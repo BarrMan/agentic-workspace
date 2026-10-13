@@ -1,0 +1,30 @@
+{
+	"$schema": "./node_modules/fallow/schema.json",
+	"minimumVersion": "3.30.0",
+	"entry": [
+		"src/cli/index.ts",
+		"src/mcp/tools/**/index.ts",
+		"src/mcp/resources/**/index.ts",
+		"scripts/**/*.ts",
+		"scripts/**/*.cjs",
+		"src/**/*.test.ts"
+	],
+	"typeAware": {
+		"enabled": true,
+		"projects": ["tsconfig.json"],
+		"require": "best-effort"
+	},
+	"framework": [
+		{
+			"name": "fallow-type-aware-companion",
+			"detection": { "type": "dependency", "package": "fallow" },
+			// Fallow launches this companion for semantic analysis; it is not imported by application source.
+			"toolingDependencies": ["fallow-type-aware"]
+		}
+	],
+	"rules": {
+		// Bun.build compiles dependencies into the executable; production does not install a node_modules runtime.
+		"dev-dependencies-in-production": "off",
+		"private-type-leak": "off"
+	}
+}

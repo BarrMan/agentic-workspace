@@ -1,0 +1,17 @@
+{
+	"version": "0.2.0",
+	"configurations": [
+		{
+			"name": "Debug OpenTUI workspace",
+			"type": "node",
+			"request": "launch",
+			"runtimeExecutable": "${env:HOME}/.bun/bin/bun",
+			"runtimeArgs": ["--inspect-wait"],
+			"program": "${workspaceFolder}/src/cli/index.ts",
+			"args": ["workspace"],
+			"cwd": "${workspaceFolder}",
+			"console": "integratedTerminal",
+			"skipFiles": ["<node_internals>/**"]
+		}
+	]
+}

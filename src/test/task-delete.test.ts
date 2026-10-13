@@ -1,0 +1,543 @@
+import { afterEach, beforeEach, describe, expect, it } from "bun:test";
+import { existsSync } from "node:fs";
+import { mkdir, rm } from "node:fs/promises";
+import { join } from "node:path";
+import { getDefaultModeCatalog } from "../agent-workspace/config.ts";
+import { BunRunner } from "../agent-workspace/session-process.ts";
+import { SessionStore } from "../agent-workspace/session-store.ts";
+import { AgentSessionService, type ProcessRunner, type TmuxServer } from "../agent-workspace/sessions.ts";
+import { workspaceRequestDir } from "../agent-workspace/workspace-context.ts";
+import { Core } from "../core/backlog.ts";
+import type { Task } from "../types/index.ts";
+import { getTaskPath } from "../utils/task-path.ts";
+import { createUniqueTestDir, initializeFilesystemTestProject } from "./test-utils.ts";
+
+describe("Permanent task deletion", () => {
+	let testDir: string;
+	let core: Core;
+
+	beforeEach(async () => {
+		testDir = createUniqueTestDir("task-delete");
+		await mkdir(testDir, { recursive: true });
+	});
+
+	afterEach(async () => {
+		await rm(testDir, { recursive: true, force: true });
+	});
+
+	function sampleTask(id: string, overrides: Partial<Task> = {}): Task {
+		return {
+			id,
+			title: "Test Task",
+			status: "To Do",
+			assignee: [],
+			createdDate: "2025-07-07",
+			labels: [],
+			dependencies: [],
+			description: "Test description",
+			...overrides,
+		};
+	}
+
+	it("removes the task markdown file", async () => {
+		core = new Core(testDir);
+		await initializeFilesystemTestProject(core, "Delete task");
+		const { task } = await core.createTaskFromInput({ title: "Delete me" });
+		const taskPath = task.filePath ?? (await getTaskPath(task.id, { filesystem: core.filesystem }));
+		expect(taskPath).toBeTruthy();
+		expect(existsSync(taskPath as string)).toBe(true);
+
+		const result = await core.deleteTask(task.id);
+
+		expect(result).toEqual({ success: true, cleanedTaskIds: [] });
+		expect(existsSync(taskPath as string)).toBe(false);
+		expect(await core.filesystem.loadTask(task.id)).toBeNull();
+	});
+
+	it("forgets a running foreign native session without stopping it", async () => {
+		core = new Core(testDir);
+		await initializeFilesystemTestProject(core, "Delete task");
+		const { task } = await core.createTaskFromInput({ title: "Keep me" });
+		const store = new SessionStore(testDir, new BunRunner());
+		const { taskDir } = await store.paths(task.id);
+		await store.mutate(task.id, async (state) => {
+			state.sessions.push({
+				id: "native-running",
+				taskId: task.id,
+				preset: "opencode",
+				tmuxName: `backlog-${task.id.toLowerCase()}-native-running`,
+				nativeWorkspace: true,
+				ownerPid: 12345,
+				cwd: testDir,
+				createdAt: new Date().toISOString(),
+				status: "running",
+				outputPath: join(taskDir, "native-running.log"),
+				bootstrapPath: join(taskDir, "native-running.md"),
+			});
+		});
+
+		await core.deleteTask(task.id);
+		expect(await core.filesystem.loadTask(task.id)).toBeNull();
+		expect((await store.read(task.id)).sessions).toEqual([]);
+	});
+
+	it("forgets mixed-mode session lifecycles without probing runtimes or touching unrelated data", async () => {
+		core = new Core(testDir);
+		await initializeFilesystemTestProject(core, "Mixed session forget");
+		const { task } = await core.createTaskFromInput({ title: "Forget mixed sessions" });
+		const { task: otherTask } = await core.createTaskFromInput({ title: "Keep unrelated sessions" });
+		let externalCalls = 0;
+		const runner: ProcessRunner = {
+			run: async () => {
+				externalCalls += 1;
+				return { exitCode: 0, stdout: "", stderr: "" };
+			},
+		};
+		const server: TmuxServer = {
+			newSession: async () => {
+				externalCalls += 1;
+				return {};
+			},
+			panes: async () => {
+				externalCalls += 1;
+				return [];
+			},
+			cmd: async () => {
+				externalCalls += 1;
+				return [];
+			},
+		};
+		(core as unknown as { agentSessions: AgentSessionService }).agentSessions = new AgentSessionService(core, {
+			runner,
+			tmuxServer: server,
+		});
+		const store = new SessionStore(testDir, runner);
+		const { taskDir } = await store.paths(task.id);
+		const catalog = getDefaultModeCatalog();
+		const modes = catalog.order;
+		const fixtures = [
+			{ id: "owned-running", modeId: modes[0], status: "running" as const, nativeWorkspace: true },
+			{ id: "foreign-running", modeId: modes[1], status: "running" as const, nativeWorkspace: false },
+			{ id: "queued-starting", modeId: modes[0], status: "starting" as const, nativeWorkspace: true },
+			{ id: "owned-parked", modeId: modes[1], status: "parked" as const, nativeWorkspace: true },
+			{ id: "foreign-stopped", modeId: modes[0], status: "stopped" as const, nativeWorkspace: false },
+		];
+		if (fixtures.some((fixture) => !fixture.modeId)) throw new Error("Expected at least two catalog modes.");
+		await store.mutate(task.id, async (state) => {
+			state.modes ??= {};
+			for (const fixture of fixtures) {
+				const record = {
+					id: fixture.id,
+					taskId: task.id,
+					preset: "opencode",
+					tmuxName: `backlog-${task.id.toLowerCase()}-${fixture.id}`,
+					nativeWorkspace: fixture.nativeWorkspace,
+					cwd: testDir,
+					createdAt: "2026-10-12T00:00:00.000Z",
+					status: fixture.status,
+					outputPath: join(taskDir, `${fixture.id}.log`),
+					bootstrapPath: join(taskDir, `${fixture.id}.md`),
+				};
+				const mode = state.modes[fixture.modeId as string] ?? { sessions: [] };
+				mode.sessions.push(record);
+				state.modes[fixture.modeId as string] = mode;
+				if (fixture.modeId === state.legacyModeId) state.sessions.push(record);
+				await Bun.write(record.outputPath, `output:${fixture.id}`);
+				await Bun.write(record.bootstrapPath, `bootstrap:${fixture.id}`);
+				if (fixture.id === "queued-starting") {
+					await mkdir(workspaceRequestDir(testDir), { recursive: true });
+					await Bun.write(join(workspaceRequestDir(testDir), `${fixture.id}.json`), "{}\n");
+				}
+			}
+		});
+		const unrelatedTaskDir = (await store.paths(otherTask.id)).taskDir;
+		const unrelatedRecord = {
+			id: "unrelated-running",
+			taskId: otherTask.id,
+			preset: "opencode",
+			tmuxName: `backlog-${otherTask.id.toLowerCase()}-unrelated-running`,
+			cwd: testDir,
+			createdAt: "2026-10-12T00:00:00.000Z",
+			status: "running" as const,
+			outputPath: join(unrelatedTaskDir, "unrelated-running.log"),
+			bootstrapPath: join(unrelatedTaskDir, "unrelated-running.md"),
+		};
+		await store.mutate(otherTask.id, async (state) => state.sessions.push(unrelatedRecord));
+		const providerData = join(testDir, "provider-conversation.json");
+		await Bun.write(providerData, "preserve provider data\n");
+		const taskPath = task.filePath ?? (await getTaskPath(task.id, { filesystem: core.filesystem }));
+		if (!taskPath) throw new Error("Expected deleted task path.");
+
+		await core.deleteTask(task.id);
+
+		expect(await core.filesystem.loadTask(task.id)).toBeNull();
+		expect(existsSync(taskPath)).toBe(false);
+		expect((await store.read(task.id)).sessions).toEqual([]);
+		for (const fixture of fixtures) {
+			expect(existsSync(join(taskDir, `${fixture.id}.log`))).toBe(false);
+			expect(existsSync(join(taskDir, `${fixture.id}.md`))).toBe(false);
+			expect(existsSync(join(workspaceRequestDir(testDir), `${fixture.id}.json`))).toBe(false);
+		}
+		expect((await store.read(otherTask.id)).sessions).toEqual([unrelatedRecord]);
+		expect(await Bun.file(providerData).text()).toBe("preserve provider data\n");
+		expect(externalCalls).toBe(0);
+	});
+
+	it("distinguishes failure before forget from failure after the task container is removed", async () => {
+		core = new Core(testDir);
+		await initializeFilesystemTestProject(core, "Deletion failure boundaries");
+		const { task } = await core.createTaskFromInput({ title: "Failure boundaries" });
+		const store = new SessionStore(testDir, new BunRunner());
+		const { taskDir } = await store.paths(task.id);
+		const record = {
+			id: "boundary-session",
+			taskId: task.id,
+			preset: "test",
+			tmuxName: `backlog-${task.id.toLowerCase()}-boundary-session`,
+			cwd: testDir,
+			createdAt: "2026-10-12T00:00:00.000Z",
+			status: "stopped" as const,
+			outputPath: join(taskDir, "boundary-session.log"),
+			bootstrapPath: join(taskDir, "boundary-session.md"),
+		};
+		await store.mutate(task.id, async (state) => state.sessions.push(record));
+		await Bun.write(record.outputPath, "retained until task removal\n");
+		const originalForget = core.sessions.forgetTaskSessions.bind(core.sessions);
+		core.sessions.forgetTaskSessions = async () => {
+			throw new Error("forget preflight failed");
+		};
+		await expect(core.deleteTask(task.id)).rejects.toThrow("forget preflight failed");
+		expect(await core.filesystem.loadTask(task.id)).not.toBeNull();
+		expect((await store.read(task.id)).sessions).toEqual([record]);
+		expect(await Bun.file(record.outputPath).text()).toBe("retained until task removal\n");
+
+		core.sessions.forgetTaskSessions = originalForget;
+		const deleteContainer = core.filesystem.deleteTaskContainer.bind(core.filesystem);
+		core.filesystem.deleteTaskContainer = async (...args: Parameters<typeof core.filesystem.deleteTaskContainer>) => {
+			await deleteContainer(...args);
+			throw new Error("post-removal failure");
+		};
+		await expect(core.deleteTask(task.id)).rejects.toThrow("post-removal failure");
+		expect(await core.filesystem.loadTask(task.id)).toBeNull();
+		expect((await store.read(task.id)).sessions).toEqual([]);
+		expect(existsSync(record.outputPath)).toBe(false);
+	});
+
+	it("awaits locked session forgetting before removing the task file", async () => {
+		core = new Core(testDir);
+		await initializeFilesystemTestProject(core, "Delete task");
+		const { task } = await core.createTaskFromInput({ title: "Await cleanup" });
+		const taskPath = task.filePath ?? (await getTaskPath(task.id, { filesystem: core.filesystem }));
+		const { promise, resolve } = Promise.withResolvers<void>();
+		let cleanupStarted = false;
+		core.sessions.forgetTaskSessions = async () => {
+			cleanupStarted = true;
+			expect(existsSync(taskPath as string)).toBe(true);
+			await promise;
+		};
+
+		const deletion = core.deleteTask(task.id);
+		while (!cleanupStarted) await new Promise((done) => setTimeout(done, 0));
+		expect(existsSync(taskPath as string)).toBe(true);
+		resolve();
+		await deletion;
+		expect(existsSync(taskPath as string)).toBe(false);
+	});
+
+	it("deletion removes the task's Backlog session associations", async () => {
+		core = new Core(testDir);
+		await initializeFilesystemTestProject(core, "Delete task");
+		const { task } = await core.createTaskFromInput({ title: "Purge after delete" });
+		const store = new SessionStore(testDir, new BunRunner());
+		const { taskDir } = await store.paths(task.id);
+		await store.mutate(task.id, async (state) => {
+			state.sessions.push({
+				id: "stopped-session",
+				taskId: task.id,
+				preset: "opencode",
+				tmuxName: `backlog-${task.id.toLowerCase()}-stopped-session`,
+				cwd: testDir,
+				createdAt: new Date().toISOString(),
+				status: "stopped",
+				outputPath: join(taskDir, "stopped-session.log"),
+				bootstrapPath: join(taskDir, "stopped-session.md"),
+			});
+		});
+		await Bun.write(join(taskDir, "stopped-session.log"), "output\n");
+		expect(existsSync(taskDir)).toBe(true);
+
+		await core.deleteTask(task.id);
+		expect(await core.filesystem.loadTask(task.id)).toBeNull();
+		expect((await store.read(task.id)).sessions).toEqual([]);
+		expect(existsSync(join(taskDir, "stopped-session.log"))).toBe(false);
+		expect(existsSync(join(taskDir, "stopped-session.md"))).toBe(false);
+	});
+
+	it("refuses to purge a session sidecar outside its task container without deleting anything", async () => {
+		core = new Core(testDir);
+		await initializeFilesystemTestProject(core, "Delete task");
+		const { task } = await core.createTaskFromInput({ title: "Keep sidecars safe" });
+		const store = new SessionStore(testDir, new BunRunner());
+		const { taskDir } = await store.paths(task.id);
+		const outputPath = join(taskDir, "safe-output.log");
+		const sentinel = join(testDir, "outside-sentinel.md");
+		await Bun.write(outputPath, "must remain until full preflight passes\n");
+		await Bun.write(sentinel, "outside-owned data\n");
+		await store.mutate(task.id, async (state) => {
+			state.sessions.push({
+				id: "tampered-session",
+				taskId: task.id,
+				preset: "opencode",
+				tmuxName: `backlog-${task.id.toLowerCase()}-tampered-session`,
+				cwd: testDir,
+				createdAt: new Date().toISOString(),
+				status: "stopped",
+				outputPath,
+				bootstrapPath: sentinel,
+			});
+		});
+
+		await expect(core.sessions.purge(task.id)).rejects.toThrow("outside its task session directory");
+		expect(await core.filesystem.loadTask(task.id)).not.toBeNull();
+		expect((await store.read(task.id)).sessions[0]?.bootstrapPath).toBe(sentinel);
+		expect(existsSync(outputPath)).toBe(true);
+		expect(existsSync(sentinel)).toBe(true);
+	});
+
+	it("refuses session admissions under deletion's lock and rejects retries after deletion", async () => {
+		const previousLockMode = process.env.USE_GLOBAL_TASK_ID_LOCK;
+		delete process.env.USE_GLOBAL_TASK_ID_LOCK;
+		const releaseDelete = Promise.withResolvers<void>();
+		let deletion: Promise<unknown> | undefined;
+		let testError: unknown;
+		let failed = false;
+		try {
+			core = new Core(testDir);
+			await initializeFilesystemTestProject(core, "Delete task");
+			const { task } = await core.createTaskFromInput({ title: "Admission lock" });
+			const store = new SessionStore(testDir, new BunRunner());
+			const sessionId = "existing-stopped";
+			const { taskDir } = await store.paths(task.id);
+			await store.mutate(task.id, async (state) => {
+				state.sessions.push({
+					id: sessionId,
+					taskId: task.id,
+					preset: "test",
+					tmuxName: `backlog-${task.id.toLowerCase()}-${sessionId}`,
+					nativeSessionId: "native-existing",
+					nativeWorkspace: true,
+					cwd: testDir,
+					createdAt: new Date().toISOString(),
+					status: "stopped",
+					outputPath: join(taskDir, `${sessionId}.log`),
+					bootstrapPath: join(taskDir, `${sessionId}.md`),
+				});
+			});
+			const enteredDelete = Promise.withResolvers<void>();
+			const deleteContainer = core.filesystem.deleteTaskContainer.bind(core.filesystem);
+			core.filesystem.deleteTaskContainer = async (...args: Parameters<typeof core.filesystem.deleteTaskContainer>) => {
+				enteredDelete.resolve();
+				await releaseDelete.promise;
+				await deleteContainer(...args);
+			};
+			deletion = core.deleteTask(task.id);
+			await enteredDelete.promise;
+
+			let externalProcessCalls = 0;
+			const runner: ProcessRunner = {
+				run: async () => {
+					externalProcessCalls += 1;
+					return { exitCode: 0, stdout: "", stderr: "" };
+				},
+			};
+			const server: TmuxServer = {
+				newSession: async () => {
+					externalProcessCalls += 1;
+					return {};
+				},
+				panes: async () => [],
+				cmd: async () => {
+					externalProcessCalls += 1;
+					return [];
+				},
+			};
+			const secondCore = new Core(testDir);
+			const contender = new AgentSessionService(secondCore, { runner, tmuxServer: server });
+			const context = {
+				v: 2 as const,
+				paneId: "%42",
+				rootDir: testDir,
+			};
+			const attempts = [
+				contender.start(task.id),
+				contender.prepareNativeSession(task.id, sessionId),
+				contender.registerPendingSession(task.id, {}, context),
+				contender.ask(task.id, "test question", { sessionId }),
+			];
+			const lockedOutcomes = await Promise.allSettled(attempts);
+			expect(lockedOutcomes.every((result) => result.status === "rejected")).toBe(true);
+			expect(externalProcessCalls).toBe(0);
+			expect((await store.read(task.id)).sessions).toEqual([]);
+
+			releaseDelete.resolve();
+			await deletion;
+			const results = await Promise.allSettled([
+				contender.start(task.id),
+				contender.prepareNativeSession(task.id, sessionId),
+				contender.registerPendingSession(task.id, {}, context),
+				contender.ask(task.id, "test question", { sessionId }),
+			]);
+			expect(results.every((result) => result.status === "rejected")).toBe(true);
+			expect(
+				results.every((result) => result.status === "rejected" && /Locally editable task/.test(String(result.reason))),
+			).toBe(true);
+			expect(externalProcessCalls).toBe(0);
+			expect((await store.read(task.id)).sessions).toEqual([]);
+		} catch (error) {
+			failed = true;
+			testError = error;
+		} finally {
+			releaseDelete.resolve();
+			if (deletion) {
+				try {
+					await deletion;
+				} catch (error) {
+					if (!failed) {
+						failed = true;
+						testError = error;
+					}
+				}
+			}
+			if (previousLockMode === undefined) delete process.env.USE_GLOBAL_TASK_ID_LOCK;
+			else process.env.USE_GLOBAL_TASK_ID_LOCK = previousLockMode;
+		}
+		if (failed) throw testError;
+	});
+
+	it("deletion does not invoke task runtime cleanup", async () => {
+		const previousLockMode = process.env.USE_GLOBAL_TASK_ID_LOCK;
+		delete process.env.USE_GLOBAL_TASK_ID_LOCK;
+		try {
+			core = new Core(testDir);
+			await initializeFilesystemTestProject(core, "Owned native deletion lock");
+			const { task } = await core.createTaskFromInput({ title: "Owned host delete" });
+			const service = core.sessions;
+			const store = new SessionStore(testDir, new BunRunner());
+			const sessionId = "owned-running";
+			const { taskDir } = await store.paths(task.id);
+			await store.mutate(task.id, async (state) => {
+				state.sessions.push({
+					id: sessionId,
+					taskId: task.id,
+					preset: "test",
+					tmuxName: `backlog-${task.id.toLowerCase()}-${sessionId}`,
+					nativeSessionId: "native-owned",
+					nativeWorkspace: true,
+					ownerPid: process.pid,
+					cwd: testDir,
+					createdAt: new Date().toISOString(),
+					status: "running",
+					outputPath: join(taskDir, `${sessionId}.log`),
+					bootstrapPath: join(taskDir, `${sessionId}.md`),
+				});
+			});
+			let cleanupCalls = 0;
+			service.cleanupTaskWorktreeSessions = async () => {
+				cleanupCalls += 1;
+			};
+			const result = await core.deleteTask(task.id);
+			expect(result.success).toBe(true);
+			expect(cleanupCalls).toBe(0);
+			expect(await core.filesystem.loadTask(task.id)).toBeNull();
+			expect((await store.read(task.id)).sessions).toEqual([]);
+		} finally {
+			if (previousLockMode === undefined) delete process.env.USE_GLOBAL_TASK_ID_LOCK;
+			else process.env.USE_GLOBAL_TASK_ID_LOCK = previousLockMode;
+		}
+	});
+
+	it("deletes through Core's locked forget when session admission locking is disabled", async () => {
+		const previousLockMode = process.env.USE_GLOBAL_TASK_ID_LOCK;
+		process.env.USE_GLOBAL_TASK_ID_LOCK = "false";
+		try {
+			core = new Core(testDir);
+			await initializeFilesystemTestProject(core, "Delete task");
+			const { task } = await core.createTaskFromInput({ title: "Keep lock required" });
+			const store = new SessionStore(testDir, new BunRunner());
+			await store.mutate(task.id, async (state) => {
+				state.sessions.push({
+					id: "stopped-lock-check",
+					taskId: task.id,
+					preset: "test",
+					tmuxName: `backlog-${task.id.toLowerCase()}-stopped-lock-check`,
+					cwd: testDir,
+					createdAt: new Date().toISOString(),
+					status: "stopped",
+					outputPath: join((await store.paths(task.id)).taskDir, "stopped-lock-check.log"),
+					bootstrapPath: join((await store.paths(task.id)).taskDir, "stopped-lock-check.md"),
+				});
+			});
+
+			await core.deleteTask(task.id);
+			expect(await core.filesystem.loadTask(task.id)).toBeNull();
+			expect((await store.read(task.id)).sessions).toEqual([]);
+		} finally {
+			if (previousLockMode === undefined) delete process.env.USE_GLOBAL_TASK_ID_LOCK;
+			else process.env.USE_GLOBAL_TASK_ID_LOCK = previousLockMode;
+		}
+	});
+
+	it("strips dependency links and references from a second task", async () => {
+		core = new Core(testDir);
+		await initializeFilesystemTestProject(core, "Delete task");
+		const target = sampleTask("task-1", { title: "Delete target" });
+		const dependent = sampleTask("task-2", {
+			title: "Dependent task",
+			dependencies: ["task-1"],
+			references: ["TASK-1", "https://example.com/tasks/task-1"],
+		});
+		await core.createTask(target);
+		await core.createTask(dependent);
+
+		const result = await core.deleteTask("task-1");
+
+		expect(result.success).toBe(true);
+		expect(result.cleanedTaskIds).toEqual(["TASK-2"]);
+		const updated = await core.filesystem.loadTask("task-2");
+		expect(updated?.dependencies).toEqual([]);
+		expect(updated?.references).toEqual(["https://example.com/tasks/task-1"]);
+	});
+
+	it("removes the task's known session sidecars", async () => {
+		core = new Core(testDir);
+		await initializeFilesystemTestProject(core, "Delete task");
+		const { task } = await core.createTaskFromInput({ title: "Session task" });
+		const store = new SessionStore(testDir, new BunRunner());
+		const { taskDir } = await store.paths(task.id);
+		const sessionId = "session-1";
+		const outputPath = join(taskDir, `${sessionId}.log`);
+		const bootstrapPath = join(taskDir, `${sessionId}.md`);
+		await Bun.write(outputPath, "session output\n");
+		await Bun.write(bootstrapPath, "# bootstrap\n");
+		await store.mutate(task.id, async (state) => {
+			state.sessions.push({
+				id: sessionId,
+				taskId: task.id,
+				preset: "opencode",
+				tmuxName: `backlog-${task.id.toLowerCase()}-${sessionId}`,
+				cwd: testDir,
+				createdAt: new Date().toISOString(),
+				status: "stopped",
+				outputPath,
+				bootstrapPath,
+			});
+		});
+		expect(existsSync(taskDir)).toBe(true);
+
+		await core.deleteTask(task.id);
+
+		expect(existsSync(outputPath)).toBe(false);
+		expect(existsSync(bootstrapPath)).toBe(false);
+		expect((await store.read(task.id)).sessions).toEqual([]);
+	});
+});

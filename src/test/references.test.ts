@@ -1,0 +1,119 @@
+import { afterEach, beforeEach, describe, expect, it } from "bun:test";
+import { mkdir } from "node:fs/promises";
+import { Core } from "../core/backlog.ts";
+import { createUniqueTestDir, initializeFilesystemTestProject, safeCleanup } from "./test-utils.ts";
+
+let TEST_DIR: string;
+
+describe("Task References", () => {
+	let core: Core;
+
+	beforeEach(async () => {
+		TEST_DIR = createUniqueTestDir("test-references");
+		await mkdir(TEST_DIR, { recursive: true });
+
+		core = new Core(TEST_DIR);
+		await initializeFilesystemTestProject(core, "Test References Project");
+	});
+
+	afterEach(async () => {
+		await safeCleanup(TEST_DIR);
+	});
+
+	describe("Create task with references", () => {
+		it("should create a task without references", async () => {
+			const { task } = await core.createTaskFromInput({
+				title: "Task without refs",
+			});
+
+			expect(task.references).toEqual([]);
+		});
+	});
+
+	describe("Update task references", () => {
+		it("should not add duplicate references", async () => {
+			const { task } = await core.createTaskFromInput({
+				title: "Task with refs",
+				references: ["file1.ts", "file2.ts"],
+			});
+
+			const updated = await core.updateTaskFromInput(task.id, {
+				addReferences: ["file2.ts", "file3.ts"],
+			});
+
+			expect(updated.references).toEqual(["file1.ts", "file2.ts", "file3.ts"]);
+		});
+
+		it("should replace references when setting directly", async () => {
+			const { task } = await core.createTaskFromInput({
+				title: "Task with refs to replace",
+				references: ["old1.ts", "old2.ts"],
+			});
+
+			const updated = await core.updateTaskFromInput(task.id, {
+				references: ["new1.ts", "new2.ts"],
+			});
+
+			expect(updated.references).toEqual(["new1.ts", "new2.ts"]);
+		});
+	});
+
+	describe("References in markdown", () => {
+		it("should not include empty references in frontmatter", async () => {
+			const { filePath } = await core.createTaskFromInput({
+				title: "Task without refs",
+			});
+
+			const content = await Bun.file(filePath as string).text();
+			expect(content).not.toContain("references:");
+		});
+	});
+
+	describe("Archive cleanup", () => {
+		it("removes only exact-ID references when archiving, in the working copy and the completed corpus", async () => {
+			const { task: archiveTarget } = await core.createTaskFromInput({
+				title: "Archive target",
+			});
+
+			const { task: activeTask } = await core.createTaskFromInput({
+				title: "Active referencing task",
+				references: [
+					"task-1",
+					"TASK-1",
+					"https://example.com/tasks/task-1",
+					"docs/task-1.md",
+					"prefix-task-1-suffix",
+					"1",
+					"JIRA-1",
+					"task-12",
+				],
+			});
+
+			const { task: completedTask } = await core.createTaskFromInput({
+				title: "Completed referencing task",
+				status: "Done",
+				references: ["task-1", "https://example.com/tasks/task-1"],
+			});
+			await core.completeTask(completedTask.id);
+
+			const archived = await core.archiveTask(archiveTarget.id);
+			expect(archived.success).toBe(true);
+
+			const updatedActive = await core.loadTaskById(activeTask.id);
+			const completedTasks = await core.filesystem.listCompletedTasks();
+			const updatedCompleted = completedTasks.find((task) => task.id === completedTask.id);
+
+			expect(updatedActive?.references).toEqual([
+				"https://example.com/tasks/task-1",
+				"docs/task-1.md",
+				"prefix-task-1-suffix",
+				"1",
+				"JIRA-1",
+				"task-12",
+			]);
+			// The completed corpus is cleaned too: the archived ID is free for reallocation, so a
+			// reference kept there would rebind to whatever task is created next.
+			expect(updatedCompleted?.references).toEqual(["https://example.com/tasks/task-1"]);
+		});
+	});
+});

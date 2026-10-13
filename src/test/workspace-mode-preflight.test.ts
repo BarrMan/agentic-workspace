@@ -1,0 +1,62 @@
+import { expect, it } from "bun:test";
+import { mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import {
+	getBuiltInAgentConfiguration,
+	getDefaultModeCatalog,
+	requireProjectModeCatalog,
+} from "../agent-workspace/config.ts";
+import type { Core } from "../core/backlog.ts";
+import { selectedModeForTask, validateSelectedModeByTask } from "../ui/opentui/workspace/state.ts";
+import { OpenTuiWorkspaceController } from "../ui/opentui/workspace-controller.ts";
+
+it("rejects a legacy project before acquiring stores or a terminal, without changing configuration", async () => {
+	const root = await mkdtemp(join(tmpdir(), "workspace-mode-preflight-"));
+	const configuration = `${JSON.stringify(getBuiltInAgentConfiguration())}\n`;
+	const path = join(root, "agents.json");
+	await writeFile(path, configuration);
+	let hosts = 0;
+	const core = { filesystem: { rootDir: root, backlogDir: root } } as unknown as Core;
+	const controller = new OpenTuiWorkspaceController(core, {
+		runtime: {
+			createHost: async () => {
+				hosts++;
+				throw new Error("Host must not be acquired");
+			},
+		},
+	});
+	try {
+		await expect(controller.run()).rejects.toThrow("agenticworkspace agent-config init project");
+		// A rejected preflight must remain retryable rather than leaving a pending completion.
+		await expect(controller.run()).rejects.toThrow("agenticworkspace agent-config init project");
+		expect(hosts).toBe(0);
+		expect(await readdir(root)).toEqual(["agents.json"]);
+		expect(await readFile(path, "utf8")).toBe(configuration);
+	} finally {
+		await rm(root, { recursive: true, force: true });
+	}
+});
+
+it("requires an explicit valid project catalog and resolves selections against its custom default", () => {
+	expect(() => requireProjectModeCatalog(null)).toThrow("Project modes are not initialized");
+	const catalog = getDefaultModeCatalog();
+	const plan = catalog.profiles.plan;
+	if (!plan) throw new Error("Missing fixture profile");
+	catalog.profiles.review = plan;
+	delete catalog.profiles.plan;
+	catalog.order = ["review", "build"];
+	catalog.defaultModeId = "review";
+	const validated = requireProjectModeCatalog({ ...getBuiltInAgentConfiguration(), modes: catalog });
+	expect(selectedModeForTask({}, "BACK-1", validated)).toBe("review");
+	expect(selectedModeForTask({ selectedModeByTask: { "BACK-1": "plan" } }, "BACK-1", validated)).toBe("review");
+	expect(selectedModeForTask({ selectedModeByTask: { "BACK-1": "build" } }, "BACK-1", validated)).toBe("build");
+	expect(validateSelectedModeByTask({ "BACK-1": "build", " ": "plan", invalid: 3 })).toEqual({
+		"BACK-1": "build",
+	});
+	expect(validateSelectedModeByTask(["build"])).toEqual({});
+	catalog.defaultModeId = "plan";
+	expect(() => requireProjectModeCatalog({ ...getBuiltInAgentConfiguration(), modes: catalog })).toThrow(
+		"valid defaultModeId",
+	);
+});

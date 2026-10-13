@@ -1,0 +1,158 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+  checks: write
+  pull-requests: write
+
+env:
+  BUN_VERSION: 1.4.3
+
+jobs:
+  test:
+    name: lint-and-unit-test (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            test_workers: 2
+            test_files: ''
+          - os: macos-latest
+            test_workers: 4
+            test_files: >-
+              src/test/atomic-task-create.test.ts src/test/auto-commit.test.ts src/test/backlog-directory.test.ts src/test/code-path.test.ts src/test/description-newlines.test.ts src/test/docs-recursive.test.ts src/test/duplicate-task-repair.test.ts src/test/filesystem.test.ts src/test/find-backlog-root.test.ts src/test/git.test.ts src/test/id-generation.test.ts src/test/markdown.test.ts src/test/task-id-resolution.test.ts src/test/task-identity-index.test.ts src/test/test-utils.test.ts src/test/worktree-refresh.test.ts src/test/worktree-task-id-allocation.test.ts src/test/agent-instructions.test.ts src/test/cli-doctor.test.ts src/test/cli-init-create.test.ts src/test/cli-launcher.test.ts src/test/config-commands.test.ts src/test/editor.test.ts src/test/offline-mode.test.ts src/test/packaging-bin.test.ts src/test/resolveBinary.test.ts src/test/runtime-cwd.test.ts src/test/status-callback.test.ts src/test/terminal-status.test.ts src/test/cli-json-watch.test.ts src/test/cli-pipe-output.test.ts src/test/watch-json.test.ts src/test/mcp-server.test.ts src/test/mcp-stdio-exit.test.ts
+          - os: windows-latest
+            test_workers: 4
+            test_files: >-
+              src/test/atomic-task-create.test.ts src/test/auto-commit.test.ts src/test/backlog-directory.test.ts src/test/code-path.test.ts src/test/description-newlines.test.ts src/test/docs-recursive.test.ts src/test/duplicate-task-repair.test.ts src/test/filesystem.test.ts src/test/find-backlog-root.test.ts src/test/git.test.ts src/test/id-generation.test.ts src/test/markdown.test.ts src/test/task-id-resolution.test.ts src/test/task-identity-index.test.ts src/test/test-utils.test.ts src/test/worktree-refresh.test.ts src/test/worktree-task-id-allocation.test.ts src/test/agent-instructions.test.ts src/test/cli-doctor.test.ts src/test/cli-init-create.test.ts src/test/cli-launcher.test.ts src/test/config-commands.test.ts src/test/editor.test.ts src/test/offline-mode.test.ts src/test/packaging-bin.test.ts src/test/resolveBinary.test.ts src/test/runtime-cwd.test.ts src/test/status-callback.test.ts src/test/terminal-status.test.ts src/test/cli-json-watch.test.ts src/test/cli-pipe-output.test.ts src/test/watch-json.test.ts src/test/mcp-server.test.ts src/test/mcp-stdio-exit.test.ts
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: oven-sh/setup-bun@v2
+        with:
+          # Bun >=1.3 includes stdin pause/subprocess handoff fixes used by TUI editor launch.
+          bun-version: ${{ env.BUN_VERSION }}
+      - uses: actions/cache@v6
+        if: matrix.test_profile == 'full'
+        id: cache
+        with:
+          path: ~/.bun/install/cache
+          key: ${{ runner.os }}-${{ matrix.os }}-bun-${{ env.BUN_VERSION }}-${{ hashFiles('**/bun.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-${{ matrix.os }}-bun-${{ env.BUN_VERSION }}-
+      - run: bun install --frozen-lockfile --linker=isolated
+      - name: Verify bun2nix dependency lock
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          bun run update-nix
+          git diff --exit-code -- bun.nix
+      - run: bun run check:types
+        if: matrix.test_profile == 'full'
+      - run: bun run check
+        if: matrix.test_profile == 'full'
+      - name: Run tests
+        run: |
+          # Ubuntu owns complete behavioral coverage. macOS and Windows focus on OS-sensitive contracts.
+          bun run test -- ${{ matrix.test_files }} --max-concurrency=${{ matrix.test_workers }} --reporter=junit --reporter-outfile=test-results.xml
+        shell: bash
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: test-results-${{ matrix.os }}
+          # The full profile writes a second JUnit file for the serial DOM pass.
+          path: test-results*.xml
+          if-no-files-found: error
+
+  build-test:
+    name: compile-and-smoke-test
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: bun-linux-x64-baseline
+          - os: macos-latest
+            target: bun-darwin-x64
+          - os: windows-latest
+            target: bun-windows-x64-baseline
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: oven-sh/setup-bun@v2
+        with:
+          # Bun >=1.3 includes stdin pause/subprocess handoff fixes used by TUI editor launch.
+          bun-version: ${{ env.BUN_VERSION }}
+      - uses: actions/cache@v6
+        id: cache
+        with:
+          path: ~/.bun/install/cache
+          key: ${{ runner.os }}-${{ matrix.os }}-bun-${{ env.BUN_VERSION }}-${{ hashFiles('**/bun.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-${{ matrix.os }}-bun-${{ env.BUN_VERSION }}-
+      - run: bun install --frozen-lockfile --linker=isolated
+      - name: Prime Bun cache for baseline target (Windows workaround)
+        if: ${{ contains(matrix.target, 'baseline') && matrix.os == 'windows-latest' }}
+        shell: bash
+        run: |
+          # Pinned Bun 1.4.3 retains this per-target primer because the cross-drive Windows cache issue remains open.
+          # Upstream: https://github.com/oven-sh/bun/issues/13513 (open); proposed fix #13556 remains unmerged.
+          # Build a dummy project from C:\ to prime the baseline binary cache before compiling from the workspace drive.
+          cd /c
+          mkdir -p bun-cache-primer
+          cd bun-cache-primer
+          echo 'console.log("cache primer")' > index.js
+          bun build --compile --target=${{ matrix.target }} ./index.js --outfile primer.exe || true
+          cd $GITHUB_WORKSPACE
+      - name: Build standalone binary
+        shell: bash
+        run: |
+          VER="$(jq -r .version package.json)"
+          OUT="backlog-test${{ contains(matrix.target,'windows') && '.exe' || '' }}"
+          BACKLOG_BUILD_VERSION="$VER" \
+            BACKLOG_BUILD_TARGET="${{ matrix.target }}" \
+            BACKLOG_BUILD_OUTFILE="$OUT" \
+            bun scripts/build.ts
+      - name: Smoke-test binary
+        shell: bash
+        run: |
+          FILE="backlog-test${{ contains(matrix.target,'windows') && '.exe' || '' }}"
+          VER="$(jq -r .version package.json)"
+          chmod +x "$FILE"
+          bun scripts/smoke-compiled-build.ts "$FILE" "$VER"
+      - name: Run interactive TUI tests against compiled binary
+        if: matrix.os == 'ubuntu-latest'
+        shell: bash
+        run: |
+          RUN_INTERACTIVE_TUI_TESTS=1 \
+          TUI_TEST_CLI_RUNTIME= \
+          TUI_TEST_CLI_PATH="$PWD/agenticworkspace-test" \
+          bun test src/test/tui-interactive-editor-handoff.test.ts --timeout=30000
+      - name: Upload compiled-binary interactive transcripts on failure
+        if: failure() && matrix.os == 'ubuntu-latest'
+        uses: actions/upload-artifact@v7
+        with:
+          name: tui-interactive-transcripts-compiled-${{ matrix.os }}
+          path: tmp/tui-interactive-transcripts/*.log
+          if-no-files-found: ignore
+
+  nix-package:
+    name: nix-package
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: DeterminateSystems/nix-installer-action@v22
+      - name: Build and smoke-test Nix package
+        run: |
+          nix build .#agenticworkspace --print-build-logs
+          expected_version="$(jq -r .version package.json)"
+          actual_version="$(./result/bin/agenticworkspace --version)"
+          test "$actual_version" = "$expected_version"
+          ./result/bin/agenticworkspace --help >/dev/null

@@ -1,0 +1,524 @@
+import { createHash } from "node:crypto";
+import type { Dirent } from "node:fs";
+import type { FileHandle } from "node:fs/promises";
+import { lstat, mkdir, open, readdir, readFile, realpath, rename, rm, writeFile } from "node:fs/promises";
+import { basename, dirname, isAbsolute, relative, resolve, sep } from "node:path";
+import type { ArtifactApprovalSidecar, ArtifactStatus } from "../agent-workspace/types.ts";
+import { resolveMainWorktreeRoot } from "../git/main-worktree.ts";
+import { parseTask } from "../markdown/parser.ts";
+import { normalizeTaskId, taskIdsEqual } from "../utils/task-id.ts";
+
+const SIDECAR = ".artifacts.json";
+const SIDECAR_LOCK = ".artifacts.json.lock";
+const TASK_RECORD = "task.md";
+const HASH = /^[a-f0-9]{64}$/;
+export const TASK_CONTAINER_LOCATIONS = ["tasks", "drafts", "completed", "archive/tasks", "archive/drafts"] as const;
+export type TaskContainerLocation = (typeof TASK_CONTAINER_LOCATIONS)[number];
+
+export function validateTaskArtifactPath(path: string): string {
+	if (
+		typeof path !== "string" ||
+		!path ||
+		path.includes("\0") ||
+		path.includes("\\") ||
+		isAbsolute(path) ||
+		/^[A-Za-z]:/.test(path) ||
+		path.split("/").some((part) => !part || part === "." || part === "..") ||
+		path === TASK_RECORD ||
+		path === SIDECAR ||
+		path === SIDECAR_LOCK ||
+		path.split("/").some((part) => part.startsWith(".backlog-artifact-") || part.startsWith(".backlog-artifacts-"))
+	)
+		throw new Error(`Invalid task artifact path: ${String(path)}`);
+	return path;
+}
+
+function fingerprint(bytes: Uint8Array): string {
+	return createHash("sha256").update(bytes).digest("hex");
+}
+
+function emptyApprovals(): ArtifactApprovalSidecar["approvals"] {
+	return Object.create(null) as ArtifactApprovalSidecar["approvals"];
+}
+
+function validateSidecar(value: unknown): ArtifactApprovalSidecar {
+	if (!value || typeof value !== "object" || Array.isArray(value))
+		throw new Error("Invalid artifact approval metadata.");
+	const sidecar = value as ArtifactApprovalSidecar;
+	if (
+		sidecar.version !== 1 ||
+		!sidecar.approvals ||
+		typeof sidecar.approvals !== "object" ||
+		Array.isArray(sidecar.approvals)
+	)
+		throw new Error("Unsupported or invalid artifact approval metadata.");
+	const approvals = emptyApprovals();
+	for (const [path, approval] of Object.entries(sidecar.approvals)) {
+		validateTaskArtifactPath(path);
+		if (
+			!approval ||
+			!HASH.test(approval.sha256) ||
+			typeof approval.approvedAt !== "string" ||
+			!Number.isFinite(Date.parse(approval.approvedAt))
+		)
+			throw new Error(`Invalid approval metadata for ${path}.`);
+		Object.defineProperty(approvals, path, { value: approval, writable: true, enumerable: true, configurable: true });
+	}
+	return { version: 1, approvals };
+}
+
+export interface TaskArtifactRepositoryOptions {
+	/** Canonical configured backlog directory (the directory containing tasks/). */
+	backlogDirectory: string;
+	/** Optional canonical task-container roots, keyed by their standard storage location. */
+	filesystemRoots?: Partial<Record<TaskContainerLocation, string>>;
+	/** Project/worktree root used to resolve registered linked worktrees to their main root. */
+	projectRoot?: string;
+	/** Called for artifact mutations, separately from task-record mutations. */
+	onMutation?: (event: {
+		taskId: string;
+		path?: string;
+		root: string;
+		type: "artifact" | "approval";
+	}) => void | Promise<void>;
+}
+
+export interface TaskArtifactEntry extends ArtifactStatus {
+	bytes?: Uint8Array;
+	size: number;
+	type: "text" | "binary";
+}
+
+/** Durable, lazy task-container artifacts and content-bound approval metadata. */
+export class TaskArtifactRepository {
+	private readonly backlogDirectory: string;
+	private readonly projectRoot?: string;
+	private readonly filesystemRoots: Partial<Record<TaskContainerLocation, string>>;
+	private readonly onMutation?: TaskArtifactRepositoryOptions["onMutation"];
+	private readonly validatedRecords = new Map<string, { content: string; id: string }>();
+
+	constructor(options: TaskArtifactRepositoryOptions) {
+		this.backlogDirectory = resolve(options.backlogDirectory);
+		this.projectRoot = options.projectRoot ? resolve(options.projectRoot) : undefined;
+		this.filesystemRoots = options.filesystemRoots ?? {};
+		this.onMutation = options.onMutation;
+	}
+
+	private canonicalId(taskId: string): string {
+		const canonical = normalizeTaskId(taskId).toLowerCase();
+		if (!/^[a-z][a-z0-9]*-[a-z0-9]+(?:[.-][a-z0-9]+)*$/.test(canonical)) throw new Error(`Invalid task ID: ${taskId}`);
+		return canonical.toLowerCase();
+	}
+
+	private async root(): Promise<string> {
+		if (!this.projectRoot) return this.backlogDirectory;
+		const main = await resolveMainWorktreeRoot(this.projectRoot);
+		if (main) {
+			const configuredRelative = relative(this.projectRoot, this.backlogDirectory);
+			if (configuredRelative.startsWith(`..${sep}`) || configuredRelative === ".." || isAbsolute(configuredRelative))
+				throw new Error("Configured backlog directory is outside the project root.");
+			return resolve(main, configuredRelative);
+		}
+		try {
+			const gitEntry = await lstat(resolve(this.projectRoot, ".git"));
+			if (gitEntry.isFile())
+				throw new Error(
+					"Cannot resolve the main Git worktree for this linked worktree; refusing to create a second task store.",
+				);
+		} catch (error) {
+			if (error instanceof Error && error.message.includes("Cannot resolve")) throw error;
+		}
+		return this.backlogDirectory;
+	}
+
+	async containerPath(taskId: string, location?: TaskContainerLocation): Promise<string> {
+		const root = await this.root();
+		const id = this.canonicalId(taskId);
+		const locationPath = (base: TaskContainerLocation): string => {
+			const configured = this.filesystemRoots[base];
+			return configured ? resolve(root, configured, id) : resolve(root, base, id);
+		};
+		if (location) {
+			const candidate = locationPath(location);
+			await this.validateContainer(candidate, taskId, false);
+			return candidate;
+		}
+		const liveMatches: string[] = [];
+		const archivedMatches: string[] = [];
+		for (const base of TASK_CONTAINER_LOCATIONS) {
+			const candidate = locationPath(base);
+			try {
+				const info = await lstat(candidate);
+				if (!info.isDirectory() || info.isSymbolicLink())
+					throw new Error(`Task container is not a real directory: ${candidate}`);
+				await this.validateContainer(candidate, taskId, true);
+				(base.startsWith("archive/") ? archivedMatches : liveMatches).push(candidate);
+			} catch (error) {
+				if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+					const exists = await lstat(candidate).then(
+						() => true,
+						() => false,
+					);
+					if (exists)
+						throw new Error(`Task container ${candidate} has no ${TASK_RECORD}; repair or remove it explicitly.`);
+					continue;
+				}
+				throw error;
+			}
+		}
+		const matches = [...liveMatches, ...archivedMatches];
+		if (matches.length > 1) throw new Error(`Task ${taskId} has multiple task containers: ${matches.join(", ")}`);
+		if (matches.length === 1) return matches[0] as string;
+		return archivedMatches[0] ?? resolve(root, "tasks", id);
+	}
+
+	private async validateContainer(
+		container: string,
+		taskId: string,
+		requireRecord: boolean,
+		content?: string,
+	): Promise<void> {
+		try {
+			const info = await lstat(container);
+			if (!info.isDirectory() || info.isSymbolicLink())
+				throw new Error(`Task container is not a real directory: ${container}`);
+			const canonicalRoot = await realpath(await this.root());
+			const canonicalContainer = await realpath(container);
+			const containerRelative = relative(canonicalRoot, canonicalContainer);
+			if (containerRelative === ".." || containerRelative.startsWith(`..${sep}`) || isAbsolute(containerRelative))
+				throw new Error(`Task container resolves outside canonical backlog storage: ${container}`);
+			const recordPath = resolve(container, TASK_RECORD);
+			const recordInfo = await lstat(recordPath);
+			if (!recordInfo.isFile() || recordInfo.isSymbolicLink())
+				throw new Error(`Task record must be a regular file: ${recordPath}`);
+			const canonicalRecord = await realpath(recordPath);
+			const recordRelative = relative(canonicalContainer, canonicalRecord);
+			if (recordRelative === ".." || recordRelative.startsWith(`..${sep}`) || isAbsolute(recordRelative))
+				throw new Error(`Task record resolves outside its container: ${recordPath}`);
+			const raw = content ?? (await readFile(recordPath, "utf8"));
+			const cached = this.validatedRecords.get(canonicalRecord);
+			const taskIdFromRecord = cached?.content === raw ? cached.id : parseTask(raw).id;
+			if (
+				!taskIdsEqual(taskIdFromRecord, taskId) ||
+				this.canonicalId(taskIdFromRecord) !== this.canonicalId(basename(container))
+			)
+				throw new Error(
+					`Task container ${container} identity does not match its validated ${TASK_RECORD} record (${taskIdFromRecord}).`,
+				);
+			this.validatedRecords.set(canonicalRecord, { content: raw, id: taskIdFromRecord });
+		} catch (error) {
+			if (!requireRecord && (error as NodeJS.ErrnoException).code === "ENOENT") return;
+			throw error;
+		}
+	}
+
+	async pathsForContext(
+		taskId: string,
+		declared: readonly string[] = [],
+		location?: TaskContainerLocation,
+	): Promise<{ taskDirectory: string; taskRecord: string; artifacts: string[] }> {
+		const taskDirectory = await this.containerPath(taskId, location);
+		return {
+			taskDirectory,
+			taskRecord: resolve(taskDirectory, TASK_RECORD),
+			artifacts: declared.map((path) => resolve(taskDirectory, validateTaskArtifactPath(path))),
+		};
+	}
+
+	private async artifactPath(
+		taskId: string,
+		path: string,
+		createParents = false,
+		location?: TaskContainerLocation,
+	): Promise<string> {
+		const container = await this.containerPath(taskId, location);
+		const validated = validateTaskArtifactPath(path);
+		const target = resolve(container, ...validated.split("/"));
+		if (!target.startsWith(`${container}${sep}`)) throw new Error("Artifact path escapes the task container.");
+		await this.assertContained(container, target, true);
+		if (createParents) {
+			await mkdir(dirname(target), { recursive: true });
+			await this.assertContained(container, target, true);
+		}
+		return target;
+	}
+
+	async resolve(taskId: string, relativePath: string, location?: TaskContainerLocation): Promise<string> {
+		return await this.artifactPath(taskId, validateTaskArtifactPath(relativePath), false, location);
+	}
+
+	private async assertContained(container: string, target: string, allowMissing: boolean): Promise<void> {
+		const realContainer = await realpath(container);
+		let cursor = target;
+		const missing: string[] = [];
+		while (true) {
+			try {
+				await lstat(cursor);
+				break;
+			} catch (error) {
+				if ((error as NodeJS.ErrnoException).code !== "ENOENT" || !allowMissing) throw error;
+				missing.unshift(cursor);
+				const parent = dirname(cursor);
+				if (parent === cursor) throw error;
+				cursor = parent;
+			}
+		}
+		const realExisting = await realpath(cursor);
+		const resolvedTarget = resolve(realExisting, ...missing.map((path) => path.slice(cursor.length + 1)));
+		const rel = relative(realContainer, resolvedTarget);
+		if (rel === ".." || rel.startsWith(`..${sep}`) || isAbsolute(rel))
+			throw new Error("Artifact path resolves outside the task container.");
+	}
+
+	private async readSidecar(container: string): Promise<ArtifactApprovalSidecar> {
+		try {
+			await this.assertContained(container, resolve(container, SIDECAR), true);
+			if ((await lstat(resolve(container, SIDECAR))).isSymbolicLink())
+				throw new Error("Artifact approval metadata may not be a symbolic link.");
+			return validateSidecar(JSON.parse(await readFile(resolve(container, SIDECAR), "utf8")));
+		} catch (error) {
+			if ((error as NodeJS.ErrnoException).code === "ENOENT") return { version: 1, approvals: emptyApprovals() };
+			throw new Error(
+				`Cannot read artifact approval metadata: ${error instanceof Error ? error.message : String(error)}`,
+			);
+		}
+	}
+
+	private async pruneStaleApprovals(container: string, sidecar: ArtifactApprovalSidecar): Promise<boolean> {
+		let changed = false;
+		for (const [path, approval] of Object.entries(sidecar.approvals)) {
+			const target = resolve(container, ...validateTaskArtifactPath(path).split("/"));
+			await this.assertContained(container, target, true);
+			try {
+				if (fingerprint(await readFile(target)) !== approval.sha256) {
+					delete sidecar.approvals[path];
+					changed = true;
+				}
+			} catch (error) {
+				if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+				delete sidecar.approvals[path];
+				changed = true;
+			}
+		}
+		return changed;
+	}
+
+	private async statusAt(
+		taskId: string,
+		path: string,
+		sidecar?: ArtifactApprovalSidecar,
+		location?: TaskContainerLocation,
+	): Promise<ArtifactStatus> {
+		const approvals = sidecar ?? (await this.readSidecar(await this.containerPath(taskId, location)));
+		const target = await this.artifactPath(taskId, path, false, location);
+		let bytes: Uint8Array;
+		try {
+			bytes = await readFile(target);
+		} catch (error) {
+			if ((error as NodeJS.ErrnoException).code === "ENOENT") return { path, state: "missing" };
+			throw error;
+		}
+		const sha256 = fingerprint(bytes);
+		const approval = Object.hasOwn(approvals.approvals, path) ? approvals.approvals[path] : undefined;
+		return approval?.sha256 === sha256
+			? { path, state: "approved", sha256, approvedAt: approval.approvedAt }
+			: { path, state: "draft", sha256 };
+	}
+
+	async status(taskId: string, relativePath: string, location?: TaskContainerLocation): Promise<ArtifactStatus> {
+		const path = validateTaskArtifactPath(relativePath);
+		return await this.statusAt(taskId, path, undefined, location);
+	}
+
+	async list(taskId: string, location?: TaskContainerLocation): Promise<TaskArtifactEntry[]> {
+		const container = await this.containerPath(taskId, location);
+		const sidecar = await this.readSidecar(container);
+		const results: TaskArtifactEntry[] = [];
+		const visit = async (directory: string, prefix: string): Promise<void> => {
+			let entries: Dirent[];
+			try {
+				entries = await readdir(directory, { withFileTypes: true });
+			} catch (error) {
+				if ((error as NodeJS.ErrnoException).code === "ENOENT") return;
+				throw error;
+			}
+			for (const entry of entries) {
+				if (entry.isSymbolicLink()) continue;
+				const path = prefix ? `${prefix}/${entry.name}` : entry.name;
+				if (
+					path === TASK_RECORD ||
+					path === SIDECAR ||
+					path === SIDECAR_LOCK ||
+					entry.name.startsWith(".backlog-artifact-") ||
+					entry.name.startsWith(".backlog-artifacts-") ||
+					entry.name.startsWith(".task-")
+				)
+					continue;
+				if (entry.isDirectory()) {
+					await visit(resolve(directory, entry.name), path);
+					continue;
+				}
+				if (!entry.isFile()) continue;
+				const bytes = await readFile(resolve(directory, entry.name));
+				let text = !bytes.includes(0);
+				if (text && bytes.length) {
+					try {
+						new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+					} catch {
+						text = false;
+					}
+				}
+				results.push({
+					...(await this.statusAt(taskId, path, sidecar, location)),
+					size: bytes.byteLength,
+					type: text ? "text" : "binary",
+				});
+			}
+		};
+		await visit(container, "");
+		return results.sort((a, b) => a.path.localeCompare(b.path));
+	}
+
+	async searchableText(taskId: string, location?: TaskContainerLocation): Promise<string> {
+		const textArtifacts = (await this.list(taskId, location)).filter(
+			(entry) => entry.type === "text" && /\.(?:md|markdown|txt|text)$/i.test(entry.path),
+		);
+		const contents = await Promise.all(
+			textArtifacts.map(async ({ path }) => (await this.read(taskId, path, location)).bytes),
+		);
+		return contents.map((bytes) => new TextDecoder("utf-8", { fatal: true }).decode(bytes)).join("\n\n");
+	}
+
+	async read(
+		taskId: string,
+		relativePath: string,
+		location?: TaskContainerLocation,
+	): Promise<{ bytes: Uint8Array; status: ArtifactStatus }> {
+		const path = validateTaskArtifactPath(relativePath);
+		const container = await this.containerPath(taskId, location);
+		const sidecar = await this.readSidecar(container);
+		const bytes = await readFile(await this.artifactPath(taskId, path, false, location));
+		const sha256 = fingerprint(bytes);
+		const approval = Object.hasOwn(sidecar.approvals, path) ? sidecar.approvals[path] : undefined;
+		const status: ArtifactStatus =
+			approval?.sha256 === sha256
+				? { path, state: "approved", sha256, approvedAt: approval.approvedAt }
+				: { path, state: "draft", sha256 };
+		return { bytes, status };
+	}
+
+	private async withMetadataLock<T>(container: string, run: () => Promise<T>): Promise<T> {
+		await mkdir(container, { recursive: true });
+		const lockPath = resolve(container, SIDECAR_LOCK);
+		let handle: FileHandle | undefined;
+		for (let attempt = 0; attempt < 200; attempt++) {
+			try {
+				handle = await open(lockPath, "wx");
+				break;
+			} catch (error) {
+				if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+				const lockInfo = await lstat(lockPath).catch(() => null);
+				if (lockInfo && Date.now() - lockInfo.mtimeMs > 60_000) {
+					await rm(lockPath, { force: true });
+					continue;
+				}
+				await Bun.sleep(10);
+			}
+		}
+		if (!handle) throw new Error("Timed out waiting for task artifact metadata lock.");
+		try {
+			return await run();
+		} finally {
+			await handle.close();
+			await rm(lockPath, { force: true });
+		}
+	}
+
+	private async writeSidecar(container: string, sidecar: ArtifactApprovalSidecar): Promise<void> {
+		const target = resolve(container, SIDECAR);
+		const temp = resolve(container, `.backlog-artifacts-${crypto.randomUUID()}.tmp`);
+		await writeFile(temp, `${JSON.stringify(sidecar, null, 2)}\n`, { flag: "wx" });
+		await rename(temp, target);
+	}
+
+	async write(
+		taskId: string,
+		relativePath: string,
+		bytes: Uint8Array,
+		location?: TaskContainerLocation,
+	): Promise<ArtifactStatus> {
+		const path = validateTaskArtifactPath(relativePath);
+		const container = await this.containerPath(taskId, location);
+		const target = await this.artifactPath(taskId, path, true, location);
+		const nextHash = fingerprint(bytes);
+		await this.withMetadataLock(container, async () => {
+			const previous = await readFile(target).catch((error) =>
+				(error as NodeJS.ErrnoException).code === "ENOENT" ? null : Promise.reject(error),
+			);
+			const sidecar = await this.readSidecar(container);
+			const pruned = await this.pruneStaleApprovals(container, sidecar);
+			if (!previous || fingerprint(previous) !== nextHash) {
+				delete sidecar.approvals[path];
+				if (await Bun.file(resolve(container, SIDECAR)).exists()) await this.writeSidecar(container, sidecar);
+			} else if (pruned) {
+				await this.writeSidecar(container, sidecar);
+			}
+			const temp = resolve(dirname(target), `.backlog-artifact-${crypto.randomUUID()}.tmp`);
+			await writeFile(temp, bytes, { flag: "wx" });
+			await rename(temp, target);
+		});
+		await this.onMutation?.({ taskId: this.canonicalId(taskId), path, root: await this.root(), type: "artifact" });
+		return await this.statusAt(taskId, path, undefined, location);
+	}
+
+	async approveCurrentVersion(
+		taskId: string,
+		relativePath: string,
+		reviewedHash: string,
+		location?: TaskContainerLocation,
+	): Promise<ArtifactStatus> {
+		const path = validateTaskArtifactPath(relativePath);
+		if (!HASH.test(reviewedHash)) throw new Error("Invalid reviewed artifact hash.");
+		const container = await this.containerPath(taskId, location);
+		const target = await this.artifactPath(taskId, path, false, location);
+		return await this.withMetadataLock<ArtifactStatus>(container, async () => {
+			const bytes = await readFile(target);
+			const currentHash = fingerprint(bytes);
+			if (currentHash !== reviewedHash)
+				throw new Error("Artifact changed since it was reviewed; refresh before approving.");
+			const sidecar = await this.readSidecar(container);
+			await this.pruneStaleApprovals(container, sidecar);
+			const approvedAt = new Date().toISOString();
+			sidecar.approvals[path] = { sha256: reviewedHash, approvedAt };
+			await this.writeSidecar(container, sidecar);
+			return { path, state: "approved", sha256: reviewedHash, approvedAt };
+		}).then(async (result) => {
+			await this.onMutation?.({ taskId: this.canonicalId(taskId), path, root: await this.root(), type: "approval" });
+			return result;
+		});
+	}
+
+	async revokeApproval(
+		taskId: string,
+		relativePath: string,
+		location?: TaskContainerLocation,
+	): Promise<ArtifactStatus> {
+		const path = validateTaskArtifactPath(relativePath);
+		const container = await this.containerPath(taskId, location);
+		try {
+			await lstat(container);
+		} catch (error) {
+			if ((error as NodeJS.ErrnoException).code === "ENOENT") return { path, state: "missing" };
+			throw error;
+		}
+		const result = await this.withMetadataLock(container, async () => {
+			const sidecar = await this.readSidecar(container);
+			await this.pruneStaleApprovals(container, sidecar);
+			delete sidecar.approvals[path];
+			if (await Bun.file(resolve(container, SIDECAR)).exists()) await this.writeSidecar(container, sidecar);
+			return await this.statusAt(taskId, path, sidecar, location);
+		});
+		await this.onMutation?.({ taskId: this.canonicalId(taskId), path, root: await this.root(), type: "approval" });
+		return result;
+	}
+}

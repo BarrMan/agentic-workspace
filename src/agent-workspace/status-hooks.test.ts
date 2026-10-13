@@ -1,0 +1,165 @@
+import { describe, expect, it } from "bun:test";
+import { spawnSync } from "node:child_process";
+import { existsSync } from "node:fs";
+import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import "./agents/agents.ts";
+import { claudeHooksConfig } from "./agents/claude.ts";
+import { openCodeV1PluginSource } from "./agents/opencode-v1.ts";
+import { piExtensionSource } from "./agents/pi.ts";
+import {
+	buildHookCommand,
+	installStatusHooks,
+	STATUS_HOOK_OWNERSHIP_TRAILER,
+	sessionActivityDir,
+} from "./status-hooks.ts";
+
+async function fixture() {
+	const root = await mkdtemp(join(tmpdir(), "backlog-hooks-test-"));
+	return { root, cleanup: () => rm(root, { recursive: true, force: true }) };
+}
+
+describe("generated hook command", () => {
+	it("pins the exact command bytes used by Claude hooks", () => {
+		expect(buildHookCommand("/tmp/owned/activity", "running")).toBe(
+			`sh -c 'unset IFS; set -f; umask 077; D='"'"'/tmp/owned/activity'"'"'; [ -n "$D" ] && [ -d "$D" ] || exit 0; printf %s running > "$D/status" 2>/dev/null; exit 0 # backlog-hooks'`,
+		);
+	});
+
+	it("targets only the owned status dir and ends with the ownership trailer", () => {
+		const statusDir = "/tmp/owned-launch-1234/activity";
+		const command = buildHookCommand(statusDir, "running");
+		expect(command.startsWith("sh -c ")).toBe(true);
+		expect(command).toContain(statusDir);
+		expect(command).toContain("umask 077");
+		expect(command).toContain("set -f");
+		expect(command).toContain("exit 0 # backlog-hooks");
+		expect(command).toContain(STATUS_HOOK_OWNERSHIP_TRAILER);
+		// No home, project, or global path is ever referenced.
+		expect(command.includes("~")).toBe(false);
+		expect(command.includes("$HOME")).toBe(false);
+	});
+
+	it("writes the status sidecar and touches nothing else when executed", async () => {
+		const { root, cleanup } = await fixture();
+		const project = join(root, "project");
+		await mkdir(project, { recursive: true });
+		const statePath = join(project, "state.json");
+		await writeFile(statePath, '{"version":1}\n');
+		const statusDir = join(root, "activity");
+		await mkdir(statusDir, { recursive: true, mode: 0o700 });
+		try {
+			const command = buildHookCommand(statusDir, "waiting");
+			const result = spawnSync("/bin/sh", ["-c", command], { encoding: "utf8" });
+			expect(result.status).toBe(0);
+			expect((await readFile(join(statusDir, "status"), "utf8")).trim()).toBe("waiting");
+			// Only our sidecar exists under the owned dir; the project's state.json is byte-identical.
+			expect(await readFile(statePath, "utf8")).toBe('{"version":1}\n');
+			expect((await readdir(project)).sort()).toEqual(["state.json"]);
+		} finally {
+			await cleanup();
+		}
+	});
+
+	it("always exits zero even for a hook whose directory is gone", async () => {
+		const { root, cleanup } = await fixture();
+		try {
+			const command = buildHookCommand(join(root, "missing"), "idle");
+			const result = spawnSync("/bin/sh", ["-c", command], { encoding: "utf8" });
+			expect(result.status).toBe(0);
+		} finally {
+			await cleanup();
+		}
+	});
+});
+
+describe("process-scoped provider install", () => {
+	it("does not recreate a removed activity directory from Pi or OpenCode events", async () => {
+		const { root, cleanup } = await fixture();
+		const statusDir = join(root, "session.activity");
+		await mkdir(statusDir);
+		const piPath = join(root, "pi.mjs");
+		const opencodePath = join(root, "opencode.mjs");
+		await writeFile(piPath, piExtensionSource(statusDir));
+		await writeFile(opencodePath, openCodeV1PluginSource(statusDir, root, "session"));
+		try {
+			await rm(statusDir, { recursive: true });
+			const pi = await import(`${new URL(`file://${piPath}`).href}?${Date.now()}`);
+			const handlers = new Map<string, () => void>();
+			pi.default({ on: (name: string, handler: () => void) => handlers.set(name, handler) });
+			handlers.get("session_start")?.();
+			const opencode = await import(`${new URL(`file://${opencodePath}`).href}?${Date.now()}`);
+			const plugin = await opencode.BacklogStatus({
+				client: { session: { get: async () => ({ data: { id: "ses_test" } }) } },
+			});
+			await plugin["chat.message"]({ sessionID: "ses_test" });
+			expect(existsSync(statusDir)).toBe(false);
+			await mkdir(statusDir);
+			handlers.get("session_start")?.();
+			await plugin["chat.message"]({ sessionID: "ses_test" });
+			expect(existsSync(join(statusDir, "status"))).toBe(false);
+		} finally {
+			await cleanup();
+		}
+	});
+
+	it("installs claude, opencode-v1, and pi artifacts only inside the owned temp dir", async () => {
+		const { root, cleanup } = await fixture();
+		try {
+			const statusDir = sessionActivityDir(root, "sess-1");
+			const claude = await installStatusHooks(
+				{ bootstrap: "claude", command: "claude" },
+				{ pluginDir: root, statusDir, sessionId: "sess-1" },
+			);
+			const opencode = await installStatusHooks(
+				{ bootstrap: "opencode-v1", command: "opencode" },
+				{ pluginDir: root, statusDir, sessionId: "sess-1" },
+			);
+			const pi = await installStatusHooks(
+				{ bootstrap: "pi", command: "pi" },
+				{ pluginDir: root, statusDir, sessionId: "sess-1" },
+			);
+			for (const install of [claude, opencode, pi]) {
+				for (const path of install.paths) expect(path.startsWith(root)).toBe(true);
+			}
+			expect(claude.paths).toEqual([join(root, "hooks", "hooks.json")]);
+			expect(opencode.paths).toEqual([join(root, "plugins", "backlog-status.ts")]);
+			expect(opencode.env.OPENCODE_CONFIG_DIR).toBe(root);
+			expect(pi.args[0]).toBe("--extension");
+			expect(pi.args[1]?.startsWith(root)).toBe(true);
+			// The generated plugin/extension never reference a home or global path.
+			const plugin = await readFile(opencode.paths[0] ?? "", "utf8");
+			expect(plugin.includes("~")).toBe(false);
+			expect(plugin).toContain("backlog-hooks");
+			expect(plugin).toContain(statusDir);
+		} finally {
+			await cleanup();
+		}
+	});
+
+	it("rejects an unregistered provider instead of installing globally", async () => {
+		const { root, cleanup } = await fixture();
+		try {
+			await expect(
+				installStatusHooks(
+					{ bootstrap: "unregistered" as "opencode", command: "unregistered" },
+					{ pluginDir: root, statusDir: sessionActivityDir(root, "sess-1"), sessionId: "sess-1" },
+				),
+			).rejects.toThrow();
+		} finally {
+			await cleanup();
+		}
+	});
+
+	it("marks every Claude settings hook command as ours", () => {
+		const config = claudeHooksConfig("/tmp/owned/activity") as {
+			hooks: Record<string, Array<{ hooks: Array<{ command: string }> }>>;
+		};
+		const commands = Object.values(config.hooks).flatMap((groups) =>
+			groups.flatMap((group) => group.hooks.map((hook) => hook.command)),
+		);
+		expect(commands.length).toBeGreaterThan(0);
+		for (const command of commands) expect(command).toContain(STATUS_HOOK_OWNERSHIP_TRAILER);
+	});
+});

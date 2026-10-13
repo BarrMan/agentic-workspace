@@ -1,0 +1,97 @@
+# dependencies (bun install)
+node_modules
+
+# output
+out
+dist
+cli
+!src/cli/
+!src/cli/*.ts
+*.tgz
+
+# code coverage
+coverage
+*.lcov
+
+# logs
+logs
+*.log
+report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
+
+# dotenv environment variable files
+.env
+.env.development.local
+.env.test.local
+.env.production.local
+.env.local
+
+# caches
+.eslintcache
+.cache
+*.tsbuildinfo
+
+# bun build artifacts
+*.bun-build
+.*.bun-build
+
+# IntelliJ based IDEs
+.idea
+
+# Finder (MacOS) folder config
+.DS_Store
+
+# Claude Code session data
+.claude
+# But include the agents directory
+!.claude/agents
+!.claude/agents/**
+# and include the skills directory
+!.claude/skills
+!.claude/skills/**
+
+# Gemini CLI session data
+.gemini
+
+# Example project folder
+example-project/
+
+# Test temp directories created by bun tests
+tmp/
+.tmp-test-*
+
+# Local files
+*.local.*
+
+# Local workspace runtime state: pane view state, per-task session records and logs, request markers
+# and per-session activity sidecars. Every entry is recreated by the process that owns it and none of
+# it is repository content, so the whole state root stays out of git.
+.backlog/
+
+# Transient lock files for task writes and for workspace view state.
+backlog/.locks/
+
+# Performance benchmark artifacts
+test-benchmark-report.json
+
+.conductor
+
+# TUI screenshot captures
+.tui-screenshots
+
+# Serena agent-tool local state
+.serena/
+
+# Secrets and key material: never commit these. `.envrc` and `.env.example` stay tracked.
+*.pem
+*.key
+*.p12
+*.sqlite
+*.db
+.env.*
+!.env.example
+
+# Editor and OS leftovers
+*.bak
+*.tmp
+*.swp
+*~
