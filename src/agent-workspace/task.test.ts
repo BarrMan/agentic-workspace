@@ -78,18 +78,19 @@ describe("Task", () => {
 		expect(task.selectedModeId).toBe("a");
 	});
 
-	it("rejects an invalid mode before provisioning", async () => {
+	it("rejects an invalid mode before provisioning", () => {
 		const f = fixture();
-		await expect(f.task.newSession("missing", () => {})).rejects.toThrow("Unknown mode");
+		expect(() => f.task.reserveSession("missing")).toThrow("Unknown mode");
 		expect(f.provisions).toBe(0);
 	});
 
-	it("inserts exactly once into the requested mode and keeps pointers valid", async () => {
+	it("reserves synchronously exactly once in the requested mode", () => {
 		const { task } = fixture();
-		const session = await task.newSession("b", () => {});
+		const { session, creation } = task.reserveSession("b");
 		expect(task.modes.a?.sessions).toHaveLength(0);
 		expect(task.modes.b?.sessions.map(({ id }) => id)).toEqual([session.id]);
 		expect(task.modes.b?.activeSessionId).toBe(session.id);
+		expect(creation).toEqual({ taskId: "T-1", modeId: "b", provisionalSessionId: session.id });
 		for (const history of Object.values(task.modes)) {
 			expect(
 				history.activeSessionId === undefined || history.sessions.some(({ id }) => id === history.activeSessionId),
@@ -97,17 +98,76 @@ describe("Task", () => {
 		}
 	});
 
-	it("rolls back the failed entry without replacing a newer active selection", async () => {
+	it("rolls back the failed entry without replacing a newer active selection", () => {
 		const { task } = fixture();
-		let creation: Parameters<typeof task.rollbackSession>[0] | undefined;
-		await task.newSession("a", ({ creation: captured }) => {
-			creation = captured;
-		});
-		await task.newSession("a", () => {});
-		if (!creation) throw new Error("creation capture was not called");
+		const { creation } = task.reserveSession("a");
+		task.reserveSession("a");
 		task.rollbackSession(creation);
 		expect(task.modes.a?.sessions.map(({ id }) => id)).toEqual(["s2"]);
 		expect(task.modes.a?.activeSessionId).toBe("s2");
+	});
+
+	it("updates only an existing same-incarnation record without changing relationships", () => {
+		const sessions = ["one", "two"].map((id) => ({
+			id,
+			taskId: "T-1",
+			preset: "x",
+			tmuxName: "",
+			cwd: "/",
+			createdAt: id,
+			status: "stopped" as const,
+			outputPath: "",
+			bootstrapPath: "",
+		}));
+		const { task } = fixture({ sessionRecords: { a: { sessions, activeSessionId: "two" } } });
+		const first = sessions[0];
+		if (!first) throw new Error("missing fixture session");
+		expect(() => task.updateSessionRecord("a", { ...first, id: "missing" })).toThrow("membership");
+		expect(() => task.updateSessionRecord("a", { ...first, taskId: "foreign" })).toThrow("another task");
+		task.updateSessionRecord("a", { ...first, status: "running" });
+		expect(task.modes.a?.sessions.map(({ id }) => id)).toEqual(["one", "two"]);
+		expect(task.modes.a?.activeSessionId).toBe("two");
+		expect(task.modes.a?.sessions[0]?.status).toBe("running");
+	});
+
+	it("registers durable records without launching and repairs removal selection", () => {
+		const { task, provisions } = fixture();
+		const record: AgentSession = {
+			id: "adopted",
+			taskId: "T-1",
+			preset: "x",
+			tmuxName: "",
+			cwd: "/",
+			createdAt: "then",
+			status: "stopped",
+			outputPath: "",
+			bootstrapPath: "",
+		};
+		task.registerSession("a", record);
+		expect(task.modes.a?.activeSessionId).toBe("adopted");
+		expect(provisions).toBe(0);
+		task.registerSession("a", { ...record, id: "other", createdAt: "later" });
+		task.selectSession("a", "adopted");
+		task.removeSession("a", "adopted");
+		expect(task.modes.a?.activeSessionId).toBe("other");
+	});
+
+	it("removes a mode history without merging its sessions", () => {
+		const { task } = fixture();
+		task.registerSession("a", {
+			id: "only-a",
+			taskId: "T-1",
+			preset: "x",
+			tmuxName: "",
+			cwd: "/",
+			createdAt: "then",
+			status: "stopped",
+			outputPath: "",
+			bootstrapPath: "",
+		});
+		task.removeMode("a");
+		expect(task.modes.a).toBeUndefined();
+		expect(task.modes.b?.sessions).toEqual([]);
 	});
 
 	it("preserves hydrated identity/source and serializes only task DTO fields", () => {

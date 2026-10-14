@@ -30,6 +30,8 @@ function assertCheckpoint(checkpoint: LifecycleCheckpoint): void {
 		throw new Error("Checkpoint identity does not match its expected membership and origin.");
 	if ((checkpoint.phase === "reservation") !== (expectedMembership.kind === "absent"))
 		throw new Error("Checkpoint phase does not match expected session membership.");
+	if (checkpoint.phase === "rollback" && origin.kind !== "creation")
+		throw new Error("Rollback checkpoints require a creation origin.");
 }
 
 /** Short locked persistence only; callers retain admission and session-claim ownership. */
@@ -50,6 +52,12 @@ export function createSessionPersistence(store: SessionStore): { checkpoint: Lif
 						JSON.stringify(current.session.pathContext) !== JSON.stringify(checkpoint.record.pathContext))
 				)
 					throw new Error(`Session ${sessionId} was replaced before checkpoint publication.`);
+				if (
+					current?.session.nativeSessionId !== undefined &&
+					checkpoint.record.nativeSessionId !== undefined &&
+					current.session.nativeSessionId !== checkpoint.record.nativeSessionId
+				)
+					throw new Error(`Session ${sessionId} native identity conflicts with the existing launch incarnation.`);
 
 				state.modes ??= {};
 				const history: ModeSessionHistory = state.modes[modeId] ?? { sessions: [] };
@@ -67,10 +75,19 @@ export function createSessionPersistence(store: SessionStore): { checkpoint: Lif
 					}
 				} else if (current) {
 					const index = history.sessions.indexOf(current.session);
-					history.sessions[index] = structuredClone(checkpoint.record) as AgentSession;
+					history.sessions[index] = {
+						...current.session,
+						...structuredClone(checkpoint.record),
+						...(current.session.useCount !== undefined ? { useCount: current.session.useCount } : {}),
+						...(current.session.lastUsedAt !== undefined ? { lastUsedAt: current.session.lastUsedAt } : {}),
+					} as AgentSession;
 				} else {
-					history.sessions.push(structuredClone(checkpoint.record) as AgentSession);
+					history.sessions.unshift(structuredClone(checkpoint.record) as AgentSession);
 					history.activeSessionId = sessionId;
+				}
+				if (modeId === state.legacyModeId) {
+					state.sessions = history.sessions;
+					state.activeSessionId = history.activeSessionId;
 				}
 			});
 		},

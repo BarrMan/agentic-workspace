@@ -3,10 +3,10 @@ import { Session } from "./session.ts";
 import type {
 	Harness,
 	LifecycleCheckpoint,
-	LifecycleCheckpointSink,
 	RunningExecution,
 	RunningExecutionEvent,
-	SessionLaunchContext,
+	SessionLaunchOperation,
+	SessionPublication,
 } from "./session-contracts.ts";
 import { AGENT_SESSION_STATUS, type AgentSession } from "./types.ts";
 
@@ -21,7 +21,7 @@ const record: AgentSession = {
 	outputPath: "/tmp/out",
 	bootstrapPath: "/tmp/bootstrap",
 };
-const context = { taskId: "task", modeId: "mode", sessionId: record.id, record } as SessionLaunchContext;
+const context = { taskId: "task", modeId: "mode", sessionId: record.id, record } as SessionLaunchOperation["context"];
 
 function execution(id: string, nativeId = id) {
 	const observers = new Set<(event: RunningExecutionEvent) => void>();
@@ -57,107 +57,148 @@ function execution(id: string, nativeId = id) {
 	};
 }
 
-function makeSession(harness: Harness, checkpoint: LifecycleCheckpointSink = async () => {}) {
-	return new Session(record, harness, context, checkpoint);
+function operation(
+	harness: Harness,
+	checkpoint: SessionPublication["checkpoint"] = async () => {},
+): SessionLaunchOperation {
+	return { harness, context, checkpoint };
+}
+function unusedHarness(): Harness {
+	return {
+		launch: async () => {
+			throw new Error("unused");
+		},
+		resume: async () => {
+			throw new Error("unused");
+		},
+	};
 }
 
 describe("Session lifecycle", () => {
-	test("start waits for readiness and required checkpoints", async () => {
+	test("start waits for readiness and checkpoints in order", async () => {
 		let ready!: (value: RunningExecution) => void;
 		const launched = new Promise<RunningExecution>((resolve) => {
 			ready = resolve;
 		});
-		const checkpoints: LifecycleCheckpoint["phase"][] = [];
-		const session = makeSession(
-			{
-				launch: () => launched,
-				resume: async () => {
-					throw new Error("unused");
-				},
-			},
-			async ({ phase }) => {
-				checkpoints.push(phase);
-			},
-		);
+		const phases: LifecycleCheckpoint["phase"][] = [];
+		const session = new Session(record);
 		let settled = false;
-		const starting = session.start().then(() => {
-			settled = true;
-		});
+		const starting = session
+			.start(
+				operation({ ...unusedHarness(), launch: () => launched }, async ({ phase }) => {
+					phases.push(phase);
+				}),
+			)
+			.then(() => {
+				settled = true;
+			});
 		await Promise.resolve();
 		expect(settled).toBe(false);
 		const running = execution("exec");
 		ready(running.value);
 		await starting;
-		expect(checkpoints).toEqual(["reservation", "identity", "ready"]);
+		expect(phases).toEqual(["reservation", "identity", "ready"]);
 		expect(session.execution).toBe(running.value);
 	});
 
-	test("a rejected checkpoint prevents launch and propagates", async () => {
+	test("checkpoint rejection prevents dependent launch", async () => {
 		const failure = new Error("reservation failed");
 		let launches = 0;
-		const session = makeSession(
-			{
-				launch: async () => {
-					launches++;
-					return execution("x").value;
-				},
-				resume: async () => {
-					throw new Error("unused");
-				},
+		const session = new Session(record);
+		const harness = {
+			...unusedHarness(),
+			launch: async () => {
+				launches++;
+				return execution("x").value;
 			},
-			async () => {
-				throw failure;
-			},
-		);
-		await expect(session.start()).rejects.toBe(failure);
+		};
+		await expect(
+			session.start(
+				operation(harness, async () => {
+					throw failure;
+				}),
+			),
+		).rejects.toBe(failure);
 		expect(launches).toBe(0);
 	});
 
-	test("stop retains the conversation record and execution provenance", async () => {
+	test("stop retains conversation and releases execution listeners", async () => {
 		const running = execution("exec", "native-conversation");
-		const session = makeSession({ launch: async () => running.value, resume: async () => running.value });
-		await session.resume("native-conversation");
-		await session.stop();
-		expect(session.serialize().id).toBe("app-id");
-		expect(session.serialize().nativeSessionId).toBe("native-conversation");
-		expect(session.execution).toBe(running.value);
-		expect(running.calls.stop).toBe(1);
-	});
-
-	test("exact resume replaces execution, tears down observation, and ignores obsolete events", async () => {
-		const first = execution("first");
-		const second = execution("second", "same-conversation");
-		const resumed: string[] = [];
-		const session = makeSession({
-			launch: async () => first.value,
-			resume: async (nativeId) => {
-				resumed.push(nativeId);
-				return second.value;
+		const session = new Session(record);
+		const harness = { ...unusedHarness(), resume: async () => running.value };
+		await session.resume("native-conversation", operation(harness));
+		const publications: LifecycleCheckpoint[] = [];
+		await session.stop({
+			checkpoint: async (checkpoint) => {
+				publications.push(checkpoint);
 			},
 		});
+		expect(session.serialize()).toMatchObject({
+			id: "app-id",
+			nativeSessionId: "native-conversation",
+			status: AGENT_SESSION_STATUS.STOPPED,
+		});
+		expect(session.execution).toBeUndefined();
+		expect(running.calls.stop).toBe(1);
+		expect(running.observerCount()).toBe(0);
+		expect(publications).toHaveLength(1);
+	});
+
+	test("resume replaces execution, clears prior terminal fields, and ignores obsolete events", async () => {
+		const first = execution("first");
+		const second = execution("second", "same-conversation");
+		const session = new Session({ ...record, endedAt: "then", error: "old failure" });
+		const harness = { ...unusedHarness(), launch: async () => first.value, resume: async () => second.value };
 		const received: string[] = [];
 		session.subscribe((event) => received.push(event.kind));
-		await session.start();
-		await session.resume("same-conversation");
-		expect(resumed).toEqual(["same-conversation"]);
+		await session.start(operation(harness));
+		await session.resume("same-conversation", operation(harness));
 		expect(first.observerCount()).toBe(0);
 		expect(first.calls.teardown).toBe(1);
 		first.emit({ kind: "turn-completed" });
 		second.emit({ kind: "turn-completed" });
 		expect(received).toEqual(["turn-completed"]);
-		expect(session.serialize().id).toBe("app-id");
-		expect(session.serialize().nativeSessionId).toBe("same-conversation");
+		expect(session.serialize()).toMatchObject({
+			id: "app-id",
+			nativeSessionId: "same-conversation",
+			status: AGENT_SESSION_STATUS.RUNNING,
+		});
+		expect(session.serialize().endedAt).toBeUndefined();
+		expect(session.serialize().error).toBeUndefined();
 	});
 
-	test("unsupported events stay distinguishable and do not synthesize idle", async () => {
+	test("execution exit updates record and emits its snapshot without publishing", async () => {
 		const running = execution("exec");
-		const session = makeSession({ launch: async () => running.value, resume: async () => running.value });
+		const session = new Session(record);
+		const events: Array<{ record: Readonly<AgentSession>; kind: string }> = [];
+		const checkpoints: LifecycleCheckpoint[] = [];
+		session.subscribe((event) => events.push(event));
+		await session.start(
+			operation({ ...unusedHarness(), launch: async () => running.value }, async (checkpoint) => {
+				checkpoints.push(checkpoint);
+			}),
+		);
+		const before = checkpoints.length;
+		running.emit({ kind: "execution-exit", exitCode: 1 });
+		expect(session.serialize()).toMatchObject({
+			status: AGENT_SESSION_STATUS.FAILED,
+			error: "Execution exited with code 1",
+		});
+		expect(session.serialize().endedAt).toBeString();
+		expect(session.execution).toBeUndefined();
+		expect(running.observerCount()).toBe(0);
+		expect(events.at(-1)).toMatchObject({ kind: "execution-exit", record: { status: AGENT_SESSION_STATUS.FAILED } });
+		expect(checkpoints).toHaveLength(before);
+	});
+
+	test("unsupported events are suppressed without synthetic activity", async () => {
+		const running = execution("exec");
+		const session = new Session(record);
 		const received: string[] = [];
 		session.subscribe((event) => received.push(event.kind));
-		await session.resume("exec");
+		await session.resume("exec", operation({ ...unusedHarness(), resume: async () => running.value }));
 		running.emit({ kind: "permission-wait" });
 		running.emit({ kind: "activity", activity: "running" });
-		expect(running.value.events.permissionWait).toBe("unsupported");
 		expect(received).toEqual(["activity"]);
 	});
 });

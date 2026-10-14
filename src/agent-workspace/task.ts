@@ -1,14 +1,13 @@
 import type { Task as TaskRecord } from "../types/index.ts";
 import { isLocalEditableTask } from "../types/index.ts";
 import type {
-	Session,
 	SessionCreationFactory,
 	SessionCreationIdentity,
 	Task as TaskContract,
 	TaskHydrationInput,
 	TaskSessionCreation,
 } from "./session-contracts.ts";
-import type { ModeId, ModeProfile, ModeSessionHistory, ResolvedAgentConfiguration } from "./types.ts";
+import type { AgentSession, ModeId, ModeProfile, ModeSessionHistory, ResolvedAgentConfiguration } from "./types.ts";
 
 export class Task implements TaskContract {
 	readonly id: string;
@@ -46,7 +45,7 @@ export class Task implements TaskContract {
 		return this.#selectedModeId;
 	}
 
-	get activeSession(): ModeSessionHistory["sessions"][number] | undefined {
+	get activeSession(): AgentSession | undefined {
 		const history = this.modes[this.#selectedModeId];
 		return history?.sessions.find(({ id }) => id === history.activeSessionId);
 	}
@@ -63,33 +62,83 @@ export class Task implements TaskContract {
 		return this.#selectedModeId;
 	}
 
-	async newSession(modeId: ModeId, capture: (creation: TaskSessionCreation) => void): Promise<Session> {
-		const history = this.modes[modeId];
-		if (!history) throw new Error(`Unknown mode: ${modeId}`);
-		const session = this.createSession.provision({ taskId: this.id, modeId });
+	reserveSession(modeId: ModeId): TaskSessionCreation {
+		const history = this.#requireMode(modeId);
 		const previousActiveSessionId = history.activeSessionId;
+		const session = this.createSession.provision({ taskId: this.id, modeId });
 		const creation: SessionCreationIdentity = {
 			taskId: this.id,
 			modeId,
 			provisionalSessionId: session.id,
 			...(previousActiveSessionId === undefined ? {} : { previousActiveSessionId }),
 		};
-		history.sessions.unshift(session.record as ModeSessionHistory["sessions"][number]);
+		history.sessions.unshift(structuredClone(session.record) as AgentSession);
 		history.activeSessionId = session.id;
-		capture({ session, creation });
-		await session.start();
-		return session;
+		this.#reservations.set(session.id, structuredClone(session.record) as AgentSession);
+		return { session, creation };
 	}
 
 	rollbackSession(creation: SessionCreationIdentity): void {
-		const history = this.modes[creation.modeId];
-		if (!history) return;
+		if (creation.taskId !== this.id) throw new Error(`Creation belongs to another task: ${creation.taskId}`);
+		const history = this.#requireMode(creation.modeId);
+		const matches = history.sessions.filter(({ id }) => id === creation.provisionalSessionId);
+		if (matches.length !== 1) throw new Error(`Expected one provisional session: ${creation.provisionalSessionId}`);
+		const provisional = matches[0];
+		if (!provisional) throw new Error(`Missing provisional session: ${creation.provisionalSessionId}`);
+		const reserved = this.#reservations.get(creation.provisionalSessionId);
+		if (!reserved || !sameIncarnation(reserved, provisional))
+			throw new Error(`Reservation incarnation changed: ${creation.provisionalSessionId}`);
 		history.sessions = history.sessions.filter(({ id }) => id !== creation.provisionalSessionId);
 		if (history.activeSessionId === creation.provisionalSessionId) {
 			history.activeSessionId = history.sessions.some(({ id }) => id === creation.previousActiveSessionId)
 				? creation.previousActiveSessionId
 				: history.sessions[0]?.id;
 		}
+		this.#reservations.delete(creation.provisionalSessionId);
+	}
+
+	#reservations = new Map<string, AgentSession>();
+
+	updateSessionRecord(modeId: ModeId, record: Readonly<AgentSession>): void {
+		if (record.taskId !== this.id) throw new Error(`Session belongs to another task: ${record.taskId}`);
+		const history = this.#requireMode(modeId);
+		const indexes = history.sessions.flatMap((session, index) => (session.id === record.id ? [index] : []));
+		if (indexes.length !== 1) throw new Error(`Expected one session membership: ${record.id}`);
+		const index = indexes[0];
+		if (index === undefined) throw new Error(`Expected one session membership: ${record.id}`);
+		const current = history.sessions[index];
+		if (!current || !sameIncarnation(current, record)) throw new Error(`Session incarnation changed: ${record.id}`);
+		history.sessions[index] = structuredClone(record) as AgentSession;
+	}
+
+	selectSession(modeId: ModeId, sessionId: string): void {
+		const history = this.#requireMode(modeId);
+		if (!history.sessions.some(({ id }) => id === sessionId)) throw new Error(`Unknown session: ${sessionId}`);
+		history.activeSessionId = sessionId;
+	}
+
+	registerSession(modeId: ModeId, record: Readonly<AgentSession>): void {
+		if (record.taskId !== this.id) throw new Error(`Session belongs to another task: ${record.taskId}`);
+		const history = this.#requireMode(modeId);
+		if (history.sessions.some(({ id }) => id === record.id))
+			throw new Error(`Session already registered: ${record.id}`);
+		history.sessions.unshift(structuredClone(record) as AgentSession);
+		if (!history.sessions.some(({ id }) => id === history.activeSessionId)) history.activeSessionId = record.id;
+	}
+
+	removeSession(modeId: ModeId, sessionId: string): void {
+		const history = this.#requireMode(modeId);
+		history.sessions = history.sessions.filter(({ id }) => id !== sessionId);
+		this.#reservations.delete(sessionId);
+		if (history.activeSessionId === sessionId || !history.sessions.some(({ id }) => id === history.activeSessionId)) {
+			history.activeSessionId = history.sessions[0]?.id;
+		}
+	}
+
+	removeMode(modeId: ModeId): void {
+		delete this.modes[modeId];
+		delete this.profiles[modeId];
+		if (this.#selectedModeId === modeId) this.#selectedModeId = Object.keys(this.modes)[0] ?? "";
 	}
 
 	edit(changes: Partial<TaskRecord>): void {
@@ -98,12 +147,23 @@ export class Task implements TaskContract {
 	}
 
 	delete(): void {
-		// Forgetting a task does not own runtime cleanup.
+		/* Forgetting a task does not own runtime cleanup. */
 	}
 
 	serialize(): TaskRecord {
 		return structuredClone(this.task);
 	}
+
+	#requireMode(modeId: ModeId): ModeSessionHistory {
+		const history = this.modes[modeId];
+		if (!history) throw new Error(`Unknown mode: ${modeId}`);
+		return history;
+	}
+}
+
+/** Incarnation key: only fields fixed at reservation. Native/tmux provenance is mutable progress, not identity. */
+function sameIncarnation(left: AgentSession, right: Readonly<AgentSession>): boolean {
+	return left.id === right.id && left.taskId === right.taskId && left.createdAt === right.createdAt;
 }
 
 export function createTask(input: {

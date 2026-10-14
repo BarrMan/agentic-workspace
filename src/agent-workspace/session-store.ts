@@ -88,6 +88,20 @@ export interface SessionPaths {
 	statePath: string;
 }
 
+export class SessionMutationError extends AggregateError {
+	constructor(
+		operationError: unknown,
+		releaseError: unknown,
+		readonly writeCommitted: boolean,
+	) {
+		super(
+			[...(operationError === undefined ? [] : [operationError]), releaseError],
+			"Session mutation lock release failed.",
+		);
+		this.name = "SessionMutationError";
+	}
+}
+
 /**
  * True when `mkdir -p path` would succeed, without creating anything. Walks up to the nearest
  * existing ancestor, because the directory itself usually does not exist yet.
@@ -422,9 +436,13 @@ export class SessionStore {
 		const paths = await this.paths(taskId);
 		await mkdir(paths.taskDir, { recursive: true });
 		const release = await acquireStateLock(paths.statePath);
+		let operationError: unknown;
+		let writeCommitted = false;
+		let releaseError: unknown;
+		let result: T | undefined;
 		try {
 			const state = await this.readPersisted(taskId);
-			const result = await fn(state);
+			result = await fn(state);
 			state.modes ??= {};
 			const compatibility = state.modes[state.legacyModeId] ?? { sessions: [] };
 			compatibility.sessions = state.sessions;
@@ -433,11 +451,21 @@ export class SessionStore {
 			state.modes[state.legacyModeId] = compatibility;
 			const validated = this.validate(state, taskId);
 			await this.write(paths.statePath, `${JSON.stringify(this.toVersioned(validated), null, "\t")}\n`);
+			writeCommitted = true;
 			if (isEnabled("store")) debug("store", "mutate.end", { taskId, ms: Date.now() - startedAt });
 			return result;
+		} catch (error) {
+			operationError = error;
 		} finally {
-			await release();
+			try {
+				await release();
+			} catch (error) {
+				releaseError = error;
+			}
 		}
+		if (releaseError !== undefined) throw new SessionMutationError(operationError, releaseError, writeCommitted);
+		if (operationError !== undefined) throw operationError;
+		return result as T;
 	}
 
 	/** Mode-scoped mutation API for new callers; unlike the flat compatibility seam it never

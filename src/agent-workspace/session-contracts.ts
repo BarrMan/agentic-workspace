@@ -1,4 +1,5 @@
 import type { Task as TaskRecord } from "../types/index.ts";
+import type { LaunchOrigin, NativeIdentity } from "./agents/agent.ts";
 import type {
 	AgentActivity,
 	AgentPreset,
@@ -8,7 +9,9 @@ import type {
 	ModeProfile,
 	ModeSessionHistory,
 	ResolvedAgentConfiguration,
+	TaskSessions,
 } from "./types.ts";
+import type { SessionHandoff, WorkspaceContext } from "./workspace-context.ts";
 
 export type Unsubscribe = () => void;
 
@@ -122,6 +125,24 @@ export interface SessionEvent {
 	readonly kind: "turn-completed" | "permission-wait" | "execution-exit" | "activity";
 	readonly activity?: AgentActivity;
 	readonly status: AgentSessionStatus;
+	/**
+	 * Snapshot of the session record after the observed change. An asynchronous observation has no
+	 * operation-scoped publication authority, so the controller must publish this snapshot under a
+	 * FRESH coordinated operation (claim + sink) rather than Session retaining authority.
+	 */
+	readonly record: Immutable<AgentSession>;
+}
+
+/** Operation-scoped publication authority. Valid only for the command that received it. */
+export interface SessionPublication {
+	readonly checkpoint: LifecycleCheckpointSink;
+}
+
+/** Operation-scoped authority for a launch or exact resume. Never retained by Session. */
+export interface SessionLaunchOperation extends SessionPublication {
+	readonly harness: Harness;
+	/** Launch inputs resolved for the CURRENT operation — never a creation-time snapshot. */
+	readonly context: SessionLaunchContext;
 }
 
 export interface Session {
@@ -131,33 +152,33 @@ export interface Session {
 	/**
 	 * New conversation. Awaits the approved R-A readiness contract (identity, provider
 	 * initialization, and initial-prompt acknowledgment) plus every required checkpoint.
-	 * A rejected checkpoint prevents dependent effects.
+	 * A rejected checkpoint prevents dependent effects. Authority is operation-scoped and is
+	 * never retained: a later command receives a fresh `SessionLaunchOperation`.
 	 */
-	start(): Promise<void>;
+	start(operation: SessionLaunchOperation): Promise<void>;
 	/**
 	 * Exact resume. Preserves the conversation identity and rejects when the exact conversation
 	 * cannot be resumed — never falling back to a fresh session. Resume readiness is identity
-	 * plus provider initialization only; no bootstrap is replayed.
+	 * plus provider initialization only; no bootstrap is replayed. Clears a prior `endedAt`/`error`.
 	 */
-	resume(nativeId: string): Promise<void>;
-	stop(): Promise<void>;
+	resume(nativeId: string, operation: SessionLaunchOperation): Promise<void>;
+	/** Stop the current execution and publish the stopped record. Retains the conversation. */
+	stop(publication: SessionPublication): Promise<void>;
 	inject(text: string): Promise<void>;
 	subscribe(listener: (event: SessionEvent) => void): Unsubscribe;
 	serialize(): AgentSession;
 }
 
 /**
- * Controller-bound, operation-scoped factory. It holds the lifecycle checkpoint sink, the
- * resolved Harness, and the controller-resolved launch inputs (working directory/path context,
- * resolved configuration, mode profile, preset, and composed bootstrap prompt). Task calls
- * `provision` and never sees storage, locking, or runtime configuration.
+ * Controller-bound factory that provisions the provisional session RECORD (working
+ * directory/path context, preset, profile). It holds NO runtime authority and NO checkpoint
+ * sink — fresh per-command authority is supplied through {@link SessionLaunchOperation}.
  */
 export interface SessionCreationFactory {
 	/**
 	 * Synchronously provisions the provisional `starting` record and returns the unstarted
-	 * Session. No I/O and no runtime dispatch occur here; Task inserts the record and awaits
-	 * `session.start()`. Reconstructing a Session for resume from an existing record is
-	 * controller-owned and does not use this factory.
+	 * Session. No I/O and no runtime dispatch occur here. Reconstructing a Session for resume
+	 * from an existing record is controller-owned and does not use this factory.
 	 */
 	provision(input: { readonly taskId: string; readonly modeId: ModeId }): Session;
 }
@@ -182,44 +203,92 @@ export interface Task {
 	readonly selectedModeId: ModeId;
 	readonly modes: Readonly<Record<ModeId, ModeSessionHistory>>;
 	/** Record of the selected mode's active session, derived from the active pointer. */
-	readonly activeSession?: Readonly<AgentSession>;
+	readonly activeSession?: Immutable<AgentSession>;
 	readonly editable: boolean;
 	cycleMode(direction?: number): ModeId;
-	/** Calls capture synchronously after provisional insertion and before awaiting startup. */
-	newSession(modeId: ModeId, capture: (creation: TaskSessionCreation) => void): Promise<Session>;
+	/**
+	 * Provision, insert and select the provisional session synchronously. No I/O and no runtime;
+	 * the controller obtains fresh operation authority and calls `session.start(...)` itself.
+	 */
+	reserveSession(modeId: ModeId): TaskSessionCreation;
 	rollbackSession(creation: SessionCreationIdentity): void;
+	/** Replace an existing member's accepted record. Never inserts, moves, reorders or selects. */
+	updateSessionRecord(modeId: ModeId, record: Immutable<AgentSession>): void;
+	/** Point the mode's active pointer at an existing member. */
+	selectSession(modeId: ModeId, sessionId: string): void;
+	/** Add an already-durable record as a member without launching it (pending/adoption). */
+	registerSession(modeId: ModeId, record: Immutable<AgentSession>): void;
+	/** Remove a membership and repair the active pointer. Never signals or stops a runtime. */
+	removeSession(modeId: ModeId, sessionId: string): void;
+	/** Remove a mode's history. Sessions are never merged into another mode. */
+	removeMode(modeId: ModeId): void;
 	edit(changes: Partial<TaskRecord>): void;
 	/** Forget-only: owns no runtime cleanup and never signals or stops a process. */
 	delete(): void;
 	serialize(): TaskRecord;
 }
 
+/** Verified live runtime identity for one session. Required by every runtime transition. */
+export interface SessionRuntimeOrigin {
+	readonly record: Immutable<AgentSession>;
+	readonly paneId: string;
+}
+
+/**
+ * Shared application controller. Maps the existing `AgentSessionService` public operations
+ * one-for-one (see `AGENT_SESSION_SERVICE_MIGRATION`) and adds Task hydration. Construction is
+ * UI-independent. The inputs the old service required are preserved deliberately: deletion
+ * `force`, hand-off successor/predecessor identity, verified runtime origin, and mode destination.
+ */
 export interface SessionController {
 	readonly tasks: readonly Task[];
-	deleteMode(taskId: string, modeId: ModeId): Promise<void>;
-	list(taskId: string): Promise<AgentSession[]>;
-	listMode(taskId: string, modeId: ModeId): Promise<AgentSession[]>;
-	publishNativeIdentity(taskId: string, modeId: ModeId, sessionId: string, nativeId: string): Promise<void>;
-	reset(taskId: string): Promise<void>;
-	purge(taskId: string, sessionId: string): Promise<void>;
-	forgetTaskSessions(taskId: string): Promise<void>;
-	delete(taskId: string, sessionId: string): Promise<void>;
-	liveSession(taskId: string, sessionId: string): Promise<Session | undefined>;
-	prepareNativeSession(taskId: string, modeId: ModeId, nativeId: string): Promise<Session>;
+
+	// Reads — never launch a runtime.
+	list(taskId: string, requestedModeId?: ModeId): Promise<TaskSessions>;
+	listMode(taskId: string, modeId: ModeId): Promise<TaskSessions>;
+	liveSession(taskId: string, sessionId: string, options?: { passive?: boolean }): Promise<Session | undefined>;
+	output(taskId: string, sessionId?: string, modeId?: ModeId): Promise<string>;
+	touchUsage(taskId: string, sessionId?: string, modeId?: ModeId): Promise<void>;
+
+	// Creation, resume and adoption.
 	prepareNewSession(taskId: string, modeId: ModeId): Promise<Session>;
+	prepareNativeSession(taskId: string, sessionId?: string, requestedModeId?: ModeId): Promise<Session>;
 	adoptPendingSession(taskId: string, sessionId: string): Promise<Session>;
-	activateNativeSession(taskId: string, sessionId: string): Promise<void>;
-	finishNativeSession(taskId: string, sessionId: string): Promise<void>;
-	parkNativeSession(taskId: string, sessionId: string): Promise<void>;
-	start(taskId: string, modeId: ModeId): Promise<Session>;
-	registerPendingSession(taskId: string, sessionId: string): Promise<void>;
-	rollbackHandoff(taskId: string, sessionId: string): Promise<void>;
-	finalizeHandoff(taskId: string, sessionId: string): Promise<void>;
-	stop(taskId: string, sessionId: string): Promise<void>;
+	registerPendingSession(
+		taskId: string,
+		options: { preset?: string; replace?: boolean; modeId?: ModeId },
+		context: WorkspaceContext,
+	): Promise<void>;
+	publishNativeIdentity(origin: LaunchOrigin, identity: NativeIdentity): Promise<void>;
+
+	// Verified runtime transitions — origin is mandatory, never inferred from selection.
+	activateNativeSession(taskId: string, sessionId: string, origin: SessionRuntimeOrigin): Promise<void>;
+	finishNativeSession(taskId: string, sessionId: string, origin: SessionRuntimeOrigin): Promise<void>;
+	parkNativeSession(taskId: string, sessionId: string, origin: SessionRuntimeOrigin): Promise<void>;
+
+	// Stop and hand-off. Hand-off carries the captured successor and predecessor identity.
+	stop(taskId: string, sessionId?: string, modeId?: ModeId): Promise<void>;
 	stopAllTaskSessions(taskId: string): Promise<void>;
-	output(taskId: string, sessionId: string, lines?: number): Promise<string>;
-	attach(taskId: string, sessionId: string): Promise<void>;
+	finalizeHandoff(taskId: string, successor: Immutable<AgentSession>, handoff: SessionHandoff): Promise<void>;
+	rollbackHandoff(taskId: string, successor: Immutable<AgentSession>, handoff: SessionHandoff): Promise<void>;
+
+	// Mutation and deletion.
+	delete(taskId: string, sessionId: string, options?: { force?: boolean }): Promise<void>;
+	forgetTaskSessions(taskId: string): Promise<void>;
+	purge(taskId: string): Promise<void>;
+	reset(taskId: string): Promise<void>;
+	deleteMode(modeId: ModeId, destinationModeId?: ModeId): Promise<void>;
+
+	// Interaction and reconciliation.
+	ask(
+		taskId: string,
+		question: string,
+		options?: { sessionId?: string; modeId?: ModeId },
+	): Promise<{ answer: string; timedOut: boolean }>;
+	sendKey(taskId: string, sessionId: string, key: string): Promise<void>;
+	attach(taskId: string, sessionId?: string, modeId?: ModeId): Promise<void>;
 	reconcileTaskSessions(taskId: string): Promise<void>;
+
 	hydrateTask(input: TaskHydrationInput): Task;
 }
 

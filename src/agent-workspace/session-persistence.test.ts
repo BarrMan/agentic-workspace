@@ -69,9 +69,28 @@ describe("session checkpoint persistence", () => {
 		await persistence.checkpoint(
 			checkpoint("identity", { ...provisional, nativeProvider: "opencode", nativeSessionId: "ses_native" }, creation),
 		);
+		await store.mutateSession("TASK-1", "new", async (current) => {
+			current.useCount = 3;
+			current.lastUsedAt = "2026-10-14T01:00:00.000Z";
+		});
+		await persistence.checkpoint(
+			checkpoint(
+				"ready",
+				{ ...provisional, nativeProvider: "opencode", nativeSessionId: "ses_native", status: "running" },
+				creation,
+			),
+		);
 		expect(await store.readMode("TASK-1", "plan")).toMatchObject({
 			activeSessionId: "new",
-			sessions: [{ id: "new", nativeSessionId: "ses_native" }],
+			sessions: [
+				{
+					id: "new",
+					nativeSessionId: "ses_native",
+					status: "running",
+					useCount: 3,
+					lastUsedAt: "2026-10-14T01:00:00.000Z",
+				},
+			],
 		});
 		expect(await store.readMode("TASK-1", "build")).toMatchObject({
 			activeSessionId: "other",
@@ -123,13 +142,13 @@ describe("session checkpoint persistence", () => {
 		await persistence.checkpoint(checkpoint("reservation", provisional, creation));
 		await store.mutateMode("TASK-1", "plan", async (history) => {
 			const newer = record("newer");
-			history.sessions.push(newer);
+			history.sessions.unshift(newer);
 			history.activeSessionId = newer.id;
 		});
 		await persistence.checkpoint(checkpoint("rollback", provisional, creation));
 		expect(await store.readMode("TASK-1", "plan")).toMatchObject({
 			activeSessionId: "newer",
-			sessions: [{ id: "prior" }, { id: "newer" }],
+			sessions: [{ id: "newer" }, { id: "prior" }],
 		});
 	});
 
@@ -159,13 +178,47 @@ describe("session checkpoint persistence", () => {
 		const newer = record("newer", { status: "running" });
 		await store.mutateMode("TASK-1", "plan", async (history) => {
 			history.sessions[0] = replacement;
-			history.sessions.push(newer);
+			history.sessions.unshift(newer);
 			history.activeSessionId = newer.id;
 		});
 		await expect(persistence.checkpoint(checkpoint("rollback", provisional, creation))).rejects.toThrow(/replaced/);
 		expect(await store.readMode("TASK-1", "plan")).toMatchObject({
 			activeSessionId: "newer",
-			sessions: [{ id: "provisional", createdAt: replacement.createdAt }, { id: "newer" }],
+			sessions: [{ id: "newer" }, { id: "provisional", createdAt: replacement.createdAt }],
 		});
+	});
+
+	it("synchronizes legacy flat pointers and rejects non-creation rollback and conflicting native IDs", async () => {
+		const { store, persistence } = await fixture();
+		const creation = { taskId: "TASK-1", modeId: "build", provisionalSessionId: "new" };
+		const provisional = record("new");
+		await persistence.checkpoint(checkpoint("reservation", provisional, creation));
+		expect(await store.read("TASK-1")).toMatchObject({
+			activeSessionId: "new",
+			modes: { build: { activeSessionId: "new" } },
+		});
+		const identity = { ...provisional, nativeProvider: "opencode" as const, nativeSessionId: "ses_first" };
+		await persistence.checkpoint(checkpoint("identity", identity, creation));
+		await expect(
+			persistence.checkpoint(checkpoint("identity", { ...identity, nativeSessionId: "ses_other" }, creation)),
+		).rejects.toThrow(/native identity conflicts/);
+		await expect(
+			persistence.checkpoint({
+				...checkpoint("rollback", provisional, creation),
+				origin: {
+					kind: "session",
+					taskId: creation.taskId,
+					modeId: creation.modeId,
+					sessionId: creation.provisionalSessionId,
+				},
+			}),
+		).rejects.toThrow(/creation origin/);
+		expect(await store.read("TASK-1")).toMatchObject({
+			activeSessionId: "new",
+			modes: { build: { activeSessionId: "new", sessions: [{ nativeSessionId: "ses_first" }] } },
+		});
+		await persistence.checkpoint(checkpoint("rollback", identity, creation));
+		expect(await store.read("TASK-1")).toMatchObject({ sessions: [], modes: { build: { sessions: [] } } });
+		expect((await store.read("TASK-1")).activeSessionId).toBeUndefined();
 	});
 });
