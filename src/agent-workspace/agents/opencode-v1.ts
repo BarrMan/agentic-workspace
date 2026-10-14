@@ -170,6 +170,7 @@ const STATUS_DIR = ${JSON.stringify(statusDir)};
 const TASK_ROOT = ${JSON.stringify(taskRoot)};
 const AGENTIC_WORKSPACE_SESSION_ID = ${JSON.stringify(agenticWorkspaceSessionId)};
 const NATIVE_SESSION_ID_PATH = join(TASK_ROOT, AGENTIC_WORKSPACE_SESSION_ID + ".native-session-id");
+const PROMPT_ACCEPTED_PATH = join(TASK_ROOT, AGENTIC_WORKSPACE_SESSION_ID + ".prompt-accepted");
 const topLevelSessionIDs = new Set();
 const childSessionIDs = new Set();
 let activeTopLevelSessionID;
@@ -192,6 +193,17 @@ function recordNativeSessionId(sessionID) {
     writeFileSync(temporaryPath, sessionID + "\\n", { mode: 0o600 });
     renameSync(temporaryPath, NATIVE_SESSION_ID_PATH);
     activeTopLevelSessionID = sessionID;
+  } catch {
+    // Never throw from an event handler.
+  }
+}
+
+function recordPromptAccepted(sessionID) {
+  try {
+    if (sessionID !== activeTopLevelSessionID) return;
+    const temporaryPath = PROMPT_ACCEPTED_PATH + "." + process.pid + ".tmp";
+    writeFileSync(temporaryPath, sessionID + "\\n", { mode: 0o600 });
+    renameSync(temporaryPath, PROMPT_ACCEPTED_PATH);
   } catch {
     // Never throw from an event handler.
   }
@@ -241,6 +253,7 @@ export const AgenticWorkspaceStatus = async ({ client }) => ({
           childSessionIDs.add(sessionID);
         }
       }
+      if (typeof sessionID === "string" && topLevelSessionIDs.has(sessionID) && !childSessionIDs.has(sessionID)) recordPromptAccepted(sessionID);
       emit("running", sessionID);
     } catch {
       // A failed read-only lookup must not block a user message.

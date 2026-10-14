@@ -40,7 +40,6 @@ export interface LifecycleCheckpoint {
 	readonly origin: SessionCheckpointOrigin;
 	readonly expectedMembership: ExpectedSessionMembership;
 	readonly record: Immutable<AgentSession>;
-	readonly history: Immutable<ModeSessionHistory>;
 }
 
 export type LifecycleCheckpointSink = (checkpoint: LifecycleCheckpoint) => Promise<void>;
@@ -158,7 +157,8 @@ export interface TaskHydrationInput {
 	readonly task: TaskRecord;
 	readonly modes: Readonly<Record<ModeId, ModeProfile>>;
 	readonly configuration: ResolvedAgentConfiguration;
-	readonly sessionRecords: Readonly<Record<ModeId, readonly AgentSession[]>>;
+	/** Existing per-mode history, INCLUDING the durable active-session pointer. */
+	readonly sessionRecords: Readonly<Record<ModeId, ModeSessionHistory>>;
 	readonly selectedModeId: ModeId;
 	readonly createSession: SessionCreationFactory;
 }
@@ -172,9 +172,17 @@ export interface Task {
 	readonly id: TaskRecord["id"];
 	readonly selectedModeId: ModeId;
 	readonly modes: Readonly<Record<ModeId, ModeSessionHistory>>;
+	/** Record of the selected mode's active session, derived from the active pointer. */
+	readonly activeSession?: Readonly<AgentSession>;
+	readonly editable: boolean;
+	cycleMode(direction?: number): ModeId;
 	/** Calls capture synchronously after provisional insertion and before awaiting startup. */
 	newSession(modeId: ModeId, capture: (creation: TaskSessionCreation) => void): Promise<Session>;
 	rollbackSession(creation: SessionCreationIdentity): void;
+	edit(changes: Partial<TaskRecord>): void;
+	/** Forget-only: owns no runtime cleanup and never signals or stops a process. */
+	delete(): void;
+	serialize(): TaskRecord;
 }
 
 export interface SessionController {

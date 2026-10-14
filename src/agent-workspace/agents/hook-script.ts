@@ -26,3 +26,7 @@ function hookScript(directoryExpression: string, status: HookStatus): string {
 export function buildHookCommand(statusDir: string, status: HookStatus): string {
 	return `sh -c ${quoteShell(hookScript(quoteShell(statusDir), status))}`;
 }
+
+export function buildPromptReceiptCommand(path: string, sessionId: string): string {
+	return `sh -c ${quoteShell(`umask 077; printf %s ${quoteShell(sessionId)} > ${quoteShell(path)}`)}`;
+}

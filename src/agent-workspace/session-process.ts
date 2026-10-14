@@ -19,7 +19,7 @@ import { paneTitle } from "./tmux-pane-lookup.ts";
 import type { AgentPreset, AgentSession, ModeProfile } from "./types.ts";
 
 const LAUNCH_PROBE_INTERVAL_MS = 25;
-const LAUNCH_PROBE_DURATION_MS = 250;
+export const LAUNCH_PROBE_DURATION_MS = 250;
 const TMUX_PLACEHOLDER_COMMAND = "exec sleep 2147483647";
 const PANE_OPTION_ROOT = "@agentic_workspace_root";
 const PANE_OPTION_TASK = "@agentic_workspace_task";
@@ -530,6 +530,20 @@ export class SessionProcess {
 		} catch (error) {
 			throw fail(`Could not send input to session ${session.id}`, errorResult(error));
 		}
+	}
+
+	async input(session: AgentSession, text: string): Promise<void> {
+		const paneId = await this.paneId(session);
+		try {
+			await this.server.cmd("send-keys", ["-t", paneId, "-l", text]);
+			await this.server.cmd("send-keys", ["-t", paneId, "Enter"]);
+		} catch (error) {
+			throw fail(`Could not send input to session ${session.id}`, errorResult(error));
+		}
+	}
+
+	async output(session: AgentSession): Promise<string> {
+		return await Bun.file(session.outputPath).text();
 	}
 
 	async alive(session: AgentSession) {

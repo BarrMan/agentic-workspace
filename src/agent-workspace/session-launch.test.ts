@@ -793,4 +793,24 @@ describe("session-local agent launch", () => {
 			await rm(root, { recursive: true, force: true });
 		}
 	});
+
+	it("delivers the Harness-composed prompt once through the existing CLI prompt argument", async () => {
+		const { root, bootstrapPath } = await fixture();
+		const prompt = "composed identity and mode prompt";
+		const launch = await prepareAgentLaunch({ ...preset, bootstrap: "claude", command: "claude" }, bootstrapPath, {
+			cwd: root,
+			intent: { kind: "new" },
+			prompt,
+		});
+		try {
+			const promptPath = launch.command.match(/\/[A-Za-z0-9._/-]+profile-bootstrap\.md/)?.[0];
+			if (!promptPath) throw new Error("Expected the composed prompt file to be passed to the CLI.");
+			expect(await readFile(promptPath, "utf8")).toBe(prompt);
+			expect(launch.command).toContain("claude");
+			expect(launch.command.match(/profile-bootstrap\.md/g)).toHaveLength(1);
+		} finally {
+			await launch.cleanup();
+			await rm(root, { recursive: true, force: true });
+		}
+	});
 });

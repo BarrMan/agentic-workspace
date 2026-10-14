@@ -10,6 +10,7 @@ import { mkdirSync, writeFileSync, renameSync, rmSync } from "node:fs";
 import { dirname, join } from "node:path";
 
 const SIDECAR = ${JSON.stringify(join(options.metadataRoot, `${options.agenticWorkspaceSessionId}.native-session-id`))};
+const PROMPT_ACCEPTED = ${JSON.stringify(join(options.metadataRoot, `${options.agenticWorkspaceSessionId}.prompt-accepted`))};
 const STATUS = ${JSON.stringify(options.statusDir ? join(options.statusDir, "status") : "")};
 let writeSequence = 0;
 
@@ -69,6 +70,14 @@ export default Plugin.define({
         const dispose = ctx.data.on(name, (event) => { status(event, value); });
         if (typeof dispose === "function") cleanup.push(dispose);
       }
+      const messageDispose = ctx.data.on("message.updated", (event) => {
+        try {
+          const info = event && event.data && event.data.info;
+          const route = activeRoute();
+          if (route && info && info.sessionID === route.sessionID && info.role === "user") atomicWrite(PROMPT_ACCEPTED, info.sessionID);
+        } catch {}
+      });
+      if (typeof messageDispose === "function") cleanup.push(messageDispose);
     } catch {}
     return () => { for (const dispose of cleanup) { try { dispose(); } catch {} } };
   },

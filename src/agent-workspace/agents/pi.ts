@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { mkdir, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { appendArguments, filePrompt } from "../bootstrap.ts";
 import type { InstalledStatusHook } from "../status-hooks.ts";
 import type { ModeProfile } from "../types.ts";
@@ -29,6 +29,7 @@ import { join } from "node:path";
 
 const STATUS_DIR = ${JSON.stringify(statusDir)};
 const SESSION_ID = ${JSON.stringify(sessionId ?? "")};
+const PROMPT_ACCEPTED_PATH = ${JSON.stringify(join(dirname(statusDir), `${sessionId ?? ""}.prompt-accepted`))};
 void SESSION_ID;
 
 function emit(status) {
@@ -43,6 +44,9 @@ function emit(status) {
 export default function agenticWorkspaceStatus(pi) {
   try {
     pi.on("session_start", () => emit("idle"));
+    pi.on("before_agent_start", () => {
+      try { writeFileSync(PROMPT_ACCEPTED_PATH, SESSION_ID, { mode: 0o600 }); } catch {}
+    });
     pi.on("tool_call", () => emit("running"));
     pi.on("turn_end", () => emit("idle"));
     pi.on("agent_end", () => emit("idle"));

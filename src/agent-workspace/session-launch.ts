@@ -47,6 +47,8 @@ export interface PrepareAgentLaunchOptions {
 	yolo?: boolean;
 	/** Resolved immutable mode profile. Omit to keep legacy preset behavior. */
 	profile?: ModeProfile;
+	/** Already-composed prompt for the Harness path; delivered through the provider CLI argument. */
+	prompt?: string;
 	repositoryRoot?: string;
 	taskRoot?: string;
 	/** A resolved environment shared by session creation/preparation and final launch. */
@@ -174,8 +176,12 @@ export async function prepareAgentLaunchResources(
 		// when a profile is supplied, so a launch with the profile suppressed starts identity-only.
 		const baseExists = await Bun.file(bootstrapPath).exists();
 		const effectiveBootstrapPath =
-			options.profile || baseExists ? join(directory, "profile-bootstrap.md") : bootstrapPath;
-		if (options.profile) {
+			options.prompt !== undefined || options.profile || baseExists
+				? join(directory, "profile-bootstrap.md")
+				: bootstrapPath;
+		if (options.prompt !== undefined) {
+			await writeFile(effectiveBootstrapPath, options.prompt, { mode: 0o600 });
+		} else if (options.profile) {
 			const base = await Bun.file(bootstrapPath).text();
 			await writeFile(
 				effectiveBootstrapPath,
