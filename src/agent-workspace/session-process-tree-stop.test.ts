@@ -12,7 +12,7 @@ describe("SessionProcess tmux instance lifecycle", () => {
 		id: "instance-session",
 		taskId: "TASK-1",
 		preset: "opencode",
-		tmuxName: "backlog-task-1-instance",
+		tmuxName: "agentic-workspace-task-1-instance",
 		cwd: process.cwd(),
 		createdAt: "2026-10-12T00:00:00.000Z",
 		status: "running",
@@ -23,15 +23,15 @@ describe("SessionProcess tmux instance lifecycle", () => {
 	afterEach(async () => await Promise.all(roots.splice(0).map((path) => rm(path, { recursive: true, force: true }))));
 
 	async function fixture(state: "live" | "dead" | "absent" = "live", role = "live-preview") {
-		const root = await realpath(await mkdtemp(join(tmpdir(), "backlog-tmux-lifecycle-")));
+		const root = await realpath(await mkdtemp(join(tmpdir(), "agentic-workspace-tmux-lifecycle-")));
 		roots.push(root);
 		const events: string[] = [];
 		let instanceState = state;
 		const options = new Map<string, string>([
-			["@backlog_root", root],
-			["@backlog_task", session.taskId],
-			["@backlog_session", session.id],
-			["@backlog_role", role],
+			["@agentic_workspace_root", root],
+			["@agentic_workspace_task", session.taskId],
+			["@agentic_workspace_session", session.id],
+			["@agentic_workspace_role", role],
 		]);
 		const pane = {
 			id: "%731",
@@ -65,10 +65,10 @@ describe("SessionProcess tmux instance lifecycle", () => {
 					return [
 						[
 							session.tmuxName,
-							options.get("@backlog_root"),
-							options.get("@backlog_task"),
-							options.get("@backlog_session"),
-							options.get("@backlog_role"),
+							options.get("@agentic_workspace_root"),
+							options.get("@agentic_workspace_task"),
+							options.get("@agentic_workspace_session"),
+							options.get("@agentic_workspace_role"),
 							pane.id,
 							instanceState === "dead" ? "1" : "0",
 						].join("\t"),
@@ -113,7 +113,7 @@ describe("SessionProcess tmux instance lifecycle", () => {
 
 	it("refuses foreign ownership and propagates uncertain probe and pane-kill errors", async () => {
 		const foreign = await fixture();
-		foreign.options.set("@backlog_task", "OTHER");
+		foreign.options.set("@agentic_workspace_task", "OTHER");
 		await expect(foreign.process.kill({ ...session, cwd: await realpath(session.cwd) })).rejects.toThrow();
 		expect(foreign.events).toEqual([]);
 
@@ -160,15 +160,15 @@ describe("SessionProcess tmux instance lifecycle", () => {
 			writes.push(`title:${title}`);
 		};
 		await live.process.demote({ ...session, cwd: await realpath(session.cwd) });
-		expect(live.options.get("@backlog_role")).toBe("retired-session");
+		expect(live.options.get("@agentic_workspace_role")).toBe("retired-session");
 		expect(writes).toHaveLength(2);
 		await live.process.demote({ ...session, cwd: await realpath(session.cwd) });
 		expect(writes).toHaveLength(4);
 
 		for (const tags of [{ role: "native-workspace" }, { task: "OTHER" }]) {
 			const foreign = await fixture();
-			if (tags.role) foreign.options.set("@backlog_role", tags.role);
-			if (tags.task) foreign.options.set("@backlog_task", tags.task);
+			if (tags.role) foreign.options.set("@agentic_workspace_role", tags.role);
+			if (tags.task) foreign.options.set("@agentic_workspace_task", tags.task);
 			let mutations = 0;
 			foreign.pane.setOption = async () => {
 				mutations++;
@@ -191,7 +191,7 @@ describe("SessionProcess tmux instance lifecycle", () => {
 				return [
 					[
 						"foreign-tmux-name",
-						f.options.get("@backlog_root"),
+						f.options.get("@agentic_workspace_root"),
 						session.taskId,
 						session.id,
 						"live-preview",

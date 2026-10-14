@@ -1,6 +1,6 @@
-# Backlog.md MCP Implementation (MVP)
+# AgenticWorkspace MCP Implementation (MVP)
 
-This directory exposes a minimal stdio MCP surface so local agents can work with backlog.md without duplicating business
+This directory exposes a minimal stdio MCP surface so local agents can work with AgenticWorkspace without duplicating business
 logic.
 
 ## What’s included
@@ -27,7 +27,7 @@ segments such as `..` are rejected by the shared core/filesystem path handling.
 bun run cli mcp start
 
 # Or via the globally installed CLI
-agenticworkspace mcp start
+agentic-workspace mcp start
 
 # Tests
 bun test src/test/mcp-*.test.ts

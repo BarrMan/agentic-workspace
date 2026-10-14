@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { mkdir } from "node:fs/promises";
 import { Writable } from "node:stream";
 import { runCli } from "../cli/register.ts";
-import { Core } from "../core/backlog.ts";
+import { Core } from "../core/agentic-workspace.ts";
 import { type TaskCorpus, toTaskDetail, withReadiness } from "../core/task-detail.ts";
 import { searchJson } from "../formatters/json-output.ts";
 import { McpServer } from "../mcp/server.ts";
@@ -23,7 +23,7 @@ describe("readiness agreement across surfaces", () => {
 
 	/** The verdict every surface has to reach for this project, by task ID. */
 	const expectedReadiness: Record<string, boolean> = {
-		// Its only dependency was completed and moved into backlog/completed.
+		// Its only dependency was completed and moved into agentic-workspace/completed.
 		"TASK-2": true,
 		// Unfinished with no dependencies at all.
 		"TASK-3": true,
@@ -61,7 +61,7 @@ describe("readiness agreement across surfaces", () => {
 		await addTask("task-5", "Waits on nothing known", "To Do", ["task-404"]);
 		await addTask("task-6", "Already finished", "Done");
 
-		// The dependency leaves the active corpus: only its location in backlog/completed still says
+		// The dependency leaves the active corpus: only its location in agentic-workspace/completed still says
 		// the work is finished.
 		expect(await core.completeTask("task-1")).toBe(true);
 

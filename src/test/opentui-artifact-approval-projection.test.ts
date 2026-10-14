@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from "bun:test";
 import { EventEmitter } from "node:events";
 import { mkdir, utimes, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import type { Core } from "../core/backlog.ts";
+import type { Core } from "../core/agentic-workspace.ts";
 import { TaskArtifactRepository } from "../file-system/task-artifact-repository.ts";
 import type { Task } from "../types/index.ts";
 import type { OpenTuiHost } from "../ui/opentui/host.ts";
@@ -29,8 +29,8 @@ afterEach(async () => {
 async function setup() {
 	const root = await createUniqueTestDir("artifact-approval-projection");
 	roots.push(root);
-	const backlogDir = join(root, ".backlog");
-	const container = join(backlogDir, "tasks", "back-23");
+	const agenticWorkspaceDir = join(root, ".agentic-workspace");
+	const container = join(agenticWorkspaceDir, "tasks", "back-23");
 	await mkdir(container, { recursive: true });
 	await writeFile(
 		join(container, "task.md"),
@@ -38,7 +38,7 @@ async function setup() {
 	);
 	const planPath = join(container, "plan.md");
 	await writeFile(planPath, "plan v1\n");
-	const repository = new TaskArtifactRepository({ backlogDirectory: backlogDir });
+	const repository = new TaskArtifactRepository({ agenticWorkspaceDirectory: agenticWorkspaceDir });
 	const modes = {
 		version: 1 as const,
 		defaultModeId: "plan",
@@ -101,7 +101,7 @@ async function setup() {
 	await writeFile(join(container, "design", "review.md"), "custom review\n");
 	await writeFile(join(container, "spec.md"), "spec\n");
 	await writeFile(
-		join(backlogDir, "agents.json"),
+		join(agenticWorkspaceDir, "agents.json"),
 		JSON.stringify({
 			selectedPreset: "opencode",
 			presets: {
@@ -129,8 +129,8 @@ async function setup() {
 			}),
 			filesystem: {
 				rootDir: root,
-				backlogDir,
-				tasksDir: join(backlogDir, "tasks"),
+				agenticWorkspaceDir,
+				tasksDir: join(agenticWorkspaceDir, "tasks"),
 				taskArtifacts: repository,
 				loadConfig: async () => ({ projectName: "Test" }),
 				listMilestones: async () => [],

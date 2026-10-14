@@ -22,21 +22,21 @@ const roots: string[] = [];
 const stores: Store[] = [];
 
 async function makeRoot(prefix: string): Promise<string> {
-	const root = await mkdtemp(join(tmpdir(), `backlog-groups-${prefix}-`));
+	const root = await mkdtemp(join(tmpdir(), `agentic-workspace-groups-${prefix}-`));
 	roots.push(root);
 	return root;
 }
 
-function backlogOf(root: string): string {
-	return join(root, ".backlog");
+function agenticWorkspaceOf(root: string): string {
+	return join(root, ".agentic-workspace");
 }
 
 function groupsFileOf(root: string): string {
-	return join(backlogOf(root), "groups.json");
+	return join(agenticWorkspaceOf(root), "groups.json");
 }
 
 async function open(root: string): Promise<Store> {
-	const store = await openGroupStore(root, backlogOf(root));
+	const store = await openGroupStore(root, agenticWorkspaceOf(root));
 	stores.push(store);
 	return store;
 }
@@ -82,8 +82,8 @@ describe("openGroupStore", () => {
 
 	it("3. degrades to empty state when the file is invalid JSON", async () => {
 		const root = await makeRoot("corrupt");
-		const backlogDir = backlogOf(root);
-		await mkdir(backlogDir, { recursive: true });
+		const agenticWorkspaceDir = agenticWorkspaceOf(root);
+		await mkdir(agenticWorkspaceDir, { recursive: true });
 		await writeFile(groupsFileOf(root), "{ this is not json", "utf8");
 
 		const store = await open(root);
@@ -92,7 +92,7 @@ describe("openGroupStore", () => {
 
 	it("4. drops invalid group entries and non-string memberships instead of throwing", async () => {
 		const root = await makeRoot("defensive");
-		await mkdir(backlogOf(root), { recursive: true });
+		await mkdir(agenticWorkspaceOf(root), { recursive: true });
 		await writeFile(
 			groupsFileOf(root),
 			`${JSON.stringify({

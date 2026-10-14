@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { realpathSync } from "node:fs";
 import { lstat, realpath, rm, rmdir, stat } from "node:fs/promises";
 import { basename, dirname, join, resolve, sep } from "node:path";
-import type { Core } from "../core/backlog.ts";
+import type { Core } from "../core/agentic-workspace.ts";
 import { taskWorktreeExists, taskWorktreePath } from "../git/task-worktree.ts";
 import type { OwnedNativeSessionStops } from "../git/task-worktree-cleanup.ts";
 import { TASK_SOURCE, type Task } from "../types/index.ts";
@@ -66,8 +66,10 @@ import {
 	deleteWorkspaceRequest,
 	readWorkspaceContext,
 	readWorkspaceRequests,
+	type SessionHandoff,
 	WORKSPACE_CONTEXT_ENV,
 	type WorkspaceContext,
+	type WorkspaceRequest,
 	workspaceContextInto,
 	workspaceRequestDir,
 	writeWorkspaceRequest,
@@ -75,7 +77,7 @@ import {
 
 const DEFAULT_MAX_RUNNING_AGENT_SESSIONS = 10;
 const ASK_TIMEOUT_MS = 120_000;
-const NATIVE_SESSION_PANE_OPTION = "@backlog_native_session_id";
+const NATIVE_SESSION_PANE_OPTION = "@agentic_workspace_native_session_id";
 
 export type { ProcessRunner, SessionTransport, TmuxServer } from "./session-process.ts";
 
@@ -88,10 +90,28 @@ export class ResumeFailedError extends Error {
 		cause: unknown,
 	) {
 		super(
-			`ResumeFailed: ${nativeProvider} ${nativeSessionId}. Conversation preserved; the next launch will start fresh.`,
+			`ResumeFailed: ${nativeProvider} ${nativeSessionId}. Conversation preserved; starting fresh requires an explicit decision.`,
 			{ cause },
 		);
 		this.name = "ResumeFailedError";
+	}
+}
+
+export class ExactResumeUnavailableError extends Error {
+	readonly kind = "exact-resume-unavailable";
+
+	constructor(
+		readonly reason: "auto-resume-disabled" | "previous-resume-failed",
+		readonly nativeProvider?: string,
+		readonly nativeSessionId?: string,
+		cause?: unknown,
+	) {
+		const identity = [nativeProvider, nativeSessionId].filter(Boolean).join(" ");
+		super(
+			`Exact conversation resume is unavailable (${reason})${identity ? ` for ${identity}` : ""}. The existing conversation was preserved; start a fresh conversation explicitly if desired.`,
+			{ cause },
+		);
+		this.name = "ExactResumeUnavailableError";
 	}
 }
 
@@ -102,35 +122,28 @@ export type SharedAgentAttachment = {
 	paneId: string;
 	bootstrap?: RuntimeAgentBootstrap;
 	warnings?: string[];
-	outcome?:
-		| { kind: "Resumed" }
-		| { kind: "Fresh" }
-		| { kind: "FreshAfterFailedResume"; nativeProvider: string; nativeSessionId: string };
+	outcome?: { kind: "Resumed" } | { kind: "Fresh" };
 };
 
 export type SessionRuntimeOrigin = Readonly<Pick<SharedAgentAttachment, "record" | "paneId">>;
 
-type ResolvedTarget = {
-	record: AgentSession;
-	modeId: ModeId;
-	pathContext: AgentSessionPathContext;
-	preset: AgentPreset;
-	profile?: ModeProfile;
-	receipt?: string;
-	environment: Record<string, string>;
-	warnings: string[];
-	settings?: SessionSettings;
-	queuedRequest: boolean;
-	failedResume?: { nativeProvider: string; nativeSessionId: string };
-	newlyCreated?: boolean;
-};
-
-type NativeAdmission =
-	| { kind: "attach"; attachment: SharedAgentAttachment }
-	| { kind: "launch"; target: ResolvedTarget; action: "resume" | "launch-queued" | "launch-new" };
-
 function timestamp(): string {
 	return new Date().toISOString();
+}
+
+function cleanupSnapshotFingerprint({ session, modeId }: { session: AgentSession; modeId: ModeId }): string {
+	return JSON.stringify([
+		modeId,
+		session.taskId,
+		session.id,
+		session.createdAt,
+		session.status,
+		session.nativeWorkspace,
+		session.nativeProvider,
+		session.tmuxName,
+		session.nativeSessionId,
+		session.ownerPid,
+	]);
 }
 
 function sameRoot(left: string, right: string): boolean {
@@ -224,7 +237,7 @@ export class AgentSessionService {
 		} else if (options.tmuxServer) {
 			this.server = options.tmuxServer;
 			this.exec = createTmuxExec({
-				socketName: process.env.BACKLOG_TMUX_SOCKET?.trim() || "default",
+				socketName: process.env.AGENTIC_WORKSPACE_TMUX_SOCKET?.trim() || "default",
 				environment: { ...process.env, TMUX: "" },
 			});
 		} else {
@@ -246,7 +259,7 @@ export class AgentSessionService {
 		);
 		const rootDir = this.core.filesystem.rootDir;
 		this.lifecycle = new ModeLifecycleService({
-			journalDirectory: join(rootDir, ".backlog", "agent-workspace"),
+			journalDirectory: join(rootDir, ".agentic-workspace", "agent-workspace"),
 			configuration: {
 				read: async () => await getEditableAgentConfiguration(this.core, "project"),
 				update: async (update) => {
@@ -466,7 +479,7 @@ export class AgentSessionService {
 			"-t",
 			paneId,
 			"-F",
-			`#{@backlog_root}\t#{@backlog_task}\t#{@backlog_session}\t#{pane_id}\t#{${NATIVE_SESSION_PANE_OPTION}}\t#{@backlog_native_provider}`,
+			`#{@agentic_workspace_root}\t#{@agentic_workspace_task}\t#{@agentic_workspace_session}\t#{pane_id}\t#{${NATIVE_SESSION_PANE_OPTION}}\t#{@agentic_workspace_native_provider}`,
 		]);
 		const [rootDir, taskId, sessionId, observedPaneId, nativeSessionId, nativeProvider] =
 			panes.length === 1 ? (panes[0]?.split("\t") ?? []) : [];
@@ -485,7 +498,13 @@ export class AgentSessionService {
 		if (!publish || !session.nativeSessionId) return;
 		await this.server.cmd("set-option", ["-p", "-t", paneId, NATIVE_SESSION_PANE_OPTION, session.nativeSessionId]);
 		if (session.nativeProvider)
-			await this.server.cmd("set-option", ["-p", "-t", paneId, "@backlog_native_provider", session.nativeProvider]);
+			await this.server.cmd("set-option", [
+				"-p",
+				"-t",
+				paneId,
+				"@agentic_workspace_native_provider",
+				session.nativeProvider,
+			]);
 	}
 
 	private assertSameSessionMembership(current: AgentSession, expected: AgentSession): void {
@@ -522,7 +541,7 @@ export class AgentSessionService {
 			"-t",
 			`=${session.tmuxName}:`,
 			"-F",
-			`#{@backlog_root}\t#{@backlog_task}\t#{@backlog_session}\t#{pane_id}\t#{${NATIVE_SESSION_PANE_OPTION}}`,
+			`#{@agentic_workspace_root}\t#{@agentic_workspace_task}\t#{@agentic_workspace_session}\t#{pane_id}\t#{${NATIVE_SESSION_PANE_OPTION}}`,
 		]);
 		for (const line of lines) {
 			const [rootDir, taskId, sessionId, paneId, nativeSessionId] = line.split("\t");
@@ -535,7 +554,7 @@ export class AgentSessionService {
 			)
 				continue;
 			await this.server.cmd("set-option", ["-p", "-u", "-t", paneId, NATIVE_SESSION_PANE_OPTION]);
-			await this.server.cmd("set-option", ["-p", "-u", "-t", paneId, "@backlog_native_provider"]);
+			await this.server.cmd("set-option", ["-p", "-u", "-t", paneId, "@agentic_workspace_native_provider"]);
 		}
 	}
 
@@ -576,7 +595,7 @@ export class AgentSessionService {
 			preflight?: PreflightedAgentLaunch;
 			environment?: Record<string, string>;
 		},
-	): Promise<{ paneId: string; prepared: PreparedAgentLaunch; warnings: string[] }> {
+	): Promise<{ paneId: string; prepared: PreparedAgentLaunch; agent: Agent }> {
 		const pathContext = await this.pathContextForSession(task, record);
 		const warnings: string[] = [];
 		let environment = options.preflight
@@ -601,6 +620,9 @@ export class AgentSessionService {
 				taskRoot: pathContext.taskDir,
 				environment,
 			}));
+		const nativeProvider = preflight.agent.nativeNamespace;
+		if (record.nativeProvider && nativeProvider && record.nativeProvider !== nativeProvider)
+			throw new Error(`Session ${record.id} belongs to provider ${record.nativeProvider}, not ${nativeProvider}.`);
 		if (options.clearWorkspaceContext) delete environment[WORKSPACE_CONTEXT_ENV];
 		if (options.bootstrapBeforeCreate)
 			await this.store.write(record.bootstrapPath, renderSessionBootstrap({ taskId: task.id }));
@@ -621,9 +643,13 @@ export class AgentSessionService {
 		if (!options.bootstrapBeforeCreate)
 			await this.store.write(record.bootstrapPath, renderSessionBootstrap({ taskId: task.id }));
 		await this.process.preparePane(record);
-		const prepared = await prepareAgentLaunchResources(record.bootstrapPath, preflight, environment);
+		const prepared = await prepareAgentLaunchResources(
+			record.bootstrapPath,
+			{ ...preflight, options: { ...preflight.options, profile: undefined } },
+			environment,
+		);
 		if (warnings.length > 0) prepared.warnings = warnings;
-		return { paneId, prepared, warnings };
+		return { paneId, prepared, agent: preflight.agent };
 	}
 
 	private warnEnvironment(text: string): void {
@@ -722,13 +748,13 @@ export class AgentSessionService {
 			canonicalDirectoryTarget(requestDir),
 		]);
 		if (
-			resolve(stateRoot) === join(resolve(this.core.filesystem.rootDir), ".backlog") &&
-			canonicalStateRoot !== join(canonicalProjectRoot, ".backlog")
+			resolve(stateRoot) === join(resolve(this.core.filesystem.rootDir), ".agentic-workspace") &&
+			canonicalStateRoot !== join(canonicalProjectRoot, ".agentic-workspace")
 		)
 			throw new Error(`Cannot forget task ${task.id}: the project state root is redirected.`);
 		if (canonicalTaskDir !== join(canonicalStateRoot, basename(paths.taskDir)))
 			throw new Error(`Cannot forget task ${task.id}: its session directory resolves outside its canonical task path.`);
-		if (canonicalRequestDir !== join(canonicalProjectRoot, ".backlog", "agent-requests"))
+		if (canonicalRequestDir !== join(canonicalProjectRoot, ".agentic-workspace", "agent-requests"))
 			throw new Error(`Cannot forget task ${task.id}: its workspace request directory is redirected.`);
 		try {
 			const stateFile = await lstat(paths.statePath);
@@ -774,14 +800,14 @@ export class AgentSessionService {
 				await removeOwnedPath(join(canonicalTaskDir, `${session.id}.md`));
 				await removeOwnedPath(join(canonicalTaskDir, `${session.id}.native-session-id`));
 				await removeOwnedPath(join(canonicalTaskDir, `${session.id}.activity`), true);
-				for (const [modeId, history] of Object.entries(currentState.modes ?? {})) {
+				for (const [modeId, history] of Object.entries(currentState.modes)) {
 					history.sessions = history.sessions.filter((current) => current.id !== session.id);
 					if (history.activeSessionId === session.id) {
-						delete history.activeSessionId;
-						if (modeId === currentState.legacyModeId) delete currentState.activeSessionId;
+						history.activeSessionId = history.sessions[0]?.id;
+						if (modeId === currentState.legacyModeId) currentState.activeSessionId = history.activeSessionId;
 					}
 				}
-				currentState.sessions = currentState.modes?.[currentState.legacyModeId]?.sessions ?? [];
+				currentState.sessions = currentState.modes[currentState.legacyModeId]?.sessions ?? [];
 			});
 		}
 		await this.store.reset(task.id);
@@ -883,116 +909,182 @@ export class AgentSessionService {
 		return prepared.attachment;
 	}
 
+	/** Create a distinct session despite an active session in the requested mode. */
+	async prepareNewSession(taskId: string, modeId: ModeId) {
+		const prepared = await this.withTaskSessionAdmission(
+			taskId,
+			async (task) => await this.prepareNativeSessionLocked(task, undefined, modeId, "prepare", true),
+		);
+		return prepared.attachment;
+	}
+
 	private async prepareNativeSessionLocked(
 		task: Task,
 		sessionId?: string,
 		requestedModeId?: ModeId,
 		intent: "prepare" | "adopt" = "prepare",
+		newSession = false,
 	) {
 		let releaseClaim: (() => Promise<void>) | undefined;
+		let freshTarget: { modeId: ModeId; record: AgentSession; previousActiveSessionId?: string } | undefined;
+		let request: WorkspaceRequest | undefined;
+		let queuedRecord: AgentSession | undefined;
+		let launched = false;
 		try {
-			const resolved = await this.resolveNativeTarget(task, sessionId, requestedModeId, intent);
-			releaseClaim = resolved.releaseClaim;
-			const admission = await this.admitResolvedTarget(task, resolved.target, resolved.target.queuedRequest);
-			if (admission.kind === "attach") return { attachment: admission.attachment, modeId: resolved.target.modeId };
-			const launch =
-				admission.action === "resume" ? await this.resumeExistingTarget(task, admission.target) : undefined;
-			const target = launch
-				? { ...admission.target, record: launch.record, preset: launch.preset, settings: launch.settings }
-				: admission.target;
-			return {
-				attachment: await this.launchPreparedTarget(task, target.record, target.preset, admission.action, {
-					preflight: launch?.preflight,
-					environment: target.environment,
-					settings: target.settings,
-					failedResume: target.failedResume,
-					queuedRequest: target.queuedRequest,
-					releaseAdmissionClaim: async () => {
-						await releaseClaim?.();
-						releaseClaim = undefined;
-					},
-				}),
-				modeId: target.modeId,
-			};
+			const state = await this.store.read(task.id);
+			const context = await this.readContext();
+			const historyModeId = sessionId ? findSessionMode(state.modes, sessionId) : undefined;
+			const modeId = await this.resolveModeId(task.id, requestedModeId ?? historyModeId, context);
+			const hasModeCatalog = (await loadAgentConfiguration(this.core, "project"))?.modes !== undefined;
+			const selectedId = newSession
+				? undefined
+				: (sessionId ?? (hasModeCatalog ? state.modes[modeId]?.activeSessionId : undefined));
+			let record: AgentSession;
+			let preset: AgentPreset;
+			let profile: ModeProfile | undefined;
+			let environment: Record<string, string>;
+			let settings: SessionSettings;
+			let preflight: PreflightedAgentLaunch | undefined;
+			let action: "resume" | "launch-new" | "launch-queued" = "launch-new";
+			if (selectedId) {
+				releaseClaim = await this.store.claimSession(task.id, selectedId);
+				const claimed = await this.store.read(task.id);
+				if (findSessionMode(claimed.modes, selectedId) !== modeId)
+					throw new Error(`Agent session not found in its owning mode: ${selectedId}`);
+				record = { ...this.modeSession(claimed.modes[modeId]!, selectedId) };
+				request = (await readWorkspaceRequests(this.core.filesystem.rootDir)).find(
+					(candidate) => candidate.taskId === task.id && candidate.sessionId === record.id,
+				);
+				if (request?.handoff) {
+					if (request.createdAt !== record.createdAt || request.handoff.modeId !== modeId)
+						throw new Error("Queued handoff no longer matches its successor.");
+					this.handoffPredecessor(claimed, record, request.handoff);
+				}
+				const queuedRequest = !!request && (record.status === AGENT_SESSION_STATUS.STARTING || !!request.handoff);
+				if (queuedRequest) queuedRecord = record;
+				if (intent === "adopt" && !queuedRequest)
+					throw new Error(`Session ${record.id} is not a verified queued workspace request; refusing adoption.`);
+				const pathContext = await this.pathContextForSession(task, record);
+				const execution = await this.executionPresetWithEnvironment(task.id, record.preset, pathContext);
+				({ preset, profile } = await this.profileFor(modeId, execution.preset));
+				environment = execution.environment;
+				const agent = agentFor(preset.bootstrap);
+				const nativeProvider = agent?.nativeNamespace;
+				if (record.nativeProvider && nativeProvider && record.nativeProvider !== nativeProvider)
+					throw new Error(`Session ${record.id} belongs to provider ${record.nativeProvider}, not ${nativeProvider}.`);
+				const receipt = await this.store.readNativeSessionIdCandidate(task.id, record.id);
+				settings = resolveSessionSettings((await this.launchConfiguration(task.id)).config);
+				if (!sameRoot(pathContext.projectDir, this.core.filesystem.rootDir))
+					throw new Error(`Session ${record.id} has a mismatched canonical project root.`);
+				if (!(await isDirectory(pathContext.worktreeDir)))
+					throw new Error(`Session ${record.id} working directory is missing: ${pathContext.worktreeDir}`);
+				const current = this.session(await this.store.read(task.id), record.id);
+				this.assertSameSession(current, record);
+				record = current;
+				const runtime = await this.process.nativeRuntimeClassification(record);
+				if (runtime.status === "uncertain")
+					throw new Error(`Could not inspect native session ${record.id}: ${runtime.reason}`);
+				if (runtime.status === "live") {
+					const paneId = runtime.paneId;
+					await this.tagNativeSessionPane(record, paneId, false);
+					const resources = await this.process.launchResources(paneId);
+					if (agent && resources) await this.reconcileDeferredIdentity(agent, { record, modeId, paneId, resources });
+					const observed = this.session(await this.store.read(task.id), record.id);
+					await this.tagNativeSessionPane(observed, paneId);
+					launched = true;
+					if (request?.handoff) await this.finalizeHandoffLocked(task.id, observed, request.handoff);
+					if (queuedRequest) await deleteWorkspaceRequest(this.core.filesystem.rootDir, record.id);
+					return {
+						attachment: {
+							record: observed,
+							server: this.server,
+							exec: this.exec as TmuxExec,
+							paneId,
+							bootstrap: preset.bootstrap,
+						},
+						modeId,
+					};
+				}
+				if (record.status === AGENT_SESSION_STATUS.STARTING && !queuedRequest)
+					throw new Error(`Session ${record.id} has an unverified pending launch; refusing adoption.`);
+				if (queuedRequest && runtime.status !== "missing")
+					throw new Error(`Pending session ${record.id} has an existing non-live runtime; refusing launch.`);
+				action = queuedRequest ? "launch-queued" : "resume";
+				if (action === "resume") {
+					const marker = record.resumeProbeFailed;
+					if (
+						marker &&
+						record.nativeProvider === marker.nativeProvider &&
+						record.nativeSessionId === marker.nativeSessionId
+					)
+						throw new ExactResumeUnavailableError(
+							"previous-resume-failed",
+							marker.nativeProvider,
+							marker.nativeSessionId,
+							record.error ? new Error(record.error) : undefined,
+						);
+					if (!settings.autoResumeOnRestart)
+						throw new ExactResumeUnavailableError(
+							"auto-resume-disabled",
+							record.nativeProvider,
+							record.nativeSessionId,
+						);
+					({ record, preflight } = await this.resumeExistingTarget(task, {
+						record,
+						preset,
+						profile,
+						receipt,
+						environment,
+						settings,
+					}));
+				}
+			} else {
+				const target = await this.createNewTarget(task, modeId, newSession);
+				({ record, preset, environment, settings } = target);
+				freshTarget = newSession ? { ...target, modeId } : undefined;
+				releaseClaim = await this.store.claimSession(task.id, record.id);
+			}
+			const attachment = await this.launchNativeRecord(task, record, preset, {
+				action,
+				preflight,
+				environment,
+				settings,
+				modeId,
+				profile,
+			});
+			launched = true;
+			if (request?.handoff) await this.finalizeHandoffLocked(task.id, attachment.record, request.handoff);
+			if (request) await deleteWorkspaceRequest(this.core.filesystem.rootDir, record.id);
+			return { attachment, modeId };
+		} catch (error) {
+			if (!launched && request?.handoff && queuedRecord) {
+				await this.rollbackHandoff(task.id, queuedRecord, request.handoff);
+			}
+			if (freshTarget?.previousActiveSessionId) {
+				const { modeId, record, previousActiveSessionId } = freshTarget;
+				try {
+					await this.store.mutateMode(task.id, modeId, async (history) => {
+						if (history.activeSessionId !== record.id) return;
+						if (history.sessions.some((candidate) => candidate.id === previousActiveSessionId))
+							history.activeSessionId = previousActiveSessionId;
+					});
+				} catch (restoreError) {
+					throw new AggregateError(
+						[error, restoreError],
+						"Could not restore the predecessor selection after handoff failure.",
+						{
+							cause: error,
+						},
+					);
+				}
+			}
+			throw error;
 		} finally {
 			await releaseClaim?.();
 		}
 	}
 
-	private async resolveNativeTarget(
-		task: Task,
-		sessionId: string | undefined,
-		requestedModeId: ModeId | undefined,
-		intent: "prepare" | "adopt",
-	): Promise<{ target: ResolvedTarget; releaseClaim?: () => Promise<void> }> {
-		const state = await this.store.read(task.id);
-		const context = await this.readContext();
-		const historyModeId = sessionId ? findSessionMode(state.modes, sessionId) : undefined;
-		const resolvedModeId = await this.resolveModeId(task.id, requestedModeId ?? historyModeId, context);
-		if (!resolvedModeId) throw new Error(`Could not resolve owning mode for session ${sessionId ?? "new session"}.`);
-		const history = state.modes?.[resolvedModeId] ?? { sessions: [] };
-		const hasModeCatalog = (await loadAgentConfiguration(this.core, "project"))?.modes !== undefined;
-		const selectedId = sessionId ?? (hasModeCatalog ? history.activeSessionId : undefined);
-		return selectedId
-			? await this.resolveSelectedTarget(task, resolvedModeId, selectedId, intent)
-			: await this.createNewTarget(task, resolvedModeId);
-	}
-
-	private async resolveSelectedTarget(
-		task: Task,
-		modeId: ModeId,
-		sessionId: string,
-		intent: "prepare" | "adopt",
-	): Promise<{ target: ResolvedTarget; releaseClaim: () => Promise<void> }> {
-		const releaseClaim = await this.store.claimSession(task.id, sessionId);
-		try {
-			const state = await this.store.read(task.id);
-			if (findSessionMode(state.modes, sessionId) !== modeId)
-				throw new Error(`Agent session not found in its owning mode: ${sessionId}`);
-			const existing = { ...this.modeSession(state.modes?.[modeId] ?? { sessions: [] }, sessionId) };
-			const queuedRequest = await this.hasQueuedWorkspaceRequest(existing);
-			if (intent === "adopt" && !queuedRequest)
-				throw new Error(`Session ${existing.id} is not a verified queued workspace request; refusing adoption.`);
-			const pathContext = await this.pathContextForSession(task, existing);
-			const execution = await this.executionPresetWithEnvironment(task.id, existing.preset, pathContext);
-			const resolved = await this.profileFor(modeId, execution.preset);
-			const nativeProvider = agentFor(resolved.preset.bootstrap)?.nativeNamespace;
-			if (existing.nativeProvider && nativeProvider && existing.nativeProvider !== nativeProvider)
-				throw new Error(
-					`Session ${existing.id} belongs to provider ${existing.nativeProvider}, not ${nativeProvider}.`,
-				);
-			const receipt = await this.store.readNativeSessionIdCandidate(task.id, existing.id);
-			const configuration = await this.launchConfiguration(task.id);
-			if (!sameRoot(pathContext.projectDir, this.core.filesystem.rootDir))
-				throw new Error(`Session ${existing.id} has a mismatched canonical project root.`);
-			if (!(await isDirectory(pathContext.worktreeDir)))
-				throw new Error(`Session ${existing.id} working directory is missing: ${pathContext.worktreeDir}`);
-			return {
-				target: {
-					record: existing,
-					modeId,
-					pathContext,
-					preset: resolved.preset,
-					profile: resolved.profile,
-					receipt,
-					environment: execution.environment,
-					warnings: [],
-					queuedRequest,
-					settings: resolveSessionSettings(configuration.config),
-				},
-				releaseClaim,
-			};
-		} catch (error) {
-			await releaseClaim();
-			throw error;
-		}
-	}
-
-	private async createNewTarget(
-		task: Task,
-		modeId: ModeId,
-	): Promise<{ target: ResolvedTarget; releaseClaim: () => Promise<void> }> {
-		const paths = await this.store.paths(task.id);
+	private async createNewTarget(task: Task, modeId: ModeId, allowRunningActive = false) {
 		const resolved = await this.launchConfiguration(task.id);
 		const presetName = resolved.config.selectedPreset;
 		const configured = resolved.config.presets[presetName];
@@ -1004,133 +1096,44 @@ export class AgentSessionService {
 			onWarning: (text) => this.warnEnvironment(text),
 		});
 		const preset = await resolveLaunchPreset(configured, { cwd, env: environment });
-		const id = randomUUID();
-		const record: AgentSession = {
-			id,
-			taskId: task.id,
-			preset: presetName,
-			tmuxName: nativeSessionName(task.id, id),
-			nativeProvider: agentFor(preset.bootstrap)?.nativeNamespace,
-			nativeWorkspace: true,
-			cwd,
-			pathContext,
-			createdAt: timestamp(),
-			status: AGENT_SESSION_STATUS.STARTING,
-			ownerPid: process.pid,
-			outputPath: join(paths.taskDir, `${id}.log`),
-			bootstrapPath: join(paths.taskDir, `${id}.md`),
-		};
-		await this.store.mutateMode(task.id, modeId, async (current) => {
-			const previous = current.activeSessionId
-				? current.sessions.find((candidate) => candidate.id === current.activeSessionId)
-				: undefined;
-			if (current.sessions.some((candidate) => candidate.status === AGENT_SESSION_STATUS.STARTING))
-				throw new Error(`Mode ${modeId} for task ${task.id} already has a pending launch.`);
-			if (previous?.status === AGENT_SESSION_STATUS.RUNNING)
-				throw new Error(`Session ${previous.id} is already running in mode ${modeId}.`);
-			current.sessions.push(record);
-		});
-		const releaseClaim = await this.store.claimSession(task.id, id);
+		const record = await this.createSessionRecord(task.id, presetName, pathContext);
+		record.nativeProvider = agentFor(preset.bootstrap)?.nativeNamespace;
+		record.nativeWorkspace = true;
+		const { priorActiveSessionId } = await this.reserveModeRecord(record, modeId, { allowRunningActive });
 		return {
-			target: {
-				record,
-				modeId,
-				pathContext,
-				preset,
-				environment,
-				warnings: [],
-				settings,
-				queuedRequest: false,
-				newlyCreated: true,
-			},
-			releaseClaim,
+			record,
+			preset,
+			environment,
+			settings,
+			previousActiveSessionId: allowRunningActive ? priorActiveSessionId : undefined,
 		};
-	}
-
-	private async admitResolvedTarget(
-		task: Task,
-		target: ResolvedTarget,
-		queuedRequest: boolean,
-	): Promise<NativeAdmission> {
-		if (!target.newlyCreated) {
-			const current = this.session(await this.store.read(task.id), target.record.id);
-			this.assertSameSession(current, target.record);
-			const currentTarget = { ...target, record: current };
-			const runtime = await this.process.nativeRuntimeClassification(current);
-			if (runtime.status === "uncertain")
-				throw new Error(`Could not inspect native session ${current.id}: ${runtime.reason}`);
-			if (runtime.status === "live") {
-				const paneId = runtime.paneId;
-				await this.tagNativeSessionPane(current, paneId, false);
-				const agent = agentFor(target.preset.bootstrap);
-				const resources = await this.process.launchResources(paneId);
-				if (agent && resources)
-					await this.reconcileDeferredIdentity(agent, {
-						record: current,
-						modeId: target.modeId,
-						paneId,
-						resources,
-					});
-				const observed = this.session(await this.store.read(task.id), current.id);
-				await this.tagNativeSessionPane(observed, paneId);
-				if (queuedRequest) await deleteWorkspaceRequest(this.core.filesystem.rootDir, current.id);
-				return {
-					kind: "attach",
-					attachment: {
-						record: observed,
-						server: this.server,
-						exec: this.exec as TmuxExec,
-						paneId,
-						bootstrap: target.preset.bootstrap,
-					},
-				};
-			}
-			if (current.status === AGENT_SESSION_STATUS.STARTING && !queuedRequest)
-				throw new Error(`Session ${current.id} has an unverified pending launch; refusing adoption.`);
-			if (queuedRequest && runtime.status !== "missing")
-				throw new Error(`Pending session ${current.id} has an existing non-live runtime; refusing launch.`);
-			if (queuedRequest) return { kind: "launch", target: currentTarget, action: "launch-queued" };
-			if (current.status === AGENT_SESSION_STATUS.STARTING)
-				throw new Error(`Session ${current.id} has an unverified pending launch; refusing adoption.`);
-			if (runtime.status === "dead" || runtime.status === "missing") {
-				const settings = currentTarget.settings ?? resolveSessionSettings(undefined);
-				const marker = current.resumeProbeFailed;
-				const matchingFailure = Boolean(
-					marker &&
-						current.nativeProvider === marker.nativeProvider &&
-						current.nativeSessionId === marker.nativeSessionId,
-				);
-				if (!settings.autoResumeOnRestart || matchingFailure) {
-					currentTarget.failedResume = matchingFailure ? marker : undefined;
-					return { kind: "launch", target: currentTarget, action: "launch-new" };
-				}
-			}
-			return { kind: "launch", target: currentTarget, action: "resume" };
-		}
-		return { kind: "launch", target, action: "launch-new" };
 	}
 
 	private async resumeExistingTarget(
 		task: Task,
-		target: ResolvedTarget,
+		target: {
+			record: AgentSession;
+			preset: AgentPreset;
+			profile?: ModeProfile;
+			receipt?: string;
+			environment: Record<string, string>;
+			settings: SessionSettings;
+		},
 	): Promise<{
 		record: AgentSession;
-		preset: AgentPreset;
 		preflight: PreflightedAgentLaunch;
-		settings: SessionSettings;
 	}> {
 		const { record, receipt } = target;
 		const candidate = await this.store.readNativeSessionIdCandidate(task.id, record.id);
 		if (candidate !== receipt) throw new Error(`Native session receipt changed for session ${record.id}.`);
 		const resumeNativeSessionId = record.nativeSessionId ?? candidate;
 		buildAgentResumeCommand(target.preset, resumeNativeSessionId);
-		const currentProfile = { preset: target.preset, profile: target.profile };
 		const preset = target.preset;
-		const settings = target.settings ?? resolveSessionSettings(undefined);
+		const settings = target.settings;
 		const pathContext = await this.pathContextForSession(task, record);
 		if (!(await isDirectory(pathContext.worktreeDir)))
 			throw new Error(`Session ${record.id} working directory is missing: ${pathContext.worktreeDir}`);
-		const profile = await this.profileWithCurrentArtifacts(currentProfile.profile, task.id, pathContext.taskDir);
+		const profile = await this.profileWithCurrentArtifacts(target.profile, task.id, pathContext.taskDir);
 		const preflight = await preflightAgentLaunch(preset, record.bootstrapPath, {
 			cwd: pathContext.worktreeDir,
 			intent: { kind: "resume", nativeSessionId: resumeNativeSessionId ?? "" },
@@ -1149,25 +1152,8 @@ export class AgentSessionService {
 		this.assertSameSession(immediatelyCurrent, record);
 		await this.process.kill(immediatelyCurrent);
 		if (resumeNativeSessionId) immediatelyCurrent.nativeSessionId = resumeNativeSessionId;
-		await this.settleStaleNativeSession(task.id, immediatelyCurrent);
-		return { record: immediatelyCurrent, preset, preflight, settings };
-	}
-
-	private async launchPreparedTarget(
-		task: Task,
-		record: AgentSession,
-		preset: AgentPreset,
-		action: "resume" | "launch-queued" | "launch-new",
-		launchInputs: {
-			preflight?: PreflightedAgentLaunch;
-			environment: Record<string, string>;
-			settings?: SessionSettings;
-			failedResume?: { nativeProvider: string; nativeSessionId: string };
-			queuedRequest?: boolean;
-			releaseAdmissionClaim?: () => Promise<void>;
-		},
-	): Promise<SharedAgentAttachment> {
-		return await this.launchNativeRecord(task, record, preset, { action, ...launchInputs });
+		await this.settleObservedSession(task.id, immediatelyCurrent, false);
+		return { record: immediatelyCurrent, preflight };
 	}
 
 	/**
@@ -1183,12 +1169,7 @@ export class AgentSessionService {
 		return { ...prepared.attachment, modeId: prepared.modeId };
 	}
 
-	/**
-	 * The shared post-record launch body: render the brief, prepare the launch (which installs the
-	 * status hooks and returns the exact native identity), and record that identity. `resume`
-	 * separates resuming an existing conversation from launching a never-launched record, and
-	 * `demoteOnFailure` marks the record FAILED when the launch cannot complete.
-	 */
+	/** Launch under the caller's session claim; retirement happens only after this succeeds. */
 	private async launchNativeRecord(
 		task: { id: string; title: string },
 		record: AgentSession,
@@ -1197,88 +1178,86 @@ export class AgentSessionService {
 			action: "resume" | "launch-new" | "launch-queued";
 			preflight?: PreflightedAgentLaunch;
 			environment?: Record<string, string>;
-			settings?: SessionSettings;
-			failedResume?: { nativeProvider: string; nativeSessionId: string };
-			queuedRequest?: boolean;
-			releaseAdmissionClaim?: () => Promise<void>;
+			settings: SessionSettings;
+			modeId: ModeId;
+			profile?: ModeProfile;
+			directReservation?: Awaited<ReturnType<AgentSessionService["reserveSession"]>>;
 		},
 	): Promise<SharedAgentAttachment> {
 		const resume = options.action === "resume";
-		const demoteOnFailure = options.action === "launch-new";
-		const state = await this.store.read(task.id);
-		const modeId = findSessionMode(state.modes, record.id);
-		if (!modeId) throw new Error(`Session ${record.id} has no mode.`);
+		const settleOnFailure = options.action !== "resume";
+		const { modeId, settings, directReservation } = options;
 		const currentProfile = options.preflight
 			? { preset: options.preflight.preset, profile: options.preflight.options.profile }
-			: await this.profileFor(modeId, preset);
+			: options.profile || directReservation
+				? { preset, profile: options.profile }
+				: await this.profileFor(modeId, preset);
 		const launchPreset = currentProfile.preset;
-		const agent = agentFor(launchPreset.bootstrap);
-		if (!agent) throw new Error(`No agent registered for bootstrap type ${launchPreset.bootstrap}.`);
-		const nativeProvider = agent.nativeNamespace;
-		if (record.nativeProvider && nativeProvider && record.nativeProvider !== nativeProvider)
-			throw new Error(`Session ${record.id} belongs to provider ${record.nativeProvider}, not ${nativeProvider}.`);
-		const settings: SessionSettings = options.settings
-			? options.settings
-			: resolveSessionSettings((await this.launchConfiguration(task.id)).config);
-		const pathContext = options.preflight
-			? {
-					projectDir: options.preflight.projectDir,
-					worktreeDir: options.preflight.options.cwd,
-					taskDir: options.preflight.taskDir,
-				}
-			: await this.pathContextForSession(task, record);
-		const cwd = pathContext.worktreeDir;
-		if (!(await isDirectory(cwd))) throw new Error(`Session ${record.id} working directory is missing: ${cwd}`);
+		const nativePathContext = directReservation
+			? undefined
+			: options.preflight
+				? {
+						projectDir: options.preflight.projectDir,
+						worktreeDir: options.preflight.options.cwd,
+						taskDir: options.preflight.taskDir,
+					}
+				: await this.pathContextForSession(task, record);
+		if (nativePathContext && !(await isDirectory(nativePathContext.worktreeDir)))
+			throw new Error(`Session ${record.id} working directory is missing: ${nativePathContext.worktreeDir}`);
 		let dispatchAttempted = false;
+		let launchRecord = record;
 		let prepared: PreparedAgentLaunch | undefined;
-		const launchIdentity = record;
 		try {
-			const profile = options.preflight
-				? options.preflight.options.profile
-				: await this.profileWithCurrentArtifacts(currentProfile.profile, task.id, pathContext.taskDir);
-			const failedResume = options.action === "launch-new" ? options.failedResume : undefined;
-			const launchRecord = record;
+			const pathContext = nativePathContext ?? (await this.pathContextForSession(task, record));
+			const profile =
+				options.preflight || directReservation
+					? currentProfile.profile
+					: await this.profileWithCurrentArtifacts(currentProfile.profile, task.id, pathContext.taskDir);
 			const intent: SessionIntent = resume
 				? { kind: "resume", nativeSessionId: record.nativeSessionId ?? "" }
 				: { kind: "new" };
-			const launch = await this.prepareSessionLaunch(task, launchRecord, modeId, launchPreset, settings, {
+			const launch = await this.prepareSessionLaunch(task, record, modeId, launchPreset, settings, {
 				profile,
 				intent,
 				prepare: resume ? undefined : launchPreset.prepare,
-				bootstrapBeforeCreate: true,
+				bootstrapBeforeCreate: !directReservation,
+				clearWorkspaceContext: !!directReservation,
 				preflight: options.preflight,
 				environment: options.environment,
 			});
 			prepared = launch.prepared;
+			const agent = launch.agent;
+			const nativeProvider = agent.nativeNamespace;
 			const paneId = launch.paneId;
 			const identity = prepared.identity;
 			const resources = prepared.resources;
-			if (!resources) throw new Error(`Prepared launch ${launchRecord.id} has no resource inventory.`);
-			const next: AgentSession = {
-				...launchRecord,
-				cwd,
-				...(nativeProvider ? { nativeProvider } : {}),
-				nativeWorkspace: true,
-				tmuxName: record.tmuxName,
-				ownerPid: process.pid,
-				status: AGENT_SESSION_STATUS.STARTING,
-				error: undefined,
-				endedAt: undefined,
-			};
+			const next: AgentSession = directReservation
+				? record
+				: {
+						...record,
+						cwd: pathContext.worktreeDir,
+						...(nativeProvider ? { nativeProvider } : {}),
+						nativeWorkspace: true,
+						ownerPid: process.pid,
+						status: AGENT_SESSION_STATUS.STARTING,
+						error: undefined,
+						endedAt: undefined,
+					};
 			delete next.nativeSessionId; // identity is owned by publishNativeIdentity, not the record shape
 			if (options.action === "launch-new") delete next.resumeProbeFailed;
 			// A fresh launch discards any previous conversation's receipt before dispatch so a deferred
 			// report can never re-deliver it.
 			if (intent.kind === "new") await this.store.clearNativeSessionReceipt(next);
-			await this.store.mutateSession(task.id, next.id, async (current) => {
-				this.assertSameSessionMembership(current, launchRecord);
-				Object.assign(current, next);
-				// A fresh conversation discards the record's prior identity; publishNativeIdentity owns
-				// the new one. Object.assign never removes keys, so drop it explicitly.
-				if (intent.kind === "new") delete current.nativeSessionId;
-				if (options.action === "launch-new") delete current.resumeProbeFailed;
-			});
+			if (!directReservation)
+				await this.store.mutateSession(task.id, next.id, async (current) => {
+					this.assertSameSessionMembership(current, record);
+					Object.assign(current, next);
+					// Object.assign never removes keys; fresh identity belongs to publishNativeIdentity.
+					if (intent.kind === "new") delete current.nativeSessionId;
+					if (options.action === "launch-new") delete current.resumeProbeFailed;
+				});
 			const origin: LaunchOrigin = { record: next, modeId, paneId, resources };
+			launchRecord = next;
 			if (identity) {
 				await this.publishNativeIdentity(origin, identity);
 				next.nativeSessionId = identity.id;
@@ -1296,34 +1275,26 @@ export class AgentSessionService {
 			await this.store.mutateSession(task.id, next.id, async (current) => {
 				this.assertSameSession(current, next);
 				current.status = AGENT_SESSION_STATUS.RUNNING;
-				current.ownerPid = process.pid;
+				current.ownerPid = directReservation ? undefined : process.pid;
 				current.error = undefined;
 				this.touch(current, timestamp());
 			});
-			await deleteWorkspaceRequest(this.core.filesystem.rootDir, next.id);
+			if (!directReservation && options.action !== "launch-queued")
+				await deleteWorkspaceRequest(this.core.filesystem.rootDir, next.id);
 			next.status = AGENT_SESSION_STATUS.RUNNING;
+			if (directReservation) {
+				this.touch(next, timestamp());
+				const { maxRunningSessions } = directReservation;
+				await this.enforceRunningLimit(next, maxRunningSessions ?? DEFAULT_MAX_RUNNING_AGENT_SESSIONS);
+			}
 			return {
-				record: {
-					...next,
-					status: next.status,
-					ownerPid: process.pid,
-				},
+				record: next,
 				server: this.server,
 				exec: this.exec as TmuxExec,
 				paneId,
 				...(prepared.bootstrap ? { bootstrap: prepared.bootstrap } : {}),
 				...(prepared.warnings ? { warnings: prepared.warnings } : {}),
-				...(failedResume
-					? {
-							outcome: { kind: "FreshAfterFailedResume" as const, ...failedResume },
-							warnings: [
-								...(prepared.warnings ?? []),
-								`Previous ${failedResume.nativeProvider} conversation ${failedResume.nativeSessionId} failed to resume; started fresh.`,
-							],
-						}
-					: !resume
-						? { outcome: { kind: "Fresh" as const } }
-						: { outcome: { kind: "Resumed" as const } }),
+				outcome: { kind: resume ? "Resumed" : "Fresh" },
 			};
 		} catch (error) {
 			if (resume && error instanceof ConclusiveStartupFailureError) {
@@ -1331,7 +1302,6 @@ export class AgentSessionService {
 				const nativeSessionId = record.nativeSessionId;
 				if (!nativeProvider || !nativeSessionId) throw error;
 				const failure = new ResumeFailedError(nativeProvider, nativeSessionId, error);
-				await options.releaseAdmissionClaim?.();
 				await this.store.markResumeProbeFailed(record, modeId, { nativeProvider, nativeSessionId }, failure.message);
 				try {
 					await this.process.kill(record);
@@ -1343,9 +1313,18 @@ export class AgentSessionService {
 				throw failure;
 			}
 			if (!dispatchAttempted) {
-				await this.failBeforeDispatch(launchIdentity, prepared, error, async () => {
-					if (demoteOnFailure) await this.finishNativeSessionRecord(launchIdentity, String(error));
+				await this.failBeforeDispatch(launchRecord, prepared, error, async () => {
+					if (directReservation) await this.failReservation(directReservation, error);
+					else if (settleOnFailure) await this.finishNativeSessionRecord(launchRecord, String(error));
 				});
+			} else if (settleOnFailure) {
+				try {
+					await this.settleDispatchedLaunchFailure(launchRecord, error);
+				} catch (settlementError) {
+					throw new AggregateError([error, settlementError], "Could not settle the failed dispatched session.", {
+						cause: error,
+					});
+				}
 			}
 			throw error;
 		}
@@ -1400,6 +1379,44 @@ export class AgentSessionService {
 		});
 	}
 
+	private async settleDispatchedLaunchFailure(expected: AgentSession, failure: unknown): Promise<void> {
+		let runtime: "live" | "dead" | "missing" | "uncertain" = "uncertain";
+		let probeReason: string | undefined;
+		try {
+			const classification = await this.process.nativeRuntimeClassification(expected);
+			runtime = classification.status;
+			if (classification.status === "uncertain") probeReason = classification.reason;
+		} catch (error) {
+			probeReason = error instanceof Error ? error.message : String(error);
+		}
+		try {
+			await this.store.mutateSession(expected.taskId, expected.id, async (session) => {
+				this.assertSameSessionMembership(session, expected);
+				if (session.status !== AGENT_SESSION_STATUS.STARTING) return;
+				if (runtime === "live") {
+					session.status = AGENT_SESSION_STATUS.RUNNING;
+					session.ownerPid = undefined;
+					session.error = undefined;
+					delete session.endedAt;
+					return;
+				}
+				session.status = AGENT_SESSION_STATUS.FAILED;
+				session.error = `Launch failed after dispatch; runtime ${runtime}${probeReason ? ` (${probeReason})` : ""}: ${
+					failure instanceof Error ? failure.message : String(failure)
+				}`;
+				session.endedAt = timestamp();
+				delete session.ownerPid;
+			});
+		} catch (error) {
+			if (
+				error instanceof Error &&
+				(error.message.startsWith("Agent session not found:") || error.message.includes("was removed or replaced"))
+			)
+				return;
+			throw error;
+		}
+	}
+
 	private async failBeforeDispatch(
 		expected: AgentSession,
 		prepared: PreparedAgentLaunch | undefined,
@@ -1407,23 +1424,28 @@ export class AgentSessionService {
 		publishFailure: () => Promise<void>,
 	): Promise<never> {
 		let reported = failure;
-		for (const action of [
-			...(prepared ? [() => prepared.cleanup()] : []),
-			() => this.process.kill(expected),
-			publishFailure,
-		]) {
-			try {
-				await action();
-			} catch (error) {
-				reported = error;
-			}
+		try {
+			await prepared?.cleanup();
+		} catch (error) {
+			reported = error;
+		}
+		try {
+			await this.process.kill(expected);
+		} catch (error) {
+			reported = error;
+		}
+		// Publication failure takes precedence over pane cleanup, resource cleanup, then launch failure.
+		try {
+			await publishFailure();
+		} catch (error) {
+			reported = error;
 		}
 		throw reported;
 	}
 
 	/**
 	 * Park a session whose process was terminated without ending the session. The harness owns the
-	 * conversation; Backlog only releases the process (for example when its workspace exits to free
+	 * conversation; AgenticWorkspace only releases the process (for example when its workspace exits to free
 	 * memory) and keeps the pointer so the session auto-resumes on the next workspace start. Parked
 	 * is non-terminal and never `stopped`/`failed`.
 	 */
@@ -1511,8 +1533,7 @@ export class AgentSessionService {
 						modeId,
 						{ replace: options.replace, maxRunningSessions: options.maxRunningSessions },
 					);
-					const session = await this.launchReserved(reservation);
-					return session;
+					return await this.launchReserved(reservation);
 				}),
 		);
 	}
@@ -1520,10 +1541,8 @@ export class AgentSessionService {
 	/**
 	 * Register a session request for a live workspace to adopt.
 	 *
-	 * The record is durable and owned: `ownerPid` is the workspace that will launch it, `tmuxName`
-	 * is that workspace's private socket, and the status stays STARTING until the workspace adopts
-	 * it. This process launches nothing and writes no bootstrap file — the adopting workspace does
-	 * both, exactly as if the user had pressed Enter there.
+	 * The record stays STARTING until adoption; requester PID is informational. The marker carries
+	 * replacement intent without touching the predecessor. This process launches nothing.
 	 */
 	async registerPendingSession(
 		taskId: string,
@@ -1549,61 +1568,37 @@ export class AgentSessionService {
 		const presetName = options.preset ?? resolved.config.selectedPreset;
 		const preset = resolved.config.presets[presetName];
 		if (!preset) throw new Error(`Agent preset not found: ${presetName}`);
-		const paths = await this.store.paths(task.id);
 		const settings = resolveSessionSettings(resolved.config);
 		const cwd = await this.sessionCwdFor(task, settings);
 		const pathContext = await this.pathContextFor(task.id, cwd);
-		let record: AgentSession | undefined;
-		await this.store.mutateMode(task.id, modeId, async (history) => {
-			if (history.sessions.some((candidate) => candidate.status === AGENT_SESSION_STATUS.STARTING))
-				throw new Error(`Mode ${modeId} for task ${task.id} already has an active or reserved session.`);
-			if (options.replace) {
-				const previous = history.activeSessionId
-					? history.sessions.find((candidate) => candidate.id === history.activeSessionId)
-					: undefined;
-				if (previous) {
-					previous.status = AGENT_SESSION_STATUS.PARKED;
-					previous.endedAt = undefined;
-					previous.ownerPid = undefined;
-				}
-			} else if (
-				history.sessions.some(
-					(candidate) =>
-						(candidate.status === AGENT_SESSION_STATUS.STARTING || candidate.status === AGENT_SESSION_STATUS.RUNNING) &&
-						(candidate.id === history.activeSessionId || candidate.status === AGENT_SESSION_STATUS.STARTING),
-				)
-			)
-				throw new Error(`Mode ${modeId} for task ${task.id} already has an active or reserved session.`);
-			const id = randomUUID();
-			record = {
-				id,
-				taskId: task.id,
-				preset: presetName,
-				tmuxName: nativeSessionName(task.id, id),
-				nativeWorkspace: true,
-				cwd,
-				pathContext,
-				createdAt: timestamp(),
-				status: AGENT_SESSION_STATUS.STARTING,
-				ownerPid: process.pid,
-				outputPath: join(paths.taskDir, `${id}.log`),
-				bootstrapPath: join(paths.taskDir, `${id}.md`),
-			};
-			history.sessions.push(record);
+		const pending = await this.createSessionRecord(task.id, presetName, pathContext);
+		pending.nativeWorkspace = true;
+		const { preceding, priorActiveSessionId } = await this.reserveModeRecord(pending, modeId, {
+			allowRunningActive: options.replace,
 		});
-		if (!record) throw new Error("Could not reserve an agent session.");
-		const pending = record;
 		try {
 			await writeWorkspaceRequest(this.core.filesystem.rootDir, {
 				taskId: task.id,
 				sessionId: pending.id,
 				pid: process.pid,
+				...(options.replace
+					? {
+							createdAt: pending.createdAt,
+							handoff: {
+								modeId,
+								priorActiveSessionId,
+								...(preceding
+									? { predecessor: { id: preceding.id, createdAt: preceding.createdAt, tmuxName: preceding.tmuxName } }
+									: {}),
+							},
+						}
+					: {}),
 			});
 		} catch (error) {
 			// A record nobody was told about must not block the task. Drop both halves of the request.
 			await this.store.mutateMode(task.id, modeId, async (history) => {
 				history.sessions = history.sessions.filter((candidate) => candidate.id !== pending.id);
-				if (history.activeSessionId === pending.id) delete history.activeSessionId;
+				if (history.activeSessionId === pending.id) history.activeSessionId = priorActiveSessionId;
 			});
 			await deleteWorkspaceRequest(this.core.filesystem.rootDir, pending.id);
 			throw error;
@@ -1613,7 +1608,10 @@ export class AgentSessionService {
 
 	private async withLifecycleAdmission<T>(operation: () => Promise<T>): Promise<T> {
 		await this.lifecycle.recover();
-		return await withModeLifecycleGate(join(this.core.filesystem.rootDir, ".backlog", "agent-workspace"), operation);
+		return await withModeLifecycleGate(
+			join(this.core.filesystem.rootDir, ".agentic-workspace", "agent-workspace"),
+			operation,
+		);
 	}
 
 	private async reserveSession(
@@ -1625,7 +1623,6 @@ export class AgentSessionService {
 		options: { replace?: boolean; maxRunningSessions?: number } = {},
 	): Promise<{
 		task: { id: string; title: string; status: string };
-		presetName: string;
 		launchPreset: AgentPreset;
 		settings: SessionSettings;
 		modeId: ModeId;
@@ -1633,10 +1630,9 @@ export class AgentSessionService {
 		reserved: AgentSession;
 		preceding?: AgentSession;
 		priorActiveSessionId?: string;
-		priorPrecedingStatus?: AgentSession["status"];
 		maxRunningSessions?: number;
+		replace?: boolean;
 	}> {
-		const paths = await this.store.paths(task.id);
 		const cwd = await this.sessionCwdFor(task, settings);
 		const pathContext = await this.pathContextFor(task.id, cwd);
 		const launchPreset = await resolveLaunchPreset(preset, {
@@ -1646,162 +1642,188 @@ export class AgentSessionService {
 			}),
 		});
 		const profile = await this.profileFor(modeId, launchPreset);
-		let session: AgentSession | undefined;
-		let preceding: AgentSession | undefined;
-		let priorActiveSessionId: string | undefined;
-		let priorPrecedingStatus: AgentSession["status"] | undefined;
-		await this.store.mutateMode(task.id, modeId, async (history) => {
-			priorActiveSessionId = history.activeSessionId;
-			if (history.sessions.some((candidate) => candidate.status === AGENT_SESSION_STATUS.STARTING))
-				throw new Error(`Mode ${modeId} for task ${task.id} already has an active or reserved session.`);
-			if (options.replace) {
-				preceding = history.activeSessionId
-					? history.sessions.find((candidate) => candidate.id === history.activeSessionId)
-					: undefined;
-				if (preceding) {
-					priorPrecedingStatus = preceding.status;
-					preceding.status = AGENT_SESSION_STATUS.PARKED;
-					preceding.endedAt = undefined;
-					preceding.ownerPid = undefined;
-				}
-			} else if (
-				history.sessions.some(
-					(candidate) =>
-						(candidate.status === AGENT_SESSION_STATUS.STARTING || candidate.status === AGENT_SESSION_STATUS.RUNNING) &&
-						(candidate.id === history.activeSessionId || candidate.status === AGENT_SESSION_STATUS.STARTING),
-				)
-			)
-				throw new Error(`Mode ${modeId} for task ${task.id} already has an active or reserved session.`);
-			const id = randomUUID();
-			const nativeProvider = agentFor(profile.preset.bootstrap)?.nativeNamespace;
-			const next: AgentSession = {
-				id,
-				taskId: task.id,
-				preset: presetName,
-				tmuxName: nativeSessionName(task.id, id),
-				...(nativeProvider ? { nativeProvider } : {}),
-				cwd,
-				pathContext,
-				createdAt: timestamp(),
-				status: AGENT_SESSION_STATUS.STARTING,
-				ownerPid: process.pid,
-				outputPath: join(paths.taskDir, `${id}.log`),
-				bootstrapPath: join(paths.taskDir, `${id}.md`),
-			};
-			session = next;
-			history.sessions.push(next);
+		const session = await this.createSessionRecord(task.id, presetName, pathContext);
+		session.nativeProvider = agentFor(profile.preset.bootstrap)?.nativeNamespace;
+		const { preceding, priorActiveSessionId } = await this.reserveModeRecord(session, modeId, {
+			allowRunningActive: options.replace,
 		});
-		if (!session) throw new Error("Could not reserve an agent session.");
 		return {
 			task,
-			presetName,
 			launchPreset: profile.preset,
 			settings,
 			modeId,
 			profile,
 			reserved: session,
-			preceding,
+			preceding: options.replace ? preceding : undefined,
+			replace: options.replace,
 			priorActiveSessionId,
-			priorPrecedingStatus,
 			maxRunningSessions: options.maxRunningSessions,
 		};
+	}
+
+	private async createSessionRecord(
+		taskId: string,
+		preset: string,
+		pathContext: AgentSessionPathContext,
+	): Promise<AgentSession> {
+		const { taskDir } = await this.store.paths(taskId);
+		const id = randomUUID();
+		return {
+			id,
+			taskId,
+			preset,
+			tmuxName: nativeSessionName(taskId, id),
+			cwd: pathContext.worktreeDir,
+			pathContext,
+			createdAt: timestamp(),
+			status: AGENT_SESSION_STATUS.STARTING,
+			ownerPid: process.pid,
+			outputPath: join(taskDir, `${id}.log`),
+			bootstrapPath: join(taskDir, `${id}.md`),
+		};
+	}
+
+	private async reserveModeRecord(record: AgentSession, modeId: ModeId, options: { allowRunningActive?: boolean }) {
+		return await this.store.mutateMode(record.taskId, modeId, async (history) => {
+			const priorActiveSessionId = history.activeSessionId;
+			const active = history.sessions.find((candidate) => candidate.id === priorActiveSessionId);
+			if (history.sessions.some((candidate) => candidate.status === AGENT_SESSION_STATUS.STARTING))
+				throw new Error(
+					`Mode ${modeId} for task ${record.taskId} already has an active or reserved session (pending launch).`,
+				);
+			if (!options.allowRunningActive && active?.status === AGENT_SESSION_STATUS.RUNNING)
+				throw new Error(
+					`Mode ${modeId} for task ${record.taskId} already has an active or reserved session: session ${active.id} is already running.`,
+				);
+			const preceding = active ? structuredClone(active) : undefined;
+			history.sessions.push(record);
+			history.activeSessionId = record.id;
+			return { preceding, priorActiveSessionId };
+		});
 	}
 
 	private async launchReserved(
 		reservation: Awaited<ReturnType<AgentSessionService["reserveSession"]>>,
 	): Promise<AgentSession> {
-		const { task, launchPreset, settings, modeId, profile, reserved, preceding, maxRunningSessions } = reservation;
-		let releasePredecessor: (() => Promise<void>) | undefined;
+		const { task, launchPreset, settings, modeId, profile, reserved } = reservation;
 		const releaseReserved = await this.store.claimSession(task.id, reserved.id);
-		let launchOutcomeUncertain = false;
-		let prepared: PreparedAgentLaunch | undefined;
-		let dispatchAttempted = false;
+		let launched = false;
 		try {
-			const pathContext = await this.pathContextForSession(task, reserved);
-			const launch = await this.prepareSessionLaunch(task, reserved, modeId, launchPreset, settings, {
+			const attachment = await this.launchNativeRecord(task, reserved, launchPreset, {
+				action: "launch-new",
+				modeId,
+				settings,
 				profile: profile.profile,
-				intent: { kind: "new" },
-				prepare: launchPreset.prepare,
-				clearWorkspaceContext: true,
+				directReservation: reservation,
 			});
-			const paneId = launch.paneId;
-			const preparedLaunch = launch.prepared;
-			prepared = preparedLaunch;
-			const identity = preparedLaunch.identity;
-			const resources = preparedLaunch.resources;
-			if (!resources) throw new Error(`Prepared launch ${reserved.id} has no resource inventory.`);
-			const agent = agentFor(launchPreset.bootstrap);
-			if (!agent) throw new Error(`No agent registered for bootstrap type ${launchPreset.bootstrap}.`);
-			await this.store.clearNativeSessionReceipt(reserved);
-			const origin: LaunchOrigin = { record: reserved, modeId, paneId, resources };
-			if (identity) await this.publishNativeIdentity(origin, identity);
-			if (identity) reserved.nativeSessionId = identity.id;
-			else delete reserved.nativeSessionId;
-			preparedLaunch.env = workspaceContextInto(preparedLaunch.env, {
-				paneId,
-				rootDir: pathContext.projectDir,
-				conversation: { taskId: task.id, modeId, sessionId: reserved.id },
-				...(reserved.nativeSessionId ? { nativeSessionId: reserved.nativeSessionId } : {}),
-			});
-			await this.assertSessionIdentity(reserved);
-			// Keep execution attribution through publication and follow-up failures; they do not prove stop.
-			launchOutcomeUncertain = true;
-			dispatchAttempted = true;
-			await this.process.launchPrepared(reserved, prepared);
-			await this.reconcileDeferredIdentity(agent, origin);
-			await this.store.mutateSession(task.id, reserved.id, async (current, history, currentModeId) => {
-				this.assertSameSession(current, reserved);
-				current.status = AGENT_SESSION_STATUS.RUNNING;
-				current.ownerPid = undefined;
-				current.error = undefined;
-				this.touch(current, timestamp());
-				if (currentModeId === modeId) history.activeSessionId = current.id;
-			});
-			reserved.status = AGENT_SESSION_STATUS.RUNNING;
-			this.touch(reserved, timestamp());
-			if (preceding) {
-				releasePredecessor = await this.store.claimSession(task.id, preceding.id);
-				const current = allModeSessions(await this.store.read(task.id)).find((session) => session.id === preceding.id);
-				if (!current) throw new Error(`Agent session not found: ${preceding.id}`);
-				this.assertSameSessionMembership(current, preceding);
-				if (current.status !== AGENT_SESSION_STATUS.PARKED || current.ownerPid !== undefined)
-					throw new Error(`Cannot retire session ${preceding.id}: its status or owner changed during replacement.`);
-				await this.process.demote(current);
-				await this.process.killRetired(current);
-				await releasePredecessor();
-				releasePredecessor = undefined;
-			}
-			await this.enforceRunningLimit(reserved, maxRunningSessions ?? DEFAULT_MAX_RUNNING_AGENT_SESSIONS);
-			return reserved;
-		} catch (error) {
-			if (!launchOutcomeUncertain) {
-				await this.failBeforeDispatch(reserved, dispatchAttempted ? undefined : prepared, error, async () => {
-					await this.store.mutateSession(task.id, reserved.id, async (current, history, currentModeId) => {
-						if (current.id !== reserved.id || current.createdAt !== reserved.createdAt) return false;
-						current.status = AGENT_SESSION_STATUS.FAILED;
-						current.endedAt = timestamp();
-						current.error = error instanceof Error ? error.message : String(error);
-						if (currentModeId === modeId && history.activeSessionId === reserved.id) {
-							history.activeSessionId = reservation.priorActiveSessionId;
-							if (preceding) {
-								const previous = history.sessions.find((candidate) => candidate.id === preceding.id);
-								if (previous) {
-									previous.status = AGENT_SESSION_STATUS.PARKED;
-									previous.endedAt = undefined;
-									previous.ownerPid = undefined;
-								}
-							}
-						}
-					});
+			launched = true;
+			if (reservation.replace)
+				await this.finalizeHandoffLocked(task.id, attachment.record, {
+					modeId,
+					predecessor: reservation.preceding,
+					priorActiveSessionId: reservation.priorActiveSessionId,
 				});
-				reserved.status = AGENT_SESSION_STATUS.FAILED;
-				reserved.endedAt = timestamp();
-				reserved.error = error instanceof Error ? error.message : String(error);
-			}
+			return attachment.record;
+		} catch (error) {
+			if (!launched)
+				await this.rollbackHandoff(task.id, reserved, {
+					modeId,
+					priorActiveSessionId: reservation.priorActiveSessionId,
+				});
 			throw error;
 		} finally {
-			await releasePredecessor?.();
 			await releaseReserved();
+		}
+	}
+
+	private async failReservation(
+		reservation: Awaited<ReturnType<AgentSessionService["reserveSession"]>>,
+		error: unknown,
+	): Promise<void> {
+		const { task, reserved, modeId, priorActiveSessionId } = reservation;
+		await this.store.mutateSession(task.id, reserved.id, async (current, history, currentModeId) => {
+			if (current.id !== reserved.id || current.createdAt !== reserved.createdAt) return false;
+			current.status = AGENT_SESSION_STATUS.FAILED;
+			current.endedAt = timestamp();
+			current.error = error instanceof Error ? error.message : String(error);
+			if (currentModeId === modeId && history.activeSessionId === reserved.id) {
+				history.activeSessionId = history.sessions.some((candidate) => candidate.id === priorActiveSessionId)
+					? priorActiveSessionId
+					: reserved.id;
+			}
+		});
+	}
+
+	private handoffPredecessor(
+		state: SessionState,
+		successor: AgentSession,
+		handoff: SessionHandoff,
+	): AgentSession | undefined {
+		if (findSessionMode(state.modes, successor.id) !== handoff.modeId)
+			throw new Error("Handoff successor no longer belongs to its captured mode.");
+		const expected = handoff.predecessor;
+		if (!expected) return undefined;
+		const current = this.session(state, expected.id);
+		if (
+			current.id === successor.id ||
+			findSessionMode(state.modes, current.id) !== handoff.modeId ||
+			current.createdAt !== expected.createdAt ||
+			current.tmuxName !== expected.tmuxName
+		)
+			throw new Error("Handoff predecessor was removed or replaced.");
+		return current;
+	}
+
+	async rollbackHandoff(taskId: string, successor: AgentSession, handoff: SessionHandoff): Promise<void> {
+		await this.store.mutateMode(taskId, handoff.modeId, async (history) => {
+			const current = history.sessions.find(({ id }) => id === successor.id);
+			if (!current) return;
+			// Provider identity can be discovered during the failed launch; reservation identity cannot change.
+			if (
+				current.taskId !== successor.taskId ||
+				current.createdAt !== successor.createdAt ||
+				current.tmuxName !== successor.tmuxName
+			)
+				throw new Error(`Session ${successor.id} was removed or replaced before handoff rollback.`);
+			if (history.activeSessionId !== successor.id) return;
+			history.activeSessionId = history.sessions.some(({ id }) => id === handoff.priorActiveSessionId)
+				? handoff.priorActiveSessionId
+				: successor.id;
+		});
+	}
+
+	async finalizeHandoff(taskId: string, successor: AgentSession, handoff: SessionHandoff): Promise<void> {
+		await this.withTaskSessionAdmission(taskId, async (task) => {
+			const release = await this.store.claimSession(task.id, successor.id);
+			try {
+				await this.finalizeHandoffLocked(task.id, successor, handoff);
+			} finally {
+				await release();
+			}
+		});
+	}
+
+	private async finalizeHandoffLocked(taskId: string, successor: AgentSession, handoff: SessionHandoff): Promise<void> {
+		try {
+			const state = await this.store.read(taskId);
+			const current = this.session(state, successor.id);
+			this.assertSameSessionMembership(current, successor);
+			const predecessor = this.handoffPredecessor(state, current, handoff);
+			const runtime = await this.process.nativeRuntimeClassification(current);
+			if (runtime.status !== "live") throw new Error("Handoff successor is not confirmed running.");
+			await this.store.mutateSession(taskId, current.id, async (record) => {
+				this.assertSameSessionMembership(record, current);
+				record.status = AGENT_SESSION_STATUS.RUNNING;
+			});
+			if (predecessor?.nativeWorkspace !== true) return;
+			const release = await this.store.claimSession(taskId, predecessor.id);
+			try {
+				await this.stopClaimedSession(taskId, predecessor);
+			} finally {
+				await release();
+			}
+		} catch (cause) {
+			throw new Error(`Successor running; predecessor cleanup failed: ${String(cause)}`, { cause });
 		}
 	}
 
@@ -1824,7 +1846,8 @@ export class AgentSessionService {
 			record.status = AGENT_SESSION_STATUS.STOPPED;
 			record.endedAt = timestamp();
 			record.ownerPid = undefined;
-			if (history.activeSessionId === record.id) delete history.activeSessionId;
+			if (history.activeSessionId === record.id)
+				history.activeSessionId = history.sessions.find((candidate) => candidate.id !== record.id)?.id ?? record.id;
 		});
 		if (current.nativeWorkspace) {
 			await deleteWorkspaceRequest(this.core.filesystem.rootDir, current.id);
@@ -1837,7 +1860,7 @@ export class AgentSessionService {
 			const state = await this.store.read(task.id);
 			const selected = sessionId
 				? this.session(state, sessionId)
-				: findActiveSession(state.modes?.[await this.resolveModeId(task.id, modeId)] ?? { sessions: [] });
+				: findActiveSession(state.modes[await this.resolveModeId(task.id, modeId)] ?? { sessions: [] });
 			if (!selected) throw new Error("Agent session not found: active");
 			const release = await this.store.claimSession(task.id, selected.id);
 			try {
@@ -1853,45 +1876,22 @@ export class AgentSessionService {
 		if (process.env.USE_GLOBAL_TASK_ID_LOCK?.toLowerCase() === "false")
 			throw new Error(`Task session locking is disabled; refusing destructive session cleanup for ${taskId}.`);
 		const snapshot = await this.store.read(taskId);
-		const modeHistories = Object.entries(snapshot.modes ?? {});
-		const entries = allModeSessions(snapshot)
-			.map((session) => ({
-				session,
-				modeId:
-					modeHistories.find(([, history]) => history.sessions.some((entry) => entry.id === session.id))?.[0] ??
-					snapshot.legacyModeId,
-			}))
+		const entries = Object.entries(snapshot.modes)
+			.flatMap(([modeId, history]) => history.sessions.map((session) => ({ modeId, session })))
 			.sort((left, right) => left.session.id.localeCompare(right.session.id));
-		const identity = ({ session, modeId }: (typeof entries)[number]) =>
-			JSON.stringify([
-				modeId,
-				session.taskId,
-				session.id,
-				session.createdAt,
-				session.status,
-				session.nativeWorkspace,
-				session.nativeProvider,
-				session.tmuxName,
-				session.nativeSessionId,
-				session.ownerPid,
-			]);
 		const releases: Array<() => Promise<void>> = [];
 		const failures: unknown[] = [];
 		try {
 			for (const { session } of entries) releases.push(await this.store.claimSession(taskId, session.id));
 			const claimedState = await this.store.read(taskId);
-			const claimedModes = Object.entries(claimedState.modes ?? {});
-			const claimed = allModeSessions(claimedState)
-				.map((session) => ({
-					session,
-					modeId:
-						claimedModes.find(([, history]) => history.sessions.some((entry) => entry.id === session.id))?.[0] ??
-						claimedState.legacyModeId,
-				}))
+			const claimed = Object.entries(claimedState.modes)
+				.flatMap(([modeId, history]) => history.sessions.map((session) => ({ modeId, session })))
 				.sort((left, right) => left.session.id.localeCompare(right.session.id));
 			if (
 				entries.length !== claimed.length ||
-				entries.some((entry, index) => identity(entry) !== identity(claimed[index]!))
+				entries.some(
+					(entry, index) => cleanupSnapshotFingerprint(entry) !== cleanupSnapshotFingerprint(claimed[index]!),
+				)
 			)
 				throw new Error(
 					`Cannot safely stop sessions for task ${taskId}: session history changed while acquiring cleanup claims. Retry task deletion.`,
@@ -1903,16 +1903,18 @@ export class AgentSessionService {
 						`Cannot stop owned native session ${sessionId}: it is not present in task ${taskId} history.`,
 					);
 
+			const targets = entries.filter(
+				({ session }) =>
+					session.status !== AGENT_SESSION_STATUS.STOPPED && session.status !== AGENT_SESSION_STATUS.FAILED,
+			);
 			// Verify every native target before stopping or publishing any records.
-			for (const { session } of entries) {
-				if (session.status === AGENT_SESSION_STATUS.STOPPED || session.status === AGENT_SESSION_STATUS.FAILED) continue;
+			for (const { session } of targets) {
 				if (!session.nativeWorkspace) continue;
 				const runtime = await this.process.nativeRuntimeClassification(session);
 				if (runtime.status === "uncertain")
 					throw new Error(`Cannot safely inspect native session ${session.id}: ${runtime.reason}`);
 			}
-			for (const { session } of entries) {
-				if (session.status === AGENT_SESSION_STATUS.STOPPED || session.status === AGENT_SESSION_STATUS.FAILED) continue;
+			for (const { session } of targets) {
 				await this.stopClaimedSession(taskId, session, session.nativeWorkspace);
 			}
 		} catch (error) {
@@ -1955,7 +1957,7 @@ export class AgentSessionService {
 	 *
 	 * When the harness does not finish within the ask timeout, the captured partial output is
 	 * returned with `timedOut: true` instead of being discarded. The timeout defaults to
-	 * {@link ASK_TIMEOUT_MS} and is configurable through `BACKLOG_ASK_TIMEOUT_MS`.
+	 * {@link ASK_TIMEOUT_MS} and is configurable through `AGENTIC_WORKSPACE_ASK_TIMEOUT_MS`.
 	 */
 	async ask(
 		taskId: string,
@@ -2022,7 +2024,7 @@ export class AgentSessionService {
 					});
 				else delete prepared.env[WORKSPACE_CONTEXT_ENV];
 				try {
-					const timeoutMs = Number(process.env.BACKLOG_ASK_TIMEOUT_MS) || ASK_TIMEOUT_MS;
+					const timeoutMs = Number(process.env.AGENTIC_WORKSPACE_ASK_TIMEOUT_MS) || ASK_TIMEOUT_MS;
 					const result = await this.runner.run(["/bin/sh", "-lc", prepared.command], {
 						cwd: roots.cwd,
 						env: prepared.env,
@@ -2055,7 +2057,7 @@ export class AgentSessionService {
 		const task = await this.requireTask(taskId);
 		const state = await this.store.read(task.id);
 		const owner = sessionId ? findSessionMode(state.modes, sessionId) : await this.resolveModeId(task.id, modeId);
-		const history = owner ? state.modes?.[owner] : undefined;
+		const history = owner ? state.modes[owner] : undefined;
 		const session = sessionId
 			? findSessionById(history?.sessions ?? [], sessionId)
 			: history
@@ -2131,22 +2133,6 @@ export class AgentSessionService {
 		});
 	}
 
-	private async settleStaleNativeSession(taskId: string, observed: AgentSession): Promise<void> {
-		await this.store.mutateSession(taskId, observed.id, async (current) => {
-			this.assertSameSessionMembership(current, observed);
-			if (
-				current.status !== observed.status ||
-				current.ownerPid !== observed.ownerPid ||
-				current.lastUsedAt !== observed.lastUsedAt
-			)
-				return;
-			current.status = AGENT_SESSION_STATUS.STOPPED;
-			current.ownerPid = undefined;
-			current.endedAt = timestamp();
-			current.error = undefined;
-		});
-	}
-
 	private async enforceRunningLimit(current: AgentSession, max: number): Promise<void> {
 		if (max < 1) return;
 		const startedAt = Date.now();
@@ -2179,7 +2165,8 @@ export class AgentSessionService {
 			await this.store.mutateSession(session.taskId, session.id, async (current, history) => {
 				current.status = AGENT_SESSION_STATUS.STOPPED;
 				current.endedAt = timestamp();
-				if (history.activeSessionId === current.id) delete history.activeSessionId;
+				if (history.activeSessionId === current.id)
+					history.activeSessionId = history.sessions.find((candidate) => candidate.id !== current.id)?.id ?? current.id;
 			});
 		}
 	}
@@ -2221,7 +2208,7 @@ export class AgentSessionService {
 		const modeId = sessionId
 			? findSessionMode(state.modes, sessionId)
 			: await this.resolveModeId(task.id, requestedModeId, await this.readContext());
-		const history = modeId ? state.modes?.[modeId] : undefined;
+		const history = modeId ? state.modes[modeId] : undefined;
 		const session = sessionId ? this.session(state, sessionId) : history ? findActiveSession(history) : undefined;
 		if (!session) throw new Error(`Agent session not found: ${sessionId ?? "active"}`);
 		if (activeOnly && session.status !== AGENT_SESSION_STATUS.RUNNING)
@@ -2230,10 +2217,9 @@ export class AgentSessionService {
 	}
 
 	private session(state: SessionState, id: string): AgentSession {
-		const session =
-			Object.values(state.modes ?? {})
-				.flatMap((history) => history.sessions)
-				.find((candidate) => candidate.id === id) ?? state.sessions.find((candidate) => candidate.id === id);
+		const session = Object.values(state.modes)
+			.flatMap((history) => history.sessions)
+			.find((candidate) => candidate.id === id);
 		if (!session) throw new Error(`Agent session not found: ${id}`);
 		return session;
 	}
@@ -2246,7 +2232,7 @@ export class AgentSessionService {
 
 	/** Most recently used prior conversation within the requested mode. */
 	private previousSession(state: SessionState, modeId: ModeId, callerSessionId?: string): AgentSession {
-		const history = state.modes?.[modeId];
+		const history = state.modes[modeId];
 		const [previous] = (history?.sessions ?? [])
 			.filter((candidate) => candidate.id !== history?.activeSessionId && candidate.id !== callerSessionId)
 			.sort((left, right) => (right.lastUsedAt ?? right.createdAt).localeCompare(left.lastUsedAt ?? left.createdAt));

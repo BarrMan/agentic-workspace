@@ -139,7 +139,7 @@ function deduplicateModels(models: AgentModel[]): AgentModel[] {
 	return [...byCanonicalId.entries()].sort(([left], [right]) => left.localeCompare(right)).map(([, model]) => model);
 }
 
-/** Drop preset auto-approval modes that conflict with an explicit Backlog profile. */
+/** Drop preset auto-approval modes that conflict with an explicit AgenticWorkspace profile. */
 export function sanitizeProfilePreset(preset: AgentPreset): AgentPreset {
 	const args = commandArguments(preset.command);
 	const executable = args[0];
@@ -193,7 +193,7 @@ export function profileInstructions(
 ): string {
 	const permissions = profile.permissions;
 	const lines = [
-		"Backlog profile scope (instructions, not an OS sandbox):",
+		"AgenticWorkspace profile scope (instructions, not an OS sandbox):",
 		`- Repository access: ${permissions.repository}; allowed root: ${repositoryRoot}. ${permissions.repository === "none" ? "Do not inspect repository or repository-context files." : ""}`,
 		...(permissions.repository === "read-write"
 			? []

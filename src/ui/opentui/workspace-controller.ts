@@ -33,7 +33,11 @@ import { effectiveModeTextColor } from "../../agent-workspace/mode-colors.ts";
 import { ModeLifecycleService } from "../../agent-workspace/mode-lifecycle.ts";
 import { BunRunner } from "../../agent-workspace/session-process.ts";
 import { SessionStore } from "../../agent-workspace/session-store.ts";
-import { AgentSessionService, type SessionRuntimeOrigin } from "../../agent-workspace/sessions.ts";
+import {
+	AgentSessionService,
+	ExactResumeUnavailableError,
+	type SessionRuntimeOrigin,
+} from "../../agent-workspace/sessions.ts";
 import { sessionActivityDir } from "../../agent-workspace/status-hooks.ts";
 import type { ActivityMetadata, ModeCatalog } from "../../agent-workspace/types.ts";
 import {
@@ -46,13 +50,13 @@ import {
 	type TaskSessions,
 } from "../../agent-workspace/types.ts";
 import { openViewStateStore, type ViewStateStore } from "../../agent-workspace/view-state-store.ts";
-import type { WorkspaceRequest } from "../../agent-workspace/workspace-context.ts";
+import type { SessionHandoff, WorkspaceRequest } from "../../agent-workspace/workspace-context.ts";
 import { readWorkspaceRequests } from "../../agent-workspace/workspace-context.ts";
 import { WorkspaceStateService } from "../../agent-workspace/workspace-state.ts";
-import type { Core } from "../../core/backlog.ts";
+import type { Core } from "../../core/agentic-workspace.ts";
 import { collectArchivedMilestoneKeys, milestoneKey } from "../../core/milestones.ts";
 import { loadTaskDetail, type TaskDetail } from "../../core/task-detail.ts";
-import type { BacklogConfig, Milestone, Task, TaskCreateInput, TaskUpdateInput } from "../../types/index.ts";
+import type { AgenticWorkspaceConfig, Milestone, Task, TaskCreateInput, TaskUpdateInput } from "../../types/index.ts";
 import { copyToClipboard } from "../../utils/clipboard.ts";
 import { watchConfig } from "../../utils/config-watcher.ts";
 import { createMilestoneFilterValueResolver } from "../../utils/milestone-filter.ts";
@@ -192,7 +196,7 @@ type WorkspaceSnapshot = {
 	readonly filterSummary: string;
 	readonly detailsVisible: boolean;
 	readonly selectedTaskIndex: number;
-	readonly config: BacklogConfig | null;
+	readonly config: AgenticWorkspaceConfig | null;
 	/** Rich detail for the selected task, keyed by id; empty in board view. */
 	readonly taskDetails: ReadonlyMap<string, TaskDetail>;
 };
@@ -209,6 +213,16 @@ type ActivityEntry = {
 	readonly activity: AgentActivity;
 	readonly taskId: string;
 };
+
+/** A transient overlay can refine, but never invent, the selected-mode active-session dot. */
+export function modeSessionIndication(
+	session: AgentSession | undefined,
+	activity?: AgentActivity,
+): AgentIndication | undefined {
+	if (!session) return undefined;
+	if (session.status === AGENT_SESSION_STATUS.STOPPED) return "ended";
+	return activityToIndication(activity);
+}
 
 /** Everything the poller needs to probe one live session's pane and sidecar. */
 type AgentActivityTarget = {
@@ -298,7 +312,7 @@ function uniqueValues(values: Iterable<string | undefined>): string[] {
 
 function editorFields(
 	draft: WorkspaceDraft,
-	config: BacklogConfig | null,
+	config: AgenticWorkspaceConfig | null,
 	groupOptions: readonly { label: string; value: string }[],
 	currentGroupId: string,
 ): readonly TaskFormField<TaskEditorField>[] {
@@ -385,7 +399,7 @@ export class OpenTuiWorkspaceController {
 	#milestones: Milestone[] = [];
 	#archivedMilestones: Milestone[] = [];
 	#resolveMilestoneLabel = createMilestoneFilterValueResolver([]);
-	#config: BacklogConfig | null = null;
+	#config: AgenticWorkspaceConfig | null = null;
 	#notice: string | undefined;
 	#closed = false;
 	#refreshLoop: Promise<void> | undefined;
@@ -398,6 +412,7 @@ export class OpenTuiWorkspaceController {
 	readonly #agents = new Map<string, RetainedWorkspaceAgent>();
 	readonly #readOnlyAttachments = new Set<string>();
 	readonly #activeAgents = new Map<string, string>();
+	#modeActiveSessions = new Map<string, AgentSession>();
 	/** This controller's execution choice, isolated by fixed task/mode identity. */
 	readonly #localSelections = new Map<string, string>();
 	readonly #localSessionModes = new Map<string, string>();
@@ -462,8 +477,9 @@ export class OpenTuiWorkspaceController {
 		let groupStore: GroupStore | undefined = this.#options.groupStore;
 		if (groupStore === undefined) {
 			try {
-				const backlogDir = this.#core.filesystem.backlogDir ?? join(this.#core.filesystem.rootDir, "backlog");
-				groupStore = await openGroupStore(this.#core.filesystem.rootDir, backlogDir);
+				const agenticWorkspaceDir =
+					this.#core.filesystem.agenticWorkspaceDir ?? join(this.#core.filesystem.rootDir, "agentic-workspace");
+				groupStore = await openGroupStore(this.#core.filesystem.rootDir, agenticWorkspaceDir);
 			} catch {
 				groupStore = undefined; // group features degrade to no-op; never break the workspace
 			}
@@ -515,7 +531,7 @@ export class OpenTuiWorkspaceController {
 
 	/**
 	 * Subscribe to the authoritative task/config watchers so an external CLI edit (for example
-	 * marking a task done, or editing the backlog config) repaints without a user action. Best-effort:
+	 * marking a task done, or editing the agentic-workspace config) repaints without a user action. Best-effort:
 	 * a watcher failure never keeps the workspace from opening, and a core with no watchable paths
 	 * (unit stubs) simply runs without live external updates.
 	 */
@@ -729,7 +745,7 @@ export class OpenTuiWorkspaceController {
 				let settled = false;
 				for (const [taskId, taskSessions] of sessions) {
 					for (const active of taskSessions.sessions) {
-						if (!this.#localSessionModes.has(active.id)) continue;
+						if ((active as AgentSession & { ownerScope?: string }).ownerScope === "foreign") continue;
 						if (discoverOnly && (active.status !== AGENT_SESSION_STATUS.RUNNING || !active.nativeWorkspace)) continue;
 						if (active.status !== AGENT_SESSION_STATUS.STARTING && active.status !== AGENT_SESSION_STATUS.RUNNING)
 							continue;
@@ -864,43 +880,14 @@ export class OpenTuiWorkspaceController {
 	}
 
 	/**
-	 * One settled indication per task, durable session status first and the in-memory activity overlay
-	 * second. A parked durable session is always blue: a stale overlay must not paint it green. A
-	 * starting/running durable session with no overlay yet is blue too, so a just-launched agent shows
-	 * an indication before its first probe. Overlay-only and locally starting/attached tasks follow.
+	 * One indication per active selected-mode session, projected from its in-memory activity evidence.
 	 */
 	#indicationByTask(): Map<string, AgentIndication> {
 		const byTask = new Map<string, AgentIndication>();
-		const overlayByTask = new Map<string, AgentActivity>();
-		for (const entry of this.#activity.values()) overlayByTask.set(entry.taskId, entry.activity);
 
-		const sessions = this.#allSessions;
-		const durableTaskIds = new Set<string>();
-		if (sessions) {
-			for (const [taskId, taskSessions] of sessions) {
-				const active = taskSessions.sessions.find((session) => session.id === taskSessions.activeSessionId);
-				if (!active) continue;
-				// The task owns a durable active session; the overlay may refine it but never adds one.
-				durableTaskIds.add(taskId);
-				if (active.status === AGENT_SESSION_STATUS.PARKED) {
-					byTask.set(taskId, "parked");
-					continue;
-				}
-				if (active.status !== AGENT_SESSION_STATUS.STARTING && active.status !== AGENT_SESSION_STATUS.RUNNING) continue;
-				byTask.set(taskId, activityToIndication(overlayByTask.get(taskId)) ?? "parked");
-			}
-		}
-
-		for (const [taskId, activity] of overlayByTask) {
-			if (durableTaskIds.has(taskId) || byTask.has(taskId)) continue;
-			const indication = activityToIndication(activity);
+		for (const [taskId, active] of this.#modeActiveSessions) {
+			const indication = modeSessionIndication(active, this.#activity.get(active.id)?.activity);
 			if (indication) byTask.set(taskId, indication);
-		}
-		for (const taskId of this.#startingTasks) {
-			if (!byTask.has(taskId)) byTask.set(taskId, "parked");
-		}
-		for (const taskId of this.#activeAgents.keys()) {
-			if (!byTask.has(taskId)) byTask.set(taskId, "parked");
 		}
 		return byTask;
 	}
@@ -993,7 +980,7 @@ export class OpenTuiWorkspaceController {
 			view: this.#view,
 			selectedTaskId: snapshot.selectedTask?.id,
 			activeStatus:
-				this.#viewState.current.activeStatus ?? snapshot.selectedTask?.status ?? snapshot.config?.statuses[0],
+				this.#viewState.current.activeStatus ?? snapshot.selectedTask?.status ?? snapshot.config?.statuses?.[0],
 			filters: this.#viewState.current.filters,
 		};
 		if (!this.#navigationCurrent) this.#navigationHistory.record(navigation);
@@ -1061,6 +1048,7 @@ export class OpenTuiWorkspaceController {
 			return;
 		}
 		const selectedAgent = snapshot.selectedTask ? this.#agents.get(snapshot.activeAgentSession?.id ?? "") : undefined;
+		const indications = this.#indicationByTask();
 		const workspaceOptions: OpenTuiWorkspaceOptions & {
 			readonly selectedModeId?: string;
 			readonly onCycleMode?: () => void;
@@ -1105,7 +1093,7 @@ export class OpenTuiWorkspaceController {
 			},
 			onCycleMode: () => void this.#cycleMode(),
 			sessionTaskIds: [...this.#sessionTaskIds],
-			indicationByTask: this.#indicationByTask(),
+			indicationByTask: indications,
 			liveAgent:
 				snapshot.selectedTask &&
 				this.#startingTasks.has(snapshot.selectedTask.id) &&
@@ -1179,6 +1167,7 @@ export class OpenTuiWorkspaceController {
 	}
 
 	async #loadSnapshot(state: SharedWorkspaceState): Promise<WorkspaceSnapshot> {
+		// Refreshes rebuild this cache so task, mode, and durable session changes cannot leave stale row dots.
 		const [tasks, config, milestones, archivedMilestones] = await Promise.all([
 			this.#view === "board" ? this.#core.loadTasks() : this.#workspaceState.listTasks(),
 			this.#core.filesystem.loadConfig(),
@@ -1221,18 +1210,36 @@ export class OpenTuiWorkspaceController {
 		const modeProjectionByTask = new Map<string, { modeLabel: string; approved: boolean; modeColor?: string }>();
 		const taskArtifactPathsByTask = new Map<string, readonly string[]>();
 		let activeAgentSession = sessions?.sessions.find((session) => session.id === sessions.activeSessionId);
+		const modeActiveSessions = new Map<string, AgentSession>();
+		const modeHistories = new Map<string, TaskSessions>();
 		if (this.#view === "workspace") {
 			const catalog = await loadProjectModeCatalog(this.#core);
 			this.#modeCatalog = catalog;
 			if (selectedTask) {
 				selectedModeId = selectedModeForTask(state, selectedTask.id, catalog);
 				const modeSessions = await this.#workspaceState.listModeSessions(selectedTask.id, selectedModeId);
+				modeHistories.set(selectedTask.id, modeSessions);
 				const localId = this.#localSelections.get(`${selectedTask.id}\u0000${selectedModeId}`);
-				activeAgentSession = localId ? modeSessions.sessions.find((session) => session.id === localId) : undefined;
+				// Prefer the mode's active session, then the local picker choice, then its most recently used history.
+				activeAgentSession =
+					modeSessions.sessions.find((session) => session.id === modeSessions.activeSessionId) ??
+					(localId ? modeSessions.sessions.find((session) => session.id === localId) : undefined) ??
+					[...modeSessions.sessions].sort((a, b) =>
+						(b.lastUsedAt ?? b.createdAt).localeCompare(a.lastUsedAt ?? a.createdAt),
+					)[0];
+				const active = modeSessions.sessions.find((session) => session.id === modeSessions.activeSessionId);
+				if (active) modeActiveSessions.set(selectedTask.id, active);
 			}
 			let cursor = 0;
 			const projectTask = async (task: Task): Promise<void> => {
 				const modeId = selectedModeForTask(state, task.id, catalog);
+				let modeSessions = modeHistories.get(task.id);
+				if (!modeSessions) {
+					modeSessions = await this.#workspaceState.listModeSessions(task.id, modeId);
+					modeHistories.set(task.id, modeSessions);
+				}
+				const active = modeSessions.sessions.find((session) => session.id === modeSessions.activeSessionId);
+				if (active) modeActiveSessions.set(task.id, active);
 				const profile = catalog.profiles[modeId];
 				if (!profile) return;
 				taskArtifactPathsByTask.set(
@@ -1263,6 +1270,7 @@ export class OpenTuiWorkspaceController {
 					}
 				}),
 			);
+			this.#modeActiveSessions = modeActiveSessions;
 		}
 		if (selectedTask) {
 			if (sessions?.sessions.length) this.#sessionTaskIds.add(selectedTask.id);
@@ -1309,65 +1317,61 @@ export class OpenTuiWorkspaceController {
 		return new Map(visibleTasks.map((task) => [task.id, all.get(task.id) ?? { taskId: task.id, sessions: [] }]));
 	}
 
-	/**
-	 * Selecting a task whose durable active session claims RUNNING must show that session's real
-	 * pane, not just a green marker. Probe the pane passively first (never kills a pane, never
-	 * rewrites status for an inconclusive tmux failure): an alive external pane is attached in the
-	 * background with no Enter, no resume, no new session and no ownership; a conclusively dead or
-	 * missing pane is settled STOPPED, so re-read the snapshot and mount the truth; an inconclusive
-	 * probe becomes an explicit notice.
-	 *
-	 * A PARKED active session is auto-resumed instead: parking released the process without ending
-	 * the session, so the selected task's exact conversation is revived (see `#resumeParkedSession`).
-	 */
+	/** Resume the selected mode's parked conversation; inspect and attach selected externally running sessions. */
 	async #syncSelectedSession(state: SharedWorkspaceState, snapshot: WorkspaceSnapshot): Promise<WorkspaceSnapshot> {
 		if (this.#closed || !this.#host || this.#view !== "workspace") return snapshot;
 		const task = snapshot.selectedTask;
 		const session = snapshot.activeAgentSession;
-		if (!task || !session) return snapshot;
-		if (session.status === AGENT_SESSION_STATUS.STARTING) return snapshot;
-		if (session.status !== AGENT_SESSION_STATUS.RUNNING) {
-			// Browsing is a passive preview. Parked sessions are prepared only after an explicit
-			// activation action, never as a side effect of selection or refresh.
+		const modeId = snapshot.selectedModeId;
+		if (
+			!task ||
+			!session ||
+			!modeId ||
+			session.status === AGENT_SESSION_STATUS.STARTING ||
+			session.status === AGENT_SESSION_STATUS.STOPPED
+		)
+			return snapshot;
+		if (session.status === AGENT_SESSION_STATUS.PARKED) {
+			void this.#startTaskSession(
+				task.id,
+				Math.max(20, this.#host.renderer.width),
+				Math.max(5, this.#host.renderer.height - 6),
+				{
+					sessionId: session.id,
+					modeId,
+				},
+			);
 			return snapshot;
 		}
-		const catalog = await loadProjectModeCatalog(this.#core);
+		if (session.status !== AGENT_SESSION_STATUS.RUNNING) return snapshot;
+		if (this.#agents.has(session.id) || this.#startingTasks.has(task.id) || this.#attachingSessions.has(session.id))
+			return snapshot;
+		const catalog = this.#modeCatalog ?? (await loadProjectModeCatalog(this.#core));
 		const selectedModeId = selectedModeForTask(state, task.id, catalog);
-		if (this.#agents.has(session.id) || this.#startingTasks.has(task.id)) return snapshot;
-		if (this.#attachingSessions.has(session.id)) return snapshot;
-		const probe = await this.#workspaceState.liveSession(task.id, session.id, { passive: true }).then(
-			(live) => ({ inspected: true as const, live }),
-			(error: unknown) => ({ inspected: false as const, error }),
-		);
-		// The probe awaits tmux; the selection or the view state may have moved on. Never settle or
-		// attach for a task the user has left, and never resurrect a stale snapshot.
+		if (selectedModeId !== modeId) return snapshot;
+		let probe: Awaited<ReturnType<WorkspaceStateService["liveSession"]>> | undefined;
+		try {
+			probe = await this.#workspaceState.liveSession(task.id, session.id, { passive: true });
+		} catch (error) {
+			if (!this.#closed && this.#viewState?.current === state && this.#selectedTaskId === task.id)
+				this.#notice = `Could not inspect agent session ${session.id}: ${error instanceof Error ? error.message : String(error)}`;
+			return snapshot;
+		}
 		if (
 			this.#closed ||
 			!this.#host ||
-			!this.#viewState ||
-			this.#view !== "workspace" ||
+			this.#viewState?.current !== state ||
 			this.#selectedTaskId !== task.id ||
-			selectedModeForTask(this.#viewState.current, task.id, catalog) !== selectedModeId ||
-			state !== this.#viewState.current
+			selectedModeForTask(state, task.id, catalog) !== modeId
 		)
 			return snapshot;
-		if (!probe.inspected) {
-			this.#notice = `Could not inspect agent session ${session.id}: ${probe.error instanceof Error ? probe.error.message : String(probe.error)}`;
-			return snapshot;
-		}
-		if (!probe.live) {
-			this.#notice = `Agent session ${session.id} is no longer running.`;
+		if (!probe) {
 			return await this.#loadSnapshot(state);
 		}
 		this.#attachRunningSession(task.id, session);
 		return snapshot;
 	}
 
-	/**
-	 * Auto-resume the selected task's parked session. Parking released the process without ending the
-	 * session, so the workspace revives the exact stored conversation on start (or when the task is
-	 * selected). Bounded to the selected task; `#startTaskSession` dedupes concurrent resumes.
-	 */
 	/** Attach the native terminal to an already-running external pane without touching its lifecycle. */
 	#attachRunningSession(taskId: string, session: AgentSession): void {
 		const host = this.#host;
@@ -1404,7 +1408,6 @@ export class OpenTuiWorkspaceController {
 		rows: number,
 		options: {
 			sessionId?: string;
-			resumeActive?: boolean;
 			modeId?: string;
 			focus?: boolean;
 			rejectFailure?: boolean;
@@ -1485,7 +1488,29 @@ export class OpenTuiWorkspaceController {
 				this.#agentFocused = true;
 			}
 		})()
-			.catch((error) => {
+			.catch(async (error: unknown) => {
+				if (error instanceof ExactResumeUnavailableError && options.sessionId) {
+					this.#notice = error.message;
+					const confirmed = await this.#openConfirm(
+						"Exact resume unavailable",
+						`${error.message}\n\nStart a fresh conversation instead?`,
+					);
+					if (confirmed && !this.#closed && this.#selectedTaskId === taskId) {
+						try {
+							const completed = await this.#launchAgent(taskId, columns, rows, undefined, {
+								modeId,
+								newSession: true,
+							});
+							if (completed) this.#notice = undefined;
+						} catch (freshError) {
+							this.#notice = `Could not start a fresh conversation: ${String(freshError)}`;
+							if (options.rejectFailure) throw freshError;
+						}
+						return;
+					}
+					if (options.rejectFailure) throw error;
+					return;
+				}
 				this.#notice = `Could not start agent: ${String(error)}`;
 				if (options.rejectFailure) throw error;
 			})
@@ -1500,54 +1525,58 @@ export class OpenTuiWorkspaceController {
 		return start;
 	}
 
-	/** Handoff retires only this UI's selected terminal for the exact task/mode pair. */
+	/** Start the replacement first, then retire only an app-owned predecessor. */
 	async #handoffLocalSession(taskId: string, modeId: string): Promise<void> {
 		const key = `${taskId}\u0000${modeId}`;
 		const id = this.#localSelections.get(key);
 		if (this.#startingTaskModes.has(key)) return;
 		const local = id ? this.#agents.get(id) : undefined;
-		if (id && local?.host) {
-			const startOwner = {};
-			this.#startingTasks.add(taskId);
-			this.#startingTaskModes.set(key, startOwner);
-			try {
-				await local.host.stop();
-			} catch (error) {
-				if (this.#startingTaskModes.get(key) === startOwner) {
-					this.#notice = `Could not stop local session ${id}: ${String(error)}`;
-					this.#startingTaskModes.delete(key);
-				}
-				if (![...this.#startingTaskModes.keys()].some((candidate) => candidate.startsWith(`${taskId}\u0000`)))
-					this.#startingTasks.delete(taskId);
+		const startOwner = {};
+		this.#startingTasks.add(taskId);
+		this.#startingTaskModes.set(key, startOwner);
+		let successorStarted = false;
+		try {
+			const history = await this.#workspaceState.listModeSessions(taskId, modeId);
+			const predecessor = local?.origin?.record;
+			const handoff: SessionHandoff = {
+				modeId,
+				priorActiveSessionId: history.activeSessionId,
+				...(predecessor
+					? { predecessor: { id: predecessor.id, createdAt: predecessor.createdAt, tmuxName: predecessor.tmuxName } }
+					: {}),
+			};
+			const started = await this.#launchAgent(
+				taskId,
+				Math.max(20, this.#host?.renderer.width ?? 80),
+				Math.max(5, (this.#host?.renderer.height ?? 24) - 6),
+				undefined,
+				{ modeId, newSession: true, handoff },
+			);
+			if (!started || this.#startingTaskModes.get(key) !== startOwner) {
 				return;
 			}
-			if (this.#startingTaskModes.get(key) !== startOwner) return;
-			local.terminal?.destroy();
-			this.#agents.delete(id);
-			this.#agentAlive.delete(id);
-			this.#forgetActivity(id);
-			this.#localSessionModes.delete(id);
-			const stillSelected = this.#localSelections.get(key) === id;
-			if (stillSelected) this.#localSelections.delete(key);
-			if (this.#activeAgents.get(taskId) === id) this.#activeAgents.delete(taskId);
+			successorStarted = true;
+			await this.#workspaceState.finalizeHandoff(taskId, started, handoff);
+			if (id && local) {
+				await local.hostOwner?.detachAndDestroy(local.terminal, this.#activityObserver.snapshot(id));
+				local.terminal?.destroy();
+				if (this.#agents.get(id) === local) this.#agents.delete(id);
+				this.#agentAlive.delete(id);
+				this.#forgetActivity(id);
+				this.#localSessionModes.delete(id);
+				if (this.#localSelections.get(key) === id) this.#localSelections.delete(key);
+				if (this.#activeAgents.get(taskId) === id) this.#activeAgents.delete(taskId);
+			}
+		} catch (error) {
+			this.#notice = successorStarted
+				? `Successor is running, but predecessor cleanup failed: ${String(error)}`
+				: `Could not start handoff session: ${String(error)}`;
+		} finally {
 			if (this.#startingTaskModes.get(key) === startOwner) this.#startingTaskModes.delete(key);
 			if (![...this.#startingTaskModes.keys()].some((candidate) => candidate.startsWith(`${taskId}\u0000`)))
 				this.#startingTasks.delete(taskId);
-			if (
-				!stillSelected ||
-				this.#selectedTaskId !== taskId ||
-				!this.#viewState ||
-				(this.#modeCatalog !== undefined &&
-					selectedModeForTask(this.#viewState.current, taskId, this.#modeCatalog) !== modeId)
-			)
-				return;
+			if (!this.#closed) void this.#scheduleRefresh();
 		}
-		this.#startTaskSession(
-			taskId,
-			Math.max(20, this.#host?.renderer.width ?? 80),
-			Math.max(5, (this.#host?.renderer.height ?? 24) - 6),
-			{ modeId },
-		);
 	}
 
 	#adoptSession(taskId: string, sessionId: string, width: number, height: number, modeId?: string): void {
@@ -1614,13 +1643,19 @@ export class OpenTuiWorkspaceController {
 		columns: number,
 		rows: number,
 		sessionId?: string,
-		options: { attachOnly?: boolean; adopt?: boolean; modeId?: string } = {},
-	): Promise<boolean> {
+		options: {
+			attachOnly?: boolean;
+			adopt?: boolean;
+			modeId?: string;
+			newSession?: boolean;
+			handoff?: SessionHandoff;
+		} = {},
+	): Promise<AgentSession | false> {
 		const launch: PendingAgentLaunch = { taskId, invalidated: false };
 		this.#pendingAgentLaunches.add(launch);
 		return this.#performAgentLaunch(taskId, columns, rows, sessionId, options, launch)
 			.catch((error: unknown) => {
-				if (launch.invalidated) return false;
+				if (launch.invalidated) return false as const;
 				throw error;
 			})
 			.finally(() => {
@@ -1633,9 +1668,9 @@ export class OpenTuiWorkspaceController {
 		columns: number,
 		rows: number,
 		sessionId: string | undefined,
-		options: { attachOnly?: boolean; adopt?: boolean; modeId?: string },
+		options: { attachOnly?: boolean; adopt?: boolean; modeId?: string; newSession?: boolean; handoff?: SessionHandoff },
 		launch: PendingAgentLaunch,
-	): Promise<boolean> {
+	): Promise<AgentSession | false> {
 		const attachOnly = options.attachOnly === true;
 		// Adoption launches a pending record for any task, not only the selected one; the pane is
 		// retained in `#agents` and appears when the user selects its task.
@@ -1665,7 +1700,7 @@ export class OpenTuiWorkspaceController {
 					this.#localSelections.set(`${taskId}\u0000${options.modeId}`, sessionId as string);
 					this.#localSessionModes.set(sessionId as string, options.modeId);
 				}
-				return true;
+				return retained.origin.record;
 			}
 		}
 		if (retained) {
@@ -1700,7 +1735,12 @@ export class OpenTuiWorkspaceController {
 				: options.modeId;
 		const selectionKey = localModeId ? `${taskId}\u0000${localModeId}` : undefined;
 		const selectionAtAdmission = selectionKey ? this.#localSelections.get(selectionKey) : undefined;
-		if (!attachment) attachment = await this.#workspaceState.prepareSession(taskId, sessionId, options.modeId);
+		if (!attachment) {
+			if (options.newSession) {
+				if (!options.modeId) throw new Error("A mode is required when creating a handoff session.");
+				attachment = await this.#workspaceState.prepareNewSession(taskId, options.modeId);
+			} else attachment = await this.#workspaceState.prepareSession(taskId, sessionId, options.modeId);
+		}
 		if (launch.invalidated || this.#deletingTasks.has(taskId)) return false;
 		const { record } = attachment;
 		const origin: SessionRuntimeOrigin = { record: structuredClone(record), paneId: attachment.paneId };
@@ -1776,7 +1816,7 @@ export class OpenTuiWorkspaceController {
 				// The close lane awaits launches before releasing them; do not roll back work already started.
 				session.terminal?.destroy();
 				this.#agents.set(record.id, session);
-				return true;
+				return record;
 			}
 			if (this.#closed || this.#view !== "workspace") throw new Error(`Task ${taskId} is no longer selected.`);
 			if (!attachOnly && !adopt) {
@@ -1812,9 +1852,10 @@ export class OpenTuiWorkspaceController {
 			}
 			if (probeTarget) this.#trackActivityTarget(record.id, probeTarget);
 			if (attachment.warnings?.length) this.#notice = attachment.warnings.join(" ");
-			return true;
+			return record;
 		} catch (error) {
 			this.#forgetActivity(record.id);
+			if (options.handoff) await this.#workspaceState.rollbackHandoff(taskId, record, options.handoff);
 			try {
 				await owner?.detachAndDestroy(session.terminal);
 			} catch {
@@ -1870,7 +1911,11 @@ export class OpenTuiWorkspaceController {
 				),
 				onFocusLocal: (id) => {
 					const agent = this.#agents.get(id);
-					if (!agent?.terminal || agent.terminal.isDestroyed) return;
+					if (!agent?.terminal || agent.terminal.isDestroyed) {
+						const session = sessions.sessions.find((candidate) => candidate.id === id);
+						if (session?.status === AGENT_SESSION_STATUS.RUNNING) this.#attachRunningSession(taskId, session);
+						return;
+					}
 					this.#localSelections.set(`${taskId}\u0000${modeId}`, id);
 					this.#activeAgents.set(taskId, id);
 					this.#agentFocused = true;
@@ -1994,7 +2039,7 @@ export class OpenTuiWorkspaceController {
 	 * the view, and an attach (passive) never reaches here.
 	 */
 	#followActivationStatus(taskId: string, activeStatus: string | undefined, adopt: boolean): void {
-		if (adopt || !activeStatus) return;
+		if (adopt || !activeStatus || this.#selectedTaskId !== taskId) return;
 		if (
 			this.#selectedTaskId === taskId &&
 			this.#viewState?.current.activeStatus?.toLowerCase() === activeStatus.toLowerCase()
@@ -2416,7 +2461,7 @@ export class OpenTuiWorkspaceController {
 			const viewState = this.#viewState;
 			if (!viewState) throw new Error("Workspace view state is unavailable.");
 			const modeLifecycle = new ModeLifecycleService({
-				journalDirectory: join(rootDir, ".backlog", "agent-workspace"),
+				journalDirectory: join(rootDir, ".agentic-workspace", "agent-workspace"),
 				configuration: {
 					read: async () => await getEditableAgentConfiguration(this.#core, "project"),
 					update: async (update) => {

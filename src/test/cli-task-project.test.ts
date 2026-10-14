@@ -2,10 +2,10 @@ import { describe, expect, it } from "bun:test";
 import { mkdir } from "node:fs/promises";
 import { Writable } from "node:stream";
 import { runCli } from "../cli/register.ts";
-import { Core } from "../core/backlog.ts";
+import { Core } from "../core/agentic-workspace.ts";
 import { createUniqueTestDir, initializeFilesystemTestProject, safeCleanup } from "./test-utils.ts";
 
-const CLI_COMMAND = ["agenticworkspace"];
+const CLI_COMMAND = ["agentic-workspace"];
 let cliQueue = Promise.resolve();
 
 function $(parts: TemplateStringsArray, ...values: unknown[]) {
@@ -186,7 +186,7 @@ describe("CLI task projects", () => {
 				const result = await $`${CLI_COMMAND} config set projects "Web,API"`.cwd(dir).nothrow().quiet();
 				expect(result.exitCode).toBe(1);
 				expect(result.stderr.toString()).toContain(
-					"projects cannot be set directly. View current values with 'agenticworkspace config get projects'.",
+					"projects cannot be set directly. View current values with 'agentic-workspace config get projects'.",
 				);
 			} finally {
 				await safeCleanup(dir);
@@ -197,10 +197,10 @@ describe("CLI task projects", () => {
 			const { dir } = await setupConfiguredProjects();
 			try {
 				const lines = [
-					"agenticworkspace task create --project ",
-					"agenticworkspace task edit TASK-1 --project ",
-					"agenticworkspace task list --project ",
-					"agenticworkspace search --project ",
+					"agentic-workspace task create --project ",
+					"agentic-workspace task edit TASK-1 --project ",
+					"agentic-workspace task list --project ",
+					"agentic-workspace search --project ",
 				];
 				const results = await Promise.all(
 					lines.map((line) => $`${CLI_COMMAND} completion __complete ${line} ${String(line.length)}`.cwd(dir).quiet()),

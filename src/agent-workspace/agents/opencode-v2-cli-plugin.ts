@@ -2,14 +2,14 @@ import { join } from "node:path";
 
 export function createOpencodeV2CliPlugin(options: {
 	metadataRoot: string;
-	backlogSessionId: string;
+	agenticWorkspaceSessionId: string;
 	statusDir?: string;
 }): string {
 	return `import { Plugin } from "@opencode/plugin/tui";
 import { mkdirSync, writeFileSync, renameSync, rmSync } from "node:fs";
 import { dirname, join } from "node:path";
 
-const SIDECAR = ${JSON.stringify(join(options.metadataRoot, `${options.backlogSessionId}.native-session-id`))};
+const SIDECAR = ${JSON.stringify(join(options.metadataRoot, `${options.agenticWorkspaceSessionId}.native-session-id`))};
 const STATUS = ${JSON.stringify(options.statusDir ? join(options.statusDir, "status") : "")};
 let writeSequence = 0;
 
@@ -26,7 +26,7 @@ function atomicWrite(path, value) {
 }
 
 export default Plugin.define({
-  id: "backlog-session-status",
+  id: "agentic-workspace-session-status",
   setup(ctx) {
     const activeRoute = () => {
       try {

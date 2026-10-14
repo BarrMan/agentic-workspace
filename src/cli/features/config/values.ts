@@ -1,5 +1,5 @@
-import type { Core } from "../../../core/backlog.ts";
-import type { BacklogConfig } from "../../../types/index.ts";
+import type { Core } from "../../../core/agentic-workspace.ts";
+import type { AgenticWorkspaceConfig } from "../../../types/index.ts";
 import { getPriorityOptions } from "../../../utils/priority-config.ts";
 import { getProjectValues } from "../../../utils/project-config.ts";
 import { parseDelimitedStringList } from "../../../utils/task-builders.ts";
@@ -8,8 +8,8 @@ import { getTaskTypeValues } from "../../../utils/task-type-config.ts";
 const CONFIG_AVAILABLE_KEYS =
 	"Available keys: defaultEditor, projectName, defaultAssignee, defaultStatus, statuses, labels, priorities, types, projects, milestones, dateFormat, maxColumnWidth, defaultPort, autoOpenBrowser, hideEmptyColumns, remoteOperations, filesystemOnly, bypassGitHooks, zeroPaddedIds, checkActiveBranches, activeBranchDays";
 
-type Reader = (core: Core, config: BacklogConfig) => string | Promise<string>;
-type Setter = (config: BacklogConfig, value: string) => boolean | Promise<boolean>;
+type Reader = (core: Core, config: AgenticWorkspaceConfig) => string | Promise<string>;
+type Setter = (config: AgenticWorkspaceConfig, value: string) => boolean | Promise<boolean>;
 
 const readers: Record<string, Reader> = {
 	projectName: (_, config) => config.projectName,
@@ -45,7 +45,11 @@ function parseBoolean(key: string, value: string): boolean | null {
 	return null;
 }
 
-function numericSetter(key: string, minimum: number, assign: (config: BacklogConfig, value: number) => void): Setter {
+function numericSetter(
+	key: string,
+	minimum: number,
+	assign: (config: AgenticWorkspaceConfig, value: number) => void,
+): Setter {
 	return (config, value) => {
 		const parsed = Number.parseInt(value, 10);
 		if (Number.isNaN(parsed) || parsed < minimum) {
@@ -59,7 +63,7 @@ function numericSetter(key: string, minimum: number, assign: (config: BacklogCon
 	};
 }
 
-function directSetter(assign: (config: BacklogConfig, value: string) => void): Setter {
+function directSetter(assign: (config: AgenticWorkspaceConfig, value: string) => void): Setter {
 	return (config, value) => {
 		assign(config, value);
 		return true;
@@ -101,7 +105,7 @@ const booleanKeys = [
 	"checkActiveBranches",
 ] as const;
 
-export async function printConfigValue(core: Core, config: BacklogConfig, key: string): Promise<boolean> {
+export async function printConfigValue(core: Core, config: AgenticWorkspaceConfig, key: string): Promise<boolean> {
 	if (key === "defaultEditor") {
 		console.log(config.defaultEditor || "defaultEditor is not set");
 		return Boolean(config.defaultEditor);
@@ -112,7 +116,7 @@ export async function printConfigValue(core: Core, config: BacklogConfig, key: s
 	return true;
 }
 
-export async function setConfigValue(config: BacklogConfig, key: string, value: string): Promise<boolean> {
+export async function setConfigValue(config: AgenticWorkspaceConfig, key: string, value: string): Promise<boolean> {
 	if (key === "defaultEditor") return setEditor(config, value);
 	if (key === "filesystemOnly") return setFilesystemOnly(config, value);
 	if (booleanKeys.includes(key as (typeof booleanKeys)[number])) {
@@ -126,7 +130,7 @@ export async function setConfigValue(config: BacklogConfig, key: string, value: 
 	return rejectedKey(key);
 }
 
-async function setEditor(config: BacklogConfig, value: string): Promise<boolean> {
+async function setEditor(config: AgenticWorkspaceConfig, value: string): Promise<boolean> {
 	if (value) {
 		const { isEditorAvailable } = await import("../../../utils/editor.ts");
 		if (!(await isEditorAvailable(value))) {
@@ -139,7 +143,7 @@ async function setEditor(config: BacklogConfig, value: string): Promise<boolean>
 	return true;
 }
 
-function setFilesystemOnly(config: BacklogConfig, value: string): boolean {
+function setFilesystemOnly(config: AgenticWorkspaceConfig, value: string): boolean {
 	const enabled = parseBoolean("filesystemOnly", value);
 	if (enabled === null) return false;
 	config.filesystemOnly = enabled;
@@ -156,17 +160,17 @@ function rejectedKey(key: string): boolean {
 	if (key === "milestones") {
 		console.error("milestones cannot be set directly.");
 		console.error(
-			"Use milestone files via milestone commands (e.g. `backlog milestone list`, `backlog milestone add`).",
+			"Use milestone files via milestone commands (e.g. `agentic-workspace milestone list`, `agentic-workspace milestone add`).",
 		);
 	} else if (["statuses", "labels", "types", "priorities", "projects"].includes(key)) {
-		console.error(`${key} cannot be set directly. View current values with 'agenticworkspace config get ${key}'.`);
+		console.error(`${key} cannot be set directly. View current values with 'agentic-workspace config get ${key}'.`);
 		console.error(
-			"Edit the list in the project config file (`backlog/config.yml`, `.backlog/config.yml`, or `backlog.config.yml`) directly.",
+			"Edit the list in the project config file (`agentic-workspace/config.yml`, `.agentic-workspace/config.yml`, or `agentic-workspace.config.yml`) directly.",
 		);
 	} else if (["taskPrefix", "prefixes"].includes(key)) {
 		console.error("Task prefix cannot be changed after initialization.");
 		console.error(
-			"The prefix is set during 'agenticworkspace init' and is permanent to avoid breaking existing task IDs.",
+			"The prefix is set during 'agentic-workspace init' and is permanent to avoid breaking existing task IDs.",
 		);
 	} else return unknownKey(key);
 	return false;

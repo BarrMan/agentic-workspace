@@ -1,5 +1,5 @@
 import { DEFAULT_STATUSES } from "../../constants/index.ts";
-import type { Core } from "../../core/backlog.ts";
+import type { Core } from "../../core/agentic-workspace.ts";
 import type { Task } from "../../types/index.ts";
 import { formatDependencyCleanupMessage } from "../../utils/dependency-graph.ts";
 import { getTerminalStatus, isTerminalStatus } from "../../utils/terminal-status.ts";

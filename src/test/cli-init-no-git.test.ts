@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { Writable } from "node:stream";
 import { $ } from "bun";
 import { runCli } from "../cli/register.ts";
-import { Core } from "../core/backlog.ts";
+import { Core } from "../core/agentic-workspace.ts";
 import { initializeProject } from "../core/init.ts";
 import { createUniqueTestDir, safeCleanup } from "./test-utils.ts";
 
@@ -159,13 +159,13 @@ describe("CLI init without Git", () => {
 			await $`git add README.md`.cwd(TEST_DIR).quiet();
 			await $`git commit -m initial`.cwd(TEST_DIR).quiet();
 
-			await $`git checkout -b stale-backlog`.cwd(TEST_DIR).quiet();
-			await mkdir(join(TEST_DIR, "backlog", "docs"), { recursive: true });
-			await mkdir(join(TEST_DIR, "backlog", "decisions"), { recursive: true });
-			await Bun.write(join(TEST_DIR, "backlog", "docs", "doc-8 - stale.md"), "# stale\n");
-			await Bun.write(join(TEST_DIR, "backlog", "decisions", "decision-8 - stale.md"), "# stale\n");
-			await $`git add backlog`.cwd(TEST_DIR).quiet();
-			await $`git commit -m "add stale backlog ids"`.cwd(TEST_DIR).quiet();
+			await $`git checkout -b stale-agentic-workspace`.cwd(TEST_DIR).quiet();
+			await mkdir(join(TEST_DIR, "agentic-workspace", "docs"), { recursive: true });
+			await mkdir(join(TEST_DIR, "agentic-workspace", "decisions"), { recursive: true });
+			await Bun.write(join(TEST_DIR, "agentic-workspace", "docs", "doc-8 - stale.md"), "# stale\n");
+			await Bun.write(join(TEST_DIR, "agentic-workspace", "decisions", "decision-8 - stale.md"), "# stale\n");
+			await $`git add agentic-workspace`.cwd(TEST_DIR).quiet();
+			await $`git commit -m "add stale agentic-workspace ids"`.cwd(TEST_DIR).quiet();
 			await $`git checkout main`.cwd(TEST_DIR).quiet();
 
 			const core = await initFilesystemOnlyProject(TEST_DIR, "Nested No Git Project");

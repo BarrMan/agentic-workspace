@@ -94,11 +94,11 @@ export function formatDuplicateTaskIdWarning(groups: DuplicateGroup[]): string {
 			lines.push(`    - ${task.filePath ?? task.title}`);
 		}
 	}
-	lines.push("Run 'backlog doctor' to review the duplicate task IDs.");
+	lines.push("Run 'agentic-workspace doctor' to review the duplicate task IDs.");
 	return lines.join("\n");
 }
 
 export function formatDuplicateTaskIdSummary(groups: DuplicateGroup[]): string {
 	const ids = groups.map((group) => group.id).join(", ");
-	return `Duplicate task IDs detected: ${ids}. Run 'backlog doctor' to review them.`;
+	return `Duplicate task IDs detected: ${ids}. Run 'agentic-workspace doctor' to review them.`;
 }

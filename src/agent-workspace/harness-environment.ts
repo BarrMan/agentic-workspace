@@ -1,12 +1,16 @@
 import { randomUUID } from "node:crypto";
 import type { ProcessRunner } from "./session-process.ts";
 
-const RESERVED_ENVIRONMENT = ["BACKLOG_PROJECT_DIR", "BACKLOG_WORKTREE_DIR", "BACKLOG_TASK_DIR"] as const;
+const RESERVED_ENVIRONMENT = [
+	"AGENTIC_WORKSPACE_PROJECT_DIR",
+	"AGENTIC_WORKSPACE_WORKTREE_DIR",
+	"AGENTIC_WORKSPACE_TASK_DIR",
+] as const;
 const LEGACY_ENVIRONMENT = [
-	"BACKLOG_CWD",
-	"BACKLOG_TASK_ID",
-	"BACKLOG_SESSION_ID",
-	"BACKLOG_PROJECT_ROOT",
+	"AGENTIC_WORKSPACE_CWD",
+	"AGENTIC_WORKSPACE_TASK_ID",
+	"AGENTIC_WORKSPACE_SESSION_ID",
+	"AGENTIC_WORKSPACE_PROJECT_ROOT",
 	"TASK_ID",
 	"SESSION_ID",
 ] as const;
@@ -18,14 +22,14 @@ function delimiterFor(value: string): string {
 	const lines = new Set(value.split("\n"));
 	let delimiter: string;
 	do {
-		delimiter = `BACKLOG_ENV_${randomUUID().replaceAll("-", "")}`;
+		delimiter = `AGENTIC_WORKSPACE_ENV_${randomUUID().replaceAll("-", "")}`;
 	} while (lines.has(delimiter));
 	return delimiter;
 }
 
 function expansionScript(value: string): { script: string; marker: string } {
 	const delimiter = delimiterFor(value);
-	const marker = `BACKLOG_VALUE_${randomUUID().replaceAll("-", "")}`;
+	const marker = `AGENTIC_WORKSPACE_VALUE_${randomUUID().replaceAll("-", "")}`;
 	return { script: `/bin/cat <<${delimiter}\n${value}:${marker}\n${delimiter}\n`, marker };
 }
 
@@ -117,9 +121,9 @@ export async function prepareHarnessEnvironment(
 		if (value !== undefined && !(LEGACY_ENVIRONMENT as readonly string[]).includes(name)) effective[name] = value;
 	}
 	Object.assign(effective, {
-		BACKLOG_PROJECT_DIR: paths.projectDir,
-		BACKLOG_WORKTREE_DIR: paths.worktreeDir,
-		BACKLOG_TASK_DIR: paths.taskDir,
+		AGENTIC_WORKSPACE_PROJECT_DIR: paths.projectDir,
+		AGENTIC_WORKSPACE_WORKTREE_DIR: paths.worktreeDir,
+		AGENTIC_WORKSPACE_TASK_DIR: paths.taskDir,
 	});
 
 	for (const name of RESERVED_ENVIRONMENT) {

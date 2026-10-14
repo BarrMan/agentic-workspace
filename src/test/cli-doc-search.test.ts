@@ -8,14 +8,14 @@ import { createUniqueTestDir, initializeFilesystemTestProject, safeCleanup } fro
 
 let TEST_DIR: string;
 
-const cliCommand = ["agenticworkspace"];
+const cliCommand = ["agentic-workspace"];
 function $(parts: TemplateStringsArray, ...values: unknown[]) {
 	const source = parts.reduce(
 		(text, part, index) =>
 			`${text}${part}${Array.isArray(values[index]) ? values[index].map((value) => JSON.stringify(value)).join(" ") : values[index] === undefined ? "" : JSON.stringify(values[index])}`,
 		"",
 	);
-	if (!source.includes("agenticworkspace")) return shell(parts, ...values);
+	if (!source.includes("agentic-workspace")) return shell(parts, ...values);
 	const args =
 		source
 			.match(/"(?:\\.|[^"\\])*"|'[^']*'|[^\s]+/g)
@@ -117,7 +117,7 @@ describe("CLI doc search command", () => {
 		expect(stdout).toContain(
 			"doc-1 - Architecture Overview (path: guides/doc-1 - Architecture-Overview.md, type: guide, tags: architecture, search)",
 		);
-		expect(stdout).toContain("View: agenticworkspace doc view doc-1");
+		expect(stdout).toContain("View: agentic-workspace doc view doc-1");
 		expect(stdout).toMatch(/\[score [0-1]\.\d{3}]/);
 		expect(stdout).not.toContain("Support Playbook");
 	});
@@ -136,7 +136,7 @@ describe("CLI doc search command", () => {
 		const stdout = result.stdout.toString();
 		const documentLines = stdout.match(/^ {2}doc-/gm) ?? [];
 		expect(documentLines).toHaveLength(1);
-		expect(stdout).toContain("View: agenticworkspace doc view");
+		expect(stdout).toContain("View: agentic-workspace doc view");
 	});
 
 	it("rejects missing or invalid query and limit inputs", async () => {
@@ -183,7 +183,7 @@ describe("CLI doc search command", () => {
 		expect(help).toContain("None; this is a read-only command");
 		expect(help).toContain("Output:");
 		expect(help).toContain("Plain text Documents list");
-		expect(help).toContain('agenticworkspace doc search "architecture"');
-		expect(help).toContain('agenticworkspace doc search "runbook" --limit 5');
+		expect(help).toContain('agentic-workspace doc search "architecture"');
+		expect(help).toContain('agentic-workspace doc search "runbook" --limit 5');
 	});
 });

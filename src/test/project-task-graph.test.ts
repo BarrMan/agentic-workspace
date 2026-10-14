@@ -75,17 +75,17 @@ describe("ProjectTaskGraph", () => {
 		const completed = task("task-2", [], { source: "completed" });
 		const identityIndex = new TaskIdentityIndex(
 			[
-				workingCopyTaskIdentityRecord(local, "task", "backlog/tasks/task-1.md"),
+				workingCopyTaskIdentityRecord(local, "task", "agentic-workspace/tasks/task-1.md"),
 				{
 					id: completed.id,
 					type: "completed",
 					branch: "feature",
-					path: "backlog/completed/task-2.md",
+					path: "agentic-workspace/completed/task-2.md",
 					lastModified: new Date(),
 					task: completed,
 				},
 			],
-			{ repositoryRoot: null, projectRoot: "/project", backlogDirectory: "backlog" },
+			{ repositoryRoot: null, projectRoot: "/project", agenticWorkspaceDirectory: "agentic-workspace" },
 			["To Do", "Done"],
 			"most_progressed",
 		);
@@ -107,10 +107,10 @@ describe("ProjectTaskGraph", () => {
 		const second = task("TASK-1");
 		const identityIndex = new TaskIdentityIndex(
 			[
-				workingCopyTaskIdentityRecord(first, "task", "backlog/tasks/task-1.md"),
-				workingCopyTaskIdentityRecord(second, "task", "backlog/tasks/task-1-copy.md"),
+				workingCopyTaskIdentityRecord(first, "task", "agentic-workspace/tasks/task-1.md"),
+				workingCopyTaskIdentityRecord(second, "task", "agentic-workspace/tasks/task-1-copy.md"),
 			],
-			{ repositoryRoot: null, projectRoot: "/project", backlogDirectory: "backlog" },
+			{ repositoryRoot: null, projectRoot: "/project", agenticWorkspaceDirectory: "agentic-workspace" },
 			["To Do", "Done"],
 			"most_progressed",
 		);
@@ -130,13 +130,15 @@ describe("ProjectTaskGraph", () => {
 		}
 
 		expect(error).toBeInstanceOf(AmbiguousTaskIdError);
-		expect(error).toMatchObject({ candidates: ["backlog/tasks/task-1-copy.md", "backlog/tasks/task-1.md"] });
+		expect(error).toMatchObject({
+			candidates: ["agentic-workspace/tasks/task-1-copy.md", "agentic-workspace/tasks/task-1.md"],
+		});
 		expect((error as Error).message).toBe(
 			[
 				"Task ID TASK-1 is ambiguous; 2 files match:",
-				"  - backlog/tasks/task-1-copy.md",
-				"  - backlog/tasks/task-1.md",
-				"Run 'backlog doctor' to review the duplicate task IDs.",
+				"  - agentic-workspace/tasks/task-1-copy.md",
+				"  - agentic-workspace/tasks/task-1.md",
+				"Run 'agentic-workspace doctor' to review the duplicate task IDs.",
 			].join("\n"),
 		);
 	});

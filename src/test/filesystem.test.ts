@@ -4,7 +4,7 @@ import { mkdir, readdir, rename, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { FileSystem } from "../file-system/operations.ts";
 import { serializeTask } from "../markdown/serializer.ts";
-import type { BacklogConfig, Decision, Document, Task } from "../types/index.ts";
+import type { AgenticWorkspaceConfig, Decision, Document, Task } from "../types/index.ts";
 import { AmbiguousIdError } from "../utils/entity-id.ts";
 import { createUniqueTestDir, safeCleanup } from "./test-utils.ts";
 
@@ -14,25 +14,25 @@ describe("FileSystem", () => {
 	let filesystem: FileSystem;
 
 	beforeEach(async () => {
-		TEST_DIR = createUniqueTestDir("test-backlog");
+		TEST_DIR = createUniqueTestDir("test-agentic-workspace");
 		filesystem = new FileSystem(TEST_DIR);
-		await filesystem.ensureBacklogStructure();
+		await filesystem.ensureAgenticWorkspaceStructure();
 	});
 
 	afterEach(async () => {
 		await safeCleanup(TEST_DIR);
 	});
 
-	describe("ensureBacklogStructure", () => {
+	describe("ensureAgenticWorkspaceStructure", () => {
 		it("should create all required directories", async () => {
 			const expectedDirs = [
-				join(TEST_DIR, "backlog"),
-				join(TEST_DIR, "backlog", "tasks"),
-				join(TEST_DIR, "backlog", "drafts"),
-				join(TEST_DIR, "backlog", "archive", "tasks"),
-				join(TEST_DIR, "backlog", "archive", "drafts"),
-				join(TEST_DIR, "backlog", "docs"),
-				join(TEST_DIR, "backlog", "decisions"),
+				join(TEST_DIR, "agentic-workspace"),
+				join(TEST_DIR, "agentic-workspace", "tasks"),
+				join(TEST_DIR, "agentic-workspace", "drafts"),
+				join(TEST_DIR, "agentic-workspace", "archive", "tasks"),
+				join(TEST_DIR, "agentic-workspace", "archive", "drafts"),
+				join(TEST_DIR, "agentic-workspace", "docs"),
+				join(TEST_DIR, "agentic-workspace", "decisions"),
 			];
 
 			for (const dir of expectedDirs) {
@@ -44,16 +44,16 @@ describe("FileSystem", () => {
 		it("should ignore EEXIST for existing directories", async () => {
 			const projectDir = join(TEST_DIR, "onedrive-project");
 			const expectedDirs = [
-				join(projectDir, "backlog"),
-				join(projectDir, "backlog", "tasks"),
-				join(projectDir, "backlog", "drafts"),
-				join(projectDir, "backlog", "completed"),
-				join(projectDir, "backlog", "archive", "tasks"),
-				join(projectDir, "backlog", "archive", "drafts"),
-				join(projectDir, "backlog", "milestones"),
-				join(projectDir, "backlog", "archive", "milestones"),
-				join(projectDir, "backlog", "docs"),
-				join(projectDir, "backlog", "decisions"),
+				join(projectDir, "agentic-workspace"),
+				join(projectDir, "agentic-workspace", "tasks"),
+				join(projectDir, "agentic-workspace", "drafts"),
+				join(projectDir, "agentic-workspace", "completed"),
+				join(projectDir, "agentic-workspace", "archive", "tasks"),
+				join(projectDir, "agentic-workspace", "archive", "drafts"),
+				join(projectDir, "agentic-workspace", "milestones"),
+				join(projectDir, "agentic-workspace", "archive", "milestones"),
+				join(projectDir, "agentic-workspace", "docs"),
+				join(projectDir, "agentic-workspace", "decisions"),
 			];
 
 			for (const dir of expectedDirs) {
@@ -78,7 +78,7 @@ describe("FileSystem", () => {
 				);
 				const oneDriveFilesystem = new MockedFileSystem(projectDir);
 
-				await oneDriveFilesystem.ensureBacklogStructure();
+				await oneDriveFilesystem.ensureAgenticWorkspaceStructure();
 
 				for (const dir of expectedDirs) {
 					const stats = await stat(dir);
@@ -91,9 +91,9 @@ describe("FileSystem", () => {
 
 		it("should not ignore EEXIST when the path is not a directory", async () => {
 			const projectDir = join(TEST_DIR, "file-conflict-project");
-			const backlogDir = join(projectDir, "backlog");
-			const tasksPath = join(backlogDir, "tasks");
-			await mkdir(backlogDir, { recursive: true });
+			const agenticWorkspaceDir = join(projectDir, "agentic-workspace");
+			const tasksPath = join(agenticWorkspaceDir, "tasks");
+			await mkdir(agenticWorkspaceDir, { recursive: true });
 			await Bun.write(tasksPath, "not a directory");
 
 			const realMkdir = fsPromises.mkdir;
@@ -111,7 +111,7 @@ describe("FileSystem", () => {
 				const { FileSystem: MockedFileSystem } = await import(`../file-system/operations.ts?eexist-file=${Date.now()}`);
 				const conflictFilesystem = new MockedFileSystem(projectDir);
 
-				await expect(conflictFilesystem.ensureBacklogStructure()).rejects.toMatchObject({ code: "EEXIST" });
+				await expect(conflictFilesystem.ensureAgenticWorkspaceStructure()).rejects.toMatchObject({ code: "EEXIST" });
 			} finally {
 				mkdirSpy.mockRestore();
 			}
@@ -397,7 +397,7 @@ title: Broken Task
 			expect(task).toBeNull();
 
 			// Check that file exists in archive
-			const archiveFiles = await readdir(join(TEST_DIR, "backlog", "archive", "tasks"));
+			const archiveFiles = await readdir(join(TEST_DIR, "agentic-workspace", "archive", "tasks"));
 			expect(archiveFiles.some((f) => f.startsWith("task-1"))).toBe(true);
 		});
 
@@ -408,11 +408,11 @@ title: Broken Task
 			expect(demoted).toBe(true);
 
 			// Task should be removed from tasks directory
-			const tasksFiles = await readdir(join(TEST_DIR, "backlog", "tasks"));
+			const tasksFiles = await readdir(join(TEST_DIR, "agentic-workspace", "tasks"));
 			expect(tasksFiles.some((f) => f.startsWith("task-1"))).toBe(false);
 
 			// Draft should exist with new draft- ID
-			const draftsFiles = await readdir(join(TEST_DIR, "backlog", "drafts"));
+			const draftsFiles = await readdir(join(TEST_DIR, "agentic-workspace", "drafts"));
 			expect(draftsFiles.some((f) => f.startsWith("draft-1"))).toBe(true);
 
 			// Verify the demoted draft can be loaded and has correct ID
@@ -527,11 +527,11 @@ title: Broken Task
 			expect(promoted).toBe(true);
 
 			// Draft should be removed from drafts directory
-			const draftsFiles = await readdir(join(TEST_DIR, "backlog", "drafts"));
+			const draftsFiles = await readdir(join(TEST_DIR, "agentic-workspace", "drafts"));
 			expect(draftsFiles.some((f) => f.startsWith("draft-1"))).toBe(false);
 
 			// Task should exist with new task- ID
-			const tasksFiles = await readdir(join(TEST_DIR, "backlog", "tasks"));
+			const tasksFiles = await readdir(join(TEST_DIR, "agentic-workspace", "tasks"));
 			expect(tasksFiles.some((f) => f.startsWith("task-1"))).toBe(true);
 
 			// Verify the promoted task can be loaded and has correct ID
@@ -542,7 +542,7 @@ title: Broken Task
 		});
 
 		it("should promote a draft to the configured default status", async () => {
-			const customConfig: BacklogConfig = {
+			const customConfig: AgenticWorkspaceConfig = {
 				projectName: "Custom Default Status Project",
 				defaultStatus: "Ready",
 				statuses: ["Ready", "In Progress", "Done"],
@@ -585,7 +585,7 @@ title: Broken Task
 
 		it("should promote draft with custom task prefix", async () => {
 			// Configure custom task prefix
-			const customConfig: BacklogConfig = {
+			const customConfig: AgenticWorkspaceConfig = {
 				projectName: "Custom Prefix Project",
 				statuses: ["To Do", "In Progress", "Done"],
 				labels: [],
@@ -602,11 +602,11 @@ title: Broken Task
 			expect(promoted).toBe(true);
 
 			// Draft should be removed
-			const draftsFiles = await readdir(join(TEST_DIR, "backlog", "drafts"));
+			const draftsFiles = await readdir(join(TEST_DIR, "agentic-workspace", "drafts"));
 			expect(draftsFiles.some((f) => f.startsWith("draft-1"))).toBe(false);
 
 			// Task should exist with custom JIRA- prefix
-			const tasksFiles = await readdir(join(TEST_DIR, "backlog", "tasks"));
+			const tasksFiles = await readdir(join(TEST_DIR, "agentic-workspace", "tasks"));
 			expect(tasksFiles.some((f) => f.startsWith("jira-1"))).toBe(true);
 
 			// Verify the promoted task can be loaded with the custom prefix
@@ -618,7 +618,7 @@ title: Broken Task
 		it("should not reuse completed task IDs when promoting draft", async () => {
 			// Create a completed task directly in the completed directory
 			// This simulates a task that was created and completed before the draft
-			const completedDir = join(TEST_DIR, "backlog", "completed");
+			const completedDir = join(TEST_DIR, "agentic-workspace", "completed");
 			await mkdir(completedDir, { recursive: true });
 
 			const completedTask: Task = {
@@ -658,19 +658,19 @@ title: Broken Task
 			await filesystem.saveDraft(sampleDraft);
 
 			const archived = await filesystem.archiveDraft("draft-1");
-			expect(archived?.sourcePath).toContain(join("backlog", "drafts", "draft-1", "task.md"));
-			expect(archived?.targetPath).toContain(join("backlog", "archive", "drafts", "draft-1", "task.md"));
+			expect(archived?.sourcePath).toContain(join("agentic-workspace", "drafts", "draft-1", "task.md"));
+			expect(archived?.targetPath).toContain(join("agentic-workspace", "archive", "drafts", "draft-1", "task.md"));
 
 			const draft = await filesystem.loadDraft("draft-1");
 			expect(draft).toBeNull();
 
-			const files = await readdir(join(TEST_DIR, "backlog", "archive", "drafts"));
+			const files = await readdir(join(TEST_DIR, "agentic-workspace", "archive", "drafts"));
 			expect(files).toContain("draft-1");
 		});
 	});
 
 	describe("config operations", () => {
-		const sampleConfig: BacklogConfig = {
+		const sampleConfig: AgenticWorkspaceConfig = {
 			projectName: "Test Project",
 			defaultAssignee: ["@admin"],
 			defaultStatus: "To Do",
@@ -690,14 +690,14 @@ title: Broken Task
 		it("should return null for missing config", async () => {
 			// Create a fresh filesystem without any config
 			const freshFilesystem = new FileSystem(join(TEST_DIR, "fresh"));
-			await freshFilesystem.ensureBacklogStructure();
+			await freshFilesystem.ensureAgenticWorkspaceStructure();
 
 			const config = await freshFilesystem.loadConfig();
 			expect(config).toBeNull();
 		});
 
 		it("should handle defaultReporter field", async () => {
-			const cfg: BacklogConfig = {
+			const cfg: AgenticWorkspaceConfig = {
 				projectName: "Reporter",
 				defaultReporter: "@author",
 				statuses: ["To Do"],
@@ -1006,7 +1006,7 @@ title: Broken Task
 		});
 
 		it("should handle config with minimal fields", async () => {
-			const minimalConfig: BacklogConfig = {
+			const minimalConfig: AgenticWorkspaceConfig = {
 				projectName: "Minimal Project",
 				statuses: ["To Do", "Done"],
 				labels: [],
@@ -1271,9 +1271,9 @@ title: Broken Task
 			await filesystem.saveDecision(decision);
 
 			expect(mutations).toEqual([
-				`task:${filesystem.backlogDir}`,
-				`document:${filesystem.backlogDir}`,
-				`decision:${filesystem.backlogDir}`,
+				`task:${filesystem.agenticWorkspaceDir}`,
+				`document:${filesystem.agenticWorkspaceDir}`,
+				`decision:${filesystem.agenticWorkspaceDir}`,
 			]);
 			unsubscribe();
 			await filesystem.saveTask({ ...task, title: "Unobserved task" });

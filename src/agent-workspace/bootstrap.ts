@@ -21,7 +21,7 @@ export function appendArguments(command: string, arguments_: string): string {
 
 /**
  * The provider's verified auto-approval flag, or `undefined` when the provider has no documented
- * flag. Returning `undefined` is deliberate: Backlog never invents a flag for a provider whose
+ * flag. Returning `undefined` is deliberate: AgenticWorkspace never invents a flag for a provider whose
  * auto-approval option is not confirmed.
  */
 export function yoloFlagFor(bootstrap: AgentBootstrap): string | undefined {

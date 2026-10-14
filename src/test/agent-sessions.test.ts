@@ -11,11 +11,11 @@ import { upsertAgentConfiguration } from "../agent-workspace/config.ts";
 import * as processTree from "../agent-workspace/process-tree.ts";
 import { prepareAgentLaunch } from "../agent-workspace/session-launch.ts";
 import { SessionStore } from "../agent-workspace/session-store.ts";
-import { isBacklogSessionName, nativeSessionName } from "../agent-workspace/session-utils.ts";
+import { isAgenticWorkspaceSessionName, nativeSessionName } from "../agent-workspace/session-utils.ts";
 import type { ProcessRunner, TmuxServer } from "../agent-workspace/sessions.ts";
 import type { AgentPreset, AgentSession } from "../agent-workspace/types.ts";
 import { type WorkspaceContext, workspaceRequestDir } from "../agent-workspace/workspace-context.ts";
-import { Core } from "../core/backlog.ts";
+import { Core } from "../core/agentic-workspace.ts";
 import { ensureTaskWorktree, taskWorktreeExists, taskWorktreePath } from "../git/task-worktree.ts";
 import { registerPromptAgent } from "./agent-test-helpers.ts";
 import { createConcurrencyLimiter, initGitRepo, initializeTestProject } from "./test-utils.ts";
@@ -293,8 +293,8 @@ class FakeTmux implements ProcessRunner, TmuxServer {
 					target,
 					stderr: [`can't find pane: ${target}`],
 				});
-			if (args.some((arg) => arg.includes("@backlog_launch_resources")))
-				return [this.paneMetadata.get(target)?.["@backlog_launch_resources"] ?? ""];
+			if (args.some((arg) => arg.includes("@agentic_workspace_launch_resources")))
+				return [this.paneMetadata.get(target)?.["@agentic_workspace_launch_resources"] ?? ""];
 			if (args.includes("#{pane_pid} #{pane_dead}"))
 				return [`${this.panePids.get(target) ?? this.serverPid} ${this.missingPanes.has(target) ? "1" : "0"}`];
 			return [`${target} ${this.missingPanes.has(target) ? "1" : "0"}`];
@@ -317,7 +317,7 @@ const projectDirs: string[] = [];
 beforeAll(async () => {
 	// A developer running the suite from inside a workspace agent pane inherits this variable; the
 	// unowned branch must stay the default here.
-	delete process.env.BACKLOG_WORKSPACE_CONTEXT;
+	delete process.env.AGENTIC_WORKSPACE_WORKSPACE_CONTEXT;
 	// A user-scope agents.json must not leak into the template project's parent lookup; pin it to an
 	// empty directory (mirrors `config.test.ts`).
 	originalXdgConfigHome = process.env.XDG_CONFIG_HOME;
@@ -361,7 +361,7 @@ function askSession(
 	return {
 		taskId: "TASK-1",
 		preset: "test",
-		tmuxName: `backlog-task-1-${overrides.id.slice(0, 8)}`,
+		tmuxName: `agentic-workspace-task-1-${overrides.id.slice(0, 8)}`,
 		cwd: root,
 		createdAt: new Date().toISOString(),
 		outputPath: join(root, `${overrides.id}.log`),
@@ -375,7 +375,7 @@ async function seedAskSessions(root: string, sessions: AgentSession[], activeSes
 	const store = new SessionStore(root, new BunRunner());
 	await store.mutate("TASK-1", async (state) => {
 		state.sessions.splice(0, state.sessions.length, ...sessions);
-		if (activeSessionId) state.activeSessionId = activeSessionId;
+		state.activeSessionId = activeSessionId ?? sessions.at(-1)?.id;
 	});
 }
 
@@ -386,8 +386,8 @@ function nativeCleanupSession(
 	return askSession(root, {
 		nativeWorkspace: true,
 		nativeSessionId: `native-${overrides.id}`,
-		outputPath: join(root, ".backlog", "task-1", `${overrides.id}.log`),
-		bootstrapPath: join(root, ".backlog", "task-1", `${overrides.id}.md`),
+		outputPath: join(root, ".agentic-workspace", "task-1", `${overrides.id}.log`),
+		bootstrapPath: join(root, ".agentic-workspace", "task-1", `${overrides.id}.md`),
 		...overrides,
 	});
 }
@@ -404,13 +404,13 @@ function addNativeHost(runner: FakeTmux, root: string, session: AgentSession, ow
 	runner.paneHandles.set(pane, new FakePane(runner, pane));
 	runner.panePids.set(pane, ownerPid);
 	runner.paneMetadata.set(pane, {
-		"@backlog_root": root,
-		"@backlog_task": session.taskId,
-		"@backlog_session": session.id,
-		"@backlog_role": "live-preview",
-		"@backlog_owner_pid": String(ownerPid),
-		"@backlog_native_session_id": session.nativeSessionId ?? "",
-		"@backlog_native_provider": session.nativeProvider ?? "",
+		"@agentic_workspace_root": root,
+		"@agentic_workspace_task": session.taskId,
+		"@agentic_workspace_session": session.id,
+		"@agentic_workspace_role": "live-preview",
+		"@agentic_workspace_owner_pid": String(ownerPid),
+		"@agentic_workspace_native_session_id": session.nativeSessionId ?? "",
+		"@agentic_workspace_native_provider": session.nativeProvider ?? "",
 	});
 	return pane;
 }
@@ -435,9 +435,9 @@ async function releaseFakeExecutionPane(
 	}
 	for (const [pane, metadata] of runner.paneMetadata) {
 		if (
-			metadata["@backlog_session"] !== session.id ||
+			metadata["@agentic_workspace_session"] !== session.id ||
 			!(["live-preview", "retired-session"] as const).includes(
-				metadata["@backlog_role"] as "live-preview" | "retired-session",
+				metadata["@agentic_workspace_role"] as "live-preview" | "retired-session",
 			)
 		)
 			continue;
@@ -525,7 +525,7 @@ describe.concurrent("AgentSessionService", () => {
 		const host = addNativeHost(runner, root, native, 7_777);
 		const hostTags = runner.paneMetadata.get(host);
 		if (!hostTags) throw new Error("Expected fake live-host tags");
-		hostTags["@backlog_root"] = "/foreign/root";
+		hostTags["@agentic_workspace_root"] = "/foreign/root";
 		await seedAskSessions(root, [cli, native]);
 
 		await expect(service.stopAllTaskSessions("TASK-1")).rejects.toThrow("ownership does not match");
@@ -534,7 +534,9 @@ describe.concurrent("AgentSessionService", () => {
 
 		const starting = nativeCleanupSession(root, { id: "starting", status: "starting", ownerPid: undefined });
 		await seedAskSessions(root, [cli, starting]);
-		await expect(service.stopAllTaskSessions("TASK-1")).rejects.toThrow("can't find session: backlog-task-1-starting");
+		await expect(service.stopAllTaskSessions("TASK-1")).rejects.toThrow(
+			"can't find session: agentic-workspace-task-1-starting",
+		);
 		expect(runner.actions.some((action) => action.type === "kill")).toBe(false);
 		expect((await service.list("TASK-1")).sessions.map((session) => session.status)).toEqual(["stopped", "stopped"]);
 	});
@@ -580,7 +582,7 @@ describe.concurrent("AgentSessionService", () => {
 		const host = addNativeHost(runner, root, parked, 8_888);
 		const hostTags = runner.paneMetadata.get(host);
 		if (!hostTags) throw new Error("Expected fake owned host tags");
-		hostTags["@backlog_root"] = "/foreign/root";
+		hostTags["@agentic_workspace_root"] = "/foreign/root";
 		await seedAskSessions(root, [parked]);
 		await expect(service.stopAllTaskSessions("TASK-1")).rejects.toThrow();
 		expect((await service.list("TASK-1")).sessions[0]?.status).toBe("parked");
@@ -695,9 +697,11 @@ describe.concurrent("AgentSessionService", () => {
 		const parked = nativeCleanupSession(root, { id: "b-parked", status: "parked", ownerPid: undefined });
 		await store.mutateMode("TASK-1", "alpha", async (history) => {
 			history.sessions.push(cli);
+			history.activeSessionId = cli.id;
 		});
 		await store.mutateMode("TASK-1", "zeta", async (history) => {
 			history.sessions.push(parked);
+			history.activeSessionId = parked.id;
 		});
 		const blocker = await store.claimSession("TASK-1", parked.id);
 		try {
@@ -720,9 +724,11 @@ describe.concurrent("AgentSessionService", () => {
 		const parked = nativeCleanupSession(root, { id: "b-parked", status: "parked", ownerPid: undefined });
 		await store.mutateMode("TASK-1", "alpha", async (history) => {
 			history.sessions.push(cli);
+			history.activeSessionId = cli.id;
 		});
 		await store.mutateMode("TASK-1", "zeta", async (history) => {
 			history.sessions.push(parked);
+			history.activeSessionId = parked.id;
 		});
 		const claim = store.claimSession.bind(store);
 		store.claimSession = async (taskId, sessionId) => {
@@ -780,12 +786,14 @@ describe.concurrent("AgentSessionService", () => {
 		const foreignPane = addNativeHost(runner, root, foreign, 12_345);
 		const foreignTags = runner.paneMetadata.get(foreignPane);
 		if (!foreignTags) throw new Error("Expected fake foreign-host tags");
-		foreignTags["@backlog_root"] = "/foreign/root";
+		foreignTags["@agentic_workspace_root"] = "/foreign/root";
 		await store.mutateMode("TASK-1", "alpha", async (history) => {
 			history.sessions.push(owned);
+			history.activeSessionId = owned.id;
 		});
 		await store.mutateMode("TASK-1", "zeta", async (history) => {
 			history.sessions.push(foreign);
+			history.activeSessionId = foreign.id;
 		});
 		const stops: string[] = [];
 
@@ -816,9 +824,9 @@ describe.concurrent("AgentSessionService", () => {
 		expect(session.nativeSessionId).toBe(session.id);
 		const created = runner.actions.find((action) => action.type === "newSession");
 		expect(created).toMatchObject({ type: "newSession", options: { name: session.tmuxName } });
-		expect(runner.paneMetadata.get("%1")?.["@backlog_task"]).toBe("TASK-1");
-		expect(runner.paneMetadata.get("%1")?.["@backlog_session"]).toBe(session.id);
-		expect(runner.paneMetadata.get("%1")?.["@backlog_role"]).toBe("live-preview");
+		expect(runner.paneMetadata.get("%1")?.["@agentic_workspace_task"]).toBe("TASK-1");
+		expect(runner.paneMetadata.get("%1")?.["@agentic_workspace_session"]).toBe(session.id);
+		expect(runner.paneMetadata.get("%1")?.["@agentic_workspace_role"]).toBe("live-preview");
 		expect(runner.actions).toContainEqual({ type: "setTitle", pane: "%1", title: "TASK-1 live-preview" });
 		expect(runner.actions).toContainEqual({ type: "respawn", pane: "%1", command: expect.anything() });
 	});
@@ -875,13 +883,13 @@ describe.concurrent("AgentSessionService", () => {
 
 	it("preserves configured PATH without injecting task-manager environment", async () => {
 		const { core, runner } = await project();
-		const prepareCommand = `printf '%s' "$BACKLOG_PROJECT_DIR|$BACKLOG_WORKTREE_DIR|$BACKLOG_TASK_DIR"`;
+		const prepareCommand = `printf '%s' "$AGENTIC_WORKSPACE_PROJECT_DIR|$AGENTIC_WORKSPACE_WORKTREE_DIR|$AGENTIC_WORKSPACE_TASK_DIR"`;
 		await upsertAgentConfiguration(core, "project", {
 			selectedPreset: "test",
 			presets: {
 				test: {
 					command: "agent {prompt} {skill}",
-					env: { TASK_CONTEXT: "$BACKLOG_TASK_DIR", PATH: "/custom/bin" },
+					env: { TASK_CONTEXT: "$AGENTIC_WORKSPACE_TASK_DIR", PATH: "/custom/bin" },
 					prepare: prepareCommand,
 					bootstrap: "pi",
 				},
@@ -893,24 +901,24 @@ describe.concurrent("AgentSessionService", () => {
 		expect(session.pathContext).toEqual({ projectDir: core.filesystem.rootDir, worktreeDir: session.cwd, taskDir });
 		const created = runner.actions.find((action) => action.type === "newSession");
 		expect(created?.options.environment?.PATH).toBe("/custom/bin");
-		expect(created?.options.environment?.BACKLOG_PROJECT_DIR).toBe(core.filesystem.rootDir);
-		expect(created?.options.environment?.BACKLOG_WORKTREE_DIR).toBe(session.cwd);
-		expect(created?.options.environment?.BACKLOG_TASK_DIR).toBe(taskDir);
+		expect(created?.options.environment?.AGENTIC_WORKSPACE_PROJECT_DIR).toBe(core.filesystem.rootDir);
+		expect(created?.options.environment?.AGENTIC_WORKSPACE_WORKTREE_DIR).toBe(session.cwd);
+		expect(created?.options.environment?.AGENTIC_WORKSPACE_TASK_DIR).toBe(taskDir);
 		expect(created?.options.environment?.TASK_CONTEXT).toBe(taskDir);
 		const preparation = runner.processCommands.findIndex((args) => args[0] === "/bin/sh" && args[2] === prepareCommand);
 		expect(preparation).toBeGreaterThanOrEqual(0);
 		expect(runner.processOptions[preparation]?.env).toMatchObject({
-			BACKLOG_PROJECT_DIR: core.filesystem.rootDir,
-			BACKLOG_WORKTREE_DIR: session.cwd,
-			BACKLOG_TASK_DIR: taskDir,
+			AGENTIC_WORKSPACE_PROJECT_DIR: core.filesystem.rootDir,
+			AGENTIC_WORKSPACE_WORKTREE_DIR: session.cwd,
+			AGENTIC_WORKSPACE_TASK_DIR: taskDir,
 			TASK_CONTEXT: taskDir,
 		});
-		expect(created?.options.environment?.BACKLOG_CWD).toBeUndefined();
-		expect(created?.options.environment?.BACKLOG_TASK_ID).toBeUndefined();
-		expect(created?.options.environment?.BACKLOG_SESSION_ID).toBeUndefined();
+		expect(created?.options.environment?.AGENTIC_WORKSPACE_CWD).toBeUndefined();
+		expect(created?.options.environment?.AGENTIC_WORKSPACE_TASK_ID).toBeUndefined();
+		expect(created?.options.environment?.AGENTIC_WORKSPACE_SESSION_ID).toBeUndefined();
 	});
 
-	it("parks the previous session and activates a new one when replacing", async () => {
+	it("preserves an unflagged predecessor and activates a new session when replacing", async () => {
 		const { core, runner } = await project();
 		const service = new AgentSessionService(core, { runner, tmuxServer: runner });
 		const first = await service.start("task-1");
@@ -929,7 +937,7 @@ describe.concurrent("AgentSessionService", () => {
 			);
 		}
 		const state = await service.list("task-1");
-		expect(state.sessions.find((session) => session.id === first.id)?.status).toBe("parked");
+		expect(state.sessions.find((session) => session.id === first.id)?.status).toBe("running");
 		expect(state.activeSessionId).toBe(replacement.id);
 		expect(replacement.id).not.toBe(first.id);
 		expect(state.sessions.map((session) => session.id)).toEqual([first.id, replacement.id]);
@@ -1032,19 +1040,19 @@ describe.concurrent("AgentSessionService", () => {
 			paneId: first.paneId,
 			record: { id: first.record.id, ownerPid: process.pid },
 		});
-		expect(runner.paneMetadata.get(first.paneId)?.["@backlog_role"]).toBe("live-preview");
+		expect(runner.paneMetadata.get(first.paneId)?.["@agentic_workspace_role"]).toBe("live-preview");
 		expect(runner.actions).toContainEqual({
 			type: "cmd",
 			command: "set-option",
-			args: ["-p", "-t", first.paneId, "@backlog_native_provider", "claude"],
+			args: ["-p", "-t", first.paneId, "@agentic_workspace_native_provider", "claude"],
 		});
 		const sharedMetadata = runner.paneMetadata.get(first.paneId) ?? {};
 		for (const [name, value] of Object.entries({
-			"@backlog_root": root,
-			"@backlog_task": first.record.taskId,
-			"@backlog_session": first.record.id,
-			"@backlog_native_session_id": first.record.nativeSessionId as string,
-			"@backlog_native_provider": "claude",
+			"@agentic_workspace_root": root,
+			"@agentic_workspace_task": first.record.taskId,
+			"@agentic_workspace_session": first.record.id,
+			"@agentic_workspace_native_session_id": first.record.nativeSessionId as string,
+			"@agentic_workspace_native_provider": "claude",
 		})) {
 			const launchesBeforeMismatch = runner.actions.filter(isRespawnAction).length;
 			sharedMetadata[name] = "foreign";
@@ -1141,7 +1149,7 @@ describe.concurrent("AgentSessionService", () => {
 		const second = await service.prepareNativeSession("task-1");
 		const afterPrepare = await service.list("task-1");
 		expect(afterPrepare.sessions.find((session) => session.id === first.record.id)?.status).toBe("parked");
-		expect(afterPrepare.activeSessionId).toBe(first.record.id);
+		expect(afterPrepare.activeSessionId).toBe(second.record.id);
 		await releaseFakeExecutionPane(service, runner, second.record);
 		await service.finishNativeSession("TASK-1", second.record.id, sessionOrigin(second));
 		const before = await service.list("task-1");
@@ -1159,7 +1167,7 @@ describe.concurrent("AgentSessionService", () => {
 		const { root, core, runner } = await project();
 		const service = new AgentSessionService(core, { runner, tmuxServer: runner });
 		const attachment = await service.prepareNativeSession("task-1", undefined, "build");
-		const raw = runner.paneMetadata.get(attachment.paneId)?.["@backlog_launch_resources"];
+		const raw = runner.paneMetadata.get(attachment.paneId)?.["@agentic_workspace_launch_resources"];
 		if (!raw) throw new Error("Fixture pane has no launch-resource inventory");
 		const origin = {
 			record: attachment.record,
@@ -1177,7 +1185,7 @@ describe.concurrent("AgentSessionService", () => {
 			delete session.nativeSessionId;
 		});
 		const metadata = f.runner.paneMetadata.get(f.origin.paneId) ?? {};
-		delete metadata["@backlog_native_session_id"];
+		delete metadata["@agentic_workspace_native_session_id"];
 		f.runner.paneMetadata.set(f.origin.paneId, metadata);
 		return sessionId;
 	}
@@ -1199,7 +1207,7 @@ describe.concurrent("AgentSessionService", () => {
 		await deferIdentity(f);
 		await f.service.publishNativeIdentity(f.origin, { id: "ses_late", basis: "provider-confirmed" });
 		expect((await f.service.list("task-1", "build")).sessions[0]?.nativeSessionId).toBe("ses_late");
-		expect(f.runner.paneMetadata.get(f.origin.paneId)?.["@backlog_native_session_id"]).toBe("ses_late");
+		expect(f.runner.paneMetadata.get(f.origin.paneId)?.["@agentic_workspace_native_session_id"]).toBe("ses_late");
 	});
 
 	it("never resurrects a deleted record when a deferred identity arrives", async () => {
@@ -1215,7 +1223,7 @@ describe.concurrent("AgentSessionService", () => {
 		const baseline = f.runner.paneMetadata.get(f.origin.paneId) ?? {};
 		f.runner.paneMetadata.set(f.origin.paneId, {
 			...baseline,
-			"@backlog_launch_resources": JSON.stringify({
+			"@agentic_workspace_launch_resources": JSON.stringify({
 				...f.origin.resources,
 				skill: { ...f.origin.resources.skill, marker: "f".repeat(64) },
 			}),
@@ -1245,7 +1253,7 @@ describe.concurrent("AgentSessionService", () => {
 		const replacement = await service.prepareNativeSession("task-1");
 		const afterPrepare = await service.list("task-1");
 		expect(afterPrepare.sessions.find((session) => session.id === first.record.id)?.status).toBe("parked");
-		expect(afterPrepare.activeSessionId).toBe(first.record.id);
+		expect(afterPrepare.activeSessionId).toBe(replacement.record.id);
 		await service.activateNativeSession("TASK-1", replacement.record.id, sessionOrigin(replacement));
 		expect((await service.list("task-1")).activeSessionId).toBe(replacement.record.id);
 	});
@@ -1315,7 +1323,7 @@ describe.concurrent("AgentSessionService", () => {
 		expect(runner.processCommands.some((command) => command[0] === "git" && command[1] === "worktree")).toBeFalse();
 	});
 
-	it("replacing via start({ replace: true }) parks the previous session and preserves task context and output", async () => {
+	it("replacing via start({ replace: true }) preserves unflagged runtime, task context and output", async () => {
 		const { core, runner } = await project();
 		const service = new AgentSessionService(core, { runner, tmuxServer: runner });
 		const first = await service.start("task-1");
@@ -1336,7 +1344,7 @@ describe.concurrent("AgentSessionService", () => {
 			);
 		}
 		const state = await service.list("task-1");
-		expect(state.sessions.find((session) => session.id === first.id)?.status).toBe("parked");
+		expect(state.sessions.find((session) => session.id === first.id)?.status).toBe("running");
 		expect(state.activeSessionId).toBe(replacement.id);
 		expect(await service.output("task-1", first.id)).toBe("Previous session output");
 		expect((await core.loadTaskById("task-1"))?.description).toBe("Verified step one. Next: step two.");
@@ -1379,7 +1387,7 @@ describe.concurrent("AgentSessionService", () => {
 		expect(runner.actions.filter(isRespawnAction)).toHaveLength(1);
 	});
 
-	it("a failed replacement leaves the previous session parked and records the new one failed", async () => {
+	it("a failed replacement leaves the previous session running and records the new one failed", async () => {
 		const { core, runner } = await project();
 		await upsertAgentConfiguration(core, "project", {
 			selectedPreset: "test",
@@ -1392,7 +1400,7 @@ describe.concurrent("AgentSessionService", () => {
 		runner.failPrepare = true;
 		await expect(service.start("task-1", { replace: true })).rejects.toThrow("Agent preparation failed");
 		const failed = await service.list("task-1");
-		expect(failed.sessions.find((session) => session.id === first.id)?.status).toBe("parked");
+		expect(failed.sessions.find((session) => session.id === first.id)?.status).toBe("running");
 		const replacement = failed.sessions.find((session) => session.id !== first.id);
 		expect(replacement?.status).toBe("failed");
 		expect(failed.activeSessionId).toBe(first.id);
@@ -1454,7 +1462,7 @@ describe.concurrent("AgentSessionService", () => {
 		const session = await service.start("task-1");
 		expect(session.nativeWorkspace).toBe(true);
 		expect(session.nativeWorkspace).toBe(true);
-		expect(isBacklogSessionName(session.tmuxName)).toBeTrue();
+		expect(isAgenticWorkspaceSessionName(session.tmuxName)).toBeTrue();
 		expect(session.tmuxName).toBe(nativeSessionName("TASK-1", session.id));
 		expect(session.status).toBe("starting");
 		expect(session.nativeSessionId).toBeUndefined();
@@ -1479,7 +1487,7 @@ describe.concurrent("AgentSessionService", () => {
 		expect(runner.actions.filter((action) => action.type === "kill")).toHaveLength(1);
 		const state = await service.list("task-1");
 		expect(state.sessions[0]?.status).toBe("stopped");
-		expect(state.activeSessionId).toBeUndefined();
+		expect(state.activeSessionId).toBe(session.id);
 	});
 
 	it("cancels a pending request instead of erroring when it is stopped", async () => {
@@ -1815,7 +1823,7 @@ describe.concurrent("AgentSessionService", () => {
 			workspaceContext: async () => undefined,
 		});
 		// A file where the marker directory belongs makes the marker write fail.
-		await mkdir(join(root, ".backlog"), { recursive: true });
+		await mkdir(join(root, ".agentic-workspace"), { recursive: true });
 		await Bun.write(workspaceRequestDir(root), "not a directory");
 
 		await expect(
@@ -1966,7 +1974,7 @@ describe.concurrent("AgentSessionService", () => {
 		expect(timedOut).toBe(false);
 		const command = shellRun(runner);
 		expect(command?.slice(0, 2)).toEqual(["/bin/sh", "-lc"]);
-		expect(command?.[2]).toContain("unset BACKLOG_CWD BACKLOG_TASK_ID");
+		expect(command?.[2]).toContain("unset AGENTIC_WORKSPACE_CWD AGENTIC_WORKSPACE_TASK_ID");
 		expect(command?.[2]).toContain("exec agent -p --resume");
 		expect(command?.[2]).toContain("native-prev");
 		expect(command?.[2]).toContain("what changed?");
@@ -1998,7 +2006,7 @@ describe.concurrent("AgentSessionService", () => {
 		expect(answer).toBe("named answer");
 		expect(timedOut).toBe(false);
 		expect(shellRun(runner)?.slice(0, 2)).toEqual(["/bin/sh", "-lc"]);
-		expect(shellRun(runner)?.[2]).toContain("unset BACKLOG_CWD BACKLOG_TASK_ID");
+		expect(shellRun(runner)?.[2]).toContain("unset AGENTIC_WORKSPACE_CWD AGENTIC_WORKSPACE_TASK_ID");
 		expect(shellRun(runner)?.[2]).toContain("exec agent -p --resume");
 		expect(shellRun(runner)?.[2]).toContain("native-older");
 		expect(shellRun(runner)?.[2]).toContain("hi");
@@ -2014,6 +2022,7 @@ describe.concurrent("AgentSessionService", () => {
 				nativeSessionId: "native-prev",
 				lastUsedAt: "2024-02-01T00:00:00.000Z",
 			}),
+			askSession(root, { id: "active", status: "stopped", lastUsedAt: "2024-03-01T00:00:00.000Z" }),
 		]);
 		runner.shellResponse = { exitCode: 124, stdout: "partial answer\n", stderr: "", timedOut: true };
 
@@ -2032,6 +2041,7 @@ describe.concurrent("AgentSessionService", () => {
 				nativeSessionId: "native-prev",
 				lastUsedAt: "2024-02-01T00:00:00.000Z",
 			}),
+			askSession(root, { id: "active", status: "stopped", lastUsedAt: "2024-03-01T00:00:00.000Z" }),
 		]);
 		runner.shellResponse = { exitCode: 124, stdout: "", stderr: "", timedOut: true };
 
@@ -2080,12 +2090,15 @@ describe.concurrent("AgentSessionService", () => {
 	it("throws when the target session has no native session id", async () => {
 		const { root, core, runner } = await project();
 		const service = new AgentSessionService(core, { runner, tmuxServer: runner });
-		await seedAskSessions(root, [askSession(root, { id: "previous", status: "stopped" })]);
+		await seedAskSessions(root, [
+			askSession(root, { id: "previous", status: "stopped" }),
+			askSession(root, { id: "active", status: "stopped", lastUsedAt: "2026-01-01T00:00:00.000Z" }),
+		]);
 
 		await expect(service.ask("task-1", "q")).rejects.toThrow("no native session id");
 	});
 
-	itRealTmuxLimited("replaces a real tmux agent and retains its stopped session output", async () => {
+	itRealTmuxLimited("replaces selection without stopping an unflagged real tmux predecessor", async () => {
 		const { root, core } = await project();
 		const agent = join(root, "fake-agent.sh");
 		await Bun.write(agent, ["#!/bin/sh", "printf 'Saved session output\\n'", "exec sleep 300"].join("\n"));
@@ -2102,7 +2115,7 @@ describe.concurrent("AgentSessionService", () => {
 		try {
 			const replacement = await service.start("task-1", { replace: true });
 			const state = await service.list("task-1");
-			expect(state.sessions.find((session) => session.id === first.id)?.status).toBe("stopped");
+			expect(state.sessions.find((session) => session.id === first.id)?.status).toBe("running");
 			expect(state.activeSessionId).not.toBe(first.id);
 			expect(state.activeSessionId).toBe(replacement.id);
 			expect(await service.output("task-1", first.id)).toContain("Saved session output");
@@ -2132,7 +2145,7 @@ describe("AgentSessionService shared process state", () => {
 			expect(runner.actions.at(-1)).toEqual({ type: "cmd", command: "switch-client", args: ["-t", "%1"] });
 			// The backend is always the default server, so a client attached to another server cannot
 			// be switched onto it; it nests instead.
-			process.env.TMUX = `/private/tmp/tmux-1/backlog-outer,${runner.serverPid + 1},0`;
+			process.env.TMUX = `/private/tmp/tmux-1/agentic-workspace-outer,${runner.serverPid + 1},0`;
 			await service.attach("task-1", session.id);
 			expect(runner.actions.at(-1)).toEqual({ type: "cmd", command: "attach-session", args: ["-t", "%1"] });
 		} finally {
@@ -2157,16 +2170,16 @@ describe("AgentSessionService shared process state", () => {
 });
 
 /**
- * Worktree-per-task launches mutate `BACKLOG_WORKTREE_HOME`, so they run apart from the
+ * Worktree-per-task launches mutate `AGENTIC_WORKSPACE_WORKTREE_HOME`, so they run apart from the
  * concurrent group rather than racing its default-settings cases.
  */
 describe("AgentSessionService worktree sessions", () => {
 	it("runs a session in the task worktree when worktree-per-task is on and the worktree exists", async () => {
 		const root = await realpath(await mkdtemp(join(tmpdir(), "agent-sessions-worktree-")));
 		projectDirs.push(root);
-		const previousHome = process.env.BACKLOG_WORKTREE_HOME;
+		const previousHome = process.env.AGENTIC_WORKSPACE_WORKTREE_HOME;
 		const worktreeHome = await realpath(await mkdtemp(join(tmpdir(), "agent-sessions-worktree-home-")));
-		process.env.BACKLOG_WORKTREE_HOME = worktreeHome;
+		process.env.AGENTIC_WORKSPACE_WORKTREE_HOME = worktreeHome;
 		try {
 			initGitRepo(root, "main");
 			const core = new Core(root);
@@ -2190,8 +2203,8 @@ describe("AgentSessionService worktree sessions", () => {
 
 			expect(session.cwd).toBe(worktreePath);
 		} finally {
-			if (previousHome === undefined) delete process.env.BACKLOG_WORKTREE_HOME;
-			else process.env.BACKLOG_WORKTREE_HOME = previousHome;
+			if (previousHome === undefined) delete process.env.AGENTIC_WORKSPACE_WORKTREE_HOME;
+			else process.env.AGENTIC_WORKSPACE_WORKTREE_HOME = previousHome;
 			await rm(worktreeHome, { recursive: true, force: true });
 		}
 	});

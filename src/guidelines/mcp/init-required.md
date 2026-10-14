@@ -1,24 +1,22 @@
-# Backlog.md Not Initialized
+# AgenticWorkspace Not Initialized
 
-This directory does not have Backlog.md initialized.
+This directory does not have AgenticWorkspace initialized.
 
 **To set up task management for this project, run:**
 
 ```bash
-agenticworkspace init
+agentic-workspace init
 ```
 
-This will create the necessary `backlog/` directory structure and configuration file.
+This will create the necessary `agentic-workspace/` directory structure and configuration file.
 
-## What is Backlog.md?
+## What is AgenticWorkspace?
 
-Backlog.md is a task management system that uses markdown files to track features, bugs, and structured work. It integrates with AI coding agents to help you manage your project tasks effectively.
+AgenticWorkspace is a task management system that uses markdown files to track features, bugs, and structured work. It integrates with AI coding agents to help you manage your project tasks effectively.
 
 ## Next Steps
 
-1. Run `agenticworkspace init` in your project directory
+1. Run `agentic-workspace init` in your project directory
 2. Follow the interactive setup prompts
 3. Choose your preferred AI agent integration (Claude Code, Codex, Gemini CLI, or Kiro)
 4. Start creating and managing tasks!
-
-For more information, visit: https://backlog.md

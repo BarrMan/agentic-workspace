@@ -44,14 +44,11 @@ describe("native session picker", () => {
 			onClose: () => {},
 		});
 		try {
+			setup.mockInput.pressArrow("up");
 			await setup.flush();
 			const frame = setup.captureCharFrame();
 			expect(frame.indexOf("newer")).toBeLessThan(frame.indexOf("older"));
 			expect(frame).toContain("[active]");
-			setup.mockInput.pressArrow("up");
-			setup.mockInput.pressEnter();
-			await setup.flush();
-			expect(selected).toEqual([]);
 			expect(frame).toContain("resume stopped");
 			setup.mockInput.pressKey("r");
 			await setup.flush();
@@ -110,7 +107,7 @@ describe("native session picker", () => {
 		}
 	});
 
-	it("Enter focuses an already-open local terminal without requesting resume", async () => {
+	it("Enter routes an externally running session through the focus callback", async () => {
 		const setup = await createTestRenderer({ width: 100, height: 30 });
 		renderers.push(setup);
 		const parent = new BoxRenderable(setup.renderer, { width: "100%", height: "100%" });
@@ -127,8 +124,7 @@ describe("native session picker", () => {
 		setup.renderer.keyInput.on("keypress", onKey);
 		const mount = mountOpenTuiSessionPicker(setup.renderer, parent, {
 			taskId: "TASK-1",
-			sessions: [session("local-id", "2026-10-06")],
-			localSessionIds: new Set(["local-id"]),
+			sessions: [{ ...session("external-id", "2026-10-06"), status: "running" }],
 			onFocusLocal: (id) => focused.push(id),
 			onResume: async (id) => {
 				resumed.push(id);
@@ -139,7 +135,7 @@ describe("native session picker", () => {
 		try {
 			setup.mockInput.pressEnter();
 			await setup.flush();
-			expect(focused).toEqual(["local-id"]);
+			expect(focused).toEqual(["external-id"]);
 			expect(resumed).toEqual([]);
 			expect(setup.captureCharFrame()).not.toContain("sessions");
 			expect(setup.renderer.currentFocusedRenderable).toBe(terminal);

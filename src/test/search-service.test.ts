@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "bun:test";
-import { Core } from "../core/backlog.ts";
+import { Core } from "../core/agentic-workspace.ts";
 import type { Decision, Task, TaskSearchResult } from "../types/index.ts";
 import { createUniqueTestDir, safeCleanup } from "./test-utils.ts";
 
@@ -9,7 +9,7 @@ async function createProject(): Promise<Core> {
 	const root = createUniqueTestDir("snapshot-search");
 	directories.push(root);
 	const core = new Core(root);
-	await core.filesystem.ensureBacklogStructure();
+	await core.filesystem.ensureAgenticWorkspaceStructure();
 	await core.filesystem.saveConfig({
 		projectName: "Snapshot search",
 		statuses: ["To Do", "Done"],

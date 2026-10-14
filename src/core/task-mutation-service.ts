@@ -199,7 +199,11 @@ export class ProjectTaskMutations {
 					completedTaskIdentityRecord(task, task.filePath ?? `${this.filesystem.completedDir}/${task.id}`),
 				),
 			],
-			{ repositoryRoot: null, projectRoot: this.filesystem.rootDir, backlogDirectory: this.filesystem.backlogDirName },
+			{
+				repositoryRoot: null,
+				projectRoot: this.filesystem.rootDir,
+				agenticWorkspaceDirectory: this.filesystem.agenticWorkspaceDirName,
+			},
 			config?.statuses ?? ["To Do", "In Progress", "Done"],
 			config?.taskResolutionStrategy ?? "most_progressed",
 		);

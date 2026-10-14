@@ -16,14 +16,14 @@ import {
 } from "./status-hooks.ts";
 
 async function fixture() {
-	const root = await mkdtemp(join(tmpdir(), "backlog-hooks-test-"));
+	const root = await mkdtemp(join(tmpdir(), "agentic-workspace-hooks-test-"));
 	return { root, cleanup: () => rm(root, { recursive: true, force: true }) };
 }
 
 describe("generated hook command", () => {
 	it("pins the exact command bytes used by Claude hooks", () => {
 		expect(buildHookCommand("/tmp/owned/activity", "running")).toBe(
-			`sh -c 'unset IFS; set -f; umask 077; D='"'"'/tmp/owned/activity'"'"'; [ -n "$D" ] && [ -d "$D" ] || exit 0; printf %s running > "$D/status" 2>/dev/null; exit 0 # backlog-hooks'`,
+			`sh -c 'unset IFS; set -f; umask 077; D='"'"'/tmp/owned/activity'"'"'; [ -n "$D" ] && [ -d "$D" ] || exit 0; printf %s running > "$D/status" 2>/dev/null; exit 0 # agentic-workspace-hooks'`,
 		);
 	});
 
@@ -34,7 +34,7 @@ describe("generated hook command", () => {
 		expect(command).toContain(statusDir);
 		expect(command).toContain("umask 077");
 		expect(command).toContain("set -f");
-		expect(command).toContain("exit 0 # backlog-hooks");
+		expect(command).toContain("exit 0 # agentic-workspace-hooks");
 		expect(command).toContain(STATUS_HOOK_OWNERSHIP_TRAILER);
 		// No home, project, or global path is ever referenced.
 		expect(command.includes("~")).toBe(false);
@@ -90,7 +90,7 @@ describe("process-scoped provider install", () => {
 			pi.default({ on: (name: string, handler: () => void) => handlers.set(name, handler) });
 			handlers.get("session_start")?.();
 			const opencode = await import(`${new URL(`file://${opencodePath}`).href}?${Date.now()}`);
-			const plugin = await opencode.BacklogStatus({
+			const plugin = await opencode.AgenticWorkspaceStatus({
 				client: { session: { get: async () => ({ data: { id: "ses_test" } }) } },
 			});
 			await plugin["chat.message"]({ sessionID: "ses_test" });
@@ -124,14 +124,14 @@ describe("process-scoped provider install", () => {
 				for (const path of install.paths) expect(path.startsWith(root)).toBe(true);
 			}
 			expect(claude.paths).toEqual([join(root, "hooks", "hooks.json")]);
-			expect(opencode.paths).toEqual([join(root, "plugins", "backlog-status.ts")]);
+			expect(opencode.paths).toEqual([join(root, "plugins", "agentic-workspace-status.ts")]);
 			expect(opencode.env.OPENCODE_CONFIG_DIR).toBe(root);
 			expect(pi.args[0]).toBe("--extension");
 			expect(pi.args[1]?.startsWith(root)).toBe(true);
 			// The generated plugin/extension never reference a home or global path.
 			const plugin = await readFile(opencode.paths[0] ?? "", "utf8");
 			expect(plugin.includes("~")).toBe(false);
-			expect(plugin).toContain("backlog-hooks");
+			expect(plugin).toContain("agentic-workspace-hooks");
 			expect(plugin).toContain(statusDir);
 		} finally {
 			await cleanup();

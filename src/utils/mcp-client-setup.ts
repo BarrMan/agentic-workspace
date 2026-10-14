@@ -18,19 +18,19 @@ const MCP_CLIENT_SETUP: Record<McpClientSetupKey, McpClientSetup> = {
 	claude: {
 		label: "Claude Code",
 		command: "claude",
-		args: (serverName) => ["mcp", "add", "-s", "user", serverName, "--", "agenticworkspace", "mcp", "start"],
+		args: (serverName) => ["mcp", "add", "-s", "user", serverName, "--", "agentic-workspace", "mcp", "start"],
 		instructionFile: "CLAUDE.md",
 	},
 	codex: {
 		label: "OpenAI Codex",
 		command: "codex",
-		args: (serverName) => ["mcp", "add", serverName, "--", "agenticworkspace", "mcp", "start"],
+		args: (serverName) => ["mcp", "add", serverName, "--", "agentic-workspace", "mcp", "start"],
 		instructionFile: "AGENTS.md",
 	},
 	gemini: {
 		label: "Gemini CLI",
 		command: "gemini",
-		args: (serverName) => ["mcp", "add", "-s", "user", serverName, "agenticworkspace", "mcp", "start"],
+		args: (serverName) => ["mcp", "add", "-s", "user", serverName, "agentic-workspace", "mcp", "start"],
 		instructionFile: "GEMINI.md",
 	},
 	kiro: {
@@ -44,7 +44,7 @@ const MCP_CLIENT_SETUP: Record<McpClientSetupKey, McpClientSetup> = {
 			"--name",
 			serverName,
 			"--command",
-			"agenticworkspace",
+			"agentic-workspace",
 			"--args",
 			"mcp,start",
 		],

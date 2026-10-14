@@ -1,7 +1,7 @@
-import type { Core } from "../../../core/backlog.ts";
+import type { Core } from "../../../core/agentic-workspace.ts";
 import type { Document, DocumentSearchResult } from "../../../types/index.ts";
 import { formatUtcDateForDisplay } from "../../../utils/utc-date-display.ts";
-import { BacklogToolError } from "../../errors/mcp-errors.ts";
+import { AgenticWorkspaceToolError } from "../../errors/mcp-errors.ts";
 import type { CallToolResult } from "../../types.ts";
 import { formatDocumentCallResult } from "../../utils/document-response.ts";
 
@@ -66,7 +66,7 @@ export class DocumentHandlers {
 	private async loadDocumentOrThrow(id: string): Promise<Document> {
 		const document = await this.core.getDocument(id);
 		if (!document) {
-			throw new BacklogToolError(`Document not found: ${id}`, "DOCUMENT_NOT_FOUND");
+			throw new AgenticWorkspaceToolError(`Document not found: ${id}`, "DOCUMENT_NOT_FOUND");
 		}
 		return document;
 	}
@@ -128,9 +128,9 @@ export class DocumentHandlers {
 			});
 		} catch (error) {
 			if (error instanceof Error) {
-				throw new BacklogToolError(`Failed to create document: ${error.message}`, "OPERATION_FAILED");
+				throw new AgenticWorkspaceToolError(`Failed to create document: ${error.message}`, "OPERATION_FAILED");
 			}
-			throw new BacklogToolError("Failed to create document.", "OPERATION_FAILED");
+			throw new AgenticWorkspaceToolError("Failed to create document.", "OPERATION_FAILED");
 		}
 	}
 
@@ -151,9 +151,9 @@ export class DocumentHandlers {
 			});
 		} catch (error) {
 			if (error instanceof Error) {
-				throw new BacklogToolError(`Failed to update document: ${error.message}`, "OPERATION_FAILED");
+				throw new AgenticWorkspaceToolError(`Failed to update document: ${error.message}`, "OPERATION_FAILED");
 			}
-			throw new BacklogToolError("Failed to update document.", "OPERATION_FAILED");
+			throw new AgenticWorkspaceToolError("Failed to update document.", "OPERATION_FAILED");
 		}
 	}
 

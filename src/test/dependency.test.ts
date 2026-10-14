@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { mkdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { Core } from "../core/backlog.ts";
+import { Core } from "../core/agentic-workspace.ts";
 import type { Task } from "../types/index.ts";
 import { taskIdsEqual } from "../utils/task-path.ts";
 import { initializeFilesystemTestProject } from "./test-utils.ts";
@@ -13,7 +13,7 @@ describe("Task Dependencies", () => {
 	let core: Core;
 
 	beforeEach(async () => {
-		tempDir = mkdtempSync(join(tmpdir(), "backlog-dependency-test-"));
+		tempDir = mkdtempSync(join(tmpdir(), "agentic-workspace-dependency-test-"));
 
 		core = new Core(tempDir);
 		await initializeFilesystemTestProject(core, "test-project");
@@ -427,7 +427,7 @@ describe("Self-referential and cyclic dependencies", () => {
 	let core: Core;
 
 	beforeEach(async () => {
-		tempDir = mkdtempSync(join(tmpdir(), "backlog-dependency-cycle-test-"));
+		tempDir = mkdtempSync(join(tmpdir(), "agentic-workspace-dependency-cycle-test-"));
 		core = new Core(tempDir);
 		await initializeFilesystemTestProject(core, "test-project");
 	});
@@ -540,8 +540,11 @@ describe("Self-referential and cyclic dependencies", () => {
 		const completed = (await core.filesystem.listCompletedTasks()).find((task) => taskIdsEqual(task.id, "task-3"));
 		expect(completed?.filePath).toBeDefined();
 		if (!completed?.filePath) return;
-		await mkdir(join(tempDir, "backlog", "tasks", "task-3"), { recursive: true });
-		await Bun.write(join(tempDir, "backlog", "tasks", "task-3", "task.md"), await Bun.file(completed.filePath).text());
+		await mkdir(join(tempDir, "agentic-workspace", "tasks", "task-3"), { recursive: true });
+		await Bun.write(
+			join(tempDir, "agentic-workspace", "tasks", "task-3", "task.md"),
+			await Bun.file(completed.filePath).text(),
+		);
 
 		await expect(core.updateTaskFromInput("task-1", { dependencies: ["task-2"] })).rejects.toThrow(
 			"more than one record claims",

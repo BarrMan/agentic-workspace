@@ -1,6 +1,6 @@
 import * as clack from "@clack/prompts";
 import { DEFAULT_INIT_CONFIG } from "../../../constants/index.ts";
-import type { BacklogConfig } from "../../../types/index.ts";
+import type { AgenticWorkspaceConfig } from "../../../types/index.ts";
 import { isEditorAvailable as checkEditorAvailability, resolveEditor } from "../../../utils/editor.ts";
 
 export interface PromptChoice {
@@ -33,19 +33,19 @@ export type PromptRunner = (
 export type EditorAvailabilityChecker = (editor: string) => Promise<boolean>;
 
 export interface WizardOptions {
-	existingConfig?: BacklogConfig | null;
+	existingConfig?: AgenticWorkspaceConfig | null;
 	cancelMessage: string;
 	promptImpl?: PromptRunner;
 	isEditorAvailable?: EditorAvailabilityChecker;
 }
 
 export interface AdvancedConfigWizardResult {
-	config: Partial<BacklogConfig>;
+	config: Partial<AgenticWorkspaceConfig>;
 	installShellCompletions: boolean;
 }
 
 type WizardConfig = Pick<
-	BacklogConfig,
+	AgenticWorkspaceConfig,
 	| "checkActiveBranches"
 	| "remoteOperations"
 	| "activeBranchDays"
@@ -371,7 +371,7 @@ async function promptWebUISettings(
 					type: "confirm",
 					name: "autoOpenBrowser",
 					message: "Automatically open browser when starting web UI?",
-					hint: "When enabled, 'backlog web' opens your browser",
+					hint: "When enabled, 'agentic-workspace web' opens your browser",
 					initial: initial.autoOpenBrowser,
 				},
 			],
@@ -389,7 +389,7 @@ async function promptWebUISettings(
 	}
 }
 
-function initialWizardConfig(config: BacklogConfig | null | undefined): WizardConfig {
+function initialWizardConfig(config: AgenticWorkspaceConfig | null | undefined): WizardConfig {
 	const configured = config ? { ...DEFAULT_INIT_CONFIG, ...config } : DEFAULT_INIT_CONFIG;
 	return {
 		checkActiveBranches: configured.checkActiveBranches,
@@ -417,7 +417,7 @@ export async function runAdvancedConfigWizard({
 				type: "confirm",
 				name: "installCompletions",
 				message: "Install shell completions now?",
-				hint: "Adds TAB completion support for backlog commands in your shell",
+				hint: "Adds TAB completion support for AgenticWorkspace commands in your shell",
 				initial: true,
 			})
 		).installCompletions,

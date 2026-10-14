@@ -21,11 +21,11 @@ import type { AgentPreset, AgentSession, ModeProfile } from "./types.ts";
 const LAUNCH_PROBE_INTERVAL_MS = 25;
 const LAUNCH_PROBE_DURATION_MS = 250;
 const TMUX_PLACEHOLDER_COMMAND = "exec sleep 2147483647";
-const PANE_OPTION_ROOT = "@backlog_root";
-const PANE_OPTION_TASK = "@backlog_task";
-const PANE_OPTION_SESSION = "@backlog_session";
-const PANE_OPTION_ROLE = "@backlog_role";
-const PANE_OPTION_LAUNCH_RESOURCES = "@backlog_launch_resources";
+const PANE_OPTION_ROOT = "@agentic_workspace_root";
+const PANE_OPTION_TASK = "@agentic_workspace_task";
+const PANE_OPTION_SESSION = "@agentic_workspace_session";
+const PANE_OPTION_ROLE = "@agentic_workspace_role";
+const PANE_OPTION_LAUNCH_RESOURCES = "@agentic_workspace_launch_resources";
 const LIVE_PREVIEW_ROLE = "live-preview";
 const RETIRED_SESSION_ROLE = "retired-session";
 
@@ -174,7 +174,7 @@ export const missingPaneStderr = (sessionId: string): string => `tmux pane for s
 const sessionSocket = (requestedSocketName?: string) => {
 	const environment: NodeJS.ProcessEnv = { ...process.env, TMUX: "" };
 	return {
-		socketName: requestedSocketName ?? (environment.BACKLOG_TMUX_SOCKET?.trim() || "default"),
+		socketName: requestedSocketName ?? (environment.AGENTIC_WORKSPACE_TMUX_SOCKET?.trim() || "default"),
 		environment,
 	};
 };
@@ -434,7 +434,7 @@ export class SessionProcess {
 					"-t",
 					`=${session.tmuxName}:`,
 					"-F",
-					"#{session_name}\t#{@backlog_root}\t#{@backlog_task}\t#{@backlog_session}\t#{@backlog_role}\t#{pane_id}\t#{pane_dead}",
+					"#{session_name}\t#{@agentic_workspace_root}\t#{@agentic_workspace_task}\t#{@agentic_workspace_session}\t#{@agentic_workspace_role}\t#{pane_id}\t#{pane_dead}",
 				],
 				timeoutMs === undefined ? undefined : { timeoutMs },
 			);

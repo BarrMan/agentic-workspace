@@ -10,7 +10,7 @@
 
 **Tagging:** `[INFERENCE]` marks a claim that was derived rather than measured. Every other claim carries a repo `file:line` verified in this pass. Upstream AOE anchors are carried from the comparison and are **not** re-verified here (no upstream checkout in this workspace); they are marked `carried`.
 
-**Review command for every phase:** `agenticworkspace workspace` (equivalently `bun run cli workspace`). No phase ends with documentation, tests, or internal components as its only deliverable.
+**Review command for every phase:** `agentic-workspace workspace` (equivalently `bun run cli workspace`). No phase ends with documentation, tests, or internal components as its only deliverable.
 
 ---
 
@@ -41,7 +41,7 @@ Three things are true on 2026-10-07 that were not true when the comparison was w
 
 Two more files already carry small uncommitted status-plan edits, so phases L2/L3 must branch from a tree that includes them rather than from `HEAD`: `sessions.ts` threads the launch `sessionId` (`sessions.ts:174`, `:293`) and `session-process.ts` does the same on resume (`session-process.ts:210`) — three one-line additions with no overlap with this plan's slices.
 
-**Never edited by this plan:** `src/agent-workspace/agent-status.ts`, `agent-status-probe.ts`, `status-hooks.ts`, `types.ts`, `src/ui/opentui/workspace.ts`, `src/ui/status-icon.ts`, `src/agent-workspace/session-launch.ts`, `src/ui/opentui/status-tabs.ts`, and anything under `backlog/**`.
+**Never edited by this plan:** `src/agent-workspace/agent-status.ts`, `agent-status-probe.ts`, `status-hooks.ts`, `types.ts`, `src/ui/opentui/workspace.ts`, `src/ui/status-icon.ts`, `src/agent-workspace/session-launch.ts`, `src/ui/opentui/status-tabs.ts`, and anything under `agentic-workspace/**`.
 
 ### 0.3 Anchor pin, and why controller anchors are stated by symbol
 
@@ -72,7 +72,7 @@ Eight gaps, in the comparison's ranked order. "Verified" = the anchor was read i
 
 Two corrections to the comparison's framing:
 
-- The comparison says the cost is "O(all tasks) per refresh"; it is, but the reader set is `visibleTasks`, i.e. the tasks that pass the **filter dialog** (`applyTaskFilters`, `workspace-controller.ts:818`). With no filters applied — the default — that is every task. This repository's own workspace has **123 task directories** (`backlog/tasks`), so a default refresh opens and parses 123 files before any render decision.
+- The comparison says the cost is "O(all tasks) per refresh"; it is, but the reader set is `visibleTasks`, i.e. the tasks that pass the **filter dialog** (`applyTaskFilters`, `workspace-controller.ts:818`). With no filters applied — the default — that is every task. This repository's own workspace has **123 task directories** (`agentic-workspace/tasks`), so a default refresh opens and parses 123 files before any render decision.
 - `#taskSessions` builds its map over `visibleTasks`, but the mount renders only the **active status tab's** rows (`workspace.ts:448` slices `taskOrder`, built in `apply` from the active group, `:199-215`), and the marker is computed per rendered row (`workspace.ts:454-462`). Nothing outside that tab consumes the map: the footer and session picker use `#sessionTaskIds`, which `#loadSnapshot` maintains incrementally for the selected task only (`workspace-controller.ts:838-839`). So the set that must be read is the active tab's task set.
 
 ### 1.2 Gap #2 — dropped, refuted by the tree
@@ -112,7 +112,7 @@ Batching is available because every durable session's pane lives on **one** serv
 
 The four readers are real (`workspace-controller.ts:808-813`). The gap is dropped for two verified reasons:
 
-1. **Measured cost is trivial next to gap #1.** This workspace has 4 milestone files (`backlog/milestones`) and one `backlog/config.yml`, against the 123 session files gap #1 reads on the same refresh.
+1. **Measured cost is trivial next to gap #1.** This workspace has 4 milestone files (`agentic-workspace/milestones`) and one `agentic-workspace/config.yml`, against the 123 session files gap #1 reads on the same refresh.
 2. **There is no config/milestone subscription in the OpenTUI path, so a cache would freeze external edits.** The controller subscribes only to view state (`workspace-controller.ts:401-403`); config and milestone changes currently become visible only because a later refresh re-reads them (any selection, filter, or task mutation triggers `#scheduleRefresh`, `:459-483`). A cache would silently pin statuses, types and milestones until process exit. A watcher does exist (`src/utils/config-watcher.ts:236` `watchConfig`, used by the since-removed legacy `src/ui/unified/controller.ts:8`) but wiring it into the OpenTUI controller is new work whose payoff is ~5 small file reads per refresh.
 
 If the user later wants it, the safe form is: reuse `watchConfig` for invalidation, never an ad-hoc cache keyed on nothing.
@@ -142,7 +142,7 @@ The comparison claims none of the 8 gaps contradicts the status plan. **Verified
 
 ## 3. Phases
 
-Format mirrors `docs/opentui-workspace-implementation-plan.md` and `docs/aoe-status-tracking-plan.md` §7: **Deliverable → Slices → Review evidence → Stop condition**, plus the runtime cost and risk this axis is about. Each phase adds one gated `debug()` line at its changed path so a reviewer can read the number from the file sink: `BACKLOG_DEBUG=<subsystem> BACKLOG_DEBUG_FILE=/tmp/backlog-debug.log agenticworkspace workspace` (`src/utils/debug-log.ts:17-20`, `:137`). Do **not** review with debug on stderr: OpenTUI owns the screen.
+Format mirrors `docs/opentui-workspace-implementation-plan.md` and `docs/aoe-status-tracking-plan.md` §7: **Deliverable → Slices → Review evidence → Stop condition**, plus the runtime cost and risk this axis is about. Each phase adds one gated `debug()` line at its changed path so a reviewer can read the number from the file sink: `AGENTIC_WORKSPACE_DEBUG=<subsystem> AGENTIC_WORKSPACE_DEBUG_FILE=/tmp/agentic-workspace-debug.log agentic-workspace workspace` (`src/utils/debug-log.ts:17-20`, `:137`). Do **not** review with debug on stderr: OpenTUI owns the screen.
 
 **Ordering rule.** Dependencies first (`L2` is `L3`'s prerequisite), then evidence strength × payoff: measured per-refresh cost (`L1`), bounded per-pass cost (`L2`), correctness of the dot after a restart (`L3`), a leak that turns into a launch failure (`L4`), the dominant idle cost (`L5`), then the last syscalls (`L6`).
 
@@ -160,7 +160,7 @@ Format mirrors `docs/opentui-workspace-implementation-plan.md` and `docs/aoe-sta
 | Caller | `src/ui/opentui/workspace-controller.ts:818,829,834,861-869` | Compute the active tab's task set with the predicate already at `:829-830` (`matchesStatus`, whose definition sits directly beside it), falling back to all `visibleTasks` when `activeStatus` is undefined, and pass it into `#taskSessions`. A tab switch re-reads because `onStatusChange` (`:759-766`) persists `activeStatus` into view state, which notifies the controller (`:401-403`, `:459-483`). |
 | Observability | `src/agent-workspace/session-store.ts:248` | Extend the existing `debug("store","readAll.begin")` site with `reads` (files opened), `skipped`, and `ms`. |
 
-**Review evidence.** In this repo (123 tasks): run `BACKLOG_DEBUG=store BACKLOG_DEBUG_FILE=/tmp/backlog-debug.log agenticworkspace workspace` and open the log — `readAll.begin` must report `entries=123` with `reads` equal to the To Do tab's task count, not 123. Then, in the real app: switch status tabs and confirm every tab still shows its green dots (no missing dot on first view of a tab), move the selection, and confirm no visible delay before the list paints. `agenticworkspace agent-session list <task>` is unaffected.
+**Review evidence.** In this repo (123 tasks): run `AGENTIC_WORKSPACE_DEBUG=store AGENTIC_WORKSPACE_DEBUG_FILE=/tmp/agentic-workspace-debug.log agentic-workspace workspace` and open the log — `readAll.begin` must report `entries=123` with `reads` equal to the To Do tab's task count, not 123. Then, in the real app: switch status tabs and confirm every tab still shows its green dots (no missing dot on first view of a tab), move the selection, and confirm no visible delay before the list paints. `agentic-workspace agent-session list <task>` is unaffected.
 
 **Runtime cost.** Wall time per refresh: one readdir (unchanged) + one read per in-tab task, issued 32 at a time. File reads and `JSON.parse` calls fall by (all tasks − active-tab tasks).
 
@@ -182,7 +182,7 @@ Format mirrors `docs/opentui-workspace-implementation-plan.md` and `docs/aoe-sta
 | Limit-scan rewire | `src/agent-workspace/sessions.ts:594-617` | `enforceRunningLimit` replaces the nested serial `alive` loop (`:604-610`) with one `probePanes` call over the candidate records (live ⇔ row present **and** not dead), keeping the `readAll()` (`:597`) and the sort/stop logic (`:613-617`). |
 | Observability | `src/agent-workspace/sessions.ts:488-513`, `:597` | Add `debug("session","probe.panes",{ sessions, forks: 1, ms })` at both sites. |
 
-**Review evidence.** Start three agents in three tasks, then in the app press Enter on a fourth and confirm the start is not stalled by the limit scan; run with `BACKLOG_DEBUG=tmux BACKLOG_DEBUG_FILE=/tmp/backlog-debug.log agenticworkspace workspace` and count `[tmux] listPanes` lines around one reconcile — **one** line with `rows=N`, not N lines (the primitive logs per call, `tmux-pane-lookup.ts:50`). Kill one pane externally and select that task: the app must still report the session stopped — the same observable outcome as today.
+**Review evidence.** Start three agents in three tasks, then in the app press Enter on a fourth and confirm the start is not stalled by the limit scan; run with `AGENTIC_WORKSPACE_DEBUG=tmux AGENTIC_WORKSPACE_DEBUG_FILE=/tmp/agentic-workspace-debug.log agentic-workspace workspace` and count `[tmux] listPanes` lines around one reconcile — **one** line with `rows=N`, not N lines (the primitive logs per call, `tmux-pane-lookup.ts:50`). Kill one pane externally and select that task: the app must still report the session stopped — the same observable outcome as today.
 
 **Runtime cost.** Fork count per reconcile/start drops from 1-3×N to 1. Idle cost unchanged (no timer added; this is a call-site change only).
 
@@ -192,7 +192,7 @@ Format mirrors `docs/opentui-workspace-implementation-plan.md` and `docs/aoe-sta
 
 ### Phase L3 — Honest dots at startup (demote-only sweep)
 
-**Deliverable.** When `agenticworkspace workspace` starts, every durable `starting`/`running` record whose pane is **conclusively** gone is demoted to `stopped`/`failed` before the first paint. Nothing is resumed, created, killed without a conclusive probe, or handed off. Non-selected tasks stop showing a green dot for a session that died while the app was closed.
+**Deliverable.** When `agentic-workspace workspace` starts, every durable `starting`/`running` record whose pane is **conclusively** gone is demoted to `stopped`/`failed` before the first paint. Nothing is resumed, created, killed without a conclusive probe, or handed off. Non-selected tasks stop showing a green dot for a session that died while the app was closed.
 
 **Slices.**
 
@@ -204,7 +204,7 @@ Format mirrors `docs/opentui-workspace-implementation-plan.md` and `docs/aoe-sta
 | Spec/contract amendment | `docs/opentui-workspace-spec.md` (current native behaviour), `docs/opentui-workspace-session-contract.md` (lifecycle table, "Reconcile" row) | Record that a **startup demotion sweep** exists, is demote-only, and is the one place that probes tasks the user did not select. |
 | Observability | new sweep site | `debug("session","startup.sweep",{ records, demoted, inconclusive, ms })`. |
 
-**Review evidence.** With two tasks holding live agents: `tmux kill-session -t <name>` for the **non-selected** task's pane, exit `agenticworkspace workspace`, reopen it, and observe the dot is gone without ever selecting that task — today it stays green until selected. Then reopen with nothing dead and observe zero writes (the `state.json` mtimes are unchanged) and no `startup.sweep` demotions in the log sink. Also reopen with a **dead active** pane: this phase must print an honest `stopped`, and the resume path must remain reachable only through `Enter` or `agenticworkspace agent-session reconcile`.
+**Review evidence.** With two tasks holding live agents: `tmux kill-session -t <name>` for the **non-selected** task's pane, exit `agentic-workspace workspace`, reopen it, and observe the dot is gone without ever selecting that task — today it stays green until selected. Then reopen with nothing dead and observe zero writes (the `state.json` mtimes are unchanged) and no `startup.sweep` demotions in the log sink. Also reopen with a **dead active** pane: this phase must print an honest `stopped`, and the resume path must remain reachable only through `Enter` or `agentic-workspace agent-session reconcile`.
 
 **Runtime cost.** One boot-time snapshot pass (Phase L2: one fork) plus one `readAll` and O(dead) locked writes. Zero idle cost, zero per-refresh cost.
 
@@ -214,7 +214,7 @@ Format mirrors `docs/opentui-workspace-implementation-plan.md` and `docs/aoe-sta
 
 ### Phase L4 — Reclaim leaked workspace servers at startup
 
-**Deliverable.** `agenticworkspace workspace` reclaims `ink-proto-<pid>[-<instance>]` tmux servers whose owning PID is provably dead before it launches any agent, so a reused PID can no longer make the next launch fail with "refusing to reuse the tmux server already on socket …".
+**Deliverable.** `agentic-workspace workspace` reclaims `ink-proto-<pid>[-<instance>]` tmux servers whose owning PID is provably dead before it launches any agent, so a reused PID can no longer make the next launch fail with "refusing to reuse the tmux server already on socket …".
 
 **Slices.**
 
@@ -225,7 +225,7 @@ Format mirrors `docs/opentui-workspace-implementation-plan.md` and `docs/aoe-sta
 | Boot call | `src/ui/opentui/workspace-controller.ts:375-411` | Call it in `run()` before the first agent can be launched (the socket name is minted later, `:1033`), alongside the L3 sweep. A sweep failure is logged and never blocks startup. |
 | Observability | new sweep site | `debug("tmux","orphan.sweep",{ scanned, reclaimed, skippedAlive })`. |
 
-**Review evidence.** With no workspace running: `ls /tmp/tmux-$(id -u)`. `kill -9` a running `agenticworkspace workspace` (its socket directory entry survives), then start a **new** workspace and confirm it (a) logs `orphan.sweep reclaimed=1`, (b) removes the stale `ink-proto-*` file from the socket directory, and (c) starts normally. Then run two workspaces at once and confirm the second reclaims nothing (`skippedAlive=1`). Also confirm the refusal path (`agent-host.ts:350-353`) is still present for anything the sweep cannot prove.
+**Review evidence.** With no workspace running: `ls /tmp/tmux-$(id -u)`. `kill -9` a running `agentic-workspace workspace` (its socket directory entry survives), then start a **new** workspace and confirm it (a) logs `orphan.sweep reclaimed=1`, (b) removes the stale `ink-proto-*` file from the socket directory, and (c) starts normally. Then run two workspaces at once and confirm the second reclaims nothing (`skippedAlive=1`). Also confirm the refusal path (`agent-host.ts:350-353`) is still present for anything the sweep cannot prove.
 
 **Runtime cost.** One readdir plus zero-to-N `tmux -L <name> kill-server` + `list-sessions` pairs per process start. Nothing at idle.
 
@@ -245,7 +245,7 @@ Format mirrors `docs/opentui-workspace-implementation-plan.md` and `docs/aoe-sta
 | Consumers | `:611-617` (interval), `:379-406` (`claimPipeLease`, stale compare `:387`) | No code change beyond the constants; the stale branch and its takeover log stay as they are. |
 | Observability | `:611-615` | First beat logs `debug("tmux","vt.heartbeat",{ cadence: VT_HEARTBEAT_MS, stale: VT_HEARTBEAT_STALE_MS })`. |
 
-**Review evidence.** Arm one agent and leave the workspace idle for 60 s with `BACKLOG_DEBUG=tmux BACKLOG_DEBUG_FILE=/tmp/backlog-debug.log`: the heartbeat's `set-option` forks halve (60 → ~30 over 60 s at the 1 s cadence). The human check is the absence of regression: the preview keeps rendering, no `vt: previous pipe owner … is stale` line appears while this process is alive, and normal exit still releases the lease (`releaseLease`, `:408-415`). Then `SIGKILL` an owner and start a second workspace: the takeover must still happen, no later than ~7 s after the last beat.
+**Review evidence.** Arm one agent and leave the workspace idle for 60 s with `AGENTIC_WORKSPACE_DEBUG=tmux AGENTIC_WORKSPACE_DEBUG_FILE=/tmp/agentic-workspace-debug.log`: the heartbeat's `set-option` forks halve (60 → ~30 over 60 s at the 1 s cadence). The human check is the absence of regression: the preview keeps rendering, no `vt: previous pipe owner … is stale` line appears while this process is alive, and normal exit still releases the lease (`releaseLease`, `:408-415`). Then `SIGKILL` an owner and start a second workspace: the takeover must still happen, no later than ~7 s after the last beat.
 
 **Runtime cost.** −0.5 fork/s per armed pane at idle — the transport's dominant idle cost. No other change.
 
@@ -376,7 +376,7 @@ bun test src/path/to/file.test.ts --timeout=20000
 
 The test preload configures worker scratch directories and tmux sockets. A full run is not required for these phases; the affected set above is. The tree currently holds 254 `*.test.ts` files plus one `*.test.tsx` (255 discovered files; `docs/test-suite-runtime-report.md` recorded 253 files / 2247 tests before the in-flight status-works additions).
 
-**Per-phase gate (all phases):** affected suites green, `bun run check:types`, scoped Biome on changed files, and one real `agenticworkspace workspace` run with the phase's described observation. No phase is approved on tests alone.
+**Per-phase gate (all phases):** affected suites green, `bun run check:types`, scoped Biome on changed files, and one real `agentic-workspace workspace` run with the phase's described observation. No phase is approved on tests alone.
 
 ---
 

@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
-import { Core } from "../core/backlog.ts";
+import { Core } from "../core/agentic-workspace.ts";
 import { findLocalDuplicateTaskIds } from "../core/duplicate-task-detection.ts";
 import { serializeTask } from "../markdown/serializer.ts";
 import type { Task } from "../types/index.ts";
@@ -32,7 +32,7 @@ async function put(path: string, content: string): Promise<void> {
 beforeEach(async () => {
 	testDir = createUniqueTestDir("container-duplicate-detection-contract");
 	core = new Core(testDir);
-	await core.filesystem.ensureBacklogStructure();
+	await core.filesystem.ensureAgenticWorkspaceStructure();
 	await core.filesystem.saveConfig({
 		projectName: "Container duplicate detection",
 		statuses: ["To Do", "In Progress", "Done"],

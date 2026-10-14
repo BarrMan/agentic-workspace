@@ -32,7 +32,7 @@ jobs:
             target: bun-windows-arm64
     runs-on: ${{ matrix.os }}
     env:
-      BIN: agenticworkspace-bin${{ contains(matrix.target,'windows') && '.exe' || '' }}
+      BIN: agentic-workspace-bin${{ contains(matrix.target,'windows') && '.exe' || '' }}
     steps:
       - uses: actions/checkout@v7
       - uses: oven-sh/setup-bun@v2
@@ -68,9 +68,9 @@ jobs:
         shell: bash
         run: |
           mkdir -p dist
-          BACKLOG_BUILD_VERSION="${GITHUB_REF##refs/tags/v}" \
-            BACKLOG_BUILD_TARGET="${{ matrix.target }}" \
-            BACKLOG_BUILD_OUTFILE="dist/${{ env.BIN }}" \
+          AGENTIC_WORKSPACE_BUILD_VERSION="${GITHUB_REF##refs/tags/v}" \
+            AGENTIC_WORKSPACE_BUILD_TARGET="${{ matrix.target }}" \
+            AGENTIC_WORKSPACE_BUILD_OUTFILE="dist/${{ env.BIN }}" \
             bun scripts/build.ts
       - name: Make binary executable (non-Windows)
         if: ${{ !contains(matrix.target,'windows') }}
@@ -86,7 +86,7 @@ jobs:
           ls -lh ${{ env.BIN }}
       - uses: actions/upload-artifact@v7
         with:
-          name: agenticworkspace-${{ matrix.target }}
+          name: agentic-workspace-${{ matrix.target }}
           path: ${{ env.BIN }}
 
   npm-publish:
@@ -108,7 +108,7 @@ jobs:
           TAG="${GITHUB_REF##refs/tags/v}"
           jq 'del(.devDependencies,.scripts.prepare,.scripts.preinstall,.type) |
               .version = "'$TAG'" |
-              .bin = {agenticworkspace:"cli.js"} |
+              .bin = {agentic-workspace:"cli.js"} |
               .files = ["cli.js","resolveBinary.cjs","postuninstall.cjs","package.json","README.md","LICENSE"] |
               .scripts = {"postuninstall": "node postuninstall.cjs"} |
               .repository = {"type":"git","url":"https://github.com/BarrMan/agentic-workspace"} |
@@ -138,27 +138,27 @@ jobs:
       matrix:
         include:
           - target: bun-linux-x64-baseline
-            package: agenticworkspace-linux-x64
+            package: agentic-workspace-linux-x64
             os: linux
             cpu: x64
           - target: bun-linux-arm64
-            package: agenticworkspace-linux-arm64
+            package: agentic-workspace-linux-arm64
             os: linux
             cpu: arm64
           - target: bun-darwin-x64
-            package: agenticworkspace-darwin-x64
+            package: agentic-workspace-darwin-x64
             os: darwin
             cpu: x64
           - target: bun-darwin-arm64
-            package: agenticworkspace-darwin-arm64
+            package: agentic-workspace-darwin-arm64
             os: darwin
             cpu: arm64
           - target: bun-windows-x64-baseline
-            package: agenticworkspace-windows-x64
+            package: agentic-workspace-windows-x64
             os: win32
             cpu: x64
           - target: bun-windows-arm64
-            package: agenticworkspace-windows-arm64
+            package: agentic-workspace-windows-arm64
             os: win32
             cpu: arm64
     runs-on: ubuntu-latest
@@ -166,7 +166,7 @@ jobs:
       - uses: actions/checkout@v7
       - uses: actions/download-artifact@v8
         with:
-          name: agenticworkspace-${{ matrix.target }}
+          name: agentic-workspace-${{ matrix.target }}
         timeout-minutes: 15
       - name: Prepare package
         shell: bash
@@ -174,10 +174,10 @@ jobs:
           TAG="${GITHUB_REF##refs/tags/v}"
           mkdir -p pkg
           # Rename the binary to the expected name
-          if [[ -f agenticworkspace-bin.exe ]]; then
-            mv agenticworkspace-bin.exe pkg/agenticworkspace.exe
-          elif [[ -f agenticworkspace-bin ]]; then
-            mv agenticworkspace-bin pkg/agenticworkspace
+          if [[ -f agentic-workspace-bin.exe ]]; then
+            mv agentic-workspace-bin.exe pkg/agentic-workspace.exe
+          elif [[ -f agentic-workspace-bin ]]; then
+            mv agentic-workspace-bin pkg/agentic-workspace
           else
             echo "Error: No binary found"
             ls -la
@@ -190,7 +190,7 @@ jobs:
             "version": "${TAG}",
             "os": ["${{ matrix.os }}"],
             "cpu": ["${{ matrix.cpu }}"],
-            "files": ["agenticworkspace${{ contains(matrix.target,'windows') && '.exe' || '' }}","package.json","LICENSE"],
+            "files": ["agentic-workspace${{ contains(matrix.target,'windows') && '.exe' || '' }}","package.json","LICENSE"],
             "repository": {
               "type": "git",
               "url": "https://github.com/BarrMan/agentic-workspace"
@@ -201,7 +201,7 @@ jobs:
         if: ${{ !contains(matrix.target,'windows') }}
         shell: bash
         run: |
-          chmod +x pkg/agenticworkspace
+          chmod +x pkg/agentic-workspace
       - uses: actions/setup-node@v6
         with:
           node-version: 24
@@ -241,8 +241,8 @@ jobs:
           VERSION="${GITHUB_REF##refs/tags/v}"
           MAX_ATTEMPTS=40
           SLEEP_SECONDS=15
-          PACKAGE_NAME="$(node -e 'const map = { win32: "windows", darwin: "darwin", linux: "linux" }; const platform = map[process.platform]; const arch = process.arch; if (!platform || !["x64","arm64"].includes(arch)) { process.exit(1); } process.stdout.write(`agenticworkspace-${platform}-${arch}`);')"
-          BINARY_PATH="node_modules/${PACKAGE_NAME}/agenticworkspace"
+          PACKAGE_NAME="$(node -e 'const map = { win32: "windows", darwin: "darwin", linux: "linux" }; const platform = map[process.platform]; const arch = process.arch; if (!platform || !["x64","arm64"].includes(arch)) { process.exit(1); } process.stdout.write(`agentic-workspace-${platform}-${arch}`);')"
+          BINARY_PATH="node_modules/${PACKAGE_NAME}/agentic-workspace"
 
           echo "Waiting for ${PACKAGE_NAME}@${VERSION} to become installable..."
           for attempt in $(seq 1 "$MAX_ATTEMPTS"); do
@@ -281,12 +281,12 @@ jobs:
           MAX_ATTEMPTS=40
           SLEEP_SECONDS=15
           PACKAGES=(
-            "agenticworkspace-linux-x64"
-            "agenticworkspace-linux-arm64"
-            "agenticworkspace-darwin-x64"
-            "agenticworkspace-darwin-arm64"
-            "agenticworkspace-windows-x64"
-            "agenticworkspace-windows-arm64"
+            "agentic-workspace-linux-x64"
+            "agentic-workspace-linux-arm64"
+            "agentic-workspace-darwin-x64"
+            "agentic-workspace-darwin-arm64"
+            "agentic-workspace-windows-x64"
+            "agentic-workspace-windows-arm64"
           )
 
           for pkg in "${PACKAGES[@]}"; do
@@ -323,8 +323,8 @@ jobs:
             throw "Unsupported runner arch: $Arch"
           }
 
-          $PackageName = "agenticworkspace-windows-$Arch"
-          $BinaryPath = Join-Path -Path "node_modules/$PackageName" -ChildPath "agenticworkspace.exe"
+          $PackageName = "agentic-workspace-windows-$Arch"
+          $BinaryPath = Join-Path -Path "node_modules/$PackageName" -ChildPath "agentic-workspace.exe"
 
           Write-Host "Waiting for $PackageName@$Version to become installable..."
           for ($attempt = 1; $attempt -le $MaxAttempts; $attempt++) {
@@ -374,7 +374,7 @@ jobs:
         with:
           node-version: 24
           registry-url: https://registry.npmjs.org
-      - name: Install and run backlog -v (Unix)
+      - name: Install and run agentic-workspace -v (Unix)
         if: ${{ matrix.os != 'windows-latest' }}
         shell: bash
         run: |
@@ -382,8 +382,8 @@ jobs:
           VERSION="${GITHUB_REF##refs/tags/v}"
           MAX_ATTEMPTS=40
           SLEEP_SECONDS=15
-          EXPECTED_PACKAGE="$(node -e 'const map = { win32: "windows", darwin: "darwin", linux: "linux" }; const platform = map[process.platform]; const arch = process.arch; if (!platform || !["x64","arm64"].includes(arch)) { process.exit(1); } process.stdout.write(`agenticworkspace-${platform}-${arch}`);')"
-          echo "Waiting for agenticworkspace@${VERSION} install + ${EXPECTED_PACKAGE} optional dependency..."
+          EXPECTED_PACKAGE="$(node -e 'const map = { win32: "windows", darwin: "darwin", linux: "linux" }; const platform = map[process.platform]; const arch = process.arch; if (!platform || !["x64","arm64"].includes(arch)) { process.exit(1); } process.stdout.write(`agentic-workspace-${platform}-${arch}`);')"
+          echo "Waiting for agentic-workspace@${VERSION} install + ${EXPECTED_PACKAGE} optional dependency..."
 
           for attempt in $(seq 1 "$MAX_ATTEMPTS"); do
             rm -rf sanity
@@ -391,8 +391,8 @@ jobs:
             cd sanity
             npm init -y >/dev/null 2>&1
 
-            if npm i "agenticworkspace@${VERSION}" --prefer-online --no-audit --no-fund; then
-              if npx backlog -v; then
+            if npm i "agentic-workspace@${VERSION}" --prefer-online --no-audit --no-fund; then
+             if npx agentic-workspace -v; then
                 echo "Install sanity succeeded on attempt ${attempt}/${MAX_ATTEMPTS}."
                 exit 0
               fi
@@ -413,9 +413,9 @@ jobs:
             fi
           done
 
-          echo "Install sanity timed out for agenticworkspace@${VERSION}."
+          echo "Install sanity timed out for agentic-workspace@${VERSION}."
           exit 1
-      - name: Install and run backlog -v (Windows)
+      - name: Install and run agentic-workspace -v (Windows)
         if: ${{ matrix.os == 'windows-latest' }}
         shell: pwsh
         run: |
@@ -428,8 +428,8 @@ jobs:
             throw "Unsupported runner arch: $Arch"
           }
 
-          $ExpectedPackage = "agenticworkspace-windows-$Arch"
-          Write-Host "Waiting for agenticworkspace@$Version install + $ExpectedPackage optional dependency..."
+          $ExpectedPackage = "agentic-workspace-windows-$Arch"
+          Write-Host "Waiting for agentic-workspace@$Version install + $ExpectedPackage optional dependency..."
 
           for ($attempt = 1; $attempt -le $MaxAttempts; $attempt++) {
             if (Test-Path "sanity") {
@@ -440,9 +440,9 @@ jobs:
 
             try {
               npm init -y | Out-Null
-              npm i "agenticworkspace@$Version" --prefer-online --no-audit --no-fund
+              npm i "agentic-workspace@$Version" --prefer-online --no-audit --no-fund
               if ($LASTEXITCODE -eq 0) {
-                npx backlog -v
+               npx agentic-workspace -v
                 if ($LASTEXITCODE -eq 0) {
                   Write-Host "Install sanity succeeded on attempt $attempt/$MaxAttempts."
                   exit 0
@@ -466,7 +466,7 @@ jobs:
             }
           }
 
-          throw "Install sanity timed out for agenticworkspace@$Version."
+          throw "Install sanity timed out for agentic-workspace@$Version."
 
   github-release:
     needs: build
@@ -484,19 +484,19 @@ jobs:
           mkdir -p binaries
           for dir in release-assets/*/; do
             if [ -d "$dir" ]; then
-              target=$(basename "$dir" | sed 's/agenticworkspace-//')
+              target=$(basename "$dir" | sed 's/agentic-workspace-//')
               echo "Processing target: $target"
               echo "Directory contents:"
               ls -la "$dir"
-              binary=$(find "$dir" -name "agenticworkspace-bin*" -type f)
+              binary=$(find "$dir" -name "agentic-workspace-bin*" -type f)
               if [ -n "$binary" ]; then
                 echo "Found binary: $binary ($(ls -lh "$binary" | awk '{print $5}'))"
                 if [[ "$target" == *"windows"* ]] && [[ "$binary" == *".exe" ]]; then
-                  cp "$binary" "binaries/agenticworkspace-${target}.exe"
-                  echo "Copied to binaries/agenticworkspace-${target}.exe ($(ls -lh "binaries/agenticworkspace-${target}.exe" | awk '{print $5}'))"
+                  cp "$binary" "binaries/agentic-workspace-${target}.exe"
+                  echo "Copied to binaries/agentic-workspace-${target}.exe ($(ls -lh "binaries/agentic-workspace-${target}.exe" | awk '{print $5}'))"
                 else
-                  cp "$binary" "binaries/agenticworkspace-${target}"
-                  echo "Copied to binaries/agenticworkspace-${target} ($(ls -lh "binaries/agenticworkspace-${target}" | awk '{print $5}'))"
+                  cp "$binary" "binaries/agentic-workspace-${target}"
+                  echo "Copied to binaries/agentic-workspace-${target} ($(ls -lh "binaries/agentic-workspace-${target}" | awk '{print $5}'))"
                 fi
               fi
             fi

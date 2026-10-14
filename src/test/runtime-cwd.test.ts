@@ -5,29 +5,29 @@ import { join } from "node:path";
 import { $ } from "bun";
 import { CliRuntime } from "../cli/runtime.ts";
 import { getAssignees, getLabels, getStatuses, getTaskIds } from "../completions/data-providers.ts";
-import { Core, createRuntimeCore } from "../core/backlog.ts";
-import { BACKLOG_CWD_ENV, resolveRuntimeCwd } from "../utils/runtime-cwd.ts";
+import { Core, createRuntimeCore } from "../core/agentic-workspace.ts";
+import { AGENTIC_WORKSPACE_CWD_ENV, resolveRuntimeCwd } from "../utils/runtime-cwd.ts";
 import { initGitRepo, initializeFilesystemTestProject } from "./test-utils.ts";
 
 describe("resolveRuntimeCwd", () => {
 	let testDir: string;
 	let originalCwd: string;
-	let originalBacklogCwd: string | undefined;
+	let originalAgenticWorkspaceCwd: string | undefined;
 
 	beforeEach(async () => {
-		testDir = await mkdtemp(join(tmpdir(), "backlog-runtime-cwd-"));
+		testDir = await mkdtemp(join(tmpdir(), "agentic-workspace-runtime-cwd-"));
 		originalCwd = process.cwd();
-		originalBacklogCwd = process.env[BACKLOG_CWD_ENV];
-		delete process.env[BACKLOG_CWD_ENV];
+		originalAgenticWorkspaceCwd = process.env[AGENTIC_WORKSPACE_CWD_ENV];
+		delete process.env[AGENTIC_WORKSPACE_CWD_ENV];
 		process.chdir(testDir);
 	});
 
 	afterEach(async () => {
 		process.chdir(originalCwd);
-		if (originalBacklogCwd === undefined) {
-			delete process.env[BACKLOG_CWD_ENV];
+		if (originalAgenticWorkspaceCwd === undefined) {
+			delete process.env[AGENTIC_WORKSPACE_CWD_ENV];
 		} else {
-			process.env[BACKLOG_CWD_ENV] = originalBacklogCwd;
+			process.env[AGENTIC_WORKSPACE_CWD_ENV] = originalAgenticWorkspaceCwd;
 		}
 		await rm(testDir, { recursive: true, force: true });
 	});
@@ -44,39 +44,42 @@ describe("resolveRuntimeCwd", () => {
 		expect(result.source).toBe("process");
 	});
 
-	it("uses BACKLOG_CWD when environment override is provided", async () => {
+	it("uses AGENTIC_WORKSPACE_CWD when environment override is provided", async () => {
 		const nestedDir = join(testDir, "workspace", "project");
 		await mkdir(nestedDir, { recursive: true });
-		process.env[BACKLOG_CWD_ENV] = nestedDir;
+		process.env[AGENTIC_WORKSPACE_CWD_ENV] = nestedDir;
 
 		const result = await resolveRuntimeCwd();
 
 		await expectCanonicalPath(result.cwd, nestedDir);
 		expect(result.source).toBe("env");
-		expect(result.sourceLabel).toBe(BACKLOG_CWD_ENV);
+		expect(result.sourceLabel).toBe(AGENTIC_WORKSPACE_CWD_ENV);
 	});
 
-	it("keeps raw BACKLOG_CWD linked while CliRuntime discovers the main project", async () => {
+	it("keeps raw AGENTIC_WORKSPACE_CWD linked while CliRuntime discovers the main project", async () => {
 		const main = join(testDir, "main");
 		const linked = join(testDir, "linked");
 		await mkdir(main);
 		initGitRepo(main);
 		await $`git -c user.name=Test -c user.email=test@example.com commit --allow-empty -m initial`.cwd(main).quiet();
 		await $`git worktree add -b feature ${linked}`.cwd(main).quiet();
-		await writeFile(join(main, "backlog.config.yml"), "project_name: Test\nbacklog_directory: backlog\n");
-		process.env[BACKLOG_CWD_ENV] = linked;
+		await writeFile(
+			join(main, "agentic-workspace.config.yml"),
+			"project_name: Test\nagentic_workspace_directory: agentic-workspace\n",
+		);
+		process.env[AGENTIC_WORKSPACE_CWD_ENV] = linked;
 		await expectCanonicalPath((await resolveRuntimeCwd()).cwd, linked);
 		const runtime = new CliRuntime();
 		await expectCanonicalPath(await runtime.cwd(), linked);
 		await expectCanonicalPath((await runtime.findProjectRoot()) as string, main);
 	});
 
-	it("gives --cwd option precedence over BACKLOG_CWD", async () => {
+	it("gives --cwd option precedence over AGENTIC_WORKSPACE_CWD", async () => {
 		const envDir = join(testDir, "env-dir");
 		const optionDir = join(testDir, "option-dir");
 		await mkdir(envDir, { recursive: true });
 		await mkdir(optionDir, { recursive: true });
-		process.env[BACKLOG_CWD_ENV] = envDir;
+		process.env[AGENTIC_WORKSPACE_CWD_ENV] = envDir;
 
 		const result = await resolveRuntimeCwd({ cwd: optionDir });
 
@@ -95,9 +98,9 @@ describe("resolveRuntimeCwd", () => {
 	});
 
 	it("throws when override path is invalid", async () => {
-		process.env[BACKLOG_CWD_ENV] = join(testDir, "missing");
+		process.env[AGENTIC_WORKSPACE_CWD_ENV] = join(testDir, "missing");
 
-		await expect(resolveRuntimeCwd()).rejects.toThrow(`Invalid directory from ${BACKLOG_CWD_ENV}`);
+		await expect(resolveRuntimeCwd()).rejects.toThrow(`Invalid directory from ${AGENTIC_WORKSPACE_CWD_ENV}`);
 	});
 
 	describe("createRuntimeCore", () => {
@@ -107,22 +110,22 @@ describe("resolveRuntimeCwd", () => {
 			await expectCanonicalPath(core.filesystem.rootDir, testDir);
 		});
 
-		it("binds the Core to BACKLOG_CWD when the override is provided", async () => {
+		it("binds the Core to AGENTIC_WORKSPACE_CWD when the override is provided", async () => {
 			const projectDir = join(testDir, "workspace", "project");
 			await mkdir(projectDir, { recursive: true });
-			process.env[BACKLOG_CWD_ENV] = projectDir;
+			process.env[AGENTIC_WORKSPACE_CWD_ENV] = projectDir;
 
 			const core = await createRuntimeCore();
 
 			await expectCanonicalPath(core.filesystem.rootDir, projectDir);
 		});
 
-		it("ascends to the project root when BACKLOG_CWD points at a subdirectory", async () => {
+		it("ascends to the project root when AGENTIC_WORKSPACE_CWD points at a subdirectory", async () => {
 			const projectDir = join(testDir, "project");
 			const nestedDir = join(projectDir, "packages", "web", "src");
 			await initializeFilesystemTestProject(new Core(projectDir), "Nested Override Project");
 			await mkdir(nestedDir, { recursive: true });
-			process.env[BACKLOG_CWD_ENV] = nestedDir;
+			process.env[AGENTIC_WORKSPACE_CWD_ENV] = nestedDir;
 
 			const core = await createRuntimeCore();
 
@@ -144,29 +147,29 @@ describe("resolveRuntimeCwd", () => {
 		it("stays on the resolved directory when no project is found", async () => {
 			const nestedDir = join(testDir, "no-project", "nested");
 			await mkdir(nestedDir, { recursive: true });
-			process.env[BACKLOG_CWD_ENV] = nestedDir;
+			process.env[AGENTIC_WORKSPACE_CWD_ENV] = nestedDir;
 
 			const core = await createRuntimeCore();
 
 			await expectCanonicalPath(core.filesystem.rootDir, nestedDir);
 		});
 
-		it("fails closed when BACKLOG_CWD points at a missing directory", async () => {
-			process.env[BACKLOG_CWD_ENV] = join(testDir, "missing");
+		it("fails closed when AGENTIC_WORKSPACE_CWD points at a missing directory", async () => {
+			process.env[AGENTIC_WORKSPACE_CWD_ENV] = join(testDir, "missing");
 
-			await expect(createRuntimeCore()).rejects.toThrow(`Invalid directory from ${BACKLOG_CWD_ENV}`);
+			await expect(createRuntimeCore()).rejects.toThrow(`Invalid directory from ${AGENTIC_WORKSPACE_CWD_ENV}`);
 		});
 	});
 
 	describe("shell completion data providers", () => {
-		it("reads the parent project when BACKLOG_CWD points at a subdirectory", async () => {
+		it("reads the parent project when AGENTIC_WORKSPACE_CWD points at a subdirectory", async () => {
 			const projectDir = join(testDir, "project");
 			const nestedDir = join(projectDir, "packages", "cli");
 			const core = new Core(projectDir);
 			await initializeFilesystemTestProject(core, "Completion Project");
 			await mkdir(nestedDir, { recursive: true });
 			await core.createTaskFromInput({ title: "Completion task", labels: ["ui"], assignee: ["@alex"] });
-			process.env[BACKLOG_CWD_ENV] = nestedDir;
+			process.env[AGENTIC_WORKSPACE_CWD_ENV] = nestedDir;
 
 			expect(await getTaskIds()).toEqual(["TASK-1"]);
 			expect(await getLabels()).toEqual(["ui"]);
@@ -176,14 +179,14 @@ describe("resolveRuntimeCwd", () => {
 		it("degrades to static fallbacks when no project is found", async () => {
 			const nestedDir = join(testDir, "no-project", "nested");
 			await mkdir(nestedDir, { recursive: true });
-			process.env[BACKLOG_CWD_ENV] = nestedDir;
+			process.env[AGENTIC_WORKSPACE_CWD_ENV] = nestedDir;
 
 			expect(await getTaskIds()).toEqual([]);
 			expect(await getStatuses()).toEqual(["To Do", "In Progress", "Done"]);
 		});
 
-		it("degrades to static fallbacks when BACKLOG_CWD is invalid", async () => {
-			process.env[BACKLOG_CWD_ENV] = join(testDir, "missing");
+		it("degrades to static fallbacks when AGENTIC_WORKSPACE_CWD is invalid", async () => {
+			process.env[AGENTIC_WORKSPACE_CWD_ENV] = join(testDir, "missing");
 
 			expect(await getTaskIds()).toEqual([]);
 			expect(await getStatuses()).toEqual(["To Do", "In Progress", "Done"]);

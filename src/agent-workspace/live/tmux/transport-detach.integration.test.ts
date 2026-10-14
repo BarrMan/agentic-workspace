@@ -2,7 +2,7 @@ import { expect, it, spyOn } from "bun:test";
 import { chmod, mkdir, mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
-import type { Core } from "../../../core/backlog.ts";
+import type { Core } from "../../../core/agentic-workspace.ts";
 import type { Task } from "../../../types/index.ts";
 import { BunRunner } from "../../session-process.ts";
 import { SessionStore } from "../../session-store.ts";
@@ -22,19 +22,19 @@ async function waitFor(check: () => boolean | Promise<boolean>, label: string): 
 }
 
 it("detaches a default live-session transport before saturated slots admit canceled input or resize", async () => {
-	const root = await realpath(await mkdtemp(join(tmpdir(), "backlog-default-transport-detach-")));
+	const root = await realpath(await mkdtemp(join(tmpdir(), "agentic-workspace-default-transport-detach-")));
 	const logPath = join(root, "calls.log");
 	const releasePath = join(root, "release");
 	const socketName = `transport-detach-${crypto.randomUUID()}`;
 	const keys = [
 		"PATH",
-		"BACKLOG_CWD",
-		"BACKLOG_TMUX_SOCKET",
+		"AGENTIC_WORKSPACE_CWD",
+		"AGENTIC_WORKSPACE_TMUX_SOCKET",
 		"TMUX_TMPDIR",
 		"TMUX",
-		"BACKLOG_EXEC_TEST_LOG",
-		"BACKLOG_EXEC_TEST_RELEASE",
-		"BACKLOG_EXEC_TEST_ROOT",
+		"AGENTIC_WORKSPACE_EXEC_TEST_LOG",
+		"AGENTIC_WORKSPACE_EXEC_TEST_RELEASE",
+		"AGENTIC_WORKSPACE_EXEC_TEST_ROOT",
 	] as const;
 	const environment = keys.map((key) => [key, process.env[key]] as const);
 	const controller = new AbortController();
@@ -44,9 +44,9 @@ it("detaches a default live-session transport before saturated slots admit cance
 	let restoreSpies = () => {};
 	try {
 		await writeFile(logPath, "");
-		await mkdir(join(root, ".backlog"), { recursive: true });
+		await mkdir(join(root, ".agentic-workspace"), { recursive: true });
 		await writeFile(
-			join(root, ".backlog", "agents.json"),
+			join(root, ".agentic-workspace", "agents.json"),
 			JSON.stringify({
 				selectedPreset: "fixture",
 				presets: { fixture: { command: "pi", env: {}, prepare: "", bootstrap: "pi" } },
@@ -55,10 +55,10 @@ it("detaches a default live-session transport before saturated slots admit cance
 		await writeFile(
 			join(root, "tmux"),
 			`#!/bin/sh
-printf '%s\n' "$*" >> "$BACKLOG_EXEC_TEST_LOG"
+printf '%s\n' "$*" >> "$AGENTIC_WORKSPACE_EXEC_TEST_LOG"
 case " $* " in
-  *" hold "*) while [ ! -f "$BACKLOG_EXEC_TEST_RELEASE" ]; do /bin/sleep 0.01; done;;
-  *" list-panes "*) printf 'backlog-fixture-session\t%s\tTASK-1\tsaved-session\tlive-preview\t%%1\t0\n' "$BACKLOG_EXEC_TEST_ROOT";;
+  *" hold "*) while [ ! -f "$AGENTIC_WORKSPACE_EXEC_TEST_RELEASE" ]; do /bin/sleep 0.01; done;;
+  *" list-panes "*) printf 'agentic-workspace-fixture-session\t%s\tTASK-1\tsaved-session\tlive-preview\t%%1\t0\n' "$AGENTIC_WORKSPACE_EXEC_TEST_ROOT";;
   *" display-message "*) case "$*" in *pane_id*) printf '%%1 0\n';; *) printf '0\n';; esac;;
   *" capture-pane "*) printf 'fixture screen\n';;
 esac
@@ -66,18 +66,18 @@ esac
 		);
 		await chmod(join(root, "tmux"), 0o755);
 		process.env.PATH = `${root}${delimiter}/usr/bin${delimiter}/bin`;
-		process.env.BACKLOG_CWD = root;
-		process.env.BACKLOG_TMUX_SOCKET = socketName;
+		process.env.AGENTIC_WORKSPACE_CWD = root;
+		process.env.AGENTIC_WORKSPACE_TMUX_SOCKET = socketName;
 		process.env.TMUX_TMPDIR = root;
 		process.env.TMUX = "/unrelated/client,123,0";
-		process.env.BACKLOG_EXEC_TEST_LOG = logPath;
-		process.env.BACKLOG_EXEC_TEST_RELEASE = releasePath;
-		process.env.BACKLOG_EXEC_TEST_ROOT = root;
+		process.env.AGENTIC_WORKSPACE_EXEC_TEST_LOG = logPath;
+		process.env.AGENTIC_WORKSPACE_EXEC_TEST_RELEASE = releasePath;
+		process.env.AGENTIC_WORKSPACE_EXEC_TEST_ROOT = root;
 		const record: AgentSession = {
 			id: "saved-session",
 			taskId: "TASK-1",
 			preset: "fixture",
-			tmuxName: "backlog-fixture-session",
+			tmuxName: "agentic-workspace-fixture-session",
 			cwd: root,
 			createdAt: new Date().toISOString(),
 			status: "running",
@@ -88,11 +88,12 @@ esac
 		const store = new SessionStore(root, new BunRunner());
 		await store.mutate(record.taskId, async (state) => {
 			state.sessions.push(record);
+			state.activeSessionId = record.id;
 		});
 		const core = {
 			filesystem: {
 				rootDir: root,
-				backlogDir: join(root, ".backlog"),
+				agenticWorkspaceDir: join(root, ".agentic-workspace"),
 				loadTask: async (taskId: string) => ({ id: taskId, agentConfiguration: undefined }),
 				taskArtifacts: { containerPath: async (taskId: string) => join(root, "artifacts", taskId) },
 				withTaskLock: async (_task: unknown, operation: () => Promise<unknown>) => await operation(),

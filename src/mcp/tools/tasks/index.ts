@@ -1,4 +1,4 @@
-import type { BacklogConfig } from "../../../types/index.ts";
+import type { AgenticWorkspaceConfig } from "../../../types/index.ts";
 import type { McpServer } from "../../server.ts";
 import type { McpToolHandler } from "../../types.ts";
 import {
@@ -13,7 +13,7 @@ import type { TaskCreateArgs, TaskEditRequest, TaskListArgs, TaskSearchArgs } fr
 import { TaskHandlers } from "./handlers.ts";
 import { taskArchiveSchema, taskCompleteSchema, taskViewSchema } from "./schemas.ts";
 
-export function registerTaskTools(server: McpServer, config: BacklogConfig): void {
+export function registerTaskTools(server: McpServer, config: AgenticWorkspaceConfig): void {
 	registerTaskArtifactTools(server);
 	const taskCreateSchema = generateTaskCreateSchema(config);
 	const taskEditSchema = generateTaskEditSchema(config);
@@ -23,7 +23,7 @@ export function registerTaskTools(server: McpServer, config: BacklogConfig): voi
 	const createTaskTool: McpToolHandler = createSimpleValidatedTool(
 		{
 			name: "task_create",
-			description: "Create a new task using Backlog.md",
+			description: "Create a new task using AgenticWorkspace",
 			inputSchema: taskCreateSchema,
 			annotations: { title: "Create Task", destructiveHint: false },
 		},
@@ -35,7 +35,7 @@ export function registerTaskTools(server: McpServer, config: BacklogConfig): voi
 		{
 			name: "task_list",
 			description:
-				"List Backlog.md tasks with optional filtering by status, type, project, assignee (or unassigned: true for tasks with no assignee), milestone, labels, and search",
+				"List AgenticWorkspace tasks with optional filtering by status, type, project, assignee (or unassigned: true for tasks with no assignee), milestone, labels, and search",
 			inputSchema: taskListSchema,
 			annotations: { title: "List Tasks", readOnlyHint: true, destructiveHint: false },
 		},
@@ -46,7 +46,8 @@ export function registerTaskTools(server: McpServer, config: BacklogConfig): voi
 	const searchTaskTool: McpToolHandler = createSimpleValidatedTool(
 		{
 			name: "task_search",
-			description: "Search Backlog.md tasks by title, description, task type, project, and modified file path filters",
+			description:
+				"Search AgenticWorkspace tasks by title, description, task type, project, and modified file path filters",
 			inputSchema: taskSearchSchema,
 			annotations: { title: "Search Tasks", readOnlyHint: true, destructiveHint: false },
 		},
@@ -58,7 +59,7 @@ export function registerTaskTools(server: McpServer, config: BacklogConfig): voi
 		{
 			name: "task_edit",
 			description:
-				"Edit a Backlog.md task, including metadata (status, priority, type, project), dependencies, references, documentation, and modified files",
+				"Edit an AgenticWorkspace task, including metadata (status, priority, type, project), dependencies, references, documentation, and modified files",
 			inputSchema: taskEditSchema,
 			annotations: { title: "Edit Task", destructiveHint: false },
 		},
@@ -69,7 +70,7 @@ export function registerTaskTools(server: McpServer, config: BacklogConfig): voi
 	const viewTaskTool: McpToolHandler = createSimpleValidatedTool(
 		{
 			name: "task_view",
-			description: "View a Backlog.md task details",
+			description: "View an AgenticWorkspace task details",
 			inputSchema: taskViewSchema,
 			annotations: { title: "View Task", readOnlyHint: true, destructiveHint: false },
 		},

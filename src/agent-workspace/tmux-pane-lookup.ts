@@ -33,10 +33,10 @@ const PANE_LOOKUP_FORMAT = [
 	"#{pane_id}",
 	"#{pane_dead}",
 	"#{window_id}",
-	"#{@backlog_root}",
-	"#{@backlog_task}",
-	"#{@backlog_session}",
-	"#{@backlog_role}",
+	"#{@agentic_workspace_root}",
+	"#{@agentic_workspace_task}",
+	"#{@agentic_workspace_session}",
+	"#{@agentic_workspace_role}",
 	"#{pane_title}",
 ].join("\t");
 
@@ -90,10 +90,10 @@ function parsePaneLookupRow(line: string): PaneLookupRow | undefined {
 
 function paneFilter(options: FindPaneOptions): string {
 	const conditions = [
-		equals("#{@backlog_root}", options.rootPath),
-		equals("#{@backlog_role}", options.role),
-		...(options.taskId ? [equals("#{@backlog_task}", options.taskId)] : []),
-		...(options.sessionId ? [equals("#{@backlog_session}", options.sessionId)] : []),
+		equals("#{@agentic_workspace_root}", options.rootPath),
+		equals("#{@agentic_workspace_role}", options.role),
+		...(options.taskId ? [equals("#{@agentic_workspace_task}", options.taskId)] : []),
+		...(options.sessionId ? [equals("#{@agentic_workspace_session}", options.sessionId)] : []),
 		...(options.includeDead ? [] : [equals("#{pane_dead}", "0")]),
 	];
 	return and(conditions);

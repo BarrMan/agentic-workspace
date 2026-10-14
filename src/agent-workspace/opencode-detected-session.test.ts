@@ -3,7 +3,7 @@ import { chmod, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { TmuxCommandError } from "libtmux";
-import { Core } from "../core/backlog.ts";
+import { Core } from "../core/agentic-workspace.ts";
 import { initializeTestProject } from "../test/test-utils.ts";
 import { getDefaultModeCatalog, initializeAgentConfiguration, upsertAgentConfiguration } from "./config.ts";
 import * as processTree from "./process-tree.ts";
@@ -89,7 +89,7 @@ class LaunchServer implements TmuxServer {
 					});
 				return ["4242 0"];
 			}
-			if (args.some((arg) => arg.includes("@backlog_launch_resources"))) {
+			if (args.some((arg) => arg.includes("@agentic_workspace_launch_resources"))) {
 				if (!this.sessionNames.has(target))
 					throw new TmuxCommandError({
 						args: [command, ...args],
@@ -97,7 +97,7 @@ class LaunchServer implements TmuxServer {
 						target,
 						stderr: [`can't find pane: ${target}`],
 					});
-				return [this.metadata.get(target)?.["@backlog_launch_resources"] ?? ""];
+				return [this.metadata.get(target)?.["@agentic_workspace_launch_resources"] ?? ""];
 			}
 		}
 		return [];
@@ -149,7 +149,7 @@ describe("runtime OpenCode adapter selection", () => {
 	});
 
 	it("keeps only the preset name and resolves the executable again for resume and ask", async () => {
-		const root = await mkdtemp(join(tmpdir(), "backlog-opencode-detected-session-"));
+		const root = await mkdtemp(join(tmpdir(), "agentic-workspace-opencode-detected-session-"));
 		roots.push(root);
 		process.env.XDG_CONFIG_HOME = join(root, "isolated-config-home");
 		const command = join(root, "opencode-version.ts");

@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { mkdir, unlink } from "node:fs/promises";
 import { join } from "node:path";
 import { $ } from "bun";
-import { Core } from "../core/backlog.ts";
+import { Core } from "../core/agentic-workspace.ts";
 import { loadTaskCorpus } from "../core/task-detail.ts";
 import { serializeTask } from "../markdown/serializer.ts";
 import type { Task } from "../types/index.ts";
@@ -48,7 +48,7 @@ async function writeTask(directory: string, _filename: string, value: Task): Pro
 
 async function commit(message: string, date: string): Promise<void> {
 	await $`git add -A`.cwd(testDir).quiet();
-	await $`GIT_AUTHOR_DATE="${date}" GIT_COMMITTER_DATE="${date}" git -c user.name="Backlog Test" -c user.email="test@example.com" commit -m ${message}`
+	await $`GIT_AUTHOR_DATE="${date}" GIT_COMMITTER_DATE="${date}" git -c user.name="AgenticWorkspace Test" -c user.email="test@example.com" commit -m ${message}`
 		.cwd(testDir)
 		.quiet();
 }
@@ -62,7 +62,7 @@ beforeEach(async () => {
 	extraDirs = [];
 	extraCores = [];
 	core = new Core(testDir);
-	await core.filesystem.ensureBacklogStructure();
+	await core.filesystem.ensureAgenticWorkspaceStructure();
 	await core.filesystem.saveConfig({
 		projectName: "Core task corpus regressions",
 		statuses: ["To Do", "In Progress", "Done"],
@@ -167,10 +167,10 @@ describe("Core shared task corpus regressions", () => {
 		// directories untouched, so only ref-fingerprint comparison can notice it.
 		const worktreeDir = trackDir("worktree");
 		await $`git worktree add ${worktreeDir} feature-stale`.cwd(testDir).quiet();
-		const worktreeTaskPath = join(worktreeDir, "backlog", "tasks", "task-1", "task.md");
+		const worktreeTaskPath = join(worktreeDir, "agentic-workspace", "tasks", "task-1", "task.md");
 		await Bun.write(worktreeTaskPath, serializeTask(task("TASK-1", "After ref move")));
 		await $`git add -A`.cwd(worktreeDir).quiet();
-		await $`git -c user.name="Backlog Test" -c user.email="test@example.com" commit -m "Move branch tip"`
+		await $`git -c user.name="AgenticWorkspace Test" -c user.email="test@example.com" commit -m "Move branch tip"`
 			.cwd(worktreeDir)
 			.quiet();
 
@@ -200,10 +200,10 @@ describe("Core shared task corpus regressions", () => {
 		// directories untouched, so only ref-fingerprint comparison can notice it.
 		const worktreeDir = trackDir("worktree");
 		await $`git worktree add ${worktreeDir} feature-stale`.cwd(testDir).quiet();
-		const worktreeTaskPath = join(worktreeDir, "backlog", "tasks", "task-1", "task.md");
+		const worktreeTaskPath = join(worktreeDir, "agentic-workspace", "tasks", "task-1", "task.md");
 		await Bun.write(worktreeTaskPath, serializeTask(task("TASK-1", "After ref move")));
 		await $`git add -A`.cwd(worktreeDir).quiet();
-		await $`git -c user.name="Backlog Test" -c user.email="test@example.com" commit -m "Move branch tip"`
+		await $`git -c user.name="AgenticWorkspace Test" -c user.email="test@example.com" commit -m "Move branch tip"`
 			.cwd(worktreeDir)
 			.quiet();
 

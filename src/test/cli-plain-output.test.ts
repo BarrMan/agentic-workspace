@@ -8,7 +8,7 @@ import { createUniqueTestDir, initializeFilesystemTestProject, safeCleanup } fro
 
 let TEST_DIR: string;
 let SUBTASKS: Array<{ id: string; title: string }> = [];
-const CLI_COMMAND = ["agenticworkspace"];
+const CLI_COMMAND = ["agentic-workspace"];
 
 function $(parts: TemplateStringsArray, ...values: unknown[]) {
 	const source = parts.reduce(
@@ -69,7 +69,7 @@ describe("CLI plain output for AI agents", () => {
 
 		// Initialize git repo first using shell API (same pattern as other tests)
 
-		// Initialize backlog project using Core (same pattern as other tests)
+		// Initialize agentic-workspace project using Core (same pattern as other tests)
 		const core = new Core(TEST_DIR);
 		await initializeFilesystemTestProject(core, "Plain Output Test Project");
 
@@ -153,7 +153,7 @@ describe("CLI plain output for AI agents", () => {
 		expect(result.stdout.toString()).not.toContain("[?1049h");
 		expect(result.stdout.toString()).not.toContain("\x1b");
 
-		const taskFile = await readFile(join(TEST_DIR, "backlog/tasks/task-1/task.md"), "utf8");
+		const taskFile = await readFile(join(TEST_DIR, "agentic-workspace/tasks/task-1/task.md"), "utf8");
 		expect(taskFile).toContain("created_date: '2025-06-18'");
 		expect(taskFile).not.toContain("(UTC)");
 	});

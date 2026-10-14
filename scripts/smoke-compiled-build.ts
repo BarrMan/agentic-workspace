@@ -19,7 +19,7 @@ for (const [key, value] of Object.entries(process.env)) {
 		fixtureEnv[key] = value;
 	}
 }
-for (const key of ["BACKLOG_CWD", "BACKLOG_WORKSPACE_CONTEXT", "BACKLOG_TASK_ID", "BACKLOG_TMUX_SOCKET"]) {
+for (const key of ["AGENTIC_WORKSPACE_CWD", "AGENTIC_WORKSPACE_WORKSPACE_CONTEXT", "AGENTIC_WORKSPACE_TASK_ID", "AGENTIC_WORKSPACE_TMUX_SOCKET"]) {
 	delete fixtureEnv[key];
 }
 
@@ -176,7 +176,7 @@ assert(helpOutput.includes("AgenticWorkspace - Project management CLI"), "Compil
 const versionOutput = (await run([executable, "--version"])).trim();
 assert(versionOutput === expectedVersion, `Expected compiled version ${expectedVersion}, received ${versionOutput}.`);
 
-const smokeRoot = await mkdtemp(join(tmpdir(), "backlog-compiled-smoke-"));
+const smokeRoot = await mkdtemp(join(tmpdir(), "agentic-workspace-compiled-smoke-"));
 fixtureEnv.HOME = join(smokeRoot, ".home");
 fixtureEnv.USERPROFILE = fixtureEnv.HOME;
 fixtureEnv.XDG_CONFIG_HOME = join(smokeRoot, ".config");
@@ -242,7 +242,7 @@ try {
 			() => ` stderr:\n${mcpStderr}`,
 		);
 		assert(
-			resources.resources.some((resource) => resource.uri === "backlog://workflow/overview"),
+			resources.resources.some((resource) => resource.uri === "agentic-workspace://workflow/overview"),
 			"Compiled MCP server is missing its workflow overview resource.",
 		);
 	} catch (error) {

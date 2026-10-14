@@ -1,6 +1,6 @@
-## Backlog.md Overview (Tools)
+## AgenticWorkspace Overview (Tools)
 
-Backlog.md tracks committed work. Create a task when work benefits from planning, decisions, or handoff context. Search existing tasks first; questions, exploration, and obvious mechanical edits may not need a task.
+AgenticWorkspace tracks committed work. Create a task when work benefits from planning, decisions, or handoff context. Search existing tasks first; questions, exploration, and obvious mechanical edits may not need a task.
 
 ### Modes and artifacts
 
@@ -12,7 +12,7 @@ Flat task and draft records are unsupported. Manually move each `<name>.md` to `
 
 ### MCP tools quick reference
 
-- `get_backlog_instructions`
+- `get_agentic-workspace_instructions`
 - `task_list`, `task_search`, `task_view`, `task_create`, `task_edit`
 - `task_complete` — move finished work to completed storage during cleanup
 - `task_archive` — archive canceled, duplicate, or invalid work

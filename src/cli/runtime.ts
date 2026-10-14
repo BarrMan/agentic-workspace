@@ -1,5 +1,5 @@
 import type { Writable } from "node:stream";
-import { findBacklogRoot } from "../utils/find-backlog-root.ts";
+import { findAgenticWorkspaceRoot } from "../utils/find-agentic-workspace-root.ts";
 import { resolveRuntimeCwd } from "../utils/runtime-cwd.ts";
 
 /** Startup capabilities shared by command registrations without exposing process-wide state. */
@@ -24,13 +24,13 @@ export class CliRuntime {
 	}
 
 	async findProjectRoot(override?: string): Promise<string | null> {
-		return findBacklogRoot(await this.cwd(override));
+		return findAgenticWorkspaceRoot(await this.cwd(override));
 	}
 
 	async projectRoot(): Promise<string> {
 		const root = await this.findProjectRoot();
 		if (root) return root;
-		console.error("No AgenticWorkspace project found. Run `agenticworkspace init` to initialize.");
+		console.error("No AgenticWorkspace project found. Run `agentic-workspace init` to initialize.");
 		throw Object.assign(new Error("CLI requested exit"), { exitCode: 1 });
 	}
 }

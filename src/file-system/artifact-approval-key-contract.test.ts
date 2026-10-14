@@ -7,7 +7,7 @@ import {
 	getDefaultModeCatalog,
 	loadAgentConfiguration,
 } from "../agent-workspace/config.ts";
-import { Core } from "../core/backlog.ts";
+import { Core } from "../core/agentic-workspace.ts";
 import { createUniqueTestDir, initializeTestProject, safeCleanup } from "../test/test-utils.ts";
 import { TaskArtifactRepository } from "./task-artifact-repository.ts";
 
@@ -22,8 +22,8 @@ describe("artifact approval key contract", () => {
 	it("persists generic prototype-named artifacts as own records across restart, list, status, and revoke", async () => {
 		const root = await createUniqueTestDir("artifact-approval-key-contract");
 		roots.push(root);
-		const backlogDirectory = join(root, ".backlog");
-		const container = join(backlogDirectory, "tasks", "back-23");
+		const agenticWorkspaceDirectory = join(root, ".agentic-workspace");
+		const container = join(agenticWorkspaceDirectory, "tasks", "back-23");
 		await mkdir(container, { recursive: true });
 		await writeFile(
 			join(container, "task.md"),
@@ -32,14 +32,14 @@ describe("artifact approval key contract", () => {
 
 		const paths = ["__proto__", "constructor", "toString"];
 		const bytes = new Map(paths.map((path) => [path, encoder.encode(`exact bytes for ${path}\n`)]));
-		const first = new TaskArtifactRepository({ backlogDirectory });
+		const first = new TaskArtifactRepository({ agenticWorkspaceDirectory });
 		for (const path of paths) await first.write("BACK-23", path, bytes.get(path)!);
 		for (const path of paths) {
 			const reviewed = await first.status("BACK-23", path);
 			await first.approveCurrentVersion("BACK-23", path, reviewed.sha256!);
 		}
 
-		const second = new TaskArtifactRepository({ backlogDirectory });
+		const second = new TaskArtifactRepository({ agenticWorkspaceDirectory });
 		const listed = await second.list("BACK-23");
 		expect(listed.map(({ path }) => path).sort()).toEqual([...paths].sort());
 		for (const path of paths) {
@@ -71,19 +71,19 @@ describe("artifact approval key contract", () => {
 		const root = await createUniqueTestDir("artifact-approval-key-contract-config");
 		roots.push(root);
 		const core = new Core(root);
-		await core.filesystem.ensureBacklogStructure();
+		await core.filesystem.ensureAgenticWorkspaceStructure();
 		await initializeTestProject(core, "Optional artifact declarations");
 		const configuration = getBuiltInAgentConfiguration();
 		configuration.modes = getDefaultModeCatalog();
 		const plan = configuration.modes.profiles.plan;
 		if (!plan) throw new Error("Missing PLAN profile");
 		plan.artifacts = [];
-		await writeFile(join(core.filesystem.backlogDir, "agents.json"), JSON.stringify(configuration));
+		await writeFile(join(core.filesystem.agenticWorkspaceDir, "agents.json"), JSON.stringify(configuration));
 
 		const loaded = await loadAgentConfiguration(core, "project");
 		expect(loaded?.modes?.profiles.plan?.artifacts).toEqual([]);
 		const { task } = await core.createTaskFromInput({ title: "Undeclared artifact", status: "To Do" });
-		const repository = new TaskArtifactRepository({ backlogDirectory: core.filesystem.backlogDir });
+		const repository = new TaskArtifactRepository({ agenticWorkspaceDirectory: core.filesystem.agenticWorkspaceDir });
 		const bytes = encoder.encode("artifact without a profile declaration\n");
 		expect((await repository.write(task.id, "notes/result.md", bytes)).path).toBe("notes/result.md");
 		expect((await repository.read(task.id, "notes/result.md")).bytes).toEqual(bytes);

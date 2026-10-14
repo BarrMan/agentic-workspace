@@ -6,9 +6,9 @@ import { addHelpSchema, choiceType } from "../../../commands/help-schema.ts";
 import { DEFAULT_DIRECTORIES, DEFAULT_FILES } from "../../../constants/index.ts";
 import { type IntegrationMode, initializeProject } from "../../../core/init.ts";
 import { type AgentInstructionFile, Core, initializeGitRepository, isGitRepository } from "../../../index.ts";
-import type { BacklogConfig } from "../../../types/index.ts";
+import type { AgenticWorkspaceConfig } from "../../../types/index.ts";
 import { type AgentSelectionValue, processAgentSelection } from "../../../utils/agent-selection.ts";
-import { normalizeProjectBacklogDirectory } from "../../../utils/backlog-directory.ts";
+import { normalizeProjectAgenticWorkspaceDirectory } from "../../../utils/agentic-workspace-directory.ts";
 import { getTaskPrefixError } from "../../../utils/prefix-config.ts";
 import { runAdvancedConfigWizard } from "../config/advanced-wizard.ts";
 import {
@@ -29,8 +29,8 @@ export interface InitCommandDependencies {
 }
 
 interface StorageSelection {
-	backlogDirectory?: string;
-	backlogDirectorySource?: "backlog" | ".backlog" | "custom";
+	agenticWorkspaceDirectory?: string;
+	agenticWorkspaceDirectorySource?: "agentic-workspace" | ".agentic-workspace" | "custom";
 	configLocation?: "folder" | "root";
 }
 
@@ -42,7 +42,7 @@ interface IntegrationSelection {
 }
 
 interface AdvancedSelection {
-	config: Partial<BacklogConfig>;
+	config: Partial<AgenticWorkspaceConfig>;
 	configured: boolean;
 	installShellCompletions: boolean;
 	completionResult: CompletionInstallResult | null;
@@ -51,7 +51,7 @@ interface AdvancedSelection {
 
 export function registerInitCommand(program: Command, dependencies: InitCommandDependencies): void {
 	addHelpSchema(program.command("init [projectName]"), initHelp)
-		.description("initialize backlog project in the current directory (or BACKLOG_CWD when set)")
+		.description("initialize AgenticWorkspace in the current directory (or AGENTIC_WORKSPACE_CWD when set)")
 		.option(
 			"--agent-instructions <instructions>",
 			"comma-separated agent instructions to create. Valid: claude, agents, gemini, copilot, cursor (writes AGENTS.md), none. Use 'none' to skip; when combined with others, 'none' is ignored.",
@@ -68,7 +68,10 @@ export function registerInitCommand(program: Command, dependencies: InitCommandD
 			"--integration-mode <mode>",
 			"choose AI integration mode: cli, mcp, or none (default: cli; cli instructions are recommended)",
 		)
-		.option("--backlog-dir <path>", "backlog folder for init: backlog, .backlog, or a custom project-relative path")
+		.option(
+			"--agentic-workspace-dir <path>",
+			"AgenticWorkspace folder for init: agentic-workspace, .agentic-workspace, or a custom project-relative path",
+		)
 		.option("--config-location <location>", "config location for init: folder or root")
 		.option(
 			"--task-prefix <prefix>",
@@ -150,12 +153,14 @@ async function selectGitMode(cwd: string, options: InitCommandOptions, interacti
 	return filesystemOnly;
 }
 
-function validateReinitialization(options: InitCommandOptions, existingConfig: BacklogConfig | null): void {
+function validateReinitialization(options: InitCommandOptions, existingConfig: AgenticWorkspaceConfig | null): void {
 	if (!existingConfig) return;
-	console.log("Existing backlog project detected. Current configuration will be preserved where not specified.");
-	if (options.backlogDir)
+	console.log(
+		"Existing AgenticWorkspace project detected. Current configuration will be preserved where not specified.",
+	);
+	if (options.agenticWorkspaceDir)
 		failInitialization(
-			"The backlog directory is fixed after initialization. Re-run init without --backlog-dir for this project.",
+			"The AgenticWorkspace directory is fixed after initialization. Re-run init without --agentic-workspace-dir for this project.",
 		);
 	if (options.configLocation)
 		failInitialization(
@@ -165,13 +170,13 @@ function validateReinitialization(options: InitCommandOptions, existingConfig: B
 
 async function selectProjectName(
 	projectName: string | undefined,
-	config: BacklogConfig | null,
+	config: AgenticWorkspaceConfig | null,
 	interactive: boolean,
 ): Promise<string | null> {
 	if (projectName) return projectName;
 	if (!interactive)
 		return abortInitialization(
-			'Project name is required when no interactive terminal is available. Supply it with `agenticworkspace init "My Project" --defaults`.',
+			'Project name is required when no interactive terminal is available. Supply it with `agentic-workspace init "My Project" --defaults`.',
 		);
 	const defaultName = config?.projectName || "";
 	const name = await clack.text({
@@ -190,15 +195,17 @@ async function selectStorage(
 	nonInteractive: boolean,
 ): Promise<StorageSelection | null> {
 	if (reinitializing) return {};
-	const resolved = core.filesystem.resolveBacklogDirectoryInfo();
-	const defaultDirectory = resolved.backlogDir ?? DEFAULT_DIRECTORIES.BACKLOG;
-	const defaultSource = resolved.source ?? "backlog";
+	const resolved = core.filesystem.resolveAgenticWorkspaceDirectoryInfo();
+	const defaultDirectory = resolved.agenticWorkspaceDir ?? DEFAULT_DIRECTORIES.AGENTIC_WORKSPACE;
+	const defaultSource = resolved.source ?? "agentic-workspace";
 	const defaultConfigLocation = resolved.configSource ?? "folder";
-	const configuredDirectory = options.backlogDir ? normalizeProjectBacklogDirectory(options.backlogDir) : undefined;
+	const configuredDirectory = options.agenticWorkspaceDir
+		? normalizeProjectAgenticWorkspaceDirectory(options.agenticWorkspaceDir)
+		: undefined;
 	const configuredLocation = options.configLocation?.trim().toLowerCase();
-	if (options.backlogDir && !configuredDirectory)
+	if (options.agenticWorkspaceDir && !configuredDirectory)
 		failInitialization(
-			"Invalid --backlog-dir value. Use 'backlog', '.backlog', or a project-relative path inside the project.",
+			"Invalid --agentic-workspace-dir value. Use 'agentic-workspace', '.agentic-workspace', or a project-relative path inside the project.",
 		);
 	if (configuredLocation && configuredLocation !== "folder" && configuredLocation !== "root")
 		failInitialization("Invalid --config-location value. Use 'folder' or 'root'.");
@@ -217,24 +224,28 @@ function selectNonInteractiveStorage(
 	directory: string | undefined,
 	location: string | undefined,
 	defaultDirectory: string,
-	defaultSource: "backlog" | ".backlog" | "custom",
+	defaultSource: "agentic-workspace" | ".agentic-workspace" | "custom",
 	defaultLocation: "folder" | "root",
 ): StorageSelection {
 	const source = directory
-		? directory === DEFAULT_DIRECTORIES.BACKLOG || directory === DEFAULT_DIRECTORIES.HIDDEN_BACKLOG
-			? (directory as "backlog" | ".backlog")
+		? directory === DEFAULT_DIRECTORIES.AGENTIC_WORKSPACE || directory === DEFAULT_DIRECTORIES.HIDDEN_AGENTIC_WORKSPACE
+			? (directory as "agentic-workspace" | ".agentic-workspace")
 			: "custom"
 		: defaultSource;
 	const configLocation =
 		(location as "folder" | "root" | undefined) ?? (source === "custom" ? "root" : defaultLocation);
 	if (source === "custom" && configLocation !== "root")
-		failInitialization("Custom backlog directories require --config-location root.");
-	return { backlogDirectory: directory ?? defaultDirectory, backlogDirectorySource: source, configLocation };
+		failInitialization("Custom AgenticWorkspace directories require --config-location root.");
+	return {
+		agenticWorkspaceDirectory: directory ?? defaultDirectory,
+		agenticWorkspaceDirectorySource: source,
+		configLocation,
+	};
 }
 
 async function promptForStorage(
 	defaultDirectory: string,
-	defaultSource: "backlog" | ".backlog" | "custom",
+	defaultSource: "agentic-workspace" | ".agentic-workspace" | "custom",
 	defaultLocation: "folder" | "root",
 	rootConfigPath: string,
 ): Promise<StorageSelection | null> {
@@ -242,8 +253,16 @@ async function promptForStorage(
 		message: "Where should AgenticWorkspace store project files?",
 		initialValue: defaultSource,
 		options: [
-			{ label: "backlog/ (default)", value: "backlog", hint: "Store tasks and config in backlog/" },
-			{ label: ".backlog/", value: ".backlog", hint: "Store tasks and config in .backlog/" },
+			{
+				label: "agentic-workspace/ (default)",
+				value: "agentic-workspace",
+				hint: "Store tasks and config in agentic-workspace/",
+			},
+			{
+				label: ".agentic-workspace/",
+				value: ".agentic-workspace",
+				hint: "Store tasks and config in .agentic-workspace/",
+			},
 			{
 				label: "Custom project-relative path",
 				value: "custom",
@@ -257,34 +276,34 @@ async function promptForStorage(
 			message: "Where should AgenticWorkspace store project configuration?",
 			initialValue: defaultLocation,
 			options: [
-				{ label: `${source}/config.yml`, value: "folder", hint: "Keep config inside the backlog folder" },
+				{ label: `${source}/config.yml`, value: "folder", hint: "Keep config inside the AgenticWorkspace folder" },
 				{
-					label: "backlog.config.yml in project root",
+					label: "agentic-workspace.config.yml in project root",
 					value: "root",
-					hint: "Keep config at project root and point to the backlog folder there",
+					hint: "Keep config at project root and point to the AgenticWorkspace folder there",
 				},
 			],
 		});
 		return clack.isCancel(configLocation)
 			? abortInitialization()
 			: {
-					backlogDirectory: source,
-					backlogDirectorySource: source,
+					agenticWorkspaceDirectory: source,
+					agenticWorkspaceDirectorySource: source,
 					configLocation: configLocation as "folder" | "root",
 				};
 	}
 	const directory = await clack.text({
-		message: "Project-relative backlog directory:",
+		message: "Project-relative AgenticWorkspace directory:",
 		defaultValue: defaultSource === "custom" ? defaultDirectory : "",
 		validate: (value) =>
-			normalizeProjectBacklogDirectory(String(value ?? ""))
+			normalizeProjectAgenticWorkspaceDirectory(String(value ?? ""))
 				? undefined
 				: "Enter a project-relative path inside the current project.",
 	});
 	if (clack.isCancel(directory)) return abortInitialization();
 	return {
-		backlogDirectory: normalizeProjectBacklogDirectory(String(directory ?? "")) ?? undefined,
-		backlogDirectorySource: "custom",
+		agenticWorkspaceDirectory: normalizeProjectAgenticWorkspaceDirectory(String(directory ?? "")) ?? undefined,
+		agenticWorkspaceDirectorySource: "custom",
 		configLocation: "root",
 	};
 }
@@ -433,7 +452,7 @@ function parseAgentInstructions(
 
 async function selectAdvancedConfig(
 	options: InitCommandOptions,
-	existingConfig: BacklogConfig | null,
+	existingConfig: AgenticWorkspaceConfig | null,
 	nonInteractive: boolean,
 	filesystemOnly: boolean,
 ): Promise<AdvancedSelection | null> {
@@ -472,8 +491,8 @@ async function selectAdvancedConfig(
 }
 
 async function promptForAdvancedConfig(
-	existingConfig: BacklogConfig | null,
-	defaults: Partial<BacklogConfig>,
+	existingConfig: AgenticWorkspaceConfig | null,
+	defaults: Partial<AgenticWorkspaceConfig>,
 ): Promise<AdvancedSelection | null> {
 	const response = await clack.confirm({
 		message: "Configure advanced settings now? (Runs the advanced AgenticWorkspace config wizard)",
@@ -510,7 +529,7 @@ async function promptForAdvancedConfig(
 }
 
 function showInitializationSummary(
-	config: BacklogConfig,
+	config: AgenticWorkspaceConfig,
 	core: Core,
 	storage: StorageSelection,
 	integration: IntegrationSelection,
@@ -519,7 +538,7 @@ function showInitializationSummary(
 	const color = createColorizer();
 	const lines = [
 		`${color.label("Project Name:")} ${color.bold(config.projectName)}`,
-		`${color.label("Backlog directory:")} ${storage.backlogDirectory ?? core.filesystem.backlogDirName}`,
+		`${color.label("AgenticWorkspace directory:")} ${storage.agenticWorkspaceDirectory ?? core.filesystem.agenticWorkspaceDirName}`,
 		`${color.label("Config location:")} ${storage.configLocation === "root" ? DEFAULT_FILES.ROOT_CONFIG : "folder config.yml"}`,
 		`${color.label("Git integration:")} ${config.filesystemOnly ? color.muted("disabled (filesystem-only)") : color.good("enabled")}`,
 	];
@@ -530,7 +549,7 @@ function showInitializationSummary(
 	if (advanced.configured || config.filesystemOnly) addAdvancedSummary(lines, color, config);
 	else
 		lines.push(
-			`${color.label("Advanced settings:")} ${color.muted("unchanged (run `agenticworkspace config` to customize)")}`,
+			`${color.label("Advanced settings:")} ${color.muted("unchanged (run `agentic-workspace config` to customize)")}`,
 		);
 	clack.note(lines.join("\n"), "Initialization Summary");
 }
@@ -554,11 +573,15 @@ function addIntegrationSummary(
 		);
 	} else
 		lines.push(
-			`${color.label("AI integration:")} ${color.muted("skipped (configure later via `agenticworkspace init`)")}`,
+			`${color.label("AI integration:")} ${color.muted("skipped (configure later via `agentic-workspace init`)")}`,
 		);
 }
 
-function addAdvancedSummary(lines: string[], color: ReturnType<typeof createColorizer>, config: BacklogConfig): void {
+function addAdvancedSummary(
+	lines: string[],
+	color: ReturnType<typeof createColorizer>,
+	config: AgenticWorkspaceConfig,
+): void {
 	const bool = (value: boolean) => (value ? color.good("true") : color.bad("false"));
 	lines.push(
 		color.label("Advanced settings:"),
@@ -589,21 +612,21 @@ function showInitializationResults(
 			`⚠️  Shell completion installation failed:\n${advanced.completionError
 				.split("\n")
 				.map((line) => `  ${line}`)
-				.join("\n")}\n  Run \`backlog completion install\` later to retry.\n`,
+				.join("\n")}\n  Run \`agentic-workspace completion install\` later to retry.\n`,
 		);
 	clack.outro(
-		`${result.isReInitialization ? "Updated" : "Initialized"} backlog project${result.isReInitialization ? " configuration" : ""}: ${name}`,
+		`${result.isReInitialization ? "Updated" : "Initialized"} AgenticWorkspace project${result.isReInitialization ? " configuration" : ""}: ${name}`,
 	);
 	if (integration.mode !== "cli") return;
 	if (result.mcpResults?.agentFiles) clack.log.info(result.mcpResults.agentFiles);
 	else if (integration.agentInstructionsSkipped) clack.log.info("Skipping agent instruction files per selection.");
 }
 
-async function warnWhenRemoteIsMissing(core: Core, config: BacklogConfig): Promise<void> {
+async function warnWhenRemoteIsMissing(core: Core, config: AgenticWorkspaceConfig): Promise<void> {
 	try {
 		if (config.remoteOperations && !(await core.git.hasAnyRemote()))
 			console.warn(
-				"Warning: remoteOperations is enabled but no git remotes are configured. Remote features will be skipped until a remote is added (e.g., 'git remote add origin <url>') or disable remoteOperations via 'agenticworkspace config set remoteOperations false'.",
+				"Warning: remoteOperations is enabled but no git remotes are configured. Remote features will be skipped until a remote is added (e.g., 'git remote add origin <url>') or disable remoteOperations via 'agentic-workspace config set remoteOperations false'.",
 			);
 	} catch {
 		/* Advisory only. */
@@ -650,7 +673,11 @@ const initHelp = {
 			type: choiceType(["claude", "agents", "gemini", "copilot", "cursor", "none"], { multiple: true }),
 			description: "Instruction files to create; cursor writes AGENTS.md; comma-separated",
 		},
-		{ name: "--backlog-dir", type: "Project-relative path", description: "backlog, .backlog, or custom path" },
+		{
+			name: "--agentic-workspace-dir",
+			type: "Project-relative path",
+			description: "agentic-workspace, .agentic-workspace, or custom path",
+		},
 		{
 			name: "--task-prefix",
 			type: "String (letters only; default: task)",
@@ -658,11 +685,11 @@ const initHelp = {
 		},
 		{ name: "--no-git", type: "Boolean", description: "Initialize without Git integration" },
 	],
-	writes: "Backlog directory, config file, and optional agent instruction files",
+	writes: "AgenticWorkspace directory, config file, and optional agent instruction files",
 	output: "Initialization summary with selected integration and config; defaults to CLI instructions",
 	examples: [
-		'agenticworkspace init "My Project" --defaults',
-		'agenticworkspace init "My Project" --defaults --integration-mode cli',
-		'agenticworkspace init "My Project" --defaults --agent-instructions agents,claude',
+		'agentic-workspace init "My Project" --defaults',
+		'agentic-workspace init "My Project" --defaults --integration-mode cli',
+		'agentic-workspace init "My Project" --defaults --agent-instructions agents,claude',
 	],
 };

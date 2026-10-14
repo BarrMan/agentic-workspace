@@ -1,6 +1,6 @@
 import { DEFAULT_INIT_CONFIG } from "../../../constants/index.ts";
 import type { IntegrationMode } from "../../../core/init.ts";
-import type { BacklogConfig } from "../../../types/index.ts";
+import type { AgenticWorkspaceConfig } from "../../../types/index.ts";
 
 export interface InitCommandOptions {
 	agentInstructions?: string;
@@ -13,7 +13,7 @@ export interface InitCommandOptions {
 	webPort?: string;
 	autoOpenBrowser?: string;
 	integrationMode?: string;
-	backlogDir?: string;
+	agenticWorkspaceDir?: string;
 	configLocation?: string;
 	taskPrefix?: string;
 	git?: boolean;
@@ -42,14 +42,16 @@ export function isNonInteractiveInit(options: InitCommandOptions): boolean {
 			options.webPort ||
 			options.autoOpenBrowser ||
 			options.integrationMode ||
-			options.backlogDir ||
+			options.agenticWorkspaceDir ||
 			options.configLocation ||
 			options.taskPrefix ||
 			options.git === false,
 	);
 }
 
-export function getInitAdvancedConfigDefaults(existingConfig?: BacklogConfig | null): Partial<BacklogConfig> {
+export function getInitAdvancedConfigDefaults(
+	existingConfig?: AgenticWorkspaceConfig | null,
+): Partial<AgenticWorkspaceConfig> {
 	return {
 		checkActiveBranches: existingConfig?.checkActiveBranches ?? DEFAULT_INIT_CONFIG.checkActiveBranches,
 		remoteOperations: existingConfig?.remoteOperations ?? DEFAULT_INIT_CONFIG.remoteOperations,
@@ -64,9 +66,9 @@ export function getInitAdvancedConfigDefaults(existingConfig?: BacklogConfig | n
 
 export function applyInitAdvancedOptionOverrides(
 	options: InitCommandOptions,
-	defaults: Partial<BacklogConfig>,
+	defaults: Partial<AgenticWorkspaceConfig>,
 	defaultEditor: string | undefined,
-): Partial<BacklogConfig> {
+): Partial<AgenticWorkspaceConfig> {
 	const config = { ...defaults };
 	config.checkActiveBranches = parseBoolean(
 		options.checkBranches,

@@ -93,6 +93,8 @@ export function getIndicationColor(indication: AgentIndication): string {
 			return "#f59e0b";
 		case "error":
 			return "red";
+		case "ended":
+			return "#9ca3af";
 		case "parked":
 		default:
 			return "#60a5fa";
@@ -111,6 +113,8 @@ export function getSelectedIndicationColor(indication: AgentIndication): string 
 			return "#92400e";
 		case "error":
 			return "#991b1b";
+		case "ended":
+			return "#4b5563";
 		case "parked":
 		default:
 			return "#1e40af";

@@ -32,8 +32,6 @@ import {
 	type TaskSessions,
 } from "./types.ts";
 
-/** Sessions persisted before handoff removal may still carry this obsolete status. */
-const LEGACY_HANDED_OFF_STATUS = "handed-off";
 const NATIVE_SESSION_ID = /^ses_[A-Za-z0-9][A-Za-z0-9_-]*$/;
 
 const stateLockQueues = new Map<string, Promise<void>>();
@@ -71,6 +69,7 @@ async function acquireStateLock(path: string): Promise<() => Promise<void>> {
 
 export interface SessionState extends TaskSessions {
 	version: 2;
+	modes: NonNullable<TaskSessions["modes"]>;
 	hasSuccessfulSession?: boolean;
 	/** Compatibility projection for flat callers. Mutations target the explicit legacy lane. */
 	legacyModeId: string;
@@ -125,14 +124,14 @@ function stateRootContext(rootDir: string, options: ProjectStateRootOptions) {
 	return {
 		projectRoot: resolve(rootDir),
 		home: resolve(process.env.HOME ?? "/tmp"),
-		executionRoots: [resolve(process.cwd()), resolve(process.env.BACKLOG_CWD ?? rootDir)],
+		executionRoots: [resolve(process.cwd()), resolve(process.env.AGENTIC_WORKSPACE_CWD ?? rootDir)],
 		stateRoot: options.stateRoot,
 	};
 }
 
 function externalStateRoot(projectRoot: string, home: string): string {
 	const hash = createHash("sha256").update(projectRoot).digest("hex").slice(0, 16);
-	return join(home, ".backlog", hash);
+	return join(home, ".agentic-workspace", hash);
 }
 
 /** Inspect only the store directory and its immediate task containers, without reading records. */
@@ -166,12 +165,12 @@ async function hasStoreEvidence(root: string): Promise<boolean> {
 
 async function resolveStateRoot(context: ReturnType<typeof stateRootContext>): Promise<string> {
 	const { projectRoot, home, executionRoots, stateRoot } = context;
-	const primary = join(projectRoot, ".backlog");
+	const primary = join(projectRoot, ".agentic-workspace");
 	const external = externalStateRoot(projectRoot, home);
 	// A validated instance may retain its external root after HOME changes.
 	const validExternal =
 		stateRoot !== undefined &&
-		basename(dirname(stateRoot)) === ".backlog" &&
+		basename(dirname(stateRoot)) === ".agentic-workspace" &&
 		basename(stateRoot) === basename(external);
 	if (
 		stateRoot !== undefined &&
@@ -223,7 +222,10 @@ async function resolveStateRoot(context: ReturnType<typeof stateRootContext>): P
 	const storageHomes = new Set([home, ...(validExternal && stateRoot ? [dirname(dirname(stateRoot))] : [])]);
 	const conflicts = new Map<string, string>();
 	for (const root of legacyRoots) {
-		const candidates = [join(root, ".backlog"), ...[...storageHomes].map((base) => externalStateRoot(root, base))];
+		const candidates = [
+			join(root, ".agentic-workspace"),
+			...[...storageHomes].map((base) => externalStateRoot(root, base)),
+		];
 		for (const candidate of candidates) {
 			if (await hasStoreEvidence(candidate)) {
 				const identity = await realpath(candidate);
@@ -297,13 +299,8 @@ const SESSION_KEYS = new Set([
 
 function isSession(value: unknown, taskId: string): value is AgentSession {
 	if (!isRecord(value)) return false;
-	// Reject unknown keys, except the pre-refactor `predecessorId` (stripped by `validate`).
-	if (!Object.keys(value).every((key) => SESSION_KEYS.has(key) || key === "predecessorId")) return false;
-	if (
-		value.taskId !== taskId ||
-		(value.status !== LEGACY_HANDED_OFF_STATUS &&
-			!Object.values(AGENT_SESSION_STATUS).includes(value.status as AgentSession["status"]))
-	)
+	if (!Object.keys(value).every((key) => SESSION_KEYS.has(key))) return false;
+	if (value.taskId !== taskId || !Object.values(AGENT_SESSION_STATUS).includes(value.status as AgentSession["status"]))
 		return false;
 	for (const key of ["id", "preset", "tmuxName", "cwd", "createdAt", "outputPath", "bootstrapPath"]) {
 		if (typeof value[key] !== "string") return false;
@@ -402,7 +399,7 @@ export class SessionStore {
 			const version = isRecord(parsed) ? parsed.version : undefined;
 			if (typeof version === "number" && version > 2) {
 				throw new Error(
-					`Agent session state for ${taskId} at ${statePath} uses version ${version}, newer than this program supports (version 2). The file was not changed. Use a compatible newer Backlog version to read it; do not downgrade, reset, or overwrite it.`,
+					`Agent session state for ${taskId} at ${statePath} uses version ${version}, newer than this program supports (version 2). The file was not changed. Use a compatible newer AgenticWorkspace version to read it; do not downgrade, reset, or overwrite it.`,
 				);
 			}
 			if (version !== 2) {
@@ -464,6 +461,7 @@ export class SessionStore {
 			const result = await fn(history);
 			if (
 				!history.sessions.every((session) => isSession(session, taskId)) ||
+				(history.sessions.length > 0 && history.activeSessionId === undefined) ||
 				(history.activeSessionId !== undefined &&
 					!history.sessions.some((session) => session.id === history.activeSessionId))
 			)
@@ -546,36 +544,32 @@ export class SessionStore {
 		};
 	}
 
+	/** The caller holds the session claim through failure publication and runtime cleanup. */
 	async markResumeProbeFailed(
 		expected: AgentSession,
 		modeId: string,
 		marker: { nativeProvider: NativeAgentNamespace; nativeSessionId: string },
 		error: string,
 	): Promise<void> {
-		const releaseClaim = await this.claimSession(expected.taskId, expected.id);
-		try {
-			await this.mutateSession(expected.taskId, expected.id, async (session, _history, currentModeId) => {
-				this.assertExpectedSession(session, expected, modeId, currentModeId);
-				if (session.nativeProvider !== marker.nativeProvider || session.nativeSessionId !== marker.nativeSessionId)
-					throw new Error(`Session ${expected.id} native identity changed before resume failure publication.`);
-				if (
-					session.status === AGENT_SESSION_STATUS.FAILED &&
-					session.error === error &&
-					session.resumeProbeFailed?.nativeProvider === marker.nativeProvider &&
-					session.resumeProbeFailed.nativeSessionId === marker.nativeSessionId &&
-					session.endedAt !== undefined &&
-					session.ownerPid === undefined
-				)
-					return;
-				session.resumeProbeFailed = marker;
-				session.status = AGENT_SESSION_STATUS.FAILED;
-				session.error = error;
-				session.endedAt = new Date().toISOString();
-				delete session.ownerPid;
-			});
-		} finally {
-			await releaseClaim();
-		}
+		await this.mutateSession(expected.taskId, expected.id, async (session, _history, currentModeId) => {
+			this.assertExpectedSession(session, expected, modeId, currentModeId);
+			if (session.nativeProvider !== marker.nativeProvider || session.nativeSessionId !== marker.nativeSessionId)
+				throw new Error(`Session ${expected.id} native identity changed before resume failure publication.`);
+			if (
+				session.status === AGENT_SESSION_STATUS.FAILED &&
+				session.error === error &&
+				session.resumeProbeFailed?.nativeProvider === marker.nativeProvider &&
+				session.resumeProbeFailed.nativeSessionId === marker.nativeSessionId &&
+				session.endedAt !== undefined &&
+				session.ownerPid === undefined
+			)
+				return;
+			session.resumeProbeFailed = marker;
+			session.status = AGENT_SESSION_STATUS.FAILED;
+			session.error = error;
+			session.endedAt = new Date().toISOString();
+			delete session.ownerPid;
+		});
 	}
 
 	private assertExpectedSession(
@@ -755,8 +749,8 @@ export class SessionStore {
 				removed = history.sessions[index];
 				history.sessions.splice(index, 1);
 				if (history.activeSessionId === sessionId) {
-					delete history.activeSessionId;
-					if (history === state.modes?.[state.legacyModeId]) delete state.activeSessionId;
+					history.activeSessionId = history.sessions[0]?.id;
+					if (history === state.modes?.[state.legacyModeId]) state.activeSessionId = history.activeSessionId;
 				}
 			}
 			state.sessions = state.modes?.[state.legacyModeId]?.sessions ?? [];
@@ -885,8 +879,9 @@ export class SessionStore {
 					seen.add(session.id);
 				}
 				if (
-					history.activeSessionId !== undefined &&
-					!history.sessions.some((session) => session.id === history.activeSessionId)
+					(history.sessions.length > 0 && history.activeSessionId === undefined) ||
+					(history.activeSessionId !== undefined &&
+						!history.sessions.some((session) => session.id === history.activeSessionId))
 				)
 					throw new Error("invalid state");
 			}
@@ -897,19 +892,6 @@ export class SessionStore {
 			(state.hasSuccessfulSession !== undefined && typeof state.hasSuccessfulSession !== "boolean")
 		)
 			throw new Error("invalid state");
-		// Pre-refactor state files may carry `handoff`, `handoffDocumentId`, `predecessorId`, or a
-		// `handed-off` status. They are obsolete now; ignore and strip them so old workspaces keep
-		// loading and are rewritten cleanly on the next mutation.
-		const record = state as unknown as Record<string, unknown>;
-		delete record.handoff;
-		delete record.handoffDocumentId;
-		for (const session of Object.values(state.modes ?? {}).flatMap((history) => history.sessions)) {
-			const fields = session as unknown as Record<string, unknown>;
-			if (fields.status === LEGACY_HANDED_OFF_STATUS) fields.status = AGENT_SESSION_STATUS.STOPPED;
-			for (const key of Object.keys(fields)) {
-				if (!SESSION_KEYS.has(key)) delete fields[key];
-			}
-		}
 		return state;
 	}
 
@@ -925,6 +907,7 @@ export class SessionStore {
 				!isRecord(history) ||
 				!Array.isArray(history.sessions) ||
 				!history.sessions.every((session) => isSession(session, taskId)) ||
+				(history.sessions.length > 0 && history.activeSessionId === undefined) ||
 				(history.activeSessionId !== undefined && typeof history.activeSessionId !== "string")
 			)
 				throw new Error("invalid state");

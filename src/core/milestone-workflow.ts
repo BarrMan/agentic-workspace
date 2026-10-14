@@ -1,6 +1,6 @@
 import type { Milestone, Task } from "../types/index.ts";
 import { normalizeDueDate } from "../utils/due-date.ts";
-import type { Core } from "./backlog.ts";
+import type { Core } from "./agentic-workspace.ts";
 import { buildMilestoneMatchKeys, findActiveMilestoneByAlias, keySetsIntersect } from "./milestone-resolution.ts";
 import { milestoneKey, normalizeMilestoneName } from "./milestones.ts";
 

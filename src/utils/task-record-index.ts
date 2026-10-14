@@ -33,7 +33,7 @@ export interface TaskRecordIndex {
 /**
  * Build the index.
  *
- * `completedTasks` are records that live in the completed corpus (`backlog/completed`). Their
+ * `completedTasks` are records that live in the completed corpus (`agentic-workspace/completed`). Their
  * location is the completion evidence, so they count as finished whatever their status string says:
  * the terminal status may have been renamed since, or the record may predate the current
  * configuration. Passing them separately is what keeps that distinction available.

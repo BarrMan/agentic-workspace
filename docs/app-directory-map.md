@@ -32,10 +32,6 @@ Every non-excluded file, with measured size, line count and tags.
 │   │   └── release.yml — 19,259 B — 527 L — #ci-workflow
 │   ├── 5-minute-tour-256.png — 22,031 B — binary — #asset-image #repo-meta
 │   ├── PULL_REQUEST_TEMPLATE.md — 1,019 B — 21 L — #repo-meta
-│   ├── backlog-logo.png — 167,239 B — binary — #asset-image #repo-meta
-│   ├── backlog-v1.40.gif — 2,632,070 B — binary — #asset-image #repo-meta
-│   ├── backlog.jpg — 210,181 B — binary — #asset-image #repo-meta
-│   ├── backlog.mp4 — 753,506 B — binary — #asset-video #repo-meta
 │   ├── cli-reference-256.png — 17,829 B — binary — #asset-image #repo-meta
 │   ├── configuration-256.png — 23,875 B — binary — #asset-image #repo-meta
 │   ├── copilot-instructions.md — 1,790 B — 50 L — #repo-meta
@@ -79,16 +75,14 @@ Every non-excluded file, with measured size, line count and tags.
 │   └── project.yml — 9,788 B — 169 L — #agent-editor-config
 ├── .vscode/
 │   └── launch.json — 415 B — 17 L — #agent-editor-config
-├── backlog/
-│   └── config.yml — 576 B — 18 L — #backlog-config
 ├── completions/
 │   ├── .gitkeep — 599 B — 15 L — #asset-completion #shell-completion
 │   ├── EXAMPLES.md — 4,872 B — 218 L — #asset-completion #shell-completion
 │   ├── README.md — 6,208 B — 287 L — #asset-completion #shell-completion
-│   ├── _backlog — 1,133 B — 35 L — #asset-completion #shell-completion
-│   ├── backlog.bash — 2,081 B — 64 L — #asset-completion #shell-completion
-│   ├── backlog.fish — 1,443 B — 38 L — #asset-completion #shell-completion
-│   └── backlog.ps1 — 1,395 B — 43 L — #asset-completion #shell-completion
+│   ├── _agentic-workspace — #asset-completion #shell-completion
+│   ├── agentic-workspace.bash — #asset-completion #shell-completion
+│   ├── agentic-workspace.fish — #asset-completion #shell-completion
+│   └── agentic-workspace.ps1 — #asset-completion #shell-completion
 ├── docs/
 │   ├── BACK-728-handoff.md — 21,129 B — 458 L — #doc-spec
 │   ├── agent-session-ownership-plan.md — 18,528 B — 149 L — #doc-spec
@@ -220,7 +214,7 @@ Every non-excluded file, with measured size, line count and tags.
 │   │   │   ├── content.ts — 3,557 B — 110 L — #domain-core #task-update
 │   │   │   ├── index.ts — 867 B — 19 L — #domain-core #task-update
 │   │   │   └── scalars.ts — 4,135 B — 136 L — #domain-core #task-update
-│   │   ├── backlog.ts — 51,068 B — 1,350 L — #domain-core
+│   │   ├── agentic-workspace.ts — 51,068 B — 1,350 L — #domain-core
 │   │   ├── config-migration-workflow.ts — 1,969 B — 43 L — #domain-core
 │   │   ├── config-migration.ts — 2,385 B — 60 L — #domain-core
 │   │   ├── domain-errors.ts — 200 B — 7 L — #domain-core
@@ -338,7 +332,7 @@ Every non-excluded file, with measured size, line count and tags.
 │   │   ├── agent-workspace-model.test.ts — 2,053 B — 52 L — #test-suite #test-unit
 │   │   ├── atomic-task-create.test.ts — 11,046 B — 312 L — #test-suite #test-unit
 │   │   ├── atomic-task-edit.test.ts — 12,471 B — 325 L — #test-suite #test-unit
-│   │   ├── backlog-directory.test.ts — 4,112 B — 92 L — #test-suite #test-unit
+│   │   ├── agentic-workspace-directory.test.ts — 4,112 B — 92 L — #test-suite #test-unit
 │   │   ├── board-actions.test.ts — 4,329 B — 124 L — #test-suite #test-unit
 │   │   ├── board-domain.test.ts — 4,398 B — 120 L — #test-suite #test-unit
 │   │   ├── board-hide-empty-columns.test.ts — 12,048 B — 356 L — #test-pty #test-suite #test-unit
@@ -422,7 +416,7 @@ Every non-excluded file, with measured size, line count and tags.
 │   │   ├── filesystem-task-cache.test.ts — 12,515 B — 331 L — #test-suite #test-unit
 │   │   ├── filesystem.test.ts — 38,785 B — 1,181 L — #test-suite #test-unit
 │   │   ├── filter-header-navigation.test.ts — 865 B — 19 L — #test-suite #test-unit
-│   │   ├── find-backlog-root.test.ts — 6,549 B — 178 L — #test-suite #test-unit
+│   │   ├── find-agentic-workspace-root.test.ts — 6,549 B — 178 L — #test-suite #test-unit
 │   │   ├── footer-content.test.ts — 3,953 B — 92 L — #test-suite #test-unit
 │   │   ├── footer-search.test.ts — 5,589 B — 165 L — #test-suite #test-unit
 │   │   ├── frontmatter-diagnostic-propagation.test.ts — 5,729 B — 158 L — #test-suite #test-unit
@@ -494,7 +488,7 @@ Every non-excluded file, with measured size, line count and tags.
 │   │   ├── strip-tags.test.ts — 2,378 B — 62 L — #test-suite #test-unit
 │   │   ├── subtask-ordering-consistency.test.ts — 4,636 B — 106 L — #test-suite #test-unit
 │   │   ├── subtask-progress.test.ts — 3,956 B — 108 L — #test-suite #test-unit
-│   │   ├── symlink-backlog-root.test.ts — 4,658 B — 123 L — #test-suite #test-unit
+│   │   ├── symlink-agentic-workspace-root.test.ts — 4,658 B — 123 L — #test-suite #test-unit
 │   │   ├── task-edit-preservation.test.ts — 8,815 B — 278 L — #test-suite #test-unit
 │   │   ├── task-filter-wiring.test.ts — 5,141 B — 162 L — #test-suite #test-unit
 │   │   ├── task-frontmatter-storage.test.ts — 6,610 B — 181 L — #test-suite #test-unit
@@ -653,7 +647,7 @@ Every non-excluded file, with measured size, line count and tags.
 │   ├── utils/
 │   │   ├── agent-selection.ts — 1,719 B — 59 L — #shared-util
 │   │   ├── app-info.ts — 245 B — 7 L — #shared-util
-│   │   ├── backlog-directory.ts — 6,936 B — 246 L — #shared-util
+│   │   ├── agentic-workspace-directory.ts — 6,936 B — 246 L — #shared-util
 │   │   ├── browser-launch.ts — 833 B — 28 L — #shared-util
 │   │   ├── clipboard.ts — 1,251 B — 50 L — #shared-util
 │   │   ├── config-line.ts — 351 B — 10 L — #shared-util
@@ -668,7 +662,7 @@ Every non-excluded file, with measured size, line count and tags.
 │   │   ├── duplicate-detection.ts — 3,718 B — 104 L — #shared-util
 │   │   ├── editor.ts — 2,456 B — 93 L — #shared-util
 │   │   ├── entity-id.ts — 2,511 B — 74 L — #shared-util
-│   │   ├── find-backlog-root.ts — 1,927 B — 67 L — #shared-util
+│   │   ├── find-agentic-workspace-root.ts — 1,927 B — 67 L — #shared-util
 │   │   ├── id-generators.ts — 3,340 B — 99 L — #shared-util
 │   │   ├── label-filter.ts — 2,441 B — 84 L — #shared-util
 │   │   ├── list-window.ts — 8,165 B — 213 L — #shared-util
@@ -738,8 +732,8 @@ Nothing below appears in the tree above: each path is recreated by the process t
 
 | Path | Role | `.gitignore` rule |
 |---|---|---|
-| `.backlog/` | The project's local runtime state root: pane view state (`view-state.json`), one session record directory per task (`<task-slug>/state.json` plus its logs), the `agent-requests/` markers written by `writeWorkspaceRequest` and consumed by the owning workspace's boot sweep (`workspaceRequestDir()` in `src/agent-workspace/workspace-context.ts`), and the `**/*.activity/` sidecars written by the agent status hooks (`src/agent-workspace/status-hooks.ts`, read back by `agent-status-probe.ts`). Resolved as `<executionDir>/.backlog`, with a `~/.backlog/<hash>` fallback when that path is not writable (`src/agent-workspace/session-store.ts`). | `.backlog/` (line 70) |
-| `backlog/.locks/` | Lock files for task writes (`create`, `<scope>-<key>`) and for the workspace view state (`src/file-system/operations.ts`, `src/agent-workspace/view-state-store.ts`). Held only for the duration of a mutation. | `backlog/.locks/` (line 73) |
+| `.agentic-workspace/` | The project's local runtime state root: pane view state (`view-state.json`), one session record directory per task (`<task-slug>/state.json` plus its logs), the `agent-requests/` markers written by `writeWorkspaceRequest` and consumed by the owning workspace's boot sweep (`workspaceRequestDir()` in `src/agent-workspace/workspace-context.ts`), and the `**/*.activity/` sidecars written by the agent status hooks (`src/agent-workspace/status-hooks.ts`, read back by `agent-status-probe.ts`). Resolved as `<executionDir>/.agentic-workspace`, with a `~/.agentic-workspace/<hash>` fallback when that path is not writable (`src/agent-workspace/session-store.ts`). | `.agentic-workspace/` |
+| `agentic-workspace/.locks/` | Lock files for task writes (`create`, `<scope>-<key>`) and for the workspace view state (`src/file-system/operations.ts`, `src/agent-workspace/view-state-store.ts`). Held only for the duration of a mutation. | `agentic-workspace/.locks/` |
 
 ## 2. Tag catalog, grouped by purpose
 
@@ -754,8 +748,8 @@ Tags are grouped by the purpose they describe. A tag's carrying set is listed ex
 - **`#cli-registry`** — 2 file(s): `src/cli/index.ts`, `src/cli/register.ts`
 - **`#cli-runtime`** — 15 file(s): `src/cli/runtime.ts`, `src/commands/agent-workspace.ts`, `src/commands/cleanup.ts`, `src/commands/completion.ts`, `src/commands/content-commands.ts`, `src/commands/draft-actions.ts`, `src/commands/help-schema.ts`, `src/commands/instructions.ts`, `src/commands/mcp.ts`, `src/commands/overview.ts`, `src/commands/project-command.ts`, `src/commands/project-view-commands.ts`, `src/commands/search.ts`, `src/commands/skill.ts`, `src/commands/watch-json.ts`
 - **`#cli-support`** — 7 file(s): `src/agent-instructions.ts`, `src/completions/command-structure.ts`, `src/completions/data-providers.ts`, `src/completions/helper.ts`, `src/formatters/dependency-graph-text.ts`, `src/formatters/json-output.ts`, `src/formatters/task-plain-text.ts`
-- **`#shell-completion`** — 10 file(s): `completions/.gitkeep`, `completions/EXAMPLES.md`, `completions/README.md`, `completions/_backlog`, `completions/backlog.bash`, `completions/backlog.fish`, `completions/backlog.ps1`, `src/completions/command-structure.ts`, `src/completions/data-providers.ts`, `src/completions/helper.ts`
-- **`#asset-completion`** — 7 file(s): `completions/.gitkeep`, `completions/EXAMPLES.md`, `completions/README.md`, `completions/_backlog`, `completions/backlog.bash`, `completions/backlog.fish`, `completions/backlog.ps1`
+- **`#shell-completion`** — 10 file(s): `completions/.gitkeep`, `completions/EXAMPLES.md`, `completions/README.md`, `completions/_agentic-workspace`, `completions/agentic-workspace.bash`, `completions/agentic-workspace.fish`, `completions/agentic-workspace.ps1`, `src/completions/command-structure.ts`, `src/completions/data-providers.ts`, `src/completions/helper.ts`
+- **`#asset-completion`** — 7 file(s): `completions/.gitkeep`, `completions/EXAMPLES.md`, `completions/README.md`, `completions/_agentic-workspace`, `completions/agentic-workspace.bash`, `completions/agentic-workspace.fish`, `completions/agentic-workspace.ps1`
 - **`#agent-instruction`** — 2 file(s): `CLAUDE.md`, `src/agent-instructions.ts`
 ### Task domain & shared utilities
 
@@ -821,15 +815,15 @@ Tags are grouped by the purpose they describe. A tag's carrying set is listed ex
 - **`#doc-repo`** — 7 file(s): `ADVANCED-CONFIG.md`, `AGENTS.md`, `CLI-INSTRUCTIONS.md`, `CONTRIBUTING.md`, `DEVELOPMENT.md`, `LICENSE`, `README.md`
 - **`#guidance-doc`** — 18 file(s): `src/guidelines/cli-agent-nudge.md`, `src/guidelines/cli-instructions/agent-workspace.md`, `src/guidelines/cli-instructions/index.ts`, `src/guidelines/cli-instructions/init-required.md`, `src/guidelines/cli-instructions/overview.md`, `src/guidelines/cli-instructions/task-creation.md`, `src/guidelines/cli-instructions/task-execution.md`, `src/guidelines/cli-instructions/task-finalization.md`, `src/guidelines/index.ts`, `src/guidelines/mcp/agent-nudge.md`, `src/guidelines/mcp/index.ts`, `src/guidelines/mcp/init-required.md`, `src/guidelines/mcp/overview-tools.md`, `src/guidelines/mcp/overview.md`, `src/guidelines/mcp/task-creation.md`, `src/guidelines/mcp/task-execution.md`, `src/guidelines/mcp/task-finalization.md`, `src/mcp/README.md`
 - **`#guidance-ts`** — 3 file(s): `src/guidelines/cli-instructions/index.ts`, `src/guidelines/index.ts`, `src/guidelines/mcp/index.ts`
-### Backlog workspace data
+### AgenticWorkspace runtime data
 
-- **`#backlog-config`** — 1 file(s): `backlog/config.yml`
+- **`#agentic-workspace-config`** — 1 file(s): `agentic-workspace/config.yml`
 ### Tooling, config & environment
 
 - **`#build-script`** — 8 file(s): `scripts/benchmark-task-loading.ts`, `scripts/build.ts`, `scripts/cli.cjs`, `scripts/postuninstall.cjs`, `scripts/resolveBinary.cjs`, `scripts/run-tui-interactive-tests.sh`, `scripts/smoke-compiled-build.ts`, `scripts/smoke-parallel-task-locking.sh`
 - **`#dev-tool`** — 1 file(s): `tools/tui-screenshot-compare.sh`
 - **`#ci-workflow`** — 2 file(s): `.github/workflows/ci.yml`, `.github/workflows/release.yml`
-- **`#repo-meta`** — 16 file(s): `.github/5-minute-tour-256.png`, `.github/ISSUE_TEMPLATE/bug_report.md`, `.github/ISSUE_TEMPLATE/feature_request.md`, `.github/PULL_REQUEST_TEMPLATE.md`, `.github/backlog-logo.png`, `.github/backlog-v1.40.gif`, `.github/backlog.jpg`, `.github/backlog.mp4`, `.github/cli-reference-256.png`, `.github/configuration-256.png`, `.github/copilot-instructions.md`, `.github/favicon.png`, `.github/sharing-export-256.png`, `.github/video-presentation.md`, `.github/web-interface-256.png`, `.github/web.jpeg`
+- **`#repo-meta`** — 12 file(s): `.github/ISSUE_TEMPLATE/bug_report.md`, `.github/ISSUE_TEMPLATE/feature_request.md`, `.github/PULL_REQUEST_TEMPLATE.md`, `.github/cli-reference-256.png`, `.github/configuration-256.png`, `.github/copilot-instructions.md`, `.github/favicon.png`, `.github/sharing-export-256.png`, `.github/video-presentation.md`, `.github/web-interface-256.png`, `.github/web.jpeg`, `.github/5-minute-tour-256.png`
 - **`#git-hook`** — 18 file(s): `.husky/_/.gitignore`, `.husky/_/applypatch-msg`, `.husky/_/commit-msg`, `.husky/_/h`, `.husky/_/husky.sh`, `.husky/_/post-applypatch`, `.husky/_/post-checkout`, `.husky/_/post-commit`, `.husky/_/post-merge`, `.husky/_/post-rewrite`, `.husky/_/pre-applypatch`, `.husky/_/pre-auto-gc`, `.husky/_/pre-commit`, `.husky/_/pre-merge-commit`, `.husky/_/pre-push`, `.husky/_/pre-rebase`, `.husky/_/prepare-commit-msg`, `.husky/pre-commit`
 - **`#nix`** — 4 file(s): `.envrc`, `bun.nix`, `flake.lock`, `flake.nix`
 - **`#lockfile`** — 1 file(s): `bun.lock`
@@ -838,8 +832,7 @@ Tags are grouped by the purpose they describe. A tag's carrying set is listed ex
 - **`#config`** — 8 file(s): `.fallowrc.jsonc`, `.gitattributes`, `.gitignore`, `.npmignore`, `biome.json`, `bunfig.toml`, `package.json`, `tsconfig.json`
 ### Media & misc
 
-- **`#asset-image`** — 10 file(s): `.github/5-minute-tour-256.png`, `.github/backlog-logo.png`, `.github/backlog-v1.40.gif`, `.github/backlog.jpg`, `.github/cli-reference-256.png`, `.github/configuration-256.png`, `.github/favicon.png`, `.github/sharing-export-256.png`, `.github/web-interface-256.png`, `.github/web.jpeg`
-- **`#asset-video`** — 1 file(s): `.github/backlog.mp4`
+- **`#asset-image`** — 7 file(s): `.github/5-minute-tour-256.png`, `.github/cli-reference-256.png`, `.github/configuration-256.png`, `.github/favicon.png`, `.github/sharing-export-256.png`, `.github/web-interface-256.png`, `.github/web.jpeg`
 - **`#symlink`** — 1 file(s): `CLAUDE.md`
 
 ## 3. Grouped tree view (one dominant purpose per file)
@@ -854,10 +847,10 @@ Each file appears exactly once, under its dominant purpose group; tags are shown
 │   ├── .gitkeep — 599 B — 15 L — #asset-completion #shell-completion
 │   ├── EXAMPLES.md — 4,872 B — 218 L — #asset-completion #shell-completion
 │   ├── README.md — 6,208 B — 287 L — #asset-completion #shell-completion
-│   ├── _backlog — 1,133 B — 35 L — #asset-completion #shell-completion
-│   ├── backlog.bash — 2,081 B — 64 L — #asset-completion #shell-completion
-│   ├── backlog.fish — 1,443 B — 38 L — #asset-completion #shell-completion
-│   └── backlog.ps1 — 1,395 B — 43 L — #asset-completion #shell-completion
+│   ├── _agentic-workspace — #asset-completion #shell-completion
+│   ├── agentic-workspace.bash — #asset-completion #shell-completion
+│   ├── agentic-workspace.fish — #asset-completion #shell-completion
+│   └── agentic-workspace.ps1 — #asset-completion #shell-completion
 └── src/
     ├── cli/
     │   ├── features/
@@ -930,7 +923,7 @@ Each file appears exactly once, under its dominant purpose group; tags are shown
     │   │   ├── content.ts — 3,557 B — 110 L — #domain-core #task-update
     │   │   ├── index.ts — 867 B — 19 L — #domain-core #task-update
     │   │   └── scalars.ts — 4,135 B — 136 L — #domain-core #task-update
-    │   ├── backlog.ts — 51,068 B — 1,350 L — #domain-core
+    │   ├── agentic-workspace.ts — 51,068 B — 1,350 L — #domain-core
     │   ├── config-migration-workflow.ts — 1,969 B — 43 L — #domain-core
     │   ├── config-migration.ts — 2,385 B — 60 L — #domain-core
     │   ├── domain-errors.ts — 200 B — 7 L — #domain-core
@@ -977,7 +970,7 @@ Each file appears exactly once, under its dominant purpose group; tags are shown
     ├── utils/
     │   ├── agent-selection.ts — 1,719 B — 59 L — #shared-util
     │   ├── app-info.ts — 245 B — 7 L — #shared-util
-    │   ├── backlog-directory.ts — 6,936 B — 246 L — #shared-util
+    │   ├── agentic-workspace-directory.ts — 6,936 B — 246 L — #shared-util
     │   ├── browser-launch.ts — 833 B — 28 L — #shared-util
     │   ├── clipboard.ts — 1,251 B — 50 L — #shared-util
     │   ├── config-line.ts — 351 B — 10 L — #shared-util
@@ -992,7 +985,7 @@ Each file appears exactly once, under its dominant purpose group; tags are shown
     │   ├── duplicate-detection.ts — 3,718 B — 104 L — #shared-util
     │   ├── editor.ts — 2,456 B — 93 L — #shared-util
     │   ├── entity-id.ts — 2,511 B — 74 L — #shared-util
-    │   ├── find-backlog-root.ts — 1,927 B — 67 L — #shared-util
+    │   ├── find-agentic-workspace-root.ts — 1,927 B — 67 L — #shared-util
     │   ├── id-generators.ts — 3,340 B — 99 L — #shared-util
     │   ├── label-filter.ts — 2,441 B — 84 L — #shared-util
     │   ├── list-window.ts — 8,165 B — 213 L — #shared-util
@@ -1264,7 +1257,7 @@ Each file appears exactly once, under its dominant purpose group; tags are shown
     │   ├── agent-workspace-model.test.ts — 2,053 B — 52 L — #test-suite #test-unit
     │   ├── atomic-task-create.test.ts — 11,046 B — 312 L — #test-suite #test-unit
     │   ├── atomic-task-edit.test.ts — 12,471 B — 325 L — #test-suite #test-unit
-    │   ├── backlog-directory.test.ts — 4,112 B — 92 L — #test-suite #test-unit
+    │   ├── agentic-workspace-directory.test.ts — 4,112 B — 92 L — #test-suite #test-unit
     │   ├── board-actions.test.ts — 4,329 B — 124 L — #test-suite #test-unit
     │   ├── board-domain.test.ts — 4,398 B — 120 L — #test-suite #test-unit
     │   ├── board-hide-empty-columns.test.ts — 12,048 B — 356 L — #test-pty #test-suite #test-unit
@@ -1348,7 +1341,7 @@ Each file appears exactly once, under its dominant purpose group; tags are shown
     │   ├── filesystem-task-cache.test.ts — 12,515 B — 331 L — #test-suite #test-unit
     │   ├── filesystem.test.ts — 38,785 B — 1,181 L — #test-suite #test-unit
     │   ├── filter-header-navigation.test.ts — 865 B — 19 L — #test-suite #test-unit
-    │   ├── find-backlog-root.test.ts — 6,549 B — 178 L — #test-suite #test-unit
+    │   ├── find-agentic-workspace-root.test.ts — 6,549 B — 178 L — #test-suite #test-unit
     │   ├── footer-content.test.ts — 3,953 B — 92 L — #test-suite #test-unit
     │   ├── footer-search.test.ts — 5,589 B — 165 L — #test-suite #test-unit
     │   ├── frontmatter-diagnostic-propagation.test.ts — 5,729 B — 158 L — #test-suite #test-unit
@@ -1420,7 +1413,7 @@ Each file appears exactly once, under its dominant purpose group; tags are shown
     │   ├── strip-tags.test.ts — 2,378 B — 62 L — #test-suite #test-unit
     │   ├── subtask-ordering-consistency.test.ts — 4,636 B — 106 L — #test-suite #test-unit
     │   ├── subtask-progress.test.ts — 3,956 B — 108 L — #test-suite #test-unit
-    │   ├── symlink-backlog-root.test.ts — 4,658 B — 123 L — #test-suite #test-unit
+    │   ├── symlink-agentic-workspace-root.test.ts — 4,658 B — 123 L — #test-suite #test-unit
     │   ├── task-edit-preservation.test.ts — 8,815 B — 278 L — #test-suite #test-unit
     │   ├── task-filter-wiring.test.ts — 5,141 B — 162 L — #test-suite #test-unit
     │   ├── task-frontmatter-storage.test.ts — 6,610 B — 181 L — #test-suite #test-unit
@@ -1533,12 +1526,12 @@ Each file appears exactly once, under its dominant purpose group; tags are shown
 └── README.md — 17,236 B — 377 L — #doc-repo
 ```
 
-### Backlog workspace data — `backlog-data` (1 files, 576 B)
+### AgenticWorkspace runtime data — `agentic-workspace-data` (1 files, 576 B)
 
 ```
 .
-└── backlog/
-    └── config.yml — 576 B — 18 L — #backlog-config
+└── agentic-workspace/
+    └── config.yml — 576 B — 18 L — #agentic-workspace-config
 ```
 
 ### Tooling, build, config & environment — `tooling-config` (72 files, 14,146,810 B)
@@ -1561,10 +1554,6 @@ Each file appears exactly once, under its dominant purpose group; tags are shown
 │   │   └── release.yml — 19,259 B — 527 L — #ci-workflow
 │   ├── 5-minute-tour-256.png — 22,031 B — binary — #asset-image #repo-meta
 │   ├── PULL_REQUEST_TEMPLATE.md — 1,019 B — 21 L — #repo-meta
-│   ├── backlog-logo.png — 167,239 B — binary — #asset-image #repo-meta
-│   ├── backlog-v1.40.gif — 2,632,070 B — binary — #asset-image #repo-meta
-│   ├── backlog.jpg — 210,181 B — binary — #asset-image #repo-meta
-│   ├── backlog.mp4 — 753,506 B — binary — #asset-video #repo-meta
 │   ├── cli-reference-256.png — 17,829 B — binary — #asset-image #repo-meta
 │   ├── configuration-256.png — 23,875 B — binary — #asset-image #repo-meta
 │   ├── copilot-instructions.md — 1,790 B — 50 L — #repo-meta
@@ -1646,7 +1635,7 @@ Each file appears exactly once, under its dominant purpose group; tags are shown
 | 6 | Terminal UI (TUI / OpenTUI) | `ui-tui` | 79 | 619,734 | 3.28% |
 | 7 | Test suites & harness | `tests` | 262 | 2,196,024 | 11.61% |
 | 8 | Docs, guidance & repo meta text | `docs-guidance` | 40 | 538,617 | 2.85% |
-| 9 | Backlog workspace data | `backlog-data` | 1 | 576 | 0.00% |
+| 9 | AgenticWorkspace runtime data | `agentic-workspace-data` | 1 | 576 | 0.00% |
 | 10 | Tooling, build, config & environment | `tooling-config` | 72 | 14,146,810 | 74.78% |
 | - | **Total** | - | **677** | **18,918,185** | **100.00%** |
 

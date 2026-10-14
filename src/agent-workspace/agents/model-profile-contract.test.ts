@@ -65,7 +65,7 @@ describe("approved harness model profile contract", () => {
 	});
 
 	test("OpenCode and Pi discovery use isolated executables, selected environment, and environment-sensitive cache identity", async () => {
-		const directory = await mkdtemp(join(tmpdir(), "backlog-model-contract-"));
+		const directory = await mkdtemp(join(tmpdir(), "agentic-workspace-model-contract-"));
 		try {
 			const fixture = join(directory, "model-fixture");
 			const observations = join(directory, "observations");
@@ -105,7 +105,7 @@ describe("approved harness model profile contract", () => {
 	});
 
 	test("discovery timeout, nonzero exit, empty and partial catalogs fail closed without removing Default", async () => {
-		const directory = await mkdtemp(join(tmpdir(), "backlog-model-failure-"));
+		const directory = await mkdtemp(join(tmpdir(), "agentic-workspace-model-failure-"));
 		try {
 			const timeout = join(directory, "timeout");
 			const failing = join(directory, "failing");

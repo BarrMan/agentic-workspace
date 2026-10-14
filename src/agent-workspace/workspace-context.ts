@@ -8,7 +8,7 @@ import { writeFileAtomic } from "./session-store.ts";
 import type { AgentConversationContext } from "./types.ts";
 
 /** The environment variable a workspace sets in its agent panes and the CLI reads back. */
-export const WORKSPACE_CONTEXT_ENV = "BACKLOG_WORKSPACE_CONTEXT";
+export const WORKSPACE_CONTEXT_ENV = "AGENTIC_WORKSPACE_WORKSPACE_CONTEXT";
 /** Current context protocol; history remains in its existing v2 format. */
 export const WORKSPACE_CONTEXT_VERSION = 2;
 
@@ -75,7 +75,7 @@ const defaultPaneMatches = async (paneId: string, context: WorkspaceContext): Pr
 		"-p",
 		"-t",
 		paneId,
-		"#{pane_id}\t#{@backlog_root}\t#{@backlog_task}\t#{@backlog_session}",
+		"#{pane_id}\t#{@agentic_workspace_root}\t#{@agentic_workspace_task}\t#{@agentic_workspace_session}",
 	]);
 	if (result.exitCode !== 0) return false;
 	const [actualPaneId, rootDir, taskId, sessionId] = result.stdout.trim().split("\t");
@@ -197,16 +197,24 @@ export async function readWorkspaceContext(
  * ---------------------------------------------------------------------------------------------- */
 
 /** One unadopted `agent-session start` request, mirrored to disk for the owning workspace to poll. */
+export interface SessionHandoff {
+	modeId: string;
+	predecessor?: { id: string; createdAt: string; tmuxName: string };
+	priorActiveSessionId?: string;
+}
+
 export interface WorkspaceRequest {
 	taskId: string;
 	sessionId: string;
-	/** PID of the workspace expected to adopt the request. */
+	/** Requester PID; not runtime authority. */
 	pid: number;
+	handoff?: SessionHandoff;
+	createdAt?: string;
 }
 
 /** The directory holding one marker per unadopted request, inside the project's own state directory. */
 export function workspaceRequestDir(rootDir: string): string {
-	return join(rootDir, ".backlog", "agent-requests");
+	return join(rootDir, ".agentic-workspace", "agent-requests");
 }
 
 /** Marker file names are session ids; this also stops a crafted id from escaping the directory. */
@@ -224,7 +232,29 @@ function parseWorkspaceRequest(value: unknown): WorkspaceRequest | undefined {
 	if (typeof candidate.taskId !== "string" || candidate.taskId.length === 0) return undefined;
 	if (typeof candidate.sessionId !== "string" || !SAFE_MARKER_ID.test(candidate.sessionId)) return undefined;
 	if (typeof candidate.pid !== "number" || !Number.isInteger(candidate.pid) || candidate.pid <= 0) return undefined;
-	return { taskId: candidate.taskId, sessionId: candidate.sessionId, pid: candidate.pid };
+	if (candidate.handoff !== undefined) {
+		if (typeof candidate.createdAt !== "string" || !candidate.createdAt) return undefined;
+		if (typeof candidate.handoff !== "object" || candidate.handoff === null) return undefined;
+		const handoff = candidate.handoff as Record<string, unknown>;
+		if (typeof handoff.modeId !== "string" || !handoff.modeId) return undefined;
+		if (handoff.priorActiveSessionId !== undefined && typeof handoff.priorActiveSessionId !== "string")
+			return undefined;
+		if (handoff.predecessor !== undefined) {
+			if (typeof handoff.predecessor !== "object" || handoff.predecessor === null) return undefined;
+			const predecessor = handoff.predecessor as Record<string, unknown>;
+			if (["id", "createdAt", "tmuxName"].some((key) => typeof predecessor[key] !== "string" || !predecessor[key]))
+				return undefined;
+			if (predecessor.id === candidate.sessionId) return undefined;
+		}
+	}
+	return {
+		taskId: candidate.taskId,
+		sessionId: candidate.sessionId,
+		pid: candidate.pid,
+		...(candidate.handoff
+			? { handoff: candidate.handoff as SessionHandoff, createdAt: candidate.createdAt as string }
+			: {}),
+	};
 }
 
 /** Write the marker for a registered request. Only this path ever creates the marker directory. */

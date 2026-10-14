@@ -30,7 +30,7 @@ describe("native runtime ownership probes", () => {
 		id: "conversation-exact",
 		taskId: "TASK-23",
 		preset: "opencode",
-		tmuxName: "backlog-task-23-12345678",
+		tmuxName: "agentic-workspace-task-23-12345678",
 		cwd: process.cwd(),
 		createdAt: "2026-10-10T00:00:00.000Z",
 		status: "running",

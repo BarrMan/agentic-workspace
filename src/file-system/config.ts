@@ -1,5 +1,5 @@
 import { DEFAULT_FRESH_INIT_POLICY, DEFAULT_STATUSES } from "../constants/index.ts";
-import type { BacklogConfig } from "../types/index.ts";
+import type { AgenticWorkspaceConfig } from "../types/index.ts";
 
 type ConfigListKey = "statuses" | "labels" | "types" | "priorities" | "projects" | "default_assignee";
 
@@ -73,7 +73,7 @@ export function decodeConfigYaml(content: string, key: string): YamlDecodeResult
 
 function configValueError(configPath: string, key: string, problem: string, remedy: string): Error {
 	const error = new Error(
-		`Backlog could not start because ${configPath} has an invalid value for "${key}"${problem ? `: ${problem}` : ""}. ${remedy}`,
+		`AgenticWorkspace could not start because ${configPath} has an invalid value for "${key}"${problem ? `: ${problem}` : ""}. ${remedy}`,
 	);
 	error.name = CONFIG_VALUE_ERROR_NAME;
 	return error;
@@ -90,7 +90,7 @@ function configSyntaxError(configPath: string, key: string, reason: unknown): Er
 }
 
 function describeConfigValue(value: unknown): string {
-	if (value === undefined) return "no value Backlog could read";
+	if (value === undefined) return "no value AgenticWorkspace could read";
 	switch (typeof value) {
 		case "string":
 			return "a scalar";
@@ -131,7 +131,7 @@ function parseConfigListValue(content: string, key: ConfigListKey, configPath: s
 	throw configTypeError(configPath, key, parsed);
 }
 
-type ConfigScalarPolicy = (config: Partial<BacklogConfig>, value: string) => void;
+type ConfigScalarPolicy = (config: Partial<AgenticWorkspaceConfig>, value: string) => void;
 
 function scalarValue(value: string): string {
 	return value.replace(/['"]/g, "");
@@ -142,9 +142,9 @@ function booleanValue(value: string): boolean {
 function numberValue(value: string): number {
 	return Number.parseInt(value, 10);
 }
-function assignScalar<Key extends keyof BacklogConfig>(
+function assignScalar<Key extends keyof AgenticWorkspaceConfig>(
 	key: Key,
-	read: (value: string) => BacklogConfig[Key],
+	read: (value: string) => AgenticWorkspaceConfig[Key],
 ): ConfigScalarPolicy {
 	return (config, value) => {
 		config[key] = read(value);
@@ -171,8 +171,8 @@ const CONFIG_SCALAR_POLICIES: Record<string, ConfigScalarPolicy> = {
 	task_prefix: (config, value) => {
 		config.prefixes = { task: scalarValue(value) };
 	},
-	backlog_directory: assignScalar("backlogDirectory", scalarValue),
-	backlogDirectory: assignScalar("backlogDirectory", scalarValue),
+	agentic_workspace_directory: assignScalar("agenticWorkspaceDirectory", scalarValue),
+	agenticWorkspaceDirectory: assignScalar("agenticWorkspaceDirectory", scalarValue),
 	onStatusChange: (config, value) => {
 		config.onStatusChange = value.replace(/^['"]|['"]$/g, "");
 	},
@@ -181,8 +181,8 @@ const CONFIG_SCALAR_POLICIES: Record<string, ConfigScalarPolicy> = {
 	},
 };
 
-function configScalars(content: string): Partial<BacklogConfig> {
-	const config: Partial<BacklogConfig> = {};
+function configScalars(content: string): Partial<AgenticWorkspaceConfig> {
+	const config: Partial<AgenticWorkspaceConfig> = {};
 	for (const line of content.split("\n")) {
 		const trimmed = line.trim();
 		if (!trimmed || trimmed.startsWith("#")) continue;
@@ -194,7 +194,7 @@ function configScalars(content: string): Partial<BacklogConfig> {
 	return config;
 }
 
-function completeConfig(config: Partial<BacklogConfig>): BacklogConfig {
+function completeConfig(config: Partial<AgenticWorkspaceConfig>): AgenticWorkspaceConfig {
 	return {
 		projectName: config.projectName || "",
 		defaultAssignee: config.defaultAssignee,
@@ -219,11 +219,11 @@ function completeConfig(config: Partial<BacklogConfig>): BacklogConfig {
 		activeBranchDays: config.activeBranchDays,
 		onStatusChange: config.onStatusChange,
 		prefixes: config.prefixes,
-		backlogDirectory: config.backlogDirectory,
+		agenticWorkspaceDirectory: config.agenticWorkspaceDirectory,
 	};
 }
 
-export function parseConfig(content: string, configPath: string): BacklogConfig {
+export function parseConfig(content: string, configPath: string): AgenticWorkspaceConfig {
 	const config = configScalars(content);
 	for (const key of CONFIG_LIST_KEYS) {
 		const value = parseConfigListValue(content, key, configPath);
@@ -251,7 +251,7 @@ function serializeOptional(key: string, value: string | number | boolean | undef
 	return value === undefined || value === "" ? [] : [`${key}: ${quote ? JSON.stringify(value) : value}`];
 }
 
-export function serializeConfig(config: BacklogConfig): string {
+export function serializeConfig(config: AgenticWorkspaceConfig): string {
 	const lines = [
 		...serializeOptional("project_name", config.projectName, true),
 		...serializeList("default_assignee", config.defaultAssignee),
@@ -278,7 +278,7 @@ export function serializeConfig(config: BacklogConfig): string {
 		...(typeof config.activeBranchDays === "number" ? [`active_branch_days: ${config.activeBranchDays}`] : []),
 		...(config.onStatusChange ? [`onStatusChange: '${config.onStatusChange}'`] : []),
 		...(config.prefixes?.task ? [`task_prefix: "${config.prefixes.task}"`] : []),
-		...(config.backlogDirectory ? [`backlog_directory: "${config.backlogDirectory}"`] : []),
+		...(config.agenticWorkspaceDirectory ? [`agentic_workspace_directory: "${config.agenticWorkspaceDirectory}"`] : []),
 	];
 	return `${lines.join("\n")}\n`;
 }

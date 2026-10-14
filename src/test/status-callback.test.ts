@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { Core } from "../core/backlog.ts";
+import { Core } from "../core/agentic-workspace.ts";
 import { serializeTask } from "../markdown/serializer.ts";
 import { executeStatusCallback } from "../utils/status-callback.ts";
 
@@ -91,9 +91,9 @@ describe("Status Change Callbacks", () => {
 		let callbackOutputPath: string;
 
 		beforeEach(async () => {
-			testDir = join(tmpdir(), `backlog-callback-test-${Date.now()}`);
+			testDir = join(tmpdir(), `agentic-workspace-callback-test-${Date.now()}`);
 			await mkdir(testDir, { recursive: true });
-			await mkdir(join(testDir, "backlog", "tasks"), { recursive: true });
+			await mkdir(join(testDir, "agentic-workspace", "tasks"), { recursive: true });
 
 			callbackOutputFile = join(testDir, "callback-output.txt");
 			callbackOutputPath = callbackOutputFile.replace(/\\/g, "/");
@@ -118,10 +118,10 @@ dateFormat: yyyy-mm-dd
 checkActiveBranches: false
 onStatusChange: 'echo "$TASK_ID:$OLD_STATUS->$NEW_STATUS" > "${callbackOutputPath}"'
 `;
-			await writeFile(join(testDir, "backlog", "config.yml"), configContent);
+			await writeFile(join(testDir, "agentic-workspace", "config.yml"), configContent);
 
 			// Verify config was written correctly
-			const writtenConfig = await Bun.file(join(testDir, "backlog", "config.yml")).text();
+			const writtenConfig = await Bun.file(join(testDir, "agentic-workspace", "config.yml")).text();
 			expect(writtenConfig).toContain("onStatusChange");
 
 			// Create a task
@@ -154,7 +154,7 @@ dateFormat: yyyy-mm-dd
 checkActiveBranches: false
 onStatusChange: 'echo "global" > "${callbackOutputPath}"'
 `;
-			await writeFile(join(testDir, "backlog", "config.yml"), configContent);
+			await writeFile(join(testDir, "agentic-workspace", "config.yml"), configContent);
 
 			// Create a task with per-task callback
 			const taskContent = serializeTask({
@@ -167,8 +167,8 @@ onStatusChange: 'echo "global" > "${callbackOutputPath}"'
 				dependencies: [],
 				onStatusChange: `echo "per-task:$NEW_STATUS" > "${callbackOutputPath}"`,
 			});
-			await mkdir(join(testDir, "backlog", "tasks", "task-1"), { recursive: true });
-			await writeFile(join(testDir, "backlog", "tasks", "task-1", "task.md"), taskContent);
+			await mkdir(join(testDir, "agentic-workspace", "tasks", "task-1"), { recursive: true });
+			await writeFile(join(testDir, "agentic-workspace", "tasks", "task-1", "task.md"), taskContent);
 
 			// Update status
 			await core.updateTaskFromInput("task-1", { status: "Done" });
@@ -191,7 +191,7 @@ dateFormat: yyyy-mm-dd
 checkActiveBranches: false
 onStatusChange: 'echo "callback-ran" > "${callbackOutputPath}"'
 `;
-			await writeFile(join(testDir, "backlog", "config.yml"), configContent);
+			await writeFile(join(testDir, "agentic-workspace", "config.yml"), configContent);
 
 			// Create a task
 			const { task } = await core.createTaskFromInput({
@@ -219,7 +219,7 @@ milestones: []
 dateFormat: yyyy-mm-dd
 checkActiveBranches: false
 `;
-			await writeFile(join(testDir, "backlog", "config.yml"), configContent);
+			await writeFile(join(testDir, "agentic-workspace", "config.yml"), configContent);
 
 			// Create a task
 			const { task } = await core.createTaskFromInput({
@@ -245,7 +245,7 @@ dateFormat: yyyy-mm-dd
 checkActiveBranches: false
 onStatusChange: 'exit 1'
 `;
-			await writeFile(join(testDir, "backlog", "config.yml"), configContent);
+			await writeFile(join(testDir, "agentic-workspace", "config.yml"), configContent);
 
 			// Create a task
 			const { task } = await core.createTaskFromInput({
@@ -271,7 +271,7 @@ dateFormat: yyyy-mm-dd
 checkActiveBranches: false
 onStatusChange: 'echo "$TASK_ID:$OLD_STATUS->$NEW_STATUS" >> "${callbackOutputPath}"'
 `;
-			await writeFile(join(testDir, "backlog", "config.yml"), configContent);
+			await writeFile(join(testDir, "agentic-workspace", "config.yml"), configContent);
 
 			// Create a task in "To Do"
 			const { task } = await core.createTaskFromInput({

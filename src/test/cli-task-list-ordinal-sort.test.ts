@@ -8,7 +8,7 @@ import { createUniqueTestDir, initializeFilesystemTestProject, safeCleanup } fro
 
 let TEST_DIR: string;
 
-const cliCommand = ["agenticworkspace"];
+const cliCommand = ["agentic-workspace"];
 let runQueue = Promise.resolve();
 
 function $(parts: TemplateStringsArray, ...values: unknown[]) {

@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { mkdir } from "node:fs/promises";
 import { $ } from "bun";
-import { Core } from "../core/backlog.ts";
+import { Core } from "../core/agentic-workspace.ts";
 import type { Task } from "../types/index.ts";
 import { createUniqueTestDir, initGitRepo, initializeTestProject, safeCleanup } from "./test-utils.ts";
 
@@ -60,7 +60,7 @@ describe("worktree task refresh", () => {
 			checkActiveBranches: true,
 			remoteOperations: false,
 		});
-		await $`git add backlog/config.yml`.cwd(TEST_DIR).quiet();
+		await $`git add agentic-workspace/config.yml`.cwd(TEST_DIR).quiet();
 		await $`git commit -m "Configure active branch scanning"`.cwd(TEST_DIR).quiet();
 
 		mainCore = new Core(TEST_DIR);
@@ -81,7 +81,7 @@ describe("worktree task refresh", () => {
 			rawContent: "## Description\nCreated after the main Core initialized.",
 		};
 		await featureCore.createTask(worktreeTask);
-		await $`git add backlog/tasks`.cwd(TEST_DIR).quiet();
+		await $`git add agentic-workspace/tasks`.cwd(TEST_DIR).quiet();
 		await $`git commit -m "Add shared task-store fixture"`.cwd(TEST_DIR).quiet();
 
 		const searchResults = await mainCore.queryTasks({ query: "Created elsewhere" });

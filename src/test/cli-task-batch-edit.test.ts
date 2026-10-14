@@ -7,7 +7,7 @@ import { Core } from "../index.ts";
 import { serializeTask } from "../markdown/serializer.ts";
 import { createUniqueTestDir, initializeFilesystemTestProject, safeCleanup } from "./test-utils.ts";
 
-const CLI_COMMAND = ["agenticworkspace"];
+const CLI_COMMAND = ["agentic-workspace"];
 let runQueue = Promise.resolve();
 
 function $(parts: TemplateStringsArray, ...values: unknown[]) {

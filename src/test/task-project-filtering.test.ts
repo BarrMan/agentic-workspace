@@ -2,13 +2,13 @@ import { afterAll, beforeAll, describe, expect, it } from "bun:test";
 import { mkdir } from "node:fs/promises";
 import { Writable } from "node:stream";
 import { runCli } from "../cli/register.ts";
-import { Core } from "../core/backlog.ts";
+import { Core } from "../core/agentic-workspace.ts";
 import { createUniqueTestDir, initializeFilesystemTestProject, safeCleanup } from "./test-utils.ts";
 
 let testDir: string;
 let core: Core;
 
-const cliCommand = ["agenticworkspace"];
+const cliCommand = ["agentic-workspace"];
 
 function $(parts: TemplateStringsArray, ...values: unknown[]) {
 	const source = parts.reduce(
@@ -217,7 +217,7 @@ describe("task project filtering", () => {
 		expect(searchHelp).toContain("--project <project>");
 		expect(searchHelp).toContain("project: one or more of configured projects: Web, API, Mobile");
 
-		const completionLines = ["agenticworkspace task list --project ", "agenticworkspace search --project "];
+		const completionLines = ["agentic-workspace task list --project ", "agentic-workspace search --project "];
 		const completions = [];
 		for (const line of completionLines)
 			completions.push(

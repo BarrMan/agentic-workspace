@@ -6,7 +6,7 @@ import { Core } from "../index.ts";
 import { createUniqueTestDir, initializeFilesystemTestProject, safeCleanup } from "./test-utils.ts";
 
 let TEST_DIR: string;
-const cliCommand = ["agenticworkspace"];
+const cliCommand = ["agentic-workspace"];
 let runQueue = Promise.resolve();
 
 function $(parts: TemplateStringsArray, ...values: unknown[]) {
@@ -171,7 +171,7 @@ describe("CLI search command", () => {
 
 		expect(result.exitCode).toBe(1);
 		expect(output).toContain("--limit must be a positive integer (1 or greater).");
-		expect(output).toContain("Try 'agenticworkspace search --help' for options.");
+		expect(output).toContain("Try 'agentic-workspace search --help' for options.");
 	});
 
 	it("finds tasks by modified file path", async () => {

@@ -1,5 +1,5 @@
-import type { BacklogConfig } from "../types/index.ts";
-import type { Core } from "./backlog.ts";
+import type { AgenticWorkspaceConfig } from "../types/index.ts";
+import type { Core } from "./agentic-workspace.ts";
 import {
 	type InitializeProjectOptions,
 	initializeProjectFiles,
@@ -13,7 +13,7 @@ export interface InitializeProjectResult {
 	success: boolean;
 	projectName: string;
 	isReInitialization: boolean;
-	config: BacklogConfig;
+	config: AgenticWorkspaceConfig;
 	mcpResults?: Record<string, string>;
 }
 

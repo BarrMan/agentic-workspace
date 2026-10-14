@@ -1,4 +1,4 @@
-import { type BacklogConfig, EntityType, type PrefixConfig } from "../types/index.ts";
+import { type AgenticWorkspaceConfig, EntityType, type PrefixConfig } from "../types/index.ts";
 
 /**
  * Default prefix configuration for tasks.
@@ -426,7 +426,7 @@ export function escapeRegex(str: string): string {
  * Only tasks have configurable prefixes (via config); other types use hardcoded prefixes.
  *
  * @param type - The entity type
- * @param config - Optional backlog config (only used for Task type)
+ * @param config - Optional AgenticWorkspace config (only used for Task type)
  * @returns The prefix string for the entity type
  *
  * @example
@@ -436,7 +436,7 @@ export function escapeRegex(str: string): string {
  * getPrefixForType(EntityType.Document) // => "doc"
  * getPrefixForType(EntityType.Decision) // => "decision"
  */
-export function getPrefixForType(type: EntityType, config?: BacklogConfig): string {
+export function getPrefixForType(type: EntityType, config?: AgenticWorkspaceConfig): string {
 	switch (type) {
 		case EntityType.Task:
 			return config?.prefixes?.task ?? DEFAULT_PREFIX_CONFIG.task;

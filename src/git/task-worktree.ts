@@ -22,12 +22,12 @@ function slug(value: string): string {
 }
 
 /**
- * Root that holds task worktrees. Defaults to `~/.backlog`; the override exists so the test suite
+ * Root that holds task worktrees. Defaults to `~/.agentic-workspace`; the override exists so the test suite
  * (and sandboxed runs) never write into a developer's real home directory.
  */
 export function taskWorktreeRoot(): string {
-	const override = process.env.BACKLOG_WORKTREE_HOME?.trim();
-	return override || join(homedir(), ".backlog");
+	const override = process.env.AGENTIC_WORKSPACE_WORKTREE_HOME?.trim();
+	return override || join(homedir(), ".agentic-workspace");
 }
 
 /**
@@ -41,7 +41,7 @@ export function taskWorktreePath(projectRoot: string, task: WorktreeTaskRef): st
 }
 
 export function taskWorktreeBranch(taskId: string): string {
-	return `backlog/task/${taskId}`;
+	return `agentic-workspace/task/${taskId}`;
 }
 
 async function runGit(args: string[], cwd: string): Promise<GitResult> {

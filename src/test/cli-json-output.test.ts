@@ -199,7 +199,7 @@ describe("CLI JSON output", () => {
 			const output = JSON.parse(result.stdout.toString());
 			expect(output.schemaVersion).toBe(1);
 			expect(output.kind).toBe("task-view");
-			expect(output.task.path).toBe("backlog/tasks/task-1/task.md");
+			expect(output.task.path).toBe("agentic-workspace/tasks/task-1/task.md");
 			expect(output.task.description).toBe("Machine-readable output");
 			expect(output.task.dependencies).toEqual(["TASK-2"]);
 			// The summary verdict and the detail explanation behind it, from the same derivation.
@@ -257,7 +257,7 @@ describe("CLI JSON output", () => {
 			id: "doc-1",
 			title: "JSON guide",
 			type: "guide",
-			path: "backlog/docs/doc-1 - JSON-guide.md",
+			path: "agentic-workspace/docs/doc-1 - JSON-guide.md",
 			tags: ["cli"],
 			createdAt: "2026-07-13",
 			updatedAt: "2026-07-14T08:00:00Z",
@@ -277,9 +277,9 @@ describe("CLI JSON output", () => {
 		const { dir: TEST_DIR } = await makeProject(); // A completed record that cannot be parsed is never cached, so it is re-read and re-logged
 		// under DEBUG on every load of the completed corpus. Counting those lines counts the corpus
 		// reads one command makes.
-		await mkdir(join(TEST_DIR, "backlog", "completed", "task-99"), { recursive: true });
+		await mkdir(join(TEST_DIR, "agentic-workspace", "completed", "task-99"), { recursive: true });
 		await writeFile(
-			join(TEST_DIR, "backlog", "completed", "task-99", "task.md"),
+			join(TEST_DIR, "agentic-workspace", "completed", "task-99", "task.md"),
 			"---\nid: TASK-99\ntitle: [unclosed\nstatus: Done\n---\n\nbroken\n",
 		);
 		const corpusReads = async (args: string[]) => {
@@ -306,7 +306,7 @@ describe("CLI JSON output", () => {
 			await mkdir(customTestDir, { recursive: true });
 
 			const core = new Core(customTestDir);
-			await initializeFilesystemTestProject(core, "Custom JSON Output Test", "planning/backlog-data");
+			await initializeFilesystemTestProject(core, "Custom JSON Output Test", "planning/agentic-workspace-data");
 			await new Core(customTestDir).filesystem.saveDocument({
 				id: "doc-1",
 				title: "Custom guide",
@@ -320,7 +320,7 @@ describe("CLI JSON output", () => {
 			expect(result.stderr.toString()).toBe("");
 			const output = JSON.parse(result.stdout.toString());
 			expect(output.results).toHaveLength(1);
-			expect(output.results[0].data.path).toBe("planning/backlog-data/docs/doc-1 - Custom-guide.md");
+			expect(output.results[0].data.path).toBe("planning/agentic-workspace-data/docs/doc-1 - Custom-guide.md");
 		} finally {
 			await safeCleanup(customTestDir);
 		}

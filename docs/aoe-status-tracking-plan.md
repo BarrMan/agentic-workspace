@@ -23,7 +23,7 @@ Upstream `Status` enum (`src/session/instance/status.rs:5-15`): `Running, Waitin
 Hook writers can only produce four values — `HookStatus` (`src/agents.rs:10-15`): `running`, `waiting`, `idle`, `error` (lowercase wire form, `src/agents.rs:17-26`).
 The manifest parser accepts only `idle|running|waiting|error` (`src/tmux/detect/manifest.rs:175-183`).
 
-Backlog task statuses (`To Do`, `In Progress`, `Done`, custom) are a **different axis** and stay untouched (spec: status tabs are task-domain).
+AgenticWorkspace task statuses (`To Do`, `In Progress`, `Done`, custom) are a **different axis** and stay untouched (spec: status tabs are task-domain).
 
 ### 0.2 Precedence (manifest-backed agent)
 
@@ -53,7 +53,7 @@ Backlog task statuses (`To Do`, `In Progress`, `Done`, custom) are a **different
 - Render path never forks; stale cache read returns `None`, never a wrong answer (`reference` §2.1).
 - Hook state is read from the filesystem, no fork (`status_update.rs:274-277`, `src/hooks/status_file.rs:46-67`).
 
-> **Backlog divergence (BACK-15).** The pinned timings above are AOE ground truth; Backlog does not
+> **AgenticWorkspace divergence (BACK-15).** The pinned timings above are AOE ground truth; AgenticWorkspace does not
 > copy them. The 3 s starting floor, the 30 s error latch, the 900 s standing `running` window, and
 > the one-poll `Running → Idle` hold were intentionally removed and replaced by event-driven sidecar
 > reads plus liveness gating: hook transitions are read with `fs.watch` on the per-session
@@ -90,8 +90,8 @@ Rules:
 
 - Lowercase strings in memory — matches AOE's `as_str()` spelling (`status.rs:34-37`) and our existing status strings (`types.ts:16-23`).
 - **No `Done`.** AOE has none (`status.rs:5-15`); terminality is already carried by `AGENT_SESSION_STATUS.STOPPED` / `FAILED` (`types.ts:16-23`).
-- `Deleted`/`Creating` from AOE are omitted: Backlog session creation is synchronous and has no delete-in-progress window.
-- `AgentActivity` is a **derived, non-authoritative** overlay. It never replaces `AgentSession.status` (`types.ts:59-83`), which keeps stdlib lifecycle meaning (`starting|running|stopped|handed-off|failed`).
+- `Deleted`/`Creating` from AOE are omitted: AgenticWorkspace session creation is synchronous and has no delete-in-progress window.
+- `AgentActivity` is a **derived, non-authoritative** overlay. It never replaces `AgentSession.status` (`types.ts:102-114`), whose lifecycle values are `starting|running|parked|stopped|failed`.
 
 ### 1.2 `[D2]` No durable serialization — delete the schema work
 
@@ -107,7 +107,7 @@ Rules:
 
 ### 1.3 Mapping table
 
-| AOE evidence | Backlog `AgentActivity` |
+| AOE evidence | AgenticWorkspace `AgentActivity` |
 |---|---|
 | launch < 3 s / `starting` | `starting` |
 | fresh hook `running` (<30 s) or chrome spinner | `running` |
@@ -115,7 +115,7 @@ Rules:
 | hook `idle`, parked prompt chrome, stale shell | `idle` |
 | hook `error`, dead pane + hook, tmux error | `error` |
 | tmux inconclusive inside the 4 s/30 s windows, or no evidence yet after attach | `unknown` |
-| durable `stopped`/`failed`/`handed-off` | `stopped` (no probe) |
+| durable `stopped`/`failed` | `stopped` (no probe) |
 
 ---
 
@@ -129,9 +129,9 @@ Rules:
 |---|---|---|---|---|
 | **claude** | **Yes** — `AgentHookConfig { settings_rel_path: ".claude/settings.json", config_dir_env_var: Some("CLAUDE_CONFIG_DIR"), events: CLAUDE_HOOK_EVENTS, format: JsonSettings }` (`src/agents.rs:518-523`) | settings.json hooks; plugin `hooks/hooks.json`; `claude --settings <file-or-json>`; `CLAUDE_CONFIG_DIR` | **Process-scoped.** Write `hooks/hooks.json` **inside the temp plugin dir already passed with `--plugin-dir`** (`session-launch.ts:202-210`). No global/project write. | `detect_claude_status` → `manifests/claude.toml` (`status_detection.rs:64`) |
 | **codex** | **Yes** — `json_hooks(".codex/hooks.json", CODEX_HOOK_EVENTS, HookFormat::CodexJson)` (`src/agents.rs:620-625`) | `hooks.json` next to the active config layer; inline `[hooks]` in `config.toml`; `[features] hooks` (default `true`); hash-based hook trust; `--dangerously-bypass-hook-trust` | **Non-destructive marked merge** into `$CODEX_HOME/hooks.json`, else `~/.codex/hooks.json` — the exact file AOE resolves (`src/hooks/mod.rs:80-90`). Never relocate `CODEX_HOME` (hides the user's auth); never write into the repo `.codex/`. | `detect_codex_status` → `manifests/codex.toml` (`status_detection.rs:67`) |
-| **opencode** | **No** hook_config; AOE = pane detection + ACP session capture (`src/agents.rs:547-577`, `SessionCaptureBackend::OpenCode`) | plugin events: `session.idle`, `session.error`, `permission.asked`, `tool.execute.before/after`, generic `event`; `OPENCODE_CONFIG_DIR` custom dir searched for plugins; `OPENCODE_CONFIG_CONTENT` inline config | **Process-scoped.** Point `OPENCODE_CONFIG_DIR` at the owned temp dir and write `<temp>/plugins/backlog-status.ts`. Removed with the temp dir. Skills keep using `OPENCODE_CONFIG_CONTENT.skills.paths` (`session-launch.ts:197-201`). | `detect_opencode_status` → `manifests/opencode.toml` (`status_detection.rs:65`) |
+| **opencode** | **No** hook_config; AOE = pane detection + ACP session capture (`src/agents.rs:547-577`, `SessionCaptureBackend::OpenCode`) | plugin events: `session.idle`, `session.error`, `permission.asked`, `tool.execute.before/after`, generic `event`; `OPENCODE_CONFIG_DIR` custom dir searched for plugins; `OPENCODE_CONFIG_CONTENT` inline config | **Process-scoped.** Point `OPENCODE_CONFIG_DIR` at the owned temp dir and write `<temp>/plugins/agentic-workspace-status.ts`. Removed with the temp dir. Skills keep using `OPENCODE_CONFIG_CONTENT.skills.paths` (`session-launch.ts:197-201`). | `detect_opencode_status` → `manifests/opencode.toml` (`status_detection.rs:65`) |
 | **pi** | **No** hook_config; AOE relies on its Pi *session-capture extension* for identity, not status (`src/agents.rs:680-694`) | extensions with lifecycle events (`session_start`, `tool_call`, `turn_end`, `agent_end`, `session_shutdown`); **`pi --extension <file>`** session-scoped loader | **Process-scoped.** Write our extension into the owned temp dir and add `--extension <file>` beside the existing `--skill` (`session-launch.ts:212-214`). | `detect_pi_status` → `manifests/pi.toml` (`status_detection.rs:70`); AOE comment "Pi has no hooks and always auto-approves" (`manifests/pi.toml:10`) |
-| **omp** | **No** hook_config (`src/agents.rs:846-875`) | hooks under `.omp/hooks/{pre,post}/` (project) or profile dirs; **`omp --hook <dir>`** explicit loader; `pi.on(...)` ExtensionAPI (OMP is a Pi fork) | **Mechanism exists but is unreachable today:** `prepareAgentLaunch` **throws** for `bootstrap === "omp"` (`session-launch.ts:166-171`), so no OMP session can launch. Design: `<temp>/hooks/pre/backlog-status.ts` + `--hook`, activating only when that launch gate is lifted. | `detect_omp_status` → `manifests/omp.toml` (`status_detection.rs:71`) |
+| **omp** | **No** hook_config (`src/agents.ts:846-875`) | hooks under `.omp/hooks/{pre,post}/` (project) or profile dirs; **`omp --hook <dir>`** explicit loader; `pi.on(...)` ExtensionAPI (OMP is a Pi fork) | **Mechanism exists but is unreachable today:** `prepareAgentLaunch` **throws** for `bootstrap === "omp"` (`session-launch.ts:166-171`), so no OMP session can launch. Design: `<temp>/hooks/pre/agentic-workspace-status.ts` + `--hook`, activating only when that launch gate is lifted. | `detect_omp_status` → `manifests/omp.toml` (`status_detection.rs:71`) |
 | **antigravity** | **No** hook_config (`src/agents.rs:796-808`) | `hooks.json` at workspace `.agents/hooks.json`, global `~/.gemini/config/hooks.json`, or a plugin's `hooks.json`; events `PreToolUse`, `PostToolUse`, `PreInvocation`, `PostInvocation`, `Stop` | **None.** No process-scoped loader and no documented config-dir env. The three documented surfaces are the repo, the user's home, or a plugin install — all forbidden by the session contract. Launch is already refused (`session-launch.ts:161-165`). | `detect_antigravity_status` → `manifests/antigravity.toml` (`status_detection.rs:76`) |
 
 **Summary of the six:** hook-backed = **claude, codex, opencode, pi** (all four install); designed-but-gated = **omp**; detection-only = **antigravity**.
@@ -155,7 +155,7 @@ lives inside the per-launch temp dir) uses the literal path:
 ```sh
 sh -c 'unset IFS; set -f; umask 077; \
   D="<statusDir>"; [ -n "$D" ] && [ -d "$D" ] || exit 0; \
-  printf %s <status> > "$D/status" 2>/dev/null; exit 0 # backlog-hooks'
+  printf %s <status> > "$D/status" 2>/dev/null; exit 0 # agentic-workspace-hooks'
 ```
 
 **Codex** writes a file that outlives the launch, so its command must be constant across launches —
@@ -163,11 +163,11 @@ it reads the sidecar path from the injected env var instead of baking one:
 
 ```sh
 sh -c 'unset IFS; set -f; umask 077; \
-  D="${BACKLOG_AGENT_STATUS_DIR:-}"; [ -n "$D" ] && [ -d "$D" ] || exit 0; \
-  printf %s <status> > "$D/status" 2>/dev/null; exit 0 # backlog-hooks'
+  D="${AGENTIC_WORKSPACE_AGENT_STATUS_DIR:-}"; [ -n "$D" ] && [ -d "$D" ] || exit 0; \
+  printf %s <status> > "$D/status" 2>/dev/null; exit 0 # agentic-workspace-hooks'
 ```
 
-Properties copied verbatim from `src/hooks/command.rs:108-140`: `sh -c`, `set -f`, `umask 077`, dir-mode/ownership guard, **unconditional `exit 0`**. Ownership trailer is `0 # backlog-hooks` mirrors `src/hooks/command.rs:18-31`. (A baked per-launch path in the Codex file would append a differently-pathed duplicate group on every launch; the env-var form is what makes re-install idempotent.)
+Properties copied verbatim from `src/hooks/command.rs:108-140`: `sh -c`, `set -f`, `umask 077`, dir-mode/ownership guard, **unconditional `exit 0`**. Ownership trailer is `0 # agentic-workspace-hooks` mirrors `src/hooks/command.rs:18-31`. (A baked per-launch path in the Codex file would append a differently-pathed duplicate group on every launch; the env-var form is what makes re-install idempotent.)
 
 For the plugin/extension providers (opencode, pi, omp) the emitter is a JS/TS module that writes the same sidecar via `node:fs`, and must be **crash-safe and non-throwing** because a throwing plugin/hook can block the agent's tool calls. It writes `running` on turn/tool start, `waiting` on a permission/approval event, `idle` on turn/settle end, `error` on session error. Event names per provider: Claude/Codex shell events §0.4; OpenCode `session.status` (busy/idle), `session.idle`, `session.error`, `permission.updated`, plus the `chat.message`/`permission.ask`/`tool.execute.before` hook keys (verified against the installed `@opencode-ai/plugin` 1.18 `Hooks`/`Event` types); Pi/OMP `pi.on("session_start"|"tool_call"|"turn_end"|"agent_end"|"session_shutdown")` (verified against the installed pi extension packages).
 
@@ -177,7 +177,7 @@ Single chokepoint: `prepareAgentLaunch` — `src/agent-workspace/session-launch.
 
 > **Resolved (owner decision, supersedes the earlier workspace-only reading).** Status hooks are
 > **unconditional at the chokepoint**, for every caller of `prepareAgentLaunch`: native
-> `agenticworkspace workspace`, CLI `agent-session start`, and CLI `agent-session ... resume`. There is no
+> `agentic-workspace workspace`, CLI `agent-session start`, and CLI `agent-session ... resume`. There is no
 > opt-in parameter and no per-caller branch. A session created by `agent-session start` must behave
 > exactly as if the workspace UI created it (scripts and a live preview pane may spin up sessions for
 > other tasks), so all three call sites produce the same launch artefacts: the owned status dir, the
@@ -187,17 +187,17 @@ Single chokepoint: `prepareAgentLaunch` — `src/agent-workspace/session-launch.
    All three call sites pass it: `sessions.ts:174` (native prepare), `sessions.ts:293` (CLI start),
    `session-process.ts:210` (resume).
 2. After `const env = launchEnvironment(preset);` create the owned status dir under the existing
-   `mkdtemp` root and inject `BACKLOG_AGENT_STATUS_DIR=<path>` into `env`. Place it here, **not** in
+   `mkdtemp` root and inject `AGENTIC_WORKSPACE_AGENT_STATUS_DIR=<path>` into `env`. Place it here, **not** in
    `launchEnvironment`, so it never leaks from the parent process.
 3. In the provider branch block:
    - `claude` — add `hooks/hooks.json` next to the existing `.claude-plugin/plugin.json`; command is
      unchanged.
-   - `opencode` — write `plugins/backlog-status.ts` and set `env.OPENCODE_CONFIG_DIR` to the owned dir.
+    - `opencode` — write `plugins/agentic-workspace-status.ts` and set `env.OPENCODE_CONFIG_DIR` to the owned dir.
    - `pi` — append `--extension <owned file>` beside `--skill`.
    - `codex` — install the marked merge (§2.5) and pass `--dangerously-bypass-hook-trust`. This arm is
      **dormant**: `LAUNCH_REFUSALS` still refuses Codex launches for the unrelated reason that Codex
      has no process-scoped skill loader, so nothing runs it today. Its hook install is reachable today
-      through `agenticworkspace agent-session hooks install`.
+      through `agentic-workspace agent-session hooks install`.
    - `omp` — unreachable until its launch gate lifts; no code path today.
 4. The status dir is inside `directory`, so the existing `trap 'rm -rf -- <directory>' EXIT` and
    `cleanup()` already remove it. No new cleanup path, and nothing outside it is ever touched —
@@ -211,10 +211,10 @@ spawns it; the CLI/tmux path re-exports `prepared.env` through `SessionProcess.l
 | Provider | File the hook lands in | Removal |
 |---|---|---|
 | **claude** | `<owned temp dir>/hooks/hooks.json` (the `--plugin-dir` dir, `session-launch.ts:202-210`) | Removed by the existing `trap`/`cleanup()` with the temp dir (`session-launch.ts:222-223`). Nothing else is written. |
-| **opencode** | `<owned temp dir>/plugins/backlog-status.ts`, discovered via `OPENCODE_CONFIG_DIR` | Removed with the temp dir. |
-| **pi** | `<owned temp dir>/backlog-status-extension.ts` | Removed with the temp dir. |
-| **codex** | `$CODEX_HOME/hooks.json` else `~/.codex/hooks.json` (`src/hooks/mod.rs:80-90`) | **Marked, merge-preserving, reversible, implemented.** Install replaces our own groups with a canonical set and keeps every user entry byte-identical; removal deletes only entries whose command ends with `0 # backlog-hooks`, then drops emptied event arrays and an emptied `hooks` key — the exact semantics of AOE's `remove_aoe_entries`/`remove_empty_events` (`src/hooks/json_settings.rs:59-78`) used by `install_hooks`/`uninstall_hooks` (`:83-175`). The stored command takes the sidecar from `BACKLOG_AGENT_STATUS_DIR` (never a baked temp path), so the text is **constant across launches** and a re-install onto an already-installed file is a no-op. Reachable today as `agenticworkspace agent-session hooks install` and `agenticworkspace agent-session hooks uninstall`; nothing removes user config at session end. We **read** `config.toml` only to check `[features] hooks`; if disabled we skip the install and never write it (`src/hooks/codex.rs:33-46`, `:48-85`). |
-| **omp** | `<owned temp dir>/hooks/pre/backlog-status.ts`, loaded via `--hook` | Removed with the temp dir. (Inactive until the launch gate lifts.) |
+| **opencode** | `<owned temp dir>/plugins/agentic-workspace-status.ts`, discovered via `OPENCODE_CONFIG_DIR` | Removed with the temp dir. |
+| **pi** | `<owned temp dir>/agentic-workspace-status-extension.ts` | Removed with the temp dir. |
+| **codex** | `$CODEX_HOME/hooks.json` else `~/.codex/hooks.json` (`src/hooks/mod.rs:80-90`) | **Marked, merge-preserving, reversible, implemented.** Install replaces our own groups with a canonical set and keeps every user entry byte-identical; removal deletes only entries whose command ends with `0 # agentic-workspace-hooks`, then drops emptied event arrays and an emptied `hooks` key — the exact semantics of AOE's `remove_aoe_entries`/`remove_empty_events` (`src/hooks/json_settings.rs:59-78`) used by `install_hooks`/`uninstall_hooks` (`:83-175`). The stored command takes the sidecar from `AGENTIC_WORKSPACE_AGENT_STATUS_DIR` (never a baked temp path), so the text is **constant across launches** and a re-install onto an already-installed file is a no-op. Reachable today as `agentic-workspace agent-session hooks install` and `agentic-workspace agent-session hooks uninstall`; nothing removes user config at session end. We **read** `config.toml` only to check `[features] hooks`; if disabled we skip the install and never write it (`src/hooks/codex.rs:33-46`, `:48-85`). |
+| **omp** | `<owned temp dir>/hooks/pre/agentic-workspace-status.ts`, loaded via `--hook` | Removed with the temp dir. (Inactive until the launch gate lifts.) |
 | **antigravity** | none | n/a |
 
 **Never:** write the repo's `.codex/hooks.json` or `.agents/hooks.json`; relocate `CODEX_HOME`/`CLAUDE_CONFIG_DIR`/`~/.gemini` (that hides the user's authentication); rewrite a `hooks.json`/`settings.json` wholesale; install a plugin into a user home; delete a non-marker entry.
@@ -225,7 +225,7 @@ spawns it; the CLI/tmux path re-exports `prepared.env` through `SessionProcess.l
 - Freshness is enforced for every status, not just `running`: a write older than the 900 s standing ceiling is ignored entirely, so a file orphaned by a hard-killed session reads as absent, never as a live status.
 - Dir mode `0700`, file read cap, mtime = freshness. Mirrors `src/hooks/status_file.rs:46-67` (`read_hook_status` + `read_hook_status_age`).
 - Status value whitelist: `running|waiting|idle|error` only (`src/agents.rs:10-15`); anything else is treated as absent, matching `src/hooks/status_file.rs:69-81`.
-- **Attached external sessions** (CLI-owned, already running) read the same deterministic sidecar, so a CLI-started session shows the same activity as a workspace-started one. Only a pane Backlog did not launch at all (no sidecar) falls back to pane/title + output evidence; state that as lower fidelity, never as an error.
+- **Attached external sessions** (CLI-owned, already running) read the same deterministic sidecar, so a CLI-started session shows the same activity as a workspace-started one. Only a pane AgenticWorkspace did not launch at all (no sidecar) falls back to pane/title + output evidence; state that as lower fidelity, never as an error.
 
 ---
 
@@ -245,7 +245,7 @@ New module `src/agent-workspace/agent-status.ts` (pure resolver) + thin probe in
 
 ### 3.2 Precedence (our resolver, mirroring AOE)
 
-1. `lifecycle ∈ {stopped, failed, handed-off}` → `stopped`; no probe (AOE rule 0).
+1. `lifecycle ∈ {stopped, failed}` → `stopped`; no probe (AOE rule 0).
 2. within 3 s of `createdAt` → `starting` (AOE rule 1).
 3. held `error` younger than 30 s → `error` (AOE rule 2).
 4. tmux absent → `error`; tmux unreachable → hold current for 4 s / 30 s (AOE rule 3).
@@ -258,7 +258,7 @@ New module `src/agent-workspace/agent-status.ts` (pure resolver) + thin probe in
 
 Staleness/timeouts are **copied verbatim**: 3 s starting, 30 s error relatch, 900 s stale running, 30 s fresh-running hook, 4 s/30 s unknown windows, 2 s snapshot TTL with half-life refresh. Cited in §0.
 
-> **Backlog divergence (BACK-15).** Backlog removed this sample-and-timer layer. The 3 s starting
+> **AgenticWorkspace divergence (BACK-15).** AgenticWorkspace removed this sample-and-timer layer. The 3 s starting
 > floor, the 30 s error latch, the 900 s standing `running` window, and rule 10's one-poll
 > `Running → Idle` hold are gone; activity is event-driven (sidecar reads via `fs.watch`, coalesced
 > ~10 ms, initial reconcile, slow 30 s backstop) and liveness-gated (a sidecar counts only while its
@@ -311,7 +311,7 @@ Start the poller in `run()` after the first `#refresh()` (`workspace-controller.
 - **`reset`** (`sessions.ts:71-73`; `session-store.ts:227-230`) still only removes persisted state and does not stop a tmux process; it is unaffected by this plan because activity was never persisted.
 - **Uninstall for the one global file (codex)** runs through the marked removal in §2.5; nothing else on disk is ours to remove.
 
-> **Backlog divergence (BACK-15).** Derive-on-attach remains, but the resolver no longer carries the
+> **AgenticWorkspace divergence (BACK-15).** Derive-on-attach remains, but the resolver no longer carries the
 > AOE timing layer: the 3 s starting floor, the 30 s error latch, the 900 s standing `running` window,
 > and rule 10's one-poll `Running → Idle` hold were intentionally removed and replaced by event-driven
 > sidecar reads plus liveness gating. A restart, or a not-yet-probed active session, reads as parked
@@ -347,7 +347,7 @@ The tabs (`src/ui/opentui/status-tabs.ts:26`) render **task statuses**, not agen
 
 ## 7. Phased rollout
 
-Format mirrors `docs/opentui-workspace-implementation-plan.md` (deliverable → slices → review evidence → stop condition). Every phase is reviewable via `agenticworkspace workspace` or `bun run cli workspace`; no phase ends with docs/tests only.
+Format mirrors `docs/opentui-workspace-implementation-plan.md` (deliverable → slices → review evidence → stop condition). Every phase is reviewable via `agentic-workspace workspace` or `bun run cli workspace`; no phase ends with docs/tests only.
 
 ### Phase 0 — `[D2]` In-memory activity model (no schema)
 
@@ -359,15 +359,15 @@ Format mirrors `docs/opentui-workspace-implementation-plan.md` (deliverable → 
 
 ### Phase 1 — Hook emitters + process-scoped install (claude, opencode, pi)
 
-**Deliverable:** generated hook command / plugin / extension; owned `activity/status` path; `BACKLOG_AGENT_STATUS_DIR` injected unconditionally at the chokepoint (§2.4); provider install in `session-launch.ts` for claude/opencode/pi.
+**Deliverable:** generated hook command / plugin / extension; owned `activity/status` path; `AGENTIC_WORKSPACE_AGENT_STATUS_DIR` injected unconditionally at the chokepoint (§2.4); provider install in `session-launch.ts` for claude/opencode/pi.
 **Slices:** command generator + temp install (`session-launch.ts`, new `status-hooks.ts`); provider emitters (claude `hooks/hooks.json`, opencode plugin, pi extension); `sessionId` plumbing at all three call sites (`sessions.ts:174`, `:293`, `session-process.ts:210`).
 **Review evidence:** launch each of claude/opencode/pi from the workspace; send a prompt (`running`), trigger a permission/approval prompt (`waiting`), end a turn (`idle`); confirm the file appears only under the owned temp dir and nothing is written to `~/.claude`, `~/.config/opencode`, `~/.pi`, or the project. CLI `agent-session start`/`resume` produce the same artefacts either way: with a live workspace context the CLI hands the launch to that workspace, and the workspace's own chokepoint installs the hooks; without one the CLI launches and stops the session itself, installing them on the way. A session created from the CLI is therefore indistinguishable from one created by the workspace UI.
-**Verification:** `bun test src/agent-workspace/session-launch.test.ts`; PTY smoke of `agenticworkspace workspace`.
+**Verification:** `bun test src/agent-workspace/session-launch.test.ts`; PTY smoke of `agentic-workspace workspace`.
 **Stop:** hook status changes on real events; zero global writes proven for the three providers.
 
 ### Phase 2 — Codex marked install + removal (**implemented**, owner decision)
 
-**Deliverable:** merge-preserving write of `$CODEX_HOME/hooks.json` (else `~/.codex/hooks.json`) with the `0 # backlog-hooks` trailer; **constant command text** that reads the sidecar from `BACKLOG_AGENT_STATUS_DIR` so re-install is idempotent; removal that deletes only marker entries; `config.toml` read-only (never written); `hooks install` / `hooks uninstall` CLI verbs; `--dangerously-bypass-hook-trust` on Codex launches.
+**Deliverable:** merge-preserving write of `$CODEX_HOME/hooks.json` (else `~/.codex/hooks.json`) with the `0 # agentic-workspace-hooks` trailer; **constant command text** that reads the sidecar from `AGENTIC_WORKSPACE_AGENT_STATUS_DIR` so re-install is idempotent; removal that deletes only marker entries; `config.toml` read-only (never written); `hooks install` / `hooks uninstall` CLI verbs; `--dangerously-bypass-hook-trust` on Codex launches.
 **Slices:** merge/remove + install/uninstall (`status-hooks.ts`); codex arm in the `session-launch.ts` provider block (dormant until the separate Codex skill-loader gate lifts); the two CLI verbs.
 **Review evidence:** install on a fixture with pre-existing user hooks adds one group and leaves user entries byte-identical; a second install is a byte-level no-op; uninstall restores the original file exactly; a `[features] hooks = false` config is never written and the install is skipped; a foreign non-marker entry survives uninstall.
 **Verification:** `bun test src/agent-workspace/status-hooks.test.ts` (byte-level round-trip on a fixture). No real Codex session can be exercised: `LAUNCH_REFUSALS` still refuses Codex launches for the unrelated skill-loader reason, so the launch arm is dormant and the install is exercised through the CLI verb + fixture tests.
@@ -393,7 +393,7 @@ Format mirrors `docs/opentui-workspace-implementation-plan.md` (deliverable → 
 
 **Deliverable:** dot colour, agent header, placeholder text.
 **Slices:** workspace render (`workspace.ts:138`, `:438-439`); controller props (`workspace-controller.ts`).
-**Review evidence:** real `agenticworkspace workspace` shows green→yellow→dim transitions without flicker; tabs unchanged.
+**Review evidence:** real `agentic-workspace workspace` shows green→yellow→dim transitions without flicker; tabs unchanged.
 **Verification:** `bun test src/test/opentui-workspace-layout.test.ts src/test/opentui-status-tabs.test.ts` (tabs must stay green and unmodified); PTY smoke.
 **Stop:** visual stability confirmed by the user.
 
@@ -420,7 +420,7 @@ Format mirrors `docs/opentui-workspace-implementation-plan.md` (deliverable → 
 
 - No AOE manifest/TOML engine and no user-editable `status_rules` UI.
 - No new **task** statuses and **no `Done`** on the activity axis (AOE has none, `status.rs:5-15`).
-- No change to durable lifecycle semantics (`starting|running|stopped|handed-off|failed`).
+- No change to durable lifecycle semantics (`starting|running|parked|stopped|failed`).
 - **`[D1]` No per-preset opt-out** — no `statusHooks`, no settings toggle, no card override. Hooks are on for every provider with a supported surface.
 - **`[D2]` No activity persistence** — no `state.json` field, no settings key, no sidecar outside the ephemeral launch dir.
 - No hook install for **antigravity** (no isolated surface) and no active hook install for **omp** until its launch gate lifts (`session-launch.ts:166-171`).
@@ -442,8 +442,8 @@ Format mirrors `docs/opentui-workspace-implementation-plan.md` (deliverable → 
 
 ### Open questions (human decision)
 
-1. ~~Do non-workspace CLI sessions (`agenticworkspace agent-session start`) also get hooks, or only native-workspace launches?~~ **Resolved: every caller, unconditionally.** Hooks are enabled at the shared chokepoint for the workspace, CLI start, and CLI resume alike; no opt-in and no per-caller branch (§2.4).
-2. ~~**Codex trust:** do we pass `--dangerously-bypass-hook-trust` for our launches, or require the user to trust the hook via `/hooks` once?~~ **Resolved: marked merge + `--dangerously-bypass-hook-trust`.** Phase 2 is implemented (§2.5, §7 Phase 2), with a constant env-var command so re-install is idempotent and an explicit `agenticworkspace agent-session hooks uninstall` for removal.
+1. ~~Do non-workspace CLI sessions (`agentic-workspace agent-session start`) also get hooks, or only native-workspace launches?~~ **Resolved: every caller, unconditionally.** Hooks are enabled at the shared chokepoint for the workspace, CLI start, and CLI resume alike; no opt-in and no per-caller branch (§2.4).
+2. ~~**Codex trust:** do we pass `--dangerously-bypass-hook-trust` for our launches, or require the user to trust the hook via `/hooks` once?~~ **Resolved: marked merge + `--dangerously-bypass-hook-trust`.** Phase 2 is implemented (§2.5, §7 Phase 2), with a constant env-var command so re-install is idempotent and an explicit `agentic-workspace agent-session hooks uninstall` for removal.
 3. **Antigravity:** if a process-scoped hooks-file loader or config-dir env exists but is undocumented, it should be verified and this row revisited; otherwise Antigravity stays detection-only.
 
 *(Resolved and removed: per-preset opt-out `[D1]`; persist-vs-sidecar `[D2]`; first-cut provider list — the user fixed all six; workspace-only scope (superseded by unconditional coverage); Codex trust.)*
@@ -480,7 +480,7 @@ Rule: one suite per process; never bare `bun test`.
 
 **Hook generation + installs** — `src/agent-workspace/status-hooks.test.ts`:
 - generated commands/extensions contain only owned temp paths; no `~`, no project, no global path;
-- command ends with the `0 # backlog-hooks` sentinel; rejects providers without a session-local loader;
+- command ends with the `0 # agentic-workspace-hooks` sentinel; rejects providers without a session-local loader;
 - claude/opencode/pi installs create a file **only** under the mkdtemp dir;
 - codex install on a fixture with pre-existing user hooks adds one group and leaves user entries byte-identical; `uninstall` restores the original bytes exactly; a `[features] hooks = false` config is never written and the install is skipped.
 

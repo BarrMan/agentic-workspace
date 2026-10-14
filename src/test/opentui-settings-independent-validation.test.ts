@@ -8,7 +8,7 @@ import { getDefaultModeCatalog, loadAgentConfiguration, upsertAgentConfiguration
 import type { GroupStore } from "../agent-workspace/group-store.ts";
 import type { AgentConfiguration } from "../agent-workspace/types.ts";
 import type { WorkspaceStateService } from "../agent-workspace/workspace-state.ts";
-import { Core } from "../core/backlog.ts";
+import { Core } from "../core/agentic-workspace.ts";
 import { mountOpenTuiAgentSettings } from "../ui/opentui/agent-settings.ts";
 import { createWorkspaceFilters } from "../ui/opentui/workspace/state.ts";
 import { mountOpenTuiWorkspace, type OpenTuiWorkspaceOptions } from "../ui/opentui/workspace.ts";
@@ -55,7 +55,7 @@ describe("independent MAIN settings persistence through public input", () => {
 			modes,
 		};
 		await upsertAgentConfiguration(core, "project", configuration);
-		const path = join(core.filesystem.backlogDir, "agents.json");
+		const path = join(core.filesystem.agenticWorkspaceDir, "agents.json");
 		const setup = await createTestRenderer({ width: 140, height: 42, kittyKeyboard: true, exitOnCtrlC: false });
 		cleanup.push(() => setup.renderer.destroy());
 		const root = new BoxRenderable(setup.renderer, { width: "100%", height: "100%", flexDirection: "column" });
@@ -383,9 +383,9 @@ runtime, source_entry, directory, configuration_path = sys.argv[1:]
 root = pathlib.Path(directory)
 home = root / "isolated-home"
 home.mkdir()
-env = {key: value for key, value in os.environ.items() if not key.startswith(("BACKLOG_", "TMUX", "XDG_"))}
+env = {key: value for key, value in os.environ.items() if not key.startswith(("AGENTIC_WORKSPACE_", "TMUX", "XDG_"))}
 env.update(HOME=str(home), XDG_CONFIG_HOME=str(home / "config"), XDG_DATA_HOME=str(home / "data"),
-           XDG_CACHE_HOME=str(home / "cache"), BACKLOG_TMUX_SOCKET=str(root / "isolated-tmux"), TERM="xterm-256color")
+           XDG_CACHE_HOME=str(home / "cache"), AGENTIC_WORKSPACE_TMUX_SOCKET=str(root / "isolated-tmux"), TERM="xterm-256color")
 subprocess.run(["git", "init", "-b", "main"], cwd=root, env=env, capture_output=True, check=True)
 master, slave = pty.openpty()
 fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack("HHHH", 42, 140, 0, 0))

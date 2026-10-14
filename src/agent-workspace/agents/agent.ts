@@ -58,7 +58,7 @@ export interface PreparationResources {
 	/** The per-launch mkdtemp root owned and removed by prepareAgentLaunch. */
 	directory: string;
 	skillRoot: string; // <directory>/skills
-	skillPath: string; // <directory>/skills/backlog-task-management/SKILL.md
+	skillPath: string; // <directory>/skills/agentic-workspace-task-management/SKILL.md
 	statusDir?: string;
 	sessionId?: string;
 	env: Record<string, string>; // mutable launch environment (already has FORBIDDEN_ENV stripped)

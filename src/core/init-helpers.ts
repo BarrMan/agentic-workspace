@@ -11,12 +11,12 @@ import {
 	FALLBACK_STATUS,
 } from "../constants/index.ts";
 import { FileSystem } from "../file-system/operations.ts";
-import type { BacklogConfig } from "../types/index.ts";
+import type { AgenticWorkspaceConfig } from "../types/index.ts";
 import {
-	BACKLOG_CONFIG_SOURCE,
-	BACKLOG_DIRECTORY_SOURCE,
-	normalizeProjectBacklogDirectory,
-} from "../utils/backlog-directory.ts";
+	AGENTIC_WORKSPACE_CONFIG_SOURCE,
+	AGENTIC_WORKSPACE_DIRECTORY_SOURCE,
+	normalizeProjectAgenticWorkspaceDirectory,
+} from "../utils/agentic-workspace-directory.ts";
 import {
 	formatMcpClientSetupCommand,
 	getMcpClientInstructionFile,
@@ -26,9 +26,9 @@ import {
 	runMcpClientSetupCommand,
 } from "../utils/mcp-client-setup.ts";
 import { getTaskPrefixError } from "../utils/prefix-config.ts";
-import type { Core } from "./backlog.ts";
+import type { Core } from "./agentic-workspace.ts";
 
-const MCP_SERVER_NAME = "agenticworkspace";
+const MCP_SERVER_NAME = "agentic-workspace";
 const MCP_GUIDE_URL = "https://github.com/BarrMan/agentic-workspace";
 
 export type IntegrationMode = "mcp" | "cli" | "none";
@@ -36,8 +36,8 @@ export type McpClient = "claude" | "codex" | "gemini" | "kiro" | "guide";
 
 export interface InitializeProjectOptions {
 	projectName: string;
-	backlogDirectory?: string;
-	backlogDirectorySource?: "backlog" | ".backlog" | "custom";
+	agenticWorkspaceDirectory?: string;
+	agenticWorkspaceDirectorySource?: "agentic-workspace" | ".agentic-workspace" | "custom";
 	configLocation?: "folder" | "root";
 	integrationMode: IntegrationMode;
 	mcpClients?: McpClient[];
@@ -56,7 +56,7 @@ export interface InitializeProjectOptions {
 		taskPrefix?: string;
 	};
 	/** Existing config for re-initialization */
-	existingConfig?: BacklogConfig | null;
+	existingConfig?: AgenticWorkspaceConfig | null;
 }
 
 function formatAgentInstructionResults(results: AgentInstructionWriteResult[]): string {
@@ -80,7 +80,7 @@ function validateInitialization(options: InitializeProjectOptions): void {
 	if (taskPrefixError) throw new Error(taskPrefixError);
 }
 
-function resolveFreshConfig(projectName: string, taskPrefix?: string): BacklogConfig {
+function resolveFreshConfig(projectName: string, taskPrefix?: string): AgenticWorkspaceConfig {
 	const defaults = DEFAULT_INIT_CONFIG;
 	return {
 		projectName,
@@ -102,7 +102,7 @@ function resolveFreshConfig(projectName: string, taskPrefix?: string): BacklogCo
 }
 
 function applyOptionalOverrides(
-	config: BacklogConfig,
+	config: AgenticWorkspaceConfig,
 	advancedConfig: NonNullable<InitializeProjectOptions["advancedConfig"]>,
 ): void {
 	if (Object.hasOwn(advancedConfig, "defaultEditor")) {
@@ -121,7 +121,7 @@ function resolveConfigValue<T>(override: T | undefined, existing: T | undefined,
 }
 
 export function resolveInitializationConfig(options: InitializeProjectOptions): {
-	config: BacklogConfig;
+	config: AgenticWorkspaceConfig;
 	isReInitialization: boolean;
 } {
 	validateInitialization(options);
@@ -138,7 +138,7 @@ export function resolveInitializationConfig(options: InitializeProjectOptions): 
 		: (options.advancedConfig ?? {});
 	const defaults = DEFAULT_INIT_CONFIG;
 	const freshConfig = resolveFreshConfig(options.projectName, advancedConfig.taskPrefix);
-	const config: BacklogConfig = {
+	const config: AgenticWorkspaceConfig = {
 		...freshConfig,
 		...(existingConfig ?? {}),
 		projectName: options.projectName,
@@ -175,53 +175,63 @@ export function resolveInitializationConfig(options: InitializeProjectOptions): 
 	return { config, isReInitialization };
 }
 
-function inferBacklogDirectorySource(
-	backlogDirectory: string | null,
-): InitializeProjectOptions["backlogDirectorySource"] | undefined {
-	if (!backlogDirectory) return undefined;
-	if (backlogDirectory === BACKLOG_DIRECTORY_SOURCE.HIDDEN) return BACKLOG_DIRECTORY_SOURCE.HIDDEN;
-	if (backlogDirectory === BACKLOG_DIRECTORY_SOURCE.DEFAULT) return BACKLOG_DIRECTORY_SOURCE.DEFAULT;
-	return BACKLOG_DIRECTORY_SOURCE.CUSTOM;
+function inferAgenticWorkspaceDirectorySource(
+	agenticWorkspaceDirectory: string | null,
+): InitializeProjectOptions["agenticWorkspaceDirectorySource"] | undefined {
+	if (!agenticWorkspaceDirectory) return undefined;
+	if (agenticWorkspaceDirectory === AGENTIC_WORKSPACE_DIRECTORY_SOURCE.HIDDEN)
+		return AGENTIC_WORKSPACE_DIRECTORY_SOURCE.HIDDEN;
+	if (agenticWorkspaceDirectory === AGENTIC_WORKSPACE_DIRECTORY_SOURCE.DEFAULT)
+		return AGENTIC_WORKSPACE_DIRECTORY_SOURCE.DEFAULT;
+	return AGENTIC_WORKSPACE_DIRECTORY_SOURCE.CUSTOM;
 }
 
-function resolveBacklogDirectorySource(
+function resolveAgenticWorkspaceDirectorySource(
 	options: InitializeProjectOptions,
-	backlogDirectory: string | null,
-): InitializeProjectOptions["backlogDirectorySource"] | undefined {
-	const inferredSource = inferBacklogDirectorySource(backlogDirectory);
-	if (options.backlogDirectorySource && inferredSource && options.backlogDirectorySource !== inferredSource) {
-		throw new Error("Backlog directory source and backlog directory value must agree.");
+	agenticWorkspaceDirectory: string | null,
+): InitializeProjectOptions["agenticWorkspaceDirectorySource"] | undefined {
+	const inferredSource = inferAgenticWorkspaceDirectorySource(agenticWorkspaceDirectory);
+	if (
+		options.agenticWorkspaceDirectorySource &&
+		inferredSource &&
+		options.agenticWorkspaceDirectorySource !== inferredSource
+	) {
+		throw new Error("AgenticWorkspace directory source and directory value must agree.");
 	}
-	const source = options.backlogDirectorySource ?? inferredSource;
-	if (source === BACKLOG_DIRECTORY_SOURCE.CUSTOM && !backlogDirectory) {
-		throw new Error("Backlog directory must be a valid project-relative path.");
+	const source = options.agenticWorkspaceDirectorySource ?? inferredSource;
+	if (source === AGENTIC_WORKSPACE_DIRECTORY_SOURCE.CUSTOM && !agenticWorkspaceDirectory) {
+		throw new Error("AgenticWorkspace directory must be a valid project-relative path.");
 	}
 	return source;
 }
 
 function resolveConfigLocation(
-	source: InitializeProjectOptions["backlogDirectorySource"] | undefined,
+	source: InitializeProjectOptions["agenticWorkspaceDirectorySource"] | undefined,
 	configLocation: InitializeProjectOptions["configLocation"],
 ): "folder" | "root" {
 	const location =
 		configLocation ??
-		(source === BACKLOG_DIRECTORY_SOURCE.CUSTOM ? BACKLOG_CONFIG_SOURCE.ROOT : BACKLOG_CONFIG_SOURCE.FOLDER);
-	if (source === BACKLOG_DIRECTORY_SOURCE.CUSTOM && location !== BACKLOG_CONFIG_SOURCE.ROOT) {
-		throw new Error("Custom backlog directories require root config discovery.");
+		(source === AGENTIC_WORKSPACE_DIRECTORY_SOURCE.CUSTOM
+			? AGENTIC_WORKSPACE_CONFIG_SOURCE.ROOT
+			: AGENTIC_WORKSPACE_CONFIG_SOURCE.FOLDER);
+	if (source === AGENTIC_WORKSPACE_DIRECTORY_SOURCE.CUSTOM && location !== AGENTIC_WORKSPACE_CONFIG_SOURCE.ROOT) {
+		throw new Error("Custom AgenticWorkspace directories require root config discovery.");
 	}
 	return location;
 }
 
 function resolveProjectDirectories(options: InitializeProjectOptions): {
-	backlogDirectory: string;
+	agenticWorkspaceDirectory: string;
 	configLocation: "folder" | "root";
 } {
-	const backlogDirectory = normalizeProjectBacklogDirectory(options.backlogDirectory);
-	const source = resolveBacklogDirectorySource(options, backlogDirectory);
+	const agenticWorkspaceDirectory = normalizeProjectAgenticWorkspaceDirectory(options.agenticWorkspaceDirectory);
+	const source = resolveAgenticWorkspaceDirectorySource(options, agenticWorkspaceDirectory);
 	return {
-		backlogDirectory:
-			backlogDirectory ??
-			(source === BACKLOG_DIRECTORY_SOURCE.HIDDEN ? BACKLOG_DIRECTORY_SOURCE.HIDDEN : BACKLOG_DIRECTORY_SOURCE.DEFAULT),
+		agenticWorkspaceDirectory:
+			agenticWorkspaceDirectory ??
+			(source === AGENTIC_WORKSPACE_DIRECTORY_SOURCE.HIDDEN
+				? AGENTIC_WORKSPACE_DIRECTORY_SOURCE.HIDDEN
+				: AGENTIC_WORKSPACE_DIRECTORY_SOURCE.DEFAULT),
 		configLocation: resolveConfigLocation(source, options.configLocation),
 	};
 }
@@ -229,7 +239,7 @@ function resolveProjectDirectories(options: InitializeProjectOptions): {
 export async function initializeProjectFiles(
 	core: Core,
 	options: InitializeProjectOptions,
-	config: BacklogConfig,
+	config: AgenticWorkspaceConfig,
 	isReInitialization: boolean,
 ): Promise<void> {
 	if (isReInitialization) {
@@ -238,7 +248,7 @@ export async function initializeProjectFiles(
 	}
 	const directories = resolveProjectDirectories(options);
 	const filesystem = new FileSystem(core.filesystem.rootDir, directories);
-	await filesystem.ensureBacklogStructure();
+	await filesystem.ensureAgenticWorkspaceStructure();
 	await filesystem.saveConfig(config);
 }
 
@@ -246,7 +256,7 @@ async function runMcpClientCommand(client: McpClientSetupKey): Promise<string> {
 	const { label, command, args } = getMcpClientSetupCommand(client, MCP_SERVER_NAME);
 	try {
 		await runMcpClientSetupCommand(command, args);
-		return `Added Backlog MCP server to ${label}`;
+		return `Added AgenticWorkspace MCP server to ${label}`;
 	} catch (error) {
 		const message = error instanceof Error ? error.message : String(error);
 		throw new Error(

@@ -45,7 +45,7 @@ const PER_TASK_ONLY_EDIT_FLAGS: ReadonlyArray<{ option: string; flag: string }> 
 function findPerTaskOnlyFlag(options: Record<string, unknown>): string | null {
 	for (const { option, flag } of PER_TASK_ONLY_EDIT_FLAGS) {
 		if (options[option] !== undefined)
-			return `Cannot use ${flag} with more than one task ID. ${flag} applies to one task only. Run agenticworkspace task edit once per task.`;
+			return `Cannot use ${flag} with more than one task ID. ${flag} applies to one task only. Run agentic-workspace task edit once per task.`;
 	}
 	return null;
 }

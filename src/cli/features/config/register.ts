@@ -2,7 +2,7 @@ import type { Command } from "commander";
 import { type CompletionInstallResult, installCompletion } from "../../../commands/completion.ts";
 import { addHelpSchema, choiceType } from "../../../commands/help-schema.ts";
 import { loadInitializedProject } from "../../../commands/project-command.ts";
-import { Core } from "../../../core/backlog.ts";
+import { Core } from "../../../core/agentic-workspace.ts";
 import { getPriorityOptions } from "../../../utils/priority-config.ts";
 import { getProjectValues } from "../../../utils/project-config.ts";
 import { getTaskTypeValues } from "../../../utils/task-type-config.ts";
@@ -138,7 +138,7 @@ function printCompletionResult(completionResult: CompletionInstallResult | null,
 			`⚠️  Shell completion installation failed:\n${completionError
 				.split("\n")
 				.map((line) => `  ${line}`)
-				.join("\n")}\n  Run \`backlog completion install\` later to retry.\n`,
+				.join("\n")}\n  Run \`agentic-workspace completion install\` later to retry.\n`,
 		);
 	}
 }
@@ -148,7 +148,7 @@ async function runAdvancedConfigCommand(loadCore: () => Promise<Core>, reportFai
 		const core = await loadCore();
 		const existingConfig = await core.filesystem.loadConfig();
 		if (!existingConfig) {
-			console.error("No AgenticWorkspace project found. Initialize one first with: agenticworkspace init");
+			console.error("No AgenticWorkspace project found. Initialize one first with: agentic-workspace init");
 			throw Object.assign(new Error("CLI requested exit"), { exitCode: 1 });
 		}
 		const result = await configureAdvancedSettings(core);
@@ -163,7 +163,7 @@ async function runAdvancedConfigCommand(loadCore: () => Promise<Core>, reportFai
 		}
 		printAdvancedConfigSummary(result.mergedConfig, completionResult, completionError);
 		printCompletionResult(completionResult, completionError);
-		console.log("\nUse `agenticworkspace config list` to review all configuration values.");
+		console.log("\nUse `agentic-workspace config list` to review all configuration values.");
 	} catch (error) {
 		reportFailure("Failed to update configuration", error);
 	}
@@ -192,7 +192,11 @@ export function registerConfigCommand(
 		optional: [],
 		writes: "Interactive configuration updates when run without a subcommand",
 		output: "Interactive wizard results or subcommand output",
-		examples: ["agenticworkspace config", "agenticworkspace config list", "agenticworkspace config get defaultEditor"],
+		examples: [
+			"agentic-workspace config",
+			"agentic-workspace config list",
+			"agentic-workspace config get defaultEditor",
+		],
 	})
 		.description("manage AgenticWorkspace configuration")
 		.action(async () => {
@@ -204,7 +208,7 @@ export function registerConfigCommand(
 		required: [{ name: "key", type: choiceType(CONFIG_GET_KEYS), description: "Configuration value to print" }],
 		optional: [],
 		output: "The selected configuration value",
-		examples: ["agenticworkspace config get defaultEditor", "agenticworkspace config get types"],
+		examples: ["agentic-workspace config get defaultEditor", "agentic-workspace config get types"],
 	})
 		.description("get a configuration value")
 		.action(async (key: string) => {
@@ -224,8 +228,8 @@ export function registerConfigCommand(
 		writes: "Updates the project AgenticWorkspace configuration file",
 		output: "Confirmation of the updated config value",
 		examples: [
-			'agenticworkspace config set defaultEditor "code --wait"',
-			'agenticworkspace config set defaultAssignee "@alice,@bob"',
+			'agentic-workspace config set defaultEditor "code --wait"',
+			'agentic-workspace config set defaultAssignee "@alice,@bob"',
 		],
 	})
 		.description("set a configuration value")
@@ -248,7 +252,7 @@ export function registerConfigCommand(
 		required: [],
 		optional: [],
 		output: "All public configuration values",
-		examples: ["agenticworkspace config list"],
+		examples: ["agentic-workspace config list"],
 	})
 		.description("list all configuration values")
 		.action(async () => {

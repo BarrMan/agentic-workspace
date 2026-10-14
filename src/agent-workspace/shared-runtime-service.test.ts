@@ -3,7 +3,7 @@ import { chmod, mkdir, mkdtemp, readFile, realpath, rename, rm, symlink, writeFi
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { TmuxCommandError } from "libtmux";
-import { Core } from "../core/backlog.ts";
+import { Core } from "../core/agentic-workspace.ts";
 import { initializeTestProject } from "../test/test-utils.ts";
 import type { Agent } from "./agents/agent.ts";
 import { agentFor, builtInAgents, registerAgent } from "./agents/agents.ts";
@@ -109,7 +109,7 @@ class FakeRuntime implements ProcessRunner, TmuxServer {
 			}
 			const paneId = args[args.indexOf("-t") + 1];
 			const option =
-				args.at(-1) === "@backlog_native_session_id" || args.at(-1) === "@backlog_native_provider"
+				args.at(-1) === "@agentic_workspace_native_session_id" || args.at(-1) === "@agentic_workspace_native_provider"
 					? args.at(-1)
 					: args.at(-2);
 			const value = args.at(-1);
@@ -124,19 +124,19 @@ class FakeRuntime implements ProcessRunner, TmuxServer {
 		if (
 			command === "list-panes" &&
 			args.at(-1)?.includes("#{pane_id}") &&
-			args.at(-1)?.includes("@backlog_native_session_id")
+			args.at(-1)?.includes("@agentic_workspace_native_session_id")
 		) {
 			const paneId = args[args.indexOf("-t") + 1];
 			const pane = this.panesById.get(paneId ?? "");
 			return pane
 				? [
 						[
-							pane.options["@backlog_root"],
-							pane.options["@backlog_task"],
-							pane.options["@backlog_session"],
+							pane.options["@agentic_workspace_root"],
+							pane.options["@agentic_workspace_task"],
+							pane.options["@agentic_workspace_session"],
 							paneId,
-							pane.options["@backlog_native_session_id"],
-							pane.options["@backlog_native_provider"],
+							pane.options["@agentic_workspace_native_session_id"],
+							pane.options["@agentic_workspace_native_provider"],
 						].join("\t"),
 					]
 				: [];
@@ -154,10 +154,10 @@ class FakeRuntime implements ProcessRunner, TmuxServer {
 			return matches.map(([paneId, pane]) => {
 				const identity = [
 					pane.name,
-					pane.options["@backlog_root"],
-					pane.options["@backlog_task"],
-					pane.options["@backlog_session"],
-					pane.options["@backlog_role"],
+					pane.options["@agentic_workspace_root"],
+					pane.options["@agentic_workspace_task"],
+					pane.options["@agentic_workspace_session"],
+					pane.options["@agentic_workspace_role"],
 				];
 				return [
 					...identity,
@@ -167,15 +167,17 @@ class FakeRuntime implements ProcessRunner, TmuxServer {
 				].join("\t");
 			});
 		}
-		if (command === "list-panes" && args.at(-1)?.includes("@backlog_native_session_id"))
+		if (command === "list-panes" && args.at(-1)?.includes("@agentic_workspace_native_session_id"))
 			return [...this.panesById].map(([paneId, pane]) =>
 				[
-					pane.options["@backlog_root"],
-					pane.options["@backlog_task"],
-					pane.options["@backlog_session"],
+					pane.options["@agentic_workspace_root"],
+					pane.options["@agentic_workspace_task"],
+					pane.options["@agentic_workspace_session"],
 					...(args.at(-1)?.includes("#{pane_id}") ? [paneId] : []),
-					pane.options["@backlog_native_session_id"],
-					...(args.at(-1)?.includes("@backlog_native_provider") ? [pane.options["@backlog_native_provider"]] : []),
+					pane.options["@agentic_workspace_native_session_id"],
+					...(args.at(-1)?.includes("@agentic_workspace_native_provider")
+						? [pane.options["@agentic_workspace_native_provider"]]
+						: []),
 				].join("\t"),
 			);
 		if (command === "list-panes")
@@ -184,17 +186,17 @@ class FakeRuntime implements ProcessRunner, TmuxServer {
 					paneId,
 					pane.dead ? "1" : "0",
 					"@agent",
-					pane.options["@backlog_root"],
-					pane.options["@backlog_task"],
-					pane.options["@backlog_session"],
-					pane.options["@backlog_role"],
+					pane.options["@agentic_workspace_root"],
+					pane.options["@agentic_workspace_task"],
+					pane.options["@agentic_workspace_session"],
+					pane.options["@agentic_workspace_role"],
 					"",
 				].join("\t"),
 			);
 		if (command === "display-message") {
 			const format = args.at(-1);
-			if (format === "#{@backlog_launch_resources}")
-				return [this.panesById.get(args[2] ?? "")?.options["@backlog_launch_resources"] ?? ""];
+			if (format === "#{@agentic_workspace_launch_resources}")
+				return [this.panesById.get(args[2] ?? "")?.options["@agentic_workspace_launch_resources"] ?? ""];
 			const pane = this.panesById.get(args[2] ?? "");
 			if (format === "#{pane_pid} #{pane_dead}") return [`4242 ${pane?.dead ? "1" : "0"}`];
 			return [format === "#{pane_id} #{pane_dead}" ? `${args[2]} ${pane?.dead ? "1" : "0"}` : "0 0"];
@@ -378,17 +380,17 @@ describe("shared runtime session service", () => {
 		expect(runtime.launches[0]).toContain('"paneId":"%1"');
 		expect(runtime.launches[0]).toContain(`"sessionId":"${started.record.id}"`);
 		const store = new SessionStore(root, runtime);
-		expect((await store.read("TASK-1")).modes?.build?.activeSessionId).toBeUndefined();
+		expect((await store.read("TASK-1")).modes?.build?.activeSessionId).toBe(started.record.id);
 		await service.activateNativeSession("task-1", started.record.id, originOf(started));
 		expect((await store.read("TASK-1")).modes?.build?.activeSessionId).toBe(started.record.id);
 
 		const pane = runtime.panesById.get(started.paneId);
 		if (!pane) throw new Error("Missing native runtime pane");
 		for (const [option, conflicting] of [
-			["@backlog_root", join(root, "other-project")],
-			["@backlog_task", "TASK-2"],
-			["@backlog_session", "other-session"],
-			["@backlog_native_provider", "claude"],
+			["@agentic_workspace_root", join(root, "other-project")],
+			["@agentic_workspace_task", "TASK-2"],
+			["@agentic_workspace_session", "other-session"],
+			["@agentic_workspace_native_provider", "claude"],
 		] as const) {
 			const established = pane.options[option];
 			const writes = runtime.optionWrites.length;
@@ -447,7 +449,7 @@ describe("shared runtime session service", () => {
 			"fake publication failure",
 		);
 		expect(runtime.kills).toBe(killsBeforeDispatchFailure);
-		expect((await service.list("task-3", "build")).sessions[0]?.status).toBe("starting");
+		expect((await service.list("task-3", "build")).sessions[0]?.status).toBe("running");
 
 		await core.createTaskFromInput({ title: "Publication failure task", status: "To Do" });
 		const launchesBeforePublicationFailure = runtime.launches.length;
@@ -483,7 +485,7 @@ describe("shared runtime session service", () => {
 
 		await service.stop("task-1", resumed.record.id);
 		await service.ask("task-1", "fixture question", { sessionId: resumed.record.id });
-		expect(runtime.runEnvironments.at(-1)?.BACKLOG_WORKSPACE_CONTEXT).toBeUndefined();
+		expect(runtime.runEnvironments.at(-1)?.AGENTIC_WORKSPACE_WORKSPACE_CONTEXT).toBeUndefined();
 		const currentPi = configuredFailure.presets["fake-pi"];
 		if (!currentPi) throw new Error("Missing fake Pi preset");
 		await upsertAgentConfiguration(core, "project", {
@@ -550,10 +552,7 @@ describe("shared runtime session service", () => {
 		return { root, service, store, runtime };
 	}
 
-	it.each([
-		"native",
-		"direct",
-	] as const)("does not tear down or fail a %s launch after dispatch begins", async (route) => {
+	it.each(["native", "direct"] as const)("settles a live %s launch after dispatch begins", async (route) => {
 		const { service, store, runtime } = await observationFixture();
 		const otherMode = await service.prepareNativeSession("task-1", undefined, "plan");
 		runtime.afterLaunch = async () => {
@@ -570,12 +569,32 @@ describe("shared runtime session service", () => {
 		const failedModeSession = state.modes?.build?.sessions[0];
 		expect(runtime.kills).toBe(killsBeforeDispatch);
 		expect(runtime.panesById.size).toBe(2);
-		expect(failedModeSession?.status).toBe("starting");
+		expect(failedModeSession?.status).toBe("running");
 		expect(state.modes?.plan?.sessions[0]?.id).toBe(otherMode.record.id);
 		expect(state.modes?.plan?.sessions[0]?.status).toBe("running");
 	});
 
-	it("kills a dispatched direct STARTING session before task-wide STOPPED publication", async () => {
+	it("settles a post-dispatch handoff failure and permits a second successor", async () => {
+		const { service, store, runtime } = await observationFixture();
+		runtime.exitOnLaunch = true;
+		runtime.afterLaunch = async () => {
+			throw new Error("controlled successor failure after dispatch");
+		};
+		await expect(service.prepareNewSession("task-1", "build")).rejects.toThrow(
+			"controlled successor failure after dispatch",
+		);
+		runtime.afterLaunch = undefined;
+		const afterFailure = (await store.read("TASK-1")).modes?.build;
+		const settled = afterFailure?.sessions[0];
+		expect(settled?.status).toBe("failed");
+		expect(afterFailure?.activeSessionId).toBe(settled?.id);
+		runtime.exitOnLaunch = false;
+		const next = await service.prepareNewSession("task-1", "build");
+		expect(next.record.id).not.toBe(settled?.id);
+		expect((await store.read("TASK-1")).modes?.build?.activeSessionId).toBe(next.record.id);
+	});
+
+	it("stops a dispatched direct session after settling it running", async () => {
 		const { service, store, runtime } = await observationFixture();
 		runtime.afterLaunch = async () => {
 			throw new Error("leave dispatched session starting");
@@ -585,9 +604,9 @@ describe("shared runtime session service", () => {
 		const stoppedState = await store.read("TASK-1");
 		const beforeStop = Object.values(stoppedState.modes ?? {})
 			.flatMap((history) => history.sessions)
-			.find((session) => session.status === "starting");
+			.find((session) => session.status === "running");
 		if (!beforeStop) throw new Error("Expected direct session to be persisted");
-		expect(beforeStop.status).toBe("starting");
+		expect(beforeStop.status).toBe("running");
 		let statusAtTeardown: string | undefined;
 		runtime.onKill = async () => {
 			const current = await store.read("TASK-1");
@@ -597,7 +616,7 @@ describe("shared runtime session service", () => {
 		};
 		await service.stopAllTaskSessions("TASK-1");
 		runtime.onKill = undefined;
-		expect(statusAtTeardown).toBe("starting");
+		expect(statusAtTeardown).toBe("running");
 		const afterStop = await store.read("TASK-1");
 		expect(
 			Object.values(afterStop.modes ?? {})
@@ -775,6 +794,7 @@ describe("shared runtime session service", () => {
 		};
 		await store.mutateMode("TASK-1", "build", async (history) => {
 			history.sessions.push(replacement);
+			history.activeSessionId = replacement.id;
 		});
 		let staleTaskCallback = false;
 		expect(
@@ -830,7 +850,7 @@ describe("shared runtime session service", () => {
 		expect(await store.read("TASK-1")).toEqual(before);
 	});
 
-	it("disabled auto-resume starts fresh only for eligible stopped owned sessions", async () => {
+	it("does not replace a selected parked conversation when auto-resume is disabled", async () => {
 		const root = await mkdtemp(join(tmpdir(), "shared-runtime-disabled-resume-"));
 		roots.push(root);
 		process.env.XDG_CONFIG_HOME = join(root, "config");
@@ -848,6 +868,10 @@ describe("shared runtime session service", () => {
 		const runtime = new FakeRuntime();
 		const service = new AgentSessionService(core, { runner: runtime, tmuxServer: runtime });
 		const started = await service.prepareNativeSession("task-1", undefined, "build");
+		const store = new SessionStore(root, runtime);
+		await store.mutateSession("TASK-1", started.record.id, async (session) => {
+			session.status = "parked";
+		});
 		const oldPane = runtime.panesById.get(started.paneId);
 		if (!oldPane) throw new Error("Missing owned outgoing pane");
 		oldPane.dead = true;
@@ -861,10 +885,291 @@ describe("shared runtime session service", () => {
 				autoResumeOnRestart: false,
 			},
 		});
-		const fresh = await service.prepareNativeSession("task-1", started.record.id, "build");
-		expect(runtime.launches).toHaveLength(2);
-		expect(fresh.record.nativeSessionId).not.toBe(started.record.nativeSessionId);
-		expect(fresh.outcome).toEqual({ kind: "Fresh" });
+		const before = await store.read("TASK-1");
+		const launches = runtime.launches.length;
+		await expect(service.prepareNativeSession("task-1", started.record.id, "build")).rejects.toMatchObject({
+			kind: "exact-resume-unavailable",
+			reason: "auto-resume-disabled",
+			nativeSessionId: started.record.nativeSessionId,
+		});
+		expect(runtime.launches).toHaveLength(launches);
+		expect(await store.read("TASK-1")).toEqual(before);
+	});
+
+	it("creates a distinct handoff session and restores the predecessor selection on launch failure", async () => {
+		const successful = await resumeFixture();
+		const originalPane = successful.runtime.panesById.get(successful.paneId);
+		if (!originalPane) throw new Error("Missing predecessor pane");
+		originalPane.dead = false;
+		const predecessorBefore = (await successful.store.read("TASK-1")).modes?.build?.sessions[0];
+
+		const successor = await successful.service.prepareNewSession("task-1", "build");
+
+		const afterSuccess = await successful.store.read("TASK-1");
+		const predecessorAfter = afterSuccess.modes?.build?.sessions.find(({ id }) => id === successful.sessionId);
+		expect(successor.record.id).not.toBe(successful.sessionId);
+		expect(afterSuccess.modes?.build?.activeSessionId).toBe(successor.record.id);
+		expect(predecessorAfter).toMatchObject({ status: "running", nativeSessionId: successful.nativeSessionId });
+		expect(originalPane.dead).toBe(false);
+
+		const failed = await resumeFixture();
+		const failedPane = failed.runtime.panesById.get(failed.paneId);
+		if (!failedPane) throw new Error("Missing failure-case predecessor pane");
+		failedPane.dead = false;
+		const failedBefore = await failed.store.read("TASK-1");
+		failed.runtime.failLaunch = true;
+
+		await expect(failed.service.prepareNewSession("task-1", "build")).rejects.toThrow("fake publication failure");
+
+		const failedAfter = await failed.store.read("TASK-1");
+		expect(failedAfter.modes?.build?.activeSessionId).toBe(failedBefore.modes?.build?.activeSessionId);
+		expect(failedAfter.modes?.build?.sessions.find(({ id }) => id === failed.sessionId)).toMatchObject({
+			status: "running",
+			nativeSessionId: failed.nativeSessionId,
+		});
+		expect(failedPane.dead).toBe(false);
+		expect(failedAfter.modes?.build?.sessions.some(({ id }) => id !== failed.sessionId)).toBe(true);
+		expect(predecessorBefore?.status).toBe("running");
+	});
+
+	it.each([
+		{ queued: false, owned: true },
+		{ queued: false, owned: false },
+		{ queued: true, owned: true },
+		{ queued: true, owned: false },
+	])("hands off successor-first with explicit ownership %j", async ({ queued, owned }) => {
+		const { root, service, store, runtime } = await observationFixture();
+		const predecessor = owned
+			? (await service.prepareNativeSession("task-1", undefined, "build")).record
+			: await service.start("task-1", { modeId: "build" });
+		const before = (await store.read("TASK-1")).modes.build!.sessions[0];
+		runtime.afterLaunch = async () => {
+			expect((await store.read("TASK-1")).modes.build!.sessions[0]).toEqual(before);
+			expect(runtime.kills).toBe(0);
+		};
+		runtime.onKill = async () => {
+			const history = (await store.read("TASK-1")).modes.build!;
+			expect(history.sessions.find(({ id }) => id === history.activeSessionId)?.status).toBe("running");
+		};
+		const pending = queued
+			? await service.registerPendingSession(
+					"task-1",
+					{ modeId: "build", replace: true },
+					{
+						v: 2,
+						paneId: "%parent",
+						rootDir: root,
+					},
+				)
+			: undefined;
+		if (pending) {
+			expect((await store.read("TASK-1")).modes.build!.sessions[0]).toEqual(before);
+			expect((await readWorkspaceRequests(root))[0]?.handoff?.predecessor?.id).toBe(predecessor.id);
+		}
+		const successor = pending
+			? (await service.adoptPendingSession("task-1", pending.id)).record
+			: await service.start("task-1", { modeId: "build", replace: true });
+		const history = (await store.read("TASK-1")).modes.build!;
+		expect(history.activeSessionId).toBe(successor.id);
+		expect(history.sessions.find(({ id }) => id === predecessor.id)?.status).toBe(owned ? "stopped" : "running");
+		expect(runtime.kills).toBe(owned ? 1 : 0);
+		expect(await readWorkspaceRequests(root)).toEqual([]);
+		expect(
+			[...runtime.panesById.values()].some(({ options }) => options["@agentic_workspace_role"] === "retired-session"),
+		).toBe(false);
+	});
+
+	it.each([false, true])("keeps the successor on retirement failure (queued=%s)", async (queued) => {
+		const { root, service, store, runtime } = await observationFixture();
+		const predecessor = await service.prepareNativeSession("task-1", undefined, "build");
+		const pending = queued
+			? await service.registerPendingSession(
+					"task-1",
+					{ modeId: "build", replace: true },
+					{
+						v: 2,
+						paneId: "%parent",
+						rootDir: root,
+					},
+				)
+			: undefined;
+		runtime.onKill = async () => {
+			throw new Error("retirement unavailable");
+		};
+		await expect(
+			pending
+				? service.adoptPendingSession("task-1", pending.id)
+				: service.start("task-1", { modeId: "build", replace: true }),
+		).rejects.toThrow("Successor running; predecessor cleanup failed");
+		const history = (await store.read("TASK-1")).modes.build!;
+		expect(history.sessions.every(({ status }) => status === "running")).toBe(true);
+		expect(history.activeSessionId).not.toBe(predecessor.record.id);
+		expect(runtime.panesById.size).toBe(2);
+		if (pending) {
+			expect(await readWorkspaceRequests(root)).toHaveLength(1);
+			const launches = runtime.launches.length;
+			runtime.onKill = undefined;
+			await service.adoptPendingSession("task-1", pending.id);
+			expect(runtime.launches).toHaveLength(launches);
+			expect(runtime.panesById.size).toBe(1);
+			expect(await readWorkspaceRequests(root)).toEqual([]);
+		}
+	});
+
+	it.each([
+		{ queued: false, competingSelection: false },
+		{ queued: true, competingSelection: false },
+		{ queued: false, competingSelection: true },
+		{ queued: true, competingSelection: true },
+	])("rolls back only the successor's selection on launch failure %j", async ({ queued, competingSelection }) => {
+		const { root, service, store, runtime } = await observationFixture();
+		const predecessor = await service.prepareNativeSession("task-1", undefined, "build");
+		const other = await service.prepareNewSession("task-1", "build");
+		await store.mutateMode("TASK-1", "build", async (history) => {
+			history.activeSessionId = predecessor.record.id;
+		});
+		const before = (await store.read("TASK-1")).modes.build!.sessions[0];
+		const pending = queued
+			? await service.registerPendingSession(
+					"task-1",
+					{ modeId: "build", replace: true },
+					{
+						v: 2,
+						paneId: "%parent",
+						rootDir: root,
+					},
+				)
+			: undefined;
+		runtime.afterLaunch = async () => {
+			if (competingSelection)
+				await store.mutateMode("TASK-1", "build", async (history) => {
+					history.activeSessionId = other.record.id;
+				});
+			throw new Error("post-dispatch failure");
+		};
+		await expect(
+			pending
+				? service.adoptPendingSession("task-1", pending.id)
+				: service.start("task-1", { modeId: "build", replace: true }),
+		).rejects.toThrow("post-dispatch failure");
+		const history = (await store.read("TASK-1")).modes.build!;
+		expect(history.activeSessionId).toBe(competingSelection ? other.record.id : predecessor.record.id);
+		expect(history.sessions[0]).toEqual(before);
+		expect(runtime.kills).toBe(0);
+	});
+
+	it("finalizes the captured local predecessor, independently of the shared selection", async () => {
+		const { service, store, runtime } = await observationFixture();
+		const local = await service.prepareNativeSession("task-1", undefined, "build");
+		const shared = await service.prepareNewSession("task-1", "build");
+		const successor = await service.prepareNewSession("task-1", "build");
+		await store.mutateMode("TASK-1", "build", async (history) => {
+			history.activeSessionId = shared.record.id;
+		});
+		await service.finalizeHandoff("task-1", successor.record, {
+			modeId: "build",
+			predecessor: local.record,
+			priorActiveSessionId: shared.record.id,
+		});
+		const history = (await store.read("TASK-1")).modes.build!;
+		expect(history.activeSessionId).toBe(shared.record.id);
+		expect(history.sessions.find(({ id }) => id === local.record.id)?.status).toBe("stopped");
+		expect(runtime.panesById.has(shared.paneId)).toBe(true);
+		expect(runtime.panesById.has(successor.paneId)).toBe(true);
+	});
+
+	it("restores queued predispatch failure without touching the predecessor", async () => {
+		const { root, service, store, runtime } = await observationFixture();
+		const predecessor = await service.prepareNativeSession("task-1", undefined, "build");
+		const before = (await store.read("TASK-1")).modes.build!.sessions[0];
+		const pending = await service.registerPendingSession(
+			"task-1",
+			{ modeId: "build", replace: true },
+			{
+				v: 2,
+				paneId: "%parent",
+				rootDir: root,
+			},
+		);
+		runtime.failTag = true;
+		await expect(service.adoptPendingSession("task-1", pending.id)).rejects.toThrow(
+			"controlled predispatch tag failure",
+		);
+		const history = (await store.read("TASK-1")).modes.build!;
+		expect(history.activeSessionId).toBe(predecessor.record.id);
+		expect(history.sessions[0]).toEqual(before);
+		expect(history.sessions.find(({ id }) => id === pending.id)?.status).toBe("failed");
+		expect(runtime.panesById.has(predecessor.paneId)).toBe(true);
+	});
+
+	it.each(["predecessor", "successor"])("revalidates %s identity at finalization", async (changed) => {
+		const { service, store, runtime } = await observationFixture();
+		const predecessor = await service.prepareNativeSession("task-1", undefined, "build");
+		const successor = await service.prepareNewSession("task-1", "build");
+		await store.mutateSession(
+			"TASK-1",
+			changed === "predecessor" ? predecessor.record.id : successor.record.id,
+			async (record) => {
+				record.createdAt = "2000-01-01T00:00:00.000Z";
+			},
+		);
+		await expect(
+			service.finalizeHandoff("task-1", successor.record, {
+				modeId: "build",
+				predecessor: predecessor.record,
+				priorActiveSessionId: predecessor.record.id,
+			}),
+		).rejects.toThrow("predecessor cleanup failed");
+		expect(runtime.kills).toBe(0);
+		expect(runtime.panesById.size).toBe(2);
+	});
+
+	it.each([
+		"predecessor",
+		"successor",
+		"mode",
+	])("rejects stale queued handoff %s identity before launch", async (changed) => {
+		const { root, service, store, runtime } = await observationFixture();
+		const predecessor = await service.prepareNativeSession("task-1", undefined, "build");
+		const pending = await service.registerPendingSession(
+			"task-1",
+			{ modeId: "build", replace: true },
+			{
+				v: 2,
+				paneId: "%parent",
+				rootDir: root,
+			},
+		);
+		const request = (await readWorkspaceRequests(root))[0]!;
+		if (changed === "mode") {
+			request.handoff!.modeId = "plan";
+			await writeWorkspaceRequest(root, request);
+		} else
+			await store.mutateSession(
+				"TASK-1",
+				changed === "predecessor" ? predecessor.record.id : pending.id,
+				async (record) => {
+					record.createdAt = "2000-01-01T00:00:00.000Z";
+				},
+			);
+		const before = await store.read("TASK-1");
+		await expect(service.adoptPendingSession("task-1", pending.id)).rejects.toThrow();
+		expect(await store.read("TASK-1")).toEqual(before);
+		expect(runtime.launches).toHaveLength(1);
+		expect(runtime.kills).toBe(0);
+	});
+
+	it("resumes a parked conversation using its stored native session ID", async () => {
+		const f = await resumeFixture();
+		await f.store.mutateSession("TASK-1", f.sessionId, async (session) => {
+			session.status = "parked";
+		});
+
+		const resumed = await f.service.prepareNativeSession("task-1", f.sessionId, "build");
+
+		expect(f.runtime.launches.at(-1)).toContain(f.nativeSessionId);
+		expect(resumed.record.nativeSessionId).toBe(f.nativeSessionId);
+		expect(resumed.outcome).toEqual({ kind: "Resumed" });
 	});
 
 	it("resume startup failure preserves the SID and does not dispatch fresh", async () => {
@@ -886,45 +1191,46 @@ describe("shared runtime session service", () => {
 		expect(failed?.status).toBe("failed");
 	});
 
-	it("next launch skips a failed SID and reports FreshAfterFailedResume", async () => {
+	it("next launch after an exact-resume failure surfaces the preserved conversation", async () => {
 		const f = await resumeFixture();
 		f.runtime.exitOnLaunch = true;
 		await expect(f.service.prepareNativeSession("task-1", f.sessionId, "build")).rejects.toThrow("ResumeFailed:");
 		const failure = (await f.store.read("TASK-1")).modes?.build?.sessions.find(({ id }) => id === f.sessionId);
 		expect(failure?.resumeProbeFailed?.nativeSessionId).toBe(f.nativeSessionId);
 		f.runtime.exitOnLaunch = false;
-		const recreated = new AgentSessionService(f.core, { runner: f.runtime, tmuxServer: f.runtime });
-		const before = f.runtime.launches.length;
-		const fresh = await recreated.prepareNativeSession("task-1", f.sessionId, "build");
-		expect(f.runtime.launches).toHaveLength(before + 1);
-		expect(f.runtime.launches.at(-1)).toContain("--session-id");
-		expect(f.runtime.launches.at(-1)).not.toContain("--session ");
-		expect(fresh.record.nativeSessionId).not.toBe(f.nativeSessionId);
-		expect(fresh.outcome).toEqual({
-			kind: "FreshAfterFailedResume",
+		const before = await f.store.read("TASK-1");
+		const launches = f.runtime.launches.length;
+		await expect(f.service.prepareNativeSession("task-1", f.sessionId, "build")).rejects.toMatchObject({
+			kind: "exact-resume-unavailable",
+			reason: "previous-resume-failed",
 			nativeProvider: "pi",
 			nativeSessionId: f.nativeSessionId,
 		});
-		expect(fresh.warnings?.join(" ")).toContain(f.nativeSessionId);
-		expect(fresh.warnings?.join(" ")).not.toBe(fresh.record.error);
+		expect(f.runtime.launches).toHaveLength(launches);
+		expect(await f.store.read("TASK-1")).toEqual(before);
 		const current = (await f.store.read("TASK-1")).modes?.build?.sessions.find(({ id }) => id === f.sessionId);
-		expect(current?.resumeProbeFailed).toBeUndefined();
-		expect(current?.nativeSessionId).not.toBe(f.nativeSessionId);
+		expect(current?.resumeProbeFailed?.nativeSessionId).toBe(f.nativeSessionId);
+		expect(current?.nativeSessionId).toBe(f.nativeSessionId);
 	});
 
-	it("fresh failure is not reported as successful fallback", async () => {
+	it("a failed-resume marker blocks fresh launch even if it would fail", async () => {
 		const f = await resumeFixture();
 		f.runtime.exitOnLaunch = true;
 		await expect(f.service.prepareNativeSession("task-1", f.sessionId, "build")).rejects.toThrow("ResumeFailed:");
 		f.runtime.exitOnLaunch = false;
 		f.runtime.failLaunch = true;
 		const recreated = new AgentSessionService(f.core, { runner: f.runtime, tmuxServer: f.runtime });
-		await expect(recreated.prepareNativeSession("task-1", f.sessionId, "build")).rejects.toThrow(
-			"fake publication failure",
-		);
+		const before = await f.store.read("TASK-1");
+		const launches = f.runtime.launches.length;
+		await expect(recreated.prepareNativeSession("task-1", f.sessionId, "build")).rejects.toMatchObject({
+			kind: "exact-resume-unavailable",
+			reason: "previous-resume-failed",
+		});
+		expect(f.runtime.launches).toHaveLength(launches);
+		expect(await f.store.read("TASK-1")).toEqual(before);
 		const record = (await f.store.read("TASK-1")).modes?.build?.sessions.find(({ id }) => id === f.sessionId);
-		expect(record?.resumeProbeFailed).toBeUndefined();
-		expect(record?.error ?? "").not.toContain("FreshAfterFailedResume");
+		expect(record?.resumeProbeFailed?.nativeSessionId).toBe(f.nativeSessionId);
+		expect(record?.nativeSessionId).toBe(f.nativeSessionId);
 	});
 
 	it("preflight and uncertain startup failures never mark a SID failed", async () => {
@@ -963,7 +1269,7 @@ describe("shared runtime session service", () => {
 		expect(f.runtime.panesById.size).toBe(1);
 	});
 
-	it("competing preparations cannot duplicate resume or fallback", async () => {
+	it("competing preparations cannot duplicate resume or start a fresh conversation", async () => {
 		const f = await resumeFixture();
 		f.runtime.exitOnLaunch = true;
 		f.runtime.afterLaunch = async () => {
@@ -975,37 +1281,43 @@ describe("shared runtime session service", () => {
 			f.service.prepareNativeSession("task-1", f.sessionId, "build"),
 		]);
 		expect(outcomes.every(({ status }) => status === "rejected")).toBe(true);
-		expect(
-			outcomes
-				.filter((outcome): outcome is PromiseRejectedResult => outcome.status === "rejected")
-				.map(({ reason }) => (reason as Error).message)
-				.join(" "),
-		).toContain("ResumeFailed:");
+		const errors = outcomes
+			.filter((outcome): outcome is PromiseRejectedResult => outcome.status === "rejected")
+			.map(({ reason }) => reason as Error);
+		expect(errors.some((error) => error.message.includes("ResumeFailed:"))).toBe(true);
+		expect(errors).toHaveLength(2);
 		expect(f.runtime.launches).toHaveLength(before + 1);
 		f.runtime.exitOnLaunch = false;
 		const retry = new AgentSessionService(f.core, { runner: f.runtime, tmuxServer: f.runtime });
-		await retry.prepareNativeSession("task-1", f.sessionId, "build");
-		expect(f.runtime.launches).toHaveLength(before + 2);
+		await expect(retry.prepareNativeSession("task-1", f.sessionId, "build")).rejects.toMatchObject({
+			kind: "exact-resume-unavailable",
+			reason: "previous-resume-failed",
+		});
+		expect(f.runtime.launches).toHaveLength(before + 1);
 	});
 
-	it("fresh identity rotation cannot resurrect an OpenCode receipt", async () => {
+	it("does not rotate an OpenCode identity after exact resume failure", async () => {
 		const f = await resumeFixture("opencode-v1");
 		f.runtime.exitOnLaunch = true;
 		await expect(f.service.prepareNativeSession("task-1", f.sessionId, "build")).rejects.toThrow("ResumeFailed:");
 		f.runtime.exitOnLaunch = false;
 		const recreated = new AgentSessionService(f.core, { runner: f.runtime, tmuxServer: f.runtime });
-		const attachment = await recreated.prepareNativeSession("task-1", f.sessionId, "build");
-		expect(attachment.outcome?.kind).toBe("FreshAfterFailedResume");
-		expect(attachment.record.nativeSessionId).toBeUndefined();
+		const before = await f.store.read("TASK-1");
+		await expect(recreated.prepareNativeSession("task-1", f.sessionId, "build")).rejects.toMatchObject({
+			kind: "exact-resume-unavailable",
+			reason: "previous-resume-failed",
+		});
+		expect(await f.store.read("TASK-1")).toEqual(before);
 		const launches = f.runtime.launches.length;
 		const reopened = new AgentSessionService(f.core, { runner: f.runtime, tmuxServer: f.runtime });
-		const again = await reopened.prepareNativeSession("task-1", f.sessionId, "build");
-		expect(again.record.nativeSessionId).toBeUndefined();
+		await expect(reopened.prepareNativeSession("task-1", f.sessionId, "build")).rejects.toMatchObject({
+			kind: "exact-resume-unavailable",
+			reason: "previous-resume-failed",
+		});
 		expect(f.runtime.launches).toHaveLength(launches);
-		expect(again.record.nativeSessionId).toBeUndefined();
 	});
 
-	it("resume failure and successful fallback have distinct UI notices", async () => {
+	it("resume failure and subsequent unavailability give distinct actionable errors", async () => {
 		const f = await resumeFixture();
 		f.runtime.exitOnLaunch = true;
 		let resumeNotice = "";
@@ -1016,11 +1328,20 @@ describe("shared runtime session service", () => {
 		}
 		f.runtime.exitOnLaunch = false;
 		const recreated = new AgentSessionService(f.core, { runner: f.runtime, tmuxServer: f.runtime });
-		const fresh = await recreated.prepareNativeSession("task-1", f.sessionId, "build");
-		const fallbackNotice = fresh.warnings?.join(" ") ?? "";
+		let unavailable: unknown;
+		try {
+			await recreated.prepareNativeSession("task-1", f.sessionId, "build");
+		} catch (error) {
+			unavailable = error;
+		}
 		expect(resumeNotice).toContain("ResumeFailed:");
-		expect(fallbackNotice).toContain(f.nativeSessionId);
-		expect(fallbackNotice).not.toBe(resumeNotice);
+		expect(unavailable).toMatchObject({
+			kind: "exact-resume-unavailable",
+			reason: "previous-resume-failed",
+			nativeSessionId: f.nativeSessionId,
+		});
+		expect((unavailable as Error).message).toContain("start a fresh conversation explicitly");
+		expect((unavailable as Error).message).not.toBe(resumeNotice);
 	});
 
 	it.each([
@@ -1123,14 +1444,14 @@ describe("shared runtime session service", () => {
 		const before = await new SessionStore(root, runtime).read("TASK-1");
 		const paneOptions = structuredClone(outgoingPane.options);
 		const inventory = JSON.parse(
-			outgoingPane.options["@backlog_launch_resources"] ?? "null",
+			outgoingPane.options["@agentic_workspace_launch_resources"] ?? "null",
 		) as PreparedLaunchResources;
 		const resourceFilePaths = [
-			join(inventory.skill.path, "skills/backlog-task-management/SKILL.md"),
-			join(inventory.skill.path, "backlog-opencode-cli-plugin/package.json"),
-			join(inventory.skill.path, "backlog-opencode-cli-plugin/tui.js"),
-			join(inventory.skill.path, ".backlog-launch-owner"),
-			...(inventory.activity ? [join(inventory.activity.path, ".backlog-launch-owner")] : []),
+			join(inventory.skill.path, "skills/agentic-workspace-task-management/SKILL.md"),
+			join(inventory.skill.path, "agentic-workspace-opencode-cli-plugin/package.json"),
+			join(inventory.skill.path, "agentic-workspace-opencode-cli-plugin/tui.js"),
+			join(inventory.skill.path, ".agentic-workspace-launch-owner"),
+			...(inventory.activity ? [join(inventory.activity.path, ".agentic-workspace-launch-owner")] : []),
 		];
 		const resourceContents = await Promise.all(resourceFilePaths.map((path) => readFile(path, "utf8")));
 		await expect(service.prepareNativeSession("task-1", started.record.id, "build")).rejects.toThrow(
@@ -1282,15 +1603,17 @@ describe("shared runtime session service", () => {
 		expect((await readWorkspaceRequests(root)).some((request) => request.sessionId === started.record.id)).toBe(false);
 		expect((await service.list("task-1", "build")).sessions).toEqual([]);
 		expect(runtime.panesById.size).toBe(1);
-		expect([...runtime.panesById.values()][0]?.options["@backlog_native_session_id"]).toBe("ses_receipt_exact");
+		expect([...runtime.panesById.values()][0]?.options["@agentic_workspace_native_session_id"]).toBe(
+			"ses_receipt_exact",
+		);
 		await core.createTaskFromInput({ title: "Forgotten native alias", status: "To Do" });
-		const alias = await service.prepareNativeSession("task-2", undefined, "build");
-		await service.stop("task-2", alias.record.id);
+		const alias = await service.prepareNativeSession("task-3", undefined, "build");
+		await service.stop("task-3", alias.record.id);
 		const store = new SessionStore(root, runtime);
-		await store.mutateSession("TASK-2", alias.record.id, async (session) => {
+		await store.mutateSession("TASK-3", alias.record.id, async (session) => {
 			session.nativeSessionId = "ses_receipt_exact";
 		});
-		const aliasedAttachment = await service.prepareNativeSession("task-2", alias.record.id, "build");
+		const aliasedAttachment = await service.prepareNativeSession("task-3", alias.record.id, "build");
 		expect(aliasedAttachment.record.nativeSessionId).toBe("ses_receipt_exact");
 	});
 
@@ -1380,7 +1703,7 @@ describe("shared runtime session service", () => {
 		await chmod(receiptPath, 0o600);
 		expect((await service.list("task-1", "build")).sessions[0]?.nativeSessionId).toBe("ses_hydrated_only");
 		expect((await service.list("task-1", "build")).sessions[0]?.nativeSessionId).toBe("ses_hydrated_only");
-		expect([...runtime.panesById.values()][0]?.options["@backlog_native_session_id"]).toBeUndefined();
+		expect([...runtime.panesById.values()][0]?.options["@agentic_workspace_native_session_id"]).toBeUndefined();
 		const blockedLog = join(taskDir, `${started.record.id}.log`);
 		await mkdir(blockedLog);
 		await expect(service.forgetTaskSessions("task-1")).rejects.toThrow();
@@ -1544,7 +1867,7 @@ describe("shared runtime session service", () => {
 		await service.stop("task-1", child.record.id);
 		await service.ask("task-1", "continue in this conversation", { sessionId: child.record.id });
 		const askContext = JSON.parse(
-			runtime.runEnvironments.at(-1)?.BACKLOG_WORKSPACE_CONTEXT ?? "null",
+			runtime.runEnvironments.at(-1)?.AGENTIC_WORKSPACE_WORKSPACE_CONTEXT ?? "null",
 		) as WorkspaceContext;
 		expect(askContext.paneId).toBe(child.paneId);
 		expect(askContext.conversation?.sessionId).toBe(child.record.id);
@@ -1593,7 +1916,7 @@ describe("shared runtime session service", () => {
 		await rename(heldTaskDir, firstPaths.taskDir);
 		expect((await service.list("task-1", "build")).sessions[0]?.id).toBe(first.record.id);
 
-		const requestDir = join(rootAlias, ".backlog", "agent-requests");
+		const requestDir = join(rootAlias, ".agentic-workspace", "agent-requests");
 		const heldRequestDir = `${requestDir}.held`;
 		const redirectedRequestDir = join(rootAlias, "redirected-requests");
 		await writeWorkspaceRequest(rootAlias, { taskId: "TASK-1", sessionId: first.record.id, pid: process.pid });

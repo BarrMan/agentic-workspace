@@ -91,7 +91,7 @@ class CaptureSlotPool {
 	 */
 	private ensureBaseDir(): string {
 		if (this.baseDir !== undefined) return this.baseDir;
-		const dir = mkdtempSync(join(tmpdir(), "backlog-tmux-"));
+		const dir = mkdtempSync(join(tmpdir(), "agentic-workspace-tmux-"));
 		this.baseDir = dir;
 		process.on("exit", () => {
 			try {

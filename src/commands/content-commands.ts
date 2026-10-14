@@ -1,5 +1,5 @@
 import type { Command } from "commander";
-import type { Core } from "../core/backlog.ts";
+import type { Core } from "../core/agentic-workspace.ts";
 import { decisionListJson, printJson } from "../formatters/json-output.ts";
 import {
 	type Decision,
@@ -70,7 +70,7 @@ function printDocumentSearchResults(results: DocumentSearchResult[], query: stri
 		console.log(
 			`  ${document.id} - ${document.title} (path: ${document.path ?? "(unknown)"}, type: ${document.type}, tags: ${document.tags?.join(", ") || "(none)"})${scoreText}`,
 		);
-		console.log(`    View: agenticworkspace doc view ${document.id}`);
+		console.log(`    View: agentic-workspace doc view ${document.id}`);
 	}
 }
 
@@ -82,14 +82,14 @@ export function registerContentCommands(program: Command, runtime: ContentComman
 			{
 				name: "path",
 				type: "Docs-relative path",
-				description: "Subdirectory under backlog/docs; absolute paths and .. are rejected",
+				description: "Subdirectory under agentic-workspace/docs; absolute paths and .. are rejected",
 			},
 			{ name: "type", type: choiceType(DOCUMENT_TYPE_VALUES), description: "Document type" },
 			{ name: "plain", type: "Boolean", description: "Use plain text output" },
 		],
 		writes: "Creates a document markdown file under the configured docs directory",
 		output: "Created document ID and path",
-		examples: ['agenticworkspace doc create "API Guidelines" -p guides/api'],
+		examples: ['agentic-workspace doc create "API Guidelines" -p guides/api'],
 	})
 		.option("-p, --path <path>")
 		.option("-t, --type <type>", `document type (${DOCUMENT_TYPE_VALUES.join(", ")})`)
@@ -103,22 +103,22 @@ export function registerContentCommands(program: Command, runtime: ContentComman
 				content: "",
 			});
 			console.log(`Created document ${document.id}`);
-			if (document.path) console.log(`Path: ${core.filesystem.backlogDirName}/docs/${document.path}`);
+			if (document.path) console.log(`Path: ${core.filesystem.agenticWorkspaceDirName}/docs/${document.path}`);
 		});
 	addHelpSchema(docCmd.command("update <docId>"), {
 		required: [{ name: "docId", type: "Document ID", description: "Document to update" }],
 		optional: [
 			{ name: "title", type: "String", description: "Replacement title" },
 			{ name: "content", type: "Markdown", description: "Replacement document body" },
-			{ name: "path", type: "Docs-relative path", description: "Move document under backlog/docs" },
+			{ name: "path", type: "Docs-relative path", description: "Move document under agentic-workspace/docs" },
 			{ name: "type", type: choiceType(DOCUMENT_TYPE_VALUES), description: "Document type" },
 			{ name: "tags", type: "Comma-separated strings", description: "Replacement tags" },
 		],
 		writes: "Updates document content, metadata, or docs-relative path",
 		output: "Updated document ID and path",
 		examples: [
-			'agenticworkspace doc update doc-1 --content "Updated markdown"',
-			"agenticworkspace doc update doc-1 -p guides",
+			'agentic-workspace doc update doc-1 --content "Updated markdown"',
+			"agentic-workspace doc update doc-1 -p guides",
 		],
 	})
 		.description("update a document")
@@ -140,14 +140,14 @@ export function registerContentCommands(program: Command, runtime: ContentComman
 				...(options.tags !== undefined && { tags: parseDelimitedStringList(options.tags) ?? [] }),
 			});
 			console.log(`Updated document ${document.id}`);
-			if (document.path) console.log(`Path: ${core.filesystem.backlogDirName}/docs/${document.path}`);
+			if (document.path) console.log(`Path: ${core.filesystem.agenticWorkspaceDirName}/docs/${document.path}`);
 		});
 	const docListCommand = addHelpSchema(docCmd.command("list"), {
 		reads: "Documents under the configured docs directory",
 		required: [],
 		optional: [...LIST_WINDOW_HELP_FIELDS, { name: "plain", type: "Boolean", description: "Use plain text output" }],
 		output: `Document list with IDs, titles, types, paths, and tags, ordered by title. ${LIST_WINDOW_OUTPUT_HELP}`,
-		examples: ["agenticworkspace doc list --plain", "agenticworkspace doc list --max-count 20 --plain"],
+		examples: ["agentic-workspace doc list --plain", "agentic-workspace doc list --max-count 20 --plain"],
 	});
 	addListWindowOptions(docListCommand)
 		.option("--plain", "use plain text output")
@@ -177,9 +177,9 @@ export function registerContentCommands(program: Command, runtime: ContentComman
 		],
 		output: `Plain text Documents list with id, title, path, type, tags, score, and a follow-up doc view command. ${LIST_WINDOW_OUTPUT_HELP}`,
 		examples: [
-			'agenticworkspace doc search "architecture"',
-			'agenticworkspace doc search "runbook" --limit 5',
-			'agenticworkspace doc search "runbook" --max-count 5 --skip 5',
+			'agentic-workspace doc search "architecture"',
+			'agentic-workspace doc search "runbook" --limit 5',
+			'agentic-workspace doc search "runbook" --max-count 5 --skip 5',
 		],
 	}).option("-l, --limit <number>", `limit results returned (1-${DOCUMENT_SEARCH_LIMIT_MAX})`);
 	addListWindowOptions(docSearchCommand)
@@ -188,7 +188,7 @@ export function registerContentCommands(program: Command, runtime: ContentComman
 			const normalizedQuery = query.trim();
 			if (!normalizedQuery) {
 				console.error(
-					'Query is required. Provide non-empty text, for example: agenticworkspace doc search "architecture"',
+					'Query is required. Provide non-empty text, for example: agentic-workspace doc search "architecture"',
 				);
 				process.exitCode = 1;
 				return;
@@ -213,7 +213,7 @@ export function registerContentCommands(program: Command, runtime: ContentComman
 		required: [{ name: "docId", type: "Document ID", description: "Document to display" }],
 		optional: [{ name: "plain", type: "Boolean", description: "Use plain text output" }],
 		output: "Document metadata and markdown content",
-		examples: ["agenticworkspace doc view doc-1", "agenticworkspace doc view doc-1 --plain"],
+		examples: ["agentic-workspace doc view doc-1", "agentic-workspace doc view doc-1 --plain"],
 	})
 		.description("view a document")
 		.option("--plain", "use plain text output")
@@ -243,7 +243,7 @@ export function registerContentCommands(program: Command, runtime: ContentComman
 		],
 		writes: "Creates a decision markdown file under the configured decisions directory",
 		output: "Created decision ID",
-		examples: ['agenticworkspace decision create "Adopt Bun test runner" -s accepted --plain'],
+		examples: ['agentic-workspace decision create "Adopt Bun test runner" -s accepted --plain'],
 	})
 		.description("create a decision")
 		.option("-s, --status <status>", "set decision status (free-form, defaults to proposed)")
@@ -275,9 +275,9 @@ export function registerContentCommands(program: Command, runtime: ContentComman
 		],
 		output: `Decision list with IDs, titles, and statuses, ordered by ID; versioned JSON with --json. ${LIST_WINDOW_OUTPUT_HELP}; JSON adds total and nextSkip`,
 		examples: [
-			"agenticworkspace decision list --plain",
-			"agenticworkspace decision list --json",
-			"agenticworkspace decision list --max-count 20",
+			"agentic-workspace decision list --plain",
+			"agentic-workspace decision list --json",
+			"agentic-workspace decision list --max-count 20",
 		],
 	}).description("list decisions");
 	addListWindowOptions(decisionListCommand)

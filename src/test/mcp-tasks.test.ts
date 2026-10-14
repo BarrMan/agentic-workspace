@@ -27,7 +27,7 @@ let mcpServer: McpServer;
 async function loadConfig(server: McpServer) {
 	const config = await server.application.filesystem.loadConfig();
 	if (!config) {
-		throw new Error("Failed to load backlog configuration for tests");
+		throw new Error("Failed to load agentic-workspace configuration for tests");
 	}
 	return config;
 }
@@ -265,10 +265,10 @@ describe("MCP task tools (MVP)", () => {
 		});
 		const text = (listResult.content ?? []).map((entry) => ("text" in entry ? entry.text : "")).join("\n\n");
 		expect(text).toContain("duplicate task ID");
-		expect(text).toContain("backlog doctor");
+		expect(text).toContain("agentic-workspace doctor");
 		expect(text).toContain("task-7/task.md");
 		expect(text.toLowerCase()).not.toContain("prompt");
-		expect(text.toLowerCase()).not.toContain("agent");
+		expect(text.toLowerCase()).not.toContain("agent repair");
 
 		const viewResult = await mcpServer.testInterface.callTool({
 			params: { name: "task_view", arguments: { id: "TASK-7" } },

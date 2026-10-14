@@ -14,28 +14,28 @@ describe("external view-state dual locking", () => {
 	let externalLock: string;
 	let canonicalLock: string;
 	let previousHome: string | undefined;
-	let previousBacklogCwd: string | undefined;
+	let previousAgenticWorkspaceCwd: string | undefined;
 	const stores: ViewStateStore<{ count: number }>[] = [];
 
 	beforeEach(async () => {
-		sandbox = await realpath(await mkdtemp(join(tmpdir(), "backlog-view-lock-")));
+		sandbox = await realpath(await mkdtemp(join(tmpdir(), "agentic-workspace-view-lock-")));
 		root = join(sandbox, "project");
 		await mkdir(root);
 		previousHome = process.env.HOME;
-		previousBacklogCwd = process.env.BACKLOG_CWD;
+		previousAgenticWorkspaceCwd = process.env.AGENTIC_WORKSPACE_CWD;
 		process.env.HOME = join(sandbox, "home");
-		delete process.env.BACKLOG_CWD;
-		saved = join(process.env.HOME, ".backlog", createHash("sha256").update(root).digest("hex").slice(0, 16));
+		delete process.env.AGENTIC_WORKSPACE_CWD;
+		saved = join(process.env.HOME, ".agentic-workspace", createHash("sha256").update(root).digest("hex").slice(0, 16));
 		externalLock = join(saved, "workspace-view-state.lock");
-		canonicalLock = join(root, "backlog", ".locks", "workspace-view-state");
+		canonicalLock = join(root, "agentic-workspace", ".locks", "workspace-view-state");
 	});
 
 	afterEach(async () => {
 		for (const store of stores.splice(0)) store.close();
 		if (previousHome === undefined) delete process.env.HOME;
 		else process.env.HOME = previousHome;
-		if (previousBacklogCwd === undefined) delete process.env.BACKLOG_CWD;
-		else process.env.BACKLOG_CWD = previousBacklogCwd;
+		if (previousAgenticWorkspaceCwd === undefined) delete process.env.AGENTIC_WORKSPACE_CWD;
+		else process.env.AGENTIC_WORKSPACE_CWD = previousAgenticWorkspaceCwd;
 		await chmod(root, 0o700);
 		await chmod(dirname(canonicalLock), 0o700).catch(() => undefined);
 		await rm(sandbox, { recursive: true, force: true });
@@ -81,7 +81,7 @@ describe("external view-state dual locking", () => {
 
 	it("serializes physical aliases across read-only -> writable while the first writer is paused after reading", async () => {
 		await mkdir(saved, { recursive: true });
-		const primary = join(root, ".backlog");
+		const primary = join(root, ".agentic-workspace");
 		await symlink(saved, primary, "dir");
 		const second = await openViewStateStore(root, () => ({ count: 0 }), { stateRoot: primary });
 		stores.push(second);
@@ -158,14 +158,16 @@ describe("external view-state dual locking", () => {
 		stores.push(store);
 		await store.update(() => {
 			expect(existsSync(canonicalLock)).toBe(true);
-			expect(existsSync(join(root, ".backlog", "workspace-view-state.lock"))).toBe(false);
+			expect(existsSync(join(root, ".agentic-workspace", "workspace-view-state.lock"))).toBe(false);
 			return { count: 1 };
 		});
-		expect(JSON.parse(await readFile(join(alias, ".backlog", "view-state.json"), "utf8")).state.count).toBe(1);
+		expect(JSON.parse(await readFile(join(alias, ".agentic-workspace", "view-state.json"), "utf8")).state.count).toBe(
+			1,
+		);
 	});
 
 	it("keeps external-spelling aliases of local physical storage canonical-only", async () => {
-		const primary = join(root, ".backlog");
+		const primary = join(root, ".agentic-workspace");
 		await mkdir(primary);
 		await mkdir(dirname(saved), { recursive: true });
 		await symlink(primary, saved, "dir");

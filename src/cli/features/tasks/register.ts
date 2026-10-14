@@ -183,7 +183,7 @@ export function registerTaskCommands(program: Command, { runtime, readOutput }: 
 	}
 
 	const taskListCommand = addHelpSchema(taskCmd.command("list"), {
-		reads: "Local editable tasks from the configured backlog directory",
+		reads: "Local editable tasks from the configured AgenticWorkspace directory",
 		required: [],
 		optional: [
 			{ name: "status", type: () => statusType({ multiple: true }), description: "Filter by one or more statuses" },
@@ -206,7 +206,7 @@ export function registerTaskCommands(program: Command, { runtime, readOutput }: 
 			{ name: "watch", type: "Boolean", description: "Requires --json; emit changed full lists" },
 		],
 		output: `Plain text task list by default, or versioned JSON with --json. ${LIST_WINDOW_OUTPUT_HELP}`,
-		examples: ["agenticworkspace task list --plain", "agenticworkspace task list --json --watch"],
+		examples: ["agentic-workspace task list --plain", "agentic-workspace task list --json --watch"],
 	})
 		.description("list tasks grouped by status")
 		.option("-s, --status <status>", "filter tasks by status", createMultiValueAccumulator())
@@ -236,7 +236,7 @@ export function registerTaskCommands(program: Command, { runtime, readOutput }: 
 			}
 			const filesystem = new Core(await requireProjectRoot()).filesystem;
 			await watchJson(
-				[filesystem.backlogDir, dirname(filesystem.configFilePath)],
+				[filesystem.agenticWorkspaceDir, dirname(filesystem.configFilePath)],
 				[
 					filesystem.tasksDir,
 					filesystem.completedDir,
@@ -335,9 +335,9 @@ export function registerTaskCommands(program: Command, { runtime, readOutput }: 
 		writes: "Updates task metadata and structured frontmatter fields through AgenticWorkspace",
 		output: "Updated task details; use --plain for text output",
 		examples: [
-			'agenticworkspace task edit {{TASK_ID:1}} --status "<active status>" -a @sara',
-			`agenticworkspace task edit {{TASK_ID:1}} --type ${taskTypeExample}`,
-			'agenticworkspace task edit {{TASK_ID:1}} {{TASK_ID:2}} --status "<active status>"',
+			'agentic-workspace task edit {{TASK_ID:1}} --status "<active status>" -a @sara',
+			`agentic-workspace task edit {{TASK_ID:1}} --type ${taskTypeExample}`,
+			'agentic-workspace task edit {{TASK_ID:1}} {{TASK_ID:2}} --status "<active status>"',
 		],
 	}).description("edit an existing task");
 	addTaskEditOptions(taskEditCommand).action(async (taskIds: string[] | undefined, options) =>
@@ -352,7 +352,7 @@ export function registerTaskCommands(program: Command, { runtime, readOutput }: 
 			{ name: "json", type: "Boolean", description: "Use versioned machine-readable JSON output" },
 		],
 		output: "Plain text task detail view by default, or versioned JSON with --json",
-		examples: ["agenticworkspace task view {{TASK_ID:1}} --plain", "agenticworkspace task view {{TASK_ID:1}} --json"],
+		examples: ["agentic-workspace task view {{TASK_ID:1}} --plain", "agentic-workspace task view {{TASK_ID:1}} --json"],
 	})
 		.description("display task details")
 		.option("--plain", "use plain text output")
@@ -402,7 +402,7 @@ export function registerTaskCommands(program: Command, { runtime, readOutput }: 
 					: "During periodic cleanup, moves a finished task in the configured final status off the board to completed storage, preserving its record and dependency links.",
 			output:
 				action === "archive" ? "Archive confirmation text" : "Completion cleanup confirmation and completed file path",
-			examples: [`agenticworkspace task ${action} {{TASK_ID:1}}`],
+			examples: [`agentic-workspace task ${action} {{TASK_ID:1}}`],
 		})
 			.description(description)
 			.action(async (taskId: string) => {
@@ -425,7 +425,7 @@ export function registerTaskCommands(program: Command, { runtime, readOutput }: 
 				const terminalStatus = getTerminalStatus(statuses) ?? DEFAULT_DONE_STATUS;
 				if (!isTerminalStatus(task.status, statuses)) {
 					console.error(
-						`Task ${task.id} is not ${terminalStatus}. Set status to "${terminalStatus}" with: agenticworkspace task edit ${task.id} -s "${terminalStatus}" before cleanup.`,
+						`Task ${task.id} is not ${terminalStatus}. Set status to "${terminalStatus}" with: agentic-workspace task edit ${task.id} -s "${terminalStatus}" before cleanup.`,
 					);
 					process.exitCode = 1;
 					return;

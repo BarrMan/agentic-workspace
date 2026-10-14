@@ -59,6 +59,7 @@ describe("mode session reservation and adoption contract", () => {
 		const release = Promise.withResolvers<void>();
 		const first = store.mutateMode("TASK-23", "plan", async (history) => {
 			history.sessions.push(record("plan-first", "plan", "starting", root));
+			history.activeSessionId = "plan-first";
 			entered.resolve();
 			await release.promise;
 		});
@@ -69,9 +70,11 @@ describe("mode session reservation and adoption contract", () => {
 		const duplicate = store.mutateMode("TASK-23", "plan", async (history) => {
 			if (history.sessions.some((session) => session.status === "starting")) throw new Error("already reserved");
 			history.sessions.push(record("plan-second", "plan", "starting", root));
+			history.activeSessionId = "plan-second";
 		});
 		const build = store.mutateMode("TASK-23", "build", async (history) => {
 			history.sessions.push(record("build-first", "build", "starting", root));
+			history.activeSessionId = "build-first";
 		});
 		let buildCompleted = false;
 		void build.then(
@@ -134,8 +137,14 @@ describe("mode session reservation and adoption contract", () => {
 		const { store } = await fixture();
 		const caller = record("caller-uuid", "build", "running", "/work");
 		const plan = record("plan-uuid", "plan", "running", "/work");
-		await store.mutateMode("TASK-23", "build", async (history) => history.sessions.push(caller));
-		await store.mutateMode("TASK-23", "plan", async (history) => history.sessions.push(plan));
+		await store.mutateMode("TASK-23", "build", async (history) => {
+			history.sessions.push(caller);
+			history.activeSessionId = caller.id;
+		});
+		await store.mutateMode("TASK-23", "plan", async (history) => {
+			history.sessions.push(plan);
+			history.activeSessionId = plan.id;
+		});
 		const current = await store.read("TASK-23");
 		const membership = Object.entries(current.modes ?? {}).find(([, history]) =>
 			history.sessions.some(({ id }) => id === caller.id),

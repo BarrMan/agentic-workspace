@@ -12,7 +12,7 @@ describe("existing CLI agent host", () => {
 	});
 
 	it("replays and follows existing raw output, sends ordered bytes, and detaches without killing the CLI session", async () => {
-		const directory = await mkdtemp(join(tmpdir(), "backlog-existing-host-"));
+		const directory = await mkdtemp(join(tmpdir(), "agentic-workspace-existing-host-"));
 		directories.push(directory);
 		const outputPath = join(directory, "session.log");
 		await writeFile(outputPath, "\u001b[2Jfirst conversation");
@@ -76,7 +76,7 @@ describe("existing CLI agent host", () => {
 	});
 
 	it("continues bounded recovered-host reads through UTF-8 and ANSI sequences, then stops notifications", async () => {
-		const directory = await mkdtemp(join(tmpdir(), "backlog-existing-bounded-output-"));
+		const directory = await mkdtemp(join(tmpdir(), "agentic-workspace-existing-bounded-output-"));
 		directories.push(directory);
 		const outputPath = join(directory, "session.log");
 		const payload = Buffer.alloc(160 * 1024, 0x61);
@@ -117,7 +117,7 @@ describe("existing CLI agent host", () => {
 	});
 
 	it("coalesces existing-host resize pairs to the active and latest sizes", async () => {
-		const directory = await mkdtemp(join(tmpdir(), "backlog-existing-resize-coalescing-"));
+		const directory = await mkdtemp(join(tmpdir(), "agentic-workspace-existing-resize-coalescing-"));
 		directories.push(directory);
 		const outputPath = join(directory, "session.log");
 		await writeFile(outputPath, "");
@@ -164,7 +164,7 @@ describe("existing CLI agent host", () => {
 	});
 
 	it("fences a queued existing-host resize when stop wins an in-flight resize", async () => {
-		const directory = await mkdtemp(join(tmpdir(), "backlog-existing-resize-stop-"));
+		const directory = await mkdtemp(join(tmpdir(), "agentic-workspace-existing-resize-stop-"));
 		directories.push(directory);
 		const outputPath = join(directory, "session.log");
 		await writeFile(outputPath, "");

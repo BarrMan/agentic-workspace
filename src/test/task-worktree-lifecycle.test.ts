@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { existsSync } from "node:fs";
 import { mkdir } from "node:fs/promises";
 import { getBuiltInAgentConfiguration, upsertAgentConfiguration } from "../agent-workspace/config.ts";
-import { Core } from "../core/backlog.ts";
+import { Core } from "../core/agentic-workspace.ts";
 import { taskWorktreeExists, taskWorktreePath } from "../git/task-worktree.ts";
 import type { Task } from "../types/index.ts";
 import { createUniqueTestDir, initGitRepo, initializeTestProject, safeCleanup } from "./test-utils.ts";
@@ -44,10 +44,10 @@ async function setupCore(options: { worktreePerTask?: boolean } = {}): Promise<C
 
 describe("task worktree lifecycle", () => {
 	beforeEach(async () => {
-		originalWorktreeHome = process.env.BACKLOG_WORKTREE_HOME;
+		originalWorktreeHome = process.env.AGENTIC_WORKSPACE_WORKTREE_HOME;
 		TEST_DIR = createUniqueTestDir("test-task-worktree");
 		WORKTREE_HOME = createUniqueTestDir("test-task-worktree-home");
-		process.env.BACKLOG_WORKTREE_HOME = WORKTREE_HOME;
+		process.env.AGENTIC_WORKSPACE_WORKTREE_HOME = WORKTREE_HOME;
 		await mkdir(TEST_DIR, { recursive: true });
 		await mkdir(WORKTREE_HOME, { recursive: true });
 		initGitRepo(TEST_DIR, "main");
@@ -55,8 +55,8 @@ describe("task worktree lifecycle", () => {
 
 	afterEach(async () => {
 		core = undefined;
-		if (originalWorktreeHome === undefined) delete process.env.BACKLOG_WORKTREE_HOME;
-		else process.env.BACKLOG_WORKTREE_HOME = originalWorktreeHome;
+		if (originalWorktreeHome === undefined) delete process.env.AGENTIC_WORKSPACE_WORKTREE_HOME;
+		else process.env.AGENTIC_WORKSPACE_WORKTREE_HOME = originalWorktreeHome;
 
 		const cleanupErrors: unknown[] = [];
 		for (const directory of [WORKTREE_HOME, TEST_DIR]) {

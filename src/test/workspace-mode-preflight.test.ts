@@ -7,7 +7,7 @@ import {
 	getDefaultModeCatalog,
 	requireProjectModeCatalog,
 } from "../agent-workspace/config.ts";
-import type { Core } from "../core/backlog.ts";
+import type { Core } from "../core/agentic-workspace.ts";
 import { selectedModeForTask, validateSelectedModeByTask } from "../ui/opentui/workspace/state.ts";
 import { OpenTuiWorkspaceController } from "../ui/opentui/workspace-controller.ts";
 
@@ -17,7 +17,7 @@ it("rejects a legacy project before acquiring stores or a terminal, without chan
 	const path = join(root, "agents.json");
 	await writeFile(path, configuration);
 	let hosts = 0;
-	const core = { filesystem: { rootDir: root, backlogDir: root } } as unknown as Core;
+	const core = { filesystem: { rootDir: root, agenticWorkspaceDir: root } } as unknown as Core;
 	const controller = new OpenTuiWorkspaceController(core, {
 		runtime: {
 			createHost: async () => {
@@ -27,9 +27,9 @@ it("rejects a legacy project before acquiring stores or a terminal, without chan
 		},
 	});
 	try {
-		await expect(controller.run()).rejects.toThrow("agenticworkspace agent-config init project");
+		await expect(controller.run()).rejects.toThrow("agentic-workspace agent-config init project");
 		// A rejected preflight must remain retryable rather than leaving a pending completion.
-		await expect(controller.run()).rejects.toThrow("agenticworkspace agent-config init project");
+		await expect(controller.run()).rejects.toThrow("agentic-workspace agent-config init project");
 		expect(hosts).toBe(0);
 		expect(await readdir(root)).toEqual(["agents.json"]);
 		expect(await readFile(path, "utf8")).toBe(configuration);

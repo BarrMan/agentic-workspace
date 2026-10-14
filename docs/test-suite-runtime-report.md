@@ -48,7 +48,7 @@ counted as successes there. Grep the progress lines for `failed in` instead.
 
 Two costs dominated, both measured rather than assumed:
 
-1. **Real CLI process spawns.** Each CLI assertion boots the compiled `backlog` binary (~0.3-1.5 s under
+1. **Real CLI process spawns.** Each CLI assertion boots the compiled `agentic-workspace` binary (~0.3-1.5 s under
    load). Suites with 30-60 spawns spent nearly all their wall time waiting on process starts. In-process
    fixture setup measured ~29 ms and was irrelevant.
 2. **Per-case fixture construction.** `git init` costs ~32 ms per call; a single auto-commit
@@ -141,10 +141,10 @@ Deliberate sleeps were a smaller factor: most remaining waits are real-clock reg
 `initGitRepo` was also swept into 23 further suites with no other change (each saved one `git init` per
 case): `board-loading`, `core-task-corpus-regressions`, `no-remote-preflight`, `offline-integration`,
 `server-task-detail-dependency-graph`, `server-task-project-endpoint`, `task-autocommit-index-scope`,
-`worktree-refresh`, `find-backlog-root`, `agent-instructions`, `duplicate-task-repair`,
+`worktree-refresh`, `find-agentic-workspace-root`, `agent-instructions`, `duplicate-task-repair`,
 `config-commands`, `local-task-command-performance`, `mcp-documents`, `mcp-milestones`,
 `mcp-roots-discovery`, `mcp-server`, `mcp-tasks`, `mcp-workspace-root`, `parent-id-normalization`,
-`server-statistics-endpoint`, `symlink-backlog-root`, `worktree-task-id-allocation`.
+`server-statistics-endpoint`, `symlink-agentic-workspace-root`, `worktree-task-id-allocation`.
 
 ## 6. Native Bun runner
 
@@ -196,10 +196,10 @@ under three minutes; local runs rely on the caller to bound a busy or stalled pr
 Each test process is isolated from any live workspace:
 
 - A per-worker OS-temp `TMPDIR` (deleted after the suite, including test failures).
-- Workspace-pinning env cleared in `src/test/test-preload.ts` (`BACKLOG_CWD`,
-  `BACKLOG_WORKSPACE_CONTEXT`, `BACKLOG_PROJECT_ROOT`, `BACKLOG_TASK_ID`, `BACKLOG_SESSION_ID`,
+- Workspace-pinning env cleared in `src/test/test-preload.ts` (`AGENTIC_WORKSPACE_CWD`,
+  `AGENTIC_WORKSPACE_WORKSPACE_CONTEXT`, `AGENTIC_WORKSPACE_PROJECT_ROOT`, `AGENTIC_WORKSPACE_TASK_ID`, `AGENTIC_WORKSPACE_SESSION_ID`,
   `TASK_ID`, `SESSION_ID`).
-- A unique test-owned `BACKLOG_TMUX_SOCKET`, so no test or spawned CLI touches the developer's
+- A unique test-owned `AGENTIC_WORKSPACE_TMUX_SOCKET`, so no test or spawned CLI touches the developer's
   default tmux server. `createSessionServer()` honours it in `src/agent-workspace/session-process.ts`.
 
-A live `agenticworkspace workspace` therefore cannot stall a run, or be affected by one.
+A live `agentic-workspace workspace` therefore cannot stall a run, or be affected by one.

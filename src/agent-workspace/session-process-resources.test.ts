@@ -36,10 +36,10 @@ describe("persisted prepared launch resources", () => {
 	});
 
 	async function fixture() {
-		const createdRoot = await mkdtemp(join(tmpdir(), "backlog-resource-root-"));
+		const createdRoot = await mkdtemp(join(tmpdir(), "agentic-workspace-resource-root-"));
 		roots.push(createdRoot);
 		const root = await realpath(createdRoot);
-		const createdStateRoot = await mkdtemp(join(tmpdir(), "backlog-external-agent-state-"));
+		const createdStateRoot = await mkdtemp(join(tmpdir(), "agentic-workspace-external-agent-state-"));
 		roots.push(createdStateRoot);
 		const stateRoot = await realpath(createdStateRoot);
 		const taskDir = join(stateRoot, "TASK-1");
@@ -48,15 +48,15 @@ describe("persisted prepared launch resources", () => {
 		const bootstrapPath = join(taskDir, "session.md");
 		await writeFile(outputPath, "durable output");
 		await writeFile(bootstrapPath, "durable bootstrap");
-		const skill = await mkdtemp(join(tmpdir(), "backlog-agent-skill-"));
+		const skill = await mkdtemp(join(tmpdir(), "agentic-workspace-agent-skill-"));
 		roots.push(skill);
 		const resources = await preparedLaunchResources(skill);
-		resourceMarker = join(resources.skill.path, ".backlog-launch-owner");
+		resourceMarker = join(resources.skill.path, ".agentic-workspace-launch-owner");
 		const session: AgentSession = {
 			id: "resource-session",
 			taskId: "TASK-1",
 			preset: "opencode",
-			tmuxName: "backlog-task-1-resource",
+			tmuxName: "agentic-workspace-task-1-resource",
 			nativeSessionId: "native-resource-session",
 			cwd: root,
 			createdAt: "2026-10-12T00:00:00.000Z",
@@ -66,10 +66,10 @@ describe("persisted prepared launch resources", () => {
 			bootstrapPath,
 		};
 		const options = new Map<string, string>([
-			["@backlog_root", root],
-			["@backlog_task", session.taskId],
-			["@backlog_session", session.id],
-			["@backlog_role", "live-preview"],
+			["@agentic_workspace_root", root],
+			["@agentic_workspace_task", session.taskId],
+			["@agentic_workspace_session", session.id],
+			["@agentic_workspace_role", "live-preview"],
 		]);
 		const events: string[] = [];
 		let paneExists = true;
@@ -140,17 +140,17 @@ describe("persisted prepared launch resources", () => {
 					return [
 						[
 							session.tmuxName,
-							options.get("@backlog_root"),
-							options.get("@backlog_task"),
-							options.get("@backlog_session"),
-							options.get("@backlog_role"),
+							options.get("@agentic_workspace_root"),
+							options.get("@agentic_workspace_task"),
+							options.get("@agentic_workspace_session"),
+							options.get("@agentic_workspace_role"),
 							currentPaneId,
 							malformedPaneProbe ? "unknown" : paneDead ? "1" : "0",
 						].join("\t"),
 					];
 				}
-				if (command === "display-message" && args.at(-1) === "#{@backlog_launch_resources}")
-					return inventoryRows ?? [options.get("@backlog_launch_resources") ?? ""];
+				if (command === "display-message" && args.at(-1) === "#{@agentic_workspace_launch_resources}")
+					return inventoryRows ?? [options.get("@agentic_workspace_launch_resources") ?? ""];
 				return [""];
 			},
 		} as unknown as TmuxServer;
@@ -214,8 +214,8 @@ describe("persisted prepared launch resources", () => {
 	it("persists validated inventory before respawn and a fresh instance stops from that inventory", async () => {
 		const f = await fixture();
 		await f.makeProcess().launchPrepared(f.session, f.launch);
-		expect(f.events.indexOf("option:@backlog_launch_resources")).toBeLessThan(f.events.indexOf("respawn"));
-		const stored = JSON.parse(f.options.get("@backlog_launch_resources") ?? "null");
+		expect(f.events.indexOf("option:@agentic_workspace_launch_resources")).toBeLessThan(f.events.indexOf("respawn"));
+		const stored = JSON.parse(f.options.get("@agentic_workspace_launch_resources") ?? "null");
 		expect(stored).toEqual(f.resources);
 		const release = f.makeProcess();
 		await release.kill(f.session);
@@ -230,7 +230,7 @@ describe("persisted prepared launch resources", () => {
 		const f = await fixture();
 		const process = f.makeProcess();
 		await process.launchPrepared(f.session, f.launch);
-		f.options.delete("@backlog_launch_resources");
+		f.options.delete("@agentic_workspace_launch_resources");
 		f.events.length = 0;
 		await process.kill(f.session);
 		await expect(readFile(f.resources.skill.path)).rejects.toMatchObject({ code: "ENOENT" });
@@ -265,7 +265,7 @@ describe("persisted prepared launch resources", () => {
 		expect(f.events.indexOf("kill-pane:resource-present")).toBeLessThan(f.events.indexOf("create"));
 		expect(f.events.indexOf("create")).toBeLessThan(f.events.indexOf("capture"));
 		expect(f.events.indexOf("capture")).toBeLessThan(f.events.indexOf("respawn"));
-		expect(f.options.has("@backlog_launch_resources")).toBe(true);
+		expect(f.options.has("@agentic_workspace_launch_resources")).toBe(true);
 	});
 
 	it("treats an early non-127 pane exit as failed startup", async () => {
@@ -301,7 +301,7 @@ describe("persisted prepared launch resources", () => {
 			"resume prerequisite rejected",
 		);
 		expect(f.events.some((event) => event.startsWith("kill-pane:"))).toBe(false);
-		expect(await readFile(join(f.resources.skill.path, ".backlog-launch-owner"), "utf8")).toBe(
+		expect(await readFile(join(f.resources.skill.path, ".agentic-workspace-launch-owner"), "utf8")).toBe(
 			f.resources.skill.marker,
 		);
 	});
@@ -312,8 +312,8 @@ describe("persisted prepared launch resources", () => {
 		const error = await rejection(f.makeProcess().launchPrepared(f.session, f.launch));
 		expect(error).toMatchObject({ message: expect.stringContaining("ownership does not match") });
 		expect(error).not.toHaveProperty("kind", "conclusive-startup-failure");
-		expect(f.options.has("@backlog_launch_resources")).toBe(true);
-		expect(await readFile(join(f.resources.skill.path, ".backlog-launch-owner"), "utf8")).toBe(
+		expect(f.options.has("@agentic_workspace_launch_resources")).toBe(true);
+		expect(await readFile(join(f.resources.skill.path, ".agentic-workspace-launch-owner"), "utf8")).toBe(
 			f.resources.skill.marker,
 		);
 		expect(f.events.some((event) => event.startsWith("kill-pane:"))).toBe(false);
@@ -328,8 +328,8 @@ describe("persisted prepared launch resources", () => {
 		expect(f.probeTimeouts).toHaveLength(1);
 		expect(f.probeTimeouts[0]).toBeGreaterThan(0);
 		expect(f.probeTimeouts[0]).toBeLessThanOrEqual(250);
-		expect(f.options.has("@backlog_launch_resources")).toBe(true);
-		expect(await readFile(join(f.resources.skill.path, ".backlog-launch-owner"), "utf8")).toBe(
+		expect(f.options.has("@agentic_workspace_launch_resources")).toBe(true);
+		expect(await readFile(join(f.resources.skill.path, ".agentic-workspace-launch-owner"), "utf8")).toBe(
 			f.resources.skill.marker,
 		);
 		expect(f.events.some((event) => event.startsWith("kill-pane:"))).toBe(false);
@@ -341,8 +341,8 @@ describe("persisted prepared launch resources", () => {
 		const error = await rejection(f.makeProcess().launchPrepared(f.session, f.launch));
 		expect(error).toMatchObject({ message: expect.stringContaining("pane changed during probe") });
 		expect(error).not.toHaveProperty("kind", "conclusive-startup-failure");
-		expect(f.options.has("@backlog_launch_resources")).toBe(true);
-		expect(await readFile(join(f.resources.skill.path, ".backlog-launch-owner"), "utf8")).toBe(
+		expect(f.options.has("@agentic_workspace_launch_resources")).toBe(true);
+		expect(await readFile(join(f.resources.skill.path, ".agentic-workspace-launch-owner"), "utf8")).toBe(
 			f.resources.skill.marker,
 		);
 	});
@@ -372,14 +372,14 @@ describe("persisted prepared launch resources", () => {
 			f.events.push("respawn");
 			throw new Error("lost respawn ACK");
 		};
-		expect(await readFile(join(f.resources.skill.path, ".backlog-launch-owner"), "utf8")).toBe(
+		expect(await readFile(join(f.resources.skill.path, ".agentic-workspace-launch-owner"), "utf8")).toBe(
 			f.resources.skill.marker,
 		);
 		const error = await rejection(f.makeProcess().launchPrepared(f.session, f.launch));
 		expect(error).toMatchObject({ message: expect.stringContaining("lost respawn ACK") });
 		expect(error).not.toHaveProperty("kind", "conclusive-startup-failure");
-		expect(f.options.has("@backlog_launch_resources")).toBe(true);
-		expect(await readFile(join(f.resources.skill.path, ".backlog-launch-owner"), "utf8")).toBe(
+		expect(f.options.has("@agentic_workspace_launch_resources")).toBe(true);
+		expect(await readFile(join(f.resources.skill.path, ".agentic-workspace-launch-owner"), "utf8")).toBe(
 			f.resources.skill.marker,
 		);
 		expect(f.events).not.toContain("unsafe-cleanup-callback");
@@ -391,12 +391,12 @@ describe("persisted prepared launch resources", () => {
 	])("refuses malformed-row inventory reads before cleanup or pane kill", async ({ rows }) => {
 		const f = await fixture();
 		await f.makeProcess().launchPrepared(f.session, f.launch);
-		const persisted = f.options.get("@backlog_launch_resources");
+		const persisted = f.options.get("@agentic_workspace_launch_resources");
 		f.setInventoryRows(rows);
 		await expect(f.makeProcess().kill(f.session)).rejects.toThrow("expected exactly one row");
-		expect(f.options.get("@backlog_launch_resources")).toBe(persisted);
+		expect(f.options.get("@agentic_workspace_launch_resources")).toBe(persisted);
 		expect(f.events).not.toContain("kill-pane:resource-absent");
-		expect(await readFile(join(f.resources.skill.path, ".backlog-launch-owner"), "utf8")).toBe(
+		expect(await readFile(join(f.resources.skill.path, ".agentic-workspace-launch-owner"), "utf8")).toBe(
 			f.resources.skill.marker,
 		);
 	});
@@ -412,39 +412,39 @@ describe("persisted prepared launch resources", () => {
 	])("refuses malformed or replaced inventory before pane destruction", async ({ inventory, error }) => {
 		const f = await fixture();
 		const persisted = typeof inventory === "function" ? inventory(f.resources) : inventory;
-		f.options.set("@backlog_launch_resources", persisted);
+		f.options.set("@agentic_workspace_launch_resources", persisted);
 		const kill = f.makeProcess().kill(f.session);
 		if (error) await expect(kill).rejects.toThrow(error);
 		else await expect(kill).rejects.toThrow();
-		expect(f.options.get("@backlog_launch_resources")).toBe(persisted);
+		expect(f.options.get("@agentic_workspace_launch_resources")).toBe(persisted);
 		expect(f.events.some((event) => event.startsWith("kill-pane:"))).toBe(false);
-		expect(await readFile(join(f.resources.skill.path, ".backlog-launch-owner"), "utf8")).toBe(
+		expect(await readFile(join(f.resources.skill.path, ".agentic-workspace-launch-owner"), "utf8")).toBe(
 			f.resources.skill.marker,
 		);
 	});
 
 	it("leaves the pane live with inventory on validation failure and retries from a fresh process", async () => {
 		const f = await fixture();
-		f.options.set("@backlog_launch_resources", JSON.stringify(f.resources));
-		await writeFile(join(f.skill, ".backlog-launch-owner"), "replaced");
+		f.options.set("@agentic_workspace_launch_resources", JSON.stringify(f.resources));
+		await writeFile(join(f.skill, ".agentic-workspace-launch-owner"), "replaced");
 		await expect(f.makeProcess().kill(f.session)).rejects.toThrow("ownership marker changed");
-		expect(f.options.has("@backlog_launch_resources")).toBe(true);
+		expect(f.options.has("@agentic_workspace_launch_resources")).toBe(true);
 		expect(f.events).not.toContain("kill-pane:resource-present");
-		await writeFile(join(f.skill, ".backlog-launch-owner"), f.resources.skill.marker);
+		await writeFile(join(f.skill, ".agentic-workspace-launch-owner"), f.resources.skill.marker);
 		await f.makeProcess().kill(f.session);
 		await expect(readFile(f.resources.skill.path)).rejects.toMatchObject({ code: "ENOENT" });
 	});
 
 	it("retries a successful resource cleanup after tmux kill failure", async () => {
 		const f = await fixture();
-		f.options.set("@backlog_launch_resources", JSON.stringify(f.resources));
+		f.options.set("@agentic_workspace_launch_resources", JSON.stringify(f.resources));
 		f.pane.kill = async () => {
 			throw new Error("tmux kill denied");
 		};
 		await expect(f.makeProcess().kill(f.session)).rejects.toThrow(
 			"resources were cleaned, but tmux pane teardown failed",
 		);
-		expect(f.options.has("@backlog_launch_resources")).toBe(true);
+		expect(f.options.has("@agentic_workspace_launch_resources")).toBe(true);
 		expect(f.events).not.toContain("kill-pane:resource-present");
 		await expect(readFile(f.resources.skill.path)).rejects.toMatchObject({ code: "ENOENT" });
 		f.pane.kill = async () => {
@@ -452,7 +452,7 @@ describe("persisted prepared launch resources", () => {
 			f.removePane();
 		};
 		await f.makeProcess().kill(f.session);
-		expect(f.options.has("@backlog_launch_resources")).toBe(false);
+		expect(f.options.has("@agentic_workspace_launch_resources")).toBe(false);
 	});
 
 	it("does not clean resources or release reservation for arbitrary errors with missing-like text", async () => {
@@ -463,8 +463,8 @@ describe("persisted prepared launch resources", () => {
 			throw new Error(`transport failure: can't find session ${f.session.tmuxName}`);
 		};
 		await expect(process.kill(f.session)).rejects.toThrow("can't find session");
-		expect(f.options.has("@backlog_launch_resources")).toBe(true);
-		expect(await readFile(join(f.resources.skill.path, ".backlog-launch-owner"), "utf8")).toBe(
+		expect(f.options.has("@agentic_workspace_launch_resources")).toBe(true);
+		expect(await readFile(join(f.resources.skill.path, ".agentic-workspace-launch-owner"), "utf8")).toBe(
 			f.resources.skill.marker,
 		);
 		expect(f.events).not.toContain("kill-pane:resource-absent");

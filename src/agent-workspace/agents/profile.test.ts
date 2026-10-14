@@ -54,7 +54,7 @@ describe("harness profile helpers", () => {
 	});
 
 	test("Pi discovery runs selected executable with preset environment and caches canonical IDs", async () => {
-		const directory = await mkdtemp(join(tmpdir(), "backlog-profile-test-"));
+		const directory = await mkdtemp(join(tmpdir(), "agentic-workspace-profile-test-"));
 		try {
 			const executable = join(directory, "pi-fixture");
 			await writeFile(executable, "#!/bin/sh\nprintf 'provider model context\\nexample model-one 128K\\n'\n", {

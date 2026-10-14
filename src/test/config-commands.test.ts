@@ -6,11 +6,11 @@ import type { PromptRunner } from "../cli/features/config/advanced-wizard.ts";
 import { configureAdvancedSettings } from "../cli/features/config/configure-advanced-settings.ts";
 import { runCli } from "../cli/register.ts";
 import { DEFAULT_STATUSES } from "../constants/index.ts";
-import { Core } from "../core/backlog.ts";
+import { Core } from "../core/agentic-workspace.ts";
 import { createUniqueTestDir, initGitRepo, initializeFilesystemTestProject, safeCleanup } from "./test-utils.ts";
 
 let TEST_DIR: string;
-const CLI_COMMAND = ["agenticworkspace"];
+const CLI_COMMAND = ["agentic-workspace"];
 
 function $(parts: TemplateStringsArray, ...values: unknown[]) {
 	const source = parts.reduce(
@@ -18,7 +18,7 @@ function $(parts: TemplateStringsArray, ...values: unknown[]) {
 			`${text}${part}${Array.isArray(values[index]) ? values[index].map((value) => JSON.stringify(value)).join(" ") : values[index] === undefined ? "" : JSON.stringify(values[index])}`,
 		"",
 	);
-	if (!source.startsWith('"agenticworkspace"')) return shell(parts, ...values);
+	if (!source.startsWith('"agentic-workspace"')) return shell(parts, ...values);
 	const args =
 		source
 			.match(/"(?:\\.|[^"\\])*"|'[^']*'|[^\s]+/g)
@@ -159,14 +159,14 @@ describe("Config commands", () => {
 			{ bypassGitHooks: true },
 			{ enableZeroPadding: true },
 			{ paddingWidth: 4 },
-			{ editor: "backlog-test-editor" },
+			{ editor: "agentic-workspace-test-editor" },
 			{ configureWebUI: true },
 			{ defaultPort: 7007, autoOpenBrowser: false },
 		]);
 
 		const { mergedConfig, installShellCompletions } = await configureAdvancedSettings(core, {
 			promptImpl: promptStub,
-			isEditorAvailable: async (editor) => editor === "backlog-test-editor",
+			isEditorAvailable: async (editor) => editor === "agentic-workspace-test-editor",
 		});
 
 		expect(installShellCompletions).toBe(true);
@@ -175,13 +175,13 @@ describe("Config commands", () => {
 		expect(mergedConfig.activeBranchDays).toBe(14);
 		expect(mergedConfig.bypassGitHooks).toBe(true);
 		expect(mergedConfig.zeroPaddedIds).toBe(4);
-		expect(mergedConfig.defaultEditor).toBe("backlog-test-editor");
+		expect(mergedConfig.defaultEditor).toBe("agentic-workspace-test-editor");
 		expect(mergedConfig.defaultPort).toBe(7007);
 		expect(mergedConfig.autoOpenBrowser).toBe(false);
 
 		const reloadedConfig = await core.filesystem.loadConfig();
 		expect(reloadedConfig?.zeroPaddedIds).toBe(4);
-		expect(reloadedConfig?.defaultEditor).toBe("backlog-test-editor");
+		expect(reloadedConfig?.defaultEditor).toBe("agentic-workspace-test-editor");
 		expect(reloadedConfig?.defaultPort).toBe(7007);
 		expect(reloadedConfig?.autoOpenBrowser).toBe(false);
 		expect(reloadedConfig?.bypassGitHooks).toBe(true);
@@ -253,7 +253,7 @@ describe("Config commands", () => {
 		const prioritiesError = priorities.stderr.toString();
 		expect(priorities.exitCode).not.toBe(0);
 		expect(prioritiesError).toContain("priorities cannot be set directly");
-		expect(prioritiesError).toContain("agenticworkspace config get priorities");
+		expect(prioritiesError).toContain("agentic-workspace config get priorities");
 		expect(prioritiesError).not.toContain("list-priorities");
 
 		const types = await $`${CLI_COMMAND} config set types bug`.cwd(TEST_DIR).nothrow().quiet();
@@ -377,7 +377,7 @@ describe("Config commands", () => {
 					(error: unknown) => (error instanceof Error ? error.message : String(error)),
 				);
 				expect(failure).toBeDefined();
-				expect(failure).toStartWith("Backlog could not start because");
+				expect(failure).toStartWith("AgenticWorkspace could not start because");
 				expect(failure).toContain(configPath);
 				expect(failure).toContain(`invalid value for "${key}"`);
 			}
@@ -408,7 +408,7 @@ describe("Config commands", () => {
 					(error: unknown) => (error instanceof Error ? error.message : String(error)),
 				);
 				expect(failure).toBeDefined();
-				expect(failure).toStartWith("Backlog could not start because");
+				expect(failure).toStartWith("AgenticWorkspace could not start because");
 				expect(failure).toContain(configPath);
 				expect(failure).toContain(`invalid value for "${key}"`);
 				expect(failure).toContain(`expected ${expected}, got ${shape}`);
@@ -474,7 +474,7 @@ describe("Config commands", () => {
 		expect(core.filesystem.parseConfig('project_name: "P"\n  statuses: ["spaced"]\n').statuses).toEqual(["spaced"]);
 	});
 
-	it("does not blame a valid list key for a malformed value under a key Backlog does not read", () => {
+	it("does not blame a valid list key for a malformed value under a key AgenticWorkspace does not read", () => {
 		// Any mapping key ends the previous key's block, whatever characters its name uses. Without that,
 		// the malformed custom-setting line folds into the statuses block and startup blames statuses —
 		// an error the user cannot fix by editing the key it names.
@@ -506,7 +506,7 @@ describe("Config commands", () => {
 		const configPath = core.filesystem.configFilePath;
 		const baseConfig = await Bun.file(configPath).text();
 		const listFiles = async () =>
-			(await $`find backlog -type f`.cwd(TEST_DIR).nothrow().quiet().text()).split("\n").sort();
+			(await $`find agentic-workspace -type f`.cwd(TEST_DIR).nothrow().quiet().text()).split("\n").sort();
 
 		await Bun.write(configPath, `${baseConfig}statuses: ["To Do]\n`);
 		const before = await listFiles();
@@ -522,7 +522,7 @@ describe("Config commands", () => {
 			const result = await $`${CLI_COMMAND} ${args}`.cwd(TEST_DIR).nothrow().quiet();
 			const stderr = result.stderr.toString();
 			expect(result.exitCode).not.toBe(0);
-			expect(stderr).toContain("Backlog could not start because");
+			expect(stderr).toContain("AgenticWorkspace could not start because");
 			expect(stderr).toContain('invalid value for "statuses"');
 			expect(stderr).not.toContain("not found");
 			expect(await listFiles()).toEqual(before);
@@ -559,7 +559,7 @@ describe("Config commands", () => {
 			const result = await $`${CLI_COMMAND} ${args}`.cwd(TEST_DIR).nothrow().quiet();
 			const stderr = result.stderr.toString();
 			expect(result.exitCode).not.toBe(0);
-			expect(stderr).toStartWith("Backlog could not start because");
+			expect(stderr).toStartWith("AgenticWorkspace could not start because");
 			expect(stderr).toContain('invalid value for "statuses"');
 			expect(stderr).not.toContain("at parseConfig");
 			expect(result.stdout.toString()).not.toContain("not initialized");
@@ -590,7 +590,11 @@ describe("Config commands", () => {
 		await mkdir(initDir, { recursive: true });
 		initGitRepo(initDir);
 
-		const env = { ...process.env, EDITOR: "backlog-sentinel-editor", VISUAL: "backlog-sentinel-editor" };
+		const env = {
+			...process.env,
+			EDITOR: "agentic-workspace-sentinel-editor",
+			VISUAL: "agentic-workspace-sentinel-editor",
+		};
 		const result =
 			await $`${CLI_COMMAND} init "Editorless Project" --defaults --default-editor "" --integration-mode none`
 				.cwd(initDir)
@@ -612,7 +616,11 @@ describe("Config commands", () => {
 		initGitRepo(initDir);
 
 		// First init without the flag: the EDITOR env fallback must still apply
-		const env = { ...process.env, EDITOR: "backlog-sentinel-editor", VISUAL: "backlog-sentinel-editor" };
+		const env = {
+			...process.env,
+			EDITOR: "agentic-workspace-sentinel-editor",
+			VISUAL: "agentic-workspace-sentinel-editor",
+		};
 		const initial = await $`${CLI_COMMAND} init "Editor Project" --defaults --integration-mode none`
 			.cwd(initDir)
 			.env(env)
@@ -621,7 +629,7 @@ describe("Config commands", () => {
 		expect(initial.exitCode).toBe(0);
 
 		const initCore = new Core(initDir);
-		expect((await initCore.filesystem.loadConfig())?.defaultEditor).toBe("backlog-sentinel-editor");
+		expect((await initCore.filesystem.loadConfig())?.defaultEditor).toBe("agentic-workspace-sentinel-editor");
 
 		// Re-init with an explicitly empty flag: clears the editor instead of keeping the existing value
 		const reinit = await $`${CLI_COMMAND} init "Editor Project" --defaults --default-editor "" --integration-mode none`

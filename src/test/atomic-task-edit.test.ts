@@ -3,7 +3,7 @@ import { mkdir } from "node:fs/promises";
 import { Writable } from "node:stream";
 import { $ } from "bun";
 import { runCli } from "../cli/register.ts";
-import { Core } from "../core/backlog.ts";
+import { Core } from "../core/agentic-workspace.ts";
 import { isTaskLockError, taskLockErrorMessage } from "../file-system/operations.ts";
 import { McpServer } from "../mcp/server.ts";
 import { TaskHandlers } from "../mcp/tools/tasks/handlers.ts";
@@ -232,7 +232,7 @@ describe("atomic task editing", () => {
 		const lockEntered = createDeferred<void>();
 		const releaseLock = createDeferred<void>();
 
-		// The lock lives on the filesystem, so a completely separate backlog process sees it.
+		// The lock lives on the filesystem, so a completely separate agentic-workspace process sees it.
 		const heldLock = setup.filesystem.withTaskLock(task, async () => {
 			lockEntered.resolve();
 			await releaseLock.promise;

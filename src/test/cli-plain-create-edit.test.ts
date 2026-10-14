@@ -6,7 +6,7 @@ import { Core } from "../index.ts";
 import { createUniqueTestDir, initializeFilesystemTestProject, safeCleanup } from "./test-utils.ts";
 
 let TEST_DIR: string;
-const cliCommand = ["agenticworkspace"];
+const cliCommand = ["agentic-workspace"];
 
 function $(parts: TemplateStringsArray, ...values: unknown[]) {
 	const source = parts.reduce(
@@ -67,7 +67,7 @@ describe("CLI --plain for task create/edit", () => {
 
 		// Initialize git repo first using shell API (same as other tests)
 
-		// Initialize backlog project using Core
+		// Initialize agentic-workspace project using Core
 		const core = new Core(TEST_DIR);
 		await initializeFilesystemTestProject(core, "Plain Create/Edit Project");
 	});

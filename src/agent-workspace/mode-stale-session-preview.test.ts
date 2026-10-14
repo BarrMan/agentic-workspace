@@ -5,7 +5,7 @@ import { chmod, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { TmuxCommandError } from "libtmux";
-import { Core } from "../core/backlog.ts";
+import { Core } from "../core/agentic-workspace.ts";
 import { initializeTestProject } from "../test/test-utils.ts";
 import { getDefaultModeCatalog, initializeAgentConfiguration, upsertAgentConfiguration } from "./config.ts";
 import * as processTree from "./process-tree.ts";
@@ -63,11 +63,11 @@ class DeadProcessHarness implements ProcessRunner, TmuxServer {
 				if (this.row?.split("\t")[8] === id) {
 					const row = this.row.split("\t");
 					const columns: Record<string, number> = {
-						"@backlog_root": 1,
-						"@backlog_task": 2,
-						"@backlog_session": 3,
-						"@backlog_role": 4,
-						"@backlog_owner_pid": 5,
+						"@agentic_workspace_root": 1,
+						"@agentic_workspace_task": 2,
+						"@agentic_workspace_session": 3,
+						"@agentic_workspace_role": 4,
+						"@agentic_workspace_owner_pid": 5,
 					};
 					const column = columns[name];
 					if (column !== undefined) row[column] = value;
@@ -104,8 +104,8 @@ class DeadProcessHarness implements ProcessRunner, TmuxServer {
 			}
 			if (args.includes("#{pane_pid} #{pane_dead}")) return ["4242 0"];
 		}
-		if (args.some((arg) => arg.includes("@backlog_launch_resources")))
-			return [this.metadata.get(target)?.["@backlog_launch_resources"] ?? ""];
+		if (args.some((arg) => arg.includes("@agentic_workspace_launch_resources")))
+			return [this.metadata.get(target)?.["@agentic_workspace_launch_resources"] ?? ""];
 		if (this.probeError) throw this.probeError;
 		if (this.row) {
 			const format = args[args.indexOf("-F") + 1] ?? "";
@@ -151,18 +151,18 @@ class DeadProcessHarness implements ProcessRunner, TmuxServer {
 					: [
 							{
 								session_name: session_name ?? "",
-								"@backlog_root": root ?? "",
-								"@backlog_task": task ?? "",
-								"@backlog_session": session ?? "",
-								"@backlog_role": role ?? "",
-								"@backlog_owner_pid": owner ?? "",
-								"@backlog_native_session_id":
-									[...this.metadata.values()].find((metadata) => metadata["@backlog_role"] === "live-preview")?.[
-										"@backlog_native_session_id"
-									] ?? "native-conversation-exact",
-								"@backlog_native_provider": "opencode",
-								"@backlog_completion_endpoint": endpoint ?? "",
-								"@backlog_completion_generation": generation ?? "",
+								"@agentic_workspace_root": root ?? "",
+								"@agentic_workspace_task": task ?? "",
+								"@agentic_workspace_session": session ?? "",
+								"@agentic_workspace_role": role ?? "",
+								"@agentic_workspace_owner_pid": owner ?? "",
+								"@agentic_workspace_native_session_id":
+									[...this.metadata.values()].find(
+										(metadata) => metadata["@agentic_workspace_role"] === "live-preview",
+									)?.["@agentic_workspace_native_session_id"] ?? "native-conversation-exact",
+								"@agentic_workspace_native_provider": "opencode",
+								"@agentic_workspace_completion_endpoint": endpoint ?? "",
+								"@agentic_workspace_completion_generation": generation ?? "",
 								pane_pid: pane_pid ?? "",
 								pane_dead: pane_dead ?? "",
 								pane_id: pane_id ?? "",
@@ -285,12 +285,12 @@ describe("stale persisted mode session preview", () => {
 		const nativeSessionId = stale.nativeSessionId;
 		if (!nativeSessionId) throw new Error("Expected the stale fixture's native identity");
 		for (const [name, value] of Object.entries({
-			"@backlog_root": realpathSync(root),
-			"@backlog_task": taskId,
-			"@backlog_session": stale.id,
-			"@backlog_role": "live-preview",
-			"@backlog_native_session_id": nativeSessionId,
-			"@backlog_native_provider": "opencode",
+			"@agentic_workspace_root": realpathSync(root),
+			"@agentic_workspace_task": taskId,
+			"@agentic_workspace_session": stale.id,
+			"@agentic_workspace_role": "live-preview",
+			"@agentic_workspace_native_session_id": nativeSessionId,
+			"@agentic_workspace_native_provider": "opencode",
 		}))
 			await sharedPane.setOption(name, value);
 		const launchesBeforeLivePrepare = harness.respawns.length;
@@ -312,7 +312,7 @@ describe("stale persisted mode session preview", () => {
 		const sharedMetadata = harness.metadata.get(sharedPane.id);
 		if (!sharedMetadata) throw new Error("Expected shared execution pane metadata");
 		const launchesBeforeMismatch = harness.respawns.length;
-		sharedMetadata["@backlog_native_session_id"] = "foreign-conversation";
+		sharedMetadata["@agentic_workspace_native_session_id"] = "foreign-conversation";
 		await expect(service.prepareNativeSession(taskId, stale.id, "plan")).rejects.toThrow("refusing to retag it");
 		await expect(service.liveSession(taskId, stale.id, { passive: true })).rejects.toThrow("refusing to retag it");
 		expect(harness.respawns).toHaveLength(launchesBeforeMismatch);
@@ -320,7 +320,7 @@ describe("stale persisted mode session preview", () => {
 		await expect(service.liveSession(taskId, stale.id, { passive: true })).rejects.toThrow("transport timed out");
 		expect((await store.readMode(taskId, "plan")).sessions[0]?.status).toBe("running");
 		harness.probeError = undefined;
-		sharedMetadata["@backlog_native_session_id"] = nativeSessionId;
+		sharedMetadata["@agentic_workspace_native_session_id"] = nativeSessionId;
 		// A dead matching pane is stopped on observation and remains eligible for exact explicit resume.
 		harness.dead.add(sharedPane.id);
 		expect(await service.liveSession(taskId, stale.id, { passive: true })).toBeUndefined();

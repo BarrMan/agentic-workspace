@@ -14,10 +14,10 @@
  * 2. **stderr, never stdout.** The CLI has JSON output modes; a debug line on stdout corrupts
  *    them. Everything here goes to stderr (and optionally a file).
  *
- * Enable with `BACKLOG_DEBUG=1` for everything, or narrow it:
- *   BACKLOG_DEBUG=tmux,session
- * Add a file sink with `BACKLOG_DEBUG_FILE=/tmp/backlog-debug.log`.
- * Verbose payload level (command output sizes, not bodies) with `BACKLOG_DEBUG_VERBOSE=1`.
+ * Enable with `AGENTIC_WORKSPACE_DEBUG=1` for everything, or narrow it:
+ *   AGENTIC_WORKSPACE_DEBUG=tmux,session
+ * Add a file sink with `AGENTIC_WORKSPACE_DEBUG_FILE=/tmp/agentic-workspace-debug.log`.
+ * Verbose payload level (command output sizes, not bodies) with `AGENTIC_WORKSPACE_DEBUG_VERBOSE=1`.
  */
 
 import { appendFileSync } from "node:fs";
@@ -29,7 +29,7 @@ export type DebugSubsystem = "http" | "tmux" | "session" | "store" | "worker" | 
 export type DebugFields = Record<string, string | number | boolean | undefined | null>;
 
 interface DebugConfig {
-	/** True when every subsystem logs (`BACKLOG_DEBUG=1`). */
+	/** True when every subsystem logs (`AGENTIC_WORKSPACE_DEBUG=1`). */
 	readonly all: boolean;
 	/** Subsystem allowlist, consulted only when `all` is false. */
 	readonly subsystems: ReadonlySet<string>;
@@ -43,7 +43,7 @@ const DISABLED: DebugConfig = { all: false, subsystems: new Set(), sink: null, v
 let config: DebugConfig | null = null;
 
 /**
- * Parse `BACKLOG_DEBUG`. "1"/"all"/"*" enables every subsystem; anything else is a
+ * Parse `AGENTIC_WORKSPACE_DEBUG`. "1"/"all"/"*" enables every subsystem; anything else is a
  * comma-separated subsystem allowlist. Unset/empty disables logging.
  */
 function parseSubsystems(raw: string): ReadonlySet<string> {
@@ -59,7 +59,7 @@ function parseSubsystems(raw: string): ReadonlySet<string> {
  * Open the file sink once, lazily, so a debug run never pays for a file it did not ask for.
  *
  * `Bun.file().writer()` truncates, so every workspace pane process sharing one
- * `BACKLOG_DEBUG_FILE` erased the traces of the panes already writing to it. `appendFileSync` opens
+ * `AGENTIC_WORKSPACE_DEBUG_FILE` erased the traces of the panes already writing to it. `appendFileSync` opens
  * `O_APPEND` per line, and one `O_APPEND` write is atomic, so concurrent processes interleave whole
  * lines instead of destroying each other's.
  */
@@ -83,19 +83,19 @@ function openSink(path: string): ((line: string) => void) | null {
  */
 function resolve(): DebugConfig {
 	if (config) return config;
-	const raw = (typeof process === "undefined" ? undefined : process.env?.BACKLOG_DEBUG)?.trim();
+	const raw = (typeof process === "undefined" ? undefined : process.env?.AGENTIC_WORKSPACE_DEBUG)?.trim();
 	if (!raw) {
 		config = DISABLED;
 		return config;
 	}
 	const all = raw === "1" || raw === "all" || raw === "*";
 	const env = process.env as Record<string, string | undefined>;
-	const sinkPath = env.BACKLOG_DEBUG_FILE?.trim();
+	const sinkPath = env.AGENTIC_WORKSPACE_DEBUG_FILE?.trim();
 	config = {
 		all,
 		subsystems: all ? new Set() : parseSubsystems(raw),
 		sink: sinkPath ? openSink(sinkPath) : null,
-		verbose: env.BACKLOG_DEBUG_VERBOSE === "1",
+		verbose: env.AGENTIC_WORKSPACE_DEBUG_VERBOSE === "1",
 	};
 	return config;
 }

@@ -10,7 +10,7 @@ import { serializeTask } from "../markdown/serializer.ts";
 import type { Decision, Document } from "../types/index.ts";
 import { createUniqueTestDir, initializeTestProject, safeCleanup } from "./test-utils.ts";
 
-const CLI_COMMAND = ["agenticworkspace"];
+const CLI_COMMAND = ["agentic-workspace"];
 
 function $(parts: TemplateStringsArray, ...values: unknown[]) {
 	const source = parts.reduce(
@@ -18,7 +18,7 @@ function $(parts: TemplateStringsArray, ...values: unknown[]) {
 			`${text}${part}${Array.isArray(values[index]) ? values[index].map((value) => JSON.stringify(value)).join(" ") : values[index] === undefined ? "" : JSON.stringify(values[index])}`,
 		"",
 	);
-	if (!source.includes("agenticworkspace")) return shell(parts, ...values);
+	if (!source.includes("agentic-workspace")) return shell(parts, ...values);
 	const args =
 		source
 			.match(/"(?:\\.|[^"\\])*"|'[^']*'|[^\s]+/g)
@@ -119,7 +119,7 @@ describe("CLI Integration", () => {
 				expect(result.exitCode).toBe(0);
 				const stdout = result.stdout.toString();
 				expect(stdout).toContain("Created document doc-1");
-				expect(stdout).toContain("Path: backlog/docs/guides/setup/doc-1 - Setup-Guide.md");
+				expect(stdout).toContain("Path: agentic-workspace/docs/guides/setup/doc-1 - Setup-Guide.md");
 
 				const docs = await core.filesystem.listDocuments();
 				expect(docs[0]?.path).toBe("guides/setup/doc-1 - Setup-Guide.md");
@@ -136,7 +136,7 @@ describe("CLI Integration", () => {
 				expect(result.stderr.toString()).not.toContain("unknown option");
 				const stdout = result.stdout.toString();
 				expect(stdout).toContain("Created document doc-1");
-				expect(stdout).toContain("Path: backlog/docs/doc-1 - Setup-Guide.md");
+				expect(stdout).toContain("Path: agentic-workspace/docs/doc-1 - Setup-Guide.md");
 			} finally {
 				await safeCleanup(dir);
 			}
@@ -175,7 +175,7 @@ describe("CLI Integration", () => {
 						.quiet();
 				expect(result.exitCode).toBe(0);
 				expect(result.stdout.toString()).toContain("Updated document doc-1");
-				expect(result.stdout.toString()).toContain("Path: backlog/docs/runbooks/doc-1 - Install-Runbook.md");
+				expect(result.stdout.toString()).toContain("Path: agentic-workspace/docs/runbooks/doc-1 - Install-Runbook.md");
 
 				const docs = await core.filesystem.listDocuments();
 				const updated = docs.find((doc) => doc.id === "doc-1");
@@ -588,8 +588,8 @@ describe("CLI Integration", () => {
 				const result = await $`${CLI_COMMAND} board export Collision-board.md --force`.cwd(dir).nothrow().quiet();
 				expect(result.exitCode).toBe(1);
 				expect(result.stderr).toContain("Task ID TASK-7 is ambiguous; review the duplicate records manually:");
-				expect(result.stderr).toContain("backlog/tasks/task-7/task.md");
-				expect(result.stderr).toContain("backlog/completed/task-7/task.md");
+				expect(result.stderr).toContain("agentic-workspace/tasks/task-7/task.md");
+				expect(result.stderr).toContain("agentic-workspace/completed/task-7/task.md");
 				expect(await Bun.file(outputPath).text()).toBe("sentinel board content");
 			} finally {
 				await safeCleanup(dir);

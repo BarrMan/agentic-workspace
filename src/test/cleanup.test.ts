@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
-import { Core } from "../core/backlog.ts";
+import { Core } from "../core/agentic-workspace.ts";
 import type { Task } from "../types/index.ts";
 import { createUniqueTestDir, initializeFilesystemTestProject, safeCleanup } from "./test-utils.ts";
 
@@ -26,7 +26,7 @@ describe("Cleanup functionality", () => {
 		TEST_DIR = createUniqueTestDir("test-cleanup");
 		await mkdir(TEST_DIR, { recursive: true });
 
-		// Initialize backlog project
+		// Initialize agentic-workspace project
 		core = new Core(TEST_DIR);
 		await initializeFilesystemTestProject(core, "Cleanup Test Project");
 	});
@@ -36,9 +36,9 @@ describe("Cleanup functionality", () => {
 	});
 
 	describe("Core functionality", () => {
-		it("should create completed directory in backlog structure", async () => {
-			await core.filesystem.ensureBacklogStructure();
-			expect(core.filesystem.completedDir).toBe(join(TEST_DIR, "backlog", "completed"));
+		it("should create completed directory in agentic-workspace structure", async () => {
+			await core.filesystem.ensureAgenticWorkspaceStructure();
+			expect(core.filesystem.completedDir).toBe(join(TEST_DIR, "agentic-workspace", "completed"));
 		});
 
 		it("should move Done task to completed folder", async () => {

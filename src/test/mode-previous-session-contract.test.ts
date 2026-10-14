@@ -11,7 +11,7 @@ import { SessionStore } from "../agent-workspace/session-store.ts";
 import { AgentSessionService, type ProcessRunner, type TmuxServer } from "../agent-workspace/sessions.ts";
 import type { AgentSession } from "../agent-workspace/types.ts";
 import type { WorkspaceContext } from "../agent-workspace/workspace-context.ts";
-import { Core } from "../core/backlog.ts";
+import { Core } from "../core/agentic-workspace.ts";
 import { initializeTestProject } from "../test/test-utils.ts";
 
 type Pane = {
@@ -57,10 +57,10 @@ class FakeHarness implements ProcessRunner, TmuxServer {
 					id,
 					this.dead.has(id) ? "1" : "0",
 					"@agent",
-					values["@backlog_root"] ?? "",
-					values["@backlog_task"] ?? "",
-					values["@backlog_session"] ?? "",
-					values["@backlog_role"] ?? "",
+					values["@agentic_workspace_root"] ?? "",
+					values["@agentic_workspace_task"] ?? "",
+					values["@agentic_workspace_session"] ?? "",
+					values["@agentic_workspace_role"] ?? "",
 					"",
 				].join("\t");
 			});
@@ -158,6 +158,7 @@ describe("public previous-session selection by mode", () => {
 		const laterInArray = session("plan-later-array", "native-later-array", "plan");
 		await store.mutateMode("TASK-1", "plan", async (history) => {
 			history.sessions.push(earlierInArray, laterInArray);
+			history.activeSessionId = laterInArray.id;
 		});
 		await store.mutateMode("TASK-1", "plan", async (history) => {
 			const earlier = history.sessions.find(({ id }) => id === earlierInArray.id);
@@ -179,6 +180,7 @@ describe("public previous-session selection by mode", () => {
 		const callerSession = session("plan-caller", "native-plan-caller", "plan");
 		await store.mutateMode("TASK-1", "plan", async (history) => {
 			history.sessions.push(candidate, callerSession);
+			history.activeSessionId = callerSession.id;
 		});
 		caller = context(
 			root,
@@ -206,6 +208,7 @@ describe("public previous-session selection by mode", () => {
 		const buildCaller = session("build-caller", "native-build-caller", "build");
 		await store.mutateMode("TASK-1", "build", async (history) => {
 			history.sessions.push(moved, buildPrior, buildCaller);
+			history.activeSessionId = buildCaller.id;
 		});
 		caller = context(root, { taskId: moved.taskId, modeId: "plan", sessionId: moved.id }, moved.nativeSessionId);
 		await service.ask("task-1", "ask in current owner");

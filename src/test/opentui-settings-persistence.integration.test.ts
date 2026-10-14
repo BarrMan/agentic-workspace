@@ -13,7 +13,7 @@ import { SessionStore } from "../agent-workspace/session-store.ts";
 import { AgentSessionService } from "../agent-workspace/sessions.ts";
 import type { AgentConfiguration, AgentSession } from "../agent-workspace/types.ts";
 import { WorkspaceStateService } from "../agent-workspace/workspace-state.ts";
-import { Core } from "../core/backlog.ts";
+import { Core } from "../core/agentic-workspace.ts";
 import { mountOpenTuiWorkspace, type OpenTuiWorkspaceOptions } from "../ui/opentui/workspace.ts";
 import { OpenTuiWorkspaceController } from "../ui/opentui/workspace-controller.ts";
 import { getTestCliCommand } from "./test-cli.ts";
@@ -70,27 +70,27 @@ describe("real WorkspaceController Settings persistence", () => {
 		await initializeTestProject(core, "Settings persistence");
 		const { task } = await core.createTaskFromInput({ title: "Settings fixture", status: "To Do" });
 		await upsertAgentConfiguration(core, "project", initialConfiguration());
-		const path = join(core.filesystem.backlogDir, "agents.json");
+		const path = join(core.filesystem.agenticWorkspaceDir, "agents.json");
 		let workspaceState: WorkspaceStateService | undefined;
 		if (pinExternalRoot) {
 			const storageHome = await mkdtemp(join(tmpdir(), "settings-pinned-home-"));
 			cleanups.push(async () => await rm(storageHome, { recursive: true, force: true }));
 			const originalHome = process.env.HOME;
-			const originalBacklogCwd = process.env.BACKLOG_CWD;
+			const originalAgenticWorkspaceCwd = process.env.AGENTIC_WORKSPACE_CWD;
 			const originalCwd = process.cwd();
 			cleanups.push(async () => {
 				process.chdir(originalCwd);
 				if (originalHome === undefined) delete process.env.HOME;
 				else process.env.HOME = originalHome;
-				if (originalBacklogCwd === undefined) delete process.env.BACKLOG_CWD;
-				else process.env.BACKLOG_CWD = originalBacklogCwd;
+				if (originalAgenticWorkspaceCwd === undefined) delete process.env.AGENTIC_WORKSPACE_CWD;
+				else process.env.AGENTIC_WORKSPACE_CWD = originalAgenticWorkspaceCwd;
 			});
 			process.env.HOME = storageHome;
 			const hash = createHash("sha256").update(core.filesystem.rootDir).digest("hex").slice(0, 16);
-			workspaceState = new WorkspaceStateService(core, { stateRoot: join(storageHome, ".backlog", hash) });
+			workspaceState = new WorkspaceStateService(core, { stateRoot: join(storageHome, ".agentic-workspace", hash) });
 			await workspaceState.stateRoot;
 			process.env.HOME = join(storageHome, "changed-home");
-			process.env.BACKLOG_CWD = storageHome;
+			process.env.AGENTIC_WORKSPACE_CWD = storageHome;
 			process.chdir(storageHome);
 		}
 		const setup = await createTestRenderer({ width: 160, height: 40, kittyKeyboard: true });
@@ -182,7 +182,7 @@ describe("real WorkspaceController Settings persistence", () => {
 		const pinnedRoot = f.stateRoot;
 		if (!pinnedRoot) throw new Error("Fixture did not pin a state root.");
 		expect(await readFile(join(pinnedRoot, "view-state.json"), "utf8")).toContain('"state"');
-		expect(existsSync(join(f.core.filesystem.rootDir, ".backlog", "view-state.json"))).toBe(false);
+		expect(existsSync(join(f.core.filesystem.rootDir, ".agentic-workspace", "view-state.json"))).toBe(false);
 		const originalDelete = AgentSessionService.prototype.deleteMode;
 		const deletion = spyOn(AgentSessionService.prototype, "deleteMode").mockImplementation(async function (
 			this: AgentSessionService,
@@ -202,7 +202,7 @@ describe("real WorkspaceController Settings persistence", () => {
 			await f.saved();
 			expect(deletion).toHaveBeenCalledTimes(1);
 			expect((await f.json()).modes?.profiles.plan).toBeUndefined();
-			expect(existsSync(join(f.core.filesystem.rootDir, ".backlog", "view-state.json"))).toBe(false);
+			expect(existsSync(join(f.core.filesystem.rootDir, ".agentic-workspace", "view-state.json"))).toBe(false);
 		} finally {
 			deletion.mockRestore();
 		}
@@ -339,6 +339,7 @@ describe("real WorkspaceController Settings persistence", () => {
 		};
 		await store.mutateMode(f.task.id, "plan", async (history) => {
 			history.sessions.push(session);
+			history.activeSessionId = session.id;
 		});
 		await f.open();
 		modes(f.setup);
@@ -427,8 +428,8 @@ import errno, fcntl, json, os, pty, re, select, struct, subprocess, sys, termios
 runtime, cli, root = sys.argv[1], sys.argv[2], sys.argv[3]
 master, slave = pty.openpty()
 fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack("HHHH", 40, 160, 0, 0))
-env = dict(os.environ, TERM="xterm-256color", BACKLOG_CWD=root)
-for key in ("BACKLOG_WORKSPACE_CONTEXT", "BACKLOG_TASK_ID", "BACKLOG_SESSION_ID"):
+env = dict(os.environ, TERM="xterm-256color", AGENTIC_WORKSPACE_CWD=root)
+for key in ("AGENTIC_WORKSPACE_WORKSPACE_CONTEXT", "AGENTIC_WORKSPACE_TASK_ID", "AGENTIC_WORKSPACE_SESSION_ID"):
     env.pop(key, None)
 process = subprocess.Popen([runtime, cli, "workspace"], cwd=root, env=env, stdin=slave, stdout=slave, stderr=slave, start_new_session=True)
 os.close(slave)
@@ -466,7 +467,7 @@ try:
     send(down+enter+enter); edit("pty-approved.md"); send(enter)
     send(down+enter); send(down*11+enter)
     send("\x13")
-    path = os.path.join(root, "backlog", "agents.json")
+    path = os.path.join(root, "agentic-workspace", "agents.json")
     expected = {"model":{"kind":"explicit","id":"pty-model"}, "prompt":"PTY prompt", "permissions":{"repository":"read-write","task":"read-write","artifacts":"read-write","subagents":"disabled"}, "artifacts":[{"path":"pty-result.md","purpose":"PTY purpose"}], "approvalArtifact":"pty-approved.md", "textColor":"brightgreen"}
     deadline = time.monotonic()+5
     while True:

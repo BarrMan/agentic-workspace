@@ -8,7 +8,7 @@ const directories: string[] = [];
 const preset = { command: "opencode", env: {}, prepare: "", bootstrap: "opencode" as const };
 
 async function versionCommand(version: string): Promise<{ cwd: string; command: string }> {
-	const cwd = await mkdtemp(join(tmpdir(), "backlog-opencode-resolution-"));
+	const cwd = await mkdtemp(join(tmpdir(), "agentic-workspace-opencode-resolution-"));
 	directories.push(cwd);
 	const command = join(cwd, "opencode");
 	await writeFile(command, `#!/bin/sh\nprintf '%s\\n' '${version}'\n`);

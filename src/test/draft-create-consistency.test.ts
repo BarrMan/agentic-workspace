@@ -65,11 +65,11 @@ describe("Draft creation consistency", () => {
 			expect(second.stdout.toString()).toContain(join("draft-2", "task.md"));
 			expect(second.stdout.toString()).not.toContain("draft-task-");
 
-			const draftFiles = await readdir(join(testDir, "backlog", "drafts"));
+			const draftFiles = await readdir(join(testDir, "agentic-workspace", "drafts"));
 			expect(draftFiles).toContain("draft-1");
 			expect(draftFiles).toContain("draft-2");
 			for (const id of ["draft-1", "draft-2"]) {
-				expect(await readdir(join(testDir, "backlog", "drafts", id))).toEqual(["task.md"]);
+				expect(await readdir(join(testDir, "agentic-workspace", "drafts", id))).toEqual(["task.md"]);
 			}
 			expect(draftFiles.some((file) => file.startsWith("draft-task-"))).toBe(false);
 

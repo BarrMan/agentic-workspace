@@ -1,5 +1,5 @@
 import { DEFAULT_STATUSES, DRAFT_STATUS } from "../../../constants/index.ts";
-import { type Core, TaskArchiveStatusError, type VacatedTaskResult } from "../../../core/backlog.ts";
+import { type Core, TaskArchiveStatusError, type VacatedTaskResult } from "../../../core/agentic-workspace.ts";
 import { findLocalDuplicateTaskIds } from "../../../core/duplicate-task-detection.ts";
 import { loadTaskDetail, loadTaskListItems } from "../../../core/task-detail.ts";
 import { isCreateLockError, isTaskLockError } from "../../../file-system/operations.ts";
@@ -24,7 +24,7 @@ import { applyTaskFilters, createTaskSearchIndex } from "../../../utils/task-sea
 import { sortByOrdinalAndPriority } from "../../../utils/task-sorting.ts";
 import { getTerminalStatus, isTerminalStatus } from "../../../utils/terminal-status.ts";
 import { formatUtcDateForDisplay } from "../../../utils/utc-date-display.ts";
-import { BacklogToolError } from "../../errors/mcp-errors.ts";
+import { AgenticWorkspaceToolError } from "../../errors/mcp-errors.ts";
 import type { CallToolResult } from "../../types.ts";
 import { formatTaskCallResult } from "../../utils/task-response.ts";
 
@@ -78,11 +78,14 @@ function noTasksResult(query?: string): CallToolResult {
 	return textResult(query === undefined ? "No tasks found." : `No tasks found for "${query}".`);
 }
 
-function taskOperationError(error: unknown, isLockError: (error: unknown) => error is Error): BacklogToolError {
+function taskOperationError(
+	error: unknown,
+	isLockError: (error: unknown) => error is Error,
+): AgenticWorkspaceToolError {
 	if (isLockError(error)) {
-		return new BacklogToolError(error.message, "OPERATION_FAILED");
+		return new AgenticWorkspaceToolError(error.message, "OPERATION_FAILED");
 	}
-	return new BacklogToolError(error instanceof Error ? error.message : String(error), "VALIDATION_ERROR");
+	return new AgenticWorkspaceToolError(error instanceof Error ? error.message : String(error), "VALIDATION_ERROR");
 }
 
 function buildTaskListFilters(args: TaskListArgs): TaskListFilter | undefined {
@@ -140,7 +143,7 @@ export class TaskHandlers {
 	private async loadTaskOrThrow(id: string): Promise<Task> {
 		const task = await this.core.getTask(id);
 		if (!task) {
-			throw new BacklogToolError(`Task not found: ${id}`, "TASK_NOT_FOUND");
+			throw new AgenticWorkspaceToolError(`Task not found: ${id}`, "TASK_NOT_FOUND");
 		}
 		return task;
 	}
@@ -149,7 +152,7 @@ export class TaskHandlers {
 		try {
 			const rawOrdinal = (args as { ordinal?: unknown }).ordinal;
 			if (rawOrdinal === null) {
-				throw new BacklogToolError("Ordinal must be a non-negative number.", "VALIDATION_ERROR");
+				throw new AgenticWorkspaceToolError("Ordinal must be a non-negative number.", "VALIDATION_ERROR");
 			}
 
 			const milestone =
@@ -182,7 +185,7 @@ export class TaskHandlers {
 
 	async listTasks(args: TaskListArgs = {}): Promise<CallToolResult> {
 		if (args.assignee && args.unassigned) {
-			throw new BacklogToolError("unassigned cannot be combined with assignee.", "VALIDATION_ERROR");
+			throw new AgenticWorkspaceToolError("unassigned cannot be combined with assignee.", "VALIDATION_ERROR");
 		}
 		const config = await this.core.filesystem.loadConfig();
 		if (this.isDraftStatus(args.status)) {
@@ -284,7 +287,7 @@ export class TaskHandlers {
 		const query = args.query?.trim() ?? "";
 		const modifiedFiles = args.modifiedFiles?.map((file) => file.trim()).filter((file) => file.length > 0);
 		if (!this.hasSearchCriteria(query, modifiedFiles, args)) {
-			throw new BacklogToolError(
+			throw new AgenticWorkspaceToolError(
 				"Search query, modifiedFiles, type filter, or project filter is required",
 				"VALIDATION_ERROR",
 			);
@@ -333,7 +336,7 @@ export class TaskHandlers {
 		}
 		const duplicates = await findLocalDuplicateTaskIds(this.core);
 		if (duplicates.some(({ id }) => canonicalTaskId(id) === canonicalTaskId(args.id))) {
-			throw new BacklogToolError(
+			throw new AgenticWorkspaceToolError(
 				`Task ID ${args.id} is ambiguous; review the duplicate records manually.`,
 				"VALIDATION_ERROR",
 			);
@@ -341,7 +344,7 @@ export class TaskHandlers {
 
 		const task = await this.core.getTaskWithSubtasks(args.id);
 		if (!task) {
-			throw new BacklogToolError(`Task not found: ${args.id}`, "TASK_NOT_FOUND");
+			throw new AgenticWorkspaceToolError(`Task not found: ${args.id}`, "TASK_NOT_FOUND");
 		}
 		// Task detail is the only MCP result read through the detail path, so it is the only one that
 		// carries the graph. The edit and lifecycle confirmations stay as short as they were.
@@ -353,7 +356,7 @@ export class TaskHandlers {
 		if (draft) {
 			const success = await this.core.archiveDraft(draft.id);
 			if (!success) {
-				throw new BacklogToolError(`Failed to archive task: ${args.id}`, "OPERATION_FAILED");
+				throw new AgenticWorkspaceToolError(`Failed to archive task: ${args.id}`, "OPERATION_FAILED");
 			}
 
 			return await formatTaskCallResult(await loadTaskDetail(this.core, draft), [`Archived draft ${draft.id}.`]);
@@ -362,7 +365,7 @@ export class TaskHandlers {
 		const task = await this.loadTaskOrThrow(args.id);
 
 		if (!isLocalEditableTask(task)) {
-			throw new BacklogToolError(`Cannot archive task from another branch: ${task.id}`, "VALIDATION_ERROR");
+			throw new AgenticWorkspaceToolError(`Cannot archive task from another branch: ${task.id}`, "VALIDATION_ERROR");
 		}
 
 		let archived: VacatedTaskResult;
@@ -370,13 +373,13 @@ export class TaskHandlers {
 			archived = await this.core.archiveTask(task.id);
 		} catch (error) {
 			if (error instanceof TaskArchiveStatusError) {
-				throw new BacklogToolError(`${error.message} In MCP, use task_complete.`, "VALIDATION_ERROR");
+				throw new AgenticWorkspaceToolError(`${error.message} In MCP, use task_complete.`, "VALIDATION_ERROR");
 			}
 			throw error;
 		}
 		const { success, cleanedTaskIds } = archived;
 		if (!success) {
-			throw new BacklogToolError(`Failed to archive task: ${args.id}`, "OPERATION_FAILED");
+			throw new AgenticWorkspaceToolError(`Failed to archive task: ${args.id}`, "OPERATION_FAILED");
 		}
 
 		const refreshed = (await this.core.getTask(task.id)) ?? task;
@@ -391,13 +394,13 @@ export class TaskHandlers {
 		const task = await this.loadTaskOrThrow(args.id);
 
 		if (!isLocalEditableTask(task)) {
-			throw new BacklogToolError(`Cannot complete task from another branch: ${task.id}`, "VALIDATION_ERROR");
+			throw new AgenticWorkspaceToolError(`Cannot complete task from another branch: ${task.id}`, "VALIDATION_ERROR");
 		}
 
 		const statuses = await this.getConfiguredStatuses();
 		const terminalStatus = getTerminalStatus(statuses) ?? "Done";
 		if (!isTerminalStatus(task.status, statuses)) {
-			throw new BacklogToolError(
+			throw new AgenticWorkspaceToolError(
 				`Task ${task.id} is not ${terminalStatus}. Set status to "${terminalStatus}" with task_edit before completing it.`,
 				"VALIDATION_ERROR",
 			);
@@ -405,12 +408,12 @@ export class TaskHandlers {
 
 		const success = await this.core.completeTask(task.id);
 		if (!success) {
-			throw new BacklogToolError(`Failed to complete task: ${args.id}`, "OPERATION_FAILED");
+			throw new AgenticWorkspaceToolError(`Failed to complete task: ${args.id}`, "OPERATION_FAILED");
 		}
 
 		const completedTask = await this.core.getTask(task.id);
 		if (!completedTask) {
-			throw new BacklogToolError(`Completed task could not be read: ${task.id}`, "OPERATION_FAILED");
+			throw new AgenticWorkspaceToolError(`Completed task could not be read: ${task.id}`, "OPERATION_FAILED");
 		}
 		const result = await formatTaskCallResult(await loadTaskDetail(this.core, completedTask), [], {
 			filePathOverride: completedTask.filePath,
@@ -427,7 +430,7 @@ export class TaskHandlers {
 		try {
 			const rawOrdinal = (args as { ordinal?: unknown }).ordinal;
 			if (rawOrdinal === null) {
-				throw new BacklogToolError("Ordinal must be a non-negative number.", "VALIDATION_ERROR");
+				throw new AgenticWorkspaceToolError("Ordinal must be a non-negative number.", "VALIDATION_ERROR");
 			}
 
 			const updateInput = buildTaskUpdateInput(args);

@@ -4,7 +4,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { getDefaultModeCatalog } from "../agent-workspace/config.ts";
-import type { Core } from "../core/backlog.ts";
+import type { Core } from "../core/agentic-workspace.ts";
 import type { Task } from "../types/index.ts";
 import type { OpenTuiHost } from "../ui/opentui/host.ts";
 import { createWorkspaceFilters } from "../ui/opentui/workspace/state.ts";
@@ -22,7 +22,7 @@ const task: Task = {
 };
 
 function setup() {
-	const directory = mkdtempSync(join(tmpdir(), "backlog-mode-navigation-"));
+	const directory = mkdtempSync(join(tmpdir(), "agentic-workspace-mode-navigation-"));
 	let mounted: OpenTuiWorkspaceOptions | undefined;
 	const updates: OpenTuiWorkspaceOptions[] = [];
 	let persistedState = {
@@ -36,9 +36,9 @@ function setup() {
 	modes.order.push("review");
 	modes.profiles.review = structuredClone(modes.profiles.build!);
 	modes.profiles.review.name = "Review";
-	mkdirSync(join(directory, ".backlog"), { recursive: true });
+	mkdirSync(join(directory, ".agentic-workspace"), { recursive: true });
 	writeFileSync(
-		join(directory, ".backlog", "agents.json"),
+		join(directory, ".agentic-workspace", "agents.json"),
 		JSON.stringify({
 			selectedPreset: "opencode",
 			presets: {
@@ -56,7 +56,7 @@ function setup() {
 			identityIndex: { getTasks: () => [task], getContestedIds: () => new Set() },
 		}),
 		filesystem: {
-			backlogDir: join(directory, ".backlog"),
+			agenticWorkspaceDir: join(directory, ".agentic-workspace"),
 			projectRoot: directory,
 			loadConfig: async () => ({ projectName: "Test" }),
 			listMilestones: async () => [],

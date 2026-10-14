@@ -251,8 +251,11 @@ describe("buildDependencyGraph", () => {
 		// `task view <completed-id>` hands the viewer the completed record to display while the viewer
 		// also loads the completed corpus, so the same file arrives in both lists. Poisoning that
 		// identity would lose the completion evidence and could show a stale non-terminal status.
-		const completed = task("task-1", [], { status: "In Progress", filePath: "/p/backlog/completed/task-1 - Done.md" });
-		const dependent = task("task-2", ["task-1"], { filePath: "/p/backlog/tasks/task-2 - Next.md" });
+		const completed = task("task-1", [], {
+			status: "In Progress",
+			filePath: "/p/agentic-workspace/completed/task-1 - Done.md",
+		});
+		const dependent = task("task-2", ["task-1"], { filePath: "/p/agentic-workspace/tasks/task-2 - Next.md" });
 		const graph = buildDependencyGraph(completed, {
 			tasks: [dependent, completed],
 			completedTasks: [completed],
@@ -277,8 +280,8 @@ describe("buildDependencyGraph", () => {
 	});
 
 	it("keeps padded variants distinct while still failing closed for identical IDs", () => {
-		const first = task("task-1", [], { filePath: "/p/backlog/tasks/task-1 - Alpha.md" });
-		const second = task("TASK-01", [], { filePath: "/p/backlog/tasks/task-01 - Beta.md" });
+		const first = task("task-1", [], { filePath: "/p/agentic-workspace/tasks/task-1 - Alpha.md" });
+		const second = task("TASK-01", [], { filePath: "/p/agentic-workspace/tasks/task-01 - Beta.md" });
 		const graph = buildDependencyGraph(task("task-2", ["task-1", "TASK-01"]), {
 			tasks: [task("task-2", ["task-1", "TASK-01"]), first, second],
 			statuses: STATUSES,
@@ -291,7 +294,7 @@ describe("buildDependencyGraph", () => {
 			tasks: [
 				task("task-2", ["task-1"]),
 				first,
-				task("TASK-1", [], { filePath: "/p/backlog/completed/task-1/task.md" }),
+				task("TASK-1", [], { filePath: "/p/agentic-workspace/completed/task-1/task.md" }),
 			],
 			statuses: STATUSES,
 		});

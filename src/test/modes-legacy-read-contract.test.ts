@@ -15,7 +15,7 @@ describe("historical flat task read contract", () => {
 	it("refuses v2 and unversioned local flat records without changing their bytes", async () => {
 		const root = await mkdtemp(join(tmpdir(), "legacy-task-git-"));
 		roots.push(root);
-		const taskDir = join(root, "backlog", "tasks");
+		const taskDir = join(root, "agentic-workspace", "tasks");
 		await mkdir(taskDir, { recursive: true });
 		const v2Path = join(taskDir, "task-1 - Historical.md");
 		const unversionedPath = join(taskDir, "task-2 - Older.md");
@@ -24,7 +24,7 @@ describe("historical flat task read contract", () => {
 		await writeFile(v2Path, legacy("1", "task_schema_version: 2\n"));
 		await writeFile(unversionedPath, legacy("2"));
 		const filesystem = new FileSystem(root);
-		await filesystem.ensureBacklogStructure();
+		await filesystem.ensureAgenticWorkspaceStructure();
 		await expect(filesystem.listTasks()).rejects.toThrow(/unsupported flat task record.*manually convert/i);
 		await expect(filesystem.loadTask("TASK-1")).rejects.toThrow(/unsupported flat task record.*manually convert/i);
 		expect(await readFile(v2Path, "utf8")).toBe(legacy("1", "task_schema_version: 2\n"));

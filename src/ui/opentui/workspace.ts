@@ -233,17 +233,6 @@ function taskDetails(task: OpenTuiWorkspaceTaskEntry | undefined): string {
 	return fields.filter((field): field is string => field !== undefined).join("\n");
 }
 
-function agentSessionDetails(
-	session: OpenTuiWorkspaceAgentSession | undefined,
-	indication: AgentIndication | undefined,
-): string {
-	if (!session) return "No active agent session.";
-	const task = session.taskId ? ` · ${session.taskId}` : "";
-	const summary = session.summary?.trim();
-	const indicationLabel = indication ? ` · ${indication}` : "";
-	return `${session.status}${indicationLabel} · ${session.preset} · ${session.id.slice(0, 8)}${task}${summary ? `\n${summary}` : ""}`;
-}
-
 /** Mount one retained normal-task workspace screen inside an existing OpenTUI host. */
 export function mountOpenTuiWorkspace(
 	renderer: CliRenderer,
@@ -525,10 +514,18 @@ export function mountOpenTuiWorkspace(
 	};
 	agentPlaceholder.add(agentText);
 	agentOutput.add(agentPlaceholder);
-	agentRegion.add(agentHeader);
+	const agentPane = new BoxRenderable(renderer, {
+		width: "100%",
+		flexGrow: 1,
+		flexBasis: 0,
+		minHeight: 0,
+		flexDirection: "column",
+	});
+	agentPane.add(agentHeader);
+	agentPane.add(agentRegion);
 	agentRegion.add(agentOutput);
 	details.add(detailRegion);
-	details.add(agentRegion);
+	details.add(agentPane);
 	body.add(taskList);
 	body.add(details);
 	surface.add(navbar);
@@ -575,7 +572,7 @@ export function mountOpenTuiWorkspace(
 		taskList.visible = taskPaneVisible && !fullscreen;
 		navbar.visible = !fullscreen;
 		footer.visible = !fullscreen;
-		agentHeader.visible = !fullscreen;
+		agentHeader.visible = !fullscreen && Boolean(selectedSession());
 		body.columnGap = taskPaneVisible && !fullscreen ? 1 : 0;
 		taskText.content = rows.length
 			? new StyledText(
@@ -658,7 +655,7 @@ export function mountOpenTuiWorkspace(
 		} else {
 			detailText.content = t`${bold(fg("blue")(task.id))} - ${task.title}\n${taskDetails(task)}`;
 		}
-		const selectedIndication = task ? indicationByTask.get(task.id) : undefined;
+		const session = selectedSession();
 		const liveAgent = opts.liveAgent?.taskId === selectedTask()?.id ? opts.liveAgent : undefined;
 		const activeHost = liveAgent?.status !== "error" ? liveAgent?.host : undefined;
 		if (mountedAgent !== activeHost || agentMount !== (activeHost ? liveAgent?.terminal : undefined)) {
@@ -672,26 +669,23 @@ export function mountOpenTuiWorkspace(
 			}
 		}
 		const selectedMode = task ? opts.modeProjectionByTask?.(task.id) : undefined;
-		const headerLabel = liveAgent
-			? `Agent session · ${liveAgent.label}${
-					liveAgent.status === "starting" ? " · warming up" : selectedIndication ? ` · ${selectedIndication}` : ""
-				}`
-			: "Agent session";
+		const modeLabel = selectedMode?.modeLabel ?? opts.selectedModeId ?? "mode";
 		const headerModeColor = modeDisplayColor(selectedMode?.modeColor);
-		agentHeader.content = selectedMode?.modeLabel
-			? t`${headerLabel} · ${headerModeColor ? fg(headerModeColor)(bold(selectedMode.modeLabel)) : bold(selectedMode.modeLabel)}`
-			: headerLabel;
-		agentPlaceholder.visible = !agentMount;
+		const headerStatus = session?.status ?? "stopped";
+		agentHeader.content = headerModeColor
+			? t`Agent session · ${fg(headerModeColor)(bold(modeLabel))} · ${headerStatus}`
+			: `Agent session · ${modeLabel} · ${headerStatus}`;
+		agentPlaceholder.visible = !agentMount && (!session || session.status === "stopped");
 		if (agentFocused && !agentMount) {
 			agentFocused = false;
 			opts.onAgentFocusChange?.(false);
 		}
 		agentText.content =
-			liveAgent?.status === "error"
-				? `Could not start agent: ${liveAgent.error}\nPress Enter to retry.`
-				: selectedIndication === "waiting"
-					? "Agent is waiting for input."
-					: agentSessionDetails(selectedSession(), selectedIndication);
+			session?.status === "stopped"
+				? `Session ended · press ${shortcut(shortcutsConfig.workspace.sessions)} to resume`
+				: session
+					? ""
+					: `No session in ${modeLabel}`;
 		const navigationShortcuts = [
 			task && opts.taskArtifactApi
 				? `[${formatShortcut(artifactViewShortcut, opts.keyboardOverrides)}] Artifacts`

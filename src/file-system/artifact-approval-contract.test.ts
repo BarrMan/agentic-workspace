@@ -15,8 +15,8 @@ afterEach(async () => {
 async function fixture() {
 	const root = await createUniqueTestDir("artifact-approval-contract");
 	roots.push(root);
-	const backlogDirectory = join(root, ".backlog");
-	const container = join(backlogDirectory, "tasks", "back-23");
+	const agenticWorkspaceDirectory = join(root, ".agentic-workspace");
+	const container = join(agenticWorkspaceDirectory, "tasks", "back-23");
 	await mkdir(container, { recursive: true });
 	const taskRecord = join(container, "task.md");
 	await writeFile(
@@ -27,7 +27,7 @@ async function fixture() {
 		container,
 		taskRecord,
 		sidecar: join(container, ".artifacts.json"),
-		service: new TaskArtifactRepository({ backlogDirectory }),
+		service: new TaskArtifactRepository({ agenticWorkspaceDirectory }),
 	};
 }
 

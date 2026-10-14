@@ -1,4 +1,4 @@
-export const BACKLOG_TASK_SKILL = `# Backlog Task Management
+export const AGENTIC_WORKSPACE_TASK_SKILL = `# AgenticWorkspace Task Management
 
 Keep task work grounded in its canonical artifacts:
 - List task artifacts, read the relevant ones, and write updates through the
@@ -13,9 +13,9 @@ For a question answered in the previous session, ask a concise, scoped question
 in the current mode rather than re-deriving the answer.
 `;
 
-export const BACKLOG_TASK_SKILL_FILE = `---
-name: backlog-task-management
-description: Keep the active Backlog task synchronized as you work - keep its description a short, user-friendly overview, maintain the detailed agent summary, and move it to In Progress. Only the user moves a task to Done.
+export const AGENTIC_WORKSPACE_TASK_SKILL_FILE = `---
+name: agentic-workspace-task-management
+description: Keep the active AgenticWorkspace task synchronized as you work - keep its description a short, user-friendly overview, maintain the detailed agent summary, and move it to In Progress. Only the user moves a task to Done.
 ---
 
-${BACKLOG_TASK_SKILL}`;
+${AGENTIC_WORKSPACE_TASK_SKILL}`;

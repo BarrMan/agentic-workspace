@@ -5,9 +5,9 @@ import { join } from "node:path";
 import { Writable } from "node:stream";
 import { $ } from "bun";
 import { runCli } from "../cli/register.ts";
-import { Core } from "../core/backlog.ts";
+import { Core } from "../core/agentic-workspace.ts";
 import { GitOperations } from "../git/operations.ts";
-import type { BacklogConfig } from "../types/index.ts";
+import type { AgenticWorkspaceConfig } from "../types/index.ts";
 import { initGitRepo } from "./test-utils.ts";
 
 async function runCliCommand(args: string[], cwd: string) {
@@ -33,7 +33,7 @@ describe("Missing git remote preflight", () => {
 	let tempDir: string;
 
 	beforeEach(async () => {
-		tempDir = await mkdtemp(join(tmpdir(), "backlog-noremote-"));
+		tempDir = await mkdtemp(join(tmpdir(), "agentic-workspace-noremote-"));
 		initGitRepo(tempDir);
 		await writeFile(join(tempDir, "README.md"), "# Test");
 		await $`git add README.md`.cwd(tempDir).quiet();
@@ -52,7 +52,7 @@ describe("Missing git remote preflight", () => {
 			milestones: [],
 			dateFormat: "YYYY-MM-DD",
 			remoteOperations: true,
-		} as BacklogConfig);
+		} as AgenticWorkspaceConfig);
 
 		// Capture console.warn to ensure no warning is printed during fetch
 		const originalWarn = console.warn;
@@ -72,7 +72,7 @@ describe("Missing git remote preflight", () => {
 	});
 
 	it("Core cross-branch loading handles remoteOperations=true without a remote", async () => {
-		const config: BacklogConfig = {
+		const config: AgenticWorkspaceConfig = {
 			projectName: "Test",
 			statuses: ["To Do", "Done"],
 			labels: [],
@@ -82,8 +82,8 @@ describe("Missing git remote preflight", () => {
 			remoteOperations: true,
 		};
 
-		await mkdir(join(tempDir, "backlog", "tasks"), { recursive: true });
-		await mkdir(join(tempDir, "backlog", "completed"), { recursive: true });
+		await mkdir(join(tempDir, "agentic-workspace", "tasks"), { recursive: true });
+		await mkdir(join(tempDir, "agentic-workspace", "completed"), { recursive: true });
 		const core = new Core(tempDir);
 		await core.filesystem.saveConfig(config);
 

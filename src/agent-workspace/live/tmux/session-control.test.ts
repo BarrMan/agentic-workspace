@@ -11,7 +11,7 @@ import { describe, expect, it } from "bun:test";
 import { assertOwnedSessionName, hasOwnedSession, killOwnedSession, type TmuxRunner } from "./session-control.ts";
 import type { TmuxResult } from "./types.ts";
 
-const NAME = "backlog-back-8-deadbeef";
+const NAME = "agentic-workspace-back-8-deadbeef";
 
 const result = (overrides: Partial<TmuxResult> = {}): TmuxResult => ({
 	exitCode: 0,
@@ -99,7 +99,7 @@ describe("killOwnedSession", () => {
 	it("accepts no server running as proof of absence", async () => {
 		const { run, calls } = scriptedRunner([
 			result({ exitCode: 0 }),
-			result({ exitCode: 1, stderr: "no server running on /tmp/tmux-501/backlog-test-host-deadbeef" }),
+			result({ exitCode: 1, stderr: "no server running on /tmp/tmux-501/agentic-workspace-test-host-deadbeef" }),
 		]);
 		await expect(killOwnedSession(NAME, run)).resolves.toBeUndefined();
 		expect(calls).toEqual([

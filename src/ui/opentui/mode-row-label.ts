@@ -49,7 +49,7 @@ export function renderModeRowLabel(options: ModeRowLabelOptions): ModeRowLabel {
 	const indent = "  ".repeat(depth);
 	const marker = options.activityMarker || " ";
 	const modeHelp = `${options.modeLabel}${options.approved ? " ✓" : ""}`;
-	const badge = options.selected && options.modeLabel ? ` ${modeHelp} ` : "";
+	const badge = options.modeLabel ? ` ${modeHelp} ` : "";
 	// Keep the activity cell before the badge, even when indentation/title cannot fit.
 	const suffix = badge && Bun.stringWidth(marker + badge) <= width ? badge : "";
 	const prefix = clipCells(`${marker}${indent} `, width - Bun.stringWidth(suffix));

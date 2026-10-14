@@ -9,7 +9,7 @@
  */
 
 import { isMissingTmuxTarget } from "../../process-tree.ts";
-import { isBacklogSessionName } from "../../session-utils.ts";
+import { isAgenticWorkspaceSessionName } from "../../session-utils.ts";
 import type { TmuxResult } from "./types.ts";
 
 /**
@@ -20,8 +20,10 @@ export type TmuxRunner = (argv: readonly string[]) => Promise<TmuxResult>;
 
 /** Reject any name that is not a project session name before a command is built from it. */
 export function assertOwnedSessionName(sessionName: string): void {
-	if (!isBacklogSessionName(sessionName)) {
-		throw new Error(`refusing to address tmux session "${sessionName}": expected backlog-<task-slug>-<8 hex chars>`);
+	if (!isAgenticWorkspaceSessionName(sessionName)) {
+		throw new Error(
+			`refusing to address tmux session "${sessionName}": expected agentic-workspace-<task-slug>-<8 hex chars>`,
+		);
 	}
 }
 

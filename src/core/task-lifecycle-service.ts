@@ -7,7 +7,7 @@ import type { Task, TaskUpdateInput } from "../types/index.ts";
 import { formatStoredDate } from "../utils/date.ts";
 import { withoutVacatedTaskLinks } from "../utils/task-links.ts";
 import { getTerminalStatus, isTerminalStatus } from "../utils/terminal-status.ts";
-import type { VacatedTaskResult } from "./backlog.ts";
+import type { VacatedTaskResult } from "./agentic-workspace.ts";
 import type { ProjectTaskMutations } from "./task-mutation-service.ts";
 import type { TaskReadOptions } from "./task-query-workflow.ts";
 import { markVacatedTaskMoved, type VacatedTaskReferenceService } from "./vacated-task-reference-service.ts";
@@ -15,7 +15,7 @@ import { markVacatedTaskMoved, type VacatedTaskReferenceService } from "./vacate
 export class TaskArchiveStatusError extends Error {
 	constructor(taskId: string, terminalStatus: string) {
 		super(
-			`Task ${taskId} is ${terminalStatus}. Use Complete to move finished work to completed storage and preserve its links. Use: agenticworkspace task complete ${taskId}`,
+			`Task ${taskId} is ${terminalStatus}. Use Complete to move finished work to completed storage and preserve its links. Use: agentic-workspace task complete ${taskId}`,
 		);
 		this.name = "TaskArchiveStatusError";
 	}

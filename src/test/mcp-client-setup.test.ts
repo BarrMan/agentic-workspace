@@ -7,15 +7,15 @@ import {
 
 describe("MCP client setup commands", () => {
 	it("uses Codex's stdio command separator", () => {
-		const setup = getMcpClientSetupCommand("codex", "agenticworkspace");
+		const setup = getMcpClientSetupCommand("codex", "agentic-workspace");
 
 		expect(setup).toEqual({
 			label: "OpenAI Codex",
 			command: "codex",
-			args: ["mcp", "add", "agenticworkspace", "--", "agenticworkspace", "mcp", "start"],
+			args: ["mcp", "add", "agentic-workspace", "--", "agentic-workspace", "mcp", "start"],
 		});
 		expect(formatMcpClientSetupCommand(setup.command, setup.args)).toBe(
-			"codex mcp add agenticworkspace -- agenticworkspace mcp start",
+			"codex mcp add agentic-workspace -- agentic-workspace mcp start",
 		);
 	});
 

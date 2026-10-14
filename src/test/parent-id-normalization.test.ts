@@ -84,7 +84,7 @@ describe("CLI parent task id normalization", () => {
 			dependencies: [],
 			rawContent: "Created on feature branch",
 		});
-		await $`git add backlog/tasks`.cwd(TEST_DIR).quiet();
+		await $`git add agentic-workspace/tasks`.cwd(TEST_DIR).quiet();
 		await $`git commit -m "Add cross-branch parent fixture"`.cwd(TEST_DIR).quiet();
 		await $`git push -u origin feature-parent`.cwd(TEST_DIR).quiet();
 		await $`git remote update origin --prune`.cwd(TEST_DIR).quiet();

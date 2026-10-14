@@ -115,7 +115,7 @@ export async function runCli(
 			const first = rawArgs[0];
 			if (
 				typeof first === "string" &&
-				/node_modules[\\/]+agenticworkspace-(darwin|linux|windows)-[^\\/]+[\\/]+agenticworkspace(\.exe)?$/.test(first)
+				/node_modules[\\/]+agentic-workspace-(darwin|linux|windows)-[^\\/]+[\\/]+agentic-workspace(\.exe)?$/.test(first)
 			)
 				rawArgs = rawArgs.slice(1);
 		}
@@ -146,7 +146,7 @@ export async function runCli(
 
 	const program = new Command();
 	program
-		.name("agenticworkspace")
+		.name("agentic-workspace")
 		.description("AgenticWorkspace - Project management CLI")
 		.version(version, "-v, --version", "display version number")
 		.showSuggestionAfterError()
@@ -220,7 +220,7 @@ export async function runCli(
 		writes:
 			"Creates or updates the managed AgenticWorkspace CLI nudge in selected instruction files; preserves existing content outside the managed block",
 		output: "Interactive file selection followed by created, updated, or unchanged file summary",
-		examples: ["agenticworkspace agents --update-instructions"],
+		examples: ["agentic-workspace agents --update-instructions"],
 	});
 	agentsCmd
 		.description("manage the short AgenticWorkspace CLI nudge in agent instruction files")
@@ -264,7 +264,7 @@ export async function runCli(
 	});
 	registerMcpCommand(program);
 	try {
-		await program.parseAsync([process.execPath, "agenticworkspace", ...argv]);
+		await program.parseAsync([process.execPath, "agentic-workspace", ...argv]);
 		const exitCode = typeof process.exitCode === "number" ? process.exitCode : 0;
 		process.exitCode = previousExitCode;
 		return exitCode;

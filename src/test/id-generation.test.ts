@@ -2,11 +2,11 @@ import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { Core } from "../core/backlog.ts";
+import { Core } from "../core/agentic-workspace.ts";
 import { serializeTask } from "../markdown/serializer.ts";
 import type { Task } from "../types/index.ts";
 
-const TEST_DIR = join(tmpdir(), "backlog-id-gen-test");
+const TEST_DIR = join(tmpdir(), "agentic-workspace-id-gen-test");
 
 describe("Task ID Generation with Archives", () => {
 	let core: Core;

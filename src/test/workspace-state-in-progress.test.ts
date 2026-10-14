@@ -4,13 +4,13 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { AgentSessionService, SessionRuntimeOrigin } from "../agent-workspace/sessions.ts";
 import { WorkspaceStateService } from "../agent-workspace/workspace-state.ts";
-import { Core } from "../core/backlog.ts";
+import { Core } from "../core/agentic-workspace.ts";
 import { initializeTestProject } from "./test-utils.ts";
 
 const roots: string[] = [];
 
 async function project(): Promise<Core> {
-	const root = await mkdtemp(join(tmpdir(), "backlog-workspace-state-"));
+	const root = await mkdtemp(join(tmpdir(), "agentic-workspace-workspace-state-"));
 	roots.push(root);
 	const core = new Core(root);
 	await initializeTestProject(core, "Workspace state");

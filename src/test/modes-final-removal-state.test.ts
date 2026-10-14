@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { getDefaultModeCatalog } from "../agent-workspace/config.ts";
 import { openViewStateStore } from "../agent-workspace/view-state-store.ts";
-import type { Core } from "../core/backlog.ts";
+import type { Core } from "../core/agentic-workspace.ts";
 import type { Task } from "../types/index.ts";
 import type { OpenTuiHost } from "../ui/opentui/host.ts";
 import { createWorkspaceFilters } from "../ui/opentui/workspace/state.ts";
@@ -33,11 +33,11 @@ function assertValidModeMap(value: unknown): asserts value is Record<string, str
 
 describe("final task removal mode state", () => {
 	it("prunes only final deletion, while browsing and archive/completion changes preserve selection", async () => {
-		const directory = mkdtempSync(join(tmpdir(), "backlog-mode-final-removal-"));
+		const directory = mkdtempSync(join(tmpdir(), "agentic-workspace-mode-final-removal-"));
 		const modes = getDefaultModeCatalog();
-		mkdirSync(join(directory, ".backlog"), { recursive: true });
+		mkdirSync(join(directory, ".agentic-workspace"), { recursive: true });
 		writeFileSync(
-			join(directory, ".backlog", "agents.json"),
+			join(directory, ".agentic-workspace", "agents.json"),
 			JSON.stringify({
 				selectedPreset: "opencode",
 				presets: {
@@ -47,7 +47,7 @@ describe("final task removal mode state", () => {
 			}),
 		);
 		const store = await openViewStateStore(
-			join(directory, ".backlog"),
+			join(directory, ".agentic-workspace"),
 			() =>
 				({
 					filters: createWorkspaceFilters(),
@@ -69,8 +69,8 @@ describe("final task removal mode state", () => {
 				identityIndex: { getTasks: () => taskList, getContestedIds: () => new Set() },
 			}),
 			filesystem: {
-				backlogDir: join(directory, ".backlog"),
-				tasksDir: join(directory, "backlog", "tasks"),
+				agenticWorkspaceDir: join(directory, ".agentic-workspace"),
+				tasksDir: join(directory, "agentic-workspace", "tasks"),
 				projectRoot: directory,
 				configFilePath: "",
 				loadConfig: async () => ({ projectName: "Test", statuses: ["To Do", "Done"] }),

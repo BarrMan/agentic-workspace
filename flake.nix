@@ -55,8 +55,8 @@
               })
             else
               standardBun;
-          agenticworkspace = pkgs.bun2nix.mkDerivation {
-            pname = "agenticworkspace";
+          agentic-workspace = pkgs.bun2nix.mkDerivation {
+            pname = "agentic-workspace";
             inherit (packageJson) version;
             src = ./.;
 
@@ -78,8 +78,8 @@
             buildPhase = ''
               runHook preBuild
 
-              BACKLOG_BUILD_VERSION="$version" \
-                BACKLOG_BUILD_OUTDIR=dist/nix \
+              AGENTIC_WORKSPACE_BUILD_VERSION="$version" \
+                AGENTIC_WORKSPACE_BUILD_OUTDIR=dist/nix \
                 ${bunRuntime}/bin/bun scripts/build.ts
 
               runHook postBuild
@@ -88,11 +88,11 @@
             installPhase = ''
               runHook preInstall
 
-              mkdir -p "$out/lib/agenticworkspace"
-              cp -R dist/nix/. "$out/lib/agenticworkspace/"
-              makeWrapper ${bunRuntime}/bin/bun "$out/bin/agenticworkspace" \
-                --add-flags "$out/lib/agenticworkspace/cli.js" \
-                --set BACKLOG_BUNDLE_ASSET_DIR "$out/lib/agenticworkspace"
+              mkdir -p "$out/lib/agentic-workspace"
+              cp -R dist/nix/. "$out/lib/agentic-workspace/"
+              makeWrapper ${bunRuntime}/bin/bun "$out/bin/agentic-workspace" \
+                --add-flags "$out/lib/agentic-workspace/cli.js" \
+                --set AGENTIC_WORKSPACE_BUNDLE_ASSET_DIR "$out/lib/agentic-workspace"
 
               runHook postInstall
             '';
@@ -107,7 +107,7 @@
             installCheckPhase = ''
               runHook preInstallCheck
 
-              ${bunRuntime}/bin/bun scripts/smoke-compiled-build.ts "$out/bin/agenticworkspace" "$version"
+              ${bunRuntime}/bin/bun scripts/smoke-compiled-build.ts "$out/bin/agentic-workspace" "$version"
 
               ${pkgs.lib.optionalString (system == "x86_64-linux") ''
                 mkdir -p "$TMPDIR/avx2-bun"
@@ -124,9 +124,9 @@
                   exit 1
                 fi
 
-                test "$(BUN_JSC_useJIT=false qemu-x86_64 -cpu IvyBridge ${bunRuntime}/bin/bun "$out/lib/agenticworkspace/cli.js" --version)" = "$version"
+                test "$(BUN_JSC_useJIT=false qemu-x86_64 -cpu IvyBridge ${bunRuntime}/bin/bun "$out/lib/agentic-workspace/cli.js" --version)" = "$version"
                 BUN_JSC_useJIT=false qemu-x86_64 -cpu IvyBridge \
-                  ${bunRuntime}/bin/bun "$out/lib/agenticworkspace/cli.js" --help >/dev/null
+                  ${bunRuntime}/bin/bun "$out/lib/agentic-workspace/cli.js" --help >/dev/null
               ''}
 
               runHook postInstallCheck
@@ -137,19 +137,19 @@
               homepage = "https://github.com/BarrMan/agentic-workspace";
               changelog = "https://github.com/BarrMan/agentic-workspace/releases";
               license = pkgs.lib.licenses.mit;
-              mainProgram = "agenticworkspace";
+              mainProgram = "agentic-workspace";
             };
           };
         in
         {
           packages = {
-            default = agenticworkspace;
-            agenticworkspace = agenticworkspace;
+            default = agentic-workspace;
+            agentic-workspace = agentic-workspace;
           };
 
           apps.default = flake-utils.lib.mkApp {
-            drv = agenticworkspace;
-            name = "agenticworkspace";
+            drv = agentic-workspace;
+            name = "agentic-workspace";
           };
 
           devShells.default = pkgs.mkShell {

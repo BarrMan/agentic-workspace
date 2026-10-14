@@ -42,31 +42,31 @@ export function formatRootEntry({ version, initialized, color = false }: RootEnt
 	if (!initialized) {
 		lines.push("This directory is not initialized for AgenticWorkspace.", "");
 		lines.push(sectionTitle("Project setup:", color));
-		lines.push(commandLine("agenticworkspace init", "Initialize AgenticWorkspace interactively"));
-		lines.push(commandLine("agenticworkspace init --defaults", "Initialize with default settings"));
-		lines.push(commandLine("agenticworkspace init --no-git", "Initialize without Git integration"));
+		lines.push(commandLine("agentic-workspace init", "Initialize AgenticWorkspace interactively"));
+		lines.push(commandLine("agentic-workspace init --defaults", "Initialize with default settings"));
+		lines.push(commandLine("agentic-workspace init --no-git", "Initialize without Git integration"));
 		lines.push("");
 	} else {
 		lines.push(sectionTitle("Common workflow:", color));
-		lines.push(commandLine('agenticworkspace search "query" --plain', "Search tasks, docs, and decisions"));
-		lines.push(commandLine("agenticworkspace task list --plain", "List tasks"));
+		lines.push(commandLine('agentic-workspace search "query" --plain', "Search tasks, docs, and decisions"));
+		lines.push(commandLine("agentic-workspace task list --plain", "List tasks"));
 		lines.push(
-			commandLine(renderConfiguredTaskIds("agenticworkspace task view {{TASK_ID:123}} --plain"), "Read task context"),
+			commandLine(renderConfiguredTaskIds("agentic-workspace task view {{TASK_ID:123}} --plain"), "Read task context"),
 		);
-		lines.push(commandLine('agenticworkspace task create "Title" -d "Description"', "Create a task"));
-		lines.push(commandLine("agenticworkspace board", "Open the TUI Kanban board"));
+		lines.push(commandLine('agentic-workspace task create "Title" -d "Description"', "Create a task"));
+		lines.push(commandLine("agentic-workspace board", "Open the TUI Kanban board"));
 		lines.push("");
 	}
 
 	lines.push(sectionTitle("Local instructions:", color));
-	lines.push(commandLine("agenticworkspace instructions", "List workflow guides"));
+	lines.push(commandLine("agentic-workspace instructions", "List workflow guides"));
 	for (const guide of INSTRUCTION_GUIDES) {
-		lines.push(commandLine(`agenticworkspace instructions ${guide.key}`, guide.description));
+		lines.push(commandLine(`agentic-workspace instructions ${guide.key}`, guide.description));
 	}
 	lines.push("");
 
 	lines.push(sectionTitle("Command help:", color));
-	lines.push(commandLine("agenticworkspace <command> --help", "Show options, fields, and examples"));
+	lines.push(commandLine("agentic-workspace <command> --help", "Show options, fields, and examples"));
 	lines.push("");
 	lines.push("Docs: https://github.com/BarrMan/agentic-workspace");
 	lines.push("");

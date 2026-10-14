@@ -70,7 +70,7 @@ const SEARCH_RESULT_HEADINGS: Record<SearchResultType, string> = {
 
 export function registerSearchCommand(program: Command, dependencies: SearchCommandDependencies): void {
 	const searchCommand = addHelpSchema(program.command("search [query]"), {
-		reads: "Tasks, documents, and decisions from the configured backlog directory",
+		reads: "Tasks, documents, and decisions from the configured agentic-workspace directory",
 		required: [],
 		optional: [
 			{ name: "query", type: "String", description: "Fuzzy search text" },
@@ -112,11 +112,11 @@ export function registerSearchCommand(program: Command, dependencies: SearchComm
 		],
 		output: `Plain text by default, or versioned JSON with --json. ${LIST_WINDOW_OUTPUT_HELP}; JSON adds total and nextSkip`,
 		examples: [
-			'agenticworkspace search "auth" --plain',
-			'agenticworkspace search "auth" --json',
-			'agenticworkspace search "api" --type task --status "<active status>"',
-			`agenticworkspace search "crash" --task-type ${TASK_TYPE_EXAMPLE} --plain`,
-			'agenticworkspace search "auth" --max-count 20 --skip 20 --plain',
+			'agentic-workspace search "auth" --plain',
+			'agentic-workspace search "auth" --json',
+			'agentic-workspace search "api" --type task --status "<active status>"',
+			`agentic-workspace search "crash" --task-type ${TASK_TYPE_EXAMPLE} --plain`,
+			'agentic-workspace search "auth" --max-count 20 --skip 20 --plain',
 		],
 	})
 		.description("search tasks, documents, and decisions using the shared index")
@@ -199,7 +199,7 @@ async function parseSearchOptions(
 	const limit =
 		options.limit === undefined
 			? undefined
-			: parsePositiveIntegerOption(options.limit, "--limit", "agenticworkspace search --help");
+			: parsePositiveIntegerOption(options.limit, "--limit", "agentic-workspace search --help");
 	if (limit === null) return null;
 	return { modifiedFileFilters, types, filters, limit };
 }

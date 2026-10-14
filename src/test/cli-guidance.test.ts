@@ -4,13 +4,13 @@ import { join } from "node:path";
 import { Writable } from "node:stream";
 import { runCli } from "../cli/register.ts";
 import { CLI_AGENT_NUDGE } from "../index.ts";
-import { BACKLOG_CWD_ENV } from "../utils/runtime-cwd.ts";
+import { AGENTIC_WORKSPACE_CWD_ENV } from "../utils/runtime-cwd.ts";
 import { createUniqueTestDir, safeCleanup } from "./test-utils.ts";
 
 const normalizeCliOutput = (output: string) => output.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
 
 let TEST_DIR: string;
-const CLI_COMMAND = ["agenticworkspace"];
+const CLI_COMMAND = ["agentic-workspace"];
 
 function $(parts: TemplateStringsArray, ...values: unknown[]) {
 	const source = parts.reduce((text, part, index) => `${text}${part}${values[index] ?? ""}`, "");
@@ -95,23 +95,23 @@ describe("CLI Integration", () => {
 			expect(result.exitCode).toBe(0);
 			expect(output).toContain("AgenticWorkspace v");
 			expect(output).toContain("Local instructions:");
-			expect(output).toContain("agenticworkspace instructions overview");
+			expect(output).toContain("agentic-workspace instructions overview");
 			expect(output).not.toContain("unknown option '--plain'");
 			expect(output).not.toContain("\u001B[");
 			expect(output).not.toContain("\u001B]");
 		});
 	});
 
-	describe("agenticworkspace instructions command", () => {
+	describe("agentic-workspace instructions command", () => {
 		it("prints the guide index by default", async () => {
 			const output = await $`${CLI_COMMAND} instructions`.cwd(TEST_DIR).text();
 
 			expect(output).toContain("AgenticWorkspace instructions");
 			expect(output).toContain("Start here:");
 			expect(output).toMatch(
-				/'agenticworkspace instructions overview'\s+Required first read before answering any user request/,
+				/'agentic-workspace instructions overview'\s+Required first read before answering any user request/,
 			);
-			expect(output).not.toMatch(/^\s+'agenticworkspace instructions'\s+List workflow guides/m);
+			expect(output).not.toMatch(/^\s+'agentic-workspace instructions'\s+List workflow guides/m);
 			expect(output).toContain("task-creation");
 			expect(output).toContain("task-execution");
 			expect(output).toContain("task-finalization");
@@ -122,7 +122,7 @@ describe("CLI Integration", () => {
 			expect(output).not.toContain("\u001B[");
 			expect(output).not.toContain("MCP Tools Quick Reference");
 			expect(output).not.toContain("task_search");
-			expect(output).not.toContain("backlog://workflow/");
+			expect(output).not.toContain("agentic-workspace://workflow/");
 			expect(output).not.toContain("Always operate through MCP tools");
 		});
 
@@ -153,15 +153,15 @@ describe("CLI Integration", () => {
 			const initRequired = normalizeCliOutput(await $`${CLI_COMMAND} instructions init-required`.cwd(TEST_DIR).text());
 
 			expect(overview).toContain("## AgenticWorkspace Overview (CLI)");
-			expect(overview).toContain("### When to Use Backlog");
+			expect(overview).toContain("### When to Use AgenticWorkspace");
 			expect(overview).not.toContain("MCP Tools Quick Reference");
-			expect(overview).not.toContain("backlog://workflow/");
+			expect(overview).not.toContain("agentic-workspace://workflow/");
 			// The overview is served whole and stays distinct from the detailed guides.
 			expect(overview).not.toContain("## Task Creation Guide");
 			expect(overview).not.toContain("## Task Execution Guide");
 			expect(overview).not.toContain("## Task Finalization Guide");
 			expect(taskCreation).toContain("## Task Creation Guide");
-			expect(taskCreation).toContain('agenticworkspace task create "Add project search"');
+			expect(taskCreation).toContain('agentic-workspace task create "Add project search"');
 			expect(taskCreation).toContain(
 				"- A short description that captures why the task exists: the problem, trigger, or user need behind it, plus any context a future agent cannot recover from the code. Keep it a user-friendly overview of what the task is about, not detailed working state.",
 			);
@@ -171,22 +171,22 @@ describe("CLI Integration", () => {
 			expect(taskCreation).toContain(
 				'Too thin: `-d "Users can search tasks, docs, and decisions from one CLI command."` states the change but not the need,\nso a future agent cannot weigh scope or alternatives.',
 			);
-			expect(taskCreation).toContain('agenticworkspace search "desktop app" --plain');
+			expect(taskCreation).toContain('agentic-workspace search "desktop app" --plain');
 			expect(taskCreation).toContain(
-				'agenticworkspace task list --search "desktop app" --labels frontend,bug --limit 20 --plain',
+				'agentic-workspace task list --search "desktop app" --labels frontend,bug --limit 20 --plain',
 			);
-			expect(taskCreation).toContain('agenticworkspace task list --status "<active status>" --plain');
-			expect(taskCreation).toContain('agenticworkspace task list --exclude-status "<terminal status>" --plain');
+			expect(taskCreation).toContain('agentic-workspace task list --status "<active status>" --plain');
+			expect(taskCreation).toContain('agentic-workspace task list --exclude-status "<terminal status>" --plain');
 			expect(taskCreation).toContain(
 				"Repeat `--exclude-status` or pass comma-separated configured statuses to exclude multiple states.",
 			);
 			expect(taskCreation).toContain("omitting it applies the project's configured `defaultAssignee` when one is set");
-			expect(taskCreation).not.toContain('agenticworkspace task list --status "In Progress" --plain');
+			expect(taskCreation).not.toContain('agentic-workspace task list --status "In Progress" --plain');
 			expect(taskCreation).toContain(
 				"Do not pass milestone IDs such as `m-0` to `--parent`; assign a task to a milestone with `--milestone`/`-m`.",
 			);
 			expect(taskCreation).toContain(
-				"If the user asks for changes, update tasks through `agenticworkspace task edit`.",
+				"If the user asks for changes, update tasks through `agentic-workspace task edit`.",
 			);
 			expect(taskCreation).toContain("Only the user marks a task Done.");
 			expect(taskCreation).toContain(
@@ -196,20 +196,20 @@ describe("CLI Integration", () => {
 				"The narrow exception is already-started work being created directly in a configured active status",
 			);
 			expect(taskExecution).toContain(
-				'agenticworkspace task list --status "<active status>" --assignee @your-name --labels backend --search "auth" --limit 20 --plain',
+				'agentic-workspace task list --status "<active status>" --assignee @your-name --labels backend --search "auth" --limit 20 --plain',
 			);
-			expect(taskExecution).toContain('agenticworkspace task edit BACK-123 -s "<active status>" -a @your-name');
-			expect(taskExecution).not.toContain('agenticworkspace task edit BACK-123 -s "In Progress" -a @your-name');
+			expect(taskExecution).toContain('agentic-workspace task edit BACK-123 -s "<active status>" -a @your-name');
+			expect(taskExecution).not.toContain('agentic-workspace task edit BACK-123 -s "In Progress" -a @your-name');
 			expect(taskExecution).toContain(
 				"Research the current system, including relevant code, tests, conventions, and recent changes",
 			);
 			expect(taskExecution).toContain("Put durable project artifacts in their canonical paths");
 			expect(taskExecution).toContain("do not use a task field as a working log");
 			expect(taskExecution).toContain("ask the user whether to add scope to the current task or create follow-up work");
-			const viewIndex = taskExecution.indexOf("agenticworkspace task view BACK-123 --plain");
+			const viewIndex = taskExecution.indexOf("agentic-workspace task view BACK-123 --plain");
 			const eligibilityIndex = taskExecution.indexOf("Review its current status");
 			const activateIndex = taskExecution.indexOf(
-				'agenticworkspace task edit BACK-123 -s "<active status>" -a @your-name',
+				'agentic-workspace task edit BACK-123 -s "<active status>" -a @your-name',
 			);
 			const researchIndex = taskExecution.indexOf("Research the current system");
 			const artifactsIndex = taskExecution.indexOf("Put durable project artifacts in their canonical paths");
@@ -222,9 +222,9 @@ describe("CLI Integration", () => {
 			expect(implementIndex).toBeGreaterThan(artifactsIndex);
 			expect(taskExecution).toContain("Do not move the task to the terminal status from this guide alone.");
 			expect(taskFinalization).toContain("terminal status");
-			expect(taskFinalization).toContain("Check accepted statuses with `agenticworkspace task edit --help`");
-			expect(taskFinalization).toContain('agenticworkspace task edit BACK-123 -s "<terminal status>"');
-			expect(taskFinalization).not.toContain("agenticworkspace task edit BACK-123 -s Done");
+			expect(taskFinalization).toContain("Check accepted statuses with `agentic-workspace task edit --help`");
+			expect(taskFinalization).toContain('agentic-workspace task edit BACK-123 -s "<terminal status>"');
+			expect(taskFinalization).not.toContain("agentic-workspace task edit BACK-123 -s Done");
 			expect(taskFinalization).toContain(
 				"Identify evidence for every requirement in the task description and durable working state.",
 			);
@@ -243,18 +243,18 @@ describe("CLI Integration", () => {
 			expect(taskCreation).not.toContain("task_create");
 			expect(taskCreation).not.toContain("task_search");
 			expect(taskCreation).toContain("### Shell Quoting for Literal Backticks");
-			expect(taskCreation).toContain("agenticworkspace task create 'Document `agenticworkspace init` setup'");
+			expect(taskCreation).toContain("agentic-workspace task create 'Document `agentic-workspace init` setup'");
 			expect(taskCreation).toContain(
 				"AgenticWorkspace cannot recover the original text after the shell has already executed it",
 			);
 			expect(initRequired).toContain("This directory does not have AgenticWorkspace initialized.");
-			expect(initRequired).toContain("agenticworkspace init --defaults");
+			expect(initRequired).toContain("agentic-workspace init --defaults");
 
 			// Completion is described as periodic cleanup in both the overview and the finalization
 			// guide, so assert it against the guides already fetched above instead of re-spawning them.
 			for (const guide of [overview, taskFinalization]) {
 				expect(guide).toContain("periodic cleanup");
-				expect(guide).toContain("agenticworkspace task complete");
+				expect(guide).toContain("agentic-workspace task complete");
 				expect(guide).toContain("record and dependency links");
 				expect(guide).toContain("canceled, duplicate, or invalid work");
 				expect(guide).toContain("incoming dependencies and task references");
@@ -263,9 +263,9 @@ describe("CLI Integration", () => {
 		}, 15_000);
 
 		it("renders task ID examples with the configured task prefix", async () => {
-			await mkdir(join(TEST_DIR, "backlog"), { recursive: true });
+			await mkdir(join(TEST_DIR, "agentic-workspace"), { recursive: true });
 			await Bun.write(
-				join(TEST_DIR, "backlog", "config.yml"),
+				join(TEST_DIR, "agentic-workspace", "config.yml"),
 				[
 					'project_name: "Prefix Project"',
 					'statuses: ["To Do", "In Progress", "Done"]',
@@ -282,23 +282,23 @@ describe("CLI Integration", () => {
 			const listHelp = await $`${CLI_COMMAND} task list --help`.cwd(TEST_DIR).text();
 			const editHelp = await $`${CLI_COMMAND} task edit --help`.cwd(TEST_DIR).text();
 
-			expect(overview).toContain("agenticworkspace task view FEAT-123 --plain");
-			expect(taskCreation).toContain('agenticworkspace task create -p FEAT-10 "Set up shell"');
-			expect(taskCreation).toContain('agenticworkspace task create "Add bulk update UI" --dep FEAT-21');
-			expect(createHelp).toContain('agenticworkspace task create -p FEAT-1 "Add tests"');
+			expect(overview).toContain("agentic-workspace task view FEAT-123 --plain");
+			expect(taskCreation).toContain('agentic-workspace task create -p FEAT-10 "Set up shell"');
+			expect(taskCreation).toContain('agentic-workspace task create "Add bulk update UI" --dep FEAT-21');
+			expect(createHelp).toContain('agentic-workspace task create -p FEAT-1 "Add tests"');
 			expect(createHelp).toContain("specify existing parent task ID, not a");
 			expect(createHelp).toContain("milestone ID");
 			expect(listHelp).toContain("-p, --parent <taskId>");
-			expect(editHelp).toContain('agenticworkspace task edit FEAT-1 --status "<active status>" -a @sara');
+			expect(editHelp).toContain('agentic-workspace task edit FEAT-1 --status "<active status>" -a @sara');
 			for (const output of [overview, taskCreation, createHelp, listHelp, editHelp]) {
 				expect(output).not.toContain("BACK-");
 			}
 		}, 15_000);
 
-		it("renders help and instruction examples from BACKLOG_CWD", async () => {
-			await mkdir(join(TEST_DIR, "backlog"), { recursive: true });
+		it("renders help and instruction examples from AGENTIC_WORKSPACE_CWD", async () => {
+			await mkdir(join(TEST_DIR, "agentic-workspace"), { recursive: true });
 			await Bun.write(
-				join(TEST_DIR, "backlog", "config.yml"),
+				join(TEST_DIR, "agentic-workspace", "config.yml"),
 				[
 					'project_name: "Runtime Cwd Schema Project"',
 					'statuses: ["Ready", "Review", "Closed"]',
@@ -310,17 +310,17 @@ describe("CLI Integration", () => {
 			);
 			const outsideDir = join(TEST_DIR, "outside");
 			await mkdir(outsideDir, { recursive: true });
-			const env = { ...process.env, [BACKLOG_CWD_ENV]: TEST_DIR };
+			const env = { ...process.env, [AGENTIC_WORKSPACE_CWD_ENV]: TEST_DIR };
 
 			const overview = await $`${CLI_COMMAND} instructions overview`.cwd(outsideDir).env(env).text();
 			const createHelp = await $`${CLI_COMMAND} task create --help`.cwd(outsideDir).env(env).text();
 			const editHelp = await $`${CLI_COMMAND} task edit --help`.cwd(outsideDir).env(env).text();
 
-			expect(overview).toContain("agenticworkspace task view FEAT-123 --plain");
+			expect(overview).toContain("agentic-workspace task view FEAT-123 --plain");
 			expect(createHelp).toContain("status: one of configured statuses: Draft, Ready, Review, Closed");
-			expect(createHelp).toContain('agenticworkspace task create -p FEAT-1 "Add tests"');
+			expect(createHelp).toContain('agentic-workspace task create -p FEAT-1 "Add tests"');
 			expect(editHelp).toContain("status: one of configured statuses: Ready, Review, Closed");
-			expect(editHelp).toContain('agenticworkspace task edit FEAT-1 --status "<active status>" -a @sara');
+			expect(editHelp).toContain('agentic-workspace task edit FEAT-1 --status "<active status>" -a @sara');
 			for (const output of [overview, createHelp, editHelp]) {
 				expect(output).not.toContain("BACK-");
 			}
@@ -333,7 +333,7 @@ describe("CLI Integration", () => {
 			expect(result.exitCode).toBe(1);
 			expect(output).toContain("Unknown instruction guide: does-not-exist");
 			expect(output).toContain("Valid guides:");
-			expect(output).toContain("agenticworkspace instructions");
+			expect(output).toContain("agentic-workspace instructions");
 		});
 	});
 
@@ -347,8 +347,8 @@ describe("CLI Integration", () => {
 			expect(initHelp).toContain("--integration-mode: one of: cli, mcp, none");
 			expect(initHelp).toContain("(default: cli)");
 			expect(initHelp).toContain("CLI instructions are recommended");
-			expect(initHelp).toContain('agenticworkspace init "My Project" --defaults --integration-mode cli');
-			expect(initHelp).not.toContain("agenticworkspace init --integration-mode mcp");
+			expect(initHelp).toContain('agentic-workspace init "My Project" --defaults --integration-mode cli');
+			expect(initHelp).not.toContain("agentic-workspace init --integration-mode mcp");
 			expect(initHelp).toContain("Writes:");
 			expect(instructionsHelp).toContain(
 				"guide: one of: overview, task-creation, task-execution, task-finalization, init-required",
@@ -454,9 +454,9 @@ describe("CLI Integration", () => {
 		}, 15_000);
 
 		it("shows configured status values in task help", async () => {
-			await mkdir(join(TEST_DIR, "backlog"), { recursive: true });
+			await mkdir(join(TEST_DIR, "agentic-workspace"), { recursive: true });
 			await Bun.write(
-				join(TEST_DIR, "backlog", "config.yml"),
+				join(TEST_DIR, "agentic-workspace", "config.yml"),
 				[
 					'project_name: "Schema Project"',
 					'statuses: ["Ready", "Review", "Closed"]',

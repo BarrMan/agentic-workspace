@@ -1,11 +1,11 @@
 import { describe, expect, it } from "bun:test";
 import { Writable } from "node:stream";
 import { runCli } from "../cli/register.ts";
-import { Core } from "../core/backlog.ts";
+import { Core } from "../core/agentic-workspace.ts";
 import { taskTypeScenarios, taskTypeScenarioTasks } from "./task-type-filter-scenarios.ts";
 import { createUniqueTestDir, initializeFilesystemTestProject, safeCleanup } from "./test-utils.ts";
 
-const cliCommand = ["agenticworkspace"];
+const cliCommand = ["agentic-workspace"];
 
 function $(parts: TemplateStringsArray, ...values: unknown[]) {
 	const source = parts.reduce(
@@ -172,8 +172,11 @@ describe("task type filtering", () => {
 			if (!config) throw new Error("Expected test config");
 			await core.filesystem.saveConfig({ ...config, types: ["Bug", "Epic"] });
 
-			const completionLines = ["agenticworkspace task list --type ", "agenticworkspace search --task-type "];
-			const unsupportedLines = ["agenticworkspace task create --task-type ", "agenticworkspace task list --task-type "];
+			const completionLines = ["agentic-workspace task list --type ", "agentic-workspace search --task-type "];
+			const unsupportedLines = [
+				"agentic-workspace task create --task-type ",
+				"agentic-workspace task list --task-type ",
+			];
 			const listHelp = await $`${cliCommand} task list --help`.cwd(dir).text();
 			const searchHelp = await $`${cliCommand} search --help`.cwd(dir).text();
 			const taskCreationGuide = await $`${cliCommand} instructions task-creation`.cwd(dir).text();
@@ -196,7 +199,7 @@ describe("task type filtering", () => {
 			expect(searchHelp).toContain("--task-type <type>");
 			expect(searchHelp).toContain("task-type: one or more of configured task types: Bug, Epic");
 
-			expect(taskCreationGuide).toContain('agenticworkspace task list --type "Bug" --plain');
+			expect(taskCreationGuide).toContain('agentic-workspace task list --type "Bug" --plain');
 			expect(taskCreationGuide).not.toContain("--type bug,spike");
 
 			expect(advertisedList.exitCode).toBe(0);

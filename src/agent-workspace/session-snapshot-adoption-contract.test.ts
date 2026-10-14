@@ -3,7 +3,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { TmuxCommandError } from "libtmux";
-import { Core } from "../core/backlog.ts";
+import { Core } from "../core/agentic-workspace.ts";
 import { initializeTestProject } from "../test/test-utils.ts";
 import {
 	getDefaultModeCatalog,
@@ -108,8 +108,8 @@ class SnapshotHarness implements ProcessRunner, TmuxServer {
 					stderr: [`can't find pane: ${id}`],
 				});
 			if (args.includes("#{pane_pid} #{pane_dead}")) return [`4242 ${this.dead.has(id) ? "1" : "0"}`];
-			if (args.some((arg) => arg.includes("@backlog_launch_resources")))
-				return [this.metadata.get(id)?.["@backlog_launch_resources"] ?? ""];
+			if (args.some((arg) => arg.includes("@agentic_workspace_launch_resources")))
+				return [this.metadata.get(id)?.["@agentic_workspace_launch_resources"] ?? ""];
 			return [`${id} ${this.dead.has(id) ? "1" : "0"}`];
 		}
 		return [];
@@ -173,8 +173,9 @@ describe("public session snapshot adoption contract", () => {
 			presets: {
 				original: {
 					command: "original-harness",
-					env: { SNAPSHOT_VALUE: "original", BACKLOG_WORKTREE_DIR: "/ignored-preset-path" },
-					prepare: "printf '%s' \"$BACKLOG_PROJECT_DIR|$BACKLOG_WORKTREE_DIR|$BACKLOG_TASK_DIR\"",
+					env: { SNAPSHOT_VALUE: "original", AGENTIC_WORKSPACE_WORKTREE_DIR: "/ignored-preset-path" },
+					prepare:
+						"printf '%s' \"$AGENTIC_WORKSPACE_PROJECT_DIR|$AGENTIC_WORKSPACE_WORKTREE_DIR|$AGENTIC_WORKSPACE_TASK_DIR\"",
 					bootstrap: "pi",
 				},
 			},
@@ -194,14 +195,15 @@ describe("public session snapshot adoption contract", () => {
 		const originalCwd = reservation.cwd;
 		const canonicalTaskDir = await core.filesystem.taskArtifacts.containerPath("task-1");
 		expect(reservation.pathContext).toEqual({ projectDir: root, worktreeDir: originalCwd, taskDir: canonicalTaskDir });
-		const prepareCommand = "printf '%s' \"$BACKLOG_PROJECT_DIR|$BACKLOG_WORKTREE_DIR|$BACKLOG_TASK_DIR\"";
+		const prepareCommand =
+			"printf '%s' \"$AGENTIC_WORKSPACE_PROJECT_DIR|$AGENTIC_WORKSPACE_WORKTREE_DIR|$AGENTIC_WORKSPACE_TASK_DIR\"";
 		await updateAgentConfiguration(core, "project", (configuration) => ({
 			...configuration,
 			selectedPreset: "replacement",
 			presets: {
 				original: {
 					command: "replacement-harness",
-					env: { SNAPSHOT_VALUE: "replacement", BACKLOG_WORKTREE_DIR: "/ignored-preset-path" },
+					env: { SNAPSHOT_VALUE: "replacement", AGENTIC_WORKSPACE_WORKTREE_DIR: "/ignored-preset-path" },
 					prepare: prepareCommand,
 					bootstrap: "pi",
 				},
@@ -232,24 +234,26 @@ describe("public session snapshot adoption contract", () => {
 		const prepareIndex = harness.commands.findIndex((args) => args[0] === "/bin/sh" && args[1] === "-lc");
 		expect(prepareIndex).toBeGreaterThanOrEqual(0);
 		expect(harness.environments[prepareIndex]).toMatchObject({
-			BACKLOG_PROJECT_DIR: root,
-			BACKLOG_WORKTREE_DIR: originalCwd,
-			BACKLOG_TASK_DIR: canonicalTaskDir,
+			AGENTIC_WORKSPACE_PROJECT_DIR: root,
+			AGENTIC_WORKSPACE_WORKTREE_DIR: originalCwd,
+			AGENTIC_WORKSPACE_TASK_DIR: canonicalTaskDir,
 			SNAPSHOT_VALUE: "replacement",
 		});
 		expect(launch).not.toContain("original-harness");
 		const profilePath = launch.match(/\/[^'"\s]+\/profile-bootstrap\.md/)?.[0];
 		if (!profilePath) throw new Error("Missing execution profile bootstrap");
-		expect(await Bun.file(profilePath).text()).toContain("replacement mode prompt");
+		const profileText = await Bun.file(profilePath).text();
+		expect(profileText).toContain("Active task:");
+		expect(profileText).not.toContain("replacement mode prompt");
 		await service.finishNativeSession(reservation.taskId, reservation.id, {
 			record: structuredClone(adopted.record),
 			paneId: adopted.paneId,
 		});
 		await service.ask(reservation.taskId, "verify saved environment", { sessionId: reservation.id });
 		expect(harness.environments.at(-1)).toMatchObject({
-			BACKLOG_PROJECT_DIR: root,
-			BACKLOG_WORKTREE_DIR: originalCwd,
-			BACKLOG_TASK_DIR: canonicalTaskDir,
+			AGENTIC_WORKSPACE_PROJECT_DIR: root,
+			AGENTIC_WORKSPACE_WORKTREE_DIR: originalCwd,
+			AGENTIC_WORKSPACE_TASK_DIR: canonicalTaskDir,
 			SNAPSHOT_VALUE: "replacement",
 		});
 

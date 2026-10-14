@@ -3,7 +3,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { TmuxCommandError } from "libtmux";
-import { Core } from "../core/backlog.ts";
+import { Core } from "../core/agentic-workspace.ts";
 import { initializeTestProject } from "../test/test-utils.ts";
 import { getDefaultModeCatalog, initializeAgentConfiguration, upsertAgentConfiguration } from "./config.ts";
 import { AgentSessionService, type ProcessRunner, type TmuxServer } from "./sessions.ts";
@@ -114,8 +114,8 @@ class FakeHarness implements ProcessRunner, TmuxServer {
 		if (command === "display-message") {
 			if (args.includes("#{pid}")) return ["4242"];
 			const id = args[args.indexOf("-t") + 1] ?? "";
-			if (args.some((arg) => arg.includes("@backlog_launch_resources")))
-				return [this.metadata.get(id)?.["@backlog_launch_resources"] ?? ""];
+			if (args.some((arg) => arg.includes("@agentic_workspace_launch_resources")))
+				return [this.metadata.get(id)?.["@agentic_workspace_launch_resources"] ?? ""];
 			if (args.includes("#{pane_pid} #{pane_dead}")) return [`4242 ${this.dead.has(id) ? "1" : "0"}`];
 			return [`${id} ${this.dead.has(id) ? "1" : "0"}`];
 		}
@@ -155,7 +155,7 @@ describe("failed mode handoff contract", () => {
 	const roots: string[] = [];
 	afterEach(async () => await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true }))));
 
-	it("retains a recoverable parked predecessor and the other mode when replacement creation fails", async () => {
+	it("retains a running predecessor and the other mode when replacement creation fails", async () => {
 		const root = await mkdtemp(join(tmpdir(), "failed-mode-handoff-contract-"));
 		roots.push(root);
 		const core = new Core(root);
@@ -187,7 +187,7 @@ describe("failed mode handoff contract", () => {
 			id: original.id,
 			nativeSessionId: originalNativeSessionId,
 			pathContext: originalPaths,
-			status: "parked",
+			status: "running",
 		});
 		expect(plan.sessions.find(({ status }) => status === "failed")).toMatchObject({
 			status: "failed",

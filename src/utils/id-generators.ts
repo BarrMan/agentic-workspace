@@ -32,11 +32,11 @@ async function collectBranchIds(
 			await core.git.fetch();
 		}
 
-		const backlogDir = core.filesystem.backlogDirName;
+		const agenticWorkspaceDir = core.filesystem.agenticWorkspaceDirName;
 		const branches = await core.git.listAllBranches();
 		const results = await Promise.all(
 			branches.map(async (branch) => {
-				const files = await core.git.listFilesInTree(branch, `${backlogDir}/${directory}`);
+				const files = await core.git.listFilesInTree(branch, `${agenticWorkspaceDir}/${directory}`);
 				return files
 					.map((file) => numericIdFromFilename(file, prefix))
 					.filter((id): id is string => id !== null)

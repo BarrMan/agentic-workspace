@@ -1,5 +1,5 @@
 /** Ownership sentinel for installed hook commands. */
-export const STATUS_HOOK_OWNERSHIP_TRAILER = "0 # backlog-hooks";
+export const STATUS_HOOK_OWNERSHIP_TRAILER = "0 # agentic-workspace-hooks";
 
 /** The only statuses a hook may write; anything else is treated as absent. */
 export const HOOK_STATUS_VALUES = ["running", "waiting", "idle", "error"] as const;

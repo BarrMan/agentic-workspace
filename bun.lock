@@ -3,7 +3,7 @@
   "configVersion": 1,
   "workspaces": {
     "": {
-      "name": "agenticworkspace",
+      "name": "agentic-workspace",
       "dependencies": {
         "@opentui/core": "^0.5.14",
         "libtmux": "^0.1.0-alpha.12",
@@ -26,12 +26,12 @@
         "typescript": "7.0.2",
       },
       "optionalDependencies": {
-        "agenticworkspace-darwin-arm64": "*",
-        "agenticworkspace-darwin-x64": "*",
-        "agenticworkspace-linux-arm64": "*",
-        "agenticworkspace-linux-x64": "*",
-        "agenticworkspace-windows-arm64": "*",
-        "agenticworkspace-windows-x64": "*",
+        "agentic-workspace-darwin-arm64": "*",
+        "agentic-workspace-darwin-x64": "*",
+        "agentic-workspace-linux-arm64": "*",
+        "agentic-workspace-linux-x64": "*",
+        "agentic-workspace-windows-arm64": "*",
+        "agentic-workspace-windows-x64": "*",
       },
     },
   },

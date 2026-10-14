@@ -22,12 +22,12 @@ import { BunRunner, type TmuxServer } from "../agent-workspace/session-process.t
 import { SessionStore } from "../agent-workspace/session-store.ts";
 import { nativeSessionName } from "../agent-workspace/session-utils.ts";
 import type { SharedAgentAttachment } from "../agent-workspace/sessions.ts";
-import { AgentSessionService } from "../agent-workspace/sessions.ts";
+import { AgentSessionService, ExactResumeUnavailableError } from "../agent-workspace/sessions.ts";
 import type { AgentIndication, AgentSession, AgentSessionStatus, TaskSessions } from "../agent-workspace/types.ts";
 import type { ViewStateEnvelope, ViewStateListener, ViewStateStore } from "../agent-workspace/view-state-store.ts";
 import { workspaceRequestDir, writeWorkspaceRequest } from "../agent-workspace/workspace-context.ts";
 import { WorkspaceStateService } from "../agent-workspace/workspace-state.ts";
-import { Core } from "../core/backlog.ts";
+import { Core } from "../core/agentic-workspace.ts";
 import type { Task } from "../types/index.ts";
 import type { OpenTuiBoardProps } from "../ui/opentui/board.ts";
 import type { OpenTuiConfirmMount } from "../ui/opentui/confirm.ts";
@@ -37,7 +37,7 @@ import { createWorkspaceFilters, type SharedWorkspaceState } from "../ui/opentui
 import type { OpenTuiWorkspaceMount, OpenTuiWorkspaceOptions } from "../ui/opentui/workspace.ts";
 import { mountOpenTuiWorkspace } from "../ui/opentui/workspace.ts";
 import { createWorkspaceAgent } from "../ui/opentui/workspace-agent.ts";
-import { OpenTuiWorkspaceController } from "../ui/opentui/workspace-controller.ts";
+import { modeSessionIndication, OpenTuiWorkspaceController } from "../ui/opentui/workspace-controller.ts";
 import { initializeTestProject, waitUntil as waitForCondition } from "./test-utils.ts";
 
 class MemoryViewStateStore implements ViewStateStore<SharedWorkspaceState> {
@@ -191,19 +191,19 @@ function groupSeed(): GroupState {
 	};
 }
 
-/** Core stub whose filesystem has a real backlog directory, so the task composer may open. */
-function composerCore(backlogDir: string, created: Task): Core {
-	mkdirSync(backlogDir, { recursive: true });
+/** Core stub whose filesystem has a real agentic-workspace directory, so the task composer may open. */
+function composerCore(agenticWorkspaceDir: string, created: Task): Core {
+	mkdirSync(agenticWorkspaceDir, { recursive: true });
 	writeFileSync(
-		join(backlogDir, "agents.json"),
+		join(agenticWorkspaceDir, "agents.json"),
 		JSON.stringify({ ...getBuiltInAgentConfiguration(), modes: getDefaultModeCatalog() }),
 	);
 	return {
 		loadTasks: async () => [],
 		createTaskFromInput: async () => ({ task: created }),
 		filesystem: {
-			rootDir: backlogDir,
-			backlogDir,
+			rootDir: agenticWorkspaceDir,
+			agenticWorkspaceDir,
 			loadTask: async (id: string) => task(id),
 			loadConfig: async () => ({ projectName: "Roadmap", statuses: ["To Do"], autoCommit: false }),
 			listMilestones: async () => [],
@@ -226,7 +226,7 @@ function task(id: string, overrides: Partial<Task> = {}): Task {
 }
 
 /** A grammar-valid tmux session name for a task's deterministic native identity. */
-function backlogSessionName(taskId: string): string {
+function agenticWorkspaceSessionName(taskId: string): string {
 	return nativeSessionName(taskId, "deadbeef");
 }
 
@@ -235,7 +235,7 @@ function session(taskId: string) {
 		id: `session-${taskId}`,
 		taskId,
 		preset: "opencode",
-		tmuxName: backlogSessionName(taskId),
+		tmuxName: agenticWorkspaceSessionName(taskId),
 		cwd: "/tmp",
 		createdAt: "2026-10-05T00:00:00.000Z",
 		status: "running",
@@ -423,15 +423,15 @@ function projectConfiguration() {
 
 function core(projectName = "Roadmap", tasks: Task[] = []): Core {
 	const projectRoot = mkdtempSync(join(tmpdir(), "workspace-controller-project-"));
-	const backlogDir = join(projectRoot, ".backlog");
-	mkdirSync(backlogDir, { recursive: true });
-	writeFileSync(join(backlogDir, "agents.json"), JSON.stringify(projectConfiguration()));
+	const agenticWorkspaceDir = join(projectRoot, ".agentic-workspace");
+	mkdirSync(agenticWorkspaceDir, { recursive: true });
+	writeFileSync(join(agenticWorkspaceDir, "agents.json"), JSON.stringify(projectConfiguration()));
 	return {
 		loadTasks: async () => tasks,
 		loadTaskSnapshot: async () => corpusSnapshot(tasks),
 		filesystem: {
 			projectRoot,
-			backlogDir,
+			agenticWorkspaceDir,
 			loadTask: async (id: string) => task(id),
 			loadConfig: async () => ({ projectName }),
 			listMilestones: async () => [],
@@ -442,16 +442,16 @@ function core(projectName = "Roadmap", tasks: Task[] = []): Core {
 
 /** Same fake with a real project root, so the marker directory has somewhere to live. */
 function coreWithRoot(rootDir: string, projectName = "Roadmap", tasks: Task[] = []): Core {
-	const backlogDir = join(rootDir, ".backlog");
-	mkdirSync(backlogDir, { recursive: true });
-	writeFileSync(join(backlogDir, "agents.json"), JSON.stringify(projectConfiguration()));
+	const agenticWorkspaceDir = join(rootDir, ".agentic-workspace");
+	mkdirSync(agenticWorkspaceDir, { recursive: true });
+	writeFileSync(join(agenticWorkspaceDir, "agents.json"), JSON.stringify(projectConfiguration()));
 	return {
 		loadTasks: async () => tasks,
 		loadTaskSnapshot: async () => corpusSnapshot(tasks),
 		filesystem: {
 			rootDir,
 			projectRoot: rootDir,
-			backlogDir,
+			agenticWorkspaceDir,
 			loadTask: async (id: string) => task(id),
 			loadConfig: async () => ({ projectName }),
 			listMilestones: async () => [],
@@ -509,15 +509,23 @@ function fakeAttachment(record: AgentSession) {
 }
 
 /** Hands out confirmation mounts whose Y/N result the test settles by hand. */
-function confirmQueue(): { mount: () => OpenTuiConfirmMount; pending: Array<{ settle: (value: boolean) => void }> } {
-	const pending: Array<{ result: Promise<boolean>; settle: (value: boolean) => void }> = [];
+function confirmQueue(): {
+	mount: (options?: { title: string; message: string }) => OpenTuiConfirmMount;
+	pending: Array<{ title?: string; message?: string; settle: (value: boolean) => void }>;
+} {
+	const pending: Array<{
+		result: Promise<boolean>;
+		settle: (value: boolean) => void;
+		title?: string;
+		message?: string;
+	}> = [];
 	return {
-		mount(): OpenTuiConfirmMount {
+		mount(options?: { title: string; message: string }): OpenTuiConfirmMount {
 			let settleValue: (value: boolean) => void = () => undefined;
 			const result = new Promise<boolean>((resolve) => {
 				settleValue = resolve;
 			});
-			const entry = { result, dispose: (): void => settleValue(false), settle: settleValue };
+			const entry = { ...options, result, dispose: (): void => settleValue(false), settle: settleValue };
 			pending.push(entry);
 			return entry;
 		},
@@ -534,10 +542,10 @@ function actionCore(
 	} = {},
 ): Core {
 	const projectRoot = mkdtempSync(join(tmpdir(), "workspace-controller-actions-"));
-	const backlogDir = join(projectRoot, ".backlog");
-	mkdirSync(backlogDir, { recursive: true });
+	const agenticWorkspaceDir = join(projectRoot, ".agentic-workspace");
+	mkdirSync(agenticWorkspaceDir, { recursive: true });
 	writeFileSync(
-		join(backlogDir, "agents.json"),
+		join(agenticWorkspaceDir, "agents.json"),
 		JSON.stringify({ ...getBuiltInAgentConfiguration(), modes: getDefaultModeCatalog() }),
 	);
 	return {
@@ -554,7 +562,7 @@ function actionCore(
 		},
 		filesystem: {
 			projectRoot,
-			backlogDir,
+			agenticWorkspaceDir,
 			loadTask: async (id: string) => task(id),
 			loadConfig: async () => ({
 				projectName: "Roadmap",
@@ -907,6 +915,39 @@ async function waitUntil(predicate: () => boolean): Promise<void> {
 }
 
 describe("OpenTuiWorkspaceController", () => {
+	it("does not indicate unconfirmed or failed sessions without live activity", () => {
+		const starting = { ...session("TASK-1"), status: "starting" } satisfies AgentSession;
+		const failed = { ...session("TASK-1"), status: "failed" } satisfies AgentSession;
+		const parked = { ...session("TASK-1"), status: "parked" } satisfies AgentSession;
+
+		expect(starting.status).toBe("starting");
+		expect(modeSessionIndication(starting)).toBeUndefined();
+		expect(modeSessionIndication(failed)).toBeUndefined();
+		expect(modeSessionIndication(starting, "running")).toBe("working");
+		expect(modeSessionIndication(parked)).toBeUndefined();
+		expect(modeSessionIndication(parked, "idle")).toBe("parked");
+		expect(modeSessionIndication(parked, "waiting")).toBe("waiting");
+		expect(modeSessionIndication(parked, "error")).toBe("error");
+		expect(modeSessionIndication({ ...parked, status: "stopped" }, "idle")).toBe("ended");
+	});
+
+	it("names the selected mode when its preview has no session", async () => {
+		const setup = await createTestRenderer({ width: 120, height: 40, exitOnCtrlC: false });
+		const mount = mountOpenTuiWorkspace(setup.renderer, setup.renderer.root as unknown as BoxRenderable, {
+			tasks: [{ id: "TASK-1", title: "No session task", status: "Todo" }],
+			selectedModeId: "build",
+			selectedTaskIndex: 0,
+			modeProjectionByTask: () => ({ modeLabel: "BUILD", approved: false }),
+		});
+		try {
+			await setup.flush();
+			expect(setup.captureCharFrame()).toContain("No session in BUILD");
+		} finally {
+			mount.dispose();
+			setup.renderer.destroy();
+		}
+	});
+
 	it("loads persisted filters and selection without selecting global active history", async () => {
 		const tasks = [
 			task("TASK-1"),
@@ -939,12 +980,16 @@ describe("OpenTuiWorkspaceController", () => {
 		const running = controller.run();
 		try {
 			const mounted = await recorder.next(0);
+			// The preview shows the selected mode's session regardless of lifecycle status, so a
+			// shared running session is previewed read-only without becoming the global active history.
 			expect(mounted).toMatchObject({
 				projectName: "Roadmap",
 				detailsVisible: false,
 				selectedTaskIndex: 0,
-				activeAgentSession: undefined,
+				activeAgentSession: { id: "session-TASK-2", taskId: "TASK-2", status: "running" },
 			});
+			// Previewing never attaches, resumes, or writes status on selection.
+			expect(mounted.liveAgent).toBeUndefined();
 			expect(mounted.tasks.map((entry) => entry.id)).toEqual(["TASK-2"]);
 		} finally {
 			controller.destroy();
@@ -952,7 +997,7 @@ describe("OpenTuiWorkspaceController", () => {
 		}
 	});
 
-	it("marks every visible task with a current durable starting or running session", async () => {
+	it("indicates only selected-mode active sessions with activity evidence (or stopped history)", async () => {
 		const tasks = [task("TASK-1"), task("TASK-2"), task("TASK-3"), task("TASK-4"), task("TASK-5")];
 		const sessions = new Map<string, TaskSessions>([
 			[
@@ -1026,36 +1071,10 @@ describe("OpenTuiWorkspaceController", () => {
 		const running = controller.run();
 		try {
 			const mounted = await recorder.next(0);
-			// A current durable starting/running session with no overlay yet is the blue parked baseline.
-			expect([...(mounted.indicationByTask?.keys() ?? [])].sort()).toEqual(["TASK-2", "TASK-3", "TASK-4"]);
-			expect(mounted.indicationByTask?.get("TASK-2")).toBe("parked");
-			expect(mounted.indicationByTask?.has("TASK-1")).toBe(false);
-			expect(mounted.indicationByTask?.has("TASK-5")).toBe(false);
+			// No event evidence means no fabricated blue baseline, regardless of durable starting/running/failed status.
+			expect([...(mounted.indicationByTask?.keys() ?? [])].sort()).toEqual(["TASK-1"]);
+			expect(mounted.indicationByTask?.get("TASK-1")).toBe("ended");
 			expect(mounted.sessionTaskIds).toEqual(["TASK-1"]);
-
-			sessions.set("TASK-1", {
-				taskId: "TASK-1",
-				activeSessionId: "starting",
-				sessions: [{ ...session("TASK-1"), id: "starting", status: "starting" }],
-			});
-			sessions.set("TASK-2", {
-				taskId: "TASK-2",
-				activeSessionId: "external-running",
-				sessions: [{ ...session("TASK-2"), id: "external-running", status: "stopped" }],
-			});
-			sessions.set("TASK-3", {
-				taskId: "TASK-3",
-				activeSessionId: "handoff-starting",
-				sessions: [{ ...session("TASK-3"), id: "handoff-starting", status: "stopped" }],
-			});
-			sessions.set("TASK-4", {
-				taskId: "TASK-4",
-				activeSessionId: "will-fail",
-				sessions: [{ ...session("TASK-4"), id: "will-fail", status: "failed", error: "launch failed" }],
-			});
-
-			await controller.refresh();
-			expect((await recorder.next(1)).indicationByTask?.get("TASK-1")).toBe("parked");
 		} finally {
 			controller.destroy();
 			await running;
@@ -1094,7 +1113,10 @@ describe("OpenTuiWorkspaceController", () => {
 			await controller.refresh();
 			const recovered = await recorder.next(1);
 			expect(recovered.selectedTaskIndex).toBe(1);
-			expect(recovered.activeAgentSession).toBeUndefined();
+			// The preview shows the selected mode's session regardless of lifecycle status,
+			// read-only: no attach, resume, or status write on selection.
+			expect(recovered.activeAgentSession?.id).toBe("session-TASK-2");
+			expect(recovered.liveAgent).toBeUndefined();
 			recovered.onToggleTaskPane?.(false);
 			recovered.onToggleDetails?.(false);
 			await waitUntil(() => recorder.options.some((options) => options.detailsVisible === false));
@@ -1321,8 +1343,8 @@ describe("OpenTuiWorkspaceController", () => {
 			...core(),
 			filesystem: {
 				...core().filesystem,
-				tasksDir: "/tmp/backlog-tasks",
-				configFilePath: "/tmp/backlog-config.yml",
+				tasksDir: "/tmp/agentic-workspace-tasks",
+				configFilePath: "/tmp/agentic-workspace-config.yml",
 				loadConfig: async () => ({ projectName: "Roadmap" }),
 				listMilestones: async () => [],
 				listArchivedMilestones: async () => [],
@@ -1564,6 +1586,7 @@ describe("OpenTuiWorkspaceController", () => {
 			};
 			await store.mutateMode(fixture.task.id, "plan", async (history) => {
 				history.sessions.push(replacement);
+				history.activeSessionId = replacement.id;
 			});
 			expect((await store.readMode(fixture.task.id, "plan")).sessions).toEqual([replacement]);
 			await controller.refresh();
@@ -1669,7 +1692,8 @@ describe("OpenTuiWorkspaceController", () => {
 			if (!entry) throw new Error("Expected task entry.");
 			mounted.onAgentStart?.(entry, 80, 24);
 			await waitUntil(() => activated === 1);
-			await waitUntil(() => recorder.options.at(-1)?.indicationByTask?.has("TASK-1") ?? false);
+			await drainTurns(10);
+			expect(recorder.options.at(-1)?.indicationByTask?.has("TASK-1")).toBe(false);
 		} finally {
 			controller.destroy();
 			await running;
@@ -1677,7 +1701,7 @@ describe("OpenTuiWorkspaceController", () => {
 		expect(finished).toBe(0);
 	});
 
-	it("does not attach a history-only running session on selection", async () => {
+	it("attaches the selected mode's running history session", async () => {
 		const tasks = [task("TASK-1")];
 		const record = { ...session("TASK-1"), id: "external-running" };
 		const recorder = new MountRecorder();
@@ -1685,6 +1709,7 @@ describe("OpenTuiWorkspaceController", () => {
 		let finished = 0;
 		let stopped = 0;
 		let prepared = 0;
+		let attached = 0;
 		const externalHost = {
 			alive: async () => true,
 			start: async () => {},
@@ -1720,7 +1745,10 @@ describe("OpenTuiWorkspaceController", () => {
 			workspaceState: service,
 			runtime: {
 				...createRuntime(recorder),
-				createExistingAgentHost: (() => externalHost) as unknown as typeof createExistingAgentHost,
+				createExistingAgentHost: (() => {
+					attached += 1;
+					return externalHost;
+				}) as unknown as typeof createExistingAgentHost,
 				createWorkspaceAgent: (() => ({ write() {}, destroy() {} })) as unknown as typeof createWorkspaceAgent,
 			},
 		});
@@ -1728,14 +1756,16 @@ describe("OpenTuiWorkspaceController", () => {
 		try {
 			await recorder.next(0);
 			await drainTurns(20);
-			expect(recorder.options.at(-1)?.liveAgent).toBeUndefined();
+			await waitUntil(() => attached === 1);
+			await waitUntil(() => Boolean(recorder.options.at(-1)?.liveAgent?.terminal));
+			expect(recorder.options.at(-1)?.liveAgent?.terminal).toBeDefined();
 			expect(prepared).toBe(0);
 			expect(activated).toBe(0);
 		} finally {
 			controller.destroy();
 			await running;
 		}
-		expect({ prepared, activated, finished, stopped }).toEqual({ prepared: 0, activated: 0, finished: 0, stopped: 0 });
+		expect({ prepared, activated, finished, stopped }).toEqual({ prepared: 0, activated: 0, finished: 0, stopped: 1 });
 	});
 
 	it("keeps same-task terminals and input selection independent by mode", async () => {
@@ -1893,7 +1923,7 @@ describe("OpenTuiWorkspaceController", () => {
 		expect(records.every((record) => record.status === "running" && record.ownerPid === 42)).toBe(true);
 	});
 
-	it("keeps a shared running history record when the service cannot confirm a live attachment", async () => {
+	it("notices an inconclusive probe for the selected running session", async () => {
 		const tasks = [task("TASK-1")];
 		const record = { ...session("TASK-1"), id: "native-live", nativeWorkspace: true, ownerPid: 9856 };
 		let passiveChecks = 0;
@@ -1904,7 +1934,7 @@ describe("OpenTuiWorkspaceController", () => {
 				new Map([["TASK-1", { taskId: "TASK-1", activeSessionId: record.id, sessions: [record] }]]),
 			liveSession: async () => {
 				passiveChecks++;
-				return undefined;
+				throw new Error("tmux transport unavailable");
 			},
 			prepareSession: async () => {
 				throw new Error("Passive history inspection must not launch");
@@ -1922,8 +1952,8 @@ describe("OpenTuiWorkspaceController", () => {
 		const running = controller.run();
 		try {
 			await recorder.next(0);
-			await drainTurns(20);
-			expect(passiveChecks).toBe(0);
+			await waitUntil(() => Boolean(recorder.options.at(-1)?.notice?.includes("tmux transport unavailable")));
+			expect(passiveChecks).toBe(2);
 			expect(recorder.options.at(-1)?.liveAgent).toBeUndefined();
 		} finally {
 			controller.destroy();
@@ -2045,6 +2075,102 @@ describe("OpenTuiWorkspaceController", () => {
 			expect(activationOrigins.at(-1)).toBe(activationOrigins[0]);
 			expect(requested).toEqual(["first", "second", "broken"]);
 			expect(launched).toHaveLength(3);
+		} finally {
+			controller.destroy();
+			await running;
+		}
+	});
+
+	it("asks before starting fresh when exact resume is unavailable", async () => {
+		const tasks = [task("TASK-1")];
+		const original: AgentSession = {
+			...session("TASK-1"),
+			id: "resume-original",
+			status: "failed",
+			nativeProvider: "pi",
+			nativeSessionId: "ses_original",
+		};
+		const fresh: AgentSession = { ...session("TASK-1"), id: "fresh-choice", status: "starting" };
+		let activeSessionId = original.id;
+		let picker: OpenTuiSessionPickerOptions | undefined;
+		const getPicker = (): OpenTuiSessionPickerOptions => {
+			if (!picker) throw new Error("Session picker has not opened.");
+			return picker;
+		};
+		let freshStarts = 0;
+		let confirmationMessage = "";
+		const confirms = confirmQueue();
+		const history = (): TaskSessions => ({ taskId: "TASK-1", activeSessionId, sessions: [original, fresh] });
+		const service = {
+			listTasks: async () => tasks,
+			listSessions: async () => history(),
+			listModeSessions: async () => history(),
+			listAllSessions: async () => new Map([["TASK-1", history()]]),
+			liveSession: async () => undefined,
+			prepareSession: async () => {
+				throw new ExactResumeUnavailableError("previous-resume-failed", "pi", "ses_original");
+			},
+			prepareNewSession: async () => {
+				freshStarts++;
+				activeSessionId = fresh.id;
+				return fakeAttachment(fresh);
+			},
+			activateSession: async (_taskId: string, id: string) => {
+				activeSessionId = id;
+				if (id === fresh.id) fresh.status = "running";
+				return { activated: true };
+			},
+			stopSession: async () => {},
+			finishSession: async () => {},
+			parkSession: async () => {},
+		} as unknown as WorkspaceStateService;
+		const recorder = new MountRecorder();
+		const controller = createController(core("Roadmap", tasks), {
+			viewStateStore: new MemoryViewStateStore(state()),
+			workspaceState: service,
+			runtime: {
+				...createRuntime(recorder),
+				mountSessionPicker: (_renderer, _root, options) => {
+					picker = options;
+					return { dispose: options.onClose };
+				},
+				mountConfirm: (_renderer, _root, options) => {
+					confirmationMessage = options.message;
+					return confirms.mount(options);
+				},
+				createExistingAgentHost: (options) =>
+					fakeExistingAgentHost(options, {
+						start: async () => options.onOutput(new TextEncoder().encode("fresh")),
+					} as unknown as AgentHost),
+				createWorkspaceAgent: (() => ({ write() {}, destroy() {} })) as unknown as typeof createWorkspaceAgent,
+			},
+		});
+		const running = controller.run();
+		try {
+			const mounted = await recorder.next(0);
+			const entry = mounted.tasks[0];
+			if (!entry) throw new Error("Missing task entry");
+			mounted.onSessionRequest?.(entry);
+			await waitUntil(() => Boolean(picker));
+
+			const declined = getPicker().onResume(original.id);
+			await waitUntil(() => confirms.pending.length === 1);
+			expect(confirms.pending[0]).toMatchObject({
+				title: "Exact resume unavailable",
+				message: expect.stringContaining("Start a fresh conversation instead?"),
+			});
+			expect(confirmationMessage).toContain("ses_original");
+			confirms.pending[0]?.settle(false);
+			await expect(declined).rejects.toMatchObject({ reason: "previous-resume-failed" });
+			expect(activeSessionId).toBe(original.id);
+			expect(freshStarts).toBe(0);
+
+			const accepted = getPicker().onResume(original.id);
+			await waitUntil(() => confirms.pending.length === 2);
+			confirms.pending[1]?.settle(true);
+			await accepted;
+			await waitUntil(() => activeSessionId === fresh.id);
+			expect(freshStarts).toBe(1);
 		} finally {
 			controller.destroy();
 			await running;
@@ -2324,7 +2450,7 @@ describe("OpenTuiWorkspaceController", () => {
 		}
 	});
 
-	it("settles a stale running session on selection instead of attaching or resuming it", async () => {
+	it("probes a stale running session passively without resuming it", async () => {
 		const tasks = [task("TASK-1")];
 		const stale = { ...session("TASK-1"), id: "stale-running" };
 		const settled = { ...stale, status: "stopped" as const, endedAt: "2026-10-05T00:00:00.000Z" };
@@ -2376,9 +2502,11 @@ describe("OpenTuiWorkspaceController", () => {
 		try {
 			const mounted = await recorder.next(0);
 			expect(mounted.liveAgent).toBeUndefined();
-			expect(mounted.activeAgentSession).toBeUndefined();
+			// The preview shows the selected mode's session regardless of lifecycle status, read-only.
+			expect(mounted.activeAgentSession).toMatchObject({ id: "stale-running", taskId: "TASK-1", status: "stopped" });
 			expect(mounted.notice).toBeUndefined();
-			expect(probeOptions).toBeUndefined();
+			await waitUntil(() => probeOptions !== undefined);
+			expect(probeOptions?.passive).toBe(true);
 		} finally {
 			controller.destroy();
 			await running;
@@ -2387,7 +2515,7 @@ describe("OpenTuiWorkspaceController", () => {
 			prepared: 0,
 			activated: 0,
 			attached: 0,
-			reconciled: false,
+			reconciled: true,
 		});
 	});
 
@@ -2396,7 +2524,7 @@ describe("OpenTuiWorkspaceController", () => {
 		true,
 	])("real Enter waits for preparation and mount before focusing embedded preview (failure: %s)", async (fail) => {
 		const tasks = [task("TASK-1", { title: "ENTER TASK ROW" })];
-		const parked = { ...session("TASK-1"), id: "enter-exact", status: "parked" as const };
+		const parked = { ...session("TASK-1"), id: "enter-exact", status: "stopped" as const };
 		const counters: AdoptionCounters = { prepares: [], activated: [], finished: [], preparedModes: [] };
 		const recorder = new MountRecorder();
 		const setup = await createTestRenderer({ width: 120, height: 40, exitOnCtrlC: false });
@@ -2559,7 +2687,7 @@ describe("OpenTuiWorkspaceController", () => {
 		}
 	});
 
-	it("starts a fresh session on activation despite parked shared history", async () => {
+	it("resumes the selected parked mode session automatically", async () => {
 		const tasks = [task("TASK-1")];
 		const parked = { ...session("TASK-1"), id: "parked-1", status: "parked" as const };
 		const counters: AdoptionCounters = { prepares: [], activated: [], finished: [], preparedModes: [] };
@@ -2576,26 +2704,21 @@ describe("OpenTuiWorkspaceController", () => {
 		const running = controller.run();
 		try {
 			const mounted = await recorder.next(0);
-			// Shared history remains visible, but it does not choose this UI's execution.
-			expect(mounted.indicationByTask?.get("TASK-1")).toBe("parked");
-			// Merely viewing history starts no runtime.
-			await drainTurns(20);
-			expect(counters.prepares).toEqual([]);
+			// The parked history is resumed as the mode's active conversation.
+			await waitUntil(() => counters.prepares.length === 1);
+			expect(counters.prepares).toEqual([parked.id]);
 			const entry = mounted.tasks.find((candidate) => candidate.id === "TASK-1");
 			if (!entry) throw new Error("Expected selected task entry.");
-			mounted.onAgentStart?.(entry, 80, 24);
-			await waitUntil(() => counters.prepares.length === 1);
-			expect(counters.prepares).toEqual(["fresh-TASK-1-1"]);
+			expect(recorder.options.at(-1)?.liveAgent?.terminal).toBeDefined();
 			expect(counters.preparedModes).toEqual(["plan"]);
-			await waitUntil(() => counters.activated.length === 1);
-			expect(counters.activated).toEqual(["fresh-TASK-1-1"]);
+			expect(counters.activated).toEqual([parked.id]);
 		} finally {
 			controller.destroy();
 			await running;
 		}
 	});
 
-	it("does not probe or resume a stale native history record during selection", async () => {
+	it("resumes a native session after its running pane is conclusively absent", async () => {
 		const tasks = [task("TASK-1")];
 		const stale = { ...session("TASK-1"), id: "stale-native-exact", nativeWorkspace: true, ownerPid: process.pid };
 		const counters: AdoptionCounters = { prepares: [], activated: [], finished: [], preparedModes: [] };
@@ -2623,10 +2746,10 @@ describe("OpenTuiWorkspaceController", () => {
 		try {
 			const mounted = await recorder.next(0);
 			await drainTurns(20);
-			expect(mounted.activeAgentSession).toBeUndefined();
-			expect(counters.prepares).toEqual([]);
-			expect(counters.activated).toEqual([]);
-			expect(parked).toBe(false);
+			// The preview shows the selected mode's session regardless of lifecycle status, read-only.
+			expect(mounted.activeAgentSession).toMatchObject({ id: "stale-native-exact", taskId: "TASK-1" });
+			await waitUntil(() => parked);
+			expect(parked).toBe(true);
 		} finally {
 			controller.destroy();
 			await running;
@@ -2676,22 +2799,23 @@ describe("OpenTuiWorkspaceController", () => {
 		try {
 			const mounted = await recorder.next(0);
 			expect(mounted.liveAgent).toBeUndefined();
-			expect(mounted.activeAgentSession).toBeUndefined();
+			// The preview shows the selected mode's session regardless of lifecycle status, read-only.
+			expect(mounted.activeAgentSession).toMatchObject({ id: "starting", taskId: "TASK-1", status: "starting" });
 			const second = mounted.tasks.find((entry) => entry.id === "TASK-2");
 			if (!second) throw new Error("Expected TASK-2 entry.");
 			mounted.onTaskSelect?.(second);
 			await waitUntil(() => recorder.options.at(-1)?.selectedTaskIndex === 1);
-			expect(recorder.options.at(-1)?.activeAgentSession).toBeUndefined();
+			expect(recorder.options.at(-1)?.activeAgentSession).toMatchObject({ id: "native-running", taskId: "TASK-2" });
 			expect(recorder.options.at(-1)?.liveAgent).toBeUndefined();
 		} finally {
 			controller.destroy();
 			await running;
 		}
-		// Shared history alone does not authorize process probes or terminal ownership.
-		expect({ probes, attached }).toEqual({ probes: 0, attached: 0 });
+		// Only the selected running session is probed; starting history is not inspected.
+		expect({ probes, attached }).toEqual({ probes: 1, attached: 0 });
 	});
 
-	it("does not treat foreign running history as a locally retained terminal", async () => {
+	it("attaches foreign running history as a read-only terminal", async () => {
 		const tasks = [task("TASK-1")];
 		const record = { ...session("TASK-1"), id: "external-running" };
 		const recorder = new MountRecorder();
@@ -2734,16 +2858,17 @@ describe("OpenTuiWorkspaceController", () => {
 		try {
 			const initial = await recorder.next(0);
 			await controller.refresh();
-			expect(initial.liveAgent).toBeUndefined();
-			expect(recorder.options.at(-1)?.liveAgent).toBeUndefined();
-			expect(attached).toBe(0);
+			await waitUntil(() => attached === 1);
+			await waitUntil(() => Boolean(recorder.options.at(-1)?.liveAgent?.terminal));
+			expect(initial.activeAgentSession?.id).toBe(record.id);
+			expect(recorder.options.at(-1)?.liveAgent?.terminal).toBeDefined();
 		} finally {
 			controller.destroy();
 			await running;
 		}
 	});
 
-	it("does not surface attach errors for a history entry that was never locally attached", async () => {
+	it("surfaces an error when the selected running session cannot attach", async () => {
 		const tasks = [task("TASK-1")];
 		const record = { ...session("TASK-1"), id: "external-running" };
 		const recorder = new MountRecorder();
@@ -2788,17 +2913,17 @@ describe("OpenTuiWorkspaceController", () => {
 		try {
 			const mounted = await recorder.next(0);
 			await controller.refresh();
-			expect(mounted.liveAgent).toBeUndefined();
-			expect(recorder.options.at(-1)?.notice).toBeUndefined();
-			expect(attached).toBe(0);
+			await waitUntil(() => Boolean(recorder.options.at(-1)?.notice?.includes("pane vanished")));
+			expect(mounted.activeAgentSession?.id).toBe(record.id);
+			expect(attached).toBe(1);
 		} finally {
 			controller.destroy();
 			await running;
 		}
-		expect({ attached, prepared, activated }).toEqual({ attached: 0, prepared: 0, activated: 0 });
+		expect({ attached, prepared, activated }).toEqual({ attached: 1, prepared: 0, activated: 0 });
 	});
 
-	it("does not probe shared running history when the selection moves on", async () => {
+	it("does not attach shared running history after selection moves on during its probe", async () => {
 		const tasks = [task("TASK-1"), task("TASK-2")];
 		const record = { ...session("TASK-1"), id: "external-running" };
 		const recorder = new MountRecorder();
@@ -2858,7 +2983,7 @@ describe("OpenTuiWorkspaceController", () => {
 			controller.destroy();
 			await running;
 		}
-		expect({ probes, attached }).toEqual({ probes: 0, attached: 0 });
+		expect({ probes, attached }).toEqual({ probes: 1, attached: 0 });
 	});
 
 	it("reuses the mounted workspace so a task selection never repaints a blank task list", async () => {
@@ -3108,7 +3233,7 @@ describe("OpenTuiWorkspaceController", () => {
 		}
 	});
 
-	it("keeps a parked durable session parked even when the overlay reports running", async () => {
+	it("projects the running activity event even when durable lifecycle is parked", async () => {
 		const counters: NativeAgentCounters = { live: 0, prepare: 0, activate: 0, finish: 0 };
 		const fake = controlledProbe();
 		const tasks = [task("TASK-1")];
@@ -3159,8 +3284,8 @@ describe("OpenTuiWorkspaceController", () => {
 			// The durable session parks. A later overlay of running must not turn the row green.
 			durableStatus = "parked";
 			await controller.refresh();
-			expect(recorder.options.at(-1)?.indicationByTask?.get("TASK-1")).toBe("parked");
-			// A fresh overlay change still renders the durable parked value, not the running activity.
+			expect(recorder.options.at(-1)?.indicationByTask?.get("TASK-1")).toBe("working");
+			// A fresh overlay change renders its waiting event rather than durable lifecycle.
 			fake.setEvidence(
 				new Map([
 					[
@@ -3169,7 +3294,7 @@ describe("OpenTuiWorkspaceController", () => {
 					],
 				]),
 			);
-			await waitUntil(() => recorder.indication.at(-1)?.get("TASK-1") === "parked");
+			await waitUntil(() => recorder.indication.at(-1)?.get("TASK-1") === "waiting");
 		} finally {
 			controller.destroy();
 			await running;
@@ -3498,12 +3623,12 @@ describe("OpenTuiWorkspaceController", () => {
 		}
 	});
 
-	it("lets parked sessions with undefined ownerPid reach service preflight unchanged", async () => {
+	it("lets stopped sessions with undefined ownerPid reach delete preflight unchanged", async () => {
 		const tasks = [task("TASK-1")];
 		const parked = {
 			...session("TASK-1"),
 			id: "parked-native",
-			status: "parked" as const,
+			status: "stopped" as const,
 			nativeWorkspace: true,
 			ownerPid: undefined,
 		};
@@ -3539,7 +3664,7 @@ describe("OpenTuiWorkspaceController", () => {
 			await waitUntil(() => confirms.pending.length === 1);
 			confirms.pending[0]?.settle(true);
 			await waitUntil(() => recorder.options.at(-1)?.notice === "Deleted TASK-1");
-			expect(events).toEqual(["delete:parked:undefined"]);
+			expect(events).toEqual(["delete:stopped:undefined"]);
 		} finally {
 			controller.destroy();
 			await running;
@@ -3723,18 +3848,28 @@ describe("OpenTuiWorkspaceController", () => {
 		}
 	});
 
-	it("handoff stops the predecessor, then starts and activates a fresh successor session", async () => {
+	it.each([
+		{ appOwned: true, failSuccessor: false },
+		{ appOwned: false, failSuccessor: false },
+		{ appOwned: true, failSuccessor: true },
+		{ appOwned: true, failSuccessor: false, sharedSelection: true },
+		{ appOwned: true, failSuccessor: true, sharedSelection: true },
+	])("handoff starts the successor before retirement and preserves ownership", async ({
+		appOwned,
+		failSuccessor,
+		sharedSelection = false,
+	}) => {
 		const previousConfigHome = process.env.XDG_CONFIG_HOME;
 		const configHome = mkdtempSync(join(tmpdir(), "handoff-config-"));
-		const backlogDir = mkdtempSync(join(tmpdir(), "handoff-"));
-		writeFileSync(join(backlogDir, "agents.json"), JSON.stringify(projectConfiguration()));
+		const agenticWorkspaceDir = mkdtempSync(join(tmpdir(), "handoff-"));
+		writeFileSync(join(agenticWorkspaceDir, "agents.json"), JSON.stringify(projectConfiguration()));
 		process.env.XDG_CONFIG_HOME = configHome;
 		const tasks = [task("TASK-1")];
 		const predecessor: AgentSession = {
 			...session("TASK-1"),
 			id: "predecessor",
 			status: "running",
-			nativeWorkspace: true,
+			nativeWorkspace: appOwned,
 			outputPath: "/dev/null",
 		};
 		const successor: AgentSession = {
@@ -3744,20 +3879,26 @@ describe("OpenTuiWorkspaceController", () => {
 			outputPath: "/dev/null",
 		};
 		const gate = deferred();
-		const predecessorStop = deferred();
 		const activated: string[] = [];
 		const hostStarts: boolean[] = [];
 		const hostStops: boolean[] = [];
+		const lifecycleOrder: string[] = [];
 		let prepareCalls = 0;
 		let hostCount = 0;
 		let handoffStarted = false;
 		let gateResolved = false;
 		let activeSessionId = predecessor.id;
-		const history = () => ({ taskId: "TASK-1", activeSessionId, sessions: [predecessor, successor] });
+		const rollbackId = sharedSelection ? "other-client" : predecessor.id;
+		const history = () => ({
+			taskId: "TASK-1",
+			activeSessionId,
+			sessions: [predecessor, successor, { ...predecessor, id: "other-client" }],
+		});
 		const recorder = new MountRecorder();
 		const service = {
 			listTasks: async () => tasks,
 			listSessions: async () => history(),
+			listModeSessions: async () => history(),
 			listAllSessions: async () => new Map([["TASK-1", history()]]),
 			liveSession: async () => undefined,
 			prepareSession: async (_taskId: string, _id?: string) => {
@@ -3765,11 +3906,37 @@ describe("OpenTuiWorkspaceController", () => {
 				if (call === 0) return fakeAttachment(predecessor);
 				activeSessionId = successor.id;
 				handoffStarted = true;
+				lifecycleOrder.push("successor-preparing");
 				await gate.promise;
 				return fakeAttachment(successor);
 			},
-			stopSession: async (_taskId: string, sessionId: string) => {
-				if (sessionId !== predecessor.id) throw new Error(`Unexpected stop target ${sessionId}`);
+			prepareNewSession: async () => {
+				prepareCalls++;
+				activeSessionId = successor.id;
+				handoffStarted = true;
+				lifecycleOrder.push("successor-preparing");
+				await gate.promise;
+				if (failSuccessor) {
+					activeSessionId = rollbackId;
+					throw new Error("successor launch failed");
+				}
+				return fakeAttachment(successor);
+			},
+			finalizeHandoff: async (
+				_taskId: string,
+				next: AgentSession,
+				handoff: { predecessor?: { id: string }; priorActiveSessionId?: string },
+			) => {
+				expect(next.id).toBe(successor.id);
+				expect(handoff.predecessor?.id).toBe(predecessor.id);
+				expect(handoff.priorActiveSessionId).toBe(rollbackId);
+				if (!appOwned) return;
+				lifecycleOrder.push(
+					successor.status === "running" && activeSessionId === successor.id
+						? "predecessor-ended"
+						: "predecessor-ended-too-early",
+				);
+				predecessor.status = "stopped";
 			},
 			activateSession: async (_taskId: string, id: string) => {
 				activated.push(id);
@@ -3784,8 +3951,8 @@ describe("OpenTuiWorkspaceController", () => {
 			updateTask: async () => {},
 			updateTaskFromInput: async () => {},
 			filesystem: {
-				rootDir: backlogDir,
-				backlogDir,
+				rootDir: agenticWorkspaceDir,
+				agenticWorkspaceDir,
 				loadConfig: async () => ({ projectName: "Roadmap" }),
 				listMilestones: async () => [],
 				listArchivedMilestones: async () => [],
@@ -3806,7 +3973,7 @@ describe("OpenTuiWorkspaceController", () => {
 						},
 						stop: async () => {
 							hostStops[index] = true;
-							if (index === 0) await predecessorStop.promise;
+							lifecycleOrder.push(index === 0 ? "predecessor-host-detached" : "successor-host-stopped");
 						},
 						resize: async () => {},
 						sendBytes: () => {},
@@ -3821,24 +3988,26 @@ describe("OpenTuiWorkspaceController", () => {
 		const running = controller.run();
 		try {
 			const mounted = await recorder.next(0);
-			const entry = mounted.tasks[0];
+			const entry = mounted.tasks.find((candidate) => candidate.id === "TASK-1");
 			if (!entry) throw new Error("Expected task entry.");
 			mounted.onAgentStart?.(entry, 80, 24);
 			await waitUntil(() => Boolean(recorder.options.at(-1)?.liveAgent?.host));
 			await drainTurns(5);
+			activeSessionId = rollbackId;
 			recorder.options.at(-1)?.onHandoffRequest?.(entry);
-			// Handoff prepares the selected task's current mode directly; it does not open a picker.
-			await waitUntil(() => hostStops[0] === true);
-			// A competing start for the same task/mode cannot pass the held predecessor stop.
+			// Handoff starts a distinct successor directly, without opening a picker.
+			await waitUntil(() => handoffStarted);
+			// The existing host and durable session remain intact while the successor is gated.
+			expect(hostStops[0]).toBeUndefined();
+			expect(lifecycleOrder).toEqual(["successor-preparing"]);
+			expect(activeSessionId).toBe(successor.id);
+			// A competing start for the same task/mode remains blocked during the handoff.
 			recorder.options.at(-1)?.onAgentStart?.(entry, 80, 24);
 			await drainTurns(5);
-			expect(prepareCalls).toBe(1);
-			predecessorStop.resolve();
-			await waitUntil(() => handoffStarted);
+			expect(prepareCalls).toBe(2);
+			expect(hostStops[0]).toBeUndefined();
 			await drainTurns(2);
 			expect(gateResolved).toBe(false);
-			// The predecessor is torn down before the gated successor session is prepared.
-			expect(hostStops[0]).toBe(true);
 			// The starting live agent is visible while the selected mode is still preparing.
 			await controller.refresh();
 			expect(recorder.options.at(-1)?.liveAgent).toMatchObject({
@@ -3849,17 +4018,33 @@ describe("OpenTuiWorkspaceController", () => {
 			expect(recorder.options.at(-1)?.liveAgent?.host).toBeUndefined();
 			gateResolved = true;
 			gate.resolve();
+			if (failSuccessor) {
+				await waitUntil(() => recorder.options.at(-1)?.notice?.includes("successor launch failed") === true);
+				expect(lifecycleOrder).toEqual(["successor-preparing"]);
+				expect(activeSessionId).toBe(rollbackId);
+				expect(predecessor.status).toBe("running");
+				expect(hostStops[0]).toBeUndefined();
+				return;
+			}
 			await waitUntil(() => recorder.options.at(-1)?.liveAgent?.label === "opencode");
 			await waitUntil(() => Boolean(recorder.options.at(-1)?.liveAgent?.host));
 			expect(hostStarts).toEqual([true, true]);
 			expect(activated.at(-1)).toBe(successor.id);
-			expect(hostStops[0]).toBe(true);
+			if (appOwned) {
+				await waitUntil(() => lifecycleOrder.includes("predecessor-ended"));
+				expect(lifecycleOrder).toEqual(["successor-preparing", "predecessor-ended"]);
+				expect(predecessor.status).toBe("stopped");
+			} else {
+				expect(lifecycleOrder).toEqual(["successor-preparing"]);
+				expect(predecessor.status).toBe("running");
+			}
+			expect(hostStops[0]).toBeUndefined();
 			expect(hostStops[1]).toBeUndefined();
 		} finally {
-			predecessorStop.resolve();
+			gate.resolve();
 			controller.destroy();
 			await running;
-			rmSync(backlogDir, { recursive: true, force: true });
+			rmSync(agenticWorkspaceDir, { recursive: true, force: true });
 			rmSync(configHome, { recursive: true, force: true });
 			if (previousConfigHome === undefined) delete process.env.XDG_CONFIG_HOME;
 			else process.env.XDG_CONFIG_HOME = previousConfigHome;
@@ -3997,8 +4182,8 @@ describe("OpenTuiWorkspaceController", () => {
 	it("activates a gated handoff session despite the selection drifting away", async () => {
 		const previousConfigHome = process.env.XDG_CONFIG_HOME;
 		const configHome = mkdtempSync(join(tmpdir(), "handoff-drift-config-"));
-		const backlogDir = mkdtempSync(join(tmpdir(), "handoff-drift-"));
-		writeFileSync(join(backlogDir, "agents.json"), JSON.stringify(projectConfiguration()));
+		const agenticWorkspaceDir = mkdtempSync(join(tmpdir(), "handoff-drift-"));
+		writeFileSync(join(agenticWorkspaceDir, "agents.json"), JSON.stringify(projectConfiguration()));
 		process.env.XDG_CONFIG_HOME = configHome;
 		const tasks = [task("TASK-1")];
 		const predecessor: AgentSession = {
@@ -4031,11 +4216,19 @@ describe("OpenTuiWorkspaceController", () => {
 		const service = {
 			listTasks: async () => tasks,
 			listSessions: async (taskId: string) => sessionsFor(taskId),
+			listModeSessions: async (taskId: string) => sessionsFor(taskId),
 			listAllSessions: async () => new Map(tasks.map((entry) => [entry.id, sessionsFor(entry.id)] as const)),
 			liveSession: async () => undefined,
 			prepareSession: async (_taskId: string, _id?: string) => {
 				const call = prepareCalls++;
 				if (call === 0) return fakeAttachment(predecessor);
+				activeSessionId = successor.id;
+				handoffStarted = true;
+				await gate.promise;
+				return fakeAttachment(successor);
+			},
+			prepareNewSession: async () => {
+				prepareCalls++;
 				activeSessionId = successor.id;
 				handoffStarted = true;
 				await gate.promise;
@@ -4048,9 +4241,7 @@ describe("OpenTuiWorkspaceController", () => {
 			finishSession: async (taskId: string, id: string, error?: string) => {
 				finished.push(`${taskId}:${id}:${error ?? ""}`);
 			},
-			stopSession: async (_taskId: string, sessionId: string) => {
-				if (sessionId !== predecessor.id) throw new Error(`Unexpected stop target ${sessionId}`);
-			},
+			finalizeHandoff: async () => {},
 			parkSession: async () => {},
 		} as unknown as WorkspaceStateService;
 		const handoffCore = {
@@ -4059,8 +4250,8 @@ describe("OpenTuiWorkspaceController", () => {
 			updateTask: async () => {},
 			updateTaskFromInput: async () => {},
 			filesystem: {
-				rootDir: backlogDir,
-				backlogDir,
+				rootDir: agenticWorkspaceDir,
+				agenticWorkspaceDir,
 				loadConfig: async () => ({ projectName: "Roadmap" }),
 				listMilestones: async () => [],
 				listArchivedMilestones: async () => [],
@@ -4113,7 +4304,7 @@ describe("OpenTuiWorkspaceController", () => {
 		} finally {
 			controller.destroy();
 			await running;
-			rmSync(backlogDir, { recursive: true, force: true });
+			rmSync(agenticWorkspaceDir, { recursive: true, force: true });
 			rmSync(configHome, { recursive: true, force: true });
 			if (previousConfigHome === undefined) delete process.env.XDG_CONFIG_HOME;
 			else process.env.XDG_CONFIG_HOME = previousConfigHome;
@@ -4172,7 +4363,7 @@ describe("OpenTuiWorkspaceController group integration", () => {
 	});
 
 	it("writes group membership when a task is created through the composer path", async () => {
-		const backlogDir = mkdtempSync(join(tmpdir(), "workspace-group-create-"));
+		const agenticWorkspaceDir = mkdtempSync(join(tmpdir(), "workspace-group-create-"));
 		const created = task("TASK-NEW", { title: "Grouped" });
 		const groupStore = new MemoryGroupStore(groupSeed());
 		const recorder = new MountRecorder();
@@ -4182,7 +4373,7 @@ describe("OpenTuiWorkspaceController group integration", () => {
 			root: setup.renderer.root as unknown as BoxRenderable,
 			destroy() {},
 		} as unknown as OpenTuiHost;
-		const controller = createController(composerCore(backlogDir, created), {
+		const controller = createController(composerCore(agenticWorkspaceDir, created), {
 			viewStateStore: new MemoryViewStateStore(state()),
 			groupStore,
 			workspaceState: workspaceState([], async (taskId) => taskSessions(taskId, false)),
@@ -4215,7 +4406,7 @@ describe("OpenTuiWorkspaceController group integration", () => {
 			controller.destroy();
 			await running;
 			setup.renderer.destroy();
-			rmSync(backlogDir, { recursive: true, force: true });
+			rmSync(agenticWorkspaceDir, { recursive: true, force: true });
 		}
 	});
 });

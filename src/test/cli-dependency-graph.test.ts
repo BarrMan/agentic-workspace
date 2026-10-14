@@ -175,7 +175,7 @@ describe("CLI dependency graph", () => {
 		const { dir, core } = await setupGraph();
 		try {
 			// Validation refuses to create a cycle, so store one directly as the legacy defect
-			// `backlog doctor` reports; the graph must still render it honestly.
+			// `agentic-workspace doctor` reports; the graph must still render it honestly.
 			await addTask(core, "task-1", "Selected", ["task-2"]);
 			await addTask(core, "task-2", "Second", ["task-1"]);
 
@@ -235,10 +235,10 @@ describe("CLI dependency graph", () => {
 		try {
 			await addTask(core, "task-1", "Contested");
 			await addTask(core, "task-2", "Selected", ["task-1"]);
-			const original = join(dir, "backlog", "tasks", "task-1", "task.md");
+			const original = join(dir, "agentic-workspace", "tasks", "task-1", "task.md");
 			const duplicate = (await readFile(original, "utf8")).replace("id: TASK-1", "id: TASK-01");
-			await mkdir(join(dir, "backlog", "tasks", "task-01"), { recursive: true });
-			await writeFile(join(dir, "backlog", "tasks", "task-01", "task.md"), duplicate);
+			await mkdir(join(dir, "agentic-workspace", "tasks", "task-01"), { recursive: true });
+			await writeFile(join(dir, "agentic-workspace", "tasks", "task-01", "task.md"), duplicate);
 
 			const plainResult = await runCli(dir, ["task", "view", "2", "--plain"]);
 			const jsonResult = await runCli(dir, ["task", "view", "2", "--json"]);

@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
-import { Core } from "../core/backlog.ts";
+import { Core } from "../core/agentic-workspace.ts";
 import { parseFrontmatter } from "../markdown/frontmatter.ts";
 import { parseMilestone, parseTask } from "../markdown/parser.ts";
 import { serializeTask } from "../markdown/serializer.ts";
@@ -152,7 +152,7 @@ describe("due date persistence operations", () => {
 		testDir = createUniqueTestDir("due-date");
 		await mkdir(testDir, { recursive: true });
 		core = new Core(testDir);
-		await core.filesystem.ensureBacklogStructure();
+		await core.filesystem.ensureAgenticWorkspaceStructure();
 		await initializeFilesystemTestProject(core, "Due date project");
 	});
 
@@ -192,7 +192,7 @@ describe("due date persistence operations", () => {
 	it("does not hide valid milestones when another file has an invalid due date", async () => {
 		await core.filesystem.createMilestone("Valid release", undefined, "2026-09-01");
 		await Bun.write(
-			join(testDir, "backlog", "milestones", "m-1 - Invalid-release.md"),
+			join(testDir, "agentic-workspace", "milestones", "m-1 - Invalid-release.md"),
 			`---
 milestone_schema_version: 1
 id: m-1

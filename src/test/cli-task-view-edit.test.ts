@@ -10,7 +10,7 @@ import { createUniqueTestDir, initializeTestProject, safeCleanup } from "./test-
 let testDir: string;
 let configHome: string;
 const previousConfigHome = process.env.XDG_CONFIG_HOME;
-const cliCommand = ["agenticworkspace"];
+const cliCommand = ["agentic-workspace"];
 let cliQueue = Promise.resolve();
 
 function $(parts: TemplateStringsArray, ...values: unknown[]) {
@@ -123,7 +123,7 @@ describe("CLI task view and edit", () => {
 	it("refuses legacy flat records without modifying their bytes", async () => {
 		const content =
 			"---\nid: TASK-2\ntitle: Legacy\nstatus: To Do\nassignee: []\ncreated_date: '2026-10-01'\nlabels: []\ndependencies: []\n---\n\n## Description\n\n<!-- SECTION:DESCRIPTION:BEGIN -->\nPreserved\n<!-- SECTION:DESCRIPTION:END -->\n";
-		const first = `${testDir}/backlog/tasks/task-2 - First.md`;
+		const first = `${testDir}/agentic-workspace/tasks/task-2 - First.md`;
 		await writeFile(first, content);
 		const result = await $`${[...cliCommand, "task", "view", "TASK-2", "--plain"]}`.cwd(testDir).nothrow().quiet();
 		expect(result.exitCode).toBe(1);

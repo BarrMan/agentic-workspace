@@ -1,10 +1,10 @@
-import type { Core } from "../../../core/backlog.ts";
+import type { Core } from "../../../core/agentic-workspace.ts";
 import { MilestoneWorkflow, MilestoneWorkflowError } from "../../../core/milestone-workflow.ts";
 import { collectArchivedMilestoneKeys } from "../../../core/milestones.ts";
 import type { Milestone, Task } from "../../../types/index.ts";
 import { normalizeDueDate } from "../../../utils/due-date.ts";
 import { formatUtcDateForDisplay } from "../../../utils/utc-date-display.ts";
-import { BacklogToolError } from "../../errors/mcp-errors.ts";
+import { AgenticWorkspaceToolError } from "../../errors/mcp-errors.ts";
 import type { CallToolResult } from "../../types.ts";
 import {
 	buildMilestoneMatchKeys,
@@ -230,13 +230,13 @@ export class MilestoneHandlers {
 	async addMilestone(args: MilestoneAddArgs): Promise<CallToolResult> {
 		const name = normalizeMilestoneName(args.name);
 		if (!name) {
-			throw new BacklogToolError("Milestone name cannot be empty.", "VALIDATION_ERROR");
+			throw new AgenticWorkspaceToolError("Milestone name cannot be empty.", "VALIDATION_ERROR");
 		}
 		let dueDate: string | undefined;
 		try {
 			dueDate = normalizeDueDate(args.dueDate, "Due date");
 		} catch (error) {
-			throw new BacklogToolError(error instanceof Error ? error.message : String(error), "VALIDATION_ERROR");
+			throw new AgenticWorkspaceToolError(error instanceof Error ? error.message : String(error), "VALIDATION_ERROR");
 		}
 
 		// Check for duplicates in existing milestone files
@@ -247,13 +247,13 @@ export class MilestoneHandlers {
 			return keySetsIntersect(requestedKeys, milestoneKeys);
 		});
 		if (duplicate) {
-			throw new BacklogToolError(
+			throw new AgenticWorkspaceToolError(
 				`Milestone alias conflict: "${name}" matches existing milestone "${duplicate.title}" (${duplicate.id}).`,
 				"VALIDATION_ERROR",
 			);
 		}
 
-		// Read the config before writing: a config Backlog refuses to read must abort the command
+		// Read the config before writing: a config AgenticWorkspace refuses to read must abort the command
 		// before the milestone file exists, not after.
 		await this.core.ensureConfigLoaded();
 
@@ -293,7 +293,7 @@ export class MilestoneHandlers {
 				lines.push(`Renamed milestone file: ${result.sourcePath} -> ${result.targetPath}`);
 			return textResult(lines.join("\n"));
 		} catch (error) {
-			if (error instanceof MilestoneWorkflowError) throw new BacklogToolError(error.message, error.code);
+			if (error instanceof MilestoneWorkflowError) throw new AgenticWorkspaceToolError(error.message, error.code);
 			throw error;
 		}
 	}
@@ -313,19 +313,19 @@ export class MilestoneHandlers {
 				);
 			return textResult(lines.join("\n"));
 		} catch (error) {
-			if (error instanceof MilestoneWorkflowError) throw new BacklogToolError(error.message, error.code);
+			if (error instanceof MilestoneWorkflowError) throw new AgenticWorkspaceToolError(error.message, error.code);
 			throw error;
 		}
 	}
 	async archiveMilestone(args: MilestoneArchiveArgs): Promise<CallToolResult> {
 		const name = normalizeMilestoneName(args.name);
 		if (!name) {
-			throw new BacklogToolError("Milestone name cannot be empty.", "VALIDATION_ERROR");
+			throw new AgenticWorkspaceToolError("Milestone name cannot be empty.", "VALIDATION_ERROR");
 		}
 
 		const result = await this.core.archiveMilestone(name);
 		if (!result.success) {
-			throw new BacklogToolError(`Milestone not found: "${name}"`, "NOT_FOUND");
+			throw new AgenticWorkspaceToolError(`Milestone not found: "${name}"`, "NOT_FOUND");
 		}
 
 		const label = result.milestone?.title ?? name;

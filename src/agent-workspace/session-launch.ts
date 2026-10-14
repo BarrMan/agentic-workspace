@@ -9,14 +9,14 @@ import { appendArguments } from "./bootstrap.ts";
 import { type PreparedLaunchResources, preparedLaunchResources } from "./completion-supervisor-resources.ts";
 import { prepareHarnessEnvironment } from "./harness-environment.ts";
 import { STATUS_DIR_ENV, sessionActivityDir } from "./status-hooks.ts";
-import { BACKLOG_TASK_SKILL_FILE } from "./task-skill.ts";
+import { AGENTIC_WORKSPACE_TASK_SKILL_FILE } from "./task-skill.ts";
 import type { AgentPreset, ModeProfile, RuntimeAgentBootstrap } from "./types.ts";
 
 const FORBIDDEN_ENV = [
-	"BACKLOG_CWD",
-	"BACKLOG_TASK_ID",
-	"BACKLOG_SESSION_ID",
-	"BACKLOG_PROJECT_ROOT",
+	"AGENTIC_WORKSPACE_CWD",
+	"AGENTIC_WORKSPACE_TASK_ID",
+	"AGENTIC_WORKSPACE_SESSION_ID",
+	"AGENTIC_WORKSPACE_PROJECT_ROOT",
 	"TASK_ID",
 	"SESSION_ID",
 ] as const;
@@ -30,7 +30,7 @@ export interface PreparedAgentLaunch {
 	identity?: NativeIdentity;
 	/** Non-blocking preset-environment warnings, available to native workspace presentation. */
 	warnings?: string[];
-	resources?: PreparedLaunchResources;
+	resources: PreparedLaunchResources;
 	/** Release only after the agent stops, or if starting the agent fails. */
 	cleanup(): Promise<void>;
 }
@@ -90,9 +90,9 @@ async function launchEnvironment(
 		});
 	return removeLegacyEnvironment({
 		...resolved,
-		BACKLOG_PROJECT_DIR: paths.projectDir,
-		BACKLOG_WORKTREE_DIR: paths.worktreeDir,
-		BACKLOG_TASK_DIR: paths.taskDir,
+		AGENTIC_WORKSPACE_PROJECT_DIR: paths.projectDir,
+		AGENTIC_WORKSPACE_WORKTREE_DIR: paths.worktreeDir,
+		AGENTIC_WORKSPACE_TASK_DIR: paths.taskDir,
 	});
 }
 
@@ -155,9 +155,9 @@ export async function prepareAgentLaunchResources(
 ): Promise<PreparedAgentLaunch> {
 	const { preset, options, agent, policyPreset, command, projectDir, taskDir, environment, adapterResult } = checked;
 
-	const directory = await mkdtemp(join(tmpdir(), "backlog-agent-skill-"));
+	const directory = await mkdtemp(join(tmpdir(), "agentic-workspace-agent-skill-"));
 	// The hook file lives in the temp dir; the sidecar lives at its deterministic per-session path
-	// (so another Backlog process can read it). Both are removed together on stop.
+	// (so another AgenticWorkspace process can read it). Both are removed together on stop.
 	const statusDir =
 		options.sessionId && agent.hookBacked ? sessionActivityDir(dirname(bootstrapPath), options.sessionId) : undefined;
 	const cleanup = async () => {
@@ -166,11 +166,15 @@ export async function prepareAgentLaunchResources(
 	};
 	try {
 		const skillRoot = join(directory, "skills");
-		const skillDirectory = join(skillRoot, "backlog-task-management");
+		const skillDirectory = join(skillRoot, "agentic-workspace-task-management");
 		await mkdir(skillDirectory, { recursive: true, mode: 0o700 });
 		const skillPath = join(skillDirectory, "SKILL.md");
-		await writeFile(skillPath, BACKLOG_TASK_SKILL_FILE, { mode: 0o600 });
-		const effectiveBootstrapPath = options.profile ? join(directory, "profile-bootstrap.md") : bootstrapPath;
+		await writeFile(skillPath, AGENTIC_WORKSPACE_TASK_SKILL_FILE, { mode: 0o600 });
+		// The identity profile bootstrap is the launch prompt file. Mode-profile text is appended only
+		// when a profile is supplied, so a launch with the profile suppressed starts identity-only.
+		const baseExists = await Bun.file(bootstrapPath).exists();
+		const effectiveBootstrapPath =
+			options.profile || baseExists ? join(directory, "profile-bootstrap.md") : bootstrapPath;
 		if (options.profile) {
 			const base = await Bun.file(bootstrapPath).text();
 			await writeFile(
@@ -178,11 +182,14 @@ export async function prepareAgentLaunchResources(
 				`${base}\n\n${profileInstructions(options.profile, projectDir, taskDir)}\n`,
 				{ mode: 0o600 },
 			);
+		} else if (baseExists) {
+			await writeFile(effectiveBootstrapPath, await Bun.file(bootstrapPath).text(), { mode: 0o600 });
 		}
 		const env = { ...environment };
 		if (requestedEnvironment) {
-			if (requestedEnvironment.BACKLOG_WORKSPACE_CONTEXT === undefined) delete env.BACKLOG_WORKSPACE_CONTEXT;
-			else env.BACKLOG_WORKSPACE_CONTEXT = requestedEnvironment.BACKLOG_WORKSPACE_CONTEXT;
+			if (requestedEnvironment.AGENTIC_WORKSPACE_WORKSPACE_CONTEXT === undefined)
+				delete env.AGENTIC_WORKSPACE_WORKSPACE_CONTEXT;
+			else env.AGENTIC_WORKSPACE_WORKSPACE_CONTEXT = requestedEnvironment.AGENTIC_WORKSPACE_WORKSPACE_CONTEXT;
 		}
 		// Process-scoped status sidecar: unconditional for every caller of this chokepoint, so a
 		// CLI-created session is indistinguishable from a workspace-created one. Created inside the
@@ -208,9 +215,9 @@ export async function prepareAgentLaunchResources(
 		});
 		const preparedEnvironment = removeLegacyEnvironment({
 			...prepared.env,
-			BACKLOG_PROJECT_DIR: projectDir,
-			BACKLOG_WORKTREE_DIR: options.cwd,
-			BACKLOG_TASK_DIR: taskDir,
+			AGENTIC_WORKSPACE_PROJECT_DIR: projectDir,
+			AGENTIC_WORKSPACE_WORKTREE_DIR: options.cwd,
+			AGENTIC_WORKSPACE_TASK_DIR: taskDir,
 		});
 		// A shell-owned trap also cleans durable tmux agents after this CLI has exited.
 		// The trap removes only our mkdtemp directory, never any project or user-owned path.
@@ -246,7 +253,7 @@ export async function prepareAgentAsk(
 		taskDir: roots.taskRoot,
 	});
 	const preset = await resolveLaunchPreset(configuredPreset, { cwd: worktreeDir, env });
-	const preflight = await preflightAgentLaunch(preset, join(tmpdir(), "backlog-agent-ask-bootstrap.md"), {
+	const preflight = await preflightAgentLaunch(preset, join(tmpdir(), "agentic-workspace-agent-ask-bootstrap.md"), {
 		cwd: worktreeDir,
 		intent: { kind: "resume", nativeSessionId },
 		profile,
@@ -255,7 +262,7 @@ export async function prepareAgentAsk(
 		environment: env,
 	});
 	const agent = preflight.agent;
-	const directory = await mkdtemp(join(tmpdir(), "backlog-agent-ask-"));
+	const directory = await mkdtemp(join(tmpdir(), "agentic-workspace-agent-ask-"));
 	const cleanup = () => rm(directory, { recursive: true, force: true });
 	try {
 		const effective =
@@ -266,10 +273,10 @@ export async function prepareAgentAsk(
 		const prepared = agent.prepareBeforeAsk
 			? await (async () => {
 					const skillRoot = join(directory, "skills");
-					const skillDirectory = join(skillRoot, "backlog-task-management");
+					const skillDirectory = join(skillRoot, "agentic-workspace-task-management");
 					const skillPath = join(skillDirectory, "SKILL.md");
 					await mkdir(skillDirectory, { recursive: true, mode: 0o700 });
-					await writeFile(skillPath, BACKLOG_TASK_SKILL_FILE, { mode: 0o600 });
+					await writeFile(skillPath, AGENTIC_WORKSPACE_TASK_SKILL_FILE, { mode: 0o600 });
 					return await agent.prepare({
 						preset: effective,
 						cwd: worktreeDir,
@@ -295,9 +302,9 @@ export async function prepareAgentAsk(
 			command: `/bin/sh -c ${quote(`unset ${FORBIDDEN_ENV.join(" ")}; exec ${command}`)}`,
 			env: removeLegacyEnvironment({
 				...prepared.env,
-				BACKLOG_PROJECT_DIR: roots.repositoryRoot,
-				BACKLOG_WORKTREE_DIR: worktreeDir,
-				BACKLOG_TASK_DIR: roots.taskRoot,
+				AGENTIC_WORKSPACE_PROJECT_DIR: roots.repositoryRoot,
+				AGENTIC_WORKSPACE_WORKTREE_DIR: worktreeDir,
+				AGENTIC_WORKSPACE_TASK_DIR: roots.taskRoot,
 			}),
 			cleanup,
 		};

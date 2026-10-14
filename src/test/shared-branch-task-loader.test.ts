@@ -2,9 +2,9 @@ import { describe, expect, it } from "bun:test";
 import { BranchTaskLoader } from "../core/task-loader.ts";
 import type { GitBranchTip, GitOperations } from "../git/operations.ts";
 import { serializeTask } from "../markdown/serializer.ts";
-import type { BacklogConfig } from "../types/index.ts";
+import type { AgenticWorkspaceConfig } from "../types/index.ts";
 
-const config: BacklogConfig = {
+const config: AgenticWorkspaceConfig = {
 	projectName: "Loader test",
 	statuses: ["To Do", "In Progress", "Done"],
 	labels: [],
@@ -31,13 +31,13 @@ function taskMarkdown(id: string, title: string): string {
 
 describe("branch task loading", () => {
 	it("loads canonical branch records without indexing sibling artifacts", async () => {
-		const path = "backlog/tasks/task-100/task.md";
+		const path = "agentic-workspace/tasks/task-100/task.md";
 		const loadedPaths: string[] = [];
 		const loader = new BranchTaskLoader({
 			listFilesInTree: async () => [
 				path,
-				"backlog/tasks/task-100/plan.md",
-				"backlog/tasks/task-100/task-200 - Notes.md",
+				"agentic-workspace/tasks/task-100/plan.md",
+				"agentic-workspace/tasks/task-100/task-200 - Notes.md",
 			],
 			getBranchLastModifiedMap: async () => new Map([[path, new Date("2026-10-10T00:00:00Z")]]),
 			showFile: async (_commit: string, recordPath: string) => {
@@ -67,7 +67,7 @@ describe("branch task loading", () => {
 
 	it("deduplicates same-SHA refs and keeps cached results immutable", async () => {
 		const commit = "1".repeat(40);
-		const path = "backlog/tasks/task-1/task.md";
+		const path = "agentic-workspace/tasks/task-1/task.md";
 		const calls = { tree: 0, history: 0, file: 0 };
 		const git = {
 			listFilesInTree: async () => {
@@ -103,7 +103,7 @@ describe("branch task loading", () => {
 	});
 
 	it("uses the unborn branch name when no ref is marked current", async () => {
-		const path = "backlog/tasks/task-1/task.md";
+		const path = "agentic-workspace/tasks/task-1/task.md";
 		const loader = new BranchTaskLoader({
 			getCurrentBranch: async () => "blank",
 			listFilesInTree: async () => [path],

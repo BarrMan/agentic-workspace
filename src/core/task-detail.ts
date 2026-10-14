@@ -3,7 +3,7 @@ import { buildDependencyGraph, createDependencyGraphContext, type DependencyGrap
 import { createReadinessGraph, getTaskReadiness, type TaskReadiness } from "../utils/readiness.ts";
 import { canonicalTaskId } from "../utils/task-id.ts";
 import { createTaskRecordIndex } from "../utils/task-record-index.ts";
-import type { Core } from "./backlog.ts";
+import type { Core } from "./agentic-workspace.ts";
 
 /**
  * The records a read is allowed to resolve relationships against, loaded once and shared by every

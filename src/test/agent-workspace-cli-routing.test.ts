@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { Command } from "commander";
 import { AgentSessionService } from "../agent-workspace/sessions.ts";
 import { registerAgentWorkspaceCommands } from "../commands/agent-workspace.ts";
-import type { Core } from "../core/backlog.ts";
+import type { Core } from "../core/agentic-workspace.ts";
 
 describe("agent-session CLI routing", () => {
 	afterEach(() => {
@@ -18,9 +18,13 @@ describe("agent-session CLI routing", () => {
 		program.exitOverride();
 		registerAgentWorkspaceCommands(program, {
 			project: async () =>
-				({ filesystem: { rootDir: process.cwd(), backlogDir: join(process.cwd(), ".backlog") } }) as Core,
+				({
+					filesystem: { rootDir: process.cwd(), agenticWorkspaceDir: join(process.cwd(), ".agentic-workspace") },
+				}) as Core,
 			root: async () =>
-				({ filesystem: { rootDir: process.cwd(), backlogDir: join(process.cwd(), ".backlog") } }) as Core,
+				({
+					filesystem: { rootDir: process.cwd(), agenticWorkspaceDir: join(process.cwd(), ".agentic-workspace") },
+				}) as Core,
 		});
 		return program;
 	};

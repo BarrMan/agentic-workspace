@@ -13,7 +13,7 @@ import type { TaskArtifactRepository } from "../file-system/task-artifact-reposi
 import { warnUnparseableTaskFile } from "../file-system/task-repository.ts";
 import type { GitBranchTip, GitOperations } from "../git/operations.ts";
 import { FrontmatterSchemaError, parseTask } from "../markdown/parser.ts";
-import type { BacklogConfig, Task, TaskDirectoryType, TaskSource } from "../types/index.ts";
+import type { AgenticWorkspaceConfig, Task, TaskDirectoryType, TaskSource } from "../types/index.ts";
 import { isLocalEditableTask, TASK_DIRECTORY, TASK_SOURCE } from "../types/index.ts";
 import { DEFAULT_TASK_PREFIX, extractAnyPrefix } from "../utils/prefix-config.ts";
 import { isValidTaskId } from "../utils/task-id.ts";
@@ -50,7 +50,7 @@ export interface TaskCorpusSnapshot {
 	completedTasks: Task[];
 	identityIndex?: TaskIdentityIndex;
 	branchStateEntries?: BranchTaskStateEntry[];
-	config?: BacklogConfig | null;
+	config?: AgenticWorkspaceConfig | null;
 }
 
 const MAX_SEARCHABLE_ARTIFACTS = 32;
@@ -97,8 +97,8 @@ const STATE_DIRECTORIES: Array<{ path: string; type: TaskDirectoryType }> = [
 	{ path: DEFAULT_DIRECTORIES.COMPLETED, type: TASK_DIRECTORY.COMPLETED },
 ];
 
-function getTaskTypeFromPath(path: string, backlogDir: string): TaskDirectoryType | null {
-	const normalized = path.startsWith(`${backlogDir}/`) ? path.slice(backlogDir.length + 1) : path;
+function getTaskTypeFromPath(path: string, agenticWorkspaceDir: string): TaskDirectoryType | null {
+	const normalized = path.startsWith(`${agenticWorkspaceDir}/`) ? path.slice(agenticWorkspaceDir.length + 1) : path;
 
 	for (const { path: dir, type } of STATE_DIRECTORIES) {
 		if (normalized.startsWith(`${dir}/`)) {
@@ -110,9 +110,9 @@ function getTaskTypeFromPath(path: string, backlogDir: string): TaskDirectoryTyp
 }
 
 /** Immutable Git trees expose current task containers only; other layouts are not task records. */
-function getTaskRecordId(path: string, backlogDir: string, prefix: string): string | null {
+function getTaskRecordId(path: string, agenticWorkspaceDir: string, prefix: string): string | null {
 	const normalized = path.replaceAll("\\", "/");
-	const root = `${backlogDir
+	const root = `${agenticWorkspaceDir
 		.replaceAll("\\", "/")
 		.replace(/^\.\//, "")
 		.replace(/^\/+|\/+$/g, "")}/`;
@@ -129,7 +129,7 @@ function getTaskRecordId(path: string, backlogDir: string, prefix: string): stri
 interface RemoteIndexEntry {
 	id: string;
 	branch: string;
-	path: string; // "backlog/tasks/task-123/task.md"
+	path: string; // "agentic-workspace/tasks/task-123/task.md"
 	lastModified: Date;
 	commit: string;
 	stateEntry?: BranchTaskStateEntry;
@@ -168,16 +168,16 @@ interface HydrationOptions {
 	loadTask: (commit: string, path: string) => Promise<Task | null | typeof MALFORMED_TASK>;
 }
 
-function logicalTaskPath(path: string, backlogDir: string): string {
+function logicalTaskPath(path: string, agenticWorkspaceDir: string): string {
 	const normalizedPath = path.replaceAll("\\", "/");
-	const normalizedBacklogDir = backlogDir
+	const normalizedAgenticWorkspaceDir = agenticWorkspaceDir
 		.replaceAll("\\", "/")
 		.replace(/^\.\//, "")
 		.replace(/^\/+|\/+$/g, "");
-	const backlogMarker = `/${normalizedBacklogDir}/`;
-	const markerIndex = normalizedPath.indexOf(backlogMarker);
+	const agenticWorkspaceMarker = `/${normalizedAgenticWorkspaceDir}/`;
+	const markerIndex = normalizedPath.indexOf(agenticWorkspaceMarker);
 	const logicalPath = markerIndex >= 0 ? normalizedPath.slice(markerIndex + 1) : normalizedPath.replace(/^\.\//, "");
-	return normalizeTaskLifecyclePath(logicalPath, normalizedBacklogDir);
+	return normalizeTaskLifecyclePath(logicalPath, normalizedAgenticWorkspaceDir);
 }
 
 function lifecycleRank(type: TaskDirectoryType | undefined): number {
@@ -205,18 +205,18 @@ function selectPreferredIdentityEntry(entries: RemoteIndexEntry[]): RemoteIndexE
 function chooseIdentityHydrationCandidates(
 	index: Map<string, RemoteIndexEntry[]>,
 	localTasks: Task[] | undefined,
-	backlogDir: string,
+	agenticWorkspaceDir: string,
 	toRef: (entry: RemoteIndexEntry) => string,
 ): HydrationCandidate[] {
 	const localIdentities = new Set(
 		(localTasks ?? [])
 			.filter((task) => task.filePath)
-			.map((task) => `${canonicalTaskId(task.id)}\0${logicalTaskPath(task.filePath ?? "", backlogDir)}`),
+			.map((task) => `${canonicalTaskId(task.id)}\0${logicalTaskPath(task.filePath ?? "", agenticWorkspaceDir)}`),
 	);
 	const winners = new Map<string, RemoteIndexEntry>();
 	for (const entries of index.values()) {
 		for (const entry of entries) {
-			const identity = `${canonicalTaskId(entry.id)}\0${logicalTaskPath(entry.path, backlogDir)}`;
+			const identity = `${canonicalTaskId(entry.id)}\0${logicalTaskPath(entry.path, agenticWorkspaceDir)}`;
 			if (localIdentities.has(identity)) continue;
 			const current = winners.get(identity);
 			if (!current || isPreferredIdentityEntry(entry, current)) winners.set(identity, entry);
@@ -425,13 +425,13 @@ export class BranchTaskLoader {
 
 	retainSnapshot(
 		tips: readonly GitBranchTip[],
-		options: { backlogDir: string; prefix: string; activeBranchDays: number },
+		options: { agenticWorkspaceDir: string; prefix: string; activeBranchDays: number },
 	): void {
 		const historyCutoff = getBranchHistoryCutoff(options.activeBranchDays);
 		const retainedCommits = new Set(tips.map((tip) => tip.commit));
 		const retainedIndexKeys = new Set(
 			[...retainedCommits].map((commit) =>
-				this.commitIndexKey(commit, options.backlogDir, options.prefix, historyCutoff),
+				this.commitIndexKey(commit, options.agenticWorkspaceDir, options.prefix, historyCutoff),
 			),
 		);
 		for (const key of this.commitIndexCache.keys()) {
@@ -444,10 +444,10 @@ export class BranchTaskLoader {
 
 	async load(
 		tips: readonly GitBranchTip[],
-		userConfig: BacklogConfig | null,
+		userConfig: AgenticWorkspaceConfig | null,
 		localTasks: Task[],
 		includeCompleted: boolean,
-		backlogDir: string = DEFAULT_DIRECTORIES.BACKLOG,
+		agenticWorkspaceDir: string = DEFAULT_DIRECTORIES.AGENTIC_WORKSPACE,
 		onProgress?: (message: string) => void,
 		currentBranch?: string,
 	): Promise<BranchTaskLoadResult> {
@@ -474,7 +474,7 @@ export class BranchTaskLoader {
 				if (!branchRef) break;
 				const indexed = await this.indexBranch(
 					branchRef,
-					{ backlogDir, prefix, historyCutoff, includeCompleted },
+					{ agenticWorkspaceDir, prefix, historyCutoff, includeCompleted },
 					stateEntries,
 					branchRef.source === TASK_SOURCE.REMOTE ? remoteIndex : localIndex,
 				);
@@ -511,7 +511,7 @@ export class BranchTaskLoader {
 			}
 			return mergeHydrationCandidates(
 				candidates,
-				chooseIdentityHydrationCandidates(index, localTasks, backlogDir, toRef),
+				chooseIdentityHydrationCandidates(index, localTasks, agenticWorkspaceDir, toRef),
 			);
 		};
 
@@ -531,7 +531,7 @@ export class BranchTaskLoader {
 
 	private async getPinnedBranchRefs(
 		tips: readonly GitBranchTip[],
-		userConfig: BacklogConfig | null,
+		userConfig: AgenticWorkspaceConfig | null,
 		snapshotCurrentBranch?: string,
 	): Promise<PinnedBranchRef[]> {
 		const currentTip = tips.find((tip) => tip.current && !isRemoteBranch(tip.name));
@@ -552,14 +552,19 @@ export class BranchTaskLoader {
 
 	private async indexBranch(
 		branchRef: PinnedBranchRef,
-		options: { backlogDir: string; prefix: string; historyCutoff: Date | undefined; includeCompleted: boolean },
+		options: {
+			agenticWorkspaceDir: string;
+			prefix: string;
+			historyCutoff: Date | undefined;
+			includeCompleted: boolean;
+		},
 		stateEntries: BranchTaskStateEntry[],
 		index: Map<string, RemoteIndexEntry[]>,
 	): Promise<boolean> {
 		try {
 			const tree = await this.loadCommitIndex(
 				branchRef.commit,
-				options.backlogDir,
+				options.agenticWorkspaceDir,
 				options.prefix,
 				options.historyCutoff,
 			);
@@ -596,27 +601,32 @@ export class BranchTaskLoader {
 		else index.set(cached.id, [entry]);
 	}
 
-	private commitIndexKey(commit: string, backlogDir: string, prefix: string, cutoff: Date | undefined): string {
-		return JSON.stringify([commit, backlogDir, prefix.toLowerCase(), cutoff?.getTime() ?? null]);
+	private commitIndexKey(
+		commit: string,
+		agenticWorkspaceDir: string,
+		prefix: string,
+		cutoff: Date | undefined,
+	): string {
+		return JSON.stringify([commit, agenticWorkspaceDir, prefix.toLowerCase(), cutoff?.getTime() ?? null]);
 	}
 
 	private async loadCommitIndex(
 		commit: string,
-		backlogDir: string,
+		agenticWorkspaceDir: string,
 		prefix: string,
 		historyCutoff: Date | undefined,
 	): Promise<readonly CachedTaskTreeEntry[]> {
-		const key = this.commitIndexKey(commit, backlogDir, prefix, historyCutoff);
+		const key = this.commitIndexKey(commit, agenticWorkspaceDir, prefix, historyCutoff);
 		const cached = this.commitIndexCache.get(key);
 		if (cached) return await cached;
 
 		const promise = (async (): Promise<readonly CachedTaskTreeEntry[]> => {
-			const files = await this.git.listFilesInTree(commit, backlogDir);
+			const files = await this.git.listFilesInTree(commit, agenticWorkspaceDir);
 			if (files.length === 0) return [];
-			const lastModified = await this.git.getBranchLastModifiedMap(commit, backlogDir, historyCutoff);
+			const lastModified = await this.git.getBranchLastModifiedMap(commit, agenticWorkspaceDir, historyCutoff);
 			const seenLayouts = new Map<string, string>();
 			return files.flatMap((path) => {
-				const id = getTaskRecordId(path, backlogDir, prefix);
+				const id = getTaskRecordId(path, agenticWorkspaceDir, prefix);
 				if (!id) return [];
 				const identity = canonicalTaskId(id);
 				const priorPath = seenLayouts.get(identity);
@@ -629,7 +639,7 @@ export class BranchTaskLoader {
 					{
 						id,
 						path,
-						type: getTaskTypeFromPath(path, backlogDir),
+						type: getTaskTypeFromPath(path, agenticWorkspaceDir),
 						lastModified: (lastModified.get(path) ?? new Date(0)).getTime(),
 					},
 				];

@@ -1,10 +1,12 @@
 # OpenTUI Workspace Specification
 
+> [`docs/SPEC.md`](./SPEC.md) is authoritative wherever this document disagrees with it.
+
 **Status:** the native terminal baseline is user-approved. The current behavior below describes the subsequent workspace pass and supersedes the historical design sections.
 
 ## Current native behavior
 
-- `agenticworkspace workspace`, interactive `agenticworkspace board`, and `agenticworkspace board view` use OpenTUI. Piped board output remains Markdown; `--milestones` works on direct and nested board commands.
+- `agentic-workspace workspace`, interactive `agentic-workspace board`, and `agentic-workspace board view` use OpenTUI. Piped board output remains Markdown; `--milestones` works on direct and nested board commands.
 - Tasks occupy 30% of workspace width. `Shift+[` hides that pane without restarting selected agent. `Space` shows or hides details in normal layout flow. Details use roughly 30% of right-region height above live preview. Hiding details expands same retained terminal and changes its rows. Collapse hint is right-aligned on details border.
 - Task navigation keeps the current viewport while selection remains visible. Moving past its top or bottom scrolls only enough to reveal the selected row. Selection refreshes retain the viewport; changing status, filters, or view resets it.
 - In task lists, `g` selects the first filtered task and `G` selects the last. Workspace jumps stay within the active status tab; board jumps stay within the selected status pane. `Home` and `End` remain available. Empty panes are safe, and editable fields and focused agent terminals keep their input.
@@ -15,23 +17,23 @@
 - Modal, preview, details, and tab surfaces use neutral backgrounds instead of dark blue. Filter dialogs remain opaque and own keyboard/paste focus. `Enter` or `Ctrl+S` applies, `Ctrl+R` resets draft, and `Escape` cancels.
 - Workspace agents use durable task-session records, saved native conversation IDs, and output logs. `s` opens newest-first session picker with active session marked. Selection displays retained live terminal or resumes exact conversation, never latest conversation by inference.
 - The task-row dot is the agent-session indication: a single map keyed by task id that renders iff the task has an active session. Green = working (a fresh <30 s `running` hook or pane chrome showing running); blue = parked (any active session not currently working, including idle, unknown, not-yet-probed after restart/resume, and durable parked/starting); orange = waiting and red = error, both transient. A task with no active session renders no dot. It appears on selected and unselected task rows. The selected row uses dark text on a light slate background, with a darkened variant of each colour for readable contrast. Selection stays visible when focus moves elsewhere.
-- Workspace exit awaits workspace-owned agent teardown. Normal exit, `SIGINT`, and `SIGTERM` close owned terminals and stop owned agent process groups, including children that ignore `SIGHUP`. Teardown escalates from `SIGTERM` to `SIGKILL` when necessary. Releasing a process **parks** the session: the durable record stays non-terminal (`parked`) with its active pointer, and the next workspace start auto-resumes the selected task's parked conversation. Workspace exit therefore never ends a session. Ownership and termination must be proven before removing process handles or capture files; failures remain explicit and never mark the session stopped. A tmux session whose name is not a project session name (`backlog-<task-slug>-<8 hex>`) is refused, not adopted or killed. Attaching to CLI-owned running sessions does not transfer ownership; workspace exit detaches without killing them. `SIGKILL` and hard crashes cannot run in-process cleanup.
+- Workspace exit awaits workspace-owned agent teardown. Normal exit, `SIGINT`, and `SIGTERM` close owned terminals and stop owned agent process groups, including children that ignore `SIGHUP`. Teardown escalates from `SIGTERM` to `SIGKILL` when necessary. Releasing a process **parks** the session: the durable record stays non-terminal (`parked`) with its active pointer, and the next workspace start auto-resumes the selected task's parked conversation. Workspace exit therefore never ends a session. Ownership and termination must be proven before removing process handles or capture files; failures remain explicit and never mark the session stopped. A tmux session whose name is not a project session name (`agentic-workspace-<task-slug>-<8 hex>`) is refused, not adopted or killed. Attaching to CLI-owned running sessions does not transfer ownership; workspace exit detaches without killing them. `SIGKILL` and hard crashes cannot run in-process cleanup.
 - Selecting a task whose CLI-owned session still runs attaches its real pane automatically. Auto-attach sends no `Enter`, starts no session, resumes no conversation, records no usage, and changes no ownership; returning to the task keeps the same preview. A stopped task never auto-resumes. Auto-attach probes only the selected task; a bounded ~30 s probe/reconcile sweep covers every durable-active session for liveness, so a non-selected session's dot is not stale until selected. The passive probe settles a session only when tmux conclusively reports its pane dead or canonically missing, and never kills a pane; an inconclusive probe leaves durable status unchanged and shows a notice. A tmux pane-died hook is deferred future work.
-- The shared agent backend is always the default tmux server, independent of an ambient tmux client. Every agent is one uniquely named session on it, `backlog-<task-slug>-<8 hex>`. A workspace running inside another tmux server still attaches the real agent on the default server.
+- The shared agent backend is always the default tmux server, independent of an ambient tmux client. Every agent is one uniquely named session on it, `agentic-workspace-<task-slug>-<8 hex>`. A workspace running inside another tmux server still attaches the real agent on the default server.
 - `Ctrl+[` and `Ctrl+]` navigate up to 100 session-local snapshots of task selection, filters, workspace/board view, and status tab. New navigation after going back discards forward history.
 - `?` opens shortcut help. `/` searches; `Enter` replaces the selected row's binding. Binding and description are separate columns in one shared responsive layout, so descriptions stay aligned across capture phases. The active row holds a native inline `Press key...` input. After the first stroke, such as `Shift+F`, the binding renders as plain text and the native pending input moves right within the same column, while the description keeps its column. The footer offers an optional second stroke. A second stroke opens the unchanged Save/Discard footer. `Escape` after the first stroke opens single-stroke confirmation and removes the pending prompt. `Left`/`Right` selects Save or Discard; `Enter` applies the choice. Initial `Escape` is recorded, so pressing `Escape` twice confirms an Escape binding. Nothing persists until Save. Overrides persist in project-local view state and replace default aliases; legacy alias arrays remain aliases. Conflicting bindings, including ambiguous sequence prefixes, cannot replace a working binding.
 - Navigation footer shows essential actions only. Tasks with saved sessions show Sessions/Handoff instead of Start; tasks without sessions show Enter/Start. Focused agent input shows only leave-agent shortcut. Help retains complete shortcut list.
 - `,` opens a fullscreen, project-only Settings shell. A three-row header shows `Settings` and `[ Project ]`; a three-row footer shows contextual key hints and status. A 20-column rounded `Categories` pane containing `Agents` sits beside a rounded content pane, with cyan `#22d3ee` focus. Fields show a label, the selected field's description, and a read-only value. `Right` enters the category's fields; `Left` returns to categories without changing values. `Tab`/`Shift+Tab`, `Up`/`Down`, or mouse clicks select fields. `Enter` starts editing; preset arrows change a staged choice, and text fields reveal a native input. `Enter` commits the field to the settings draft; `Escape` cancels that field edit and stays in Settings. Multiline environment paste works; `Shift+Enter` inserts a newline when supported by the terminal. At the preset selector, `Space` marks the chosen preset as default and `n` copies its provider adapter into a new named preset. `Ctrl+S` saves only committed draft values, never the current uncommitted editor buffer. `Escape` outside editing discards the whole draft. Existing preparation, worktree, and adapter fields survive edits. The horizontal scrollbar stays hidden; the vertical scrollbar appears only on overflow. User-level settings are not exposed.
 - New-task creation defaults to inheriting project configuration. Choosing preset saves explicit task override atomically with creation. `p` changes selected task's preset or clears override. `h` chooses replacement preset before starting linked session; failed launch preserves active predecessor. Settings UI is project scope only; preset visibility does not claim live verification for additional providers.
 - Task create and edit forms stay compact: option fields render as a one-line `◀ value ▶` cycler (Left/Up previous, Right/Down next, wrapping) instead of an expanded list. The create form keeps title, description, status, type, priority, project, agent preset, worktree-per-task, and YOLO. The edit form shows title, description, type, and priority. Due date remains editable through the CLI and visible in the read-only details pane.
-- `agenticworkspace skill` prints Backlog Task Management skill. Task-manager launches supply temporary session-scoped skill directory rather than installing into global or project discovery paths. New agents run from project root without task/project metadata environment variables. Provider prerequisites are described in [session contract](./opentui-workspace-session-contract.md).
+- `agentic-workspace skill` prints AgenticWorkspace Task Management skill. Task-manager launches supply temporary session-scoped skill directory rather than installing into global or project discovery paths. New agents run from project root without task/project metadata environment variables. Provider prerequisites are described in [session contract](./opentui-workspace-session-contract.md).
 - Workspace refresh reads project session state once rather than reloading the task corpus for each visible task. Rapid navigation coalesces pending refreshes and commits the latest selection instead of replaying obsolete snapshots. Session state remains freshly read; this does not introduce a stale session cache. Board cross-branch task loading remains unchanged.
 
 Legacy terminals encode `Ctrl+[` and `Escape` identically. Navigation treats that byte as history back; modal and agent focus retain Escape behavior.
 
 ### TTT tab reference
 
-This composition follows the [TTT v1.6.0 `tabbar_widget.go`](https://github.com/eugenioenko/ttt/blob/v1.6.0/internal/ui/tabbar_widget.go): the active tab is a three-row cap whose reversed bottom seams open into the content viewport below, and inactive labels rest on a shared baseline at natural label width plus one space per side. Backlog renders the same geometry inside Tasks, with plain status labels, no per-tab count, and no underline, separator, or fixed cell.
+This composition follows the [TTT v1.6.0 `tabbar_widget.go`](https://github.com/eugenioenko/ttt/blob/v1.6.0/internal/ui/tabbar_widget.go): the active tab is a three-row cap whose reversed bottom seams open into the content viewport below, and inactive labels rest on a shared baseline at natural label width plus one space per side. AgenticWorkspace renders the same geometry inside Tasks, with plain status labels, no per-tab count, and no underline, separator, or fixed cell.
 
 ### AOE settings reference
 
@@ -41,7 +43,7 @@ The remaining sections preserve original design history. They do not override cu
 
 ## 1. Goal
 
-`agenticworkspace workspace` becomes one OpenTUI Core workspace process.
+`agentic-workspace workspace` becomes one OpenTUI Core workspace process.
 
 It replaces tmux/Blessed presentation. It retains existing task domain services, persistence, watchers, and durable tmux-backed agent sessions.
 
@@ -49,7 +51,7 @@ It replaces tmux/Blessed presentation. It retains existing task domain services,
 
 ### In scope
 
-- Public `agenticworkspace workspace` OpenTUI workspace.
+- Public `agentic-workspace workspace` OpenTUI workspace.
 - Task navigation, filtering, search, details, creation, editing, lifecycle actions, and board route.
 - Live agent session status, output, history, handoff, configuration, and quick preview.
 - Config-driven shortcuts, help, footer labels, and workspace exit behavior.
@@ -65,7 +67,7 @@ It replaces tmux/Blessed presentation. It retains existing task domain services,
 ## 3. Public command
 
 ```sh
-agenticworkspace workspace
+agentic-workspace workspace
 ```
 
 The command starts one OpenTUI host.
@@ -304,7 +306,7 @@ Renderer code must not write tasks, spawn agents, stop agents, own persistence, 
 
 The cutover is complete only when:
 
-1. `agenticworkspace workspace` launches one OpenTUI host.
+1. `agentic-workspace workspace` launches one OpenTUI host.
 2. No hidden workspace UI process or tmux presentation pane starts.
 3. Normal-mode `Ctrl+C` is only application-exit path.
 4. Quick preview forwards only allowed keys and implements exact `Ctrl+Q` and `Ctrl+C` rules.

@@ -3,10 +3,10 @@ import { dirname, resolve } from "node:path";
 import type { Command } from "commander";
 import { DEFAULT_STATUSES, DRAFT_STATUS } from "../constants/index.ts";
 import { decodeConfigYaml } from "../file-system/config.ts";
-import { resolveBacklogDirectory } from "../utils/backlog-directory.ts";
+import { resolveAgenticWorkspaceDirectory } from "../utils/agentic-workspace-directory.ts";
 import { getPriorityLabels } from "../utils/priority-config.ts";
 import { getProjectValues } from "../utils/project-config.ts";
-import { BACKLOG_CWD_ENV } from "../utils/runtime-cwd.ts";
+import { AGENTIC_WORKSPACE_CWD_ENV } from "../utils/runtime-cwd.ts";
 import { getTaskTypeValues } from "../utils/task-type-config.ts";
 
 export interface HelpField {
@@ -112,10 +112,10 @@ function parseStringValueFromConfig(content: string, keys: string[]): string | n
 	return null;
 }
 
-function findBacklogConfigPathSync(startDir: string): string | null {
+function findAgenticWorkspaceConfigPathSync(startDir: string): string | null {
 	let current = startDir;
 	while (current !== dirname(current)) {
-		const resolution = resolveBacklogDirectory(current);
+		const resolution = resolveAgenticWorkspaceDirectory(current);
 		if (resolution.configPath) {
 			return resolution.configPath;
 		}
@@ -125,7 +125,7 @@ function findBacklogConfigPathSync(startDir: string): string | null {
 }
 
 function getRuntimeConfigStartDir(): string {
-	const override = process.env[BACKLOG_CWD_ENV]?.trim();
+	const override = process.env[AGENTIC_WORKSPACE_CWD_ENV]?.trim();
 	return override ? resolve(override) : process.cwd();
 }
 
@@ -141,7 +141,7 @@ function normalizeStatusValues(statuses: string[]): string[] {
 
 function getCliStatusValues(options?: { includeDraft?: boolean }): string[] {
 	let configuredStatuses: string[] = [...DEFAULT_STATUSES];
-	const configPath = findBacklogConfigPathSync(getRuntimeConfigStartDir());
+	const configPath = findAgenticWorkspaceConfigPathSync(getRuntimeConfigStartDir());
 	if (configPath) {
 		try {
 			const parsed = parseStatusesFromConfig(readFileSync(configPath, "utf8"));
@@ -158,7 +158,7 @@ function getCliStatusValues(options?: { includeDraft?: boolean }): string[] {
 }
 
 function getCliPriorityValues(): string[] {
-	const configPath = findBacklogConfigPathSync(getRuntimeConfigStartDir());
+	const configPath = findAgenticWorkspaceConfigPathSync(getRuntimeConfigStartDir());
 	if (configPath) {
 		try {
 			const parsed = parsePrioritiesFromConfig(readFileSync(configPath, "utf8"));
@@ -173,7 +173,7 @@ function getCliPriorityValues(): string[] {
 }
 
 export function getCliTaskTypeValues(): string[] {
-	const configPath = findBacklogConfigPathSync(getRuntimeConfigStartDir());
+	const configPath = findAgenticWorkspaceConfigPathSync(getRuntimeConfigStartDir());
 	if (configPath) {
 		try {
 			const parsed = parseTaskTypesFromConfig(readFileSync(configPath, "utf8"));
@@ -186,7 +186,7 @@ export function getCliTaskTypeValues(): string[] {
 }
 
 function getCliProjectValues(): string[] {
-	const configPath = findBacklogConfigPathSync(getRuntimeConfigStartDir());
+	const configPath = findAgenticWorkspaceConfigPathSync(getRuntimeConfigStartDir());
 	if (configPath) {
 		try {
 			const parsed = parseProjectsFromConfig(readFileSync(configPath, "utf8"));
@@ -199,7 +199,7 @@ function getCliProjectValues(): string[] {
 }
 
 function getCliTaskPrefix(): string {
-	const configPath = findBacklogConfigPathSync(getRuntimeConfigStartDir());
+	const configPath = findAgenticWorkspaceConfigPathSync(getRuntimeConfigStartDir());
 	if (configPath) {
 		try {
 			return parseStringValueFromConfig(readFileSync(configPath, "utf8"), ["task_prefix", "taskPrefix"]) ?? "task";

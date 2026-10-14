@@ -27,7 +27,11 @@ export function validateTaskArtifactPath(path: string): string {
 		path === TASK_RECORD ||
 		path === SIDECAR ||
 		path === SIDECAR_LOCK ||
-		path.split("/").some((part) => part.startsWith(".backlog-artifact-") || part.startsWith(".backlog-artifacts-"))
+		path
+			.split("/")
+			.some(
+				(part) => part.startsWith(".agentic-workspace-artifact-") || part.startsWith(".agentic-workspace-artifacts-"),
+			)
 	)
 		throw new Error(`Invalid task artifact path: ${String(path)}`);
 	return path;
@@ -68,8 +72,8 @@ function validateSidecar(value: unknown): ArtifactApprovalSidecar {
 }
 
 export interface TaskArtifactRepositoryOptions {
-	/** Canonical configured backlog directory (the directory containing tasks/). */
-	backlogDirectory: string;
+	/** Canonical configured AgenticWorkspace directory (the directory containing tasks/). */
+	agenticWorkspaceDirectory: string;
 	/** Optional canonical task-container roots, keyed by their standard storage location. */
 	filesystemRoots?: Partial<Record<TaskContainerLocation, string>>;
 	/** Project/worktree root used to resolve registered linked worktrees to their main root. */
@@ -91,14 +95,14 @@ export interface TaskArtifactEntry extends ArtifactStatus {
 
 /** Durable, lazy task-container artifacts and content-bound approval metadata. */
 export class TaskArtifactRepository {
-	private readonly backlogDirectory: string;
+	private readonly agenticWorkspaceDirectory: string;
 	private readonly projectRoot?: string;
 	private readonly filesystemRoots: Partial<Record<TaskContainerLocation, string>>;
 	private readonly onMutation?: TaskArtifactRepositoryOptions["onMutation"];
 	private readonly validatedRecords = new Map<string, { content: string; id: string }>();
 
 	constructor(options: TaskArtifactRepositoryOptions) {
-		this.backlogDirectory = resolve(options.backlogDirectory);
+		this.agenticWorkspaceDirectory = resolve(options.agenticWorkspaceDirectory);
 		this.projectRoot = options.projectRoot ? resolve(options.projectRoot) : undefined;
 		this.filesystemRoots = options.filesystemRoots ?? {};
 		this.onMutation = options.onMutation;
@@ -111,12 +115,12 @@ export class TaskArtifactRepository {
 	}
 
 	private async root(): Promise<string> {
-		if (!this.projectRoot) return this.backlogDirectory;
+		if (!this.projectRoot) return this.agenticWorkspaceDirectory;
 		const main = await resolveMainWorktreeRoot(this.projectRoot);
 		if (main) {
-			const configuredRelative = relative(this.projectRoot, this.backlogDirectory);
+			const configuredRelative = relative(this.projectRoot, this.agenticWorkspaceDirectory);
 			if (configuredRelative.startsWith(`..${sep}`) || configuredRelative === ".." || isAbsolute(configuredRelative))
-				throw new Error("Configured backlog directory is outside the project root.");
+				throw new Error("Configured AgenticWorkspace directory is outside the project root.");
 			return resolve(main, configuredRelative);
 		}
 		try {
@@ -128,7 +132,7 @@ export class TaskArtifactRepository {
 		} catch (error) {
 			if (error instanceof Error && error.message.includes("Cannot resolve")) throw error;
 		}
-		return this.backlogDirectory;
+		return this.agenticWorkspaceDirectory;
 	}
 
 	async containerPath(taskId: string, location?: TaskContainerLocation): Promise<string> {
@@ -186,7 +190,7 @@ export class TaskArtifactRepository {
 			const canonicalContainer = await realpath(container);
 			const containerRelative = relative(canonicalRoot, canonicalContainer);
 			if (containerRelative === ".." || containerRelative.startsWith(`..${sep}`) || isAbsolute(containerRelative))
-				throw new Error(`Task container resolves outside canonical backlog storage: ${container}`);
+				throw new Error(`Task container resolves outside canonical AgenticWorkspace storage: ${container}`);
 			const recordPath = resolve(container, TASK_RECORD);
 			const recordInfo = await lstat(recordPath);
 			if (!recordInfo.isFile() || recordInfo.isSymbolicLink())
@@ -349,8 +353,8 @@ export class TaskArtifactRepository {
 					path === TASK_RECORD ||
 					path === SIDECAR ||
 					path === SIDECAR_LOCK ||
-					entry.name.startsWith(".backlog-artifact-") ||
-					entry.name.startsWith(".backlog-artifacts-") ||
+					entry.name.startsWith(".agentic-workspace-artifact-") ||
+					entry.name.startsWith(".agentic-workspace-artifacts-") ||
 					entry.name.startsWith(".task-")
 				)
 					continue;
@@ -436,7 +440,7 @@ export class TaskArtifactRepository {
 
 	private async writeSidecar(container: string, sidecar: ArtifactApprovalSidecar): Promise<void> {
 		const target = resolve(container, SIDECAR);
-		const temp = resolve(container, `.backlog-artifacts-${crypto.randomUUID()}.tmp`);
+		const temp = resolve(container, `.agentic-workspace-artifacts-${crypto.randomUUID()}.tmp`);
 		await writeFile(temp, `${JSON.stringify(sidecar, null, 2)}\n`, { flag: "wx" });
 		await rename(temp, target);
 	}
@@ -463,7 +467,7 @@ export class TaskArtifactRepository {
 			} else if (pruned) {
 				await this.writeSidecar(container, sidecar);
 			}
-			const temp = resolve(dirname(target), `.backlog-artifact-${crypto.randomUUID()}.tmp`);
+			const temp = resolve(dirname(target), `.agentic-workspace-artifact-${crypto.randomUUID()}.tmp`);
 			await writeFile(temp, bytes, { flag: "wx" });
 			await rename(temp, target);
 		});

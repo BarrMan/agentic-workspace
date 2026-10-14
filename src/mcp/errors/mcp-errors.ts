@@ -5,21 +5,21 @@ import type { CallToolResult } from "../types.ts";
 /**
  * Base MCP error class for all MCP-related errors
  */
-export class BacklogToolError extends Error {
+export class AgenticWorkspaceToolError extends Error {
 	constructor(
 		message: string,
 		public code: string,
 		public details?: unknown,
 	) {
 		super(message);
-		this.name = "BacklogToolError";
+		this.name = "AgenticWorkspaceToolError";
 	}
 }
 
 /**
  * Validation error for input validation failures
  */
-export class McpValidationError extends BacklogToolError {
+export class McpValidationError extends AgenticWorkspaceToolError {
 	constructor(message: string, validationError?: unknown) {
 		super(message, "VALIDATION_ERROR", validationError);
 	}
@@ -43,8 +43,8 @@ function buildErrorResult(code: string, message: string, details?: unknown): Cal
 	};
 }
 
-export function handleBacklogToolError(error: unknown): CallToolResult {
-	if (error instanceof BacklogToolError) {
+export function handleAgenticWorkspaceToolError(error: unknown): CallToolResult {
+	if (error instanceof AgenticWorkspaceToolError) {
 		return buildErrorResult(error.code, error.message, error.details);
 	}
 	if (isAmbiguousTaskIdError(error)) {

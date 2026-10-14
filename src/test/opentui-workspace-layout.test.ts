@@ -774,6 +774,16 @@ describe("native workspace layout", () => {
 			expect(parked.text).toBe("●");
 			expect(parked.fg.toInts()).toEqual([96, 165, 250, 255]);
 			expect(parked.fg.toInts()).not.toEqual(waiting.fg.toInts());
+			for (const [indication, color] of [
+				["error", [255, 0, 0, 255]],
+				["ended", [156, 163, 175, 255]],
+			] as const) {
+				mount.setIndication(new Map<string, AgentIndication>([["BACK-1", indication]]));
+				await setup.flush();
+				const marker = taskSpans(setup, "BACK-1").marker;
+				expect(marker.text).toBe("●");
+				expect([...marker.fg.toInts()]).toEqual([...color]);
+			}
 		} finally {
 			mount.dispose();
 		}
@@ -813,25 +823,70 @@ describe("native workspace layout", () => {
 		}
 	});
 
-	test("shows the derived indication in the agent header", async () => {
+	test("renders one exact mode/status header line", async () => {
 		const setup = await createTestRenderer({ width: 120, height: 40, exitOnCtrlC: false });
 		renderers.push(setup);
 		const { agent } = liveAgent(setup);
 		const mount = mountOpenTuiWorkspace(setup.renderer, attachParent(setup), {
 			tasks,
+			activeAgentSession: { id: "running", taskId: "BACK-1", status: "running", preset: "test" },
 			liveAgent: agent,
 			indicationByTask: new Map<string, AgentIndication>([["BACK-1", "waiting"]]),
 		});
 		try {
 			await setup.flush();
-			expect(setup.captureCharFrame()).toContain("Agent session · Retained agent · waiting");
+			const line =
+				setup
+					.captureCharFrame()
+					.split("\n")
+					.find((value) => value.includes("Agent session ·")) ?? "";
+			expect(line.slice(line.indexOf("Agent session ·")).trim()).toBe("Agent session · mode · running");
 		} finally {
 			mount.dispose();
 			agent.terminal.destroy();
 		}
 	});
 
-	test("shows the waiting placeholder and no centered warming text when no terminal is mounted", async () => {
+	test("hides the session header and keeps the selected-mode placeholder without a session", async () => {
+		const setup = await createTestRenderer({ width: 120, height: 40, exitOnCtrlC: false });
+		renderers.push(setup);
+		const mount = mountOpenTuiWorkspace(setup.renderer, attachParent(setup), {
+			tasks: [{ id: "BACK-1", title: "First task", status: "Todo" }],
+			selectedTaskIndex: 0,
+			selectedModeId: "plan",
+			modeProjectionByTask: () => ({ modeLabel: "PLAN", approved: false }),
+			onAgentStart: () => {},
+		});
+		try {
+			await setup.flush();
+			const frame = setup.captureCharFrame();
+			expect(frame).not.toContain("Agent session ·");
+			expect(frame).toContain("No session in PLAN");
+			expect(frame).toContain("[Enter] Start");
+		} finally {
+			mount.dispose();
+		}
+	});
+
+	test("shows the exact ended hint using the configured resume shortcut", async () => {
+		const setup = await createTestRenderer({ width: 120, height: 40, exitOnCtrlC: false });
+		renderers.push(setup);
+		const mount = mountOpenTuiWorkspace(setup.renderer, attachParent(setup), {
+			tasks: [{ id: "BACK-1", title: "First task", status: "Todo" }],
+			selectedTaskIndex: 0,
+			activeAgentSession: { id: "ended", status: "stopped", preset: "test", taskId: "BACK-1" },
+			sessionTaskIds: ["BACK-1"],
+			keyboardOverrides: { "workspace.sessions": { sequence: [{ key: "r" }] } },
+		});
+		try {
+			await setup.flush();
+			expect(setup.captureCharFrame()).toContain("Session ended · press R to resume");
+		} finally {
+			mount.dispose();
+		}
+	});
+
+	test("does not render session details or a no-session placeholder when a session exists", async () => {
 		const setup = await createTestRenderer({ width: 120, height: 40, exitOnCtrlC: false });
 		renderers.push(setup);
 		const mount = mountOpenTuiWorkspace(setup.renderer, attachParent(setup), {
@@ -841,9 +896,8 @@ describe("native workspace layout", () => {
 		});
 		try {
 			await setup.flush();
-			expect(setup.captureCharFrame()).toContain("Agent is waiting for input.");
-			// The old centered "Agent is warming up..." body text must never render.
-			expect(setup.captureCharFrame()).not.toContain("Agent is warming up...");
+			expect(setup.captureCharFrame()).not.toContain("Agent is waiting for input.");
+			expect(setup.captureCharFrame()).not.toContain("No session in");
 		} finally {
 			mount.dispose();
 		}
@@ -855,6 +909,7 @@ describe("native workspace layout", () => {
 		const { agent } = liveAgent(setup, "starting");
 		const mount = mountOpenTuiWorkspace(setup.renderer, attachParent(setup), {
 			tasks,
+			activeAgentSession: { id: "starting", taskId: "BACK-1", status: "starting", preset: "test" },
 			sessionTaskIds: ["BACK-1"],
 			liveAgent: agent,
 			indicationByTask: new Map<string, AgentIndication>([["BACK-1", "waiting"]]),
@@ -862,8 +917,8 @@ describe("native workspace layout", () => {
 		try {
 			await setup.flush();
 			const frame = setup.captureCharFrame();
-			expect(frame).toContain("Agent session · Retained agent · warming up");
-			// A starting agent reports "warming up" in the header, not as a centered placeholder body.
+			const line = frame.split("\n").find((value) => value.includes("Agent session ·")) ?? "";
+			expect(line.slice(line.indexOf("Agent session ·")).trim()).toBe("Agent session · mode · starting");
 			expect(frame).not.toContain("Agent is warming up...");
 		} finally {
 			mount.dispose();

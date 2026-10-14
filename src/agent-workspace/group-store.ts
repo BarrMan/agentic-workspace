@@ -96,7 +96,7 @@ class GroupStoreImpl implements GroupStore {
 
 	constructor(
 		private readonly rootDir: string,
-		private readonly backlogDir: string,
+		private readonly agenticWorkspaceDir: string,
 	) {}
 
 	get current(): GroupState {
@@ -104,9 +104,9 @@ class GroupStoreImpl implements GroupStore {
 	}
 
 	async open(): Promise<void> {
-		this.path = join(this.backlogDir, GROUPS_FILE);
+		this.path = join(this.agenticWorkspaceDir, GROUPS_FILE);
 		// The directory has to exist before fs.watch can attach to it.
-		await mkdir(this.backlogDir, { recursive: true });
+		await mkdir(this.agenticWorkspaceDir, { recursive: true });
 		await this.seed();
 		this.startWatching();
 	}
@@ -244,7 +244,7 @@ class GroupStoreImpl implements GroupStore {
 	private async withLock<R>(operation: () => Promise<R>): Promise<R> {
 		return await this.lock.withTarget(
 			this.rootDir,
-			join(this.backlogDir, ".locks", "workspace-groups"),
+			join(this.agenticWorkspaceDir, ".locks", "workspace-groups"),
 			{ staleMs: LOCK_STALE_MS, retries: LOCK_RETRIES, retryDelayMs: LOCK_RETRY_DELAY_MS },
 			(error) =>
 				new Error(`Could not lock workspace groups: ${error instanceof Error ? error.message : String(error)}`),
@@ -253,8 +253,8 @@ class GroupStoreImpl implements GroupStore {
 	}
 }
 
-export async function openGroupStore(rootDir: string, backlogDir: string): Promise<GroupStore> {
-	const store = new GroupStoreImpl(rootDir, backlogDir);
+export async function openGroupStore(rootDir: string, agenticWorkspaceDir: string): Promise<GroupStore> {
+	const store = new GroupStoreImpl(rootDir, agenticWorkspaceDir);
 	await store.open();
 	return store;
 }

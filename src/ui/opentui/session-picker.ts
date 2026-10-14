@@ -81,10 +81,8 @@ export function mountOpenTuiSessionPicker(
 		const session = sessions[selected];
 		if (!session || busy) return;
 		if (!resume) {
-			if (options.localSessionIds?.has(session.id)) {
-				dispose();
-				options.onFocusLocal(session.id);
-			}
+			dispose();
+			options.onFocusLocal(session.id);
 			return;
 		}
 		if (session.status !== "stopped" && session.status !== "parked") return;

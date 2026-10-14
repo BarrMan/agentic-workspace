@@ -3,7 +3,7 @@ import { spawn } from "node:child_process";
 import { mkdir } from "node:fs/promises";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
-import { Core } from "../core/backlog.ts";
+import { Core } from "../core/agentic-workspace.ts";
 import { initializeProject } from "../core/init.ts";
 import { getTestCliCommand } from "./test-cli.ts";
 import { createUniqueTestDir, getPlatformTimeout, isWindows, observeChildClose, safeCleanup } from "./test-utils.ts";

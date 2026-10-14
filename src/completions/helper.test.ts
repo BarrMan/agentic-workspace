@@ -4,7 +4,7 @@ import { getCompletions, parseCompletionContext } from "./helper.ts";
 
 describe("parseCompletionContext", () => {
 	test("parses empty command line", () => {
-		const context = parseCompletionContext("backlog ", 8);
+		const context = parseCompletionContext("agentic-workspace ", 8);
 		expect(context.command).toBeNull();
 		expect(context.subcommand).toBeNull();
 		expect(context.partial).toBe("");
@@ -12,41 +12,47 @@ describe("parseCompletionContext", () => {
 	});
 
 	test("parses partial command", () => {
-		const context = parseCompletionContext("backlog tas", 11);
+		const context = parseCompletionContext("agentic-workspace tas", "agentic-workspace tas".length);
 		expect(context.command).toBeNull();
 		expect(context.partial).toBe("tas");
 	});
 
 	test("parses complete command", () => {
-		const context = parseCompletionContext("agenticworkspace task ", 22);
+		const context = parseCompletionContext("agentic-workspace task ", "agentic-workspace task ".length);
 		expect(context.command).toBe("task");
 		expect(context.subcommand).toBeNull();
 		expect(context.partial).toBe("");
 	});
 
 	test("parses partial subcommand", () => {
-		const context = parseCompletionContext("agenticworkspace task ed", 24);
+		const context = parseCompletionContext("agentic-workspace task ed", "agentic-workspace task ed".length);
 		expect(context.command).toBe("task");
 		expect(context.subcommand).toBeNull();
 		expect(context.partial).toBe("ed");
 	});
 
 	test("parses complete subcommand", () => {
-		const context = parseCompletionContext("agenticworkspace task edit ", 27);
+		const context = parseCompletionContext("agentic-workspace task edit ", "agentic-workspace task edit ".length);
 		expect(context.command).toBe("task");
 		expect(context.subcommand).toBe("edit");
 		expect(context.partial).toBe("");
 	});
 
 	test("parses partial argument", () => {
-		const context = parseCompletionContext("agenticworkspace task edit task-", 32);
+		const context = parseCompletionContext(
+			"agentic-workspace task edit task-",
+			"agentic-workspace task edit task-".length,
+		);
 		expect(context.command).toBe("task");
 		expect(context.subcommand).toBe("edit");
 		expect(context.partial).toBe("task-");
 	});
 
 	test("parses flag", () => {
-		const context = parseCompletionContext("agenticworkspace task create --status ", 38);
+		const context = parseCompletionContext(
+			"agentic-workspace task create --status ",
+			"agentic-workspace task create --status ".length,
+		);
 		expect(context.command).toBe("task");
 		expect(context.subcommand).toBe("create");
 		expect(context.lastFlag).toBe("--status");
@@ -54,7 +60,10 @@ describe("parseCompletionContext", () => {
 	});
 
 	test("parses partial flag value", () => {
-		const context = parseCompletionContext("agenticworkspace task create --status In", 40);
+		const context = parseCompletionContext(
+			"agentic-workspace task create --status In",
+			"agentic-workspace task create --status In".length,
+		);
 		expect(context.command).toBe("task");
 		expect(context.subcommand).toBe("create");
 		expect(context.lastFlag).toBe("--status");
@@ -62,7 +71,10 @@ describe("parseCompletionContext", () => {
 	});
 
 	test("handles quoted strings", () => {
-		const context = parseCompletionContext('agenticworkspace task create "test task" --status ', 50);
+		const context = parseCompletionContext(
+			'agentic-workspace task create "test task" --status ',
+			'agentic-workspace task create "test task" --status '.length,
+		);
 		expect(context.command).toBe("task");
 		expect(context.subcommand).toBe("create");
 		expect(context.lastFlag).toBe("--status");
@@ -70,7 +82,7 @@ describe("parseCompletionContext", () => {
 	});
 
 	test("handles multiple flags", () => {
-		const context = parseCompletionContext("agenticworkspace task create --priority high --status ", 55);
+		const context = parseCompletionContext("agentic-workspace task create --priority high --status ", 55);
 		expect(context.command).toBe("task");
 		expect(context.subcommand).toBe("create");
 		expect(context.lastFlag).toBe("--status");
@@ -78,36 +90,42 @@ describe("parseCompletionContext", () => {
 	});
 
 	test("parses completion subcommand", () => {
-		const context = parseCompletionContext("backlog completion install ", 27);
+		const context = parseCompletionContext(
+			"agentic-workspace completion install ",
+			"agentic-workspace completion install ".length,
+		);
 		expect(context.command).toBe("completion");
 		expect(context.subcommand).toBe("install");
 		expect(context.partial).toBe("");
 	});
 
 	test("handles cursor in middle of line", () => {
-		// Cursor after "agenticworkspace task " starts the edit command context.
-		const context = parseCompletionContext("agenticworkspace task edit", 22);
+		// Cursor after "agentic-workspace task " starts the edit command context.
+		const context = parseCompletionContext("agentic-workspace task edit", "agentic-workspace task ".length);
 		expect(context.command).toBe("task");
 		expect(context.subcommand).toBeNull();
 		expect(context.partial).toBe("");
 	});
 
 	test("counts argument position correctly", () => {
-		const context = parseCompletionContext("agenticworkspace task edit task-1 ", 34);
+		const context = parseCompletionContext(
+			"agentic-workspace task edit task-1 ",
+			"agentic-workspace task edit task-1 ".length,
+		);
 		expect(context.command).toBe("task");
 		expect(context.subcommand).toBe("edit");
 		expect(context.argPosition).toBe(1);
 	});
 
 	test("does not count flag values as arguments", () => {
-		const context = parseCompletionContext("agenticworkspace task create --status Done ", 43);
+		const context = parseCompletionContext("agentic-workspace task create --status Done ", 43);
 		expect(context.command).toBe("task");
 		expect(context.subcommand).toBe("create");
 		expect(context.argPosition).toBe(0);
 	});
 
 	test("includes pwsh in --shell value completions", async () => {
-		const line = "backlog completion install --shell ";
+		const line = "agentic-workspace completion install --shell ";
 		const completions = await getCompletions(new Command(), line, line.length);
 
 		expect(completions).toContain("pwsh");
@@ -115,7 +133,7 @@ describe("parseCompletionContext", () => {
 	});
 
 	test("filters pwsh shell completion by partial value", async () => {
-		const line = "backlog completion install --shell pws";
+		const line = "agentic-workspace completion install --shell pws";
 		const completions = await getCompletions(new Command(), line, line.length);
 
 		expect(completions).toEqual(["pwsh"]);

@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from "bun:test";
 import { mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { Core } from "../core/backlog.ts";
+import { Core } from "../core/agentic-workspace.ts";
 import { serializeTask } from "../markdown/serializer.ts";
 import type { Task } from "../types/index.ts";
 import {
@@ -47,11 +47,11 @@ describe("mode lifecycle deletion contract", () => {
 	});
 
 	it("public mode deletion enumerates active, draft, completed, and archived tasks through the production service", async () => {
-		const root = await mkdtemp(join(tmpdir(), "backlog-mode-container-deletion-"));
+		const root = await mkdtemp(join(tmpdir(), "agentic-workspace-mode-container-deletion-"));
 		roots.push(root);
 		const core = new Core(root);
 		const filesystem = core.filesystem;
-		await filesystem.ensureBacklogStructure();
+		await filesystem.ensureAgenticWorkspaceStructure();
 		const modes = getDefaultModeCatalog();
 		const plan = modes.profiles.plan;
 		const build = modes.profiles.build;
@@ -134,7 +134,7 @@ describe("mode lifecycle deletion contract", () => {
 	});
 
 	async function fixture(options: { onViewUpdate?: () => void; onConfigUpdate?: () => void } = {}) {
-		const root = await mkdtemp(join(tmpdir(), "backlog-mode-lifecycle-contract-"));
+		const root = await mkdtemp(join(tmpdir(), "agentic-workspace-mode-lifecycle-contract-"));
 		roots.push(root);
 		let configuration: AgentConfiguration = { modes: catalog() } as AgentConfiguration;
 		let view: Record<string, unknown> = { selectedModeByTask: { A: "research", B: "plan" }, preserved: true };
@@ -191,7 +191,7 @@ describe("mode lifecycle deletion contract", () => {
 
 	it("rejects deleting a mode that owns sessions even with a valid destination", async () => {
 		const f = await fixture();
-		f.setHistory("A", "research", { sessions: [record("r1")] });
+		f.setHistory("A", "research", { sessions: [record("r1")], activeSessionId: "r1" });
 		await expect(f.service.deleteMode("research")).rejects.toThrow(/sessions cannot change modes/i);
 		await expect(f.service.deleteMode("research", "plan")).rejects.toThrow(/sessions cannot change modes/i);
 		await expect(f.service.deleteMode("research", "missing")).rejects.toThrow(/invalid.*destination/i);

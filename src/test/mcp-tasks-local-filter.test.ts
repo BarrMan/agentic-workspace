@@ -1,5 +1,5 @@
 import { describe, expect, it, spyOn } from "bun:test";
-import { Core } from "../core/backlog.ts";
+import { Core } from "../core/agentic-workspace.ts";
 import { TaskHandlers } from "../mcp/tools/tasks/handlers.ts";
 import type { Task } from "../types/index.ts";
 

@@ -10,7 +10,7 @@ import { chmod, copyFile, mkdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { $ } from "bun";
-import type { Core } from "../core/backlog.ts";
+import type { Core } from "../core/agentic-workspace.ts";
 import { initializeProject as initializeProjectShared } from "../core/init.ts";
 import { serializeTask } from "../markdown/serializer.ts";
 import type { Task } from "../types/index.ts";
@@ -18,15 +18,15 @@ import type { Task } from "../types/index.ts";
 /**
  * Root for every test project and Git template. It lives in the operating-system temp directory,
  * never in this checkout: a fixture that is not a complete project would otherwise resolve its
- * project root by walking up to this repository's Git root and write into the real `backlog/`
+ * project root by walking up to this repository's Git root and write into the real `agentic-workspace/`
  * workspace, and every run would leave its fixtures behind in the working tree. The test preload
  * points `TMPDIR` at a disposable worker directory and removes it after the suite completes.
  */
 const TEST_TMP_ROOT = ((): string => {
 	try {
-		return join(realpathSync(tmpdir()), "backlog-tests");
+		return join(realpathSync(tmpdir()), "agentic-workspace-tests");
 	} catch {
-		return join(tmpdir(), "backlog-tests");
+		return join(tmpdir(), "agentic-workspace-tests");
 	}
 })();
 
@@ -266,7 +266,7 @@ export async function createLauncherInstall(
 	if (writeBinary) {
 		const packageDir = join(dir, "node_modules", getCandidatePackageNames()[0]);
 		await mkdir(packageDir, { recursive: true });
-		const binaryPath = join(packageDir, isWindows() ? "agenticworkspace.exe" : "agenticworkspace");
+		const binaryPath = join(packageDir, isWindows() ? "agentic-workspace.exe" : "agentic-workspace");
 		await writeBinary(binaryPath);
 		await chmod(binaryPath, 0o755);
 	}
@@ -336,40 +336,40 @@ export async function initializeTestProject(
 	core: Core,
 	projectName: string,
 	commitFixture = false,
-	backlogDirectory?: string,
+	agenticWorkspaceDirectory?: string,
 ): Promise<void> {
-	await initializeTestProjectWithOptions(core, projectName, { backlogDirectory });
+	await initializeTestProjectWithOptions(core, projectName, { agenticWorkspaceDirectory });
 	if (commitFixture) {
-		const repoRoot = await core.git.stageBacklogDirectory(core.filesystem.backlogDirName);
-		await core.git.commitChanges(`backlog: Initialize backlog project: ${projectName}`, repoRoot);
+		const repoRoot = await core.git.stageAgenticWorkspaceDirectory(core.filesystem.agenticWorkspaceDirName);
+		await core.git.commitChanges(`agentic-workspace: Initialize agentic-workspace project: ${projectName}`, repoRoot);
 	}
 }
 
 export async function initializeFilesystemTestProject(
 	core: Core,
 	projectName: string,
-	backlogDirectory?: string,
+	agenticWorkspaceDirectory?: string,
 ): Promise<void> {
-	await initializeTestProjectWithOptions(core, projectName, { backlogDirectory, filesystemOnly: true });
+	await initializeTestProjectWithOptions(core, projectName, { agenticWorkspaceDirectory, filesystemOnly: true });
 }
 
 async function initializeTestProjectWithOptions(
 	core: Core,
 	projectName: string,
-	options: { backlogDirectory?: string; filesystemOnly?: boolean },
+	options: { agenticWorkspaceDirectory?: string; filesystemOnly?: boolean },
 ): Promise<void> {
-	const { backlogDirectory, filesystemOnly = false } = options;
-	const backlogDirectorySource = backlogDirectory
-		? backlogDirectory === "backlog" || backlogDirectory === ".backlog"
-			? (backlogDirectory as "backlog" | ".backlog")
+	const { agenticWorkspaceDirectory, filesystemOnly = false } = options;
+	const agenticWorkspaceDirectorySource = agenticWorkspaceDirectory
+		? agenticWorkspaceDirectory === "agentic-workspace" || agenticWorkspaceDirectory === ".agentic-workspace"
+			? (agenticWorkspaceDirectory as "agentic-workspace" | ".agentic-workspace")
 			: "custom"
 		: undefined;
-	const configLocation = backlogDirectorySource === "custom" ? "root" : "folder";
+	const configLocation = agenticWorkspaceDirectorySource === "custom" ? "root" : "folder";
 
 	await initializeProjectShared(core, {
 		projectName,
-		backlogDirectory,
-		backlogDirectorySource,
+		agenticWorkspaceDirectory,
+		agenticWorkspaceDirectorySource,
 		configLocation,
 		integrationMode: "none",
 		filesystemOnly,

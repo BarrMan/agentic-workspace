@@ -1,7 +1,7 @@
 import { type FSWatcher, watch } from "node:fs";
 import { stat } from "node:fs/promises";
 import { basename, dirname } from "node:path";
-import type { Core } from "../core/backlog.ts";
+import type { Core } from "../core/agentic-workspace.ts";
 import { resolveMainWorktreeRoot } from "../git/main-worktree.ts";
 import type { Task } from "../types/index.ts";
 import { hasAnyPrefix } from "./prefix-config.ts";
@@ -57,7 +57,9 @@ function classifyTaskWatchEvent(eventType: string, filename: string | Buffer | n
 			path === ".artifacts.json.lock" ||
 			artifactSegments.some(
 				(part) =>
-					part.startsWith(".backlog-artifact-") || part.startsWith(".backlog-artifacts-") || part.startsWith(".task-"),
+					part.startsWith(".agentic-workspace-artifact-") ||
+					part.startsWith(".agentic-workspace-artifacts-") ||
+					part.startsWith(".task-"),
 			)
 		)
 			return { kind: "ignore" };
@@ -344,8 +346,8 @@ export function watchTasks(
 	void resolveMainWorktreeRoot(core.filesystem.rootDir)
 		.then((mainRoot) => {
 			if (stopped || !mainRoot) return;
-			const relativeBacklog = tasksDir.slice(core.filesystem.rootDir.length).replace(/^[/\\]+/, "");
-			const canonicalTasksDir = `${mainRoot}/${relativeBacklog}`;
+			const relativeAgenticWorkspace = tasksDir.slice(core.filesystem.rootDir.length).replace(/^[/\\]+/, "");
+			const canonicalTasksDir = `${mainRoot}/${relativeAgenticWorkspace}`;
 			if (canonicalTasksDir === tasksDir) return;
 			try {
 				canonicalWatcher = watch(canonicalTasksDir, { recursive: true }, handleWatchEvent);

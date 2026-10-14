@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { basename, dirname, join, relative } from "node:path";
 import { sessionActivityDir } from "./status-hooks.ts";
 
-const MARKER = ".backlog-launch-owner";
+const MARKER = ".agentic-workspace-launch-owner";
 type OwnedDirectory = {
 	readonly path: string;
 	readonly dev: number;
@@ -63,7 +63,7 @@ export async function cleanupPreparedLaunchResources(
 			throw new Error("Invalid prepared resource manifest.");
 		if (
 			kind === "skill"
-				? dirname(resource.path) !== tempRoot || !basename(resource.path).startsWith("backlog-agent-skill-")
+				? dirname(resource.path) !== tempRoot || !basename(resource.path).startsWith("agentic-workspace-agent-skill-")
 				: resource.path !== expectedActivity
 		)
 			throw new Error("Prepared resource containment does not match.");

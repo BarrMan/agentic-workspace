@@ -14,7 +14,7 @@ import { findDocumentById, normalizeDocumentId } from "../utils/document-id.ts";
 import { getDocumentSubPathFromRelativePath, normalizeDocumentSubPath } from "../utils/document-path.ts";
 import { generateNextDecisionId, generateNextDocId } from "../utils/id-generators.ts";
 import { normalizeStringList } from "../utils/task-builders.ts";
-import type { Core } from "./backlog.ts";
+import type { Core } from "./agentic-workspace.ts";
 
 function normalizeDocumentTypeInput(type: unknown): DocumentType | undefined {
 	if (type === undefined) return undefined;

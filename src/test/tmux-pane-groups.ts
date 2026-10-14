@@ -8,7 +8,7 @@
 import { terminateProcessTreeSync } from "../agent-workspace/process-tree.ts";
 
 /** Prefix every test-owned socket label carries. `default` and `main` can never match. */
-export const TEST_TMUX_SOCKET_PREFIX = "backlog-test";
+export const TEST_TMUX_SOCKET_PREFIX = "agentic-workspace-test";
 
 const TEST_TMUX_SOCKET_PATTERN = new RegExp(`^${TEST_TMUX_SOCKET_PREFIX}-[a-z0-9]+(?:-[a-z0-9]+)*-[0-9a-f]{8}$`);
 

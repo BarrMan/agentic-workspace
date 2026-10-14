@@ -10,7 +10,7 @@ export async function ensureSessionWorktree(
 ): Promise<void> {
 	const exists = await runner.run(["git", "worktree", "list", "--porcelain"], { cwd: root });
 	if (exists.exitCode === 0 && exists.stdout.includes(`worktree ${path}`)) return;
-	const branch = `backlog/session/${slug(taskId)}`;
+	const branch = `agentic-workspace/session/${slug(taskId)}`;
 	let result = await runner.run(["git", "worktree", "add", "-b", branch, path], { cwd: root });
 	if (result.exitCode !== 0 && /already exists/i.test(result.stderr))
 		result = await runner.run(["git", "worktree", "add", path, branch], { cwd: root });

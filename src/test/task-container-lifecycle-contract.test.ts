@@ -36,7 +36,7 @@ function task(id: string, title: string, status = "To Do"): Task {
 }
 
 function container(location: string, id: string): string {
-	return join(root, "backlog", location, id.toLowerCase());
+	return join(root, "agentic-workspace", location, id.toLowerCase());
 }
 
 async function addArtifacts(id: string): Promise<void> {

@@ -11,7 +11,7 @@ const originalPsModulePath = process.env.PSModulePath;
 const tempDirs: string[] = [];
 
 async function makeTempDir(): Promise<string> {
-	const dir = await mkdtemp(join(tmpdir(), "backlog-completion-"));
+	const dir = await mkdtemp(join(tmpdir(), "agentic-workspace-completion-"));
 	tempDirs.push(dir);
 	return dir;
 }
@@ -40,13 +40,13 @@ describe("installCompletion", () => {
 		const tempDir = await makeTempDir();
 		const result = await installCompletion("bash", { homeDir: tempDir });
 		const shellScript = [
-			'agenticworkspace() { printf "%s\\n" "very high" "very low"; }',
+			'agentic-workspace() { printf "%s\\n" "very high" "very low"; }',
 			'source "$1"',
-			'COMP_WORDS=(agenticworkspace task create --priority "")',
+			'COMP_WORDS=(agentic-workspace task create --priority "")',
 			"COMP_CWORD=4",
-			'COMP_LINE="agenticworkspace task create --priority "',
+			'COMP_LINE="agentic-workspace task create --priority "',
 			"COMP_POINT=31",
-			"_agenticworkspace",
+			"_agentic-workspace",
 			"declare -p COMPREPLY",
 		].join("\n");
 
@@ -69,14 +69,14 @@ describe("installCompletion", () => {
 			resolvePowerShellProfilePath: () => profilePath,
 		});
 
-		const expectedInstallPath = join(tempDir, "PowerShell", "Completions", "agenticworkspace-completion.ps1");
+		const expectedInstallPath = join(tempDir, "PowerShell", "Completions", "agentic-workspace-completion.ps1");
 		expect(result.shell).toBe("pwsh");
 		expect(result.installPath).toBe(expectedInstallPath);
 		expect(result.instructions).toContain("$PROFILE.CurrentUserAllHosts");
 
 		const script = await Bun.file(expectedInstallPath).text();
 		expect(script).toContain("Register-ArgumentCompleter");
-		expect(script).toContain("agenticworkspace completion __complete");
+		expect(script).toContain("agentic-workspace completion __complete");
 	});
 
 	test("prefers explicit SHELL value over inherited PSModulePath", async () => {
@@ -90,10 +90,10 @@ describe("installCompletion", () => {
 		});
 
 		expect(result.shell).toBe("zsh");
-		expect(result.installPath).toBe(join(tempDir, ".zsh", "completions", "_agenticworkspace"));
+		expect(result.installPath).toBe(join(tempDir, ".zsh", "completions", "_agentic-workspace"));
 
 		const script = await Bun.file(result.installPath).text();
-		expect(script).toContain("#compdef agenticworkspace");
+		expect(script).toContain("#compdef agentic-workspace");
 	});
 
 	test("does not infer PowerShell solely from PSModulePath", async () => {

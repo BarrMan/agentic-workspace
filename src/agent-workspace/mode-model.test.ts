@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from "bun:test";
 import { chmod, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { Core } from "../core/backlog.ts";
+import type { Core } from "../core/agentic-workspace.ts";
 import {
 	openCodeExportArguments,
 	parseOpenCodeSessionExport,
@@ -38,11 +38,11 @@ const core = {
 
 function currentSession(overrides: Partial<AgentSession> = {}): AgentSession {
 	return {
-		id: "backlog-session",
+		id: "agentic-workspace-session",
 		taskId: "TASK-1",
 		preset: "opencode",
 		pathContext: { projectDir: "/project", worktreeDir: process.cwd(), taskDir: "/task" },
-		tmuxName: "backlog-task-1-session",
+		tmuxName: "agentic-workspace-task-1-session",
 		nativeSessionId: "native-opencode-id",
 		cwd: "/project",
 		createdAt: "2026-01-01T00:00:00Z",
@@ -53,7 +53,7 @@ function currentSession(overrides: Partial<AgentSession> = {}): AgentSession {
 	};
 }
 
-function callingContext(sessionId = "backlog-session", nativeSessionId = "native-opencode-id") {
+function callingContext(sessionId = "agentic-workspace-session", nativeSessionId = "native-opencode-id") {
 	return {
 		v: 2 as const,
 		paneId: "%42",
@@ -95,7 +95,7 @@ describe("mode model helper", () => {
 					v: 2,
 					paneId: "%42",
 					rootDir: "/project",
-					conversation: { taskId: "TASK-1", modeId: "plan", sessionId: "backlog-session" },
+					conversation: { taskId: "TASK-1", modeId: "plan", sessionId: "agentic-workspace-session" },
 					nativeSessionId: "native-opencode-id",
 				};
 			},
@@ -137,7 +137,7 @@ describe("mode model helper", () => {
 			exportSession: async (session, preset, harness) => {
 				expect(preset.command).toBe(command);
 				expect(preset.env.CURRENT).toBe("yes");
-				expect(preset.env.BACKLOG_WORKTREE_DIR).toBe(process.cwd());
+				expect(preset.env.AGENTIC_WORKSPACE_WORKTREE_DIR).toBe(process.cwd());
 				exportedSession = session;
 				exportedHarness = harness;
 				return exportJson;

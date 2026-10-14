@@ -4,13 +4,13 @@ scripts/
 test-npm-package/
 
 # Build artifacts
-backlog
+agentic-workspace
 *.bun-build
 .*.bun-build
 
 # Development files
 .github/
-.backlog/
+.agentic-workspace/
 .claude/
 .git/
 .gitignore

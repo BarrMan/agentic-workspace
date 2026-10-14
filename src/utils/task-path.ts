@@ -42,13 +42,18 @@ export function normalizeTaskIdentity(task: Task): Task {
  * exist to avoid.
  */
 export const LOCAL_TASK_LOOKUP_HINT =
-	"Task lookups read only the local working copy; use 'backlog board' to see tasks from other branches.";
+	"Task lookups read only the local working copy; use 'agentic-workspace board' to see tasks from other branches.";
 
 export class AmbiguousTaskIdError extends AmbiguousIdError {
 	readonly taskId: string;
 
 	constructor(taskId: string, candidates: string[]) {
-		super("Task", canonicalTaskId(taskId), candidates, "Run 'backlog doctor' to review the duplicate task IDs.");
+		super(
+			"Task",
+			canonicalTaskId(taskId),
+			candidates,
+			"Run 'agentic-workspace doctor' to review the duplicate task IDs.",
+		);
 		this.name = "AmbiguousTaskIdError";
 		this.taskId = taskId;
 	}

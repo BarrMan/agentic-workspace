@@ -31,7 +31,7 @@ async function setupDirs(projectCount = 1): Promise<{
 }> {
 	TEST_DIR = createUniqueTestDir("mcp-roots");
 
-	const uninitializedDir = join(TEST_DIR, "no-backlog");
+	const uninitializedDir = join(TEST_DIR, "no-agentic-workspace");
 	const projectRoot = join(TEST_DIR, "real-project");
 	const secondProjectRoot = join(TEST_DIR, "second-project");
 
@@ -88,8 +88,8 @@ describe("MCP roots discovery", () => {
 		expect(server.getServer().oninitialized).toBeUndefined();
 
 		const resources = await server.testInterface.listResources();
-		expect(resources.resources.map((resource) => resource.uri)).toEqual(["backlog://init-required"]);
-		expect(resources.resources[0]?.name).toBe(`Backlog.md Not Initialized [${uninitializedDir}]`);
+		expect(resources.resources.map((resource) => resource.uri)).toEqual(["agentic-workspace://init-required"]);
+		expect(resources.resources[0]?.name).toBe(`AgenticWorkspace Not Initialized [${uninitializedDir}]`);
 
 		const tools = await server.testInterface.listTools();
 		expect(tools.tools).toEqual([]);
@@ -108,12 +108,12 @@ describe("MCP roots discovery", () => {
 			const tools = await client.listTools();
 			const toolNames = tools.tools.map((tool) => tool.name);
 			expect(toolNames).toContain("task_create");
-			expect(toolNames).toContain("get_backlog_instructions");
+			expect(toolNames).toContain("get_agentic-workspace_instructions");
 			expect(server.application.filesystem.rootDir).toBe(projectRoot);
 			expect(getRootsRequestCount()).toBe(1);
 
 			const resources = await client.listResources();
-			expect(resources.resources.map((resource) => resource.uri)).toContain("backlog://workflow/overview");
+			expect(resources.resources.map((resource) => resource.uri)).toContain("agentic-workspace://workflow/overview");
 			expect(getRootsRequestCount()).toBe(1);
 		} finally {
 			await client.close();
@@ -132,7 +132,7 @@ describe("MCP roots discovery", () => {
 
 		try {
 			const resources = await client.listResources();
-			expect(resources.resources.map((resource) => resource.uri)).toContain("backlog://workflow/overview");
+			expect(resources.resources.map((resource) => resource.uri)).toContain("agentic-workspace://workflow/overview");
 			expect(server.application.filesystem.rootDir).toBe(projectRoot);
 			expect(getRootsRequestCount()).toBe(1);
 		} finally {
@@ -167,8 +167,8 @@ describe("MCP roots discovery", () => {
 
 	it("skips a root whose config value is rejected and keeps examining later roots", async () => {
 		const { uninitializedDir, projectRoot, secondProjectRoot } = await setupDirs(2);
-		// The first root is a real project whose statuses value Backlog refuses to read.
-		const brokenConfigPath = join(projectRoot, "backlog", "config.yml");
+		// The first root is a real project whose statuses value AgenticWorkspace refuses to read.
+		const brokenConfigPath = join(projectRoot, "agentic-workspace", "config.yml");
 		const brokenConfig = (await Bun.file(brokenConfigPath).text()).replace(/^statuses:.*$/m, 'statuses: ["To Do]');
 		await Bun.write(brokenConfigPath, brokenConfig);
 
@@ -205,7 +205,9 @@ describe("MCP roots discovery", () => {
 			expect(getRootsRequestCount()).toBe(1);
 
 			const fallbackResources = await client.listResources();
-			expect(fallbackResources.resources.map((resource) => resource.uri)).toEqual(["backlog://init-required"]);
+			expect(fallbackResources.resources.map((resource) => resource.uri)).toEqual([
+				"agentic-workspace://init-required",
+			]);
 			expect(server.application.filesystem.rootDir).toBe(uninitializedDir);
 			expect(getRootsRequestCount()).toBe(2);
 

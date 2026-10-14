@@ -39,7 +39,7 @@ export class PersistentTaskRead {
 						config,
 						localTasks,
 						true,
-						this.filesystem.backlogDirName,
+						this.filesystem.agenticWorkspaceDirName,
 						undefined,
 						tips.find((tip) => tip.current && !tip.name.startsWith("origin/"))?.name ??
 							(await this.git.getCurrentBranch()),
@@ -55,7 +55,7 @@ export class PersistentTaskRead {
 			{
 				repositoryRoot: branches ? await this.git.getRepositoryRoot() : null,
 				projectRoot: this.filesystem.rootDir,
-				backlogDirectory: this.filesystem.backlogDirName,
+				agenticWorkspaceDirectory: this.filesystem.agenticWorkspaceDirName,
 			},
 			config?.statuses ?? [...DEFAULT_STATUSES],
 			config?.taskResolutionStrategy ?? "most_progressed",

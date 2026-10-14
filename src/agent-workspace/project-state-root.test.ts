@@ -4,7 +4,7 @@ import { existsSync, statSync } from "node:fs";
 import { chmod, mkdir, mkdtemp, readdir, readFile, realpath, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { Core } from "../core/backlog.ts";
+import { Core } from "../core/agentic-workspace.ts";
 import { findGitWorktreeRoot } from "../git/main-worktree.ts";
 import { GitOperations } from "../git/operations.ts";
 import type { ProcessRunner } from "./session-process.ts";
@@ -18,7 +18,7 @@ const runner: ProcessRunner = {
 };
 
 function external(root: string, home: string): string {
-	return join(home, ".backlog", createHash("sha256").update(root).digest("hex").slice(0, 16));
+	return join(home, ".agentic-workspace", createHash("sha256").update(root).digest("hex").slice(0, 16));
 }
 
 async function git(root: string, ...args: string[]): Promise<void> {
@@ -37,18 +37,18 @@ describe("pinned project state root", () => {
 	let home: string;
 	let cwd: string;
 	let previousHome: string | undefined;
-	let previousBacklogCwd: string | undefined;
+	let previousAgenticWorkspaceCwd: string | undefined;
 
 	beforeEach(async () => {
 		cwd = process.cwd();
 		previousHome = process.env.HOME;
-		previousBacklogCwd = process.env.BACKLOG_CWD;
-		sandbox = await realpath(await mkdtemp(join(tmpdir(), "backlog-root-pin-")));
+		previousAgenticWorkspaceCwd = process.env.AGENTIC_WORKSPACE_CWD;
+		sandbox = await realpath(await mkdtemp(join(tmpdir(), "agentic-workspace-root-pin-")));
 		root = join(sandbox, "project");
 		home = join(sandbox, "home");
 		await Promise.all([mkdir(root), mkdir(home)]);
 		process.env.HOME = home;
-		delete process.env.BACKLOG_CWD;
+		delete process.env.AGENTIC_WORKSPACE_CWD;
 		process.chdir(root);
 	});
 
@@ -56,9 +56,9 @@ describe("pinned project state root", () => {
 		process.chdir(cwd);
 		if (previousHome === undefined) delete process.env.HOME;
 		else process.env.HOME = previousHome;
-		if (previousBacklogCwd === undefined) delete process.env.BACKLOG_CWD;
-		else process.env.BACKLOG_CWD = previousBacklogCwd;
-		await chmod(join(root, ".backlog"), 0o700).catch(() => undefined);
+		if (previousAgenticWorkspaceCwd === undefined) delete process.env.AGENTIC_WORKSPACE_CWD;
+		else process.env.AGENTIC_WORKSPACE_CWD = previousAgenticWorkspaceCwd;
+		await chmod(join(root, ".agentic-workspace"), 0o700).catch(() => undefined);
 		await chmod(root, 0o700);
 		await rm(sandbox, { recursive: true, force: true });
 	});
@@ -83,23 +83,23 @@ describe("pinned project state root", () => {
 
 	it("uses the canonical root despite a registered execution worktree", async () => {
 		const execution = await worktree();
-		process.env.BACKLOG_CWD = execution;
+		process.env.AGENTIC_WORKSPACE_CWD = execution;
 		process.chdir(execution);
 		const store = new SessionStore(root, runner);
-		expect(await store.stateRoot).toBe(join(root, ".backlog"));
-		expect((await store.paths("TASK-1")).taskDir).toBe(join(root, ".backlog", "task-1"));
-		expect(await readdir(execution)).not.toContain(".backlog");
+		expect(await store.stateRoot).toBe(join(root, ".agentic-workspace"));
+		expect((await store.paths("TASK-1")).taskDir).toBe(join(root, ".agentic-workspace", "task-1"));
+		expect(await readdir(execution)).not.toContain(".agentic-workspace");
 	});
 
 	it("captures HOME and cwd at construction, pins once, and caches rejection", async () => {
-		await writeFile(join(root, ".backlog"), "primary blocked");
+		await writeFile(join(root, ".agentic-workspace"), "primary blocked");
 		const store = new SessionStore(".", runner);
 		process.env.HOME = join(sandbox, "different-home");
-		process.env.BACKLOG_CWD = home;
+		process.env.AGENTIC_WORKSPACE_CWD = home;
 		process.chdir(home);
 		const resolution = store.stateRoot;
 		expect(await resolution).toBe(external(root, home));
-		await rm(join(root, ".backlog"));
+		await rm(join(root, ".agentic-workspace"));
 		expect(store.stateRoot).toBe(resolution);
 		expect(await store.stateRoot).toBe(external(root, home));
 		const bad = new SessionStore(root, runner, undefined, { stateRoot: "relative" });
@@ -114,14 +114,14 @@ describe("pinned project state root", () => {
 		await writeFile(join(saved, "view-state.json"), "historical bytes");
 		expect(await resolveProjectStateRoot(root)).toBe(saved);
 		expect(await readFile(join(saved, "view-state.json"), "utf8")).toBe("historical bytes");
-		expect(await readdir(root)).not.toContain(".backlog");
+		expect(await readdir(root)).not.toContain(".agentic-workspace");
 	});
 
 	it("shares explicit root across session history, claims, services, and view state", async () => {
 		const saved = external(root, home);
 		const options = { stateRoot: saved };
 		const store = new SessionStore(root, runner, undefined, options);
-		options.stateRoot = join(root, ".backlog");
+		options.stateRoot = join(root, ".agentic-workspace");
 		const service = new AgentSessionService(new Core(root), { runner, stateRoot: saved });
 		const workspace = new WorkspaceStateService(new Core(root), { sessions: service });
 		expect(await workspace.stateRoot).toBe(saved);
@@ -141,7 +141,7 @@ describe("pinned project state root", () => {
 		} finally {
 			view.close();
 		}
-		expect(await readdir(root)).not.toContain(".backlog");
+		expect(await readdir(root)).not.toContain(".agentic-workspace");
 	});
 
 	it("pins a relative view-store project path including its existing lock namespace", async () => {
@@ -149,7 +149,9 @@ describe("pinned project state root", () => {
 		try {
 			process.chdir(home);
 			await view.update(() => ({ count: 1 }));
-			expect(JSON.parse(await readFile(join(root, ".backlog", "view-state.json"), "utf8")).state.count).toBe(1);
+			expect(JSON.parse(await readFile(join(root, ".agentic-workspace", "view-state.json"), "utf8")).state.count).toBe(
+				1,
+			);
 			expect(await readdir(home)).toEqual([]);
 		} finally {
 			view.close();
@@ -157,14 +159,14 @@ describe("pinned project state root", () => {
 	});
 
 	it("rejects primary/external conflicts before writes, even with an explicit root", async () => {
-		for (const candidate of [join(root, ".backlog"), external(root, home)]) {
+		for (const candidate of [join(root, ".agentic-workspace"), external(root, home)]) {
 			await mkdir(candidate, { recursive: true });
 			await writeFile(join(candidate, "view-state.json"), "preserve");
 		}
-		const store = new SessionStore(root, runner, undefined, { stateRoot: join(root, ".backlog") });
+		const store = new SessionStore(root, runner, undefined, { stateRoot: join(root, ".agentic-workspace") });
 		await expect(store.claimSession("TASK-1", "session-1")).rejects.toThrow("Ambiguous agent state");
 		await expect(openViewStateStore(root, () => ({}))).rejects.toThrow("Ambiguous agent state");
-		for (const candidate of [join(root, ".backlog"), external(root, home)]) {
+		for (const candidate of [join(root, ".agentic-workspace"), external(root, home)]) {
 			expect(await readdir(candidate)).toEqual(["view-state.json"]);
 			expect(await readFile(join(candidate, "view-state.json"), "utf8")).toBe("preserve");
 		}
@@ -172,13 +174,13 @@ describe("pinned project state root", () => {
 
 	it("rejects a registered legacy worktree store without needing ambient cwd", async () => {
 		const execution = await worktree();
-		const legacy = join(execution, ".backlog", "task-1");
+		const legacy = join(execution, ".agentic-workspace", "task-1");
 		await mkdir(legacy, { recursive: true });
 		await writeFile(join(legacy, "state.json"), "historical bytes");
 		const store = new SessionStore(root, runner);
 		await expect(store.mutateMode("TASK-1", "build", async () => undefined)).rejects.toThrow("Ambiguous agent state");
 		expect(await readFile(join(legacy, "state.json"), "utf8")).toBe("historical bytes");
-		expect(await readdir(root)).not.toContain(".backlog");
+		expect(await readdir(root)).not.toContain(".agentic-workspace");
 	});
 
 	it("rejects legacy external claims and a conflicting explicit root", async () => {
@@ -199,7 +201,7 @@ describe("pinned project state root", () => {
 	});
 
 	it("fails closed on unreadable storage rather than selecting another root", async () => {
-		const primary = join(root, ".backlog");
+		const primary = join(root, ".agentic-workspace");
 		await mkdir(primary);
 		await chmod(primary, 0o000);
 		await expect(resolveProjectStateRoot(root)).rejects.toThrow("Cannot inspect agent state");
@@ -221,7 +223,7 @@ describe("pinned project state root", () => {
 	it("rejects linked legacy task containers and dangling container links without writes", async () => {
 		const execution = await worktree();
 		const target = join(sandbox, "task-container");
-		const legacy = join(execution, ".backlog");
+		const legacy = join(execution, ".agentic-workspace");
 		await mkdir(target);
 		await writeFile(join(target, "state.json"), "preserve");
 		await mkdir(legacy);
@@ -233,7 +235,7 @@ describe("pinned project state root", () => {
 		await rm(join(legacy, "task-1"));
 		await symlink(join(sandbox, "missing"), join(legacy, "task-1"), "dir");
 		await expect(resolveProjectStateRoot(root)).rejects.toThrow("Cannot inspect agent state");
-		expect(await readdir(root)).not.toContain(".backlog");
+		expect(await readdir(root)).not.toContain(".agentic-workspace");
 	});
 
 	it.each(["missing", ".git"])("refuses a broken or looping .git symlink (%s)", async (target) => {
@@ -267,29 +269,29 @@ describe("pinned project state root", () => {
 	])("preserves registered worktree path bytes and refuses its old store (%s)", async (name) => {
 		const execution = await worktree(name);
 		expect(await new GitOperations(root).listWorktreePaths()).toContain(execution);
-		const legacy = join(execution, ".backlog", "task-1");
+		const legacy = join(execution, ".agentic-workspace", "task-1");
 		await mkdir(legacy, { recursive: true });
 		await writeFile(join(legacy, "state.json"), "preserve");
 		await expect(resolveProjectStateRoot(root)).rejects.toThrow("Ambiguous agent state");
 		expect(await readFile(join(legacy, "state.json"), "utf8")).toBe("preserve");
-		expect(await readdir(root)).not.toContain(".backlog");
+		expect(await readdir(root)).not.toContain(".agentic-workspace");
 	});
 
 	it("allows ..cache as a descendant name when checking old execution stores", async () => {
 		await worktree();
 		const execution = join(root, "..cache");
-		const legacy = join(execution, ".backlog", "task-1");
+		const legacy = join(execution, ".agentic-workspace", "task-1");
 		await mkdir(legacy, { recursive: true });
 		await writeFile(join(legacy, "state.json"), "preserve");
-		process.env.BACKLOG_CWD = execution;
+		process.env.AGENTIC_WORKSPACE_CWD = execution;
 		await expect(resolveProjectStateRoot(root)).rejects.toThrow("Ambiguous agent state");
 		expect(await readFile(join(legacy, "state.json"), "utf8")).toBe("preserve");
-		expect(await readdir(root)).not.toContain(".backlog");
+		expect(await readdir(root)).not.toContain(".agentic-workspace");
 	});
 
 	it("deduplicates physical stores and preserves explicit root spelling", async () => {
 		const saved = external(root, home);
-		const primary = join(root, ".backlog");
+		const primary = join(root, ".agentic-workspace");
 		await mkdir(saved, { recursive: true });
 		await writeFile(join(saved, "view-state.json"), "preserve");
 		await symlink(saved, primary, "dir");
@@ -313,7 +315,7 @@ describe("pinned project state root", () => {
 		expect(await readFile(join(legacy, "owner.claim"), "utf8")).toBe("preserve claim");
 		expect(await readFile(join(saved, "view-state.json"), "utf8")).toBe("preserve");
 		expect(existsSync(process.env.HOME)).toBe(false);
-		expect(await readdir(root)).not.toContain(".backlog");
+		expect(await readdir(root)).not.toContain(".agentic-workspace");
 	});
 
 	it("shares external state and lock across read-only project clients, pinned despite environment changes", async () => {
@@ -327,7 +329,7 @@ describe("pinned project state root", () => {
 		const second = await openViewStateStore(root, () => ({ count: 0 }), { stateRoot: await store.stateRoot });
 		try {
 			process.env.HOME = join(sandbox, "different-home");
-			process.env.BACKLOG_CWD = home;
+			process.env.AGENTIC_WORKSPACE_CWD = home;
 			process.chdir(home);
 			await Promise.all(
 				Array.from({ length: 20 }, (_, index) =>
@@ -352,7 +354,7 @@ describe("pinned project state root", () => {
 		const view = await openViewStateStore(root, () => ({ count: 0 }), { stateRoot: saved });
 		try {
 			await view.update(() => {
-				expect(statSync(join(root, "backlog", ".locks", "workspace-view-state")).isDirectory()).toBe(true);
+				expect(statSync(join(root, "agentic-workspace", ".locks", "workspace-view-state")).isDirectory()).toBe(true);
 				expect(statSync(join(saved, "workspace-view-state.lock")).isDirectory()).toBe(true);
 				return { count: 1 };
 			});
@@ -362,13 +364,13 @@ describe("pinned project state root", () => {
 	});
 
 	it("retains an existing usable canonical namespace even with a read-only project root", async () => {
-		await mkdir(join(root, "backlog", ".locks"), { recursive: true });
+		await mkdir(join(root, "agentic-workspace", ".locks"), { recursive: true });
 		await chmod(root, 0o500);
 		const saved = external(root, home);
 		const view = await openViewStateStore(root, () => ({ count: 0 }));
 		try {
 			await view.update(() => {
-				expect(statSync(join(root, "backlog", ".locks", "workspace-view-state")).isDirectory()).toBe(true);
+				expect(statSync(join(root, "agentic-workspace", ".locks", "workspace-view-state")).isDirectory()).toBe(true);
 				expect(statSync(join(saved, "workspace-view-state.lock")).isDirectory()).toBe(true);
 				return { count: 1 };
 			});
@@ -378,7 +380,7 @@ describe("pinned project state root", () => {
 	});
 
 	it("does not switch namespaces for an unusable canonical lock directory in a writable project", async () => {
-		const locks = join(root, "backlog", ".locks");
+		const locks = join(root, "agentic-workspace", ".locks");
 		await mkdir(locks, { recursive: true });
 		await chmod(locks, 0o500);
 		try {
@@ -393,7 +395,7 @@ describe("pinned project state root", () => {
 	});
 
 	it("does not interpret an unreadable canonical lock directory as read-only", async () => {
-		const locks = join(root, "backlog", ".locks");
+		const locks = join(root, "agentic-workspace", ".locks");
 		await mkdir(locks, { recursive: true });
 		await chmod(locks, 0o000);
 		await chmod(root, 0o500);

@@ -163,7 +163,10 @@ export function registerMilestoneCommands(program: Command, runtime: MilestoneRu
 			{ name: "plain", type: "Boolean", description: "Use text output instead of interactive UI" },
 		],
 		output: `Milestone list with completion status; active milestones come first, then completed ones with --show-completed. ${LIST_WINDOW_OUTPUT_HELP}`,
-		examples: ["backlog milestone list --plain", "backlog milestone list --show-completed --max-count 10 --plain"],
+		examples: [
+			"agentic-workspace milestone list --plain",
+			"agentic-workspace milestone list --show-completed --max-count 10 --plain",
+		],
 	})
 		.description("list milestones with completion status")
 		.option("--show-completed", "show completed milestones");
@@ -181,7 +184,10 @@ export function registerMilestoneCommands(program: Command, runtime: MilestoneRu
 		],
 		writes: "Creates a milestone markdown file in the active milestones directory",
 		output: "Created milestone title and ID",
-		examples: ['backlog milestone add "Release 1.0"', 'backlog milestone add "Beta" --description "Beta scope"'],
+		examples: [
+			'agentic-workspace milestone add "Release 1.0"',
+			'agentic-workspace milestone add "Beta" --description "Beta scope"',
+		],
 	})
 		.description("add a milestone file")
 		.option("-d, --description <text>", "milestone description")
@@ -207,8 +213,8 @@ export function registerMilestoneCommands(program: Command, runtime: MilestoneRu
 		writes: "Renames the milestone file and, by default, updates matching local task milestone values",
 		output: "Rename summary, task update count, and file move path when changed",
 		examples: [
-			'backlog milestone rename "Release 1.0" "Release 2.0"',
-			'backlog milestone rename m-1 "Release 2.0" --no-update-tasks',
+			'agentic-workspace milestone rename "Release 1.0" "Release 2.0"',
+			'agentic-workspace milestone rename m-1 "Release 2.0" --no-update-tasks',
 		],
 	})
 		.description("rename a milestone file and update local tasks by default")
@@ -236,9 +242,9 @@ export function registerMilestoneCommands(program: Command, runtime: MilestoneRu
 		writes: "Moves the milestone file to the archived milestones directory and may clear or reassign local tasks",
 		output: "Removal summary and task handling count",
 		examples: [
-			'backlog milestone remove "Release 1.0"',
-			'backlog milestone remove "Release 1.0" --task-handling keep',
-			'backlog milestone remove "Release 1.0" --task-handling reassign --reassign-to "Release 2.0"',
+			'agentic-workspace milestone remove "Release 1.0"',
+			'agentic-workspace milestone remove "Release 1.0" --task-handling keep',
+			'agentic-workspace milestone remove "Release 1.0" --task-handling reassign --reassign-to "Release 2.0"',
 		],
 	})
 		.description("remove a milestone file and clear, keep, or reassign matching tasks")
@@ -253,7 +259,7 @@ export function registerMilestoneCommands(program: Command, runtime: MilestoneRu
 		optional: [],
 		writes: "Moves a milestone file into the archived milestones directory",
 		output: "Archive confirmation text",
-		examples: ["backlog milestone archive m-1"],
+		examples: ["agentic-workspace milestone archive m-1"],
 	})
 		.description("archive a milestone by id or title")
 		.action((name: string) => runMilestoneArchive(name, runtime));

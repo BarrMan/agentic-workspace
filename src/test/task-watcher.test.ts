@@ -5,7 +5,7 @@ import { mkdir, rename, unlink } from "node:fs/promises";
 import { join } from "node:path";
 import { Writable } from "node:stream";
 import { runCli } from "../cli/register.ts";
-import { Core } from "../core/backlog.ts";
+import { Core } from "../core/agentic-workspace.ts";
 import * as mainWorktree from "../git/main-worktree.ts";
 import { serializeTask } from "../markdown/serializer.ts";
 import type { Task } from "../types/index.ts";
@@ -18,7 +18,7 @@ import {
 	withTimeout,
 } from "./test-utils.ts";
 
-const cliCommand = ["agenticworkspace"];
+const cliCommand = ["agentic-workspace"];
 
 function $(parts: TemplateStringsArray, ...values: unknown[]) {
 	const source = parts.reduce(
@@ -176,7 +176,7 @@ describe("task watcher reconciliation", () => {
 		armedIdle = undefined;
 		resolveIdle = undefined;
 		core = new Core(testDir);
-		await core.filesystem.ensureBacklogStructure();
+		await core.filesystem.ensureAgenticWorkspaceStructure();
 		watchSpy = spyOn(nodeFs, "watch").mockImplementation(((
 			_path: Parameters<typeof nodeFs.watch>[0],
 			...args: unknown[]
@@ -354,7 +354,7 @@ describe("task watcher reconciliation", () => {
 	});
 
 	it("confirms archive and delete absence from one event without duplicate removals", async () => {
-		const archiveDir = join(testDir, "backlog", "archive", "tasks");
+		const archiveDir = join(testDir, "agentic-workspace", "archive", "tasks");
 		await mkdir(archiveDir, { recursive: true });
 		const tasks = [sampleTask("task-3", "Archived"), sampleTask("task-4", "Deleted")];
 		const paths = await Promise.all(tasks.map((task) => taskFilePath(core, task.id)));

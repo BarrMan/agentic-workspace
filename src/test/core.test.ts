@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { mkdir, utimes } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { $ } from "bun";
-import { Core } from "../core/backlog.ts";
+import { Core } from "../core/agentic-workspace.ts";
 import { serializeTask } from "../markdown/serializer.ts";
 import type { Document, Task } from "../types/index.ts";
 import {
@@ -34,7 +34,7 @@ describe("Core", () => {
 	beforeEach(async () => {
 		TEST_DIR = createUniqueTestDir("test-core");
 		core = new Core(TEST_DIR);
-		await core.filesystem.ensureBacklogStructure();
+		await core.filesystem.ensureAgenticWorkspaceStructure();
 
 		initGitRepo(TEST_DIR);
 	});
@@ -53,16 +53,16 @@ describe("Core", () => {
 			expect(config?.defaultStatus).toBe("To Do");
 		});
 
-		it("should use root backlog.config.yml for custom backlog directories", async () => {
-			await initializeTestProject(core, "Custom Root Project", false, "planning/backlog-data");
+		it("should use root agentic-workspace.config.yml for custom agentic-workspace directories", async () => {
+			await initializeTestProject(core, "Custom Root Project", false, "planning/agentic-workspace-data");
 
-			expect(await Bun.file(join(TEST_DIR, "backlog.config.yml")).exists()).toBe(true);
-			expect(await Bun.file(join(TEST_DIR, "planning", "backlog-data", "config.yml")).exists()).toBe(false);
+			expect(await Bun.file(join(TEST_DIR, "agentic-workspace.config.yml")).exists()).toBe(true);
+			expect(await Bun.file(join(TEST_DIR, "planning", "agentic-workspace-data", "config.yml")).exists()).toBe(false);
 
 			const freshCore = new Core(TEST_DIR);
 			const config = await freshCore.filesystem.loadConfig();
 			expect(config?.projectName).toBe("Custom Root Project");
-			expect(freshCore.filesystem.backlogDirName).toBe("planning/backlog-data");
+			expect(freshCore.filesystem.agenticWorkspaceDirName).toBe("planning/agentic-workspace-data");
 		});
 	});
 
@@ -446,7 +446,7 @@ describe("Core", () => {
 			await core.filesystem.saveTask({ ...sampleTask, id: "TASK-2", title: "Task on another branch" });
 			await $`git add . && git commit -m "Add branch-only task"`.cwd(TEST_DIR).quiet();
 			await $`git switch main && git switch --orphan blank`.cwd(TEST_DIR).quiet();
-			await core.filesystem.ensureBacklogStructure();
+			await core.filesystem.ensureAgenticWorkspaceStructure();
 			await core.filesystem.saveConfig(branchConfig);
 
 			expect((await core.loadTasks()).map((task) => task.title)).toEqual(["Task on another branch"]);
@@ -554,10 +554,10 @@ describe("Core", () => {
 			expect(await core.getTask("TASK-001")).toMatchObject({ id: "TASK-001", title: "Completed identity" });
 		});
 
-		it("normalizes local and Git paths for a nested project with a custom backlog directory", async () => {
+		it("normalizes local and Git paths for a nested project with a custom agentic-workspace directory", async () => {
 			const nestedRoot = join(TEST_DIR, "packages", "app");
 			const nestedCore = new Core(nestedRoot);
-			await initializeTestProject(nestedCore, "Nested Project", false, "planning/backlog-data");
+			await initializeTestProject(nestedCore, "Nested Project", false, "planning/agentic-workspace-data");
 			const configuredCore = new Core(nestedRoot);
 			const config = await configuredCore.filesystem.loadConfig();
 			if (!config) {
@@ -841,7 +841,7 @@ describe("Core", () => {
 		it("should handle task creation without committing when git fails", async () => {
 			// Create task in directory without git
 			const nonGitCore = new Core(join(TEST_DIR, "no-git"));
-			await nonGitCore.filesystem.ensureBacklogStructure();
+			await nonGitCore.filesystem.ensureAgenticWorkspaceStructure();
 
 			// This should succeed even without git
 			await nonGitCore.createTask(sampleTask);
@@ -1022,7 +1022,7 @@ describe("Core", () => {
 
 		it("shows a git rename when the document title changes", async () => {
 			await core.createDocument(baseDocument);
-			await $`git add backlog/docs`.cwd(TEST_DIR).quiet();
+			await $`git add agentic-workspace/docs`.cwd(TEST_DIR).quiet();
 			await $`git commit -m "Add document fixture"`.cwd(TEST_DIR).quiet();
 
 			const renamedDoc: Document = {
@@ -1035,8 +1035,8 @@ describe("Core", () => {
 			await $`git add -A`.cwd(TEST_DIR).quiet();
 			const diffResult = await $`git diff --name-status -M HEAD`.cwd(TEST_DIR).quiet();
 			const diff = diffResult.stdout.toString();
-			const previousPath = "backlog/docs/doc-1 - Operations-Guide.md";
-			const renamedPath = "backlog/docs/doc-1 - Operations-Guide-Renamed.md";
+			const previousPath = "agentic-workspace/docs/doc-1 - Operations-Guide.md";
+			const renamedPath = "agentic-workspace/docs/doc-1 - Operations-Guide-Renamed.md";
 			const escapeForRegex = (value: string) => value.replace(/[|\\{}()[\]^$+*?.]/g, "\\$&");
 			expect(diff).toMatch(
 				new RegExp(`^R\\d*\\t${escapeForRegex(previousPath)}\\t${escapeForRegex(renamedPath)}`, "m"),

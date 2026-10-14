@@ -2,7 +2,7 @@ import { mkdir, readFile, rename, unlink, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import lockfile from "proper-lockfile";
-import type { Core } from "../core/backlog.ts";
+import type { Core } from "../core/agentic-workspace.ts";
 import { isModeTextColor } from "./mode-colors.ts";
 import {
 	AGENT_BOOTSTRAP_TYPES,
@@ -120,18 +120,18 @@ function clone<T>(value: T): T {
 	return structuredClone(value);
 }
 
-/** Returns a mutable copy of Backlog's canonical agent presets. */
+/** Returns a mutable copy of AgenticWorkspace's canonical agent presets. */
 export function getBuiltInAgentConfiguration(): AgentConfiguration {
 	return clone(BUILT_IN_CONFIGURATION);
 }
 
 function rootConfigurationPath(): string {
 	const configHome = process.env.XDG_CONFIG_HOME || join(process.env.HOME || homedir(), ".config");
-	return join(configHome, "backlog", AGENT_CONFIGURATION_FILE_NAME);
+	return join(configHome, "agentic-workspace", AGENT_CONFIGURATION_FILE_NAME);
 }
 
 function projectConfigurationPath(core: Core): string {
-	return join(core.filesystem.backlogDir, AGENT_CONFIGURATION_FILE_NAME);
+	return join(core.filesystem.agenticWorkspaceDir, AGENT_CONFIGURATION_FILE_NAME);
 }
 
 function requireTaskId(scope: AgentConfigScope, taskId: string | undefined): string {
@@ -341,7 +341,7 @@ export async function loadAgentConfiguration(
 export function requireProjectModeCatalog(configuration: AgentConfiguration | null): ModeCatalog {
 	if (!configuration?.modes) {
 		throw new Error(
-			"Project modes are not initialized. Run `agenticworkspace agent-config init project` to initialize the project mode catalog.",
+			"Project modes are not initialized. Run `agentic-workspace agent-config init project` to initialize the project mode catalog.",
 		);
 	}
 	assertModeCatalog(configuration.modes, "Project mode catalog");

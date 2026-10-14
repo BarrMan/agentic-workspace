@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { mkdir } from "node:fs/promises";
 import { Writable } from "node:stream";
 import { runCli } from "../cli/register.ts";
-import { Core } from "../core/backlog.ts";
+import { Core } from "../core/agentic-workspace.ts";
 import { withReadiness } from "../core/task-detail.ts";
 import type { FileSystem } from "../file-system/operations.ts";
 import { McpServer } from "../mcp/server.ts";
@@ -17,7 +17,7 @@ import {
 } from "../utils/task-search.ts";
 import { createUniqueTestDir, initializeFilesystemTestProject, safeCleanup } from "./test-utils.ts";
 
-const cliCommand = ["agenticworkspace"];
+const cliCommand = ["agentic-workspace"];
 
 function $(parts: TemplateStringsArray, ...values: unknown[]) {
 	const source = parts.reduce(
@@ -73,7 +73,7 @@ function $(parts: TemplateStringsArray, ...values: unknown[]) {
 
 /**
  * The local one-shot index (`task list --search`, the TUI views, the MCP adapter) and the
- * persistent search (`backlog search`, the web API) must agree on what a query matches
+ * persistent search (`agentic-workspace search`, the web API) must agree on what a query matches
  * and on what a filter means. These tests pin that agreement.
  */
 
@@ -126,7 +126,7 @@ describe("cross-surface search parity", () => {
 		TEST_DIR = createUniqueTestDir("task-search-parity");
 		core = new Core(TEST_DIR);
 		filesystem = core.filesystem;
-		await filesystem.ensureBacklogStructure();
+		await filesystem.ensureAgenticWorkspaceStructure();
 		for (const task of tasks) {
 			await filesystem.saveTask(task);
 		}

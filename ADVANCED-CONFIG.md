@@ -6,15 +6,15 @@ For getting started and the interactive wizard overview, see [README.md](README.
 
 | Action      | Example                                              |
 |-------------|------------------------------------------------------|
-| View all configs | `agenticworkspace config list` |
-| Get specific config | `agenticworkspace config get defaultEditor` |
-| Set config value | `agenticworkspace config set defaultEditor "code --wait"` |
-| Bypass git hooks | `agenticworkspace config set bypassGitHooks true` |
-| Enable cross-branch check | `agenticworkspace config set checkActiveBranches true` |
-| Set active branch days | `agenticworkspace config set activeBranchDays 30` |
-| Set default assignees | `agenticworkspace config set defaultAssignee "@alice,@bob"` |
+| View all configs | `agentic-workspace config list` |
+| Get specific config | `agentic-workspace config get defaultEditor` |
+| Set config value | `agentic-workspace config set defaultEditor "code --wait"` |
+| Bypass git hooks | `agentic-workspace config set bypassGitHooks true` |
+| Enable cross-branch check | `agentic-workspace config set checkActiveBranches true` |
+| Set active branch days | `agentic-workspace config set activeBranchDays 30` |
+| Set default assignees | `agentic-workspace config set defaultAssignee "@alice,@bob"` |
 
-Running `agenticworkspace config` with no arguments launches the interactive advanced wizard.
+Running `agentic-workspace config` with no arguments launches the interactive advanced wizard.
 
 ## Available Configuration Options
 
@@ -36,11 +36,11 @@ Running `agenticworkspace config` with no arguments launches the interactive adv
 | `checkActiveBranches` | Check task states across active branches for accuracy | `true` |
 | `activeBranchDays` | How many days a branch is considered active | `30` |
 | `onStatusChange`  | Shell command to run on status change | `(disabled)` |
-| `backlog_directory` | Project-relative backlog folder, chosen at `agenticworkspace init` and read from `backlog.config.yml` in the project root | `backlog` |
+| `agentic_workspace_directory` | Project-relative workspace folder, chosen at `agentic-workspace init` and read from `agentic-workspace.config.yml` in the project root | `agentic-workspace` |
 
 ## Detailed Notes
 
-> Editor setup guide: See [Configuring VIM and Neovim as Default Editor](backlog/docs/doc-002%20-%20Configuring-VIM-and-Neovim-as-Default-Editor.md) for configuration tips and troubleshooting interactive editors.
+> Editor setup guide: See [Configuring VIM and Neovim as Default Editor](agentic-workspace/docs/doc-002%20-%20Configuring-VIM-and-Neovim-as-Default-Editor.md) for configuration tips and troubleshooting interactive editors.
 
 > **Note**: Set `remoteOperations: false` to work offline. This disables git fetch operations and loads tasks from local branches only, useful when working without network connectivity.
 
@@ -51,20 +51,20 @@ Running `agenticworkspace config` with no arguments launches the interactive adv
 
 > **Status Change Callbacks**: Set `onStatusChange` to run a shell command whenever a task's status changes. Available variables: `$TASK_ID`, `$OLD_STATUS`, `$NEW_STATUS`, `$TASK_TITLE`. Per-task override via `onStatusChange` in task frontmatter. Example: `'if [ "$NEW_STATUS" = "In Progress" ]; then claude "Task $TASK_ID ($TASK_TITLE) has been assigned to you. Please implement it." & fi'`
 
-> **Default Assignee**: `defaultAssignee` is a list, so `agenticworkspace config set defaultAssignee "@alice,@bob"` stores both names. Every create surface (CLI `task create` and `draft create`, the creation wizard, TUI, MCP) applies it when no assignee is supplied. An explicit assignee replaces the default entirely instead of merging with it, and setting the value to an empty string clears the default so new tasks start unassigned. To keep a single task unassigned while the default stays configured, pass an explicit empty assignee: `agenticworkspace task create "Title" -a ""`. The same value clears existing assignees on edit: `agenticworkspace task edit BACK-1 -a ""` (MCP `task_create`/`task_edit` use an empty `assignee` array). When editing `config.yml` by hand, quote the names (`default_assignee: ["@alice"]`) because `@` starts a reserved YAML character; a value YAML cannot read is ignored rather than guessed at.
+> **Default Assignee**: `defaultAssignee` is a list, so `agentic-workspace config set defaultAssignee "@alice,@bob"` stores both names. Every create surface (CLI `task create` and `draft create`, the creation wizard, TUI, MCP) applies it when no assignee is supplied. An explicit assignee replaces the default entirely instead of merging with it, and setting the value to an empty string clears the default so new tasks start unassigned. To keep a single task unassigned while the default stays configured, pass an explicit empty assignee: `agentic-workspace task create "Title" -a ""`. The same value clears existing assignees on edit: `agentic-workspace task edit BACK-1 -a ""` (MCP `task_create`/`task_edit` use an empty `assignee` array). When editing `config.yml` by hand, quote the names (`default_assignee: ["@alice"]`) because `@` starts a reserved YAML character; a value YAML cannot read is ignored rather than guessed at.
 
 > **Priority Values**: Set `priorities` to an ordered list of labels such as `["Very High", "High", "Medium", "Low", "Very Low"]`. The first value sorts highest. CLI and MCP inputs accept configured values case-insensitively and store normalized lowercase values in task frontmatter.
 
-> **Project Values**: `projects` tags each task with one project in a monorepo-style backlog. It has no default, so the field stays inert until you set it — until then no surface offers it, and `--project` fails with a message naming the config file. Set it by editing the project config file directly (like `statuses`, `labels`, `types`, and `priorities`, it cannot be changed with `agenticworkspace config set`):
+> **Project Values**: `projects` tags each task with one project in a monorepo-style backlog. It has no default, so the field stays inert until you set it — until then no surface offers it, and `--project` fails with a message naming the config file. Set it by editing the project config file directly (like `statuses`, `labels`, `types`, and `priorities`, it cannot be changed with `agentic-workspace config set`):
 >
 > ```yaml
 > projects: ["web", "api", "mobile"]
 > ```
 >
-> Once configured, CLI and MCP inputs accept the values case-insensitively and store the configured spelling in task frontmatter. Filter with `agenticworkspace task list --project web`, `agenticworkspace search --project web`, or repeat/comma-separate values for OR semantics. Clear a task's project with `agenticworkspace task edit <id> --project ""`. Read current values with `agenticworkspace config get projects`.
+> Once configured, CLI and MCP inputs accept the values case-insensitively and store the configured spelling in task frontmatter. Filter with `agentic-workspace task list --project web`, `agentic-workspace search --project web`, or repeat/comma-separate values for OR semantics. Clear a task's project with `agentic-workspace task edit <id> --project ""`. Read current values with `agentic-workspace config get projects`.
 
 > **Date/Time Support**: AgenticWorkspace now supports datetime precision for all dates. New items automatically include time (YYYY-MM-DD HH:mm format in UTC), while existing date-only entries remain unchanged for backward compatibility. Use the migration script `bun src/scripts/migrate-dates.ts` to optionally add time to existing items.
 
 > **Date Display Format**: `dateFormat` only changes how dates are *displayed* in the TUI; markdown files always store dates in the canonical `yyyy-mm-dd [hh:mm]` UTC format. The format string is split at the first whitespace into a date part and an optional time part. Date part tokens (case-insensitive, each exactly once): `yyyy`, `mm` (month), `dd`; any other characters are kept literally. Time part tokens: `hh` and `mm` (minutes) — `mm` means month in the date part and minutes in the time part. If a stored value includes a time it is always shown: through the format's time part when present, otherwise appended as ` hh:mm`. Date-only values never invent a time. Invalid formats fall back to the canonical display. Agent-facing output (`--plain` CLI output and MCP responses) always stays canonical regardless of this setting. Example: `dateFormat: dd/mm/yyyy` renders `2026-07-04 21:54` as `04/07/2026 21:54`.
 
-> **Custom Backlog Folder**: `backlog_directory` is chosen when the project is initialized — select "Custom project-relative path" in the wizard or run `agenticworkspace init --backlog-dir my-backlog --config-location root` — and init refuses to move the folder afterwards. Unlike every other key here it is read only from `backlog.config.yml` in the project root: the same key inside `backlog/config.yml` is ignored, and `agenticworkspace config` cannot set, get, or list it. The path is only checked lexically: absolute values and paths that normalize to outside the project are ignored, while a relative path that symlinks outside the repository is accepted. When the value is ignored AgenticWorkspace uses `backlog/` or `.backlog/` if one exists, and otherwise reports that no project was found.
+> **Custom AgenticWorkspace Folder**: `agentic_workspace_directory` is chosen when the project is initialized — select "Custom project-relative path" in the wizard or run `agentic-workspace init --agentic-workspace-dir my-backlog --config-location root` — and init refuses to move the folder afterwards. Unlike every other key here it is read only from `agentic-workspace.config.yml` in the project root: the same key inside `agentic-workspace/config.yml` is ignored, and `agentic-workspace config` cannot set, get, or list it. The path is only checked lexically: absolute values and paths that normalize to outside the project are ignored, while a relative path that symlinks outside the repository is accepted. When the value is ignored AgenticWorkspace uses `agentic-workspace/` or `.agentic-workspace/` if one exists, and otherwise reports that no project was found.

@@ -9,7 +9,7 @@ import { Core } from "../index.ts";
 import { initializeFilesystemTestProject } from "./test-utils.ts";
 
 let TEST_DIR: string;
-const CLI_COMMAND = ["agenticworkspace"];
+const CLI_COMMAND = ["agentic-workspace"];
 let runQueue = Promise.resolve();
 
 function $(parts: TemplateStringsArray, ...values: unknown[]) {
@@ -73,7 +73,7 @@ function $(parts: TemplateStringsArray, ...values: unknown[]) {
 
 describe("CLI root entry (bare run)", () => {
 	beforeEach(async () => {
-		TEST_DIR = await mkdtemp(join(tmpdir(), "backlog-root-entry-"));
+		TEST_DIR = await mkdtemp(join(tmpdir(), "agentic-workspace-root-entry-"));
 		await mkdir(TEST_DIR, { recursive: true });
 	});
 
@@ -121,11 +121,11 @@ describe("CLI root entry (bare run)", () => {
 		expect(out).toContain("AgenticWorkspace v");
 		expect(out).toContain("This directory is not initialized for AgenticWorkspace.");
 		expect(out).toContain("Project setup:");
-		expect(out).toContain("agenticworkspace init");
+		expect(out).toContain("agentic-workspace init");
 		expect(out).toContain("Local instructions:");
-		expect(out).toContain("agenticworkspace instructions");
-		expect(out).toContain("agenticworkspace instructions overview");
-		expect(out).toContain("agenticworkspace <command> --help");
+		expect(out).toContain("agentic-workspace instructions");
+		expect(out).toContain("agentic-workspace instructions overview");
+		expect(out).toContain("agentic-workspace <command> --help");
 		expect(out).toContain("Docs: https://github.com/BarrMan/agentic-workspace");
 		expect(out).not.toContain("\u001B[");
 		expect(out).not.toContain("\u001B]");
@@ -141,13 +141,13 @@ describe("CLI root entry (bare run)", () => {
 		expect(result.exitCode).toBe(0);
 		expect(out).toContain("██████╗");
 		expect(out).toContain("Common workflow:");
-		expect(out).toContain("agenticworkspace task view TASK-123 --plain");
-		expect(out).toContain("agenticworkspace task create");
-		expect(out).toContain("agenticworkspace board");
+		expect(out).toContain("agentic-workspace task view TASK-123 --plain");
+		expect(out).toContain("agentic-workspace task create");
+		expect(out).toContain("agentic-workspace board");
 		expect(out).toContain("Open the TUI Kanban board");
 		expect(out).toContain("Local instructions:");
-		expect(out).toContain("agenticworkspace instructions task-execution");
-		expect(out).not.toContain("agenticworkspace init");
+		expect(out).toContain("agentic-workspace instructions task-execution");
+		expect(out).not.toContain("agentic-workspace init");
 		expect(out).toContain("Docs: https://github.com/BarrMan/agentic-workspace");
 		expect(out).not.toContain("\u001B[");
 		expect(out).not.toContain("\u001B]");
@@ -157,7 +157,7 @@ describe("CLI root entry (bare run)", () => {
 		const result = await $`${CLI_COMMAND} --help`.cwd(TEST_DIR).quiet();
 		const out = result.stdout.toString();
 		expect(result.exitCode).toBe(0);
-		expect(out).toMatch(/Usage: .*agenticworkspace/);
+		expect(out).toMatch(/Usage: .*agentic-workspace/);
 		expect(out).not.toContain("Local instructions:");
 	});
 });

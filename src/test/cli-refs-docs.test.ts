@@ -8,7 +8,7 @@ import { Core } from "../index.ts";
 import { createUniqueTestDir, initializeFilesystemTestProject, safeCleanup } from "./test-utils.ts";
 
 const createdDirs: string[] = [];
-const CLI_COMMAND = ["agenticworkspace"];
+const CLI_COMMAND = ["agentic-workspace"];
 const cliCommand = CLI_COMMAND;
 
 function $(parts: TemplateStringsArray, ...values: unknown[]) {
@@ -17,7 +17,7 @@ function $(parts: TemplateStringsArray, ...values: unknown[]) {
 			`${text}${part}${Array.isArray(values[index]) ? values[index].map((value) => JSON.stringify(value)).join(" ") : values[index] === undefined ? "" : JSON.stringify(values[index])}`,
 		"",
 	);
-	if (!source.startsWith('"agenticworkspace"')) return shell(parts, ...values);
+	if (!source.startsWith('"agentic-workspace"')) return shell(parts, ...values);
 	const args =
 		source
 			.match(/"(?:\\.|[^"\\])*"|'[^']*'|[^\s]+/g)
@@ -530,7 +530,7 @@ describe("CLI --ref and --doc flags", () => {
 			const TEST_DIR = await makeProject();
 			await $`${cliCommand} task create "Feature" --ref https://example.com --ref src/index.ts`.cwd(TEST_DIR).quiet();
 
-			const taskFile = await Bun.file(join(TEST_DIR, "backlog/tasks/task-1/task.md")).text();
+			const taskFile = await Bun.file(join(TEST_DIR, "agentic-workspace/tasks/task-1/task.md")).text();
 			expect(taskFile).toContain("references:");
 			expect(taskFile).toContain("https://example.com");
 			expect(taskFile).toContain("src/index.ts");
@@ -540,7 +540,7 @@ describe("CLI --ref and --doc flags", () => {
 			const TEST_DIR = await makeProject();
 			await $`${cliCommand} task create "Feature" --doc https://docs.example.com --doc spec.md`.cwd(TEST_DIR).quiet();
 
-			const taskFile = await Bun.file(join(TEST_DIR, "backlog/tasks/task-1/task.md")).text();
+			const taskFile = await Bun.file(join(TEST_DIR, "agentic-workspace/tasks/task-1/task.md")).text();
 			expect(taskFile).toContain("documentation:");
 			expect(taskFile).toContain("https://docs.example.com");
 			expect(taskFile).toContain("spec.md");
@@ -552,7 +552,7 @@ describe("CLI --ref and --doc flags", () => {
 				.cwd(TEST_DIR)
 				.quiet();
 
-			const taskFile = await Bun.file(join(TEST_DIR, "backlog/tasks/task-1/task.md")).text();
+			const taskFile = await Bun.file(join(TEST_DIR, "agentic-workspace/tasks/task-1/task.md")).text();
 			expect(taskFile).toContain("modified_files:");
 			expect(taskFile).toContain("src/index.ts");
 			expect(taskFile).toContain("src/ui.ts");

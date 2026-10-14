@@ -19,95 +19,95 @@ function resolverFor(available: string[]) {
 
 describe("getPackageName", () => {
 	it("maps win32 platform to windows package", () => {
-		expect(getPackageName("win32", "x64")).toBe("agenticworkspace-windows-x64");
+		expect(getPackageName("win32", "x64")).toBe("agentic-workspace-windows-x64");
 	});
 
 	it("maps win32 arm64 to windows-arm64 package", () => {
-		expect(getPackageName("win32", "arm64")).toBe("agenticworkspace-windows-arm64");
+		expect(getPackageName("win32", "arm64")).toBe("agentic-workspace-windows-arm64");
 	});
 
 	it("returns linux name unchanged", () => {
-		expect(getPackageName("linux", "arm64")).toBe("agenticworkspace-linux-arm64");
+		expect(getPackageName("linux", "arm64")).toBe("agentic-workspace-linux-arm64");
 	});
 
 	it("maps darwin arches to darwin packages", () => {
-		expect(getPackageName("darwin", "arm64")).toBe("agenticworkspace-darwin-arm64");
-		expect(getPackageName("darwin", "x64")).toBe("agenticworkspace-darwin-x64");
+		expect(getPackageName("darwin", "arm64")).toBe("agentic-workspace-darwin-arm64");
+		expect(getPackageName("darwin", "x64")).toBe("agentic-workspace-darwin-x64");
 	});
 });
 
 describe("getCandidatePackageNames", () => {
 	it("tries the sibling darwin arch after the native one on macOS", () => {
 		expect(getCandidatePackageNames("darwin", "arm64", false)).toEqual([
-			"agenticworkspace-darwin-arm64",
-			"agenticworkspace-darwin-x64",
+			"agentic-workspace-darwin-arm64",
+			"agentic-workspace-darwin-x64",
 		]);
 		expect(getCandidatePackageNames("darwin", "x64", false)).toEqual([
-			"agenticworkspace-darwin-x64",
-			"agenticworkspace-darwin-arm64",
+			"agentic-workspace-darwin-x64",
+			"agentic-workspace-darwin-arm64",
 		]);
 	});
 
 	it("prefers the arm64 hardware arch when the process runs under Rosetta", () => {
 		expect(getCandidatePackageNames("darwin", "x64", true)).toEqual([
-			"agenticworkspace-darwin-arm64",
-			"agenticworkspace-darwin-x64",
+			"agentic-workspace-darwin-arm64",
+			"agentic-workspace-darwin-x64",
 		]);
 	});
 
 	it("does not add fallbacks on other platforms", () => {
-		expect(getCandidatePackageNames("linux", "x64")).toEqual(["agenticworkspace-linux-x64"]);
-		expect(getCandidatePackageNames("linux", "arm64")).toEqual(["agenticworkspace-linux-arm64"]);
-		expect(getCandidatePackageNames("win32", "x64")).toEqual(["agenticworkspace-windows-x64"]);
+		expect(getCandidatePackageNames("linux", "x64")).toEqual(["agentic-workspace-linux-x64"]);
+		expect(getCandidatePackageNames("linux", "arm64")).toEqual(["agentic-workspace-linux-arm64"]);
+		expect(getCandidatePackageNames("win32", "x64")).toEqual(["agentic-workspace-windows-x64"]);
 	});
 
 	it("does not add fallbacks for unknown darwin arches", () => {
-		expect(getCandidatePackageNames("darwin", "ppc64")).toEqual(["agenticworkspace-darwin-ppc64"]);
+		expect(getCandidatePackageNames("darwin", "ppc64")).toEqual(["agentic-workspace-darwin-ppc64"]);
 	});
 });
 
 describe("resolveBinaryPath", () => {
 	it("resolves the native package when it is installed", () => {
 		const resolver = resolverFor([
-			"agenticworkspace-darwin-arm64/agenticworkspace",
-			"agenticworkspace-darwin-x64/agenticworkspace",
+			"agentic-workspace-darwin-arm64/agentic-workspace",
+			"agentic-workspace-darwin-x64/agentic-workspace",
 		]);
 		expect(resolveBinaryPath("darwin", "arm64", resolver)).toBe(
-			"/node_modules/agenticworkspace-darwin-arm64/agenticworkspace",
+			"/node_modules/agentic-workspace-darwin-arm64/agentic-workspace",
 		);
 	});
 
 	it("falls back to darwin-x64 when arm64 Node only has the x64 package", () => {
-		const resolver = resolverFor(["agenticworkspace-darwin-x64/agenticworkspace"]);
+		const resolver = resolverFor(["agentic-workspace-darwin-x64/agentic-workspace"]);
 		expect(resolveBinaryPath("darwin", "arm64", resolver)).toBe(
-			"/node_modules/agenticworkspace-darwin-x64/agenticworkspace",
+			"/node_modules/agentic-workspace-darwin-x64/agentic-workspace",
 		);
 	});
 
 	it("falls back to darwin-arm64 when Rosetta x64 Node only has the arm64 package", () => {
-		const resolver = resolverFor(["agenticworkspace-darwin-arm64/agenticworkspace"]);
+		const resolver = resolverFor(["agentic-workspace-darwin-arm64/agentic-workspace"]);
 		expect(resolveBinaryPath("darwin", "x64", resolver)).toBe(
-			"/node_modules/agenticworkspace-darwin-arm64/agenticworkspace",
+			"/node_modules/agentic-workspace-darwin-arm64/agentic-workspace",
 		);
 	});
 
 	it("throws the original error when no darwin package is installed", () => {
 		expect(() => resolveBinaryPath("darwin", "arm64", resolverFor([]))).toThrow(
-			"Cannot find module 'agenticworkspace-darwin-arm64/agenticworkspace'",
+			"Cannot find module 'agentic-workspace-darwin-arm64/agentic-workspace'",
 		);
 	});
 
 	it("does not fall back across arches on linux", () => {
-		const resolver = resolverFor(["agenticworkspace-linux-arm64/agenticworkspace"]);
+		const resolver = resolverFor(["agentic-workspace-linux-arm64/agentic-workspace"]);
 		expect(() => resolveBinaryPath("linux", "x64", resolver)).toThrow(
-			"Cannot find module 'agenticworkspace-linux-x64/agenticworkspace'",
+			"Cannot find module 'agentic-workspace-linux-x64/agentic-workspace'",
 		);
 	});
 
 	it("resolves the .exe binary on windows", () => {
-		const resolver = resolverFor(["agenticworkspace-windows-x64/agenticworkspace.exe"]);
+		const resolver = resolverFor(["agentic-workspace-windows-x64/agentic-workspace.exe"]);
 		expect(resolveBinaryPath("win32", "x64", resolver)).toBe(
-			"/node_modules/agenticworkspace-windows-x64/agenticworkspace.exe",
+			"/node_modules/agentic-workspace-windows-x64/agentic-workspace.exe",
 		);
 	});
 });

@@ -96,8 +96,8 @@ export function registerTaskCreate(taskCmd: Command, runtime: CliRuntime, readOu
 		writes: "Creates a task or draft markdown file through AgenticWorkspace",
 		output: "Created task details; use --plain for text output",
 		examples: [
-			`agenticworkspace task create "Fix session expiry" --type ${taskTypeExample}`,
-			'agenticworkspace task create -p {{TASK_ID:1}} "Add tests"',
+			`agentic-workspace task create "Fix session expiry" --type ${taskTypeExample}`,
+			'agentic-workspace task create -p {{TASK_ID:1}} "Add tests"',
 		],
 	})
 		.option("-d, --description <text>", "task description")

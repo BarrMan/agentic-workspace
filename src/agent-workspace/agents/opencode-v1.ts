@@ -149,27 +149,27 @@ export class OpencodeV1Agent implements Agent {
 		statusDir,
 		sessionId,
 	}: StatusHookInstallOptions): Promise<InstalledStatusHook> {
-		if (!sessionId) throw new Error("OpenCode 1.19 status hooks require a Backlog session ID.");
+		if (!sessionId) throw new Error("OpenCode 1.19 status hooks require a AgenticWorkspace session ID.");
 		await mkdir(statusDir, { recursive: true, mode: 0o700 });
 		const pluginsDir = join(pluginDir, "plugins");
 		await mkdir(pluginsDir, { recursive: true, mode: 0o700 });
-		const path = join(pluginsDir, "backlog-status.ts");
+		const path = join(pluginsDir, "agentic-workspace-status.ts");
 		await writeFile(path, openCodeV1PluginSource(statusDir, dirname(statusDir), sessionId), { mode: 0o600 });
 		return { provider: "opencode-v1", paths: [path], env: { OPENCODE_CONFIG_DIR: pluginDir }, args: [] };
 	}
 }
 
 /** OpenCode 1.19 plugin source for the TUI launch path. */
-export function openCodeV1PluginSource(statusDir: string, taskRoot: string, backlogSessionId: string): string {
-	return `// backlog-hooks
+export function openCodeV1PluginSource(statusDir: string, taskRoot: string, agenticWorkspaceSessionId: string): string {
+	return `// agentic-workspace-hooks
 // Process-scoped status and native-session emitter for OpenCode 1.19.
 import { existsSync, mkdirSync, renameSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 const STATUS_DIR = ${JSON.stringify(statusDir)};
 const TASK_ROOT = ${JSON.stringify(taskRoot)};
-const BACKLOG_SESSION_ID = ${JSON.stringify(backlogSessionId)};
-const NATIVE_SESSION_ID_PATH = join(TASK_ROOT, BACKLOG_SESSION_ID + ".native-session-id");
+const AGENTIC_WORKSPACE_SESSION_ID = ${JSON.stringify(agenticWorkspaceSessionId)};
+const NATIVE_SESSION_ID_PATH = join(TASK_ROOT, AGENTIC_WORKSPACE_SESSION_ID + ".native-session-id");
 const topLevelSessionIDs = new Set();
 const childSessionIDs = new Set();
 let activeTopLevelSessionID;
@@ -177,7 +177,7 @@ let activeTopLevelSessionID;
 function emit(status, sessionID) {
   try {
     if (sessionID && sessionID !== activeTopLevelSessionID) return;
-    if (!STATUS_DIR || !existsSync(join(STATUS_DIR, ".backlog-launch-owner"))) return;
+    if (!STATUS_DIR || !existsSync(join(STATUS_DIR, ".agentic-workspace-launch-owner"))) return;
     writeFileSync(join(STATUS_DIR, "status"), status, { mode: 0o600 });
   } catch {
     // A throwing plugin can block the agent's tool calls; never propagate.
@@ -197,7 +197,7 @@ function recordNativeSessionId(sessionID) {
   }
 }
 
-export const BacklogStatus = async ({ client }) => ({
+export const AgenticWorkspaceStatus = async ({ client }) => ({
   event: async ({ event }) => {
     try {
       const type = event && event.type;

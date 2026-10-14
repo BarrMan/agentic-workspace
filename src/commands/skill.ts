@@ -1,11 +1,11 @@
 import type { Command } from "commander";
-import { BACKLOG_TASK_SKILL } from "../agent-workspace/task-skill.ts";
+import { AGENTIC_WORKSPACE_TASK_SKILL } from "../agent-workspace/task-skill.ts";
 
 export function registerSkillCommand(program: Command): void {
 	program
 		.command("skill")
-		.description("print the session-local Backlog task management skill")
+		.description("print the session-local AgenticWorkspace task management skill")
 		.action(() => {
-			process.stdout.write(BACKLOG_TASK_SKILL);
+			process.stdout.write(AGENTIC_WORKSPACE_TASK_SKILL);
 		});
 }

@@ -33,7 +33,7 @@ describe("BACK-23 canonical task creation contract", () => {
 	it("creates only a lowercase-ID task.md container, without artifacts or runtime state", async () => {
 		const root = await project("mode-task-create");
 		const filesystem = new FileSystem(root);
-		await filesystem.ensureBacklogStructure();
+		await filesystem.ensureAgenticWorkspaceStructure();
 
 		const savedPath = await filesystem.saveTask(task("BACK-23", "Canonical task"));
 		const container = join(filesystem.tasksDir, "back-23");
@@ -42,13 +42,13 @@ describe("BACK-23 canonical task creation contract", () => {
 		expect((await filesystem.listTasks()).map(({ id }) => id)).toEqual(["BACK-23"]);
 		expect(await Bun.file(join(container, ".artifacts.json")).exists()).toBe(false);
 		expect(await Bun.file(join(container, "spec.md")).exists()).toBe(false);
-		expect(await Bun.file(join(filesystem.backlogDir, "sessions")).exists()).toBe(false);
+		expect(await Bun.file(join(filesystem.agenticWorkspaceDir, "sessions")).exists()).toBe(false);
 	});
 
 	it("updates task content in its stable container without merging or removing sibling artifacts", async () => {
 		const root = await project("mode-task-update");
 		const filesystem = new FileSystem(root);
-		await filesystem.ensureBacklogStructure();
+		await filesystem.ensureAgenticWorkspaceStructure();
 		const originalPath = await filesystem.saveTask(task("BACK-23", "Before rename"));
 		const artifactPath = join(filesystem.tasksDir, "back-23", "notes", "kept.md");
 		await Bun.write(artifactPath, "existing artifact");
@@ -63,7 +63,7 @@ describe("BACK-23 canonical task creation contract", () => {
 	it("rejects occupied containers without a task and updates matching IDs without merging artifacts", async () => {
 		const root = await project("mode-task-collision");
 		const filesystem = new FileSystem(root);
-		await filesystem.ensureBacklogStructure();
+		await filesystem.ensureAgenticWorkspaceStructure();
 		const occupiedContainer = join(filesystem.tasksDir, "back-23");
 		const occupiedArtifact = join(occupiedContainer, "plan.md");
 		await mkdir(occupiedContainer, { recursive: true });
@@ -82,14 +82,17 @@ describe("BACK-23 canonical task creation contract", () => {
 		expect(await readFile(taskPath, "utf8")).toContain("Replacement");
 	});
 
-	it("creates tasks under the explicitly configured backlog root", async () => {
+	it("creates tasks under the explicitly configured agentic-workspace root", async () => {
 		const root = await project("mode-task-configured-root");
-		const filesystem = new FileSystem(root, { backlogDirectory: "work/backlog", configLocation: "folder" });
-		await filesystem.ensureBacklogStructure();
+		const filesystem = new FileSystem(root, {
+			agenticWorkspaceDirectory: "work/agentic-workspace",
+			configLocation: "folder",
+		});
+		await filesystem.ensureAgenticWorkspaceStructure();
 
 		const savedPath = await filesystem.saveTask(task("BACK-23", "Configured root task"));
-		expect(savedPath).toBe(join(root, "work", "backlog", "tasks", "back-23", "task.md"));
+		expect(savedPath).toBe(join(root, "work", "agentic-workspace", "tasks", "back-23", "task.md"));
 		expect((await filesystem.listTasks()).map(({ title }) => title)).toEqual(["Configured root task"]);
-		expect(await Bun.file(join(root, ".backlog", "tasks", "back-23", "task.md")).exists()).toBe(false);
+		expect(await Bun.file(join(root, ".agentic-workspace", "tasks", "back-23", "task.md")).exists()).toBe(false);
 	});
 });

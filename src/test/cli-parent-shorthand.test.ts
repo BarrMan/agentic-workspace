@@ -7,7 +7,7 @@ import { runCli } from "../cli/register.ts";
 import { Core } from "../index.ts";
 import { initializeFilesystemTestProject } from "./test-utils.ts";
 
-const CLI_COMMAND = ["agenticworkspace"];
+const CLI_COMMAND = ["agentic-workspace"];
 
 function $(parts: TemplateStringsArray, ...values: unknown[]) {
 	const source = parts.reduce(
@@ -65,11 +65,11 @@ describe("CLI parent shorthand option", () => {
 	let testDir: string;
 
 	beforeAll(async () => {
-		testDir = await mkdtemp(join(tmpdir(), "backlog-test-"));
+		testDir = await mkdtemp(join(tmpdir(), "agentic-workspace-test-"));
 
 		// Initialize git repository first to avoid interactive prompts
 
-		// Initialize backlog project using Core (simulating CLI)
+		// Initialize agentic-workspace project using Core (simulating CLI)
 		const core = new Core(testDir);
 		await initializeFilesystemTestProject(core, "Test Project");
 	});
@@ -90,7 +90,7 @@ describe("CLI parent shorthand option", () => {
 		expect(createSubtaskShort.exitCode).toBe(0);
 
 		// Verify the subtask was created with correct parent
-		const subtaskFile = Bun.file(join(testDir, "backlog", "tasks", "task-1.1", "task.md"));
+		const subtaskFile = Bun.file(join(testDir, "agentic-workspace", "tasks", "task-1.1", "task.md"));
 		expect(await subtaskFile.exists()).toBe(true);
 		expect(await subtaskFile.text()).toContain("parent_task_id: TASK-1");
 	});

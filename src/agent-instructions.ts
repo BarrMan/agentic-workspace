@@ -38,7 +38,7 @@ type GuidelineMarkerKind = "default" | "mcp";
  * Gets the markers for an installed guideline block
  */
 function getMarkers(kind: GuidelineMarkerKind = "default"): { start: string; end: string } {
-	const label = kind === "mcp" ? "BACKLOG.MD MCP GUIDELINES" : "BACKLOG.MD GUIDELINES";
+	const label = kind === "mcp" ? "AGENTIC_WORKSPACE MCP GUIDELINES" : "AGENTIC_WORKSPACE GUIDELINES";
 	return {
 		start: `<!-- ${label} START -->`,
 		end: `<!-- ${label} END -->`,
@@ -46,9 +46,9 @@ function getMarkers(kind: GuidelineMarkerKind = "default"): { start: string; end
 }
 
 /**
- * Checks if the Backlog.md guidelines are already present in the content
+ * Checks if the AgenticWorkspace guidelines are already present in the content
  */
-function hasBacklogGuidelines(content: string): boolean {
+function hasAgenticWorkspaceGuidelines(content: string): boolean {
 	const { start } = getMarkers();
 	return content.includes(start);
 }
@@ -59,12 +59,12 @@ function hasBacklogGuidelines(content: string): boolean {
  * version so local instructions can later be compared against the bundled ones.
  */
 function versionMarkerLine(version: string): string {
-	const marker = `backlog.md-instructions-version: ${version}`;
+	const marker = `agentic-workspace-instructions-version: ${version}`;
 	return `<!-- ${marker} -->`;
 }
 
 /**
- * Wraps the Backlog.md guidelines with appropriate markers
+ * Wraps the AgenticWorkspace guidelines with appropriate markers
  */
 function wrapWithMarkers(content: string, version: string, kind: GuidelineMarkerKind = "default"): string {
 	const { start, end } = getMarkers(kind);
@@ -162,7 +162,7 @@ async function updateAgentInstructionFile(
 function replaceCliGuidelines(existing: string, content: string, version: string): string | undefined {
 	const withoutMcp = stripGuidelineSection(existing, "mcp").content;
 	const stripped = stripGuidelineSection(withoutMcp, "default");
-	if (!stripped.removed && hasBacklogGuidelines(withoutMcp)) return undefined;
+	if (!stripped.removed && hasAgenticWorkspaceGuidelines(withoutMcp)) return undefined;
 	if (stripped.removed) {
 		const index = stripped.firstIndex ?? stripped.content.length;
 		return stripped.content.slice(0, index) + wrapWithMarkers(content, version) + stripped.content.slice(index);

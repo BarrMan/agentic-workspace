@@ -12,7 +12,7 @@ export { exportKanbanBoardToFile } from "./board.ts";
 // Constants
 export * from "./constants/index.ts";
 // Core entry point
-export { Core } from "./core/backlog.ts";
+export { Core } from "./core/agentic-workspace.ts";
 
 // File system operations
 

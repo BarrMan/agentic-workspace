@@ -1,13 +1,15 @@
 # BACK-23 Phase 1 contract and ownership
 
+> [`docs/SPEC.md`](./SPEC.md) is authoritative wherever this document disagrees with it.
+
 Phase 1 defined the data contracts below. Canonical task containers are the only readable task layout; legacy flat task records are not read. Manually move each `<name>.md` to `<lowercase-id>/task.md`, set frontmatter `id` to match the directory name, and set `task_schema_version` to `3`. Version-1 session state is unsupported; manually set `version` to `2`, move `sessions` and `activeSessionId` into `modes.build`, and preserve `taskId` before use.
 
 ## Seed catalog
 
 | Stable ID | Name | Model | Repository | Task metadata | Artifacts | Subagents | Approval indicator |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| `plan` | PLAN | Default (no Backlog override) | Read | Read-Write | Read-Write | Allowed | `plan.md` |
-| `build` | BUILD | Default (no Backlog override) | Read-Write | Read-Write | Read-Write | Allowed | None |
+| `plan` | PLAN | Default (no AgenticWorkspace override) | Read | Read-Write | Read-Write | Allowed | `plan.md` |
+| `build` | BUILD | Default (no AgenticWorkspace override) | Read-Write | Read-Write | Read-Write | Allowed | None |
 
 PLAN declares optional `spec.md` (WHAT: requirements, behavior, constraints, acceptance criteria, durable decisions) and `plan.md` (HOW: approach, affected areas, steps, validation). Creation and session start do not create these files. Catalog version is `1`; IDs are stable lowercase keys and display names may change. Seed only on explicit project configuration initialization when `modes` is absent. Ordinary config reads/saves do not seed; root/card preset resolution never supplies a mode catalog. Existing configuration fields round-trip untouched.
 
@@ -15,9 +17,9 @@ Profile `textColor` is optional and uses the shared lowercase ANSI palette in `s
 
 ## Workspace startup
 
-`agenticworkspace workspace` and interactive board entry require a valid catalog in the exact project configuration. Missing project configuration or missing `modes` fails before terminal acquisition or local store creation. There is no built-in, root, or card catalog fallback. A missing or deleted persisted task mode resolves against the project catalog's default without rewriting the selection during startup.
+`agentic-workspace workspace` and interactive board entry require a valid catalog in the exact project configuration. Missing project configuration or missing `modes` fails before terminal acquisition or local store creation. There is no built-in, root, or card catalog fallback. A missing or deleted persisted task mode resolves against the project catalog's default without rewriting the selection during startup.
 
-For a legacy project, manually convert flat task and draft records by moving `<name>.md` to `<lowercase-id>/task.md` under the same root, setting frontmatter `id` to match the directory name, and setting `task_schema_version` to `3`. Back up and manually convert version-1 session state by setting `version` to `2`, moving `sessions` and `activeSessionId` into `modes.build`, and preserving `taskId`. `agenticworkspace agent-config init project` initializes only a missing project catalog. Host setup failure destroys the acquired renderer, and teardown remains idempotent even when root disposal fails.
+For a legacy project, manually convert flat task and draft records by moving `<name>.md` to `<lowercase-id>/task.md` under the same root, setting frontmatter `id` to match the directory name, and setting `task_schema_version` to `3`. Back up and manually convert version-1 session state by setting `version` to `2`, moving `sessions` and `activeSessionId` into `modes.build`, and preserving `taskId`. `agentic-workspace agent-config init project` initializes only a missing project catalog. Host setup failure destroys the acquired renderer, and teardown remains idempotent even when root disposal fails.
 
 ## Durable artifacts and approvals (Phase 2 implementation boundary)
 

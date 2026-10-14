@@ -32,7 +32,7 @@ describe("--desc alias functionality", () => {
 		TEST_DIR = createUniqueTestDir("test-desc-alias");
 		await mkdir(TEST_DIR, { recursive: true });
 
-		// Initialize backlog project using Core
+		// Initialize agentic-workspace project using Core
 		const core = new Core(TEST_DIR);
 		await initializeFilesystemTestProject(core, "Desc Alias Test Project");
 	});

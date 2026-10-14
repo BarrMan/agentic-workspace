@@ -2,7 +2,7 @@ import { describe, expect, it } from "bun:test";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { Core } from "../core/backlog.ts";
+import { Core } from "../core/agentic-workspace.ts";
 import { ContentRepository } from "../file-system/content-repository.ts";
 import {
 	FrontmatterSchemaError,
@@ -100,7 +100,7 @@ describe("task frontmatter storage", () => {
 	});
 
 	it("preserves unknown decision metadata on an ordinary save", async () => {
-		const root = await mkdtemp(join(tmpdir(), "backlog-decision-frontmatter-"));
+		const root = await mkdtemp(join(tmpdir(), "agentic-workspace-decision-frontmatter-"));
 		const decisionsDir = join(root, "decisions");
 		const repository = new ContentRepository({
 			decisionsDirectory: async () => decisionsDir,
@@ -131,7 +131,7 @@ describe("task frontmatter storage", () => {
 	});
 
 	it("replaces decision custom metadata with submitted frontmatter", async () => {
-		const root = await mkdtemp(join(tmpdir(), "backlog-decision-content-"));
+		const root = await mkdtemp(join(tmpdir(), "agentic-workspace-decision-content-"));
 		const core = new Core(root);
 		const decision: Decision = {
 			id: "decision-1",
@@ -144,7 +144,7 @@ describe("task frontmatter storage", () => {
 			rawContent: "",
 		};
 		try {
-			await core.filesystem.ensureBacklogStructure();
+			await core.filesystem.ensureAgenticWorkspaceStructure();
 			await core.createDecision(decision);
 			await core.filesystem.saveDecision(decision, { stale_metadata: "discarded" });
 			await core.updateDecisionFromContent(

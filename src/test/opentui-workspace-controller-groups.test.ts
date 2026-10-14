@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { getBuiltInAgentConfiguration, getDefaultModeCatalog } from "../agent-workspace/config.ts";
 import type { GroupState, GroupStore } from "../agent-workspace/group-store.ts";
 import type { WorkspaceStateService } from "../agent-workspace/workspace-state.ts";
-import type { Core } from "../core/backlog.ts";
+import type { Core } from "../core/agentic-workspace.ts";
 import type { Task } from "../types/index.ts";
 import type { OpenTuiHost } from "../ui/opentui/host.ts";
 import { createWorkspaceFilters } from "../ui/opentui/workspace/state.ts";
@@ -42,10 +42,10 @@ const tasks: Task[] = ["T1", "T2"].map((id) => ({
 }));
 
 function setup(groups: Groups, runtimeOverrides: Record<string, unknown> = {}) {
-	const backlogDir = mkdtempSync(join(tmpdir(), "backlog-workspace-controller-groups-"));
-	roots.push(backlogDir);
+	const agenticWorkspaceDir = mkdtempSync(join(tmpdir(), "agentic-workspace-workspace-controller-groups-"));
+	roots.push(agenticWorkspaceDir);
 	writeFileSync(
-		join(backlogDir, "agents.json"),
+		join(agenticWorkspaceDir, "agents.json"),
 		JSON.stringify({ ...getBuiltInAgentConfiguration(), modes: getDefaultModeCatalog() }),
 	);
 	let mounted!: OpenTuiWorkspaceOptions;
@@ -80,7 +80,7 @@ function setup(groups: Groups, runtimeOverrides: Record<string, unknown> = {}) {
 			identityIndex: { getTasks: () => tasks, getContestedIds: () => new Set() },
 		}),
 		filesystem: {
-			backlogDir,
+			agenticWorkspaceDir,
 			loadConfig: async () => ({ projectName: "Test" }),
 			listMilestones: async () => [],
 			listArchivedMilestones: async () => [],

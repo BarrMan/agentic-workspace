@@ -1,5 +1,5 @@
 import { DRAFT_STATUS } from "../../../constants/index.ts";
-import type { Core } from "../../../core/backlog.ts";
+import type { Core } from "../../../core/agentic-workspace.ts";
 import { loadTaskDetail } from "../../../core/task-detail.ts";
 import { formatTaskPlainText } from "../../../formatters/task-plain-text.ts";
 import { parseClearableStringList, parseDelimitedStringList, toStringArray } from "../../../utils/task-builders.ts";

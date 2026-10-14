@@ -136,14 +136,16 @@ export class ModeLifecycleService {
 				)
 					throw new Error(`Invalid ${source} session history for task ${taskId}`);
 				if (
-					state.activeSessionId !== undefined &&
-					!state.sessions.some((session) => session.id === state.activeSessionId)
+					(state.sessions.length > 0 && state.activeSessionId === undefined) ||
+					(state.activeSessionId !== undefined &&
+						!state.sessions.some((session) => session.id === state.activeSessionId))
 				)
 					throw new Error(`Invalid active session pointer for ${source} on task ${taskId}`);
 				if (
 					target &&
 					(!Array.isArray(target.sessions) ||
 						target.sessions.some((session) => !session || typeof session.id !== "string") ||
+						(target.sessions.length > 0 && target.activeSessionId === undefined) ||
 						(target.activeSessionId !== undefined &&
 							!target.sessions.some((session) => session.id === target.activeSessionId)))
 				)

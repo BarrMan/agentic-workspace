@@ -131,23 +131,20 @@ export const AGENT_ACTIVITY_STATUS = {
 export type AgentActivity = (typeof AGENT_ACTIVITY_STATUS)[keyof typeof AGENT_ACTIVITY_STATUS];
 
 /**
- * The row indication shown for a task's active agent session. This is the settled four-state
- * contract: `working` (green) only while the agent is genuinely executing, `parked` (blue) for an
- * active session that is not working yet or has no evidence, `waiting` (orange) and `error` (red)
- * remain transient. A task with no active session renders no indication at all.
+ * The row indication shown for a task's active agent session, derived from activity events.
  */
 export const AGENT_INDICATION = {
 	WORKING: "working",
 	PARKED: "parked",
 	WAITING: "waiting",
 	ERROR: "error",
+	ENDED: "ended",
 } as const;
 export type AgentIndication = (typeof AGENT_INDICATION)[keyof typeof AGENT_INDICATION];
 
 /**
  * Map a derived activity to the settled row indication. `running` is the only green; every
- * non-working active state (idle/unknown/parked/starting, and not-yet-derived `undefined`) is the
- * blue parked indication; `stopped` means there is no active session, so there is no indication.
+ * non-working active state is the blue parked indication; no activity evidence means no indication.
  */
 export function activityToIndication(activity: AgentActivity | undefined): AgentIndication | undefined {
 	switch (activity) {
@@ -160,8 +157,9 @@ export function activityToIndication(activity: AgentActivity | undefined): Agent
 		case "idle":
 		case "unknown":
 		case "starting":
-		case undefined:
 			return "parked";
+		case undefined:
+			return undefined;
 		case "stopped":
 			return undefined;
 	}
@@ -187,7 +185,7 @@ export interface AgentPreset {
 	bootstrap: RuntimeAgentBootstrap;
 	/**
 	 * Overrides native resume syntax.
-	 * When absent, Backlog uses this bootstrap type's documented default.
+	 * When absent, AgenticWorkspace uses this bootstrap type's documented default.
 	 */
 	resumeFlag?: string;
 }

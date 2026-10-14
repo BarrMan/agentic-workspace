@@ -1,5 +1,5 @@
 import { DEFAULT_STATUSES, DRAFT_STATUS } from "../../constants/index.ts";
-import type { BacklogConfig } from "../../types/index.ts";
+import type { AgenticWorkspaceConfig } from "../../types/index.ts";
 import { getPriorityLabels } from "../../utils/priority-config.ts";
 import { getProjectValues } from "../../utils/project-config.ts";
 import { getTaskTypeValues } from "../../utils/task-type-config.ts";
@@ -8,7 +8,7 @@ import type { JsonSchema } from "../validation/validators.ts";
 /**
  * Builds the accepted task status values used by MCP schemas and public CLI help.
  */
-function getStatusFieldEnumValues(config: Pick<BacklogConfig, "statuses">): string[] {
+function getStatusFieldEnumValues(config: Pick<AgenticWorkspaceConfig, "statuses">): string[] {
 	const configuredStatuses =
 		config.statuses && config.statuses.length > 0 ? [...config.statuses] : [...DEFAULT_STATUSES];
 	const normalizedStatuses = configuredStatuses.map((status) => status.trim());
@@ -19,7 +19,7 @@ function getStatusFieldEnumValues(config: Pick<BacklogConfig, "statuses">): stri
 /**
  * Generates a status field schema with dynamic enum values sourced from config.
  */
-function generateStatusFieldSchema(config: BacklogConfig): JsonSchema {
+function generateStatusFieldSchema(config: AgenticWorkspaceConfig): JsonSchema {
 	const configuredStatuses =
 		config.statuses && config.statuses.length > 0 ? [...config.statuses] : [...DEFAULT_STATUSES];
 	const normalizedStatuses = configuredStatuses.map((status) => status.trim());
@@ -41,7 +41,7 @@ function generateStatusFieldSchema(config: BacklogConfig): JsonSchema {
  * Generates a task type field schema with dynamic enum values sourced from config.
  * No default is set: tasks without a type stay untyped.
  */
-function generateTypeFieldSchema(config: Pick<BacklogConfig, "types">): JsonSchema {
+function generateTypeFieldSchema(config: Pick<AgenticWorkspaceConfig, "types">): JsonSchema {
 	const types = getTaskTypeValues(config);
 
 	return {
@@ -53,7 +53,7 @@ function generateTypeFieldSchema(config: Pick<BacklogConfig, "types">): JsonSche
 	};
 }
 
-function generateTypeFilterSchema(config: Pick<BacklogConfig, "types">): JsonSchema {
+function generateTypeFilterSchema(config: Pick<AgenticWorkspaceConfig, "types">): JsonSchema {
 	return {
 		type: "array",
 		items: generateTypeFieldSchema(config),
@@ -62,7 +62,7 @@ function generateTypeFilterSchema(config: Pick<BacklogConfig, "types">): JsonSch
 	};
 }
 
-function generateProjectFilterSchema(config: Pick<BacklogConfig, "projects">): JsonSchema {
+function generateProjectFilterSchema(config: Pick<AgenticWorkspaceConfig, "projects">): JsonSchema {
 	return {
 		type: "array",
 		items: generateProjectFieldSchema(config),
@@ -71,7 +71,7 @@ function generateProjectFilterSchema(config: Pick<BacklogConfig, "projects">): J
 	};
 }
 
-export function generateTaskListSchema(config: Pick<BacklogConfig, "types" | "projects">): JsonSchema {
+export function generateTaskListSchema(config: Pick<AgenticWorkspaceConfig, "types" | "projects">): JsonSchema {
 	return {
 		type: "object",
 		properties: {
@@ -119,7 +119,7 @@ export function generateTaskListSchema(config: Pick<BacklogConfig, "types" | "pr
 /**
  * Generates a priority field schema with dynamic enum values sourced from config.
  */
-function generatePriorityFieldSchema(config: Pick<BacklogConfig, "priorities">): JsonSchema {
+function generatePriorityFieldSchema(config: Pick<AgenticWorkspaceConfig, "priorities">): JsonSchema {
 	const priorities = getPriorityLabels(config);
 
 	return {
@@ -136,7 +136,7 @@ function generatePriorityFieldSchema(config: Pick<BacklogConfig, "priorities">):
  * Unlike priority and type, projects has no default set, so callers must omit this
  * field from generated tool schemas entirely when no projects are configured.
  */
-function generateProjectFieldSchema(config: Pick<BacklogConfig, "projects">): JsonSchema {
+function generateProjectFieldSchema(config: Pick<AgenticWorkspaceConfig, "projects">): JsonSchema {
 	const projects = getProjectValues(config);
 
 	return {
@@ -159,7 +159,7 @@ function generateDueDateFieldSchema(description: string, clearable = false): Jso
 /**
  * Generates the task_create input schema with dynamic status enum
  */
-export function generateTaskCreateSchema(config: BacklogConfig): JsonSchema {
+export function generateTaskCreateSchema(config: AgenticWorkspaceConfig): JsonSchema {
 	return {
 		type: "object",
 		properties: {
@@ -250,7 +250,7 @@ export function generateTaskCreateSchema(config: BacklogConfig): JsonSchema {
 /**
  * Generates the task_edit input schema with dynamic status enum and MCP-specific operations.
  */
-export function generateTaskEditSchema(config: BacklogConfig): JsonSchema {
+export function generateTaskEditSchema(config: AgenticWorkspaceConfig): JsonSchema {
 	return {
 		type: "object",
 		properties: {
@@ -368,7 +368,9 @@ export function generateTaskEditSchema(config: BacklogConfig): JsonSchema {
 	};
 }
 
-export function generateTaskSearchSchema(config: Pick<BacklogConfig, "priorities" | "types" | "projects">): JsonSchema {
+export function generateTaskSearchSchema(
+	config: Pick<AgenticWorkspaceConfig, "priorities" | "types" | "projects">,
+): JsonSchema {
 	return {
 		type: "object",
 		properties: {

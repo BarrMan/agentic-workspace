@@ -5,7 +5,7 @@ import type { Task } from "../types/index.ts";
 const context = {
 	repositoryRoot: "/repo",
 	projectRoot: "/repo",
-	backlogDirectory: "backlog",
+	agenticWorkspaceDirectory: "agentic-workspace",
 };
 
 function task(title: string, id = "BACK-1"): Task {
@@ -30,7 +30,7 @@ describe("TaskIdentityIndex", () => {
 			id: "BACK-1",
 			type: "task",
 			branch: "origin/main",
-			path: "backlog/tasks/back-1 - Shared.md",
+			path: "agentic-workspace/tasks/back-1 - Shared.md",
 			lastModified: new Date("2026-08-01T10:00:00Z"),
 			task: task("Hydrated title"),
 		};
@@ -53,7 +53,7 @@ describe("TaskIdentityIndex", () => {
 			id: "BACK-001",
 			type: "task",
 			branch: "feature/active",
-			path: "backlog/tasks/back-1 - Shared.md",
+			path: "agentic-workspace/tasks/back-1 - Shared.md",
 			lastModified: new Date("2026-08-01T10:00:00Z"),
 			task: task("Active"),
 		};
@@ -61,7 +61,7 @@ describe("TaskIdentityIndex", () => {
 			id: "BACK-1",
 			type: "archived",
 			branch: "feature/archive",
-			path: "backlog/archive/tasks/back-1 - Shared.md",
+			path: "agentic-workspace/archive/tasks/back-1 - Shared.md",
 			lastModified: new Date("2026-08-01T10:00:00Z"),
 		};
 
@@ -80,7 +80,7 @@ describe("TaskIdentityIndex", () => {
 			id: "BACK-1",
 			type: "task",
 			branch: "branch-a",
-			path: "backlog/tasks/back-1 - Shared.md",
+			path: "agentic-workspace/tasks/back-1 - Shared.md",
 			lastModified: new Date("2026-08-01T10:00:00Z"),
 			task: task("Branch A"),
 		};
@@ -100,7 +100,7 @@ describe("TaskIdentityIndex", () => {
 			id,
 			type: "task",
 			branch: "local",
-			path: `backlog/tasks/${id.toLowerCase()} - Subtask.md`,
+			path: `agentic-workspace/tasks/${id.toLowerCase()} - Subtask.md`,
 			lastModified: new Date("2026-08-01T10:00:00Z"),
 			task: task(`Subtask ${id}`, id),
 		}));
@@ -116,14 +116,14 @@ describe("TaskIdentityIndex", () => {
 				id: "BACK-001",
 				type: "archived",
 				branch: "branch-a",
-				path: "backlog/archive/tasks/back-1 - Shared.md",
+				path: "agentic-workspace/archive/tasks/back-1 - Shared.md",
 				lastModified: new Date("2026-08-01T10:00:00Z"),
 			},
 			{
 				id: "BACK-1",
 				type: "archived",
 				branch: "branch-b",
-				path: "backlog/archive/tasks/back-1 - Shared.md",
+				path: "agentic-workspace/archive/tasks/back-1 - Shared.md",
 				lastModified: new Date("2026-08-01T11:00:00Z"),
 			},
 		]);

@@ -21,7 +21,7 @@ describe("bare existing-agent observers", () => {
 	});
 
 	it("snapshots and tails independently; detaching readers never changes the shared runtime", async () => {
-		const directory = await mkdtemp(join(tmpdir(), "backlog-fake-observers-"));
+		const directory = await mkdtemp(join(tmpdir(), "agentic-workspace-fake-observers-"));
 		directories.push(directory);
 		const outputPath = join(directory, "session.log");
 		await writeFile(outputPath, "old transcript");
@@ -111,7 +111,7 @@ describe("bare existing-agent observers", () => {
 	});
 
 	it("cleans up only local resources when a bare observer cannot snapshot", async () => {
-		const directory = await mkdtemp(join(tmpdir(), "backlog-fake-observer-failure-"));
+		const directory = await mkdtemp(join(tmpdir(), "agentic-workspace-fake-observer-failure-"));
 		directories.push(directory);
 		const outputPath = join(directory, "session.log");
 		await writeFile(outputPath, "untouched");
@@ -138,7 +138,7 @@ describe("bare existing-agent observers", () => {
 	});
 
 	it("stop and detach dispose only local readers and never alter the pane or capture pipe", async () => {
-		const directory = await mkdtemp(join(tmpdir(), "backlog-fake-observer-dispose-"));
+		const directory = await mkdtemp(join(tmpdir(), "agentic-workspace-fake-observer-dispose-"));
 		directories.push(directory);
 		const outputPath = join(directory, "session.log");
 		await writeFile(outputPath, "existing capture");

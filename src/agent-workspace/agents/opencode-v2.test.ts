@@ -10,7 +10,7 @@ const preset: AgentPreset = { bootstrap: "opencode", command: "opencode", prepar
 
 describe("OpenCode v2 adapter", () => {
 	test("uses an exact native session for interactive launch, resume, and ask", async () => {
-		const directory = await mkdtemp(join(tmpdir(), "backlog-opencode-v2-identity-"));
+		const directory = await mkdtemp(join(tmpdir(), "agentic-workspace-opencode-v2-identity-"));
 		try {
 			const agent = new OpencodeV2Agent();
 			const prepared = await agent.prepare({
@@ -39,7 +39,7 @@ describe("OpenCode v2 adapter", () => {
 	});
 
 	test("preserves user CLI plugins and installs a process-local terminal-aware plugin", async () => {
-		const directory = await mkdtemp(join(tmpdir(), "backlog-opencode-v2-"));
+		const directory = await mkdtemp(join(tmpdir(), "agentic-workspace-opencode-v2-"));
 		try {
 			const launchDirectory = join(directory, "launch-temp");
 			const metadataRoot = join(directory, "durable-metadata");
@@ -80,7 +80,10 @@ describe("OpenCode v2 adapter", () => {
 				intent: { kind: "new" },
 			});
 			const cliConfig = Bun.JSONC.parse(prepared.env.OPENCODE_CLI_CONFIG_CONTENT ?? "{}") as { plugins: string[] };
-			expect(cliConfig.plugins).toEqual(["user-plugin", join(launchDirectory, "backlog-opencode-cli-plugin")]);
+			expect(cliConfig.plugins).toEqual([
+				"user-plugin",
+				join(launchDirectory, "agentic-workspace-opencode-cli-plugin"),
+			]);
 			const skillConfig = JSON.parse(prepared.env.OPENCODE_CONFIG_CONTENT ?? "{}") as { skills: string[] };
 			expect(skillConfig.skills).toEqual(["/user/skills", join(launchDirectory, "skills")]);
 			const pluginDirectory = cliConfig.plugins[1];
@@ -172,7 +175,7 @@ describe("OpenCode v2 adapter", () => {
 	});
 
 	test("validates v2 skill arrays and configures explicit models without CLI flags", async () => {
-		const directory = await mkdtemp(join(tmpdir(), "backlog-opencode-v2-config-"));
+		const directory = await mkdtemp(join(tmpdir(), "agentic-workspace-opencode-v2-config-"));
 		try {
 			const agent = new OpencodeV2Agent();
 			await expect(
@@ -233,7 +236,7 @@ describe("OpenCode v2 adapter", () => {
 	});
 
 	test("checks exact resume IDs without creating missing sessions", async () => {
-		const directory = await mkdtemp(join(tmpdir(), "backlog-opencode-v2-resume-"));
+		const directory = await mkdtemp(join(tmpdir(), "agentic-workspace-opencode-v2-resume-"));
 		try {
 			const binary = join(directory, "opencode-probe");
 			await writeFile(
@@ -280,7 +283,7 @@ esac
 					cwd: directory,
 					bootstrapPath: join(directory, "bootstrap"),
 					env: { OPENCODE_CONFIG_CONTENT: "[]" },
-					sessionId: "backlog-session",
+					sessionId: "agentic-workspace-session",
 					resume: false,
 					nativeSessionId: "ses_new",
 				}),
@@ -291,7 +294,7 @@ esac
 					cwd: directory,
 					bootstrapPath: join(directory, "bootstrap"),
 					env: { OPENCODE_CLI_CONFIG_CONTENT: '{"plugins":"invalid"}' },
-					sessionId: "backlog-session",
+					sessionId: "agentic-workspace-session",
 					resume: false,
 					nativeSessionId: "ses_new",
 				}),

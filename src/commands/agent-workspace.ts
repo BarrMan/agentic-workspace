@@ -17,7 +17,7 @@ import {
 	resolveSessionSettings,
 	type SessionSettings,
 } from "../agent-workspace/types.ts";
-import type { Core } from "../core/backlog.ts";
+import type { Core } from "../core/agentic-workspace.ts";
 import { OpenTuiWorkspaceController } from "../ui/opentui/workspace-controller.ts";
 import { addHelpSchema, choiceType } from "./help-schema.ts";
 
@@ -144,7 +144,7 @@ export function registerAgentWorkspaceCommands(program: Command, getCore: CoreFa
 	addHelpSchema(program.command("workspace"), {
 		reads: "Agent session state and configuration",
 		output: "OpenTUI task workspace",
-		examples: ["agenticworkspace workspace"],
+		examples: ["agentic-workspace workspace"],
 	})
 		.description("open the OpenTUI task-centered agent workspace")
 		.action(async () => {
@@ -158,8 +158,8 @@ export function registerAgentWorkspaceCommands(program: Command, getCore: CoreFa
 		optional: [{ name: "--help", type: "Boolean", description: "Show lifecycle command help" }],
 		output: "Session records as JSON; output prints persisted session output; attach connects to the session terminal",
 		examples: [
-			"agenticworkspace agent-session list BACK-123 --mode plan",
-			"agenticworkspace agent-session start BACK-123 --preset opencode",
+			"agentic-workspace agent-session list BACK-123 --mode plan",
+			"agentic-workspace agent-session start BACK-123 --preset opencode",
 		],
 	})
 		.description("manage task agent sessions")
@@ -290,10 +290,10 @@ export function registerAgentWorkspaceCommands(program: Command, getCore: CoreFa
 		],
 		output: "Resolved or scoped configuration as JSON",
 		examples: [
-			"agenticworkspace agent-config show",
-			"agenticworkspace agent-config init project",
-			"agenticworkspace agent-config set card --task BACK-123 --preset opencode --worktree-per-task true",
-			"agenticworkspace agent-config model set --current --mode plan",
+			"agentic-workspace agent-config show",
+			"agentic-workspace agent-config init project",
+			"agentic-workspace agent-config set card --task BACK-123 --preset opencode --worktree-per-task true",
+			"agentic-workspace agent-config model set --current --mode plan",
 		],
 	})
 		.description("inspect and selectively edit scoped agent configuration")

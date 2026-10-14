@@ -23,10 +23,10 @@ Verification: 89 passing tests and one skipped test across 13 focused suites; Ty
 - Task details overlay the preview without resizing it. Status selection uses native tabs.
 - Shortcut help supports search and recorded, project-local overrides. `Shift+[` toggles the task pane; `Ctrl+[` and `Ctrl+]` navigate a bounded 100-state history.
 - `Ctrl+C` and `Ctrl+Q` leave focused agent input without interrupting the agent. Navigation `Ctrl+C` exits; `q` never exits.
-- Task-manager launches use an exact idle prompt and a temporary session-local Backlog skill. `agenticworkspace skill` prints its body. New sessions start at the project root without task/path environment injection, automatic task-status changes, or worktree creation.
+- Task-manager launches use an exact idle prompt and a temporary session-local AgenticWorkspace skill. `agentic-workspace skill` prints its body. New sessions start at the project root without task/path environment injection, automatic task-status changes, or worktree creation.
 - Native workspace and CLI agents share durable records. The session picker selects exact conversations; externally owned live sessions remain alive when the workspace detaches.
 
-Public CLI checks have exercised task-selection history, status wraparound, board-to-workspace history, filter/selection restoration, shortcut search and recording, replacement of default aliases, and clean navigation exit. The public `agenticworkspace skill` command prints the requested skill body.
+Public CLI checks have exercised task-selection history, status wraparound, board-to-workspace history, filter/selection restoration, shortcut search and recording, replacement of default aliases, and clean navigation exit. The public `agentic-workspace skill` command prints the requested skill body.
 
 Final verification for this pass:
 
@@ -52,7 +52,7 @@ The numbered phases below and the preceding cleanup results are historical plann
 Each phase changes the actual workspace screen.
 
 ```sh
-agenticworkspace workspace
+agentic-workspace workspace
 ```
 
 is the review command for every phase.
@@ -81,7 +81,7 @@ Every phase preserves these rules:
 
 ### Deliverable
 
-`agenticworkspace workspace` launches one OpenTUI shell.
+`agentic-workspace workspace` launches one OpenTUI shell.
 
 ```text
 navbar with visible filter state
@@ -98,7 +98,7 @@ Legacy presentation source stays available only as rollback source. Public comma
 
 | Slice | Owner boundary | Output |
 |---|---|---|
-| Public startup | `src/commands/agent-workspace.ts` and startup tests | `agenticworkspace workspace` creates one OpenTUI controller and preserves non-TTY error behavior |
+| Public startup | `src/commands/agent-workspace.ts` and startup tests | `agentic-workspace workspace` creates one OpenTUI controller and preserves non-TTY error behavior |
 | Shell layout | `src/ui/opentui/workspace.ts` and shell layout tests | Navbar/filter, left task list, collapsible right details/agent region, footer |
 | State adapter | `src/ui/opentui/workspace-controller.ts` and controller tests | Real `Core`, workspace state, watchers, `UnifiedViewSession`, `TaskViewerSession`, and session-state adapter |
 | Agent state region | New OpenTUI agent-view module and tests | Selected-task session state, no-session/loading/stopped/error states, stale identity guard |
@@ -108,7 +108,7 @@ Legacy presentation source stays available only as rollback source. Public comma
 Run:
 
 ```sh
-agenticworkspace workspace
+agentic-workspace workspace
 ```
 
 Review:
@@ -128,11 +128,11 @@ User approves actual shell appearance and selection behavior.
 
 ### Deliverable
 
-Same `agenticworkspace workspace` screen supports filter editing/search, task create/edit, task actions, board route, help, and normal-mode shortcuts.
+Same `agentic-workspace workspace` screen supports filter editing/search, task create/edit, task actions, board route, help, and normal-mode shortcuts.
 
 ### Current review target
 
-The approved Phase 1 normal workflow was recovered from session history on 2026-10-05, before Phase 2 live-preview changes. The workspace surface, controller, and terminal host matched their historical snapshots at recovery. The Enter-only increment below extends that recovered screen without changing its layout. `agenticworkspace workspace` still launches OpenTUI, not the legacy tmux presentation.
+The approved Phase 1 normal workflow was recovered from session history on 2026-10-05, before Phase 2 live-preview changes. The workspace surface, controller, and terminal host matched their historical snapshots at recovery. The Enter-only increment below extends that recovered screen without changing its layout. `agentic-workspace workspace` still launches OpenTUI, not the legacy tmux presentation.
 
 Recovery verification: the actual CLI ran in an isolated PTY project. Task navigation changed the selected description, Space collapsed and restored details, idle produced zero output bytes over 1.6 seconds, and Ctrl+C exited with code 0 and restored the main screen. TypeScript, focused tests, and Biome passed. Real-terminal appearance still requires user review.
 
@@ -184,7 +184,7 @@ Review with `bun src/cli/index.ts workspace`: Enter starts the agent, Space togg
 
 ### Review evidence
 
-Run `agenticworkspace workspace`. Review real task creation, editing, filters, search, board return, footer/help, and remapped shortcuts.
+Run `agentic-workspace workspace`. Review real task creation, editing, filters, search, board return, footer/help, and remapped shortcuts.
 
 Confirm `Ctrl+C` is sole exit request, `q` does not exit, and `Esc` only closes/backtracks.
 
@@ -198,7 +198,7 @@ User approves normal task workflow.
 
 ### Deliverable
 
-Same `agenticworkspace workspace` screen renders live durable agent output, history, handoff, configuration, worktree state, and quick preview.
+Same `agentic-workspace workspace` screen renders live durable agent output, history, handoff, configuration, worktree state, and quick preview.
 
 ### Parallel slices
 
@@ -250,7 +250,7 @@ Same OpenTUI workspace satisfies full retained user workflow and cutover accepta
 
 ### Review evidence
 
-Run `agenticworkspace workspace` and prove task, board, detail, filter, search, edit, session, history, handoff, config, worktree, quick-preview, close/reopen, and failure states.
+Run `agentic-workspace workspace` and prove task, board, detail, filter, search, edit, session, history, handoff, config, worktree, quick-preview, close/reopen, and failure states.
 
 Run focused tests, full tests, build, actual terminal verification, and compiled CLI smoke.
 
@@ -262,7 +262,7 @@ User approves full parity before deletion.
 
 ### Deliverable
 
-The visible `agenticworkspace workspace` remains unchanged. Legacy Blessed workspace presentation and tmux layout code are deleted.
+The visible `agentic-workspace workspace` remains unchanged. Legacy Blessed workspace presentation and tmux layout code are deleted.
 
 Durable tmux agent-session implementation remains.
 
@@ -276,7 +276,7 @@ Durable tmux agent-session implementation remains.
 
 ### Review evidence
 
-Run `agenticworkspace workspace`. Confirm same OpenTUI output. Confirm no legacy presentation caller remains. Confirm durable agent sessions still pass lifecycle tests.
+Run `agentic-workspace workspace`. Confirm same OpenTUI output. Confirm no legacy presentation caller remains. Confirm durable agent sessions still pass lifecycle tests.
 
 Run full tests, build, actual terminal check, and compiled smoke.
 
@@ -288,7 +288,7 @@ User approves final deletion result.
 
 Every phase requires:
 
-1. A visible `agenticworkspace workspace` review target.
+1. A visible `agentic-workspace workspace` review target.
 2. Focused tests for changed behavior.
 3. TypeScript check.
 4. Biome check for changed files.

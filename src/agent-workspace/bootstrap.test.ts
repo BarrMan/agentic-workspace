@@ -21,7 +21,7 @@ describe("agent session bootstrap", () => {
 	});
 
 	it("passes bootstrap content as one argv value and preserves configured command flags", async () => {
-		const directory = await mkdtemp(join(tmpdir(), "backlog-bootstrap-"));
+		const directory = await mkdtemp(join(tmpdir(), "agentic-workspace-bootstrap-"));
 		const outputPath = join(directory, "argv.txt");
 		const agentPath = join(directory, "agent");
 		const bootstrapPath = join(directory, "agent's bootstrap.md");
@@ -106,7 +106,7 @@ describe("agent session bootstrap", () => {
 			name: "claude" | "pi" | "opencode-v1" | "opencode-v2",
 			intent: import("./agents/agent.ts").SessionIntent,
 		) => {
-			const directory = await mkdtemp(join(tmpdir(), "backlog-identity-"));
+			const directory = await mkdtemp(join(tmpdir(), "agentic-workspace-identity-"));
 			try {
 				return await requireAgent(name).prepare({
 					cwd: directory,

@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from "bun:test";
 import { join } from "node:path";
-import { Core } from "../core/backlog.ts";
+import { Core } from "../core/agentic-workspace.ts";
 import { FileSystem } from "../file-system/operations.ts";
 import { serializeTask } from "../markdown/serializer.ts";
 import type { Task } from "../types/index.ts";
@@ -16,7 +16,7 @@ async function createProject(name: string): Promise<{ core: Core; filesystem: Fi
 	const root = createUniqueTestDir(name);
 	directories.push(root);
 	const core = new Core(root);
-	await core.filesystem.ensureBacklogStructure();
+	await core.filesystem.ensureAgenticWorkspaceStructure();
 	await core.filesystem.saveConfig({
 		projectName: name,
 		statuses: ["To Do", "Done"],

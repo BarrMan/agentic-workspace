@@ -29,7 +29,7 @@ async function bootstrapServer(): Promise<McpServer> {
 	// Use normal mode instructions for bootstrapped test server
 	const server = new McpServer(TEST_DIR, "Test instructions");
 
-	await server.application.filesystem.ensureBacklogStructure();
+	await server.application.filesystem.ensureAgenticWorkspaceStructure();
 	initGitRepo(TEST_DIR, "main");
 
 	await initializeTestProject(server.application, "Test Project");
@@ -50,7 +50,7 @@ describe("McpServer bootstrap", () => {
 		const server = await bootstrapServer();
 
 		const tools = await server.testInterface.listTools();
-		expect(tools.tools.map((tool) => tool.name)).toEqual(["get_backlog_instructions"]);
+		expect(tools.tools.map((tool) => tool.name)).toEqual(["get_agentic-workspace_instructions"]);
 		expect(tools.tools[0]?.inputSchema).toEqual({
 			type: "object",
 			properties: {
@@ -65,10 +65,10 @@ describe("McpServer bootstrap", () => {
 
 		const resources = await server.testInterface.listResources();
 		expect(resources.resources.map((r) => r.uri)).toEqual([
-			"backlog://workflow/overview",
-			"backlog://workflow/task-creation",
-			"backlog://workflow/task-execution",
-			"backlog://workflow/task-finalization",
+			"agentic-workspace://workflow/overview",
+			"agentic-workspace://workflow/task-creation",
+			"agentic-workspace://workflow/task-execution",
+			"agentic-workspace://workflow/task-finalization",
 		]);
 
 		const prompts = await server.testInterface.listPrompts();
@@ -84,7 +84,7 @@ describe("McpServer bootstrap", () => {
 		const server = await bootstrapServer();
 
 		const result = await server.testInterface.readResource({
-			params: { uri: "backlog://workflow/overview" },
+			params: { uri: "agentic-workspace://workflow/overview" },
 		});
 
 		expect(result.contents).toHaveLength(1);
@@ -107,7 +107,7 @@ describe("McpServer bootstrap", () => {
 		const server = await bootstrapServer();
 
 		const result = await server.testInterface.readResource({
-			params: { uri: "backlog://workflow/task-creation" },
+			params: { uri: "agentic-workspace://workflow/task-creation" },
 		});
 
 		expect(result.contents).toHaveLength(1);
@@ -121,7 +121,7 @@ describe("McpServer bootstrap", () => {
 		const server = await bootstrapServer();
 
 		const result = await server.testInterface.readResource({
-			params: { uri: "backlog://workflow/task-execution" },
+			params: { uri: "agentic-workspace://workflow/task-execution" },
 		});
 
 		expect(result.contents).toHaveLength(1);
@@ -134,7 +134,7 @@ describe("McpServer bootstrap", () => {
 		const server = await bootstrapServer();
 
 		const result = await server.testInterface.readResource({
-			params: { uri: "backlog://workflow/task-finalization" },
+			params: { uri: "agentic-workspace://workflow/task-finalization" },
 		});
 
 		expect(result.contents).toHaveLength(1);
@@ -200,12 +200,12 @@ describe("McpServer bootstrap", () => {
 		const server = await bootstrapServer();
 
 		const overview = await server.testInterface.callTool({
-			params: { name: "get_backlog_instructions", arguments: {} },
+			params: { name: "get_agentic-workspace_instructions", arguments: {} },
 		});
 		expect(getText(overview.content)).toBe(MCP_WORKFLOW_OVERVIEW_TOOLS);
 
 		const creation = await server.testInterface.callTool({
-			params: { name: "get_backlog_instructions", arguments: { instruction: "task-creation" } },
+			params: { name: "get_agentic-workspace_instructions", arguments: { instruction: "task-creation" } },
 		});
 		expect(getText(creation.content)).toBe(MCP_TASK_CREATION_GUIDE);
 
@@ -216,7 +216,7 @@ describe("McpServer bootstrap", () => {
 		TEST_DIR = createUniqueTestDir("mcp-server-factory");
 
 		const bootstrap = new McpServer(TEST_DIR, "Bootstrap instructions");
-		await bootstrap.application.filesystem.ensureBacklogStructure();
+		await bootstrap.application.filesystem.ensureAgenticWorkspaceStructure();
 		initGitRepo(TEST_DIR, "main");
 		await initializeTestProject(bootstrap.application, "Factory Project");
 		await bootstrap.stop();
@@ -225,7 +225,7 @@ describe("McpServer bootstrap", () => {
 
 		const tools = await server.testInterface.listTools();
 		expect(tools.tools.map((tool) => tool.name)).toEqual([
-			"get_backlog_instructions",
+			"get_agentic-workspace_instructions",
 			"task_artifact_list",
 			"task_artifact_read",
 			"task_artifact_write",
@@ -251,12 +251,12 @@ describe("McpServer bootstrap", () => {
 
 		const resources = await server.testInterface.listResources();
 		expect(resources.resources.map((r) => r.uri)).toEqual([
-			"backlog://workflow/overview",
-			"backlog://workflow/task-creation",
-			"backlog://workflow/task-execution",
-			"backlog://workflow/task-finalization",
+			"agentic-workspace://workflow/overview",
+			"agentic-workspace://workflow/task-creation",
+			"agentic-workspace://workflow/task-execution",
+			"agentic-workspace://workflow/task-finalization",
 		]);
-		expect(MCP_WORKFLOW_OVERVIEW).toContain("## Backlog.md Overview (MCP)");
+		expect(MCP_WORKFLOW_OVERVIEW).toContain("## AgenticWorkspace Overview (MCP)");
 
 		const resourceTemplates = await server.testInterface.listResourceTemplates();
 		expect(resourceTemplates.resourceTemplates).toEqual([]);

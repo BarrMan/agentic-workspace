@@ -37,12 +37,12 @@ type Recorder = {
 
 const roots: string[] = [];
 const stores: Store[] = [];
-let previousBacklogCwd: string | undefined;
+let previousAgenticWorkspaceCwd: string | undefined;
 
 async function makeRoot(prefix: string): Promise<string> {
 	// A fresh temp dir per test: the store derives its on-disk location from rootDir, so
 	// this keeps every test isolated without the test having to know the path formula.
-	const root = await mkdtemp(join(tmpdir(), `backlog-view-state-${prefix}-`));
+	const root = await mkdtemp(join(tmpdir(), `agentic-workspace-view-state-${prefix}-`));
 	roots.push(root);
 	return root;
 }
@@ -89,15 +89,15 @@ async function expectNotification(recorder: Recorder, count: number): Promise<vo
 
 describe("openViewStateStore", () => {
 	beforeEach(() => {
-		// The store resolves its state root from BACKLOG_CWD when set; pin it to the test's
+		// The store resolves its state root from AGENTIC_WORKSPACE_CWD when set; pin it to the test's
 		// own root so a stray value in the developer's shell cannot redirect the writes.
-		previousBacklogCwd = process.env.BACKLOG_CWD;
-		delete process.env.BACKLOG_CWD;
+		previousAgenticWorkspaceCwd = process.env.AGENTIC_WORKSPACE_CWD;
+		delete process.env.AGENTIC_WORKSPACE_CWD;
 	});
 
 	afterEach(async () => {
-		if (previousBacklogCwd === undefined) delete process.env.BACKLOG_CWD;
-		else process.env.BACKLOG_CWD = previousBacklogCwd;
+		if (previousAgenticWorkspaceCwd === undefined) delete process.env.AGENTIC_WORKSPACE_CWD;
+		else process.env.AGENTIC_WORKSPACE_CWD = previousAgenticWorkspaceCwd;
 		for (const store of stores.splice(0)) {
 			try {
 				store.close();

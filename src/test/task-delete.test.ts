@@ -7,7 +7,7 @@ import { BunRunner } from "../agent-workspace/session-process.ts";
 import { SessionStore } from "../agent-workspace/session-store.ts";
 import { AgentSessionService, type ProcessRunner, type TmuxServer } from "../agent-workspace/sessions.ts";
 import { workspaceRequestDir } from "../agent-workspace/workspace-context.ts";
-import { Core } from "../core/backlog.ts";
+import { Core } from "../core/agentic-workspace.ts";
 import type { Task } from "../types/index.ts";
 import { getTaskPath } from "../utils/task-path.ts";
 import { createUniqueTestDir, initializeFilesystemTestProject } from "./test-utils.ts";
@@ -65,7 +65,7 @@ describe("Permanent task deletion", () => {
 				id: "native-running",
 				taskId: task.id,
 				preset: "opencode",
-				tmuxName: `backlog-${task.id.toLowerCase()}-native-running`,
+				tmuxName: `agentic-workspace-${task.id.toLowerCase()}-native-running`,
 				nativeWorkspace: true,
 				ownerPid: 12345,
 				cwd: testDir,
@@ -74,6 +74,7 @@ describe("Permanent task deletion", () => {
 				outputPath: join(taskDir, "native-running.log"),
 				bootstrapPath: join(taskDir, "native-running.md"),
 			});
+			state.activeSessionId = "native-running";
 		});
 
 		await core.deleteTask(task.id);
@@ -130,7 +131,7 @@ describe("Permanent task deletion", () => {
 					id: fixture.id,
 					taskId: task.id,
 					preset: "opencode",
-					tmuxName: `backlog-${task.id.toLowerCase()}-${fixture.id}`,
+					tmuxName: `agentic-workspace-${task.id.toLowerCase()}-${fixture.id}`,
 					nativeWorkspace: fixture.nativeWorkspace,
 					cwd: testDir,
 					createdAt: "2026-10-12T00:00:00.000Z",
@@ -140,8 +141,12 @@ describe("Permanent task deletion", () => {
 				};
 				const mode = state.modes[fixture.modeId as string] ?? { sessions: [] };
 				mode.sessions.push(record);
+				mode.activeSessionId = record.id;
 				state.modes[fixture.modeId as string] = mode;
-				if (fixture.modeId === state.legacyModeId) state.sessions.push(record);
+				if (fixture.modeId === state.legacyModeId) {
+					state.sessions.push(record);
+					state.activeSessionId = record.id;
+				}
 				await Bun.write(record.outputPath, `output:${fixture.id}`);
 				await Bun.write(record.bootstrapPath, `bootstrap:${fixture.id}`);
 				if (fixture.id === "queued-starting") {
@@ -155,14 +160,17 @@ describe("Permanent task deletion", () => {
 			id: "unrelated-running",
 			taskId: otherTask.id,
 			preset: "opencode",
-			tmuxName: `backlog-${otherTask.id.toLowerCase()}-unrelated-running`,
+			tmuxName: `agentic-workspace-${otherTask.id.toLowerCase()}-unrelated-running`,
 			cwd: testDir,
 			createdAt: "2026-10-12T00:00:00.000Z",
 			status: "running" as const,
 			outputPath: join(unrelatedTaskDir, "unrelated-running.log"),
 			bootstrapPath: join(unrelatedTaskDir, "unrelated-running.md"),
 		};
-		await store.mutate(otherTask.id, async (state) => state.sessions.push(unrelatedRecord));
+		await store.mutate(otherTask.id, async (state) => {
+			state.sessions.push(unrelatedRecord);
+			state.activeSessionId = unrelatedRecord.id;
+		});
 		const providerData = join(testDir, "provider-conversation.json");
 		await Bun.write(providerData, "preserve provider data\n");
 		const taskPath = task.filePath ?? (await getTaskPath(task.id, { filesystem: core.filesystem }));
@@ -193,14 +201,17 @@ describe("Permanent task deletion", () => {
 			id: "boundary-session",
 			taskId: task.id,
 			preset: "test",
-			tmuxName: `backlog-${task.id.toLowerCase()}-boundary-session`,
+			tmuxName: `agentic-workspace-${task.id.toLowerCase()}-boundary-session`,
 			cwd: testDir,
 			createdAt: "2026-10-12T00:00:00.000Z",
 			status: "stopped" as const,
 			outputPath: join(taskDir, "boundary-session.log"),
 			bootstrapPath: join(taskDir, "boundary-session.md"),
 		};
-		await store.mutate(task.id, async (state) => state.sessions.push(record));
+		await store.mutate(task.id, async (state) => {
+			state.sessions.push(record);
+			state.activeSessionId = record.id;
+		});
 		await Bun.write(record.outputPath, "retained until task removal\n");
 		const originalForget = core.sessions.forgetTaskSessions.bind(core.sessions);
 		core.sessions.forgetTaskSessions = async () => {
@@ -244,7 +255,7 @@ describe("Permanent task deletion", () => {
 		expect(existsSync(taskPath as string)).toBe(false);
 	});
 
-	it("deletion removes the task's Backlog session associations", async () => {
+	it("deletion removes the task's AgenticWorkspace session associations", async () => {
 		core = new Core(testDir);
 		await initializeFilesystemTestProject(core, "Delete task");
 		const { task } = await core.createTaskFromInput({ title: "Purge after delete" });
@@ -255,13 +266,14 @@ describe("Permanent task deletion", () => {
 				id: "stopped-session",
 				taskId: task.id,
 				preset: "opencode",
-				tmuxName: `backlog-${task.id.toLowerCase()}-stopped-session`,
+				tmuxName: `agentic-workspace-${task.id.toLowerCase()}-stopped-session`,
 				cwd: testDir,
 				createdAt: new Date().toISOString(),
 				status: "stopped",
 				outputPath: join(taskDir, "stopped-session.log"),
 				bootstrapPath: join(taskDir, "stopped-session.md"),
 			});
+			state.activeSessionId = "stopped-session";
 		});
 		await Bun.write(join(taskDir, "stopped-session.log"), "output\n");
 		expect(existsSync(taskDir)).toBe(true);
@@ -288,13 +300,14 @@ describe("Permanent task deletion", () => {
 				id: "tampered-session",
 				taskId: task.id,
 				preset: "opencode",
-				tmuxName: `backlog-${task.id.toLowerCase()}-tampered-session`,
+				tmuxName: `agentic-workspace-${task.id.toLowerCase()}-tampered-session`,
 				cwd: testDir,
 				createdAt: new Date().toISOString(),
 				status: "stopped",
 				outputPath,
 				bootstrapPath: sentinel,
 			});
+			state.activeSessionId = "tampered-session";
 		});
 
 		await expect(core.sessions.purge(task.id)).rejects.toThrow("outside its task session directory");
@@ -323,7 +336,7 @@ describe("Permanent task deletion", () => {
 					id: sessionId,
 					taskId: task.id,
 					preset: "test",
-					tmuxName: `backlog-${task.id.toLowerCase()}-${sessionId}`,
+					tmuxName: `agentic-workspace-${task.id.toLowerCase()}-${sessionId}`,
 					nativeSessionId: "native-existing",
 					nativeWorkspace: true,
 					cwd: testDir,
@@ -332,6 +345,7 @@ describe("Permanent task deletion", () => {
 					outputPath: join(taskDir, `${sessionId}.log`),
 					bootstrapPath: join(taskDir, `${sessionId}.md`),
 				});
+				state.activeSessionId = sessionId;
 			});
 			const enteredDelete = Promise.withResolvers<void>();
 			const deleteContainer = core.filesystem.deleteTaskContainer.bind(core.filesystem);
@@ -430,7 +444,7 @@ describe("Permanent task deletion", () => {
 					id: sessionId,
 					taskId: task.id,
 					preset: "test",
-					tmuxName: `backlog-${task.id.toLowerCase()}-${sessionId}`,
+					tmuxName: `agentic-workspace-${task.id.toLowerCase()}-${sessionId}`,
 					nativeSessionId: "native-owned",
 					nativeWorkspace: true,
 					ownerPid: process.pid,
@@ -440,6 +454,7 @@ describe("Permanent task deletion", () => {
 					outputPath: join(taskDir, `${sessionId}.log`),
 					bootstrapPath: join(taskDir, `${sessionId}.md`),
 				});
+				state.activeSessionId = sessionId;
 			});
 			let cleanupCalls = 0;
 			service.cleanupTaskWorktreeSessions = async () => {
@@ -469,13 +484,14 @@ describe("Permanent task deletion", () => {
 					id: "stopped-lock-check",
 					taskId: task.id,
 					preset: "test",
-					tmuxName: `backlog-${task.id.toLowerCase()}-stopped-lock-check`,
+					tmuxName: `agentic-workspace-${task.id.toLowerCase()}-stopped-lock-check`,
 					cwd: testDir,
 					createdAt: new Date().toISOString(),
 					status: "stopped",
 					outputPath: join((await store.paths(task.id)).taskDir, "stopped-lock-check.log"),
 					bootstrapPath: join((await store.paths(task.id)).taskDir, "stopped-lock-check.md"),
 				});
+				state.activeSessionId = "stopped-lock-check";
 			});
 
 			await core.deleteTask(task.id);
@@ -524,13 +540,14 @@ describe("Permanent task deletion", () => {
 				id: sessionId,
 				taskId: task.id,
 				preset: "opencode",
-				tmuxName: `backlog-${task.id.toLowerCase()}-${sessionId}`,
+				tmuxName: `agentic-workspace-${task.id.toLowerCase()}-${sessionId}`,
 				cwd: testDir,
 				createdAt: new Date().toISOString(),
 				status: "stopped",
 				outputPath,
 				bootstrapPath,
 			});
+			state.activeSessionId = sessionId;
 		});
 		expect(existsSync(taskDir)).toBe(true);
 

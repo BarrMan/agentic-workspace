@@ -1,6 +1,6 @@
 ## Task Creation Guide
 
-Use this guide when `agenticworkspace instructions` or the user indicates that new AgenticWorkspace tasks are needed.
+Use this guide when `agentic-workspace instructions` or the user indicates that new AgenticWorkspace tasks are needed.
 
 ### Step 1: Search First
 
@@ -8,16 +8,16 @@ Always check whether the work is already tracked.
 
 Recommended CLI commands:
 
-- `agenticworkspace search "desktop app" --plain`
-- `agenticworkspace task list --status "<todo status>" --plain`
-- `agenticworkspace task list --status "<active status>" --plain`
-- `agenticworkspace task list --exclude-status "<terminal status>" --plain`
-- `agenticworkspace task list --type {{TASK_TYPE:1}} --plain`
-- `agenticworkspace task list --search "desktop app" --labels frontend,bug --limit 20 --plain`
+- `agentic-workspace search "desktop app" --plain`
+- `agentic-workspace task list --status "<todo status>" --plain`
+- `agentic-workspace task list --status "<active status>" --plain`
+- `agentic-workspace task list --exclude-status "<terminal status>" --plain`
+- `agentic-workspace task list --type {{TASK_TYPE:1}} --plain`
+- `agentic-workspace task list --search "desktop app" --labels frontend,bug --limit 20 --plain`
 
 Avoid broad unfiltered listing when the project may have many tasks. Use `--status`, `--exclude-status`, `--type`, `--project`, `--assignee`, `--unassigned`, `--parent`, `--priority`, `--labels`, `--search`, or `--limit` where applicable. Check the size with `--count`, and read a long list in windows with `--max-count` and `--skip`; cut output ends with the command for the next window. Repeat `--exclude-status` or pass comma-separated configured statuses to exclude multiple states. Repeat `--type` or pass comma-separated configured task types to include multiple types. Repeat `--project` or pass comma-separated configured projects to include multiple projects.
 
-Use `agenticworkspace task view {{TASK_ID:123}} --plain` to read full context for likely matches.
+Use `agentic-workspace task view {{TASK_ID:123}} --plain` to read full context for likely matches.
 
 ### Step 2: Assess Scope Before Creating Tasks
 
@@ -39,18 +39,18 @@ Ask:
 Use subtasks when the work shares one goal and one subsystem:
 
 ```bash
-agenticworkspace task create "Desktop application"
-agenticworkspace task create -p {{TASK_ID:10}} "Set up shell"
-agenticworkspace task create -p {{TASK_ID:10}} "Wire IPC"
+agentic-workspace task create "Desktop application"
+agentic-workspace task create -p {{TASK_ID:10}} "Set up shell"
+agentic-workspace task create -p {{TASK_ID:10}} "Wire IPC"
 ```
 
-Use `--parent`/`-p` only with an existing task ID returned by `agenticworkspace task create`, `agenticworkspace task list`, or `agenticworkspace task view`. Do not pass milestone IDs such as `m-0` to `--parent`; assign a task to a milestone with `--milestone`/`-m`.
+Use `--parent`/`-p` only with an existing task ID returned by `agentic-workspace task create`, `agentic-workspace task list`, or `agentic-workspace task view`. Do not pass milestone IDs such as `m-0` to `--parent`; assign a task to a milestone with `--milestone`/`-m`.
 
 Use separate tasks with dependencies when work spans independent components:
 
 ```bash
-agenticworkspace task create "Add bulk update API"
-agenticworkspace task create "Add bulk update UI" --dep {{TASK_ID:21}}
+agentic-workspace task create "Add bulk update API"
+agentic-workspace task create "Add bulk update UI" --dep {{TASK_ID:21}}
 ```
 
 ### Step 4: Create Tasks
@@ -70,7 +70,7 @@ For future work, do **not** add detailed implementation state during task creati
 Examples:
 
 ```bash
-agenticworkspace task create "Add project search" \
+agentic-workspace task create "Add project search" \
   -d "Finding anything means running three separate commands, and matches in the ones you skip are missed silently. One search command covers tasks, docs, and decisions."
 ```
 
@@ -78,7 +78,7 @@ Too thin: `-d "Users can search tasks, docs, and decisions from one CLI command.
 so a future agent cannot weigh scope or alternatives.
 
 ```bash
-agenticworkspace task create "Add settings docs" \
+agentic-workspace task create "Add settings docs" \
   --doc docs/settings.md \
   --ref https://example.com/spec
 ```
@@ -90,16 +90,16 @@ When task text includes Markdown code spans, quote it so the shell passes the ba
 Use single-quoted CLI arguments for values that contain literal backticks:
 
 ```bash
-agenticworkspace task create 'Document `agenticworkspace init` setup' \
-  -d 'Covers `agenticworkspace init --defaults` setup'
+agentic-workspace task create 'Document `agentic-workspace init` setup' \
+  -d 'Covers `agentic-workspace init --defaults` setup'
 ```
 
 If single quotes are not practical in your shell, escape each literal backtick before running the command. Do not rely on AgenticWorkspace to sanitize accidental command output after substitution.
 
 ### After Creation
 
-Report the created task IDs, titles, and descriptions to the user. If the user asks for changes, update tasks through `agenticworkspace task edit`.
+Report the created task IDs, titles, and descriptions to the user. If the user asks for changes, update tasks through `agentic-workspace task edit`.
 
-Task creation is complete once the work is tracked. If you will continue into implementation in the same session, ask the user whether they want you to proceed; after their confirmation, read `agenticworkspace instructions task-execution` before continuing.
+Task creation is complete once the work is tracked. If you will continue into implementation in the same session, ask the user whether they want you to proceed; after their confirmation, read `agentic-workspace instructions task-execution` before continuing.
 
 Only the user marks a task Done. Do not move a task to Done, or another terminal status, on the user's behalf.

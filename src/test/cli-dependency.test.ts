@@ -3,11 +3,11 @@ import { mkdir } from "node:fs/promises";
 import { Writable } from "node:stream";
 import { $ as shell } from "bun";
 import { runCli } from "../cli/register.ts";
-import { Core } from "../core/backlog.ts";
+import { Core } from "../core/agentic-workspace.ts";
 import type { Task } from "../types/index.ts";
 import { createUniqueTestDir, initializeFilesystemTestProject, safeCleanup } from "./test-utils.ts";
 
-const CLI_COMMAND = ["agenticworkspace"];
+const CLI_COMMAND = ["agentic-workspace"];
 
 function $(parts: TemplateStringsArray, ...values: unknown[]) {
 	const source = parts.reduce(
@@ -15,7 +15,7 @@ function $(parts: TemplateStringsArray, ...values: unknown[]) {
 			`${text}${part}${Array.isArray(values[index]) ? values[index].map((value) => JSON.stringify(value)).join(" ") : values[index] === undefined ? "" : JSON.stringify(values[index])}`,
 		"",
 	);
-	if (!source.includes("agenticworkspace")) return shell(parts, ...values);
+	if (!source.includes("agentic-workspace")) return shell(parts, ...values);
 	const args =
 		source
 			.match(/"(?:\\.|[^"\\])*"|'[^']*'|[^\s]+/g)

@@ -94,7 +94,7 @@ export class PromptInjectionAgent implements Agent {
 
 	async installStatusHooks(_options: StatusHookInstallOptions): Promise<InstalledStatusHook> {
 		throw new Error(
-			`Provider ${this.name} has no process-scoped status-hook loader; Backlog must not install it globally.`,
+			`Provider ${this.name} has no process-scoped status-hook loader; AgenticWorkspace must not install it globally.`,
 		);
 	}
 }

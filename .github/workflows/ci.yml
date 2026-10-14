@@ -26,11 +26,11 @@ jobs:
           - os: macos-latest
             test_workers: 4
             test_files: >-
-              src/test/atomic-task-create.test.ts src/test/auto-commit.test.ts src/test/backlog-directory.test.ts src/test/code-path.test.ts src/test/description-newlines.test.ts src/test/docs-recursive.test.ts src/test/duplicate-task-repair.test.ts src/test/filesystem.test.ts src/test/find-backlog-root.test.ts src/test/git.test.ts src/test/id-generation.test.ts src/test/markdown.test.ts src/test/task-id-resolution.test.ts src/test/task-identity-index.test.ts src/test/test-utils.test.ts src/test/worktree-refresh.test.ts src/test/worktree-task-id-allocation.test.ts src/test/agent-instructions.test.ts src/test/cli-doctor.test.ts src/test/cli-init-create.test.ts src/test/cli-launcher.test.ts src/test/config-commands.test.ts src/test/editor.test.ts src/test/offline-mode.test.ts src/test/packaging-bin.test.ts src/test/resolveBinary.test.ts src/test/runtime-cwd.test.ts src/test/status-callback.test.ts src/test/terminal-status.test.ts src/test/cli-json-watch.test.ts src/test/cli-pipe-output.test.ts src/test/watch-json.test.ts src/test/mcp-server.test.ts src/test/mcp-stdio-exit.test.ts
+              src/test/atomic-task-create.test.ts src/test/auto-commit.test.ts src/test/agentic-workspace-directory.test.ts src/test/code-path.test.ts src/test/description-newlines.test.ts src/test/docs-recursive.test.ts src/test/duplicate-task-repair.test.ts src/test/filesystem.test.ts src/test/find-agentic-workspace-root.test.ts src/test/git.test.ts src/test/id-generation.test.ts src/test/markdown.test.ts src/test/task-id-resolution.test.ts src/test/task-identity-index.test.ts src/test/test-utils.test.ts src/test/worktree-refresh.test.ts src/test/worktree-task-id-allocation.test.ts src/test/agent-instructions.test.ts src/test/cli-doctor.test.ts src/test/cli-init-create.test.ts src/test/cli-launcher.test.ts src/test/config-commands.test.ts src/test/editor.test.ts src/test/offline-mode.test.ts src/test/packaging-bin.test.ts src/test/resolveBinary.test.ts src/test/runtime-cwd.test.ts src/test/status-callback.test.ts src/test/terminal-status.test.ts src/test/cli-json-watch.test.ts src/test/cli-pipe-output.test.ts src/test/watch-json.test.ts src/test/mcp-server.test.ts src/test/mcp-stdio-exit.test.ts
           - os: windows-latest
             test_workers: 4
             test_files: >-
-              src/test/atomic-task-create.test.ts src/test/auto-commit.test.ts src/test/backlog-directory.test.ts src/test/code-path.test.ts src/test/description-newlines.test.ts src/test/docs-recursive.test.ts src/test/duplicate-task-repair.test.ts src/test/filesystem.test.ts src/test/find-backlog-root.test.ts src/test/git.test.ts src/test/id-generation.test.ts src/test/markdown.test.ts src/test/task-id-resolution.test.ts src/test/task-identity-index.test.ts src/test/test-utils.test.ts src/test/worktree-refresh.test.ts src/test/worktree-task-id-allocation.test.ts src/test/agent-instructions.test.ts src/test/cli-doctor.test.ts src/test/cli-init-create.test.ts src/test/cli-launcher.test.ts src/test/config-commands.test.ts src/test/editor.test.ts src/test/offline-mode.test.ts src/test/packaging-bin.test.ts src/test/resolveBinary.test.ts src/test/runtime-cwd.test.ts src/test/status-callback.test.ts src/test/terminal-status.test.ts src/test/cli-json-watch.test.ts src/test/cli-pipe-output.test.ts src/test/watch-json.test.ts src/test/mcp-server.test.ts src/test/mcp-stdio-exit.test.ts
+              src/test/atomic-task-create.test.ts src/test/auto-commit.test.ts src/test/agentic-workspace-directory.test.ts src/test/code-path.test.ts src/test/description-newlines.test.ts src/test/docs-recursive.test.ts src/test/duplicate-task-repair.test.ts src/test/filesystem.test.ts src/test/find-agentic-workspace-root.test.ts src/test/git.test.ts src/test/id-generation.test.ts src/test/markdown.test.ts src/test/task-id-resolution.test.ts src/test/task-identity-index.test.ts src/test/test-utils.test.ts src/test/worktree-refresh.test.ts src/test/worktree-task-id-allocation.test.ts src/test/agent-instructions.test.ts src/test/cli-doctor.test.ts src/test/cli-init-create.test.ts src/test/cli-launcher.test.ts src/test/config-commands.test.ts src/test/editor.test.ts src/test/offline-mode.test.ts src/test/packaging-bin.test.ts src/test/resolveBinary.test.ts src/test/runtime-cwd.test.ts src/test/status-callback.test.ts src/test/terminal-status.test.ts src/test/cli-json-watch.test.ts src/test/cli-pipe-output.test.ts src/test/watch-json.test.ts src/test/mcp-server.test.ts src/test/mcp-stdio-exit.test.ts
     runs-on: ${{ matrix.os }}
     timeout-minutes: 10
     steps:
@@ -115,15 +115,15 @@ jobs:
         shell: bash
         run: |
           VER="$(jq -r .version package.json)"
-          OUT="backlog-test${{ contains(matrix.target,'windows') && '.exe' || '' }}"
-          BACKLOG_BUILD_VERSION="$VER" \
-            BACKLOG_BUILD_TARGET="${{ matrix.target }}" \
-            BACKLOG_BUILD_OUTFILE="$OUT" \
+          OUT="agentic-workspace-test${{ contains(matrix.target,'windows') && '.exe' || '' }}"
+          AGENTIC_WORKSPACE_BUILD_VERSION="$VER" \
+            AGENTIC_WORKSPACE_BUILD_TARGET="${{ matrix.target }}" \
+            AGENTIC_WORKSPACE_BUILD_OUTFILE="$OUT" \
             bun scripts/build.ts
       - name: Smoke-test binary
         shell: bash
         run: |
-          FILE="backlog-test${{ contains(matrix.target,'windows') && '.exe' || '' }}"
+          FILE="agentic-workspace-test${{ contains(matrix.target,'windows') && '.exe' || '' }}"
           VER="$(jq -r .version package.json)"
           chmod +x "$FILE"
           bun scripts/smoke-compiled-build.ts "$FILE" "$VER"
@@ -133,7 +133,7 @@ jobs:
         run: |
           RUN_INTERACTIVE_TUI_TESTS=1 \
           TUI_TEST_CLI_RUNTIME= \
-          TUI_TEST_CLI_PATH="$PWD/agenticworkspace-test" \
+          TUI_TEST_CLI_PATH="$PWD/agentic-workspace-test" \
           bun test src/test/tui-interactive-editor-handoff.test.ts --timeout=30000
       - name: Upload compiled-binary interactive transcripts on failure
         if: failure() && matrix.os == 'ubuntu-latest'
@@ -151,8 +151,8 @@ jobs:
       - uses: DeterminateSystems/nix-installer-action@v22
       - name: Build and smoke-test Nix package
         run: |
-          nix build .#agenticworkspace --print-build-logs
+          nix build .#agentic-workspace --print-build-logs
           expected_version="$(jq -r .version package.json)"
-          actual_version="$(./result/bin/agenticworkspace --version)"
+          actual_version="$(./result/bin/agentic-workspace --version)"
           test "$actual_version" = "$expected_version"
-          ./result/bin/agenticworkspace --help >/dev/null
+          ./result/bin/agentic-workspace --help >/dev/null

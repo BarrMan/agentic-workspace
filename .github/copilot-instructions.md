@@ -28,9 +28,9 @@
 
 ## Core Structure
 
-- **CLI Tool**: Built with Bun and TypeScript as a global npm package (`npm i -g agenticworkspace`)
+- **CLI Tool**: Built with Bun and TypeScript as a global npm package (`npm i -g agentic-workspace`)
 - **Source Code**: Located in `/src` directory with modular TypeScript structure
-- **Task Management**: Uses markdown files in `backlog/` directory structure
+- **Task Management**: AgenticWorkspace uses markdown files in the `agentic-workspace/` directory structure
 - **Workflow**: Git-integrated with task IDs referenced in commits and PRs
 
 ## Code Standards

@@ -7,7 +7,7 @@ import { Core } from "../index.ts";
 import { createUniqueTestDir, initializeFilesystemTestProject, safeCleanup } from "./test-utils.ts";
 
 let TEST_DIR: string;
-const CLI_COMMAND = ["agenticworkspace"];
+const CLI_COMMAND = ["agentic-workspace"];
 let cliQueue = Promise.resolve();
 
 function $(parts: TemplateStringsArray, ...values: unknown[]) {
@@ -81,7 +81,7 @@ describe("CLI Integration", () => {
 
 	describe("task archive and state transition commands", () => {
 		beforeEach(async () => {
-			// Set up a git repository and initialize backlog
+			// Set up a git repository and initialize agentic-workspace
 
 			const core = new Core(TEST_DIR);
 			await initializeFilesystemTestProject(core, "Archive Test Project");
@@ -112,7 +112,7 @@ describe("CLI Integration", () => {
 
 			// Verify task exists in archive
 			const { readdir } = await import("node:fs/promises");
-			const archiveFiles = await readdir(join(TEST_DIR, "backlog", "archive", "tasks"));
+			const archiveFiles = await readdir(join(TEST_DIR, "agentic-workspace", "archive", "tasks"));
 			expect(archiveFiles.some((f) => f.startsWith("task-1"))).toBe(true);
 		});
 
@@ -142,7 +142,7 @@ describe("CLI Integration", () => {
 
 			expect(result.exitCode).not.toBe(0);
 			expect(output).toContain("Task TASK-5 is Done.");
-			expect(output).toContain("Use: agenticworkspace task complete TASK-5");
+			expect(output).toContain("Use: agentic-workspace task complete TASK-5");
 			expect(await core.filesystem.loadTask("task-5")).not.toBeNull();
 
 			const archivedTasks = await core.filesystem.listArchivedTasks();
@@ -200,7 +200,7 @@ describe("CLI Integration", () => {
 
 			expect(result.exitCode).not.toBe(0);
 			expect(output).toContain("Task TASK-4 is not Done.");
-			expect(output).toContain('agenticworkspace task edit TASK-4 -s "Done"');
+			expect(output).toContain('agentic-workspace task edit TASK-4 -s "Done"');
 			expect(output).toContain("before cleanup");
 			expect((await core.filesystem.loadTask("task-4"))?.status).toBe("Not Done");
 
@@ -233,7 +233,7 @@ describe("CLI Integration", () => {
 
 			// Verify demoted draft has new draft- ID
 			const { readdir } = await import("node:fs/promises");
-			const draftsFiles = await readdir(join(TEST_DIR, "backlog", "drafts"));
+			const draftsFiles = await readdir(join(TEST_DIR, "agentic-workspace", "drafts"));
 			expect(draftsFiles.some((f) => f.startsWith("draft-"))).toBe(true);
 
 			// Verify draft can be loaded with draft- ID
@@ -262,7 +262,7 @@ describe("CLI Integration", () => {
 
 			// Verify promoted task has new task- ID
 			const { readdir } = await import("node:fs/promises");
-			const tasksFiles = await readdir(join(TEST_DIR, "backlog", "tasks"));
+			const tasksFiles = await readdir(join(TEST_DIR, "agentic-workspace", "tasks"));
 			expect(tasksFiles.some((f) => f.startsWith("task-"))).toBe(true);
 
 			// Verify task can be loaded with task- ID
@@ -291,7 +291,7 @@ describe("CLI Integration", () => {
 
 			// Verify draft exists in archive
 			const { readdir } = await import("node:fs/promises");
-			const archiveFiles = await readdir(join(TEST_DIR, "backlog", "archive", "drafts"));
+			const archiveFiles = await readdir(join(TEST_DIR, "agentic-workspace", "archive", "drafts"));
 			expect(archiveFiles.some((f) => f.startsWith(draft.id.toLowerCase()))).toBe(true);
 		});
 

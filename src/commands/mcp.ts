@@ -2,13 +2,13 @@
  * MCP Command Group - Model Context Protocol CLI commands.
  *
  * This simplified command set focuses on the stdio transport, which is the
- * only supported transport for Backlog.md's local MCP integration.
+ * only supported transport for AgenticWorkspace's local MCP integration.
  */
 
 import type { Command } from "commander";
 import { isConfigValueError } from "../file-system/operations.ts";
 import { createMcpServer } from "../mcp/server.ts";
-import { findBacklogRoot } from "../utils/find-backlog-root.ts";
+import { findAgenticWorkspaceRoot } from "../utils/find-agentic-workspace-root.ts";
 import { resolveRuntimeCwd } from "../utils/runtime-cwd.ts";
 
 type StartOptions = {
@@ -77,12 +77,12 @@ function registerStartCommand(mcpCmd: Command): void {
 		.command("start")
 		.description("Start the MCP server using stdio transport")
 		.option("-d, --debug", "Enable debug logging", false)
-		.option("--cwd <path>", "Directory to resolve Backlog root from (overrides BACKLOG_CWD)")
+		.option("--cwd <path>", "Directory to resolve AgenticWorkspace root from (overrides AGENTIC_WORKSPACE_CWD)")
 		.action(async (options: StartOptions) => {
 			try {
 				const runtimeCwd = await resolveRuntimeCwd({ cwd: options.cwd });
-				const projectRoot = (await findBacklogRoot(runtimeCwd.cwd)) ?? runtimeCwd.cwd;
-				// An explicit --cwd/BACKLOG_CWD pins the root; an inferred process.cwd()
+				const projectRoot = (await findAgenticWorkspaceRoot(runtimeCwd.cwd)) ?? runtimeCwd.cwd;
+				// An explicit --cwd/AGENTIC_WORKSPACE_CWD pins the root; an inferred process.cwd()
 				// lets the server follow the client's workspace roots instead.
 				const pinned = runtimeCwd.source !== "process";
 				const server = await createMcpServer(projectRoot, { debug: options.debug, pinned });
@@ -99,7 +99,7 @@ function registerStartCommand(mcpCmd: Command): void {
 
 				registerShutdownHandlers(server, Boolean(options.debug));
 			} catch (error) {
-				// A config value Backlog refuses to read already names the file, the key, and the fix,
+				// A config value AgenticWorkspace refuses to read already names the file, the key, and the fix,
 				// so it is reported as written instead of behind a startup summary.
 				if (isConfigValueError(error)) {
 					console.error(error.message);

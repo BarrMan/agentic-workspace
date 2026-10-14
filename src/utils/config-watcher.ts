@@ -1,11 +1,11 @@
 import { type FSWatcher, unwatchFile, watch, watchFile } from "node:fs";
 import { basename, dirname } from "node:path";
-import type { Core } from "../core/backlog.ts";
+import type { Core } from "../core/agentic-workspace.ts";
 import type { FileSystem } from "../file-system/operations.ts";
-import type { BacklogConfig } from "../types/index.ts";
+import type { AgenticWorkspaceConfig } from "../types/index.ts";
 
 export interface ConfigWatcherCallbacks {
-	onConfigChanged?: (config: BacklogConfig | null) => void | Promise<void>;
+	onConfigChanged?: (config: AgenticWorkspaceConfig | null) => void | Promise<void>;
 	onConfigInvalid?: () => void | Promise<void>;
 }
 
@@ -41,8 +41,8 @@ const RECOGNIZED_CONFIG_KEYS = new Set([
 	"onStatusChange",
 	"on_status_change",
 	"task_prefix",
-	"backlog_directory",
-	"backlogDirectory",
+	"agentic_workspace_directory",
+	"agenticWorkspaceDirectory",
 ]);
 
 function hasValidConfigValue(key: string, value: string): boolean {
@@ -81,7 +81,7 @@ function hasValidExplicitValues(content: string): boolean {
 	return true;
 }
 
-function isUsableConfig(config: BacklogConfig | null, content: string): config is BacklogConfig {
+function isUsableConfig(config: AgenticWorkspaceConfig | null, content: string): config is AgenticWorkspaceConfig {
 	return Boolean(
 		config?.projectName.trim() &&
 			Array.isArray(config.statuses) &&
@@ -110,7 +110,7 @@ async function publishStableConfig(
 	content: string,
 	isCurrent: () => boolean,
 ): Promise<boolean> {
-	let config: BacklogConfig | null;
+	let config: AgenticWorkspaceConfig | null;
 	try {
 		config = filesystem.parseConfig(content);
 	} catch {

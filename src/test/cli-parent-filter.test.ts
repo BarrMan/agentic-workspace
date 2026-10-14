@@ -7,7 +7,7 @@ import { Core } from "../index.ts";
 import { LOCAL_TASK_LOOKUP_HINT } from "../utils/task-path.ts";
 import { createUniqueTestDir, initializeFilesystemTestProject, safeCleanup } from "./test-utils.ts";
 
-const cliCommand = ["agenticworkspace"];
+const cliCommand = ["agentic-workspace"];
 
 function $(parts: TemplateStringsArray, ...values: unknown[]) {
 	const source = parts.reduce(

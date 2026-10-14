@@ -14,7 +14,7 @@ import { createUniqueTestDir, initializeFilesystemTestProject, safeCleanup } fro
 
 const normalizeCliOutput = (output: string) => output.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
 
-const CLI_COMMAND = ["agenticworkspace"];
+const CLI_COMMAND = ["agentic-workspace"];
 const createdDirs: string[] = [];
 
 function $(parts: TemplateStringsArray, ...values: unknown[]) {
@@ -23,7 +23,7 @@ function $(parts: TemplateStringsArray, ...values: unknown[]) {
 			`${text}${part}${Array.isArray(values[index]) ? values[index].map((value) => JSON.stringify(value)).join(" ") : values[index] === undefined ? "" : JSON.stringify(values[index])}`,
 		"",
 	);
-	if (!source.includes("agenticworkspace")) return shell(parts, ...values);
+	if (!source.includes("agentic-workspace")) return shell(parts, ...values);
 	const args =
 		source
 			.match(/"(?:\\.|[^"\\])*"|'[^']*'|[^\s]+/g)
@@ -187,7 +187,7 @@ describe("CLI draft edit", () => {
 
 	it("fails closed when several canonical draft containers claim the same id", async () => {
 		const TEST_DIR = await makeProject();
-		const draftsDir = join(TEST_DIR, "backlog", "drafts");
+		const draftsDir = join(TEST_DIR, "agentic-workspace", "drafts");
 		await writeContainerDraft(draftsDir, "DRAFT-7", "Alpha");
 		await writeContainerDraft(draftsDir, "DRAFT-07", "Beta");
 
@@ -203,7 +203,7 @@ describe("CLI draft edit", () => {
 
 	it("fails closed when padded canonical draft containers claim the same numeric id", async () => {
 		const TEST_DIR = await makeProject();
-		const draftsDir = join(TEST_DIR, "backlog", "drafts");
+		const draftsDir = join(TEST_DIR, "agentic-workspace", "drafts");
 		await writeContainerDraft(draftsDir, "DRAFT-1", "Alpha");
 		await writeContainerDraft(draftsDir, "DRAFT-01", "Beta");
 
@@ -221,7 +221,7 @@ describe("CLI draft edit", () => {
 
 	it("fails closed on draft view when padded canonical containers claim the same numeric id", async () => {
 		const TEST_DIR = await makeProject();
-		const draftsDir = join(TEST_DIR, "backlog", "drafts");
+		const draftsDir = join(TEST_DIR, "agentic-workspace", "drafts");
 		await writeContainerDraft(draftsDir, "DRAFT-1", "Alpha");
 		await writeContainerDraft(draftsDir, "DRAFT-01", "Beta");
 
@@ -305,7 +305,7 @@ describe("CLI draft edit", () => {
 
 	it("resolves a canonical draft container through the same loose numeric rule as the TUI", async () => {
 		const TEST_DIR = await makeProject();
-		const draftsDir = join(TEST_DIR, "backlog", "drafts");
+		const draftsDir = join(TEST_DIR, "agentic-workspace", "drafts");
 		await Bun.write(
 			join(draftsDir, "draft-001", "task.md"),
 			serializeTask({
@@ -483,7 +483,8 @@ describe("atomic draft editing", () => {
 			const core = new Core(TEST_DIR);
 			const reloaded = await core.filesystem.loadDraft(draftId);
 			expect(reloaded?.title).toBe("Archive race");
-			const archivedFiles = (await readdir(join(TEST_DIR, "backlog", "archive", "drafts")).catch(() => [])).length;
+			const archivedFiles = (await readdir(join(TEST_DIR, "agentic-workspace", "archive", "drafts")).catch(() => []))
+				.length;
 			expect(archivedFiles).toBe(0);
 
 			// After release, archiving succeeds cleanly.
@@ -493,7 +494,7 @@ describe("atomic draft editing", () => {
 	);
 
 	it("picker lists unrelated healthy drafts beside colliding containers", async () => {
-		const draftsDir = join(TEST_DIR, "backlog", "drafts");
+		const draftsDir = join(TEST_DIR, "agentic-workspace", "drafts");
 		for (const [id, title] of [
 			["DRAFT-1", "Alpha"],
 			["DRAFT-01", "Alpha twin"],
@@ -664,7 +665,7 @@ describe("draft wizard selection binding", () => {
 
 	it("refuses a flat draft path with manual conversion guidance", async () => {
 		const TEST_DIR = await makeProject();
-		const draftsDir = join(TEST_DIR, "backlog", "drafts");
+		const draftsDir = join(TEST_DIR, "agentic-workspace", "drafts");
 		const drifted = serializeTask({
 			id: "DRAFT-2",
 			title: "Alpha",
@@ -688,7 +689,7 @@ describe("draft wizard selection binding", () => {
 
 describe("draft identity sweep", () => {
 	const writeDraftFile = async (testDir: string, filename: string, id: string, title: string): Promise<string> => {
-		const filePath = join(testDir, "backlog", "drafts", filename);
+		const filePath = join(testDir, "agentic-workspace", "drafts", filename);
 		await mkdir(dirname(filePath), { recursive: true });
 		await Bun.write(
 			filePath,
@@ -708,7 +709,7 @@ describe("draft identity sweep", () => {
 	it("updates a canonical draft container without minting a duplicate", async () => {
 		const TEST_DIR = await makeProject();
 		await writeDraftFile(TEST_DIR, "draft-1/task.md", "DRAFT-1", "Padded");
-		const draftsDir = join(TEST_DIR, "backlog", "drafts");
+		const draftsDir = join(TEST_DIR, "agentic-workspace", "drafts");
 
 		const renamed = await $`${CLI_COMMAND} draft edit 1 -t "Converged"`.cwd(TEST_DIR).nothrow().quiet();
 		expect(renamed.exitCode).toBe(0);
@@ -728,7 +729,7 @@ describe("draft identity sweep", () => {
 
 	it("never deletes an unparsable padded canonical twin during allocation", async () => {
 		const TEST_DIR = await makeProject(); // Unparsable content: the numeric id is only proclaimed by the filename.
-		const notesPath = join(TEST_DIR, "backlog", "drafts", "draft-001", "task.md");
+		const notesPath = join(TEST_DIR, "agentic-workspace", "drafts", "draft-001", "task.md");
 		const brokenYaml = "---\nid: [oops\ntitle: Notes\n---\nbroken yaml";
 		await mkdir(dirname(notesPath), { recursive: true });
 		await Bun.write(notesPath, brokenYaml);
@@ -763,7 +764,7 @@ describe("draft identity sweep", () => {
 describe("draft identity edge cases", () => {
 	it("groups dotted-segment padding variants so direct ids fail closed", async () => {
 		const TEST_DIR = await makeProject();
-		const draftsDir = join(TEST_DIR, "backlog", "drafts");
+		const draftsDir = join(TEST_DIR, "agentic-workspace", "drafts");
 		const twin = async (container: string, id: string, title: string) => {
 			const path = join(draftsDir, container, "task.md");
 			await mkdir(dirname(path), { recursive: true });
@@ -817,12 +818,12 @@ describe("draft identity edge cases", () => {
 		expect(result.exitCode).toBe(1);
 		expect(output).toContain("Invalid draft path");
 		expect(await Bun.file(foreignPath).text()).toBe(foreignContent);
-		expect((await readdir(join(TEST_DIR, "backlog", "drafts"))).length).toBe(0);
+		expect((await readdir(join(TEST_DIR, "agentic-workspace", "drafts"))).length).toBe(0);
 	});
 
 	it("fails closed when a path-form id names one duplicate canonical draft", async () => {
 		const TEST_DIR = await makeProject();
-		const draftsDir = join(TEST_DIR, "backlog", "drafts");
+		const draftsDir = join(TEST_DIR, "agentic-workspace", "drafts");
 		const alphaPath = join(draftsDir, "draft-1", "task.md");
 		const twinPath = join(draftsDir, "draft-01", "task.md");
 		await mkdir(dirname(alphaPath), { recursive: true });
@@ -866,7 +867,7 @@ describe("draft identity edge cases", () => {
 	it("still accepts the canonical in-drafts-dir task.md path for a unique draft", async () => {
 		const TEST_DIR = await makeProject();
 		await $`${CLI_COMMAND} draft create "Solo draft"`.cwd(TEST_DIR).nothrow().quiet();
-		const draftsDir = join(TEST_DIR, "backlog", "drafts");
+		const draftsDir = join(TEST_DIR, "agentic-workspace", "drafts");
 		const soloPath = join(draftsDir, "draft-1", "task.md");
 		if (!soloPath) throw new Error("expected the created draft file");
 

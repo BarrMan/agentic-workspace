@@ -4,10 +4,10 @@ import { mkdir, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { Writable } from "node:stream";
 import { runCli } from "../cli/register.ts";
-import { Core } from "../core/backlog.ts";
+import { Core } from "../core/agentic-workspace.ts";
 import { createUniqueTestDir, initializeFilesystemTestProject, safeCleanup } from "./test-utils.ts";
 
-const cliCommand = ["agenticworkspace"];
+const cliCommand = ["agentic-workspace"];
 
 function $(parts: TemplateStringsArray, ...values: unknown[]) {
 	const source = parts.reduce(
@@ -73,7 +73,7 @@ describe("CLI mutations with missing storage directories", () => {
 
 		// Git does not retain empty directories, including the archive parent directory.
 		for (const directory of ["drafts", "decisions", "completed", "archive"]) {
-			const path = join(testDir, "backlog", directory);
+			const path = join(testDir, "agentic-workspace", directory);
 			await rm(path, { recursive: true });
 			expect(existsSync(path)).toBe(false);
 		}
@@ -84,7 +84,7 @@ describe("CLI mutations with missing storage directories", () => {
 	});
 
 	it("creates a draft when its storage directory is absent", async () => {
-		expect(existsSync(join(testDir, "backlog", "drafts"))).toBe(false);
+		expect(existsSync(join(testDir, "agentic-workspace", "drafts"))).toBe(false);
 		const result = await $`${cliCommand} draft create "First draft" -d "Keep this description"`
 			.cwd(testDir)
 			.nothrow()
@@ -116,7 +116,7 @@ describe("CLI mutations with missing storage directories", () => {
 		const { task: dependent } = await core.createTaskFromInput({ title: "Dependent task", dependencies: [task.id] });
 		if (!task.filePath) throw new Error("Expected the created task path");
 		const content = await Bun.file(task.filePath).text();
-		const destinationDir = join(testDir, "backlog", destination);
+		const destinationDir = join(testDir, "agentic-workspace", destination);
 		expect(existsSync(destinationDir)).toBe(false);
 
 		const result = await $`${cliCommand} task ${command} ${task.id}`.cwd(testDir).nothrow().quiet();
@@ -135,7 +135,7 @@ describe("CLI mutations with missing storage directories", () => {
 		});
 		const { task: dependent } = await core.createTaskFromInput({ title: "Dependent task", dependencies: [task.id] });
 		if (!task.filePath) throw new Error("Expected the created task path");
-		expect(existsSync(join(testDir, "backlog", "drafts"))).toBe(false);
+		expect(existsSync(join(testDir, "agentic-workspace", "drafts"))).toBe(false);
 
 		const result = await $`${cliCommand} task demote ${task.id}`.cwd(testDir).nothrow().quiet();
 		expect(result.exitCode).toBe(0);

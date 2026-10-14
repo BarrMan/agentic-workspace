@@ -3,7 +3,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { TmuxCommandError } from "libtmux";
-import { Core } from "../core/backlog.ts";
+import { Core } from "../core/agentic-workspace.ts";
 import { initializeTestProject } from "../test/test-utils.ts";
 import {
 	getDefaultModeCatalog,
@@ -115,8 +115,8 @@ class FakeHarness implements ProcessRunner, TmuxServer {
 		if (command === "display-message") {
 			if (args.includes("#{pid}")) return ["4242"];
 			const id = args[args.indexOf("-t") + 1] ?? "";
-			if (args.some((arg) => arg.includes("@backlog_launch_resources")))
-				return [this.metadata.get(id)?.["@backlog_launch_resources"] ?? ""];
+			if (args.some((arg) => arg.includes("@agentic_workspace_launch_resources")))
+				return [this.metadata.get(id)?.["@agentic_workspace_launch_resources"] ?? ""];
 			if (args.includes("#{pane_pid} #{pane_dead}")) return [`4242 ${this.dead.has(id) ? "1" : "0"}`];
 			return [`${id} ${this.dead.has(id) ? "1" : "0"}`];
 		}
@@ -213,6 +213,9 @@ describe("public AgentSessionService mode contract", () => {
 		expect(next.id).not.toBe(plan.id);
 		expect(next.preset).toBe(plan.preset);
 		expect(planAfter.activeSessionId).toBe(next.id);
+		expect(planAfter.sessions.find(({ id }) => id === plan.id)).toEqual(planBefore.sessions[0]);
+		await service.stop("task-1", next.id);
+		expect((await service.listMode("task-1", "plan")).activeSessionId).toBe(plan.id);
 		expect(planAfter.sessions.map(({ id }) => id)).toEqual([plan.id, next.id]);
 		expect(planAfter.sessions.find(({ id }) => id === plan.id)?.pathContext).toEqual(plan.pathContext);
 		expect(Object.keys(plan)).not.toContain("createdWith");
@@ -220,7 +223,7 @@ describe("public AgentSessionService mode contract", () => {
 		expect(buildAfter.activeSessionId).toBe(build.id);
 		expect(planBefore.activeSessionId).toBe(plan.id);
 		const buildPane = [...harness.metadata.entries()].find(
-			([, metadata]) => metadata["@backlog_session"] === build.id,
+			([, metadata]) => metadata["@agentic_workspace_session"] === build.id,
 		)?.[0];
 		expect(buildPane).toBeDefined();
 		const config = await loadAgentConfiguration(core, "project");

@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { join } from "node:path";
-import { Core } from "../core/backlog.ts";
+import { Core } from "../core/agentic-workspace.ts";
 import { serializeMilestone } from "../markdown/serializer.ts";
 import { McpServer } from "../mcp/server.ts";
 import { registerMilestoneTools } from "../mcp/tools/milestones/index.ts";

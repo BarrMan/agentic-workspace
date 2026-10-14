@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from "bun:test";
 import { join } from "node:path";
-import { Core } from "../core/backlog.ts";
+import { Core } from "../core/agentic-workspace.ts";
 import { FileSystem } from "../file-system/operations.ts";
 import { createUniqueTestDir, safeCleanup } from "./test-utils.ts";
 
@@ -11,7 +11,7 @@ afterEach(async () => {
 });
 
 describe("immutable Core project binding", () => {
-	it("keeps an in-flight read on its initial backlog after root configuration selects another one", async () => {
+	it("keeps an in-flight read on its initial agentic-workspace after root configuration selects another one", async () => {
 		const root = createUniqueTestDir("immutable-project-context");
 		directories.push(root);
 		const config = {
@@ -23,10 +23,10 @@ describe("immutable Core project binding", () => {
 			remoteOperations: false,
 			checkActiveBranches: false,
 		};
-		const rootConfig = (backlogDirectory: string) =>
+		const rootConfig = (agenticWorkspaceDirectory: string) =>
 			[
 				`project_name: ${config.projectName}`,
-				`backlog_directory: ${backlogDirectory}`,
+				`agentic_workspace_directory: ${agenticWorkspaceDirectory}`,
 				"statuses:",
 				"  - To Do",
 				"  - Done",
@@ -36,9 +36,9 @@ describe("immutable Core project binding", () => {
 				"remote_operations: false",
 				"check_active_branches: false",
 			].join("\n");
-		await Bun.write(join(root, "backlog.config.yml"), rootConfig("a"));
-		const initializer = new FileSystem(root, { backlogDirectory: "a", configLocation: "root" });
-		await initializer.ensureBacklogStructure();
+		await Bun.write(join(root, "agentic-workspace.config.yml"), rootConfig("a"));
+		const initializer = new FileSystem(root, { agenticWorkspaceDirectory: "a", configLocation: "root" });
+		await initializer.ensureAgenticWorkspaceStructure();
 		await initializer.saveTask({
 			id: "task-1",
 			title: "A",
@@ -48,8 +48,8 @@ describe("immutable Core project binding", () => {
 			labels: [],
 			dependencies: [],
 		});
-		const replacement = new FileSystem(root, { backlogDirectory: "b", configLocation: "root" });
-		await replacement.ensureBacklogStructure();
+		const replacement = new FileSystem(root, { agenticWorkspaceDirectory: "b", configLocation: "root" });
+		await replacement.ensureAgenticWorkspaceStructure();
 		await replacement.saveTask({
 			id: "task-2",
 			title: "B",
@@ -61,7 +61,7 @@ describe("immutable Core project binding", () => {
 		});
 
 		const core = new Core(root);
-		expect(core.filesystem.backlogDir).toBe(join(root, "a"));
+		expect(core.filesystem.agenticWorkspaceDir).toBe(join(root, "a"));
 		expect((await core.queryTasks()).map((task) => task.id)).toEqual(["TASK-1"]);
 		const originalListTasks = core.filesystem.listTasks.bind(core.filesystem);
 		let release: (() => void) | undefined;
@@ -80,7 +80,7 @@ describe("immutable Core project binding", () => {
 
 		const read = core.queryTasks();
 		await reading;
-		await Bun.write(join(root, "backlog.config.yml"), rootConfig("b"));
+		await Bun.write(join(root, "agentic-workspace.config.yml"), rootConfig("b"));
 		release?.();
 
 		expect((await read).map((task) => task.id)).toEqual(["TASK-1"]);
@@ -91,7 +91,7 @@ describe("immutable Core project binding", () => {
 		const root = createUniqueTestDir("immutable-project-local-read");
 		directories.push(root);
 		const filesystem = new FileSystem(root);
-		await filesystem.ensureBacklogStructure();
+		await filesystem.ensureAgenticWorkspaceStructure();
 		await filesystem.saveConfig({
 			projectName: "Local read",
 			statuses: ["To Do", "Done"],

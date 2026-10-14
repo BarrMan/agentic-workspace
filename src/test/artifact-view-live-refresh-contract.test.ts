@@ -3,7 +3,7 @@ import { mkdir, utimes, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { BoxRenderable } from "@opentui/core";
 import { createTestRenderer, type TestRendererSetup } from "@opentui/core/testing";
-import type { Core } from "../core/backlog.ts";
+import type { Core } from "../core/agentic-workspace.ts";
 import { TaskArtifactRepository } from "../file-system/task-artifact-repository.ts";
 import { TaskArtifactView, type TaskArtifactViewApi } from "../ui/opentui/task-artifact-view.ts";
 import { watchTasks } from "../utils/task-watcher.ts";
@@ -22,8 +22,8 @@ describe("artifact viewer live-refresh contract", () => {
 	it("reloads external same-size/same-mtime bytes and sidecar changes, then unsubscribes on close/dispose", async () => {
 		const root = await createUniqueTestDir("artifact-view-live-refresh");
 		roots.push(root);
-		const backlogDir = join(root, ".backlog");
-		const tasksDir = join(backlogDir, "tasks");
+		const agenticWorkspaceDir = join(root, ".agentic-workspace");
+		const tasksDir = join(agenticWorkspaceDir, "tasks");
 		const container = join(tasksDir, "back-23");
 		await mkdir(container, { recursive: true });
 		await writeFile(
@@ -32,7 +32,7 @@ describe("artifact viewer live-refresh contract", () => {
 		);
 		const artifactPath = join(container, "plan.md");
 		await writeFile(artifactPath, "draft v1\n");
-		const repository = new TaskArtifactRepository({ backlogDirectory: backlogDir });
+		const repository = new TaskArtifactRepository({ agenticWorkspaceDirectory: agenticWorkspaceDir });
 		const initial = await repository.status(taskId, "plan.md");
 		await repository.approveCurrentVersion(taskId, "plan.md", initial.sha256!);
 

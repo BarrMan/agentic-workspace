@@ -1,5 +1,7 @@
 # BACK-23 delivery plan — small implementation/validation pairs
 
+> [`docs/SPEC.md`](./SPEC.md) is authoritative wherever this document disagrees with it.
+
 This plan supersedes the 2026-10-09 broad-lane dispatch model in the task
 Agent Summary. The approved product contract, artifact-approval amendment, and
 `docs/modes-phase1-contract.md` remain authoritative. This document plans the
@@ -32,9 +34,9 @@ delivery and its completion evidence; it does not change the product contract.
   correcting the mock, its focused suite passes. The artifact CLI/MCP timeout
   was transient: the latest two tests pass in 4.89s.
 - **Project initialization — verified.** The preserved fixture's
-  `backlog/agents.json` is the correct config location and receives PLAN as
+  `agentic-workspace/agents.json` is the correct config location and receives PLAN as
   default plus BUILD. Config-dir resolution uses
-  `core.filesystem.backlogDir`, whose default is `backlog`, not `.backlog`.
+  `core.filesystem.agenticWorkspaceDir`, whose default is `agentic-workspace`, not `.agentic-workspace`.
   The strengthened `modes-project-initialization-contract` CLI assertion was
   run against the fresh absolute-path worktree binary and passed 2 tests.
 - **Phase 3 — CLI, migration, deletion, lifecycle: bounded checks complete.**
@@ -55,13 +57,13 @@ rerun was needed); storage suites 13 files / 136 tests pass. The UI/CLI run
 reported 108 passing tests; its controller-groups mock was incomplete and the
 focused corrected suite now passes (1 test). The artifact CLI/MCP suite's
 latest two tests pass in 4.89s after a transient timeout. Project initialization
-CLI contract passes 2 tests against the fresh absolute worktree `dist/agenticworkspace`.
+CLI contract passes 2 tests against the fresh absolute worktree `dist/agentic-workspace`.
 Final fresh `bun run check:types` and `bun run check` both exit 0. Biome checks
 555 files without applying fixes and reports 40 warnings and 8 informational
 findings, but no error-level diagnostics; an additional read-only
 `bun run check --diagnostic-level=error` also exits 0 with no diagnostics.
 The previously reported initialization formatter error is resolved.
-`git diff --check` passes. The rebuilt `dist/agenticworkspace`
+`git diff --check` passes. The rebuilt `dist/agentic-workspace`
 identifies as 1.53.0; canonical artifact write/read/search and preview/apply/
 rerun smoke checks passed against it. Durable live OpenCode acceptance
 independently confirmed PLAN/BUILD, handoff, ask, and an external
@@ -75,7 +77,7 @@ Status remains In Progress until the user marks the task Done.
 - Multiline editor: 3 pass; approval indicator: 2 pass, including saved exact
   content/paste and raw/native input checks. Full settings coverage: 27 pass.
 - Initialization: 2 pass against the absolute rebuilt worktree binary, proving
-  `backlog/agents.json` seeding with PLAN default and BUILD included.
+  `agentic-workspace/agents.json` seeding with PLAN default and BUILD included.
 - Artifact CLI/MCP: 2 pass in 4.89s after a transient timeout. Controller-groups:
   1 pass after the incomplete mock's missing `configPath` was corrected.
 - Storage: 136 pass across 13 files. Sessions: 74 pass across 14 files on the
@@ -93,10 +95,10 @@ Status remains In Progress until the user marks the task Done.
 - After the latest source/test patch and mutation restoration, builds were run
   immediately. Typecheck, Biome on all three touched files, and diff whitespace
   checks passed. The final read-only repository-wide gates above now also pass.
-- Verified binary: `/Users/imribarr/.backlog/Backlog.md/modes-BACK-23/dist/agenticworkspace`,
-  version 1.53.0. Final `find src -name '*.ts' -newer dist/agenticworkspace` returns no
-  paths. `/opt/homebrew/bin/agenticworkspace` points instead to
-  `/Users/imribarr/Projects/agentic-workspace/dist/agenticworkspace`; it is authoritative for
+- Verified binary: `/Users/imribarr/.agentic-workspace/agentic-workspace/modes-BACK-23/dist/agentic-workspace`,
+  version 1.53.0. Final `find src -name '*.ts' -newer dist/agentic-workspace` returns no
+  paths. `/opt/homebrew/bin/agentic-workspace` points instead to
+  `/Users/imribarr/Projects/agentic-workspace/dist/agentic-workspace`; it is authoritative for
   task management/help, not the binary used to verify this checkout's feature.
 - This continuation changes documentation and appends the authoritative task
   summary only. It makes no source/test edits, needs no additional rebuild,
@@ -138,15 +140,15 @@ For every mission, in order:
    validator independently reviews the implementation and results and returns
    **PASS** or **BLOCKED**, not a partial acceptance.
 4. Integrator accepts only PASS plus successful build/required checks and
-   clean binary freshness (`find src -name '*.ts' -newer dist/agenticworkspace`).
+   clean binary freshness (`find src -name '*.ts' -newer dist/agentic-workspace`).
    Resolve integration conflicts in a separately owned integration mission;
    do not combine unrelated feature scope into a mission.
 
 The validator does not implement the feature, rubber-stamp implementation
 tests, or accept a claim unsupported by behavior evidence. For test-only
 changes, run the required immediate build too. Never use a stale global
-`agenticworkspace` binary as verification; manual checks use the rebuilt worktree
-`dist/agenticworkspace` in an isolated project. Build/test failures block the mission
+`agentic-workspace` binary as verification; manual checks use the rebuilt worktree
+`dist/agentic-workspace` in an isolated project. Build/test failures block the mission
 until repaired and re-reviewed. Phase boundaries are automatic quality
 checkpoints, not user-approval gates. Continue through all phases without
 asking the user to authorize each checkpoint. Do not mark BACK-23 Done or

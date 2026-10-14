@@ -14,7 +14,7 @@ afterEach(async () => {
 
 describe("MilestoneStore", () => {
 	it("does not guess between duplicate title matches while preserving exact ID lookup", async () => {
-		const root = await mkdtemp(join(tmpdir(), "backlog-milestones-"));
+		const root = await mkdtemp(join(tmpdir(), "agentic-workspace-milestones-"));
 		directories.push(root);
 		const active = join(root, "milestones");
 		const archived = join(root, "archive");
@@ -41,7 +41,7 @@ describe("MilestoneStore", () => {
 
 describe("filesystem config parsing", () => {
 	it("accepts the legacy scalar default assignee without weakening list parsing", () => {
-		const config = parseConfig('statuses: ["To Do"]\ndefault_assignee: "@alex"\n', "/tmp/backlog/config.yml");
+		const config = parseConfig('statuses: ["To Do"]\ndefault_assignee: "@alex"\n', "/tmp/agentic-workspace/config.yml");
 		expect(config.defaultAssignee).toEqual(["@alex"]);
 	});
 });

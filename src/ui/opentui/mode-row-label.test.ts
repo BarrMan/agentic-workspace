@@ -58,8 +58,8 @@ describe("mode row label public render output", () => {
 			selected: false,
 			width: 10,
 		});
-		expect(unselected.text).toBe("  A very l");
-		expect(unselected.mode.start).toBe(unselected.mode.end);
+		expect(unselected.text).toBe("  BUILD ✓ ");
+		expect(unselected.text.slice(unselected.mode.characterStart, unselected.mode.characterEnd)).toBe("BUILD");
 		expect(Bun.stringWidth(rendered.text)).toBeLessThanOrEqual(10);
 		expect(rendered.text).toContain("BUILD ✓");
 		expect(rendered.modeHelp).toBe("BUILD ✓");
@@ -139,15 +139,19 @@ describe("mode row label public render output", () => {
 		expect(rendered.text.slice(rendered.title.end)).toContain("PLAN ✓");
 	});
 
-	test("unselected rows use all title cells without mode or approval space", () => {
+	test("unselected rows show badges when they fit and use all title cells when they do not", () => {
 		const row = renderModeRowLabel({
 			title: "abcdefghijklmnopqrstuv",
 			modeLabel: "PLAN",
 			approved: true,
 			width: 24,
 		});
-		expect(row.text).toBe("  abcdefghijklmnopqrstuv");
-		expect(row.text.slice(row.mode.characterStart, row.mode.characterEnd)).toBe("");
+		expect(row.text).toBe("  abcdefghijklmn PLAN ✓ ");
+		expect(row.text.slice(row.mode.characterStart, row.mode.characterEnd)).toBe("PLAN");
+
+		const narrow = renderModeRowLabel({ title: "abcdefghijklmnopqrstuv", modeLabel: "PLAN", approved: true, width: 8 });
+		expect(narrow.text).toBe("  abcdef");
+		expect(narrow.text.slice(narrow.mode.characterStart, narrow.mode.characterEnd)).toBe("");
 	});
 
 	test("clips whole graphemes and hides only badges that cannot fit beside activity", () => {

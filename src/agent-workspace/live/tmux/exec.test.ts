@@ -18,20 +18,21 @@ describe("tmux executor admission cancellation", () => {
 	});
 
 	it("removes an aborted capture-slot waiter before the freed slot can spawn it", async () => {
-		const directory = await mkdtemp(join(tmpdir(), "backlog-exec-admission-"));
+		const directory = await mkdtemp(join(tmpdir(), "agentic-workspace-exec-admission-"));
 		directories.push(directory);
 		const logPath = join(directory, "calls.log");
 		const releasePath = join(directory, "release");
 		const shim = join(directory, "tmux");
 		await writeFile(
 			shim,
-			`#!/bin/sh\nprintf '%s\\n' "$*" >> "$BACKLOG_EXEC_TEST_LOG"\nwhile [ ! -f "$BACKLOG_EXEC_TEST_RELEASE" ]; do /bin/sleep 0.01; done\n`,
+			`#!/bin/sh\nprintf '%s\\n' "$*" >> "$AGENTIC_WORKSPACE_EXEC_TEST_LOG"\nwhile [ ! -f "$AGENTIC_WORKSPACE_EXEC_TEST_RELEASE" ]; do /bin/sleep 0.01; done\n`,
 		);
 		await chmod(shim, 0o755);
-		for (const key of ["PATH", "BACKLOG_EXEC_TEST_LOG", "BACKLOG_EXEC_TEST_RELEASE"]) env.push([key, process.env[key]]);
+		for (const key of ["PATH", "AGENTIC_WORKSPACE_EXEC_TEST_LOG", "AGENTIC_WORKSPACE_EXEC_TEST_RELEASE"])
+			env.push([key, process.env[key]]);
 		process.env.PATH = `${directory}${delimiter}${process.env.PATH ?? ""}`;
-		process.env.BACKLOG_EXEC_TEST_LOG = logPath;
-		process.env.BACKLOG_EXEC_TEST_RELEASE = releasePath;
+		process.env.AGENTIC_WORKSPACE_EXEC_TEST_LOG = logPath;
+		process.env.AGENTIC_WORKSPACE_EXEC_TEST_RELEASE = releasePath;
 		const calls: string[] = [];
 		const exec = createTmuxExec({
 			socketName: "isolated-admission-test",
@@ -72,20 +73,21 @@ describe("tmux executor admission cancellation", () => {
 	});
 
 	it("kills an already-dispatched command on abort and reports its outcome as uncertain without replay", async () => {
-		const directory = await mkdtemp(join(tmpdir(), "backlog-exec-spawn-abort-"));
+		const directory = await mkdtemp(join(tmpdir(), "agentic-workspace-exec-spawn-abort-"));
 		directories.push(directory);
 		const logPath = join(directory, "calls.log");
 		const releasePath = join(directory, "release");
 		const shim = join(directory, "tmux");
 		await writeFile(
 			shim,
-			`#!/bin/sh\nprintf '%s\\n' "$*" >> "$BACKLOG_EXEC_TEST_LOG"\nwhile [ ! -f "$BACKLOG_EXEC_TEST_RELEASE" ]; do :; done\n`,
+			`#!/bin/sh\nprintf '%s\\n' "$*" >> "$AGENTIC_WORKSPACE_EXEC_TEST_LOG"\nwhile [ ! -f "$AGENTIC_WORKSPACE_EXEC_TEST_RELEASE" ]; do :; done\n`,
 		);
 		await chmod(shim, 0o755);
-		for (const key of ["PATH", "BACKLOG_EXEC_TEST_LOG", "BACKLOG_EXEC_TEST_RELEASE"]) env.push([key, process.env[key]]);
+		for (const key of ["PATH", "AGENTIC_WORKSPACE_EXEC_TEST_LOG", "AGENTIC_WORKSPACE_EXEC_TEST_RELEASE"])
+			env.push([key, process.env[key]]);
 		process.env.PATH = `${directory}${delimiter}${process.env.PATH ?? ""}`;
-		process.env.BACKLOG_EXEC_TEST_LOG = logPath;
-		process.env.BACKLOG_EXEC_TEST_RELEASE = releasePath;
+		process.env.AGENTIC_WORKSPACE_EXEC_TEST_LOG = logPath;
+		process.env.AGENTIC_WORKSPACE_EXEC_TEST_RELEASE = releasePath;
 		const controller = new AbortController();
 		const exec = createTmuxExec({ socketName: "isolated-spawn-abort", timeoutMs: 20_000 });
 		const operation = exec.run(["already-dispatched"], { signal: controller.signal });
@@ -110,7 +112,7 @@ describe("tmux executor admission cancellation", () => {
 	});
 
 	it("waits for an already-dispatched input write before stopping the host", async () => {
-		const directory = await mkdtemp(join(tmpdir(), "backlog-exec-input-drain-"));
+		const directory = await mkdtemp(join(tmpdir(), "agentic-workspace-exec-input-drain-"));
 		directories.push(directory);
 		const outputPath = join(directory, "output.log");
 		await writeFile(outputPath, "");
@@ -138,7 +140,7 @@ describe("tmux executor admission cancellation", () => {
 	});
 
 	it("reports failure when an already-dispatched input write cannot finish within the shutdown bound", async () => {
-		const directory = await mkdtemp(join(tmpdir(), "backlog-exec-input-stall-"));
+		const directory = await mkdtemp(join(tmpdir(), "agentic-workspace-exec-input-stall-"));
 		directories.push(directory);
 		const outputPath = join(directory, "output.log");
 		await writeFile(outputPath, "");
@@ -162,7 +164,7 @@ describe("tmux executor admission cancellation", () => {
 	});
 
 	it("cancels queued production input, heartbeat, and resize before any freed slot can spawn them", async () => {
-		const directory = await mkdtemp(join(tmpdir(), "backlog-exec-transport-cancel-"));
+		const directory = await mkdtemp(join(tmpdir(), "agentic-workspace-exec-transport-cancel-"));
 		directories.push(directory);
 		const logPath = join(directory, "calls.log");
 		const releasePath = join(directory, "release");
@@ -171,13 +173,14 @@ describe("tmux executor admission cancellation", () => {
 		await writeFile(outputPath, "");
 		await writeFile(
 			shim,
-			`#!/bin/sh\nprintf '%s\\n' "$*" >> "$BACKLOG_EXEC_TEST_LOG"\ncase "$*" in *hold*) while [ ! -f "$BACKLOG_EXEC_TEST_RELEASE" ]; do /bin/sleep 0.01; done;; *display-message*) printf '0';; esac\n`,
+			`#!/bin/sh\nprintf '%s\\n' "$*" >> "$AGENTIC_WORKSPACE_EXEC_TEST_LOG"\ncase "$*" in *hold*) while [ ! -f "$AGENTIC_WORKSPACE_EXEC_TEST_RELEASE" ]; do /bin/sleep 0.01; done;; *display-message*) printf '0';; esac\n`,
 		);
 		await chmod(shim, 0o755);
-		for (const key of ["PATH", "BACKLOG_EXEC_TEST_LOG", "BACKLOG_EXEC_TEST_RELEASE"]) env.push([key, process.env[key]]);
+		for (const key of ["PATH", "AGENTIC_WORKSPACE_EXEC_TEST_LOG", "AGENTIC_WORKSPACE_EXEC_TEST_RELEASE"])
+			env.push([key, process.env[key]]);
 		process.env.PATH = `${directory}${delimiter}${process.env.PATH ?? ""}`;
-		process.env.BACKLOG_EXEC_TEST_LOG = logPath;
-		process.env.BACKLOG_EXEC_TEST_RELEASE = releasePath;
+		process.env.AGENTIC_WORKSPACE_EXEC_TEST_LOG = logPath;
+		process.env.AGENTIC_WORKSPACE_EXEC_TEST_RELEASE = releasePath;
 		const executed: string[] = [];
 		const exec = createTmuxExec({
 			socketName: "isolated-transport-cancel",

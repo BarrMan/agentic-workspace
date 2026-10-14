@@ -6,7 +6,7 @@ import { runCli } from "../cli/register.ts";
 import { Core } from "../index.ts";
 import { createUniqueTestDir, initializeFilesystemTestProject, safeCleanup } from "./test-utils.ts";
 
-const cliCommand = ["agenticworkspace"];
+const cliCommand = ["agentic-workspace"];
 
 function $(parts: TemplateStringsArray, ...values: unknown[]) {
 	const source = parts.reduce(
@@ -65,7 +65,7 @@ async function setupPreservation(): Promise<{ dir: string; core: Core }> {
 	const dir = createUniqueTestDir("test-task-edit-preservation");
 	await mkdir(dir, { recursive: true });
 
-	// Initialize backlog project using Core
+	// Initialize agentic-workspace project using Core
 	const core = new Core(dir);
 	await initializeFilesystemTestProject(core, "Task Edit Preservation Test");
 	return { dir, core };
@@ -75,7 +75,7 @@ describe("Task edit section preservation", () => {
 	it("preserves opaque body and unknown frontmatter when editing labels", async () => {
 		const { dir } = await setupPreservation();
 		try {
-			const tasksDir = join(dir, "backlog", "tasks");
+			const tasksDir = join(dir, "agentic-workspace", "tasks");
 			const taskDir = join(tasksDir, "task-1");
 			await mkdir(taskDir, { recursive: true });
 			const taskPath = join(taskDir, "task.md");
@@ -143,7 +143,7 @@ Keep me exactly.
 				description: "Original description",
 			});
 
-			const artifactPath = join(dir, "backlog", "tasks", "task-1", "working-state.md");
+			const artifactPath = join(dir, "agentic-workspace", "tasks", "task-1", "working-state.md");
 			await Bun.write(artifactPath, "Opaque working state.\n");
 
 			// Update just the description
@@ -153,7 +153,9 @@ Keep me exactly.
 
 			expect(result).toContain("UPDATED description");
 			expect(await Bun.file(artifactPath).text()).toBe("Opaque working state.\n");
-			expect(await Bun.file(join(dir, "backlog", "tasks", "task-1", "task.md")).text()).not.toContain("agent_summary");
+			expect(await Bun.file(join(dir, "agentic-workspace", "tasks", "task-1", "task.md")).text()).not.toContain(
+				"agent_summary",
+			);
 		} finally {
 			await safeCleanup(dir);
 		}
@@ -174,7 +176,7 @@ Keep me exactly.
 				description: "Test description",
 			});
 
-			const artifactPath = join(dir, "backlog", "tasks", "task-2", "working-state.md");
+			const artifactPath = join(dir, "agentic-workspace", "tasks", "task-2", "working-state.md");
 			await Bun.write(artifactPath, "Working notes remain opaque.\n");
 			await $`${cliCommand} task edit 2 -d "Updated description"`.cwd(dir).quiet();
 
@@ -206,7 +208,7 @@ Keep me exactly.
 			await $`${cliCommand} task edit 3 -d "Updated description"`.cwd(dir).quiet();
 
 			const result = await $`${cliCommand} task 3 --plain`.cwd(dir).text();
-			const taskContent = await Bun.file(join(dir, "backlog", "tasks", "task-3", "task.md")).text();
+			const taskContent = await Bun.file(join(dir, "agentic-workspace", "tasks", "task-3", "task.md")).text();
 
 			expect(result).toContain("Updated description");
 			expect(taskContent).not.toContain("agent_summary");
@@ -230,7 +232,7 @@ Keep me exactly.
 				description: "Test description",
 			});
 
-			const artifactPath = join(dir, "backlog", "tasks", "task-4", "working-state.md");
+			const artifactPath = join(dir, "agentic-workspace", "tasks", "task-4", "working-state.md");
 			await Bun.write(artifactPath, "Pending work.\n");
 			await $`${cliCommand} task edit 4 -d "Updated description"`.cwd(dir).quiet();
 
@@ -263,7 +265,7 @@ Keep me exactly.
 			await $`${cliCommand} task edit 5 -d "Updated minimal description"`.cwd(dir).quiet();
 
 			const result = await $`${cliCommand} task 5 --plain`.cwd(dir).text();
-			const taskContent = await Bun.file(join(dir, "backlog", "tasks", "task-5", "task.md")).text();
+			const taskContent = await Bun.file(join(dir, "agentic-workspace", "tasks", "task-5", "task.md")).text();
 
 			expect(result).toContain("Updated minimal description");
 			expect(result).toContain("Artifacts: None");

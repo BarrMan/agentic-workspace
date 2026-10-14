@@ -65,10 +65,10 @@ tmp/
 # Local workspace runtime state: pane view state, per-task session records and logs, request markers
 # and per-session activity sidecars. Every entry is recreated by the process that owns it and none of
 # it is repository content, so the whole state root stays out of git.
-.backlog/
+.agentic-workspace/
 
 # Transient lock files for task writes and for workspace view state.
-backlog/.locks/
+agentic-workspace/.locks/
 
 # Performance benchmark artifacts
 test-benchmark-report.json

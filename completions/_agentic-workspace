@@ -1,0 +1,35 @@
+#compdef agentic-workspace
+
+# Zsh completion script for agentic-workspace CLI
+#
+# NOTE: This script is embedded in the agentic-workspace binary and installed automatically
+# via 'agentic-workspace completion install'. This file serves as reference documentation.
+#
+# Installation:
+#   - Recommended: agentic-workspace completion install --shell zsh
+#   - Manual: Copy this file to a directory in your $fpath and run compinit
+
+_agentic-workspace() {
+	# Get the current command line buffer and cursor position
+	local line=$BUFFER
+	local point=$CURSOR
+
+	# Call the agentic-workspace completion command to get dynamic completions
+	# The __complete command returns one completion per line
+	local -a completions
+	completions=(${(f)"$(agentic-workspace completion __complete "$line" "$point" 2>/dev/null)"})
+
+	# Check if we got any completions
+	if (( ${#completions[@]} == 0 )); then
+		# No completions available
+		return 1
+	fi
+
+	# Present the completions to the user
+	# _describe shows completions with optional descriptions
+	# The first argument is the tag name shown in completion groups
+	_describe 'agentic-workspace commands' completions
+}
+
+# Register the completion function for the agentic-workspace command
+compdef _agentic-workspace agentic-workspace

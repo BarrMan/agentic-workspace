@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { type BacklogConfig, EntityType } from "../types/index.ts";
+import { type AgenticWorkspaceConfig, EntityType } from "../types/index.ts";
 import {
 	buildFilenameIdRegex,
 	buildGlobPattern,
@@ -316,12 +316,12 @@ describe("prefix-config", () => {
 		});
 
 		test("returns configured task prefix", () => {
-			const config = { prefixes: { task: "JIRA" } } as BacklogConfig;
+			const config = { prefixes: { task: "JIRA" } } as AgenticWorkspaceConfig;
 			expect(getPrefixForType(EntityType.Task, config)).toBe("JIRA");
 		});
 
 		test("returns default task prefix when config has no prefixes", () => {
-			const config = {} as BacklogConfig;
+			const config = {} as AgenticWorkspaceConfig;
 			expect(getPrefixForType(EntityType.Task, config)).toBe("task");
 		});
 
@@ -330,7 +330,7 @@ describe("prefix-config", () => {
 		});
 
 		test("draft prefix is always hardcoded regardless of config", () => {
-			const config = { prefixes: { task: "JIRA" } } as BacklogConfig;
+			const config = { prefixes: { task: "JIRA" } } as AgenticWorkspaceConfig;
 			// Draft prefix is hardcoded, not part of config
 			expect(getPrefixForType(EntityType.Draft, config)).toBe("draft");
 		});

@@ -2,7 +2,7 @@ import { FALLBACK_STATUS } from "../constants/index.ts";
 import { EntityType, type Task, type TaskCreateInput } from "../types/index.ts";
 import { formatStoredDate } from "../utils/date.ts";
 import { validateDependencies } from "../utils/task-builders.ts";
-import type { Core } from "./backlog.ts";
+import type { Core } from "./agentic-workspace.ts";
 import { buildCreatedTask, generatedTaskTitle, prepareTaskCreationInput } from "./task-creation-input.ts";
 import { readFileIfPresent } from "./task-creation-transaction.ts";
 

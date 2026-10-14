@@ -2,8 +2,8 @@ import { basename, join } from "node:path";
 import * as clack from "@clack/prompts";
 import type { Command } from "commander";
 import { DEFAULT_STATUSES } from "../constants/index.ts";
-import { Core } from "../core/backlog.ts";
-import type { BacklogConfig, Task } from "../types/index.ts";
+import { Core } from "../core/agentic-workspace.ts";
+import type { AgenticWorkspaceConfig, Task } from "../types/index.ts";
 import { getTerminalStatus, isTerminalStatus } from "../utils/terminal-status.ts";
 import { formatUtcDateForDisplay } from "../utils/utc-date-display.ts";
 import { addHelpSchema } from "./help-schema.ts";
@@ -34,7 +34,7 @@ async function selectCleanupAge(): Promise<number | null> {
 	return selectedAge;
 }
 
-function printCleanupPreview(tasks: Task[], ageTitle: string | undefined, config: BacklogConfig): boolean {
+function printCleanupPreview(tasks: Task[], ageTitle: string | undefined, config: AgenticWorkspaceConfig): boolean {
 	if (tasks.length === 0) {
 		console.log(`No tasks found that are older than ${ageTitle}.`);
 		return false;
@@ -63,7 +63,7 @@ async function confirmCleanupMove(taskCount: number): Promise<boolean> {
 	return true;
 }
 
-async function selectCleanupTasks(core: Core, config: BacklogConfig): Promise<Task[] | null> {
+async function selectCleanupTasks(core: Core, config: AgenticWorkspaceConfig): Promise<Task[] | null> {
 	const selectedAge = await selectCleanupAge();
 	if (selectedAge === null) {
 		return null;
@@ -118,7 +118,7 @@ async function moveCleanupTasks(core: Core, tasks: Task[]): Promise<{ successCou
 	return { successCount: movedTasks.length, stagedForGit: await stageCleanupMoves(core, movedTasks) };
 }
 
-async function runSelectedCleanup(core: Core, config: BacklogConfig): Promise<void> {
+async function runSelectedCleanup(core: Core, config: AgenticWorkspaceConfig): Promise<void> {
 	const tasksToMove = await selectCleanupTasks(core, config);
 	if (!tasksToMove) return;
 
@@ -131,7 +131,7 @@ async function runCleanupCommand(cwd: string): Promise<void> {
 	const core = new Core(cwd);
 	const config = await core.filesystem.loadConfig();
 	if (!config) {
-		console.error("No AgenticWorkspace project found. Initialize one first with: agenticworkspace init");
+		console.error("No AgenticWorkspace project found. Initialize one first with: agentic-workspace init");
 		throw Object.assign(new Error("CLI requested exit"), { exitCode: 1 });
 	}
 	core.git.setConfig(config);
@@ -158,12 +158,12 @@ export function registerCleanupCommand(
 	runtime: { requireProjectRoot(): Promise<string>; reportFailure(summary: string, error: unknown): void },
 ): void {
 	addHelpSchema(program.command("cleanup"), {
-		reads: "Tasks in terminal status from the configured backlog directory",
+		reads: "Tasks in terminal status from the configured agentic-workspace directory",
 		required: [],
 		optional: [],
 		writes: "Moves selected terminal-status tasks to the completed folder",
 		output: "Interactive cleanup summary",
-		examples: ["agenticworkspace cleanup"],
+		examples: ["agentic-workspace cleanup"],
 	})
 		.description("move completed tasks to completed folder based on age")
 		.action(async () => {

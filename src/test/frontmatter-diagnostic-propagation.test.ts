@@ -2,14 +2,14 @@ import { afterEach, beforeEach, describe, expect, it, spyOn } from "bun:test";
 import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { Core } from "../core/backlog.ts";
+import { Core } from "../core/agentic-workspace.ts";
 import { BranchTaskLoader } from "../core/task-loader.ts";
 import { ContentRepository } from "../file-system/content-repository.ts";
 import { MilestoneStore } from "../file-system/milestones.ts";
 import type { GitOperations } from "../git/operations.ts";
 import { UnsupportedRecordFrontmatterSchemaError, UnsupportedTaskFrontmatterSchemaError } from "../markdown/parser.ts";
 import { serializeDecision, serializeMilestone, serializeTask } from "../markdown/serializer.ts";
-import type { BacklogConfig, Decision, Milestone, Task } from "../types/index.ts";
+import type { AgenticWorkspaceConfig, Decision, Milestone, Task } from "../types/index.ts";
 import { createUniqueTestDir, initializeFilesystemTestProject, safeCleanup } from "./test-utils.ts";
 
 const task: Task = {
@@ -33,7 +33,7 @@ const decision: Decision = {
 	rawContent: "",
 };
 const milestone: Milestone = { id: "m-1", title: "Milestone", description: "", rawContent: "" };
-const config: BacklogConfig = {
+const config: AgenticWorkspaceConfig = {
 	projectName: "Diagnostic propagation",
 	statuses: ["To Do"],
 	labels: [],
@@ -51,7 +51,7 @@ function unsupported(content: string, schema: string): string {
 
 describe("frontmatter diagnostic propagation", () => {
 	it("propagates unsupported decision schema diagnostics through list and load", async () => {
-		const root = await mkdtemp(join(tmpdir(), "backlog-decision-diagnostics-"));
+		const root = await mkdtemp(join(tmpdir(), "agentic-workspace-decision-diagnostics-"));
 		try {
 			const repository = new ContentRepository({
 				decisionsDirectory: async () => root,
@@ -72,7 +72,7 @@ describe("frontmatter diagnostic propagation", () => {
 	});
 
 	it("propagates unsupported milestone schema diagnostics through list and load", async () => {
-		const root = await mkdtemp(join(tmpdir(), "backlog-milestone-diagnostics-"));
+		const root = await mkdtemp(join(tmpdir(), "agentic-workspace-milestone-diagnostics-"));
 		const active = join(root, "active");
 		try {
 			await mkdir(active);
@@ -127,7 +127,7 @@ describe("task frontmatter diagnostic propagation", () => {
 
 	it("skips unsupported schema with its diagnostic during branch hydration", async () => {
 		const commit = "1".repeat(40);
-		const path = "backlog/tasks/task-1/task.md";
+		const path = "agentic-workspace/tasks/task-1/task.md";
 		const loader = new BranchTaskLoader({
 			listFilesInTree: async () => [path],
 			getBranchLastModifiedMap: async () => new Map([[path, new Date("2026-09-30T00:00:00Z")]]),

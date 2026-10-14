@@ -8,7 +8,7 @@ import type { TmuxServer } from "../agent-workspace/session-process.ts";
 import type { SharedAgentAttachment } from "../agent-workspace/sessions.ts";
 import type { AgentSession } from "../agent-workspace/types.ts";
 import type { WorkspaceStateService } from "../agent-workspace/workspace-state.ts";
-import type { Core } from "../core/backlog.ts";
+import type { Core } from "../core/agentic-workspace.ts";
 import type { Task } from "../types/index.ts";
 import type { OpenTuiHost } from "../ui/opentui/host.ts";
 import { createWorkspaceFilters } from "../ui/opentui/workspace/state.ts";
@@ -53,7 +53,7 @@ function fixture(
 		}),
 		filesystem: {
 			rootDir: root,
-			backlogDir: root,
+			agenticWorkspaceDir: root,
 			loadTask: async () => task,
 			loadConfig: async () => ({ projectName: "Test" }),
 			listMilestones: async () => [],
@@ -64,10 +64,11 @@ function fixture(
 		id: "session-1",
 		taskId: task.id,
 		preset: "agent",
-		tmuxName: "backlog-task-1-session-1",
+		tmuxName: "agentic-workspace-task-1-session-1",
 		cwd: root,
 		bootstrapPath: join(root, "bootstrap.md"),
 		status: "running",
+		nativeWorkspace: true,
 		createdAt: "2026-01-01",
 		outputPath: join(root, "output.log"),
 	} satisfies AgentSession;
@@ -98,7 +99,14 @@ function fixture(
 		listAllSessions: async () => new Map(),
 		liveSession: async () => undefined,
 		prepareSession: overrides.prepare ?? (async () => attachment),
+		prepareNewSession: async () => ({
+			...attachment,
+			record: { ...record, id: "session-2", tmuxName: "agentic-workspace-task-1-session-2" },
+		}),
 		activateSession: async () => undefined,
+		finalizeHandoff: async (_taskId: string, _successor: AgentSession, handoff: { predecessor?: { id: string } }) => {
+			if (handoff.predecessor) await state.stopSession(_taskId, handoff.predecessor.id);
+		},
 		stopSession: async (_taskId: string, sessionId: string) => {
 			stopCalls++;
 			stoppedSessionId = sessionId;

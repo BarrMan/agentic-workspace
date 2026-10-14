@@ -11,7 +11,7 @@ import {
 	runMcpClientSetupCommand,
 } from "../../../utils/mcp-client-setup.ts";
 
-export const INIT_MCP_SERVER_NAME = "agenticworkspace";
+export const INIT_MCP_SERVER_NAME = "agentic-workspace";
 
 async function openInitMcpGuide(url: string): Promise<void> {
 	try {
@@ -27,7 +27,7 @@ async function configureInitMcpClient(client: McpClientSetupKey, serverName = IN
 	console.log(`    Configuring ${label}...`);
 	try {
 		await runMcpClientSetupCommand(command, args, { stdout: "inherit", stderr: "inherit" });
-		console.log(`    ✓ Added Backlog MCP server to ${label}`);
+		console.log(`    ✓ Added AgenticWorkspace MCP server to ${label}`);
 		return label;
 	} catch (error) {
 		const message = error instanceof Error ? error.message : String(error);

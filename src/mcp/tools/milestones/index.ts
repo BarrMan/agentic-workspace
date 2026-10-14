@@ -59,7 +59,7 @@ export function registerMilestoneTools(server: McpServer): void {
 	const archiveTool: McpToolHandler = createSimpleValidatedTool(
 		{
 			name: "milestone_archive",
-			description: "Archive a milestone by moving it to backlog/archive/milestones",
+			description: "Archive a milestone by moving it to agentic-workspace/archive/milestones",
 			inputSchema: milestoneArchiveSchema,
 			annotations: { title: "Archive Milestone", destructiveHint: true },
 		},

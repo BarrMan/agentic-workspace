@@ -1,4 +1,4 @@
-import type { Core } from "../core/backlog.ts";
+import type { Core } from "../core/agentic-workspace.ts";
 import { resolveLaunchPreset } from "./agents/opencode-resolution.ts";
 import { commandArguments } from "./agents/profile.ts";
 import { resolveSessionPreset } from "./config.ts";

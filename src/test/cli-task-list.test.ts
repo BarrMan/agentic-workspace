@@ -8,7 +8,7 @@ import { Core } from "../index.ts";
 import { createUniqueTestDir, initializeTestProject, safeCleanup } from "./test-utils.ts";
 
 let TEST_DIR: string;
-const CLI_COMMAND = ["agenticworkspace"];
+const CLI_COMMAND = ["agentic-workspace"];
 
 function $(parts: TemplateStringsArray, ...values: unknown[]) {
 	const source = parts.reduce(
@@ -16,7 +16,7 @@ function $(parts: TemplateStringsArray, ...values: unknown[]) {
 			`${text}${part}${Array.isArray(values[index]) ? values[index].map((value) => JSON.stringify(value)).join(" ") : values[index] === undefined ? "" : JSON.stringify(values[index])}`,
 		"",
 	);
-	if (!source.startsWith('"agenticworkspace"')) return shell(parts, ...values);
+	if (!source.startsWith('"agentic-workspace"')) return shell(parts, ...values);
 	const args =
 		source
 			.match(/"(?:\\.|[^"\\])*"|'[^']*'|[^\s]+/g)
@@ -96,7 +96,7 @@ describe("CLI Integration", () => {
 
 	describe("task list command", () => {
 		beforeEach(async () => {
-			// Set up a git repository and initialize backlog
+			// Set up a git repository and initialize agentic-workspace
 			await $`git init -b main`.cwd(TEST_DIR).quiet();
 
 			const core = new Core(TEST_DIR);
@@ -656,10 +656,10 @@ describe("CLI Integration", () => {
 				rawContent: "",
 			});
 			// A malformed completed record is skipped with one warning when the corpus is read.
-			await mkdir(join(TEST_DIR, "backlog", "completed"), { recursive: true });
-			await mkdir(join(TEST_DIR, "backlog", "completed", "task-99"), { recursive: true });
+			await mkdir(join(TEST_DIR, "agentic-workspace", "completed"), { recursive: true });
+			await mkdir(join(TEST_DIR, "agentic-workspace", "completed", "task-99"), { recursive: true });
 			await writeFile(
-				join(TEST_DIR, "backlog", "completed", "task-99", "task.md"),
+				join(TEST_DIR, "agentic-workspace", "completed", "task-99", "task.md"),
 				"---\nid: TASK-99\ntask_schema_version: 3\ntitle: [unclosed\nstatus: Done\n---\n\nbroken\n",
 			);
 			const corpusReads = async (args: string[]) => {
@@ -709,10 +709,10 @@ describe("CLI Integration", () => {
 			});
 
 			// A malformed completed record is skipped with one warning when the corpus is read.
-			await mkdir(join(TEST_DIR, "backlog", "completed"), { recursive: true });
-			await mkdir(join(TEST_DIR, "backlog", "completed", "task-99"), { recursive: true });
+			await mkdir(join(TEST_DIR, "agentic-workspace", "completed"), { recursive: true });
+			await mkdir(join(TEST_DIR, "agentic-workspace", "completed", "task-99"), { recursive: true });
 			await writeFile(
-				join(TEST_DIR, "backlog", "completed", "task-99", "task.md"),
+				join(TEST_DIR, "agentic-workspace", "completed", "task-99", "task.md"),
 				"---\nid: TASK-99\ntask_schema_version: 3\ntitle: [unclosed\nstatus: Done\n---\n\nbroken\n",
 			);
 
@@ -738,7 +738,7 @@ describe("CLI Integration", () => {
 			expect(jsonReady.warnings).toEqual(plainReady.warnings);
 			expect(plainReady.warnings).toHaveLength(1);
 			expect(plainReady.warnings[0]).toContain(
-				`${join(TEST_DIR, "backlog", "completed", "task-99", "task.md")}: YAML Parse error: Unexpected token`,
+				`${join(TEST_DIR, "agentic-workspace", "completed", "task-99", "task.md")}: YAML Parse error: Unexpected token`,
 			);
 
 			const rows = JSON.parse(jsonReady.stdout).tasks as Array<{ id: string; isReady: boolean }>;
@@ -811,7 +811,7 @@ describe("CLI Integration", () => {
 
 			expect(result.exitCode).toBe(1);
 			expect(out).toContain("--limit must be a positive integer (1 or greater).");
-			expect(out).toContain("Try 'agenticworkspace task list --help' for options.");
+			expect(out).toContain("Try 'agentic-workspace task list --help' for options.");
 		});
 	});
 });

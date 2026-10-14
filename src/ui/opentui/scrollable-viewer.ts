@@ -4,7 +4,7 @@ import { createKeybindings, shortcutsConfig } from "./keybindings.ts";
 
 const FOOTER_ROWS = 1;
 
-/** Render long read-only text with Backlog's shared viewer controls. */
+/** Render long read-only text with AgenticWorkspace's shared viewer controls. */
 export async function openScrollableViewer(content: string): Promise<void> {
 	const host = await createOpenTuiHost();
 	const { renderer, root } = host;

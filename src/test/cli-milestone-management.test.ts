@@ -7,7 +7,7 @@ import { MilestoneHandlers } from "../mcp/tools/milestones/handlers.ts";
 import type { CallToolResult } from "../mcp/types.ts";
 import { createUniqueTestDir, initializeTestProject, safeCleanup } from "./test-utils.ts";
 
-const cliCommand = ["agenticworkspace"];
+const cliCommand = ["agentic-workspace"];
 
 function $(parts: TemplateStringsArray, ...values: unknown[]) {
 	const source = parts.reduce(

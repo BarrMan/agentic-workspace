@@ -1,6 +1,6 @@
 import { DEFAULT_STATUSES } from "../constants/index.ts";
-import { type Core, createRuntimeCore } from "../core/backlog.ts";
-import type { BacklogConfig } from "../types/index.ts";
+import { type Core, createRuntimeCore } from "../core/agentic-workspace.ts";
+import type { AgenticWorkspaceConfig } from "../types/index.ts";
 import { getPriorityValues } from "../utils/priority-config.ts";
 import { getProjectValues } from "../utils/project-config.ts";
 import { getTaskTypeValues } from "../utils/task-type-config.ts";
@@ -24,7 +24,7 @@ function getDefaultStatuses(): string[] {
 }
 
 /**
- * Get all task IDs from the backlog
+ * Get all task IDs from the agentic-workspace
  */
 export async function getTaskIds(): Promise<string[]> {
 	return await withCore(async (core) => {
@@ -38,7 +38,7 @@ export async function getTaskIds(): Promise<string[]> {
  */
 export async function getStatuses(): Promise<string[]> {
 	return await withCore(async (core) => {
-		const config: BacklogConfig | null = await core.filesystem.loadConfig();
+		const config: AgenticWorkspaceConfig | null = await core.filesystem.loadConfig();
 		const statuses = config?.statuses;
 		if (Array.isArray(statuses) && statuses.length > 0) {
 			return statuses;
@@ -52,7 +52,7 @@ export async function getStatuses(): Promise<string[]> {
  */
 export async function getPriorities(): Promise<string[]> {
 	return await withCore(async (core) => {
-		const config: BacklogConfig | null = await core.filesystem.loadConfig();
+		const config: AgenticWorkspaceConfig | null = await core.filesystem.loadConfig();
 		return getPriorityValues(config);
 	}, getPriorityValues());
 }
@@ -62,7 +62,7 @@ export async function getPriorities(): Promise<string[]> {
  */
 export async function getTaskTypes(): Promise<string[]> {
 	return await withCore(async (core) => {
-		const config: BacklogConfig | null = await core.filesystem.loadConfig();
+		const config: AgenticWorkspaceConfig | null = await core.filesystem.loadConfig();
 		return getTaskTypeValues(config);
 	}, getTaskTypeValues());
 }
@@ -72,7 +72,7 @@ export async function getTaskTypes(): Promise<string[]> {
  */
 export async function getProjects(): Promise<string[]> {
 	return await withCore(async (core) => {
-		const config: BacklogConfig | null = await core.filesystem.loadConfig();
+		const config: AgenticWorkspaceConfig | null = await core.filesystem.loadConfig();
 		return getProjectValues(config);
 	}, []);
 }
@@ -110,7 +110,7 @@ export async function getAssignees(): Promise<string[]> {
 }
 
 /**
- * Get all document IDs from the backlog
+ * Get all document IDs from the agentic-workspace
  */
 export async function getDocumentIds(): Promise<string[]> {
 	return await withCore(async (core) => {

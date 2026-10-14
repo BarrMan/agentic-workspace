@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, spyOn } from "bun:test";
 import { mkdir, unlink } from "node:fs/promises";
 import { join } from "node:path";
 import { $ } from "bun";
-import { Core } from "../core/backlog.ts";
+import { Core } from "../core/agentic-workspace.ts";
 import { findCrossBranchDuplicateTaskIds, findLocalDuplicateTaskIds } from "../core/duplicate-task-detection.ts";
 import { serializeTask } from "../markdown/serializer.ts";
 import type { Task } from "../types/index.ts";
@@ -36,7 +36,7 @@ async function writeTask(directory: string, task: Task, container = task.id.toLo
 beforeEach(async () => {
 	testDir = createUniqueTestDir("duplicate-task-detection");
 	core = new Core(testDir);
-	await core.filesystem.ensureBacklogStructure();
+	await core.filesystem.ensureAgenticWorkspaceStructure();
 	await core.filesystem.saveConfig({
 		projectName: "Duplicate detection",
 		statuses: ["To Do", "In Progress", "Done"],
@@ -67,7 +67,7 @@ describe("duplicate task diagnosis", () => {
 		try {
 			const groups = await findLocalDuplicateTaskIds(core);
 			expect(groups.map(({ id }) => id)).toEqual(["TASK-7"]);
-			expect(warning).toHaveBeenCalledWith(expect.stringContaining("backlog/completed/task-99/task.md"));
+			expect(warning).toHaveBeenCalledWith(expect.stringContaining("agentic-workspace/completed/task-99/task.md"));
 		} finally {
 			warning.mockRestore();
 		}
@@ -85,9 +85,9 @@ describe("duplicate task diagnosis", () => {
 		expect(groups[0]?.id).toBe("TASK-7");
 		expect(groups[0]?.tasks).toHaveLength(3);
 		expect(groups[0]?.tasks.map((task) => task.filePath)).toEqual([
-			"backlog/completed/task-7/task.md",
-			"backlog/tasks/task-7 - Beta/task.md",
-			"backlog/tasks/task-7/task.md",
+			"agentic-workspace/completed/task-7/task.md",
+			"agentic-workspace/tasks/task-7 - Beta/task.md",
+			"agentic-workspace/tasks/task-7/task.md",
 		]);
 	});
 
@@ -99,9 +99,9 @@ describe("duplicate task diagnosis", () => {
 			await core.filesystem.loadTask("TASK-7");
 		} catch (error) {
 			const message = String(error).replaceAll("\\", "/");
-			expect(message).toContain("backlog/tasks/task-7/task.md");
-			expect(message).toContain("backlog/completed/task-7/task.md");
-			expect(message).toContain("backlog doctor");
+			expect(message).toContain("agentic-workspace/tasks/task-7/task.md");
+			expect(message).toContain("agentic-workspace/completed/task-7/task.md");
+			expect(message).toContain("agentic-workspace doctor");
 		}
 	});
 

@@ -77,7 +77,7 @@ export function parsePositiveIntegerOption(value: unknown, optionName: string, h
 	return Number.parseInt(rawValue, 10);
 }
 
-/** The command's full name, such as `backlog task list`. */
+/** The command's full name, such as `agentic-workspace task list`. */
 function commandName(command: Command): string {
 	const names: string[] = [];
 	for (let current: Command | null = command; current; current = current.parent) {
@@ -179,7 +179,9 @@ export function nextPageCommand(window: ListWindow, nextSkip: number): string {
 			kept.push(args[index] ?? "");
 		}
 	}
-	return ["agenticworkspace", ...kept, "--skip", String(nextSkip), ...afterSeparator].map(quoteShellArgument).join(" ");
+	return ["agentic-workspace", ...kept, "--skip", String(nextSkip), ...afterSeparator]
+		.map(quoteShellArgument)
+		.join(" ");
 }
 
 /** Names the printed range, the total, and the command for the following items; null for a complete list. */

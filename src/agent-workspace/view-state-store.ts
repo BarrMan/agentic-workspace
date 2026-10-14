@@ -71,7 +71,7 @@ async function writableDirectory(path: string): Promise<boolean> {
 }
 
 async function canonicalViewLock(projectRoot: string, external: boolean): Promise<string | undefined> {
-	const canonical = join(projectRoot, "backlog", ".locks", "workspace-view-state");
+	const canonical = join(projectRoot, "agentic-workspace", ".locks", "workspace-view-state");
 	let parent = dirname(canonical);
 	for (;;) {
 		let exists = false;
@@ -134,7 +134,7 @@ class ViewStateStoreImpl<T extends object> implements ViewStateStore<T> {
 		const physicalStateRoot = await realpath(stateRoot);
 		const physicalProjectRoot = await realpath(this.rootDir);
 		this.externalStateRoot =
-			physicalStateRoot === join(physicalProjectRoot, ".backlog") ? undefined : physicalStateRoot;
+			physicalStateRoot === join(physicalProjectRoot, ".agentic-workspace") ? undefined : physicalStateRoot;
 		await this.seed();
 		this.startWatching();
 	}

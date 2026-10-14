@@ -15,8 +15,8 @@ import {
 	type ServerNotification,
 	type ServerRequest,
 } from "@modelcontextprotocol/sdk/types.js";
-import { Core } from "../core/backlog.ts";
-import type { BacklogConfig } from "../types/index.ts";
+import { Core } from "../core/agentic-workspace.ts";
+import type { AgenticWorkspaceConfig } from "../types/index.ts";
 import { getPackageName } from "../utils/app-info.ts";
 import { getVersion } from "../utils/version.ts";
 import { registerInitRequiredResource } from "./resources/init-required/index.ts";
@@ -51,7 +51,7 @@ const INSTRUCTIONS =
 
 type ServerInitOptions = {
 	debug?: boolean;
-	/** When true (from --cwd/BACKLOG_CWD), the root is fixed and client roots are never consulted. */
+	/** When true (from --cwd/AGENTIC_WORKSPACE_CWD), the root is fixed and client roots are never consulted. */
 	pinned?: boolean;
 };
 
@@ -119,11 +119,11 @@ export class McpServer {
 	 * returns to the launch-directory project instead of init-required.
 	 *
 	 * The first request-scoped handler invocation can query MCP roots to look
-	 * for a valid backlog project. If found, the activation owner replaces the immutable Core,
+	 * for a valid agentic-workspace project. If found, the activation owner replaces the immutable Core,
 	 * registers the full toolset, and notifies the client. A roots change resolves a fresh
 	 * binding even when its project root is unchanged.
 	 */
-	enableRootsDiscovery(options: { debug?: boolean; startupConfig: BacklogConfig | null }): void {
+	enableRootsDiscovery(options: { debug?: boolean; startupConfig: AgenticWorkspaceConfig | null }): void {
 		this.rootActivation.enable(options);
 	}
 
@@ -133,7 +133,7 @@ export class McpServer {
 			console.error(message);
 		}
 		// Also send via MCP logging protocol when transport is connected
-		this.server.sendLoggingMessage({ level: "info", logger: "agenticworkspace", data: message }).catch(() => {});
+		this.server.sendLoggingMessage({ level: "info", logger: "agentic-workspace", data: message }).catch(() => {});
 	}
 
 	private async ensureRootsResolved(extra?: ServerRequestExtra): Promise<void> {
@@ -143,7 +143,7 @@ export class McpServer {
 	/**
 	 * Register the full toolset for the currently selected immutable Core instance.
 	 */
-	private async setCapabilities(config: BacklogConfig | null, projectRoot: string): Promise<void> {
+	private async setCapabilities(config: AgenticWorkspaceConfig | null, projectRoot: string): Promise<void> {
 		if (config) this.registerProjectCapabilities(config);
 		else this.registerFallbackCapabilities(projectRoot);
 		await this.notifyRegistrationChanged();
@@ -153,11 +153,11 @@ export class McpServer {
 		this.replaceRegistries(() => registerInitRequiredResource(this, projectRoot));
 	}
 
-	public registerProjectCapabilities(config: BacklogConfig): void {
+	public registerProjectCapabilities(config: AgenticWorkspaceConfig): void {
 		this.replaceRegistries(() => this.addProjectCapabilities(config));
 	}
 
-	private addProjectCapabilities(config: BacklogConfig): void {
+	private addProjectCapabilities(config: AgenticWorkspaceConfig): void {
 		registerWorkflowResources(this);
 		registerWorkflowTools(this);
 		registerTaskTools(this, config);
@@ -382,7 +382,7 @@ export class McpServer {
 /**
  * Factory that bootstraps a fully configured MCP server instance.
  *
- * If backlog is not initialized in the project directory, the server will start
+ * If agentic-workspace is not initialized in the project directory, the server will start
  * in fallback mode with roots discovery enabled — the first request-scoped MCP
  * handler can then query client roots to find the correct project.
  */

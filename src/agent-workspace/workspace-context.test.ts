@@ -75,7 +75,7 @@ describe("shared workspace context", () => {
 		).rejects.toThrow("root");
 		for (const value of [
 			{ ...base, paneId: "42" },
-			{ v: 2, pid: 1, session: "backlog-task-4242abcd", rootDir: ROOT },
+			{ v: 2, pid: 1, session: "agentic-workspace-task-4242abcd", rootDir: ROOT },
 			{ v: 3, paneId: "%42", rootDir: ROOT },
 		])
 			expect(() => parseWorkspaceContext(JSON.stringify(value))).toThrow();

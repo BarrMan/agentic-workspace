@@ -11,7 +11,7 @@
 
 ## 1. What we are trying to do
 
-BACK-728 is the multi-pane agent workspace launched by `agenticworkspace workspace`. It has two
+BACK-728 is the multi-pane agent workspace launched by `agentic-workspace workspace`. It has two
 user-visible problems:
 
 1. **Ctrl+C / `q` does not exit.** The app dies visually (all panes go dead) but the
@@ -36,14 +36,14 @@ working spike. It has **not** been formally approved, and no migration work has 
 ```
 HEAD:   243ba18b
 Status: clean except untracked directories (listed below)
-Binary: dist/agenticworkspace is CURRENT (nothing in src/ is newer)
+Binary: dist/agentic-workspace is CURRENT (nothing in src/ is newer)
 ```
 
 Untracked directories, **none of which should be committed**:
 
 | Path | Origin | Notes |
 |---|---|---|
-| `.backlog/` | the user's live project data | **Never modify, move, delete, or commit** |
+| `.agentic-workspace/` | the user's live project data | **Never modify, move, delete, or commit** |
 | `docs/pi-extensions/` | **unknown** | ownership never established. Do not commit. |
 | `.omp/` | appeared during this session | likely agent-session scratch |
 | `.pi/` | appeared during this session | likely agent-session scratch |
@@ -53,7 +53,7 @@ Untracked directories, **none of which should be committed**:
 ```sh
 bun run check:types     # tsc --noEmit — THIS is the typecheck
 bun test                # full suite, ~170s
-bun run build           # produces dist/agenticworkspace
+bun run build           # produces dist/agentic-workspace
 bun run check           # biome check (lint+format)
 bun run lint            # biome lint --write
 ```
@@ -64,12 +64,12 @@ bun run lint            # biome lint --write
 
 ### 3.1 Rebuild after every source change (MANDATORY, not batchable)
 
-`/opt/homebrew/bin/agenticworkspace` is a symlink to `/Users/imribarr/Projects/agentic-workspace/dist/agenticworkspace`.
-Editing `src/**` changes nothing about what the `agenticworkspace` command actually runs.
+`/opt/homebrew/bin/agentic-workspace` is a symlink to `/Users/imribarr/Projects/agentic-workspace/dist/agentic-workspace`.
+Editing `src/**` changes nothing about what the `agentic-workspace` command actually runs.
 
 ```sh
 bun run build
-find src -name '*.ts' -newer dist/agenticworkspace   # MUST print nothing
+find src -name '*.ts' -newer dist/agentic-workspace   # MUST print nothing
 ```
 
 If the second command lists files, the build did not pick them up. **Do not proceed to
@@ -88,7 +88,7 @@ clean checkout for comparison.
 
 A bare `tmux kill-server` resolves to the **developer's default socket** and destroys every
 unrelated session on the machine. The project has a dedicated guard for this at
-`src/test/tmux-test-server.ts` (`TEST_TMUX_SOCKET_PREFIX = "backlog-test"`, plus
+`src/test/tmux-test-server.ts` (`TEST_TMUX_SOCKET_PREFIX = "agentic-workspace-test"`, plus
 `assertIsolatedSocket`). Kill tmux servers **by PID** or via a private socket.
 
 Also note: `tmux list-panes -a` **ignores `-t`** and shows real user sessions. Do not run it
@@ -99,7 +99,7 @@ against the default socket.
 There is a genuine trap here, described in §4.2 — a test passed and the user-visible bug
 persisted, because the test exercised a different process than the one the user launches.
 
-### 3.5 Never modify `.git/backlog-workspace/88f5d4c122ec...` or the user's `.backlog/`
+### 3.5 Never modify `.git/backlog-workspace/88f5d4c122ec...` or the user's `.agentic-workspace/`
 
 Without explicit permission.
 
@@ -109,7 +109,7 @@ Without explicit permission.
 
 ### 4.1 Why Ctrl+C does not exit
 
-The outer `agenticworkspace workspace` process calls `TmuxWorkspace.enter()`
+The outer `agentic-workspace workspace` process calls `TmuxWorkspace.enter()`
 (`src/agent-workspace/tmux-workspace.ts:812`), which calls `ensureHost()`,
 `installTerminationHandlers()`, `showWorkspace()`, then **`attachClient()`** (line 827).
 
@@ -141,7 +141,7 @@ The quit helpers were hardened and `workspace-quit` / `workspace-quit-keybind` p
 **That e2e test was invalid for the user's symptom.** It exercised the inner `workspace-ui`
 process (whose call sites at `src/ui/workspace/regions/navigation.ts:79` and
 `src/ui/workspace/navigation-keys.ts:52` correctly call
-`quitWorkspaceHost(host, host.exit ?? process.exit)`), not the outer `agenticworkspace workspace`
+`quitWorkspaceHost(host, host.exit ?? process.exit)`), not the outer `agentic-workspace workspace`
 process the user actually launches. The inner path was never the problem.
 
 ### 4.3 Why it is laggy
@@ -150,8 +150,8 @@ Measured, not guessed:
 
 | Scenario | Result |
 |---|---|
-| Populated `.backlog/`, switching panes | 18.9 / 15.6 / 18.6 / 18.8 ms, **one** `swap-pane`, zero spawns |
-| Missing `.backlog/` | 60.6 / 16.8 / 16.8 / 17.9 ms, nothing displayed, first switch = 9 tmux calls |
+| Populated `.agentic-workspace/`, switching panes | 18.9 / 15.6 / 18.6 / 18.8 ms, **one** `swap-pane`, zero spawns |
+| Missing `.agentic-workspace/` | 60.6 / 16.8 / 16.8 / 17.9 ms, nothing displayed, first switch = 9 tmux calls |
 | Entering a **sessionless** task | **89 tmux calls / 630 ms** |
 | Idle, 30 s | **240 tmux calls / 1,836 ms** serialized tmux wait |
 
@@ -159,7 +159,7 @@ Slowest call sites: `show-options` 599 ms, `display-message` 564 ms, `select-pan
 `list-panes` 328 ms. Every tmux invocation costs ~6 ms and the code path uses **sequential
 awaits**, so costs multiply linearly.
 
-**The missing `.backlog/` migration was disproved as the cause.** It makes session
+**The missing `.agentic-workspace/` migration was disproved as the cause.** It makes session
 resolution silently broken but does not make ordinary switches materially slower.
 
 Three concrete defects identified:
@@ -226,7 +226,7 @@ view-state store, `recover()` split, session lookup deduplication, removal of
 - `src/ui/workspace/pane.ts` — footer input-focus matcher fix.
 - `src/ui/unified/controller.ts` — tick no longer re-presents the workspace every tick. (This path was removed with the legacy blessed TUI.)
 - `src/agent-workspace/tmux-workspace.ts`, `src/utils/debug-log.ts` — env-forwarding for
-  `BACKLOG_DEBUG` into pane children. **Note:** these two were not among the three named
+  `AGENTIC_WORKSPACE_DEBUG` into pane children. **Note:** these two were not among the three named
   fixes but are legitimate and documented in the commit body.
 - Tests: `workspace-quit.test.ts` (modified), `workspace-quit-keybind.test.ts` (new),
   `workspace-tick-presentation.test.ts` (new), `workspace-search-rendering.test.ts`,
@@ -332,7 +332,7 @@ user must decide. This is a product decision, not a technical one.
 | Item | Status |
 |---|---|
 | Ctrl+C narrow fix (option A) | Designed, **not implemented** — see §4.1 |
-| `.backlog/` migration | **Never run.** The user has not done it. Roughly 30 live session dirs remain under `.git/backlog-workspace/`. Leave it to the user. |
+| `.agentic-workspace/` migration | **Never run.** The user has not done it. Roughly 30 live session dirs remain under `.git/backlog-workspace/`. Leave it to the user. |
 | `docs/pi-extensions/01-agent-yaml-error.md` | Untracked, ownership unknown, nothing in `src/` references it. Needs a decision. |
 | `docs/BACK-728-handoff.md` (this file) | Untracked, not committed |
 | Ink migration | Not started. Spike only. |
@@ -365,8 +365,8 @@ Supporting facts:
 - tmux is **not** currently drawing the UI. `tmux-workspace.ts:637` respawns panes as the
   same binary running blessed via `workspace-ui`.
 - Agent output is scraped by `capture-pane` polling at `src/agent-workspace/tmux/pane.ts:187`.
-- Debug instrumentation already supports `BACKLOG_DEBUG=tmux,view,session,store`,
-  `BACKLOG_DEBUG_FILE`, `BACKLOG_DEBUG_VERBOSE`; pane children receive these env vars.
+- Debug instrumentation already supports `AGENTIC_WORKSPACE_DEBUG=tmux,view,session,store`,
+  `AGENTIC_WORKSPACE_DEBUG_FILE`, `AGENTIC_WORKSPACE_DEBUG_VERBOSE`; pane children receive these env vars.
 - `Bun.file(p).text()` is safe against atomic-rename writes. `Bun.Glob` does **not** descend
   into dot-directories.
 - tmux facts: `=title` cannot target `swap-pane` (use pane IDs); pane IDs are monotonic and
@@ -375,7 +375,7 @@ Supporting facts:
 ### Target architecture
 
 ```
-agenticworkspace workspace
+agentic-workspace workspace
   └─ ONE Ink process — owns the terminal, alternateScreen, ctrl+c
        ├─ navbar / task list / details / footer   ← Yoga Flexbox, replaces 6 processes
        ├─ live agent output  ← pipe-pane → @xterm/headless → cell grid → Ink <Text>
@@ -401,10 +401,10 @@ clean quit** via `quitWorkspace()` → `killPaneProcessTrees()` (descendants-fir
    explicit shutdown, resume on relaunch. Reuse `/Users/imribarr/Projects/ink-pty-spike` as
    the starting skeleton.
 5. If **A**: resolve §8.3, implement the three changes in §4.1, rebuild, and **test the outer
-   `agenticworkspace workspace` process** — not the inner `workspace-ui`.
+   `agentic-workspace workspace` process** — not the inner `workspace-ui`.
 6. Re-measure a clean test baseline (§5 numbers are from a dirty tree).
 7. Decide what to do with `docs/pi-extensions/`.
-8. Run the `.backlog/` migration — but only with the user's explicit go-ahead.
+8. Run the `.agentic-workspace/` migration — but only with the user's explicit go-ahead.
 
 ---
 
@@ -439,7 +439,7 @@ default socket. **This is worth auditing** — it is a live risk to the user's s
 ### 12.3 Cleanup that was performed
 
 Killed: 3 runaway `minimal.tsx` loops; orphan tmux server PID 2853 (by PID); 5
-`dist/agenticworkspace workspace-ui` panes; 4 `sleep` processes; 17 stale tmux socket files (each
+`dist/agentic-workspace workspace-ui` panes; 4 `sleep` processes; 17 stale tmux socket files (each
 truth-tested by exit code first). Verified zero remaining tmux servers, sockets, or orphans.
 All three live `pi` agent sessions survived.
 

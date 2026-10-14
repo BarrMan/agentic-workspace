@@ -190,11 +190,12 @@ describe("agent workspace CLI", () => {
 		const store = new SessionStore(testDir, new BunRunner());
 		const { taskDir } = await store.paths(taskId);
 		await store.mutateMode(taskId, "plan", async (state) => {
+			state.activeSessionId = sessionId;
 			state.sessions.push({
 				id: sessionId,
 				taskId,
 				preset: "opencode",
-				tmuxName: `backlog-current-${sessionId.slice(0, 8)}`,
+				tmuxName: `agentic-workspace-current-${sessionId.slice(0, 8)}`,
 				nativeSessionId: "native-opencode-id",
 				cwd: testDir,
 				createdAt: new Date().toISOString(),
@@ -203,16 +204,16 @@ describe("agent workspace CLI", () => {
 				bootstrapPath: join(taskDir, `${sessionId}.md`),
 			});
 		});
-		const tmuxName = `backlog-current-${sessionId.slice(0, 8)}`;
+		const tmuxName = `agentic-workspace-current-${sessionId.slice(0, 8)}`;
 		const tmuxSocket = uniqueTmuxSocket("agent-workspace-cli");
 		await $`tmux -f /dev/null -L ${tmuxSocket} new-session -d -s ${tmuxName} sleep 30`.quiet();
 		try {
 			const paneId = (
 				await $`tmux -f /dev/null -L ${tmuxSocket} display-message -p -t ${tmuxName} ${"#{pane_id}"}`.text()
 			).trim();
-			await $`tmux -f /dev/null -L ${tmuxSocket} set-option -p -t ${paneId} @backlog_root ${testDir}`.quiet();
-			await $`tmux -f /dev/null -L ${tmuxSocket} set-option -p -t ${paneId} @backlog_task ${taskId}`.quiet();
-			await $`tmux -f /dev/null -L ${tmuxSocket} set-option -p -t ${paneId} @backlog_session ${sessionId}`.quiet();
+			await $`tmux -f /dev/null -L ${tmuxSocket} set-option -p -t ${paneId} @agentic_workspace_root ${testDir}`.quiet();
+			await $`tmux -f /dev/null -L ${tmuxSocket} set-option -p -t ${paneId} @agentic_workspace_task ${taskId}`.quiet();
+			await $`tmux -f /dev/null -L ${tmuxSocket} set-option -p -t ${paneId} @agentic_workspace_session ${sessionId}`.quiet();
 			const savedSession = (await store.read(taskId)).modes?.plan?.sessions.find((session) => session.id === sessionId);
 			if (!savedSession) throw new Error("Expected seeded session in durable history.");
 			const context = JSON.stringify({
@@ -224,7 +225,7 @@ describe("agent workspace CLI", () => {
 			});
 			const result = await $`${cli} agent-config model set --current`
 				.cwd(testDir)
-				.env({ ...env, BACKLOG_TMUX_SOCKET: tmuxSocket, BACKLOG_WORKSPACE_CONTEXT: context })
+				.env({ ...env, AGENTIC_WORKSPACE_TMUX_SOCKET: tmuxSocket, AGENTIC_WORKSPACE_WORKSPACE_CONTEXT: context })
 				.text();
 			expect(JSON.parse(result)).toMatchObject({ newModel: "provider/current-model" });
 			const config = JSON.parse(await $`${cli} agent-config show project`.cwd(testDir).env(env).text());
@@ -268,11 +269,12 @@ describe("agent workspace CLI", () => {
 		await Bun.write(outputPath, "saved session output\n");
 		await Bun.write(bootstrapPath, "# session bootstrap\n");
 		await store.mutateMode(taskId, "plan", async (state) => {
+			state.activeSessionId = sessionId;
 			state.sessions.push({
 				id: sessionId,
 				taskId,
 				preset: "opencode",
-				tmuxName: `backlog-${taskId.toLowerCase()}-${sessionId.slice(0, 8)}`,
+				tmuxName: `agentic-workspace-${taskId.toLowerCase()}-${sessionId.slice(0, 8)}`,
 				cwd: testDir,
 				createdAt: new Date().toISOString(),
 				status: "stopped",
@@ -303,24 +305,37 @@ describe("agent workspace CLI", () => {
 		const store = new SessionStore(testDir, new BunRunner());
 		const { taskDir } = await store.paths(taskId);
 		const sessionId = randomUUID();
+		const activeSessionId = randomUUID();
 		await store.mutateMode(taskId, "plan", async (state) => {
 			state.sessions.push({
 				id: sessionId,
 				taskId,
 				preset: "claude",
-				tmuxName: `backlog-${taskId.toLowerCase()}-${sessionId.slice(0, 8)}`,
+				tmuxName: `agentic-workspace-${taskId.toLowerCase()}-${sessionId.slice(0, 8)}`,
 				nativeSessionId: "native-1",
 				cwd: testDir,
-				createdAt: new Date().toISOString(),
+				createdAt: "2026-01-01T00:00:00.000Z",
 				status: "stopped",
 				outputPath: join(taskDir, `${sessionId}.log`),
 				bootstrapPath: join(taskDir, `${sessionId}.md`),
 			});
+			state.sessions.push({
+				id: activeSessionId,
+				taskId,
+				preset: "claude",
+				tmuxName: `agentic-workspace-${taskId.toLowerCase()}-${activeSessionId.slice(0, 8)}`,
+				cwd: testDir,
+				createdAt: "2026-02-01T00:00:00.000Z",
+				status: "stopped",
+				outputPath: join(taskDir, `${activeSessionId}.log`),
+				bootstrapPath: join(taskDir, `${activeSessionId}.md`),
+			});
+			state.activeSessionId = activeSessionId;
 		});
 
 		const question = "what is the status?";
 		const result = await $`${cli} agent-session ask ${taskId} ${question}`.cwd(testDir).nothrow().quiet();
-		expect(result.exitCode).toBe(0);
+		expect(result.exitCode, result.stderr.toString()).toBe(0);
 		const stdout = result.stdout.toString();
 		expect(stdout).toContain("-p --resume native-1");
 		expect(stdout).not.toContain("--dangerously-skip-permissions");

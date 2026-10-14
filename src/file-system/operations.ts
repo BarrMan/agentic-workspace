@@ -6,7 +6,7 @@ import { resolveMainWorktreeRootSync } from "../git/main-worktree.ts";
 import { FrontmatterSchemaError, parseMarkdown, parseTask, TaskDependenciesParseError } from "../markdown/parser.ts";
 import { serializeTask } from "../markdown/serializer.ts";
 import {
-	type BacklogConfig,
+	type AgenticWorkspaceConfig,
 	type Decision,
 	type Document,
 	type Milestone,
@@ -14,12 +14,12 @@ import {
 	type Task,
 	type TaskListFilter,
 } from "../types/index.ts";
-import type { BacklogConfigSource } from "../utils/backlog-directory.ts";
+import type { AgenticWorkspaceConfigSource } from "../utils/agentic-workspace-directory.ts";
 import {
-	normalizeProjectBacklogDirectory,
-	resolveBacklogDirectory,
-	resolveBacklogDirectoryFromRootConfig,
-} from "../utils/backlog-directory.ts";
+	normalizeProjectAgenticWorkspaceDirectory,
+	resolveAgenticWorkspaceDirectory,
+	resolveAgenticWorkspaceDirectoryFromRootConfig,
+} from "../utils/agentic-workspace-directory.ts";
 import type { DraftIdentityFindings } from "../utils/duplicate-detection.ts";
 import { AmbiguousIdError, isAmbiguousIdError } from "../utils/entity-id.ts";
 import {
@@ -96,8 +96,8 @@ export type ContentMutation =
 export type ContentMutationListener = (mutation: ContentMutation) => void | Promise<void>;
 
 export type FileSystemSelection = {
-	backlogDirectory: string;
-	configLocation: BacklogConfigSource;
+	agenticWorkspaceDirectory: string;
+	configLocation: AgenticWorkspaceConfigSource;
 };
 
 const CREATE_LOCK_ERROR_CODE = "ECREATELOCK";
@@ -172,14 +172,14 @@ export class DraftIdentityError extends Error {
 class UnsupportedFlatDraftRecordError extends Error {}
 
 export class FileSystem {
-	private resolvedBacklogDir: string;
-	private resolvedBacklogDirName: string;
+	private resolvedAgenticWorkspaceDir: string;
+	private resolvedAgenticWorkspaceDirName: string;
 	private resolvedConfigPath: string;
-	private configSource: BacklogConfigSource;
+	private configSource: AgenticWorkspaceConfigSource;
 	private resolutionFrozen = false;
 	private readonly projectRoot: string;
-	private readonly backlogResolutionRoot: string;
-	private cachedConfig: BacklogConfig | null = null;
+	private readonly agenticWorkspaceResolutionRoot: string;
+	private cachedConfig: AgenticWorkspaceConfig | null = null;
 	private cachedConfigSnapshot: { path: string; content: string } | null = null;
 	private readonly taskRepository: TaskRepository;
 	private readonly contentRepository: ContentRepository;
@@ -196,22 +196,24 @@ export class FileSystem {
 
 	constructor(projectRoot: string, selection?: FileSystemSelection) {
 		this.projectRoot = projectRoot;
-		this.backlogResolutionRoot = resolveMainWorktreeRootSync(projectRoot) ?? projectRoot;
-		const resolution = resolveBacklogDirectory(this.backlogResolutionRoot);
-		const backlogDirectory = selection?.backlogDirectory ?? resolution.backlogDir ?? DEFAULT_DIRECTORIES.BACKLOG;
-		const normalizedSelection = normalizeProjectBacklogDirectory(backlogDirectory);
-		if (!normalizedSelection) throw new Error("Backlog directory must be a project-relative path.");
-		this.resolvedBacklogDirName = normalizedSelection;
-		this.resolvedBacklogDir = selection
-			? join(this.backlogResolutionRoot, normalizedSelection)
-			: (resolution.backlogPath ?? join(this.backlogResolutionRoot, DEFAULT_DIRECTORIES.BACKLOG));
+		this.agenticWorkspaceResolutionRoot = resolveMainWorktreeRootSync(projectRoot) ?? projectRoot;
+		const resolution = resolveAgenticWorkspaceDirectory(this.agenticWorkspaceResolutionRoot);
+		const agenticWorkspaceDirectory =
+			selection?.agenticWorkspaceDirectory ?? resolution.agenticWorkspaceDir ?? DEFAULT_DIRECTORIES.AGENTIC_WORKSPACE;
+		const normalizedSelection = normalizeProjectAgenticWorkspaceDirectory(agenticWorkspaceDirectory);
+		if (!normalizedSelection) throw new Error("AgenticWorkspace directory must be a project-relative path.");
+		this.resolvedAgenticWorkspaceDirName = normalizedSelection;
+		this.resolvedAgenticWorkspaceDir = selection
+			? join(this.agenticWorkspaceResolutionRoot, normalizedSelection)
+			: (resolution.agenticWorkspacePath ??
+				join(this.agenticWorkspaceResolutionRoot, DEFAULT_DIRECTORIES.AGENTIC_WORKSPACE));
 		this.configSource = selection?.configLocation ?? resolution.configSource ?? "folder";
 		this.resolvedConfigPath =
 			this.configSource === "root"
-				? join(this.backlogResolutionRoot, DEFAULT_FILES.ROOT_CONFIG)
+				? join(this.agenticWorkspaceResolutionRoot, DEFAULT_FILES.ROOT_CONFIG)
 				: selection
-					? join(this.resolvedBacklogDir, DEFAULT_FILES.CONFIG)
-					: (resolution.configPath ?? join(this.resolvedBacklogDir, DEFAULT_FILES.CONFIG));
+					? join(this.resolvedAgenticWorkspaceDir, DEFAULT_FILES.CONFIG)
+					: (resolution.configPath ?? join(this.resolvedAgenticWorkspaceDir, DEFAULT_FILES.CONFIG));
 		this.taskRepository = new TaskRepository();
 		this.parsedTaskFiles = this.taskRepository.parsedFiles;
 		this.taskFileReadGenerations = this.taskRepository.fileReadGenerations;
@@ -229,40 +231,40 @@ export class FileSystem {
 		});
 	}
 
-	private async getBacklogDir(): Promise<string> {
-		return this.resolvedBacklogDir;
+	private async getAgenticWorkspaceDir(): Promise<string> {
+		return this.resolvedAgenticWorkspaceDir;
 	}
 
 	// Public accessors for directory paths
-	get backlogDir(): string {
-		return this.resolvedBacklogDir;
+	get agenticWorkspaceDir(): string {
+		return this.resolvedAgenticWorkspaceDir;
 	}
-	get backlogDirName(): string {
-		return this.resolvedBacklogDirName;
+	get agenticWorkspaceDirName(): string {
+		return this.resolvedAgenticWorkspaceDirName;
 	}
 	get tasksDir(): string {
-		return join(this.resolvedBacklogDir, DEFAULT_DIRECTORIES.TASKS);
+		return join(this.resolvedAgenticWorkspaceDir, DEFAULT_DIRECTORIES.TASKS);
 	}
 	get completedDir(): string {
-		return join(this.resolvedBacklogDir, DEFAULT_DIRECTORIES.COMPLETED);
+		return join(this.resolvedAgenticWorkspaceDir, DEFAULT_DIRECTORIES.COMPLETED);
 	}
 
 	get archiveTasksDir(): string {
-		return join(this.resolvedBacklogDir, DEFAULT_DIRECTORIES.ARCHIVE_TASKS);
+		return join(this.resolvedAgenticWorkspaceDir, DEFAULT_DIRECTORIES.ARCHIVE_TASKS);
 	}
 	get archiveMilestonesDir(): string {
-		return join(this.resolvedBacklogDir, DEFAULT_DIRECTORIES.ARCHIVE_MILESTONES);
+		return join(this.resolvedAgenticWorkspaceDir, DEFAULT_DIRECTORIES.ARCHIVE_MILESTONES);
 	}
 	get decisionsDir(): string {
-		return join(this.resolvedBacklogDir, DEFAULT_DIRECTORIES.DECISIONS);
+		return join(this.resolvedAgenticWorkspaceDir, DEFAULT_DIRECTORIES.DECISIONS);
 	}
 
 	get docsDir(): string {
-		return join(this.resolvedBacklogDir, DEFAULT_DIRECTORIES.DOCS);
+		return join(this.resolvedAgenticWorkspaceDir, DEFAULT_DIRECTORIES.DOCS);
 	}
 
 	get milestonesDir(): string {
-		return join(this.resolvedBacklogDir, DEFAULT_DIRECTORIES.MILESTONES);
+		return join(this.resolvedAgenticWorkspaceDir, DEFAULT_DIRECTORIES.MILESTONES);
 	}
 
 	get configFilePath(): string {
@@ -272,11 +274,16 @@ export class FileSystem {
 	/** Filesystem service for task-relative files; task records remain managed by this FileSystem. */
 	get taskArtifacts(): TaskArtifactRepository {
 		return new TaskArtifactRepository({
-			backlogDirectory: this.resolvedBacklogDir,
-			projectRoot: this.backlogResolutionRoot,
+			agenticWorkspaceDirectory: this.resolvedAgenticWorkspaceDir,
+			projectRoot: this.agenticWorkspaceResolutionRoot,
 			onMutation: (event) => {
 				for (const listener of this.contentMutationListeners) {
-					void listener({ type: "artifact", root: this.resolvedBacklogDir, taskId: event.taskId, path: event.path });
+					void listener({
+						type: "artifact",
+						root: this.resolvedAgenticWorkspaceDir,
+						taskId: event.taskId,
+						path: event.path,
+					});
 				}
 			},
 		});
@@ -303,7 +310,7 @@ export class FileSystem {
 				return join(canonical(dirname(path)), basename(path));
 			}
 		};
-		this.resolvedBacklogDir = canonical(this.resolvedBacklogDir);
+		this.resolvedAgenticWorkspaceDir = canonical(this.resolvedAgenticWorkspaceDir);
 		this.resolvedConfigPath = canonical(this.resolvedConfigPath);
 		this.resolutionFrozen = true;
 	}
@@ -314,14 +321,20 @@ export class FileSystem {
 			: null;
 	}
 
-	publishConfig(config: BacklogConfig, sourceConfigPath: string, content: string): boolean {
-		const rootConfigPath = join(this.backlogResolutionRoot, DEFAULT_FILES.ROOT_CONFIG);
+	publishConfig(config: AgenticWorkspaceConfig, sourceConfigPath: string, content: string): boolean {
+		const rootConfigPath = join(this.agenticWorkspaceResolutionRoot, DEFAULT_FILES.ROOT_CONFIG);
 		if (resolve(sourceConfigPath) === resolve(rootConfigPath)) {
-			if (config.backlogDirectory !== undefined && normalizeProjectBacklogDirectory(config.backlogDirectory) === null) {
+			if (
+				config.agenticWorkspaceDirectory !== undefined &&
+				normalizeProjectAgenticWorkspaceDirectory(config.agenticWorkspaceDirectory) === null
+			) {
 				return false;
 			}
-			const resolution = resolveBacklogDirectoryFromRootConfig(this.backlogResolutionRoot, config.backlogDirectory);
-			if (!resolution.backlogDir || !resolution.backlogPath || resolution.configSource !== "root") {
+			const resolution = resolveAgenticWorkspaceDirectoryFromRootConfig(
+				this.agenticWorkspaceResolutionRoot,
+				config.agenticWorkspaceDirectory,
+			);
+			if (!resolution.agenticWorkspaceDir || !resolution.agenticWorkspacePath || resolution.configSource !== "root") {
 				return false;
 			}
 			if (!this.resolutionFrozen) this.applyConfigResolution(resolution);
@@ -332,18 +345,19 @@ export class FileSystem {
 	}
 
 	private refreshConfigResolution(): void {
-		this.applyConfigResolution(resolveBacklogDirectory(this.backlogResolutionRoot));
+		this.applyConfigResolution(resolveAgenticWorkspaceDirectory(this.agenticWorkspaceResolutionRoot));
 	}
 
-	private applyConfigResolution(resolution: ReturnType<typeof resolveBacklogDirectory>): void {
-		const backlogDirName = resolution.backlogDir ?? DEFAULT_DIRECTORIES.BACKLOG;
-		const backlogDir = resolution.backlogPath ?? join(this.projectRoot, DEFAULT_DIRECTORIES.BACKLOG);
-		if (resolve(backlogDir) !== resolve(this.resolvedBacklogDir)) {
+	private applyConfigResolution(resolution: ReturnType<typeof resolveAgenticWorkspaceDirectory>): void {
+		const agenticWorkspaceDirName = resolution.agenticWorkspaceDir ?? DEFAULT_DIRECTORIES.AGENTIC_WORKSPACE;
+		const agenticWorkspaceDir =
+			resolution.agenticWorkspacePath ?? join(this.projectRoot, DEFAULT_DIRECTORIES.AGENTIC_WORKSPACE);
+		if (resolve(agenticWorkspaceDir) !== resolve(this.resolvedAgenticWorkspaceDir)) {
 			this.invalidateTaskParseCache();
 		}
-		this.resolvedBacklogDirName = backlogDirName;
-		this.resolvedBacklogDir = backlogDir;
-		this.resolvedConfigPath = resolution.configPath ?? join(this.resolvedBacklogDir, DEFAULT_FILES.CONFIG);
+		this.resolvedAgenticWorkspaceDirName = agenticWorkspaceDirName;
+		this.resolvedAgenticWorkspaceDir = agenticWorkspaceDir;
+		this.resolvedConfigPath = resolution.configPath ?? join(this.resolvedAgenticWorkspaceDir, DEFAULT_FILES.CONFIG);
 		this.configSource = resolution.configSource ?? "folder";
 	}
 
@@ -351,79 +365,79 @@ export class FileSystem {
 		this.taskRepository.invalidate();
 	}
 
-	resolveBacklogDirectoryInfo() {
+	resolveAgenticWorkspaceDirectoryInfo() {
 		if (this.resolutionFrozen)
 			return {
 				projectRoot: this.projectRoot,
-				backlogDir: this.resolvedBacklogDirName,
-				backlogPath: this.resolvedBacklogDir,
+				agenticWorkspaceDir: this.resolvedAgenticWorkspaceDirName,
+				agenticWorkspacePath: this.resolvedAgenticWorkspaceDir,
 				source: null,
 				configPath: this.resolvedConfigPath,
 				configSource: this.configSource,
-				rootConfigPath: join(this.backlogResolutionRoot, DEFAULT_FILES.ROOT_CONFIG),
+				rootConfigPath: join(this.agenticWorkspaceResolutionRoot, DEFAULT_FILES.ROOT_CONFIG),
 				rootConfigExists: this.configSource === "root",
 			};
-		return resolveBacklogDirectory(this.backlogResolutionRoot);
+		return resolveAgenticWorkspaceDirectory(this.agenticWorkspaceResolutionRoot);
 	}
 
 	private async getTasksDir(): Promise<string> {
-		const backlogDir = await this.getBacklogDir();
-		return join(backlogDir, DEFAULT_DIRECTORIES.TASKS);
+		const agenticWorkspaceDir = await this.getAgenticWorkspaceDir();
+		return join(agenticWorkspaceDir, DEFAULT_DIRECTORIES.TASKS);
 	}
 
 	async getDraftsDir(): Promise<string> {
-		const backlogDir = await this.getBacklogDir();
-		return join(backlogDir, DEFAULT_DIRECTORIES.DRAFTS);
+		const agenticWorkspaceDir = await this.getAgenticWorkspaceDir();
+		return join(agenticWorkspaceDir, DEFAULT_DIRECTORIES.DRAFTS);
 	}
 
 	async getArchiveTasksDir(): Promise<string> {
-		const backlogDir = await this.getBacklogDir();
-		return join(backlogDir, DEFAULT_DIRECTORIES.ARCHIVE_TASKS);
+		const agenticWorkspaceDir = await this.getAgenticWorkspaceDir();
+		return join(agenticWorkspaceDir, DEFAULT_DIRECTORIES.ARCHIVE_TASKS);
 	}
 
 	private async getArchiveMilestonesDir(): Promise<string> {
-		const backlogDir = await this.getBacklogDir();
-		return join(backlogDir, DEFAULT_DIRECTORIES.ARCHIVE_MILESTONES);
+		const agenticWorkspaceDir = await this.getAgenticWorkspaceDir();
+		return join(agenticWorkspaceDir, DEFAULT_DIRECTORIES.ARCHIVE_MILESTONES);
 	}
 
 	private async getArchiveDraftsDir(): Promise<string> {
-		const backlogDir = await this.getBacklogDir();
-		return join(backlogDir, DEFAULT_DIRECTORIES.ARCHIVE_DRAFTS);
+		const agenticWorkspaceDir = await this.getAgenticWorkspaceDir();
+		return join(agenticWorkspaceDir, DEFAULT_DIRECTORIES.ARCHIVE_DRAFTS);
 	}
 
 	private async getDecisionsDir(): Promise<string> {
-		const backlogDir = await this.getBacklogDir();
-		return join(backlogDir, DEFAULT_DIRECTORIES.DECISIONS);
+		const agenticWorkspaceDir = await this.getAgenticWorkspaceDir();
+		return join(agenticWorkspaceDir, DEFAULT_DIRECTORIES.DECISIONS);
 	}
 
 	private async getDocsDir(): Promise<string> {
-		const backlogDir = await this.getBacklogDir();
-		return join(backlogDir, DEFAULT_DIRECTORIES.DOCS);
+		const agenticWorkspaceDir = await this.getAgenticWorkspaceDir();
+		return join(agenticWorkspaceDir, DEFAULT_DIRECTORIES.DOCS);
 	}
 
 	private async getMilestonesDir(): Promise<string> {
-		const backlogDir = await this.getBacklogDir();
-		return join(backlogDir, DEFAULT_DIRECTORIES.MILESTONES);
+		const agenticWorkspaceDir = await this.getAgenticWorkspaceDir();
+		return join(agenticWorkspaceDir, DEFAULT_DIRECTORIES.MILESTONES);
 	}
 
 	private async getCompletedDir(): Promise<string> {
-		const backlogDir = await this.getBacklogDir();
-		return join(backlogDir, DEFAULT_DIRECTORIES.COMPLETED);
+		const agenticWorkspaceDir = await this.getAgenticWorkspaceDir();
+		return join(agenticWorkspaceDir, DEFAULT_DIRECTORIES.COMPLETED);
 	}
 
-	async ensureBacklogStructure(): Promise<void> {
-		const backlogDir = await this.getBacklogDir();
+	async ensureAgenticWorkspaceStructure(): Promise<void> {
+		const agenticWorkspaceDir = await this.getAgenticWorkspaceDir();
 		const directories = [
-			backlogDir,
-			join(backlogDir, DEFAULT_DIRECTORIES.TASKS),
-			join(backlogDir, DEFAULT_DIRECTORIES.DRAFTS),
-			join(backlogDir, DEFAULT_DIRECTORIES.COMPLETED),
-			join(backlogDir, DEFAULT_DIRECTORIES.ARCHIVE_TASKS),
-			join(backlogDir, DEFAULT_DIRECTORIES.ARCHIVE_DRAFTS),
-			join(backlogDir, DEFAULT_DIRECTORIES.MILESTONES),
-			join(backlogDir, DEFAULT_DIRECTORIES.ARCHIVE_MILESTONES),
-			join(backlogDir, DEFAULT_DIRECTORIES.DOCS),
-			join(backlogDir, DEFAULT_DIRECTORIES.DECISIONS),
+			agenticWorkspaceDir,
+			join(agenticWorkspaceDir, DEFAULT_DIRECTORIES.TASKS),
+			join(agenticWorkspaceDir, DEFAULT_DIRECTORIES.DRAFTS),
+			join(agenticWorkspaceDir, DEFAULT_DIRECTORIES.COMPLETED),
+			join(agenticWorkspaceDir, DEFAULT_DIRECTORIES.ARCHIVE_TASKS),
+			join(agenticWorkspaceDir, DEFAULT_DIRECTORIES.ARCHIVE_DRAFTS),
+			join(agenticWorkspaceDir, DEFAULT_DIRECTORIES.MILESTONES),
+			join(agenticWorkspaceDir, DEFAULT_DIRECTORIES.ARCHIVE_MILESTONES),
+			join(agenticWorkspaceDir, DEFAULT_DIRECTORIES.DOCS),
+			join(agenticWorkspaceDir, DEFAULT_DIRECTORIES.DECISIONS),
 		];
 
 		await this.layout.ensureDirectories(directories);
@@ -470,7 +484,7 @@ export class FileSystem {
 				return null;
 			}
 		} catch {
-			// If config cannot be read, still try git and fall back to the backlog directory on failure.
+			// If config cannot be read, still try git and fall back to the AgenticWorkspace directory on failure.
 		}
 
 		try {
@@ -492,18 +506,18 @@ export class FileSystem {
 		}
 	}
 
-	private async getCreateLockTarget(backlogDir: string): Promise<CreateLockTarget> {
+	private async getCreateLockTarget(agenticWorkspaceDir: string): Promise<CreateLockTarget> {
 		const commonGitDir = await this.getGitCommonDir();
 		if (commonGitDir) {
 			return {
 				targetPath: commonGitDir,
-				locksDir: join(commonGitDir, "backlog.md", "locks"),
+				locksDir: join(commonGitDir, "agentic-workspace", "locks"),
 			};
 		}
 
 		return {
-			targetPath: backlogDir,
-			locksDir: join(backlogDir, ".locks"),
+			targetPath: agenticWorkspaceDir,
+			locksDir: join(agenticWorkspaceDir, ".locks"),
 		};
 	}
 
@@ -513,8 +527,8 @@ export class FileSystem {
 			return await fn();
 		}
 
-		const backlogDir = await this.getBacklogDir();
-		const lockTarget = await this.getCreateLockTarget(backlogDir);
+		const agenticWorkspaceDir = await this.getAgenticWorkspaceDir();
+		const lockTarget = await this.getCreateLockTarget(agenticWorkspaceDir);
 		const timeoutMs = options.timeoutMs ?? DEFAULT_CREATE_LOCK_TIMEOUT_MS;
 		const retryDelayMs = options.retryDelayMs ?? DEFAULT_CREATE_LOCK_RETRY_DELAY_MS;
 		return await this.withLockTarget(
@@ -538,7 +552,7 @@ export class FileSystem {
 	 * The lock target is the task file itself because proper-lockfile keys its in-process
 	 * lock registry by target path: a shared target with per-task lockfile paths would
 	 * clobber concurrent locks held by one process. Unlike the create lock, the lockfile
-	 * lives under this project's backlog directory rather than the shared git common dir:
+	 * lives under this project's AgenticWorkspace directory rather than the shared git common dir:
 	 * an edit protects one file, so sibling worktrees editing their own copy of a task must
 	 * not fail each other. USE_GLOBAL_TASK_ID_LOCK=false bypasses it like the create lock.
 	 */
@@ -576,7 +590,7 @@ export class FileSystem {
 			})
 			.join(".");
 		const lockKey = identityKey.replace(/[^a-z0-9._-]+/g, "-").replace(/^\.+/, "") || "unknown";
-		const locksDir = join(await this.getBacklogDir(), ".locks");
+		const locksDir = join(await this.getAgenticWorkspaceDir(), ".locks");
 		const targetPath = join(locksDir, `${DRAFT_DIRECTORY}-${lockKey}`);
 		await mkdir(targetPath, { recursive: true });
 		return await this.withLockTarget(
@@ -601,7 +615,7 @@ export class FileSystem {
 			.replace(/^\.+/, "");
 		return await this.withLockTarget(
 			filePath,
-			join(await this.getBacklogDir(), ".locks", `${scope}-${lockKey || "unknown"}`),
+			join(await this.getAgenticWorkspaceDir(), ".locks", `${scope}-${lockKey || "unknown"}`),
 			{ staleMs: DEFAULT_CREATE_LOCK_STALE_MS, retries: 0, retryDelayMs: 0 },
 			(error) => this.toTaskLockError(error, entityId),
 			fn,
@@ -772,7 +786,7 @@ export class FileSystem {
 		await Bun.write(filepath, content);
 		await this.publishContentMutation({
 			type: TASK_DIRECTORY,
-			root: resolve(this.backlogDir),
+			root: resolve(this.agenticWorkspaceDir),
 			taskId: normalizedTask.id,
 			filePath: filepath,
 		});
@@ -921,7 +935,7 @@ export class FileSystem {
 			const targetPath = join(targetContainer, "task.md");
 			await this.publishContentMutation({
 				type: TASK_DIRECTORY,
-				root: resolve(this.backlogDir),
+				root: resolve(this.agenticWorkspaceDir),
 				taskId: task.id,
 				filePath: targetPath,
 			});
@@ -939,7 +953,7 @@ export class FileSystem {
 			this.taskRepository.invalidate();
 			await this.publishContentMutation({
 				type: TASK_DIRECTORY,
-				root: resolve(this.backlogDir),
+				root: resolve(this.agenticWorkspaceDir),
 				taskId: task.id,
 				filePath: sourcePath,
 			});
@@ -1057,7 +1071,7 @@ export class FileSystem {
 				this.taskRepository.invalidate();
 				await this.publishContentMutation({
 					type: TASK_DIRECTORY,
-					root: resolve(this.backlogDir),
+					root: resolve(this.agenticWorkspaceDir),
 					taskId: promotedTask.id,
 					filePath: promotedTask.filePath as string,
 				});
@@ -1122,7 +1136,7 @@ export class FileSystem {
 			onMoved?.(sourcePath, toPath);
 			await this.publishContentMutation({
 				type: TASK_DIRECTORY,
-				root: resolve(this.backlogDir),
+				root: resolve(this.agenticWorkspaceDir),
 				taskId: demotedDraft.id,
 				filePath: toPath,
 			});
@@ -1425,7 +1439,7 @@ export class FileSystem {
 		decision: Decision,
 		retainedFrontmatter?: Record<string, unknown>,
 	): Promise<{ filepath: string; removedFilepaths: string[] }> {
-		const root = resolve(this.backlogDir);
+		const root = resolve(this.agenticWorkspaceDir);
 		const saved = await this.contentRepository.saveDecision(decision, retainedFrontmatter);
 		await this.publishContentMutation({ type: "decision", root, decisionId: decision.id });
 		return saved;
@@ -1437,7 +1451,7 @@ export class FileSystem {
 
 	// Document operations
 	async saveDocument(document: Document, subPath = ""): Promise<{ relativePath: string; removedFilepaths: string[] }> {
-		const root = resolve(this.backlogDir);
+		const root = resolve(this.agenticWorkspaceDir);
 		const saved = await this.contentRepository.saveDocument(document, subPath);
 		await this.publishContentMutation({ type: "document", root, documentId: document.id });
 		return saved;
@@ -1668,7 +1682,7 @@ ${description || `Milestone: ${title}`}`,
 	}
 
 	// Config operations
-	async loadConfig(): Promise<BacklogConfig | null> {
+	async loadConfig(): Promise<AgenticWorkspaceConfig | null> {
 		// Return cached config if available
 		if (this.cachedConfig !== null) {
 			return this.cachedConfig;
@@ -1687,7 +1701,7 @@ ${description || `Milestone: ${title}`}`,
 			return null;
 		}
 
-		// A value Backlog cannot read is reported, not swallowed: callers must not silently
+		// A value AgenticWorkspace cannot read is reported, not swallowed: callers must not silently
 		// fall back to defaults while the config file says something else.
 		const config = parseConfig(content, this.resolvedConfigPath);
 		this.cachedConfig = config;
@@ -1695,13 +1709,13 @@ ${description || `Milestone: ${title}`}`,
 		return config;
 	}
 
-	async saveConfig(config: BacklogConfig): Promise<void> {
-		const normalizedConfig: BacklogConfig = {
+	async saveConfig(config: AgenticWorkspaceConfig): Promise<void> {
+		const normalizedConfig: AgenticWorkspaceConfig = {
 			...config,
-			...(this.configSource === "root" ? { backlogDirectory: this.resolvedBacklogDirName } : {}),
+			...(this.configSource === "root" ? { agenticWorkspaceDirectory: this.resolvedAgenticWorkspaceDirName } : {}),
 		};
 		if (this.configSource === "folder") {
-			delete normalizedConfig.backlogDirectory;
+			delete normalizedConfig.agenticWorkspaceDirectory;
 		}
 		const configPath = this.resolvedConfigPath;
 		const content = serializeConfig(normalizedConfig);
@@ -1732,7 +1746,7 @@ ${description || `Milestone: ${title}`}`,
 		}
 	}
 
-	parseConfig(content: string): BacklogConfig {
+	parseConfig(content: string): AgenticWorkspaceConfig {
 		return parseConfig(content, this.resolvedConfigPath);
 	}
 }

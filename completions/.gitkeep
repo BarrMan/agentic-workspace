@@ -1,15 +1,15 @@
 # Completion Scripts Reference
 
 The shell completion scripts in this directory serve as reference documentation.
-The actual scripts are embedded in the agenticworkspace binary (see src/commands/completion.ts).
+The actual scripts are embedded in the agentic-workspace binary (see src/commands/completion.ts).
 
 During development, the CLI will read these files first if they exist,
 otherwise it falls back to the embedded versions.
 
 Files:
-- agenticworkspace.bash - Bash completion reference
-- _agenticworkspace - Zsh completion reference
-- agenticworkspace.fish - Fish completion reference
-- agenticworkspace.ps1 - PowerShell completion reference
+- agentic-workspace.bash - Bash completion reference
+- _agentic-workspace - Zsh completion reference
+- agentic-workspace.fish - Fish completion reference
+- agentic-workspace.ps1 - PowerShell completion reference
 - README.md - Installation and usage guide
 - EXAMPLES.md - Detailed examples and how it works

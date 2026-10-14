@@ -2,9 +2,9 @@ import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { writeFileSync } from "node:fs";
 import { mkdir, rename } from "node:fs/promises";
 import { join } from "node:path";
-import { Core } from "../core/backlog.ts";
+import { Core } from "../core/agentic-workspace.ts";
 import { FileSystem } from "../file-system/operations.ts";
-import type { BacklogConfig } from "../types/index.ts";
+import type { AgenticWorkspaceConfig } from "../types/index.ts";
 import { watchConfig, watchConfigFile } from "../utils/config-watcher.ts";
 import { createUniqueTestDir, getPlatformTimeout, safeCleanup } from "./test-utils.ts";
 
@@ -12,7 +12,7 @@ let testDir: string;
 let core: Core;
 let watcherChild: Bun.Subprocess<"ignore", "ignore", "pipe"> | undefined;
 
-const initialConfig: BacklogConfig = {
+const initialConfig: AgenticWorkspaceConfig = {
 	projectName: "Config watcher",
 	statuses: ["To Do", "Done"],
 	labels: ["web"],
@@ -50,7 +50,7 @@ describe("config watcher", () => {
 		testDir = createUniqueTestDir("config-watcher");
 		watcherChild = undefined;
 		core = new Core(testDir);
-		await core.filesystem.ensureBacklogStructure();
+		await core.filesystem.ensureAgenticWorkspaceStructure();
 		await core.filesystem.saveConfig(initialConfig);
 	});
 
@@ -139,9 +139,9 @@ describe("config watcher", () => {
 			return originalParseConfig(content);
 		};
 
-		const published: BacklogConfig[] = [];
-		let resolvePublished: (config: BacklogConfig) => void = () => {};
-		const publishedConfig = new Promise<BacklogConfig>((resolve) => {
+		const published: AgenticWorkspaceConfig[] = [];
+		let resolvePublished: (config: AgenticWorkspaceConfig) => void = () => {};
+		const publishedConfig = new Promise<AgenticWorkspaceConfig>((resolve) => {
 			resolvePublished = resolve;
 		});
 		const configWatcher = watchConfig(core, {
@@ -228,10 +228,10 @@ describe("config watcher", () => {
 			return originalParseConfig(content);
 		};
 
-		const published: BacklogConfig[] = [];
-		let resolveNextPublished: (config: BacklogConfig) => void = () => {};
+		const published: AgenticWorkspaceConfig[] = [];
+		let resolveNextPublished: (config: AgenticWorkspaceConfig) => void = () => {};
 		const nextPublished = () =>
-			new Promise<BacklogConfig>((resolve) => {
+			new Promise<AgenticWorkspaceConfig>((resolve) => {
 				resolveNextPublished = resolve;
 			});
 		const configWatcher = watchConfigFile(core.filesystem, {
@@ -268,10 +268,10 @@ describe("config watcher", () => {
 
 	it("publishes root config resolution from the same accepted content", async () => {
 		const rootDir = createUniqueTestDir("config-watcher-root");
-		const rootConfigPath = join(rootDir, "backlog.config.yml");
+		const rootConfigPath = join(rootDir, "agentic-workspace.config.yml");
 		const candidateContent = [
 			'project_name: "Candidate"',
-			'backlog_directory: "custom/a"',
+			'agentic_workspace_directory: "custom/a"',
 			'statuses: ["To Do", "Done"]',
 			"labels: []",
 			"date_format: YYYY-MM-DD",
@@ -280,7 +280,7 @@ describe("config watcher", () => {
 		].join("\n");
 		const interveningInvalidContent = [
 			'project_name: ""',
-			'backlog_directory: "custom/b"',
+			'agentic_workspace_directory: "custom/b"',
 			"check_active_branches: false",
 			"",
 		].join("\n");
@@ -294,7 +294,7 @@ describe("config watcher", () => {
 		].join("\n");
 		const invalidPointerContent = [
 			'project_name: "Broken pointer"',
-			'backlog_directory: "../escape"',
+			'agentic_workspace_directory: "../escape"',
 			'statuses: ["To Do", "Done"]',
 			"labels: []",
 			"date_format: YYYY-MM-DD",
@@ -303,7 +303,7 @@ describe("config watcher", () => {
 		].join("\n");
 		const malformedPointerContent = [
 			'project_name: "Malformed pointer"',
-			'backlog_directory "backlog"',
+			'agentic_workspace_directory "agentic-workspace"',
 			'statuses: ["To Do", "Done"]',
 			"labels: []",
 			"date_format: YYYY-MM-DD",
@@ -312,7 +312,7 @@ describe("config watcher", () => {
 		].join("\n");
 		const nextValidContent = candidateContent
 			.replace('project_name: "Candidate"', 'project_name: "Next valid"')
-			.replace('backlog_directory: "custom/a"', 'backlog_directory: "custom/b"');
+			.replace('agentic_workspace_directory: "custom/a"', 'agentic_workspace_directory: "custom/b"');
 		await mkdir(join(rootDir, "custom", "a"), { recursive: true });
 		await mkdir(join(rootDir, "custom", "b"), { recursive: true });
 		await Bun.write(rootConfigPath, candidateContent.replace('project_name: "Candidate"', 'project_name: "Initial"'));
@@ -355,7 +355,7 @@ describe("config watcher", () => {
 			}
 			return config;
 		};
-		type RootConfigSnapshot = { config: BacklogConfig; backlogDirName: string; configPath: string };
+		type RootConfigSnapshot = { config: AgenticWorkspaceConfig; agenticWorkspaceDirName: string; configPath: string };
 		let callbackCount = 0;
 		let resolveFirstPublished: (snapshot: RootConfigSnapshot) => void = () => {};
 		let resolveSecondPublished: (snapshot: RootConfigSnapshot) => void = () => {};
@@ -371,7 +371,7 @@ describe("config watcher", () => {
 				callbackCount += 1;
 				const snapshot = {
 					config,
-					backlogDirName: rootFilesystem.backlogDirName,
+					agenticWorkspaceDirName: rootFilesystem.agenticWorkspaceDirName,
 					configPath: rootFilesystem.configFilePath,
 				};
 				if (callbackCount === 1) resolveFirstPublished(snapshot);
@@ -386,28 +386,28 @@ describe("config watcher", () => {
 			const snapshot = await withTimeout(firstPublished, "root config publication");
 			expect(injectedInterveningContent).toBe(true);
 			expect(snapshot.config.projectName).toBe("Candidate");
-			expect(snapshot.config.backlogDirectory).toBe("custom/a");
-			expect(snapshot.backlogDirName).toBe("custom/a");
+			expect(snapshot.config.agenticWorkspaceDirectory).toBe("custom/a");
+			expect(snapshot.agenticWorkspaceDirName).toBe("custom/a");
 			expect(snapshot.configPath).toBe(rootConfigPath);
 			expect((await rootFilesystem.loadConfig())?.projectName).toBe("Candidate");
-			expect(rootFilesystem.backlogDirName).toBe("custom/a");
+			expect(rootFilesystem.agenticWorkspaceDirName).toBe("custom/a");
 
 			await Bun.write(replacementPath, sparseRootContent);
 			await rename(replacementPath, rootConfigPath);
 			await withTimeout(sparseRootAttemptsExhausted, "sparse root config attempts");
 			expect(callbackCount).toBe(1);
 			expect((await rootFilesystem.loadConfig())?.projectName).toBe("Candidate");
-			expect(rootFilesystem.backlogDirName).toBe("custom/a");
+			expect(rootFilesystem.agenticWorkspaceDirName).toBe("custom/a");
 			expect(rootFilesystem.configFilePath).toBe(rootConfigPath);
 
-			await mkdir(join(rootDir, "backlog"), { recursive: true });
+			await mkdir(join(rootDir, "agentic-workspace"), { recursive: true });
 			await Bun.write(replacementPath, malformedPointerContent);
 			await rename(replacementPath, rootConfigPath);
 			await withTimeout(malformedPointerAttemptsExhausted, "malformed root pointer attempts");
 			expect(callbackCount).toBe(1);
 			expect((await rootFilesystem.loadConfig())?.projectName).toBe("Candidate");
 			expect((await rootFilesystem.loadConfig())?.checkActiveBranches).toBe(true);
-			expect(rootFilesystem.backlogDirName).toBe("custom/a");
+			expect(rootFilesystem.agenticWorkspaceDirName).toBe("custom/a");
 			expect(rootFilesystem.configFilePath).toBe(rootConfigPath);
 
 			await Bun.write(replacementPath, invalidPointerContent);
@@ -415,15 +415,15 @@ describe("config watcher", () => {
 			await withTimeout(invalidPointerAttemptsExhausted, "invalid root pointer attempts");
 			expect(callbackCount).toBe(1);
 			expect((await rootFilesystem.loadConfig())?.projectName).toBe("Candidate");
-			expect(rootFilesystem.backlogDirName).toBe("custom/a");
+			expect(rootFilesystem.agenticWorkspaceDirName).toBe("custom/a");
 			expect(rootFilesystem.configFilePath).toBe(rootConfigPath);
 
 			await Bun.write(replacementPath, nextValidContent);
 			await rename(replacementPath, rootConfigPath);
 			const nextSnapshot = await withTimeout(secondPublished, "next valid root config publication");
 			expect(nextSnapshot.config.projectName).toBe("Next valid");
-			expect(nextSnapshot.config.backlogDirectory).toBe("custom/b");
-			expect(nextSnapshot.backlogDirName).toBe("custom/b");
+			expect(nextSnapshot.config.agenticWorkspaceDirectory).toBe("custom/b");
+			expect(nextSnapshot.agenticWorkspaceDirName).toBe("custom/b");
 			expect(nextSnapshot.configPath).toBe(rootConfigPath);
 			expect((await rootFilesystem.loadConfig())?.projectName).toBe("Next valid");
 			expect(callbackCount).toBe(2);
@@ -437,8 +437,8 @@ describe("config watcher", () => {
 	it("publishes a stable prefix-only edit to the canonical config", async () => {
 		const canonicalContent = await Bun.file(core.filesystem.configFilePath).text();
 		const prefixEdit = canonicalContent.replace('task_prefix: "BACK"', 'task_prefix: "JIRA"');
-		let resolvePublished: (config: BacklogConfig) => void = () => {};
-		const publishedConfig = new Promise<BacklogConfig>((resolve) => {
+		let resolvePublished: (config: AgenticWorkspaceConfig) => void = () => {};
+		const publishedConfig = new Promise<AgenticWorkspaceConfig>((resolve) => {
 			resolvePublished = resolve;
 		});
 		const configWatcher = watchConfig(core, {
@@ -459,8 +459,8 @@ describe("config watcher", () => {
 	});
 
 	it("keeps accepting the sparse config shape supported by the parser", async () => {
-		let resolvePublished: (config: BacklogConfig) => void = () => {};
-		const publishedConfig = new Promise<BacklogConfig>((resolve) => {
+		let resolvePublished: (config: AgenticWorkspaceConfig) => void = () => {};
+		const publishedConfig = new Promise<AgenticWorkspaceConfig>((resolve) => {
 			resolvePublished = resolve;
 		});
 		const configWatcher = watchConfig(core, {
@@ -491,12 +491,12 @@ describe("config watcher", () => {
 		await Bun.write(core.filesystem.configFilePath, changedBeforeStartup);
 
 		let callbackCount = 0;
-		let resolvePublished: (config: BacklogConfig) => void = () => {};
-		let resolveNextPublished: (config: BacklogConfig) => void = () => {};
-		const publishedConfig = new Promise<BacklogConfig>((resolve) => {
+		let resolvePublished: (config: AgenticWorkspaceConfig) => void = () => {};
+		let resolveNextPublished: (config: AgenticWorkspaceConfig) => void = () => {};
+		const publishedConfig = new Promise<AgenticWorkspaceConfig>((resolve) => {
 			resolvePublished = resolve;
 		});
-		const nextPublished = new Promise<BacklogConfig>((resolve) => {
+		const nextPublished = new Promise<AgenticWorkspaceConfig>((resolve) => {
 			resolveNextPublished = resolve;
 		});
 		const configWatcher = watchConfig(core, {
@@ -619,11 +619,11 @@ describe("config watcher", () => {
 		let callbackAttempts = 0;
 		const cachedProjectNames: string[] = [];
 		let resolvePublished: () => void = () => {};
-		let resolveNextPublished: (config: BacklogConfig | null) => void = () => {};
+		let resolveNextPublished: (config: AgenticWorkspaceConfig | null) => void = () => {};
 		const published = new Promise<void>((resolve) => {
 			resolvePublished = resolve;
 		});
-		const nextPublished = new Promise<BacklogConfig | null>((resolve) => {
+		const nextPublished = new Promise<AgenticWorkspaceConfig | null>((resolve) => {
 			resolveNextPublished = resolve;
 		});
 		const configWatcher = watchConfig(core, {

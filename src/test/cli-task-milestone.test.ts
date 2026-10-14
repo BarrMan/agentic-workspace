@@ -6,7 +6,7 @@ import { Core } from "../index.ts";
 import { createUniqueTestDir, initializeFilesystemTestProject, safeCleanup } from "./test-utils.ts";
 
 let TEST_DIR: string;
-const cliCommand = ["agenticworkspace"];
+const cliCommand = ["agentic-workspace"];
 let runQueue = Promise.resolve();
 
 function $(parts: TemplateStringsArray, ...values: unknown[]) {

@@ -2,7 +2,7 @@ import { realpath, stat } from "node:fs/promises";
 import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { $ } from "bun";
 import { DEFAULT_DIRECTORIES } from "../constants/index.ts";
-import type { BacklogConfig } from "../types/index.ts";
+import type { AgenticWorkspaceConfig } from "../types/index.ts";
 import { MILLISECONDS_PER_DAY } from "../utils/time.ts";
 
 type GitPathContext = {
@@ -10,7 +10,7 @@ type GitPathContext = {
 	relativePath: string;
 };
 
-type GitConfigLoader = () => Promise<BacklogConfig | null>;
+type GitConfigLoader = () => Promise<AgenticWorkspaceConfig | null>;
 
 const FETCH_TIMEOUT_MS = 10_000;
 const MILLISECONDS_PER_SECOND = 1_000;
@@ -52,19 +52,19 @@ function parseBranchModificationLog(output: string): Map<string, Date> {
 
 export class GitOperations {
 	private projectRoot: string;
-	private config: BacklogConfig | null = null;
+	private config: AgenticWorkspaceConfig | null = null;
 	private readonly configLoader?: GitConfigLoader;
 	private readonly repositories = new Set<string>();
 	private readonly repositoryChecks = new Map<string, Promise<boolean>>();
 	private readonly fetches = new Map<string, Promise<void>>();
 
-	constructor(projectRoot: string, config: BacklogConfig | null = null, configLoader?: GitConfigLoader) {
+	constructor(projectRoot: string, config: AgenticWorkspaceConfig | null = null, configLoader?: GitConfigLoader) {
 		this.projectRoot = projectRoot;
 		this.config = config;
 		this.configLoader = configLoader;
 	}
 
-	setConfig(config: BacklogConfig | null): void {
+	setConfig(config: AgenticWorkspaceConfig | null): void {
 		this.config = config;
 	}
 
@@ -310,8 +310,10 @@ export class GitOperations {
 		return networkErrorPatterns.some((pattern) => lowerMessage.includes(pattern));
 	}
 
-	async stageBacklogDirectory(backlogDir: string = DEFAULT_DIRECTORIES.BACKLOG): Promise<string | null> {
-		const context = await this.getPathContext(backlogDir);
+	async stageAgenticWorkspaceDirectory(
+		agenticWorkspaceDir: string = DEFAULT_DIRECTORIES.AGENTIC_WORKSPACE,
+	): Promise<string | null> {
+		const context = await this.getPathContext(agenticWorkspaceDir);
 		if (context) {
 			const pathForAdd = context.relativePath === "." ? "." : context.relativePath;
 			await this.execGit(["add", pathForAdd], { cwd: context.repoRoot });
@@ -321,7 +323,7 @@ export class GitOperations {
 			return null;
 		}
 
-		await this.execGit(["add", `${backlogDir}/`]);
+		await this.execGit(["add", `${agenticWorkspaceDir}/`]);
 		return null;
 	}
 	async stageFileMove(fromPath: string, toPath: string): Promise<string | null> {

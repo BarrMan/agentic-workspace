@@ -3,10 +3,10 @@ import { mkdir, readdir } from "node:fs/promises";
 import { join } from "node:path";
 import { Writable } from "node:stream";
 import { runCli } from "../cli/register.ts";
-import { Core } from "../core/backlog.ts";
+import { Core } from "../core/agentic-workspace.ts";
 import { createUniqueTestDir, initializeFilesystemTestProject, safeCleanup } from "./test-utils.ts";
 
-const CLI_COMMAND = ["agenticworkspace"];
+const CLI_COMMAND = ["agentic-workspace"];
 let cliQueue = Promise.resolve();
 
 function $(parts: TemplateStringsArray, ...values: unknown[]) {
@@ -94,7 +94,7 @@ describe("CLI Zero Padded IDs Feature", () => {
 		const result = await $`${CLI_COMMAND} task create "Padded Task"`.cwd(TEST_DIR).quiet();
 		expect(result.exitCode).toBe(0);
 
-		const tasksDir = join(TEST_DIR, "backlog", "tasks");
+		const tasksDir = join(TEST_DIR, "agentic-workspace", "tasks");
 		const files = await readdir(tasksDir);
 		expect(files.length).toBe(1);
 		expect(files[0]).toStartWith("task-001");
@@ -104,7 +104,7 @@ describe("CLI Zero Padded IDs Feature", () => {
 		const result = await $`${CLI_COMMAND} doc create "Padded Doc"`.cwd(TEST_DIR).quiet();
 		expect(result.exitCode).toBe(0);
 
-		const docsDir = join(TEST_DIR, "backlog", "docs");
+		const docsDir = join(TEST_DIR, "agentic-workspace", "docs");
 		const files = await readdir(docsDir);
 		expect(files.length).toBe(1);
 		expect(files[0]).toStartWith("doc-001");
@@ -114,7 +114,7 @@ describe("CLI Zero Padded IDs Feature", () => {
 		const result = await $`${CLI_COMMAND} decision create "Padded Decision"`.cwd(TEST_DIR).quiet();
 		expect(result.exitCode).toBe(0);
 
-		const decisionsDir = join(TEST_DIR, "backlog", "decisions");
+		const decisionsDir = join(TEST_DIR, "agentic-workspace", "decisions");
 		const files = await readdir(decisionsDir);
 		expect(files.length).toBe(1);
 		expect(files[0]).toStartWith("decision-001");
@@ -125,7 +125,7 @@ describe("CLI Zero Padded IDs Feature", () => {
 		const result = await $`${CLI_COMMAND} task create "Second Padded Task"`.cwd(TEST_DIR).quiet();
 		expect(result.exitCode).toBe(0);
 
-		const tasksDir = join(TEST_DIR, "backlog", "tasks");
+		const tasksDir = join(TEST_DIR, "agentic-workspace", "tasks");
 		const files = await readdir(tasksDir);
 		expect(files.length).toBe(2);
 		expect(files.some((file) => file.startsWith("task-002"))).toBe(true);
@@ -139,7 +139,7 @@ describe("CLI Zero Padded IDs Feature", () => {
 		const result = await $`${CLI_COMMAND} task create "Padded Sub-task" -p task-001`.cwd(TEST_DIR).quiet();
 		expect(result.exitCode).toBe(0);
 
-		const tasksDir = join(TEST_DIR, "backlog", "tasks");
+		const tasksDir = join(TEST_DIR, "agentic-workspace", "tasks");
 		const files = await readdir(tasksDir);
 		expect(files.length).toBe(2);
 		expect(files.some((file) => file.startsWith("task-001.01"))).toBe(true);

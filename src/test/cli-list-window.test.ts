@@ -38,7 +38,7 @@ async function runCommand(args: string[], env: Record<string, string | undefined
 		if (value === undefined) delete process.env[key];
 		else process.env[key] = value;
 	}
-	process.argv = [process.execPath, "agenticworkspace", ...args];
+	process.argv = [process.execPath, "agentic-workspace", ...args];
 	let exitCode: number;
 	try {
 		exitCode = await runCli(args, { cwd: TEST_DIR, stdout: out, stderr: err });
@@ -64,13 +64,13 @@ async function followWindows(args: string[]): Promise<string[]> {
 	let stdout = (await runCommand(args)).stdout;
 	while (true) {
 		outputs.push(stdout);
-		const next = stdout.match(/Next: agenticworkspace (.+)$/m)?.[1];
+		const next = stdout.match(/Next: agentic-workspace (.+)$/m)?.[1];
 		if (!next) return outputs;
 		const nextArgs =
 			next
 				.match(/'(?:\\.|[^'])*'|"(?:\\.|[^"\\])*"|\S+/g)
 				?.map((arg) => (arg.startsWith("'") || arg.startsWith('"') ? arg.slice(1, -1) : arg)) ?? [];
-		stdout = (await runCommand(nextArgs[0] === "agenticworkspace" ? nextArgs.slice(1) : nextArgs)).stdout;
+		stdout = (await runCommand(nextArgs[0] === "agentic-workspace" ? nextArgs.slice(1) : nextArgs)).stdout;
 	}
 }
 
@@ -174,7 +174,7 @@ describe("CLI list windows", () => {
 		const windows = await followWindows(["task", "list", "--search", "Window task", "--max-count", "2", "--plain"]);
 
 		expect(windows).toHaveLength(3);
-		expect(windows[0]).toContain("Showing 1-2 of 5 items. Next: agenticworkspace task list --search 'Window task'");
+		expect(windows[0]).toContain("Showing 1-2 of 5 items. Next: agentic-workspace task list --search 'Window task'");
 		expect(windows[2]?.trimEnd().endsWith("Showing 5-5 of 5 items.")).toBe(true);
 		expect(joinGroupedWindows(windows)).toEqual(printedLines(complete.stdout));
 	});
@@ -228,7 +228,7 @@ describe("CLI list windows", () => {
 		);
 
 		const separated = await followWindows(["doc", "list", "--max-count", "1", "--"]);
-		expect(separated[0]).toContain("Next: agenticworkspace doc list --max-count 1 --skip 1 --");
+		expect(separated[0]).toContain("Next: agentic-workspace doc list --max-count 1 --skip 1 --");
 		expect(joinGroupedWindows(separated)).toEqual(printedLines((await runCommand(["doc", "list", "--plain"])).stdout));
 	});
 
@@ -236,7 +236,7 @@ describe("CLI list windows", () => {
 		expect((await runCommand(["task", "list", "--count"])).stdout).toBe("5\n");
 		expect((await runCommand(["task", "list", "--status", "To Do", "--count"])).stdout).toBe("3\n");
 		expect((await runCommand(["task", "list", "--count", "--skip", "4"])).stdout).toBe("1\n");
-		// Bun colors a logged number when color is forced, which would break `$(backlog ... --count)`.
+		// Bun colors a logged number when color is forced, which would break `$(agentic-workspace ... --count)`.
 		expect((await runCommand(["task", "list", "--count"], { FORCE_COLOR: "1" })).stdout).toBe("5\n");
 
 		const withJson = await runCommand(["task", "list", "--count", "--json"]);
@@ -266,7 +266,7 @@ describe("CLI list windows", () => {
 		const search = await runCommand(["search", "--type", "decision", "--max-count", "2", "--plain"]);
 		expect(idsIn(search.stdout, /decision-\d+/g)).toEqual(["decision-1", "decision-2"]);
 		expect(search.stdout).toContain(
-			"Showing 1-2 of 3 items. Next: agenticworkspace search --type decision --max-count 2 --plain --skip 2",
+			"Showing 1-2 of 3 items. Next: agentic-workspace search --type decision --max-count 2 --plain --skip 2",
 		);
 		expect(await runJson(["search", "--type", "decision", "--max-count", "1", "--skip", "1"])).toMatchObject({
 			results: [{ type: "decision", data: { id: "decision-2" } }],
@@ -282,12 +282,12 @@ describe("CLI list windows", () => {
 
 		const documentViews = idsIn(
 			(await runCommand(["doc", "search", "Guide"])).stdout,
-			/View: agenticworkspace doc view doc-\d+/g,
+			/View: agentic-workspace doc view doc-\d+/g,
 		);
 		const firstDocument = await runCommand(["doc", "search", "Guide", "--max-count", "1"]);
-		expect(idsIn(firstDocument.stdout, /View: agenticworkspace doc view doc-\d+/g)).toEqual(documentViews.slice(0, 1));
+		expect(idsIn(firstDocument.stdout, /View: agentic-workspace doc view doc-\d+/g)).toEqual(documentViews.slice(0, 1));
 		expect(firstDocument.stdout).toContain(
-			`Showing 1-1 of ${documentViews.length} items. Next: agenticworkspace doc search Guide --max-count 1 --skip 1`,
+			`Showing 1-1 of ${documentViews.length} items. Next: agentic-workspace doc search Guide --max-count 1 --skip 1`,
 		);
 		expect((await runCommand(["doc", "search", "Guide", "--count"])).stdout).toBe(`${documentViews.length}\n`);
 	});

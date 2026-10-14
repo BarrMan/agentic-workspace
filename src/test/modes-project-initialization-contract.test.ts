@@ -11,7 +11,7 @@ import {
 } from "../agent-workspace/config.ts";
 import type { AgentPreset } from "../agent-workspace/types.ts";
 import { runCli } from "../cli/register.ts";
-import { Core } from "../core/backlog.ts";
+import { Core } from "../core/agentic-workspace.ts";
 
 const roots: string[] = [];
 const originalHome = process.env.HOME;
@@ -59,7 +59,7 @@ describe("project mode initialization contract", () => {
 		const configHome = join(home, ".config");
 		process.env.HOME = home;
 		delete process.env.XDG_CONFIG_HOME;
-		await mkdir(join(configHome, "backlog"), { recursive: true });
+		await mkdir(join(configHome, "agentic-workspace"), { recursive: true });
 		await mkdir(project, { recursive: true });
 		const rootConfig = {
 			selectedPreset: "team-agent",
@@ -73,10 +73,10 @@ describe("project mode initialization contract", () => {
 			},
 			sessions: { worktreePerTask: true, yoloMode: false },
 		};
-		await writeFile(join(configHome, "backlog", "agents.json"), `${JSON.stringify(rootConfig, null, 2)}\n`);
+		await writeFile(join(configHome, "agentic-workspace", "agents.json"), `${JSON.stringify(rootConfig, null, 2)}\n`);
 
 		await cli(["init", "Modes contract", "--defaults", "--integration-mode", "none", "--no-git"], project);
-		const projectAgentConfigPath = join(project, "backlog", "agents.json");
+		const projectAgentConfigPath = join(project, "agentic-workspace", "agents.json");
 		const projectAgentConfig = JSON.parse(await readFile(projectAgentConfigPath, "utf8"));
 		expect(projectAgentConfig.modes.defaultModeId).toBe("plan");
 		expect(projectAgentConfig.modes.profiles.plan.name).toBe("PLAN");
@@ -89,7 +89,9 @@ describe("project mode initialization contract", () => {
 		expect(initialized.sessions).toEqual(rootConfig.sessions);
 		expect(await Bun.file(join(project, "AGENTS.md")).exists()).toBe(false);
 		expect(await Bun.file(projectAgentConfigPath).exists()).toBe(true);
-		expect(JSON.parse(await readFile(join(configHome, "backlog", "agents.json"), "utf8"))).toEqual(rootConfig);
+		expect(JSON.parse(await readFile(join(configHome, "agentic-workspace", "agents.json"), "utf8"))).toEqual(
+			rootConfig,
+		);
 	});
 
 	it("does not regenerate deleted default modes during ordinary read/save or repeated initialization", async () => {
@@ -102,7 +104,7 @@ describe("project mode initialization contract", () => {
 			configuration.modes.defaultModeId = "build";
 		}
 		await upsertAgentConfiguration(core, "project", configuration);
-		const path = join(core.filesystem.backlogDir, "agents.json");
+		const path = join(core.filesystem.agenticWorkspaceDir, "agents.json");
 		const before = await readFile(path, "utf8");
 
 		expect((await loadAgentConfiguration(core, "project"))?.modes?.profiles.plan).toBeUndefined();

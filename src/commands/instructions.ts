@@ -17,7 +17,7 @@ function isInstructionGuideKey(value: string): value is InstructionGuideKey {
 }
 
 function guideCommand(guide: WorkflowGuideDefinition): string {
-	return `agenticworkspace instructions ${guide.key}`;
+	return `agentic-workspace instructions ${guide.key}`;
 }
 
 function quoteCommand(command: string): string {
@@ -33,8 +33,8 @@ function formatInstructionGuideIndex(): string {
 		"AgenticWorkspace instructions",
 		"",
 		"Start here:",
-		commandLine("agenticworkspace instructions overview", "Required first read before answering any user request"),
-		commandLine("agenticworkspace <command> --help", "Show options, fields, and examples"),
+		commandLine("agentic-workspace instructions overview", "Required first read before answering any user request"),
+		commandLine("agentic-workspace <command> --help", "Show options, fields, and examples"),
 		"",
 		"Guides:",
 	];
@@ -63,9 +63,9 @@ export function registerInstructionsCommand(program: Command): void {
 		],
 		output: "Guide index, or markdown guide text when a guide is selected",
 		examples: [
-			"agenticworkspace instructions",
-			"agenticworkspace instructions overview",
-			"agenticworkspace instructions task-execution",
+			"agentic-workspace instructions",
+			"agentic-workspace instructions overview",
+			"agentic-workspace instructions task-execution",
 		],
 	})
 		.description("show AgenticWorkspace workflow instructions")
@@ -79,7 +79,7 @@ export function registerInstructionsCommand(program: Command): void {
 			if (!isInstructionGuideKey(guide)) {
 				console.error(`Unknown instruction guide: ${guide}`);
 				console.error(`Valid guides: ${INSTRUCTION_GUIDE_KEYS.join(", ")}`);
-				console.error("Run `agenticworkspace instructions` to see available guides.");
+				console.error("Run `agentic-workspace instructions` to see available guides.");
 				throw Object.assign(new Error("CLI requested exit"), { exitCode: 1 });
 			}
 

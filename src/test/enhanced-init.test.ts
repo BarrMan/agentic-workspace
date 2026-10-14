@@ -1,8 +1,8 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { join } from "node:path";
-import { Core } from "../core/backlog.ts";
+import { Core } from "../core/agentic-workspace.ts";
 import { initializeProject } from "../core/init.ts";
-import type { BacklogConfig } from "../types/index.ts";
+import type { AgenticWorkspaceConfig } from "../types/index.ts";
 import { createUniqueTestDir, initializeTestProject, safeCleanup } from "./test-utils.ts";
 
 describe("Enhanced init command", () => {
@@ -46,11 +46,11 @@ describe("Enhanced init command", () => {
 			defaultStatus: "Backlog",
 			dateFormat: "dd/mm/yyyy",
 			maxColumnWidth: 30,
-			backlogDirectory: "backlog",
+			agenticWorkspaceDirectory: "agentic-workspace",
 			prefixes: { task: "WORK" },
 		};
 
-		await core.filesystem.ensureBacklogStructure();
+		await core.filesystem.ensureAgenticWorkspaceStructure();
 		await core.filesystem.saveConfig(customConfig);
 
 		// Simulate re-initialization by loading existing config
@@ -81,7 +81,7 @@ describe("Enhanced init command", () => {
 	test("should preserve non-init-managed config fields during re-initialization", async () => {
 		const core = new Core(tmpDir);
 
-		const initialConfig: BacklogConfig = {
+		const initialConfig: AgenticWorkspaceConfig = {
 			projectName: "Preserve Fields Project",
 			statuses: ["To Do", "In Progress", "Done"],
 			labels: ["bug"],
@@ -100,7 +100,7 @@ describe("Enhanced init command", () => {
 			},
 		};
 
-		await core.filesystem.ensureBacklogStructure();
+		await core.filesystem.ensureAgenticWorkspaceStructure();
 		await core.filesystem.saveConfig(initialConfig);
 
 		const existingConfig = await core.filesystem.loadConfig();
@@ -132,7 +132,7 @@ describe("Enhanced init command", () => {
 					advancedConfig: { taskPrefix },
 				}),
 			).rejects.toThrow(/reserved for drafts, docs, or decisions/);
-			expect(await Bun.file(join(tmpDir, "backlog", "config.yml")).exists()).toBe(false);
+			expect(await Bun.file(join(tmpDir, "agentic-workspace", "config.yml")).exists()).toBe(false);
 		}
 	});
 
@@ -254,110 +254,110 @@ describe("Enhanced init command", () => {
 		expect(loadedConfig?.prefixes?.task).toBe("PERSIST");
 	});
 
-	test("initializeProject should create .backlog when selected", async () => {
+	test("initializeProject should create .agentic-workspace when selected", async () => {
 		const core = new Core(tmpDir);
 
 		await initializeProject(core, {
-			projectName: "Hidden Backlog Init",
-			backlogDirectory: ".backlog",
-			backlogDirectorySource: ".backlog",
+			projectName: "Hidden AgenticWorkspace Init",
+			agenticWorkspaceDirectory: ".agentic-workspace",
+			agenticWorkspaceDirectorySource: ".agentic-workspace",
 			integrationMode: "none",
 		});
 
-		const configExists = await Bun.file(join(tmpDir, ".backlog", "config.yml")).exists();
+		const configExists = await Bun.file(join(tmpDir, ".agentic-workspace", "config.yml")).exists();
 		expect(configExists).toBe(true);
-		expect(new Core(tmpDir).filesystem.backlogDirName).toBe(".backlog");
+		expect(new Core(tmpDir).filesystem.agenticWorkspaceDirName).toBe(".agentic-workspace");
 	});
 
-	test("initializeProject should honor .backlog source when backlogDirectory is omitted", async () => {
+	test("initializeProject should honor .agentic-workspace source when agenticWorkspaceDirectory is omitted", async () => {
 		const core = new Core(tmpDir);
 
 		await initializeProject(core, {
-			projectName: "Hidden Backlog Source Only",
-			backlogDirectorySource: ".backlog",
+			projectName: "Hidden AgenticWorkspace Source Only",
+			agenticWorkspaceDirectorySource: ".agentic-workspace",
 			integrationMode: "none",
 		});
 
-		expect(await Bun.file(join(tmpDir, ".backlog", "config.yml")).exists()).toBe(true);
-		expect(await Bun.file(join(tmpDir, "backlog", "config.yml")).exists()).toBe(false);
+		expect(await Bun.file(join(tmpDir, ".agentic-workspace", "config.yml")).exists()).toBe(true);
+		expect(await Bun.file(join(tmpDir, "agentic-workspace", "config.yml")).exists()).toBe(false);
 	});
 
-	test("initializeProject should create a root backlog.config.yml for custom backlog directories", async () => {
+	test("initializeProject should create a root agentic-workspace.config.yml for custom agentic-workspace directories", async () => {
 		const core = new Core(tmpDir);
 		await initializeProject(core, {
-			projectName: "Custom Backlog Init",
-			backlogDirectory: "planning/backlog-data",
-			backlogDirectorySource: "custom",
+			projectName: "Custom AgenticWorkspace Init",
+			agenticWorkspaceDirectory: "planning/agentic-workspace-data",
+			agenticWorkspaceDirectorySource: "custom",
 			configLocation: "root",
 			integrationMode: "none",
 		});
 
-		const rootConfigPath = join(tmpDir, "backlog.config.yml");
+		const rootConfigPath = join(tmpDir, "agentic-workspace.config.yml");
 		const rootConfig = await Bun.file(rootConfigPath).text();
 		const configExists = await Bun.file(rootConfigPath).exists();
 		const freshCore = new Core(tmpDir);
 		const freshConfig = await freshCore.filesystem.loadConfig();
 
 		expect(configExists).toBe(true);
-		expect(rootConfig).toContain('backlog_directory: "planning/backlog-data"');
-		expect(freshCore.filesystem.backlogDirName).toBe("planning/backlog-data");
-		expect(freshConfig?.projectName).toBe("Custom Backlog Init");
-		expect(freshCore.filesystem.backlogDirName).toBe("planning/backlog-data");
+		expect(rootConfig).toContain('agentic_workspace_directory: "planning/agentic-workspace-data"');
+		expect(freshCore.filesystem.agenticWorkspaceDirName).toBe("planning/agentic-workspace-data");
+		expect(freshConfig?.projectName).toBe("Custom AgenticWorkspace Init");
+		expect(freshCore.filesystem.agenticWorkspaceDirName).toBe("planning/agentic-workspace-data");
 	});
 
-	test("initializeProject should default custom backlog directories to root config when configLocation is omitted", async () => {
+	test("initializeProject should default custom agentic-workspace directories to root config when configLocation is omitted", async () => {
 		const core = new Core(tmpDir);
 		await initializeProject(core, {
-			projectName: "Custom Backlog Default Root",
-			backlogDirectory: "planning/backlog-data",
-			backlogDirectorySource: "custom",
+			projectName: "Custom AgenticWorkspace Default Root",
+			agenticWorkspaceDirectory: "planning/agentic-workspace-data",
+			agenticWorkspaceDirectorySource: "custom",
 			integrationMode: "none",
 		});
 
-		const rootConfigPath = join(tmpDir, "backlog.config.yml");
+		const rootConfigPath = join(tmpDir, "agentic-workspace.config.yml");
 		const rootConfig = await Bun.file(rootConfigPath).text();
 		expect(await Bun.file(rootConfigPath).exists()).toBe(true);
-		expect(rootConfig).toContain('backlog_directory: "planning/backlog-data"');
-		expect(await Bun.file(join(tmpDir, "planning", "backlog-data", "config.yml")).exists()).toBe(false);
+		expect(rootConfig).toContain('agentic_workspace_directory: "planning/agentic-workspace-data"');
+		expect(await Bun.file(join(tmpDir, "planning", "agentic-workspace-data", "config.yml")).exists()).toBe(false);
 	});
 
-	test("initializeProject should infer custom source from backlogDirectory when source is omitted", async () => {
+	test("initializeProject should infer custom source from agenticWorkspaceDirectory when source is omitted", async () => {
 		const core = new Core(tmpDir);
 		await initializeProject(core, {
-			projectName: "Custom Backlog Inferred Source",
-			backlogDirectory: "planning/backlog-data",
+			projectName: "Custom AgenticWorkspace Inferred Source",
+			agenticWorkspaceDirectory: "planning/agentic-workspace-data",
 			integrationMode: "none",
 		});
 
-		const rootConfigPath = join(tmpDir, "backlog.config.yml");
+		const rootConfigPath = join(tmpDir, "agentic-workspace.config.yml");
 		const rootConfig = await Bun.file(rootConfigPath).text();
 		expect(await Bun.file(rootConfigPath).exists()).toBe(true);
-		expect(rootConfig).toContain('backlog_directory: "planning/backlog-data"');
-		expect(await Bun.file(join(tmpDir, "planning", "backlog-data", "config.yml")).exists()).toBe(false);
+		expect(rootConfig).toContain('agentic_workspace_directory: "planning/agentic-workspace-data"');
+		expect(await Bun.file(join(tmpDir, "planning", "agentic-workspace-data", "config.yml")).exists()).toBe(false);
 	});
 
-	test("initializeProject should reject custom backlog directories with folder config location", async () => {
+	test("initializeProject should reject custom agentic-workspace directories with folder config location", async () => {
 		const core = new Core(tmpDir);
 		await expect(
 			initializeProject(core, {
 				projectName: "Invalid Custom Folder Config",
-				backlogDirectory: "planning/backlog-data",
-				backlogDirectorySource: "custom",
+				agenticWorkspaceDirectory: "planning/agentic-workspace-data",
+				agenticWorkspaceDirectorySource: "custom",
 				configLocation: "folder",
 				integrationMode: "none",
 			}),
-		).rejects.toThrow("Custom backlog directories require root config discovery.");
+		).rejects.toThrow("Custom AgenticWorkspace directories require root config discovery.");
 	});
 
-	test("initializeProject should reject mismatched built-in source and custom backlog path", async () => {
+	test("initializeProject should reject mismatched built-in source and custom agentic-workspace path", async () => {
 		const core = new Core(tmpDir);
 		await expect(
 			initializeProject(core, {
-				projectName: "Mismatched Backlog Source",
-				backlogDirectory: "planning/backlog-data",
-				backlogDirectorySource: ".backlog",
+				projectName: "Mismatched AgenticWorkspace Source",
+				agenticWorkspaceDirectory: "planning/agentic-workspace-data",
+				agenticWorkspaceDirectorySource: ".agentic-workspace",
 				integrationMode: "none",
 			}),
-		).rejects.toThrow("Backlog directory source and backlog directory value must agree.");
+		).rejects.toThrow("AgenticWorkspace directory source and directory value must agree.");
 	});
 });

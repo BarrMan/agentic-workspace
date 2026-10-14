@@ -200,12 +200,12 @@ export class OpencodeV2Agent implements Agent {
 		if (sessionId) {
 			if (!statusDir) throw new Error("OpenCode v2 session launch requires its durable status directory.");
 			await this.installStatusHooks({ pluginDir: directory, statusDir, sessionId });
-			const cliPlugin = join(directory, "backlog-opencode-cli-plugin");
+			const cliPlugin = join(directory, "agentic-workspace-opencode-cli-plugin");
 			await mkdir(cliPlugin, { recursive: true, mode: 0o700 });
 			await writeFile(
 				join(cliPlugin, "package.json"),
 				JSON.stringify({
-					name: "backlog-opencode-cli-plugin",
+					name: "agentic-workspace-opencode-cli-plugin",
 					private: true,
 					type: "module",
 					exports: { "./tui": "./tui.js" },
@@ -216,7 +216,7 @@ export class OpencodeV2Agent implements Agent {
 				join(cliPlugin, "tui.js"),
 				createOpencodeV2CliPlugin({
 					metadataRoot: dirname(statusDir),
-					backlogSessionId: sessionId,
+					agenticWorkspaceSessionId: sessionId,
 					statusDir,
 				}),
 				{ mode: 0o600 },

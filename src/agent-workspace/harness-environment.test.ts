@@ -14,11 +14,11 @@ const paths = (directory: string) => ({
 
 describe("prepareHarnessEnvironment", () => {
 	it("continues sequential expansion when an earlier preset PATH hides cat", async () => {
-		const directory = await mkdtemp(join(tmpdir(), "backlog-harness-env-path-"));
+		const directory = await mkdtemp(join(tmpdir(), "agentic-workspace-harness-env-path-"));
 		try {
 			const warnings: string[] = [];
 			const result = await prepareHarnessEnvironment(
-				{ PATH: "/not/a/path", SECOND: "$BACKLOG_TASK_DIR" },
+				{ PATH: "/not/a/path", SECOND: "$AGENTIC_WORKSPACE_TASK_DIR" },
 				paths(directory),
 				{ inherited: { PATH: "/bin:/usr/bin" }, onWarning: (warning) => warnings.push(warning) },
 			);
@@ -30,27 +30,27 @@ describe("prepareHarnessEnvironment", () => {
 		}
 	});
 
-	it("uses sequential shell expansion, preserves values and trailing newlines, and protects Backlog paths", async () => {
-		const directory = await mkdtemp(join(tmpdir(), "backlog-harness-env-"));
+	it("uses sequential shell expansion, preserves values and trailing newlines, and protects AgenticWorkspace paths", async () => {
+		const directory = await mkdtemp(join(tmpdir(), "agentic-workspace-harness-env-"));
 		const marker = join(directory, `not-executed-${randomUUID()}`);
 		const inherited = {
 			PATH: process.env.PATH ?? "/bin:/usr/bin",
 			BASE: "base value",
-			BACKLOG_CWD: "/legacy",
+			AGENTIC_WORKSPACE_CWD: "/legacy",
 			TASK_ID: "legacy-task",
-			BACKLOG_PROJECT_DIR: "/untrusted-project",
+			AGENTIC_WORKSPACE_PROJECT_DIR: "/untrusted-project",
 		};
 		const preset = {
 			PATH: "$PATH:/custom-bin",
-			FIRST: "$BASE:$BACKLOG_WORKTREE_DIR",
+			FIRST: "$BASE:$AGENTIC_WORKSPACE_WORKTREE_DIR",
 			SECOND: "$FIRST:$UNDEFINED_VARIABLE",
 			DOLLAR: "\\$BASE",
 			COMPLEX: " spaces 'single' \"double\"\nsecond line\n",
 			BACKSLASH: "ends-with\\",
 			COMMAND_TEXT: `; touch ${marker}`,
-			BACKLOG_PROJECT_DIR: "/preset-project",
-			BACKLOG_WORKTREE_DIR: "/preset-worktree",
-			BACKLOG_TASK_DIR: "/preset-task",
+			AGENTIC_WORKSPACE_PROJECT_DIR: "/preset-project",
+			AGENTIC_WORKSPACE_WORKTREE_DIR: "/preset-worktree",
+			AGENTIC_WORKSPACE_TASK_DIR: "/preset-task",
 		};
 		const originalInherited = { ...inherited };
 		const originalPreset = { ...preset };
@@ -69,16 +69,16 @@ describe("prepareHarnessEnvironment", () => {
 			expect(result.COMMAND_TEXT).toBe(`; touch ${marker}`);
 			expect(await Bun.file(marker).exists()).toBe(false);
 			expect(result).toMatchObject({
-				BACKLOG_PROJECT_DIR: join(directory, "project"),
-				BACKLOG_WORKTREE_DIR: directory,
-				BACKLOG_TASK_DIR: join(directory, "task"),
+				AGENTIC_WORKSPACE_PROJECT_DIR: join(directory, "project"),
+				AGENTIC_WORKSPACE_WORKTREE_DIR: directory,
+				AGENTIC_WORKSPACE_TASK_DIR: join(directory, "task"),
 			});
-			expect(result.BACKLOG_CWD).toBeUndefined();
+			expect(result.AGENTIC_WORKSPACE_CWD).toBeUndefined();
 			expect(result.TASK_ID).toBeUndefined();
 			expect(warnings).toHaveLength(3);
-			expect(warnings.join(" ")).toContain("BACKLOG_PROJECT_DIR");
-			expect(warnings.join(" ")).toContain("BACKLOG_WORKTREE_DIR");
-			expect(warnings.join(" ")).toContain("BACKLOG_TASK_DIR");
+			expect(warnings.join(" ")).toContain("AGENTIC_WORKSPACE_PROJECT_DIR");
+			expect(warnings.join(" ")).toContain("AGENTIC_WORKSPACE_WORKTREE_DIR");
+			expect(warnings.join(" ")).toContain("AGENTIC_WORKSPACE_TASK_DIR");
 			expect(inherited).toEqual(originalInherited);
 			expect(preset).toEqual(originalPreset);
 		} finally {
@@ -87,7 +87,7 @@ describe("prepareHarnessEnvironment", () => {
 	});
 
 	it("keeps the previous value after expansion timeout or runner failure without logging values", async () => {
-		const directory = await mkdtemp(join(tmpdir(), "backlog-harness-env-failure-"));
+		const directory = await mkdtemp(join(tmpdir(), "agentic-workspace-harness-env-failure-"));
 		const calls: Array<{ args: string[]; cwd?: string }> = [];
 		const runner: ProcessRunner = {
 			run: async (args, options) => {
@@ -95,7 +95,7 @@ describe("prepareHarnessEnvironment", () => {
 				if (calls.length === 1)
 					return { exitCode: 124, stdout: "secret-output", stderr: "secret-diagnostic", timedOut: true };
 				if (calls.length === 2) throw new Error("secret failure detail");
-				const marker = args[2]?.match(/:(BACKLOG_VALUE_[A-Za-z0-9]+)\n/)?.[1];
+				const marker = args[2]?.match(/:(AGENTIC_WORKSPACE_VALUE_[A-Za-z0-9]+)\n/)?.[1];
 				return { exitCode: 0, stdout: `\0:${marker}\n`, stderr: "" };
 			},
 		};

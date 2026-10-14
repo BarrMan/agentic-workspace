@@ -7,7 +7,7 @@ import { OpencodeV1Agent } from "./opencode-v1.ts";
 
 describe("OpenCode 1.19 TUI adapter", () => {
 	it("launches with --prompt and records its created native session in the task root", async () => {
-		const root = await mkdtemp(join(tmpdir(), "backlog-opencode-v1-"));
+		const root = await mkdtemp(join(tmpdir(), "agentic-workspace-opencode-v1-"));
 		try {
 			const bootstrapPath = join(root, "bootstrap.md");
 			await writeFile(bootstrapPath, "Wait for instructions.");
@@ -21,24 +21,24 @@ describe("OpenCode 1.19 TUI adapter", () => {
 			).toContain("--prompt");
 
 			const taskRoot = join(root, "task");
-			const statusDir = join(taskRoot, "backlog-1.activity");
+			const statusDir = join(taskRoot, "agentic-workspace-1.activity");
 			const installed = await agent.installStatusHooks({
 				pluginDir: join(root, "config"),
 				statusDir,
-				sessionId: "backlog-1",
+				sessionId: "agentic-workspace-1",
 			});
-			await writeFile(join(statusDir, ".backlog-launch-owner"), "test-owned-launch");
+			await writeFile(join(statusDir, ".agentic-workspace-launch-owner"), "test-owned-launch");
 			expect(installed.provider).toBe("opencode-v1");
 			expect(installed.env.OPENCODE_CONFIG_DIR).toBe(join(root, "config"));
 			const pluginPath = installed.paths[0] ?? "";
 			const lookups: string[] = [];
 			const plugin = (await import(`${pathToFileURL(pluginPath).href}?test=${Date.now()}`)) as {
-				BacklogStatus: (input: unknown) => Promise<{
+				AgenticWorkspaceStatus: (input: unknown) => Promise<{
 					event(input: unknown): Promise<void>;
 					"chat.message"(input: unknown): Promise<void>;
 				}>;
 			};
-			const hooks = await plugin.BacklogStatus({
+			const hooks = await plugin.AgenticWorkspaceStatus({
 				client: {
 					session: {
 						get: async ({ sessionID }: { sessionID: string }) => {
@@ -57,7 +57,7 @@ describe("OpenCode 1.19 TUI adapter", () => {
 			});
 			await hooks["chat.message"]({ sessionID: "ses_child" });
 
-			const nativePath = join(taskRoot, "backlog-1.native-session-id");
+			const nativePath = join(taskRoot, "agentic-workspace-1.native-session-id");
 			expect(await readFile(nativePath, "utf8")).toBe("ses_native\n");
 			await hooks.event({ event: { type: "session.created", properties: { sessionID: "ses_rotated", info: {} } } });
 			expect(await readFile(nativePath, "utf8")).toBe("ses_rotated\n");
@@ -79,23 +79,23 @@ describe("OpenCode 1.19 TUI adapter", () => {
 
 			const concurrent = await agent.installStatusHooks({
 				pluginDir: join(root, "concurrent-config"),
-				statusDir: join(taskRoot, "backlog-2.activity"),
-				sessionId: "backlog-2",
+				statusDir: join(taskRoot, "agentic-workspace-2.activity"),
+				sessionId: "agentic-workspace-2",
 			});
 			const concurrentPlugin = (await import(
 				`${pathToFileURL(concurrent.paths[0] ?? "").href}?test=${Date.now()}-concurrent`
-			)) as { BacklogStatus: (input: unknown) => Promise<{ event(input: unknown): Promise<void> }> };
-			await (await concurrentPlugin.BacklogStatus({ client: {} })).event({
+			)) as { AgenticWorkspaceStatus: (input: unknown) => Promise<{ event(input: unknown): Promise<void> }> };
+			await (await concurrentPlugin.AgenticWorkspaceStatus({ client: {} })).event({
 				event: { type: "session.created", properties: { sessionID: "ses_concurrent", info: {} } },
 			});
-			expect(await readFile(join(taskRoot, "backlog-2.native-session-id"), "utf8")).toBe("ses_concurrent\n");
+			expect(await readFile(join(taskRoot, "agentic-workspace-2.native-session-id"), "utf8")).toBe("ses_concurrent\n");
 		} finally {
 			await rm(root, { recursive: true, force: true });
 		}
 	});
 
 	it("accepts only the supported executable version before preparing a launch", async () => {
-		const root = await mkdtemp(join(tmpdir(), "backlog-opencode-v1-version-"));
+		const root = await mkdtemp(join(tmpdir(), "agentic-workspace-opencode-v1-version-"));
 		try {
 			const executable = join(root, "opencode");
 			await writeFile(executable, "#!/bin/sh\necho 1.19.0\n");
@@ -108,8 +108,8 @@ describe("OpenCode 1.19 TUI adapter", () => {
 				directory: join(root, "config"),
 				skillRoot: join(root, "skills"),
 				skillPath: join(root, "skills", "SKILL.md"),
-				statusDir: join(root, "task", "backlog-1.activity"),
-				sessionId: "backlog-1",
+				statusDir: join(root, "task", "agentic-workspace-1.activity"),
+				sessionId: "agentic-workspace-1",
 				env: {},
 				intent: { kind: "new" as const },
 			};

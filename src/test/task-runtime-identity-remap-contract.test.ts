@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { SessionStore } from "../agent-workspace/session-store.ts";
 import type { AgentSession } from "../agent-workspace/types.ts";
-import { Core } from "../core/backlog.ts";
+import { Core } from "../core/agentic-workspace.ts";
 import { initializeTestProject } from "./test-utils.ts";
 
 const roots: string[] = [];
@@ -114,9 +114,11 @@ describe("MAIN task runtime identity remap contract", () => {
 
 		await store.mutateMode("TASK-SOURCE", "plan", async (history) => {
 			history.sessions.push(session("TASK-SOURCE", "plan", randomUUID(), join(root, "source.log"), root));
+			history.activeSessionId = history.sessions.at(-1)?.id;
 		});
 		await store.mutateMode("TASK-TARGET", "build", async (history) => {
 			history.sessions.push(session("TASK-TARGET", "build", randomUUID(), join(root, "target.log"), root));
+			history.activeSessionId = history.sessions.at(-1)?.id;
 		});
 		const sourceBefore = await store.read("TASK-SOURCE");
 		const targetBefore = await store.read("TASK-TARGET");
@@ -137,7 +139,10 @@ describe("MAIN task runtime identity remap contract", () => {
 			roots.push(root);
 			const store = new SessionStore(root, new NoProcess());
 			const source = session("TASK-SOURCE", "plan", randomUUID(), join(root, "runtime.log"), root);
-			await store.mutateMode("TASK-SOURCE", "plan", async (history) => history.sessions.push(source));
+			await store.mutateMode("TASK-SOURCE", "plan", async (history) => {
+				history.sessions.push(source);
+				history.activeSessionId = source.id;
+			});
 			await Bun.write(source.outputPath, "sidecar bytes\n");
 			const oldPaths = await store.paths("TASK-SOURCE");
 			const newPaths = await store.paths("TASK-TARGET");
@@ -190,9 +195,11 @@ describe("MAIN task runtime identity remap contract", () => {
 		const root = await mkdtemp(join(tmpdir(), "task-runtime-remap-release-"));
 		roots.push(root);
 		const store = new SessionStore(root, new NoProcess());
-		await store.mutateMode("TASK-SOURCE", "plan", async (history) =>
-			history.sessions.push(session("TASK-SOURCE", "plan", randomUUID(), join(root, "runtime.log"), root)),
-		);
+		await store.mutateMode("TASK-SOURCE", "plan", async (history) => {
+			const source = session("TASK-SOURCE", "plan", randomUUID(), join(root, "runtime.log"), root);
+			history.sessions.push(source);
+			history.activeSessionId = source.id;
+		});
 		type Internals = { acquireRemapLock(path: string): Promise<() => Promise<void>> };
 		const internals = store as unknown as Internals;
 		const original = internals.acquireRemapLock.bind(store);

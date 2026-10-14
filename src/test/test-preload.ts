@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { killTmuxSocketPaneGroups } from "./tmux-pane-groups.ts";
 
-const testTmpDir = mkdtempSync(join(tmpdir(), "backlog-test-worker-"));
+const testTmpDir = mkdtempSync(join(tmpdir(), "agentic-workspace-test-worker-"));
 process.env.TMPDIR = testTmpDir;
 process.env.TMP = testTmpDir;
 process.env.TEMP = testTmpDir;
@@ -21,9 +21,9 @@ process.env.GIT_COMMITTER_EMAIL = "test@example.com";
 /**
  * A test process must never resolve the developer's *live* workspace state.
  *
- * `resolveProjectStateRoot` honours `BACKLOG_CWD`, so a value exported by a running
- * `backlog workspace` would redirect every session/view-state lock onto the live project's
- * `.backlog/<task>/state.json`. The workspace holds those locks (stale 30s, 20 retries), so
+ * `resolveProjectStateRoot` honours `AGENTIC_WORKSPACE_CWD`, so a value exported by a running
+ * `agentic-workspace workspace` would redirect every session/view-state lock onto the live project's
+ * `.agentic-workspace/<task>/state.json`. The workspace holds those locks (stale 30s, 20 retries), so
  * tests would block behind it and the suite would stall. Clearing every workspace-pinning
  * variable makes each test derive its state from its own temp project root instead; a test
  * that pins one deliberately sets it again after this preload runs.
@@ -34,11 +34,11 @@ process.env.GIT_COMMITTER_EMAIL = "test@example.com";
  * replaces, the inline config).
  */
 for (const name of [
-	"BACKLOG_CWD",
-	"BACKLOG_WORKSPACE_CONTEXT",
-	"BACKLOG_PROJECT_ROOT",
-	"BACKLOG_TASK_ID",
-	"BACKLOG_SESSION_ID",
+	"AGENTIC_WORKSPACE_CWD",
+	"AGENTIC_WORKSPACE_WORKSPACE_CONTEXT",
+	"AGENTIC_WORKSPACE_PROJECT_ROOT",
+	"AGENTIC_WORKSPACE_TASK_ID",
+	"AGENTIC_WORKSPACE_SESSION_ID",
 	"TASK_ID",
 	"SESSION_ID",
 	"OPENCODE_CONFIG_CONTENT",
@@ -53,8 +53,8 @@ for (const name of [
  * server from this same environment — on an isolated tmux server, so a live workspace's
  * sessions can never be inspected, replaced, or torn down by a test.
  */
-const socket = `backlog-test-suite-${process.pid.toString(36)}-${randomUUID().slice(0, 8)}`;
-process.env.BACKLOG_TMUX_SOCKET = socket;
+const socket = `agentic-workspace-test-suite-${process.pid.toString(36)}-${randomUUID().slice(0, 8)}`;
+process.env.AGENTIC_WORKSPACE_TMUX_SOCKET = socket;
 afterAll(() => {
 	try {
 		const uid = process.getuid?.();

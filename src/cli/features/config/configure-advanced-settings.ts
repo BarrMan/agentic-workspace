@@ -1,5 +1,5 @@
-import type { Core } from "../../../core/backlog.ts";
-import type { BacklogConfig } from "../../../types/index.ts";
+import type { Core } from "../../../core/agentic-workspace.ts";
+import type { AgenticWorkspaceConfig } from "../../../types/index.ts";
 import { type EditorAvailabilityChecker, type PromptRunner, runAdvancedConfigWizard } from "./advanced-wizard.ts";
 
 interface ConfigureAdvancedOptions {
@@ -11,10 +11,10 @@ interface ConfigureAdvancedOptions {
 export async function configureAdvancedSettings(
 	core: Core,
 	{ promptImpl, isEditorAvailable, cancelMessage = "Aborting configuration." }: ConfigureAdvancedOptions = {},
-): Promise<{ mergedConfig: BacklogConfig; installShellCompletions: boolean }> {
+): Promise<{ mergedConfig: AgenticWorkspaceConfig; installShellCompletions: boolean }> {
 	const existingConfig = await core.filesystem.loadConfig();
 	if (!existingConfig) {
-		throw new Error("No AgenticWorkspace project found. Initialize one first with: agenticworkspace init");
+		throw new Error("No AgenticWorkspace project found. Initialize one first with: agentic-workspace init");
 	}
 
 	const wizardResult = await runAdvancedConfigWizard({
@@ -24,7 +24,7 @@ export async function configureAdvancedSettings(
 		isEditorAvailable,
 	});
 
-	const mergedConfig: BacklogConfig = { ...existingConfig, ...wizardResult.config };
+	const mergedConfig: AgenticWorkspaceConfig = { ...existingConfig, ...wizardResult.config };
 	await core.filesystem.saveConfig(mergedConfig);
 
 	return {

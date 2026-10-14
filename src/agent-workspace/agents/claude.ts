@@ -106,7 +106,7 @@ export class ClaudeAgent implements Agent {
 		await mkdir(join(directory, ".claude-plugin"), { mode: 0o700 });
 		await writeFile(
 			join(directory, ".claude-plugin", "plugin.json"),
-			JSON.stringify({ name: "backlog", version: "1.0.0" }),
+			JSON.stringify({ name: "agentic-workspace", version: "1.0.0" }),
 			{ mode: 0o600 },
 		);
 		// The plugin's own hooks/hooks.json is discovered from --plugin-dir, session-only.

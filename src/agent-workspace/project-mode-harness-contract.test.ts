@@ -3,7 +3,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { TmuxCommandError } from "libtmux";
-import { Core } from "../core/backlog.ts";
+import { Core } from "../core/agentic-workspace.ts";
 import { initializeTestProject } from "../test/test-utils.ts";
 import { buildAgentResumeCommand } from "./bootstrap.ts";
 import { initializeAgentConfiguration, loadAgentConfiguration, upsertAgentConfiguration } from "./config.ts";
@@ -98,7 +98,7 @@ class CapturedHarness implements ProcessRunner, TmuxServer {
 					});
 				return [`4242 ${this.dead.has(target) ? "1" : "0"}`];
 			}
-			if (args.some((arg) => arg.includes("@backlog_launch_resources"))) {
+			if (args.some((arg) => arg.includes("@agentic_workspace_launch_resources"))) {
 				if (!this.sessions.has(target))
 					throw new TmuxCommandError({
 						args: [command, ...args],
@@ -106,7 +106,7 @@ class CapturedHarness implements ProcessRunner, TmuxServer {
 						target,
 						stderr: [`can't find pane: ${target}`],
 					});
-				return [this.metadata.get(target)?.["@backlog_launch_resources"] ?? ""];
+				return [this.metadata.get(target)?.["@agentic_workspace_launch_resources"] ?? ""];
 			}
 			if (target && !this.sessions.has(target))
 				throw new TmuxCommandError({

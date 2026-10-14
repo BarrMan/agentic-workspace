@@ -156,7 +156,7 @@ export function registerDraftCommands(program: Command, runtime: DraftRuntime): 
 		],
 		writes: "Updates draft metadata and structured frontmatter fields through AgenticWorkspace",
 		output: "Updated draft details; use --plain for text output",
-		examples: ['backlog draft edit DRAFT-1 -t "Renamed draft"'],
+		examples: ['agentic-workspace draft edit DRAFT-1 -t "Renamed draft"'],
 	}).description("edit an existing draft");
 	addTaskEditOptions(draftEditCommand).action(async (taskId: string | undefined, options) =>
 		runDraftEdit(taskId ? [taskId] : [], options, runtime.edit),

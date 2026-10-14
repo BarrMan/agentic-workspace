@@ -1,10 +1,11 @@
 import { DEFAULT_STATUSES } from "../constants/index.ts";
-import type { Core } from "../core/backlog.ts";
+import type { Core } from "../core/agentic-workspace.ts";
 import type { Task } from "../types/index.ts";
 import { resolveInProgressStatus } from "../utils/status.ts";
 import { getTerminalStatus, isTerminalStatus } from "../utils/terminal-status.ts";
 import { AgentSessionService, type SessionRuntimeOrigin } from "./sessions.ts";
-import type { ModeId, TaskSessions } from "./types.ts";
+import type { AgentSession, ModeId, TaskSessions } from "./types.ts";
+import type { SessionHandoff } from "./workspace-context.ts";
 
 export class WorkspaceStateService {
 	private readonly sessions: AgentSessionService;
@@ -51,12 +52,24 @@ export class WorkspaceStateService {
 		return this.sessions.prepareNativeSession(taskId, sessionId, modeId);
 	}
 
+	prepareNewSession(taskId: string, modeId: ModeId) {
+		return this.sessions.prepareNewSession(taskId, modeId);
+	}
+
 	adoptPendingSession(taskId: string, sessionId: string) {
 		return this.sessions.adoptPendingSession(taskId, sessionId);
 	}
 
 	stopSession(taskId: string, sessionId: string): Promise<void> {
 		return this.sessions.stop(taskId, sessionId);
+	}
+
+	finalizeHandoff(taskId: string, successor: AgentSession, handoff: SessionHandoff): Promise<void> {
+		return this.sessions.finalizeHandoff(taskId, successor, handoff);
+	}
+
+	rollbackHandoff(taskId: string, successor: AgentSession, handoff: SessionHandoff): Promise<void> {
+		return this.sessions.rollbackHandoff(taskId, successor, handoff);
 	}
 
 	activateSession(

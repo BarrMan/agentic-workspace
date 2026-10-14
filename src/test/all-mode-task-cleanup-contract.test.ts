@@ -3,7 +3,7 @@ import { BunRunner } from "../agent-workspace/session-process.ts";
 import { SessionStore } from "../agent-workspace/session-store.ts";
 import { AgentSessionService, type ProcessRunner, type TmuxServer } from "../agent-workspace/sessions.ts";
 import type { AgentSession, TaskSessions } from "../agent-workspace/types.ts";
-import { Core } from "../core/backlog.ts";
+import { Core } from "../core/agentic-workspace.ts";
 import { cleanupTaskWorktreeSessions, withoutSelectedModeForTask } from "../git/task-worktree-cleanup.ts";
 import { createUniqueTestDir, initializeFilesystemTestProject, safeCleanup } from "./test-utils.ts";
 
@@ -59,7 +59,11 @@ describe("all-mode task cleanup contract", () => {
 		const releaseErrors = [new Error("release c failed"), new Error("release b failed")];
 		const service: AgentSessionService = Object.assign(Object.create(AgentSessionService.prototype), {
 			store: {
-				read: async () => ({ taskId: "TASK-1", sessions: records }),
+				read: async () => ({
+					taskId: "TASK-1",
+					sessions: records,
+					modes: { build: { sessions: records, activeSessionId: "a" } },
+				}),
 				claimSession: async (_taskId: string, id: string) => () => {
 					released.push(id);
 					if (releaseFails && id === "c") throw releaseErrors[0];
@@ -139,8 +143,8 @@ describe("all-mode task cleanup contract", () => {
 	it("runs cleanup through Core before completed/deleted task storage and worktree removal", async () => {
 		const root = createUniqueTestDir("all-mode-cleanup");
 		const worktreeHome = createUniqueTestDir("all-mode-cleanup-home");
-		const priorHome = process.env.BACKLOG_WORKTREE_HOME;
-		process.env.BACKLOG_WORKTREE_HOME = worktreeHome;
+		const priorHome = process.env.AGENTIC_WORKSPACE_WORKTREE_HOME;
+		process.env.AGENTIC_WORKSPACE_WORKTREE_HOME = worktreeHome;
 		try {
 			const core = new Core(root);
 			await initializeFilesystemTestProject(core, "All mode cleanup");
@@ -160,8 +164,8 @@ describe("all-mode task cleanup contract", () => {
 			await core.completeTask(task.task.id);
 			expect(events).toContain(`cleanup:${task.task.id}`);
 		} finally {
-			if (priorHome === undefined) delete process.env.BACKLOG_WORKTREE_HOME;
-			else process.env.BACKLOG_WORKTREE_HOME = priorHome;
+			if (priorHome === undefined) delete process.env.AGENTIC_WORKSPACE_WORKTREE_HOME;
+			else process.env.AGENTIC_WORKSPACE_WORKTREE_HOME = priorHome;
 			await safeCleanup(worktreeHome);
 			await safeCleanup(root);
 		}
@@ -178,6 +182,7 @@ describe("all-mode task cleanup contract", () => {
 			const sessionId = "parked-during-completion";
 			await store.mutate(taskId, async (state) => {
 				state.sessions.push({ ...session(sessionId, "parked"), taskId });
+				state.activeSessionId = sessionId;
 			});
 			const cleanup = core.sessions.cleanupTaskWorktreeSessions.bind(core.sessions);
 			core.sessions.cleanupTaskWorktreeSessions = async (id) => {

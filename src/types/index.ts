@@ -31,7 +31,7 @@ export type TaskSource = (typeof TASK_SOURCE)[keyof typeof TASK_SOURCE];
 export type LabelMatchMode = "any" | "all";
 
 /**
- * Entity types in the backlog system.
+ * Entity types in AgenticWorkspace.
  * Used for ID generation and prefix resolution.
  */
 export enum EntityType {
@@ -313,7 +313,7 @@ export interface PrefixConfig {
 	task: string;
 }
 
-export interface BacklogConfig {
+export interface AgenticWorkspaceConfig {
 	projectName: string;
 	/** Assignees applied to new tasks when none are provided. Empty or unset means no default. */
 	defaultAssignee?: string[];
@@ -345,8 +345,8 @@ export interface BacklogConfig {
 	bypassGitHooks?: boolean;
 	checkActiveBranches?: boolean; // Check task states across active branches (default: true)
 	activeBranchDays?: number; // How many days a branch is considered active (default: 30)
-	/** Project-relative backlog folder when config is stored at project root in backlog.config.yml. */
-	backlogDirectory?: string;
+	/** Project-relative AgenticWorkspace folder when config is stored at project root in agentic-workspace.config.yml. */
+	agenticWorkspaceDirectory?: string;
 	/** Global callback command to run on any task status change. Supports $TASK_ID, $OLD_STATUS, $NEW_STATUS, $TASK_TITLE variables. */
 	onStatusChange?: string;
 	/** ID prefix configuration for tasks and drafts. Defaults to { task: "task", draft: "draft" } */

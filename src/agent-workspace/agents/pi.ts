@@ -22,8 +22,8 @@ import { discoverModels, withExplicitModel } from "./profile.ts";
 
 /** Pi extension source. Non-throwing, same contract as the OpenCode plugin. */
 export function piExtensionSource(statusDir: string, sessionId?: string): string {
-	return `// backlog-hooks
-// Process-scoped status emitter. Installed inside Backlog's owned temp dir and removed with it.
+	return `// agentic-workspace-hooks
+// Process-scoped status emitter. Installed inside AgenticWorkspace's owned temp dir and removed with it.
 import { existsSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
@@ -33,14 +33,14 @@ void SESSION_ID;
 
 function emit(status) {
   try {
-    if (!STATUS_DIR || !existsSync(join(STATUS_DIR, ".backlog-launch-owner"))) return;
+    if (!STATUS_DIR || !existsSync(join(STATUS_DIR, ".agentic-workspace-launch-owner"))) return;
     writeFileSync(join(STATUS_DIR, "status"), status, { mode: 0o600 });
   } catch {
     // A throwing extension can block the agent's tool calls; never propagate.
   }
 }
 
-export default function backlogStatus(pi) {
+export default function agenticWorkspaceStatus(pi) {
   try {
     pi.on("session_start", () => emit("idle"));
     pi.on("tool_call", () => emit("running"));
@@ -142,7 +142,7 @@ export class PiAgent implements Agent {
 	}: StatusHookInstallOptions): Promise<InstalledStatusHook> {
 		// The sidecar is the deterministic per-session directory; the hook file lives in the temp dir.
 		await mkdir(statusDir, { recursive: true, mode: 0o700 });
-		const path = join(pluginDir, "backlog-status-extension.ts");
+		const path = join(pluginDir, "agentic-workspace-status-extension.ts");
 		await writeFile(path, piExtensionSource(statusDir, sessionId), { mode: 0o600 });
 		return { provider: "pi", paths: [path], env: {}, args: ["--extension", path] };
 	}

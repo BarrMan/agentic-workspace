@@ -6,10 +6,10 @@ type PackageJson = {
 };
 
 const packageJson = (await Bun.file("package.json").json()) as PackageJson;
-const outfile = process.env.BACKLOG_BUILD_OUTFILE ?? "dist/agenticworkspace";
-const outdir = process.env.BACKLOG_BUILD_OUTDIR;
-const version = process.env.BACKLOG_BUILD_VERSION ?? packageJson.version;
-const target = process.env.BACKLOG_BUILD_TARGET;
+const outfile = process.env.AGENTIC_WORKSPACE_BUILD_OUTFILE ?? "dist/agentic-workspace";
+const outdir = process.env.AGENTIC_WORKSPACE_BUILD_OUTDIR;
+const version = process.env.AGENTIC_WORKSPACE_BUILD_VERSION ?? packageJson.version;
+const target = process.env.AGENTIC_WORKSPACE_BUILD_TARGET;
 const outputDirectory = outdir ?? dirname(outfile);
 
 if (outputDirectory !== ".") {

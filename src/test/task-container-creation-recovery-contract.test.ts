@@ -1,7 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { Core } from "../core/backlog.ts";
+import { Core } from "../core/agentic-workspace.ts";
 import { createUniqueTestDir, initializeTestProject, safeCleanup } from "./test-utils.ts";
 
 async function setup(): Promise<{ dir: string; core: Core }> {
@@ -23,7 +23,7 @@ describe("task container creation recovery contract", () => {
 			await expect(core.createTaskFromInput({ title: "Recover task", status: "To Do" })).rejects.toThrow(
 				"injected finalize failure",
 			);
-			const tasksDir = join(dir, "backlog", "tasks");
+			const tasksDir = join(dir, "agentic-workspace", "tasks");
 			const taskContainer = join(tasksDir, "task-1");
 			expect(await Bun.file(join(taskContainer, "task.md")).exists()).toBe(false);
 			expect((await readdir(tasksDir)).filter((entry) => entry === "task-1")).toEqual([]);
@@ -41,14 +41,14 @@ describe("task container creation recovery contract", () => {
 		const { dir, core } = await setup();
 		try {
 			core.finalizeCreatedTask = async (_task, _isDraft) => {
-				const container = join(dir, "backlog", "drafts", "draft-1");
+				const container = join(dir, "agentic-workspace", "drafts", "draft-1");
 				await writeFile(join(container, "notes.txt"), "user-owned bytes");
 				throw new Error("injected finalize failure");
 			};
 			await expect(core.createTaskFromInput({ title: "Recover draft", status: "Draft" })).rejects.toThrow(
 				"injected finalize failure",
 			);
-			const container = join(dir, "backlog", "drafts", "draft-1");
+			const container = join(dir, "agentic-workspace", "drafts", "draft-1");
 			expect(await Bun.file(join(container, "task.md")).exists()).toBe(false);
 			expect(await readFile(join(container, "notes.txt"), "utf8")).toBe("user-owned bytes");
 			expect(await readdir(container)).toEqual(["notes.txt"]);
@@ -60,7 +60,7 @@ describe("task container creation recovery contract", () => {
 	it("refuses to merge into an occupied task identity", async () => {
 		const { dir, core } = await setup();
 		try {
-			const occupied = join(dir, "backlog", "tasks", "task-1");
+			const occupied = join(dir, "agentic-workspace", "tasks", "task-1");
 			await mkdir(occupied, { recursive: true });
 			await writeFile(join(occupied, "notes.txt"), "keep me");
 			await expect(core.createTaskFromInput({ title: "Occupied", status: "To Do" })).rejects.toThrow(

@@ -3,8 +3,8 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { $ } from "bun";
-import { Core } from "../core/backlog.ts";
-import type { BacklogConfig } from "../types/index.ts";
+import { Core } from "../core/agentic-workspace.ts";
+import type { AgenticWorkspaceConfig } from "../types/index.ts";
 import { initGitRepo } from "./test-utils.ts";
 
 describe("Offline Integration Tests", () => {
@@ -12,7 +12,7 @@ describe("Offline Integration Tests", () => {
 	let core: Core;
 
 	beforeEach(async () => {
-		tempDir = await mkdtemp(join(tmpdir(), "backlog-offline-integration-"));
+		tempDir = await mkdtemp(join(tmpdir(), "agentic-workspace-offline-integration-"));
 
 		// Initialize a git repo without remote
 		initGitRepo(tempDir);
@@ -22,14 +22,14 @@ describe("Offline Integration Tests", () => {
 		await $`git add README.md`.cwd(tempDir).quiet();
 		await $`git commit -m "Initial commit"`.cwd(tempDir).quiet();
 
-		// Create basic backlog structure
-		const backlogDir = join(tempDir, "backlog");
-		await mkdir(backlogDir, { recursive: true });
-		await mkdir(join(backlogDir, "tasks"), { recursive: true });
-		await mkdir(join(backlogDir, "drafts"), { recursive: true });
+		// Create basic agentic-workspace structure
+		const agenticWorkspaceDir = join(tempDir, "agentic-workspace");
+		await mkdir(agenticWorkspaceDir, { recursive: true });
+		await mkdir(join(agenticWorkspaceDir, "tasks"), { recursive: true });
+		await mkdir(join(agenticWorkspaceDir, "drafts"), { recursive: true });
 
 		// Create config with remote operations disabled
-		const config: BacklogConfig = {
+		const config: AgenticWorkspaceConfig = {
 			projectName: "Offline Test Project",
 			statuses: ["To Do", "In Progress", "Done"],
 			labels: ["bug", "feature"],
@@ -39,13 +39,13 @@ describe("Offline Integration Tests", () => {
 		};
 
 		await writeFile(
-			join(backlogDir, "config.yml"),
+			join(agenticWorkspaceDir, "config.yml"),
 			`project_name: "${config.projectName}"
 statuses: ["To Do", "In Progress", "Done"]
 labels: ["bug", "feature"]
 milestones: []
 date_format: YYYY-MM-DD
-backlog_directory: "backlog"
+agentic_workspace_directory: "agentic-workspace"
 remote_operations: false
 `,
 		);
@@ -116,7 +116,7 @@ remote_operations: false
 
 		// Simulate config set command
 		if (!initialConfig) throw new Error("Config not loaded");
-		const updatedConfig: BacklogConfig = { ...initialConfig, remoteOperations: true };
+		const updatedConfig: AgenticWorkspaceConfig = { ...initialConfig, remoteOperations: true };
 		await core.filesystem.saveConfig(updatedConfig);
 
 		// Verify config was updated
@@ -125,7 +125,7 @@ remote_operations: false
 
 		// Test changing it back
 		if (!newConfig) throw new Error("Config not loaded");
-		const finalConfig: BacklogConfig = { ...newConfig, remoteOperations: false };
+		const finalConfig: AgenticWorkspaceConfig = { ...newConfig, remoteOperations: false };
 		await core.filesystem.saveConfig(finalConfig);
 
 		const verifyConfig = await core.filesystem.loadConfig();

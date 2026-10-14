@@ -4,9 +4,9 @@ import type { McpResourceHandler } from "../../types.ts";
 
 function createInitRequiredResource(server: McpServer, projectRoot: string): McpResourceHandler {
 	return {
-		uri: "backlog://init-required",
-		name: `Backlog.md Not Initialized [${projectRoot}]`,
-		description: "Instructions for initializing Backlog.md in this project",
+		uri: "agentic-workspace://init-required",
+		name: `AgenticWorkspace Not Initialized [${projectRoot}]`,
+		description: "Instructions for initializing AgenticWorkspace in this project",
 		mimeType: "text/markdown",
 		handler: async () => {
 			let text = MCP_INIT_REQUIRED_GUIDE;
@@ -18,7 +18,7 @@ function createInitRequiredResource(server: McpServer, projectRoot: string): Mcp
 			return {
 				contents: [
 					{
-						uri: "backlog://init-required",
+						uri: "agentic-workspace://init-required",
 						mimeType: "text/markdown",
 						text,
 					},

@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { resolveAgentConfiguration, upsertAgentConfiguration } from "../agent-workspace/config.ts";
 import type { AgentConfiguration } from "../agent-workspace/types.ts";
-import { Core } from "../core/backlog.ts";
+import { Core } from "../core/agentic-workspace.ts";
 import { CREATE_LOCK_ERROR_MESSAGE } from "../file-system/operations.ts";
 import type { Task } from "../types";
 import { initializeTestProject, withTimeout } from "./test-utils.ts";
@@ -41,10 +41,10 @@ describe("atomic task creation", () => {
 		// A user-scope agents.json must not leak into the project's parent lookup; pin it to an empty
 		// directory (mirrors `config.test.ts`).
 		originalXdgConfigHome = process.env.XDG_CONFIG_HOME;
-		configHome = await mkdtemp(join(tmpdir(), "backlog-atomic-config-"));
+		configHome = await mkdtemp(join(tmpdir(), "agentic-workspace-atomic-config-"));
 		process.env.XDG_CONFIG_HOME = configHome;
 
-		testDir = await mkdtemp(join(tmpdir(), "backlog-atomic-create-"));
+		testDir = await mkdtemp(join(tmpdir(), "agentic-workspace-atomic-create-"));
 		const core = new Core(testDir);
 		await initializeTestProject(core, "Atomic Create Test", false);
 
@@ -178,7 +178,7 @@ describe("atomic task creation", () => {
 		const releaseFirstWrite = createDeferred<void>();
 		let writeEntries = 0;
 		const originalWrite = Bun.write;
-		const tasksPathPrefix = `${testDir}/backlog/tasks/`.replace(/\\/g, "/");
+		const tasksPathPrefix = `${testDir}/agentic-workspace/tasks/`.replace(/\\/g, "/");
 
 		Bun.write = (async (...args: Parameters<typeof Bun.write>) => {
 			const targetPath = String(args[0]).replace(/\\/g, "/");
@@ -223,7 +223,7 @@ describe("atomic task creation", () => {
 		const releaseFirstWrite = createDeferred<void>();
 		let writeEntries = 0;
 		const originalWrite = Bun.write;
-		const draftsPathPrefix = `${testDir}/backlog/drafts/`.replace(/\\/g, "/");
+		const draftsPathPrefix = `${testDir}/agentic-workspace/drafts/`.replace(/\\/g, "/");
 
 		Bun.write = (async (...args: Parameters<typeof Bun.write>) => {
 			const targetPath = String(args[0]).replace(/\\/g, "/");
@@ -264,7 +264,7 @@ describe("atomic task creation", () => {
 		const releaseFirstWrite = createDeferred<void>();
 		let writeEntries = 0;
 		const originalWrite = Bun.write;
-		const milestonePathPrefix = `${testDir}/backlog/milestones/`.replace(/\\/g, "/");
+		const milestonePathPrefix = `${testDir}/agentic-workspace/milestones/`.replace(/\\/g, "/");
 
 		Bun.write = (async (...args: Parameters<typeof Bun.write>) => {
 			const targetPath = String(args[0]).replace(/\\/g, "/");

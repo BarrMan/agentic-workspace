@@ -1,11 +1,11 @@
 /**
- * Default directory structure for backlog projects
+ * Default directory structure for AgenticWorkspace projects
  */
 export const DEFAULT_DIRECTORIES = {
-	/** Main backlog directory */
-	BACKLOG: "backlog",
-	/** Hidden backlog directory */
-	HIDDEN_BACKLOG: ".backlog",
+	/** Main AgenticWorkspace directory */
+	AGENTIC_WORKSPACE: "agentic-workspace",
+	/** Hidden AgenticWorkspace directory */
+	HIDDEN_AGENTIC_WORKSPACE: ".agentic-workspace",
 	/** Active tasks directory */
 	TASKS: "tasks",
 	/** Draft tasks directory */
@@ -36,8 +36,8 @@ export const DEFAULT_FILES = {
 	CONFIG: "config.yml",
 	/** Alternate config filename accepted for discovery */
 	CONFIG_YAML: "config.yaml",
-	/** Root-level backlog configuration file */
-	ROOT_CONFIG: "backlog.config.yml",
+	/** Root-level AgenticWorkspace configuration file */
+	ROOT_CONFIG: "agentic-workspace.config.yml",
 } as const;
 
 /**

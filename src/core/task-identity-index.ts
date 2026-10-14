@@ -37,7 +37,7 @@ export function completedTaskIdentityRecord(task: Task, path: string): TaskIdent
 interface TaskIdentityPathContext {
 	repositoryRoot: string | null;
 	projectRoot: string;
-	backlogDirectory: string;
+	agenticWorkspaceDirectory: string;
 }
 
 interface TaskIdentity {
@@ -66,11 +66,11 @@ function joinPosix(...parts: string[]): string {
 		.join("/");
 }
 
-export function normalizeTaskLifecyclePath(path: string, backlogDirectory: string): string {
+export function normalizeTaskLifecyclePath(path: string, agenticWorkspaceDirectory: string): string {
 	for (const lifecycleDirectory of [DEFAULT_DIRECTORIES.ARCHIVE_TASKS, DEFAULT_DIRECTORIES.COMPLETED]) {
-		const lifecyclePrefix = `${backlogDirectory}/${lifecycleDirectory}/`;
+		const lifecyclePrefix = `${agenticWorkspaceDirectory}/${lifecycleDirectory}/`;
 		if (path.startsWith(lifecyclePrefix)) {
-			return `${backlogDirectory}/${DEFAULT_DIRECTORIES.TASKS}/${path.slice(lifecyclePrefix.length)}`;
+			return `${agenticWorkspaceDirectory}/${DEFAULT_DIRECTORIES.TASKS}/${path.slice(lifecyclePrefix.length)}`;
 		}
 	}
 	return path;
@@ -92,17 +92,17 @@ function normalizeRecordPath(record: TaskIdentityRecord, context: TaskIdentityPa
 	}
 
 	path = toPosixPath(path);
-	const repositoryBacklogDirectory = joinPosix(projectPrefix, context.backlogDirectory);
-	const projectBacklogDirectory = toPosixPath(context.backlogDirectory);
+	const repositoryAgenticWorkspaceDirectory = joinPosix(projectPrefix, context.agenticWorkspaceDirectory);
+	const projectAgenticWorkspaceDirectory = toPosixPath(context.agenticWorkspaceDirectory);
 	if (
 		projectPrefix &&
-		(path === projectBacklogDirectory || path.startsWith(`${projectBacklogDirectory}/`)) &&
-		!(path === repositoryBacklogDirectory || path.startsWith(`${repositoryBacklogDirectory}/`))
+		(path === projectAgenticWorkspaceDirectory || path.startsWith(`${projectAgenticWorkspaceDirectory}/`)) &&
+		!(path === repositoryAgenticWorkspaceDirectory || path.startsWith(`${repositoryAgenticWorkspaceDirectory}/`))
 	) {
 		path = joinPosix(projectPrefix, path);
 	}
 
-	return normalizeTaskLifecyclePath(path, repositoryBacklogDirectory);
+	return normalizeTaskLifecyclePath(path, repositoryAgenticWorkspaceDirectory);
 }
 
 function recordKey(record: TaskIdentityRecord): string {

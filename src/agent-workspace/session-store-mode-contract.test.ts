@@ -34,7 +34,7 @@ describe("SessionStore mode persistence contract", () => {
 	});
 
 	async function fixture() {
-		const root = await mkdtemp(join(tmpdir(), "backlog-session-mode-contract-"));
+		const root = await mkdtemp(join(tmpdir(), "agentic-workspace-session-mode-contract-"));
 		roots.push(root);
 		const store = new SessionStore(root, new InertRunner());
 		return { root, store, ...(await store.paths("TASK-23")) };
@@ -44,6 +44,7 @@ describe("SessionStore mode persistence contract", () => {
 		const { store } = await fixture();
 		await store.mutateMode("TASK-23", "plan", async (history) => {
 			history.sessions.push(session("preset-only"));
+			history.activeSessionId = "preset-only";
 		});
 		expect((await store.readMode("TASK-23", "plan")).sessions[0]).toEqual(session("preset-only"));
 	});
@@ -70,7 +71,11 @@ describe("SessionStore mode persistence contract", () => {
 		const { root, store, statePath } = await fixture();
 		const planner = session("plan-uuid", {
 			nativeSessionId: "native-plan",
-			pathContext: { projectDir: "/project", worktreeDir: "/work/plan", taskDir: "/project/backlog/tasks/task-23" },
+			pathContext: {
+				projectDir: "/project",
+				worktreeDir: "/work/plan",
+				taskDir: "/project/agentic-workspace/tasks/task-23",
+			},
 		});
 		const builder = session("build-uuid", {
 			nativeSessionId: "native-build",
@@ -103,7 +108,10 @@ describe("SessionStore mode persistence contract", () => {
 			taskId: "TASK-23",
 			worktreePath: "/worktree/TASK-23",
 			hasSuccessfulSession: true,
-			modes: { build: { sessions: [session("metadata-build")] }, plan: { sessions: [session("metadata-plan")] } },
+			modes: {
+				build: { activeSessionId: "metadata-build", sessions: [session("metadata-build")] },
+				plan: { activeSessionId: "metadata-plan", sessions: [session("metadata-plan")] },
+			},
 		};
 		await writeFile(statePath, JSON.stringify(envelope));
 		const expectMetadata = async () =>
@@ -129,33 +137,33 @@ describe("SessionStore mode persistence contract", () => {
 		}
 	});
 
-	it("normalizes obsolete records in every mode without writing during read", async () => {
+	it("rejects obsolete session records without writing during read", async () => {
 		const { store, statePath } = await fixture();
 		await mkdir(join(statePath, ".."), { recursive: true });
-		const legacySession = (id: string) => ({ ...session(id), status: "handed-off", predecessorId: "old-task" });
+		const invalidSession = (id: string) => ({ ...session(id), predecessorId: "old-task" });
 		const bytes = JSON.stringify({
 			version: 2,
 			taskId: "TASK-23",
-			modes: { build: { sessions: [legacySession("old-build")] }, plan: { sessions: [legacySession("old-plan")] } },
+			modes: { build: { sessions: [invalidSession("old-build")] }, plan: { sessions: [invalidSession("old-plan")] } },
 		});
 		await writeFile(statePath, bytes);
-		const read = await store.read("TASK-23");
-		expect(read.modes?.build?.sessions[0]).toMatchObject({ status: "stopped" });
-		expect(read.modes?.plan?.sessions[0]).toMatchObject({ status: "stopped" });
-		expect(read.modes?.build?.sessions[0]).not.toHaveProperty("predecessorId");
-		expect(read.modes?.plan?.sessions[0]).not.toHaveProperty("predecessorId");
+		await expect(store.read("TASK-23")).rejects.toThrow(/invalid session data/i);
 		expect(await readFile(statePath, "utf8")).toBe(bytes);
 	});
 
-	it("returns an empty mode without creating state, then persists a mode with no active session", async () => {
+	it("returns an empty mode without creating state, then persists a selected session", async () => {
 		const { store, statePath } = await fixture();
 		expect(await store.readMode("TASK-23", "research")).toEqual({ sessions: [] });
 		await expect(readFile(statePath)).rejects.toMatchObject({ code: "ENOENT" });
 
 		await store.mutateMode("TASK-23", "research", async (history) => {
 			history.sessions.push(session("research-uuid"));
+			history.activeSessionId = "research-uuid";
 		});
-		expect(await store.readMode("TASK-23", "research")).toEqual({ sessions: [session("research-uuid")] });
+		expect(await store.readMode("TASK-23", "research")).toEqual({
+			sessions: [session("research-uuid")],
+			activeSessionId: "research-uuid",
+		});
 	});
 
 	it("finds the current UUID owner under lock and leaves unrelated mode history and pointers intact", async () => {

@@ -11,10 +11,10 @@ import {
 	selectListWindow,
 } from "../utils/list-window.ts";
 
-/** `agenticworkspace task list` with the window options and one option that reads a value, `--search`. */
+/** `agentic-workspace task list` with the window options and one option that reads a value, `--search`. */
 function taskListCommand(): Command {
 	return addListWindowOptions(
-		new Command("agenticworkspace").command("task").command("list").option("--search <query>"),
+		new Command("agentic-workspace").command("task").command("list").option("--search <query>"),
 	);
 }
 
@@ -67,7 +67,7 @@ describe("list windows", () => {
 
 		expect(footer(0, 5)).toBeNull();
 		expect(footer(2, 2)).toBe(
-			"Showing 3-4 of 5 items. Next: agenticworkspace task list --max-count 2 --plain --skip 4",
+			"Showing 3-4 of 5 items. Next: agentic-workspace task list --max-count 2 --plain --skip 4",
 		);
 		expect(footer(4, 2)).toBe("Showing 5-5 of 5 items.");
 		expect(footer(9, 2)).toBe("Showing 0 of 5 items.");
@@ -75,31 +75,33 @@ describe("list windows", () => {
 
 	it("replaces the typed skip and quotes arguments the shell would split", () => {
 		expect(nextPageCommand(windowOf(0, 3, ["task", "list", "--skip", "3", "--max-count", "3"]), 6)).toBe(
-			"agenticworkspace task list --max-count 3 --skip 6",
+			"agentic-workspace task list --max-count 3 --skip 6",
 		);
 		expect(
 			nextPageCommand(
 				windowOf(0, 3, ["search", "--skip=3", "it's done", "--status", "To Do", "=draft", "--priority=high"]),
 				6,
 			),
-		).toBe("agenticworkspace search 'it'\\''s done' --status 'To Do' '=draft' '--priority=high' --skip 6");
+		).toBe("agentic-workspace search 'it'\\''s done' --status 'To Do' '=draft' '--priority=high' --skip 6");
 	});
 
 	it("keeps option values that read --skip or -- and puts the new skip before --", () => {
 		const next = (args: string[]) => nextPageCommand(windowOf(0, 1, args), 1);
 
 		expect(next(["task", "list", "--search", "--skip", "--max-count", "1"])).toBe(
-			"agenticworkspace task list --search --skip --max-count 1 --skip 1",
+			"agentic-workspace task list --search --skip --max-count 1 --skip 1",
 		);
 		expect(next(["task", "list", "--search", "--skip", "--skip", "3", "--max-count", "1"])).toBe(
-			"agenticworkspace task list --search --skip --max-count 1 --skip 1",
+			"agentic-workspace task list --search --skip --max-count 1 --skip 1",
 		);
 		expect(next(["task", "list", "--search", "--", "--max-count", "1"])).toBe(
-			"agenticworkspace task list --search -- --max-count 1 --skip 1",
+			"agentic-workspace task list --search -- --max-count 1 --skip 1",
 		);
-		expect(next(["doc", "list", "--max-count", "1", "--"])).toBe("agenticworkspace doc list --max-count 1 --skip 1 --");
+		expect(next(["doc", "list", "--max-count", "1", "--"])).toBe(
+			"agentic-workspace doc list --max-count 1 --skip 1 --",
+		);
 		expect(next(["search", "--max-count", "1", "--", "--skip", "it"])).toBe(
-			"agenticworkspace search --max-count 1 --skip 1 -- --skip it",
+			"agentic-workspace search --max-count 1 --skip 1 -- --skip it",
 		);
 	});
 
@@ -158,7 +160,7 @@ describe("list windows", () => {
 			}
 			expect(parseListWindow({ count: true, json: true }, taskListCommand(), [])).toBeNull();
 			expect(errors).toHaveBeenLastCalledWith(
-				"--count cannot be combined with --json. Try 'agenticworkspace task list --help' for options.",
+				"--count cannot be combined with --json. Try 'agentic-workspace task list --help' for options.",
 			);
 		} finally {
 			errors.mockRestore();

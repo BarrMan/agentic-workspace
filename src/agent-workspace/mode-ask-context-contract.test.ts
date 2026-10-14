@@ -3,7 +3,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { TmuxCommandError } from "libtmux";
-import { Core } from "../core/backlog.ts";
+import { Core } from "../core/agentic-workspace.ts";
 import { initializeTestProject } from "../test/test-utils.ts";
 import { getDefaultModeCatalog, initializeAgentConfiguration, upsertAgentConfiguration } from "./config.ts";
 import * as processTree from "./process-tree.ts";
@@ -67,10 +67,10 @@ class FakeHarness implements ProcessRunner, TmuxServer {
 				const metadata = this.metadata.get(id) ?? {};
 				const row: Record<string, string> = {
 					session_name: sessionName,
-					"@backlog_root": metadata["@backlog_root"] ?? "",
-					"@backlog_task": metadata["@backlog_task"] ?? "",
-					"@backlog_session": metadata["@backlog_session"] ?? "",
-					"@backlog_role": metadata["@backlog_role"] ?? "",
+					"@agentic_workspace_root": metadata["@agentic_workspace_root"] ?? "",
+					"@agentic_workspace_task": metadata["@agentic_workspace_task"] ?? "",
+					"@agentic_workspace_session": metadata["@agentic_workspace_session"] ?? "",
+					"@agentic_workspace_role": metadata["@agentic_workspace_role"] ?? "",
 					pane_id: id,
 					pane_dead: this.dead.has(id) ? "1" : "0",
 				};
@@ -79,9 +79,9 @@ class FakeHarness implements ProcessRunner, TmuxServer {
 		}
 		if (command === "display-message") {
 			if (args.includes("#{pid}")) return ["4242"];
-			if (args.some((arg) => arg.includes("@backlog_launch_resources"))) {
+			if (args.some((arg) => arg.includes("@agentic_workspace_launch_resources"))) {
 				const paneId = args[args.indexOf("-t") + 1] ?? "";
-				return [this.metadata.get(paneId)?.["@backlog_launch_resources"] ?? ""];
+				return [this.metadata.get(paneId)?.["@agentic_workspace_launch_resources"] ?? ""];
 			}
 			if (args.includes("#{pane_pid} #{pane_dead}")) return ["4242 0"];
 			return ["%1 0"];

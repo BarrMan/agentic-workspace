@@ -41,6 +41,7 @@ describe("mode name color projection", () => {
 			];
 			const mount = mountOpenTuiWorkspace(setup.renderer, parent, {
 				tasks,
+				activeAgentSession: { id: "color-session", taskId: "TASK-1", status: "running", preset: "test" },
 				statuses: ["To Do", "Done"],
 				selectedTaskIndex: 0,
 				modeProjectionByTask: (id) =>
@@ -123,6 +124,7 @@ describe("mode name color projection", () => {
 		]);
 		const options = {
 			tasks,
+			activeAgentSession: { id: "plan-session", taskId: "TASK-1", status: "running", preset: "test" },
 			statuses: ["To Do"],
 			modeProjectionByTask: (id: string) => modes.get(id),
 			indicationByTask: new Map([["TASK-1", "working" as const]]),
@@ -146,17 +148,16 @@ describe("mode name color projection", () => {
 			expect(approval.fg.toInts()).toEqual(title.fg.toInts());
 			expect(marker.fg.toInts()).toEqual([22, 101, 52, 255]);
 			const otherY = lines.findIndex((row) => row.includes("Other title"));
-			expect(lines[otherY]).not.toContain("Build");
-			expect(lines[otherY]).not.toContain("✓");
+			expect(lines[otherY]).toContain("Build ✓");
 			const colorlessY = lines.findIndex((row) => row.includes("Colorless title"));
-			expect(lines[colorlessY]).not.toContain("Review");
+			expect(lines[colorlessY]).toContain("Review");
 			setup.mockInput.pressArrow("down");
 			await setup.flush();
 			lines = setup.captureCharFrame().split("\n");
 			const build = spanAt(setup, (lines[otherY] ?? "").indexOf("Build"), otherY);
 			expect(build.bg.toInts()).toEqual(title.bg.toInts());
 			expect(contrast(build.fg.toInts(), build.bg.toInts())).toBeGreaterThanOrEqual(4.5);
-			expect(lines[y]).not.toContain("Plan ✓");
+			expect(lines[y]).toContain("Plan ✓");
 			expect(spanAt(setup, (lines[y] ?? "").indexOf("●"), y).fg.toInts()).toEqual([102, 255, 102, 255]);
 			setup.mockInput.pressArrow("down");
 			await setup.flush();
@@ -188,7 +189,7 @@ describe("mode name color projection", () => {
 		}
 	});
 
-	it("overlays the padded badge on a long title and restores every title cell on navigation", async () => {
+	it("renders the padded badge on selected and unselected long-title rows", async () => {
 		const setup = await createTestRenderer({ width: 120, height: 28 });
 		const parent = new BoxRenderable(setup.renderer, { width: "100%", height: "100%" });
 		setup.renderer.root.add(parent);
@@ -228,8 +229,8 @@ describe("mode name color projection", () => {
 			setup.mockInput.pressArrow("down");
 			await setup.flush();
 			lines = setup.captureCharFrame().split("\n");
-			expect((lines[y] ?? "").slice(left + 1, right)).toBe(`  ${longTitle.slice(0, contentWidth - 2)}`);
-			expect(lines[y]).not.toContain("PLAN");
+			expect((lines[y] ?? "").slice(left + 1, right)).toBe(`  ${longTitle.slice(0, contentWidth - 10)} PLAN ✓ `);
+			expect(lines[y]).toContain("PLAN ✓");
 			const nextY = lines.findIndex((line) => line.includes("Next task") && line.includes("BUILD ✓"));
 			expect(nextY).toBeGreaterThanOrEqual(0);
 			expect((lines[nextY] ?? "").slice(left + 1, right)).toEndWith(" BUILD ✓ ");
@@ -237,7 +238,7 @@ describe("mode name color projection", () => {
 			await setup.flush();
 			lines = setup.captureCharFrame().split("\n");
 			expect((lines[y] ?? "").slice(left + 1, right)).toBe(selectedContent);
-			expect(lines[nextY]).not.toContain("BUILD");
+			expect(lines[nextY]).toContain("BUILD ✓");
 		} finally {
 			mount.dispose();
 			setup.renderer.destroy();
@@ -281,6 +282,7 @@ describe("mode name color projection", () => {
 		let projection: OpenTuiWorkspaceModeProjection = { modeLabel: "Plan", approved: false, modeColor: "green" };
 		const options = {
 			tasks: [{ id: "TASK-1", title: "Retained task", status: "To Do" }],
+			activeAgentSession: { id: "retained", taskId: "TASK-1", status: "running", preset: "test" },
 			modeProjectionByTask: () => projection,
 			liveAgent: { taskId: "TASK-1", label: "Retained", status: "running" as const, host, terminal },
 		};
@@ -290,7 +292,9 @@ describe("mode name color projection", () => {
 			const terminalParent = terminal.parent;
 			const headerColor = () => {
 				const lines = setup.captureCharFrame().split("\n");
-				const y = lines.findIndex((line) => line.includes("Agent session · Retained") && line.includes("Plan"));
+				const y = lines.findIndex((line) => line.includes("Agent session · Plan · running"));
+				const line = lines[y] ?? "";
+				expect(line.slice(line.indexOf("Agent session ·")).trim()).toBe("Agent session · Plan · running");
 				return spanAt(setup, (lines[y] ?? "").lastIndexOf("Plan"), y).fg.toInts();
 			};
 			const originalColor = headerColor();
@@ -300,7 +304,7 @@ describe("mode name color projection", () => {
 			projection = { modeLabel: "Build", approved: false, modeColor: "blue" };
 			mount.update({ ...options, agentFocused: true });
 			await setup.flush();
-			expect(setup.captureCharFrame()).toContain("Agent session · Retained · parked · Build");
+			expect(setup.captureCharFrame()).toContain("Agent session · Build · running");
 			expect(terminal.parent).toBe(terminalParent);
 			expect(terminal.isDestroyed).toBe(false);
 		} finally {

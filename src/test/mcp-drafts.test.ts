@@ -16,7 +16,7 @@ let mcpServer: McpServer;
 async function loadConfig(server: McpServer) {
 	const config = await server.application.filesystem.loadConfig();
 	if (!config) {
-		throw new Error("Failed to load backlog configuration for tests");
+		throw new Error("Failed to load agentic-workspace configuration for tests");
 	}
 	return config;
 }
@@ -210,7 +210,7 @@ describe("MCP draft support via task tools", () => {
 			},
 		});
 
-		const draftsDir = join(TEST_DIR, "backlog", "drafts");
+		const draftsDir = join(TEST_DIR, "agentic-workspace", "drafts");
 		const twinPath = join(draftsDir, "draft-001", "task.md");
 		await mkdir(join(draftsDir, "draft-1"), { recursive: true });
 		await mkdir(join(draftsDir, "draft-001"), { recursive: true });
@@ -280,7 +280,7 @@ describe("MCP draft support via task tools", () => {
 		const archivedDraft = await mcpServer.application.filesystem.loadDraft("draft-1");
 		expect(archivedDraft).toBeNull();
 
-		const archiveDir = join(TEST_DIR, "backlog", "archive", "drafts");
+		const archiveDir = join(TEST_DIR, "agentic-workspace", "archive", "drafts");
 		const archiveFiles = await readdir(archiveDir);
 		expect(archiveFiles.some((file) => file.startsWith("draft-1"))).toBe(true);
 	});

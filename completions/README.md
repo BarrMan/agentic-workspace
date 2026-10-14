@@ -1,28 +1,28 @@
 # Shell Completion Scripts
 
-**Note**: The completion scripts are embedded in the compiled `agenticworkspace` binary. These files serve as reference documentation and are used during development (the CLI reads them first if available, otherwise uses the embedded versions).
+**Note**: The completion scripts are embedded in the compiled `agentic-workspace` binary. These files serve as reference documentation and are used during development (the CLI reads them first if available, otherwise uses the embedded versions).
 
 ## Available Shells
 
 ### Zsh
 
-**File**: `_backlog`
+**AgenticWorkspace completion file**: `_agentic-workspace`
 
 **Installation**:
 
 1. **Automatic** (recommended):
    ```bash
-   agenticworkspace completion install --shell zsh
+   agentic-workspace completion install --shell zsh
    ```
 
 2. **Manual**:
    ```bash
    # Copy to a directory in your $fpath
-   sudo cp _backlog /usr/local/share/zsh/site-functions/_backlog
+   sudo cp _agentic-workspace /usr/local/share/zsh/site-functions/_agentic-workspace
 
    # Or add to your custom completions directory
    mkdir -p ~/.zsh/completions
-   cp _backlog ~/.zsh/completions/_backlog
+   cp _agentic-workspace ~/.zsh/completions/_agentic-workspace
 
    # Add to ~/.zshrc if not already present:
    fpath=(~/.zsh/completions $fpath)
@@ -39,59 +39,59 @@
 **Verification**:
 ```bash
 # Type and press TAB
-agenticworkspace <TAB>
-agenticworkspace task <TAB>
+agentic-workspace <TAB>
+agentic-workspace task <TAB>
 ```
 
 ### Bash
 
-**File**: `agenticworkspace.bash`
+**File**: `agentic-workspace.bash`
 
 **Installation**:
 
 1. **Automatic** (recommended):
    ```bash
-   agenticworkspace completion install --shell bash
+   agentic-workspace completion install --shell bash
    ```
 
 2. **Manual**:
    ```bash
    # Copy to bash-completion directory
-   sudo cp agenticworkspace.bash /etc/bash_completion.d/agenticworkspace
+   sudo cp agentic-workspace.bash /etc/bash_completion.d/agentic-workspace
 
    # Or source in ~/.bashrc
-   echo "source /path/to/agenticworkspace.bash" >> ~/.bashrc
+   echo "source /path/to/agentic-workspace.bash" >> ~/.bashrc
    source ~/.bashrc
    ```
 
 3. **Testing without installation**:
    ```bash
    # In your current bash session
-   source ./completions/agenticworkspace.bash
+   source ./completions/agentic-workspace.bash
    ```
 
 **Verification**:
 ```bash
 # Type and press TAB
-agenticworkspace <TAB>
-agenticworkspace task <TAB>
+agentic-workspace <TAB>
+agentic-workspace task <TAB>
 ```
 
 ### Fish
 
-**File**: `agenticworkspace.fish`
+**File**: `agentic-workspace.fish`
 
 **Installation**:
 
 1. **Automatic** (recommended):
    ```bash
-   agenticworkspace completion install --shell fish
+   agentic-workspace completion install --shell fish
    ```
 
 2. **Manual**:
    ```bash
    # Copy to fish completions directory
-   cp agenticworkspace.fish ~/.config/fish/completions/agenticworkspace.fish
+   cp agentic-workspace.fish ~/.config/fish/completions/agentic-workspace.fish
 
    # Completions are automatically loaded in new fish sessions
    ```
@@ -99,32 +99,32 @@ agenticworkspace task <TAB>
 3. **Testing without installation**:
    ```bash
    # In your current fish session
-   source ./completions/agenticworkspace.fish
+   source ./completions/agentic-workspace.fish
    ```
 
 **Verification**:
 ```bash
 # Type and press TAB
-agenticworkspace <TAB>
-agenticworkspace task <TAB>
+agentic-workspace <TAB>
+agentic-workspace task <TAB>
 ```
 
 ### PowerShell
 
-**File**: `agenticworkspace.ps1`
+**File**: `agentic-workspace.ps1`
 
 **Installation**:
 
 1. **Automatic** (recommended):
    ```powershell
-   agenticworkspace completion install --shell pwsh
+   agentic-workspace completion install --shell pwsh
    ```
 
 2. **Manual**:
    ```powershell
-   $completionScript = Join-Path (Split-Path -Parent $PROFILE.CurrentUserAllHosts) "Completions/agenticworkspace-completion.ps1"
+   $completionScript = Join-Path (Split-Path -Parent $PROFILE.CurrentUserAllHosts) "Completions/agentic-workspace-completion.ps1"
    New-Item -ItemType Directory -Path (Split-Path -Parent $completionScript) -Force | Out-Null
-   # Save completions/agenticworkspace.ps1 content to $completionScript
+   # Save completions/agentic-workspace.ps1 content to $completionScript
 
    # Add to $PROFILE.CurrentUserAllHosts:
    if (Test-Path $completionScript) { . $completionScript }
@@ -132,14 +132,14 @@ agenticworkspace task <TAB>
 
 3. **Testing without installation**:
    ```powershell
-   . ./completions/agenticworkspace.ps1
+   . ./completions/agentic-workspace.ps1
    ```
 
 **Verification**:
 ```powershell
 # Type and press TAB
-agenticworkspace <TAB>
-agenticworkspace task <TAB>
+agentic-workspace <TAB>
+agentic-workspace task <TAB>
 ```
 
 ## How It Works
@@ -147,7 +147,7 @@ agenticworkspace task <TAB>
 All completion scripts use the same backend:
 
 1. The shell calls the completion function when TAB is pressed
-2. The completion function invokes `agenticworkspace completion __complete "<current-line>" "<cursor-position>"`
+2. The completion function invokes `agentic-workspace completion __complete "<current-line>" "<cursor-position>"`
 3. The CLI returns a newline-separated list of completions
 4. The shell presents these completions to the user
 
@@ -164,39 +164,39 @@ This architecture provides:
 **Zsh**:
 ```bash
 # Run automated tests
-zsh _backlog.test.zsh
+ zsh _agentic-workspace.test.zsh
 
 # Or manually verify
 zsh
-source _backlog
-which _backlog
+ source _agentic-workspace
+ which _agentic-workspace
 ```
 
 **Bash**:
 ```bash
 # Manually verify
 bash
-source agenticworkspace.bash
-complete -p agenticworkspace
+source agentic-workspace.bash
+complete -p agentic-workspace
 ```
 
 **Fish**:
 ```bash
 # Run automated tests
-fish agenticworkspace.test.fish
+fish agentic-workspace.test.fish
 
 # Or manually verify
 fish
-source agenticworkspace.fish
-complete -C'agenticworkspace '
+source agentic-workspace.fish
+complete -C'agentic-workspace '
 ```
 
 **PowerShell**:
 ```powershell
 # Manually verify
 pwsh
-. ./completions/agenticworkspace.ps1
-(TabExpansion2 -inputScript "agenticworkspace task " -cursorColumn 22).CompletionMatches
+. ./completions/agentic-workspace.ps1
+(TabExpansion2 -inputScript "agentic-workspace task " -cursorColumn 22).CompletionMatches
 ```
 
 ### Adding New Completions
@@ -225,31 +225,31 @@ To update completion scripts:
 
 1. Verify the CLI is in your PATH:
    ```bash
-   which agenticworkspace
+   which agentic-workspace
    ```
 
 2. Check completion function is loaded:
    ```bash
    # Zsh
-   which _backlog
+    which _agentic-workspace
 
    # Bash
-   complete -p agenticworkspace
+   complete -p agentic-workspace
 
    # Fish
-   complete -C'agenticworkspace '
+   complete -C'agentic-workspace '
    ```
 
    ```powershell
    # PowerShell
-   (TabExpansion2 -inputScript "agenticworkspace " -cursorColumn 17).CompletionMatches
+   (TabExpansion2 -inputScript "agentic-workspace " -cursorColumn 17).CompletionMatches
    ```
 
 3. Test the completion backend directly:
    ```bash
-   agenticworkspace completion __complete "agenticworkspace task " 22
+   agentic-workspace completion __complete "agentic-workspace task " 22
    ```
-   This should output available subcommands for `agenticworkspace task`.
+   This should output available subcommands for `agentic-workspace task`.
 
 4. Reload your shell configuration:
    ```bash
@@ -271,7 +271,7 @@ To update completion scripts:
 ### Slow completions
 
 If completions feel slow, it may be because:
-- Large number of tasks/documents in your backlog
+- Large number of tasks/documents in your AgenticWorkspace project
 - Network latency (if applicable)
 - First completion triggers CLI initialization
 
@@ -282,6 +282,6 @@ The completion system is designed to be fast, but with very large datasets you m
 When adding new completion features:
 
 1. Update the backend in `/src/completions/`
-2. Test with `agenticworkspace completion __complete`
+2. Test with `agentic-workspace completion __complete`
 3. Verify each shell script still works
 4. Update this README if behavior changes

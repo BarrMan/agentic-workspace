@@ -3,14 +3,14 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { GitOperations, isGitRepository } from "../git/operations.ts";
-import type { BacklogConfig } from "../types/index.ts";
+import type { AgenticWorkspaceConfig } from "../types/index.ts";
 
 const TEST_CONFIG = {
 	projectName: "Git operations",
 	statuses: [],
 	labels: [],
 	dateFormat: "YYYY-MM-DD",
-} satisfies BacklogConfig;
+} satisfies AgenticWorkspaceConfig;
 
 function createGate(): { promise: Promise<void>; release: () => void } {
 	let release: () => void = () => {};
@@ -50,10 +50,10 @@ async function runGit(cwd: string, args: string[]): Promise<string> {
 }
 
 async function createRepository(): Promise<string> {
-	const directory = await mkdtemp(join(tmpdir(), "backlog-git-test-"));
+	const directory = await mkdtemp(join(tmpdir(), "agentic-workspace-git-test-"));
 	await runGit(directory, ["init", "-q"]);
-	await runGit(directory, ["config", "user.name", "Backlog Test"]);
-	await runGit(directory, ["config", "user.email", "backlog-test@example.invalid"]);
+	await runGit(directory, ["config", "user.name", "AgenticWorkspace Test"]);
+	await runGit(directory, ["config", "user.email", "agentic-workspace-test@example.invalid"]);
 	return directory;
 }
 
@@ -61,7 +61,7 @@ describe("Git Operations", () => {
 	describe("isGitRepository", () => {
 		it("detects temporary repositories and ordinary directories", async () => {
 			const repository = await createRepository();
-			const directory = await mkdtemp(join(tmpdir(), "backlog-non-git-test-"));
+			const directory = await mkdtemp(join(tmpdir(), "agentic-workspace-non-git-test-"));
 			try {
 				expect(await isGitRepository(repository)).toBe(true);
 				expect(await new GitOperations(repository).isRepository()).toBe(true);
@@ -160,7 +160,7 @@ describe("Git Operations", () => {
 					options: { timeoutMs: number; env?: Record<string, string> },
 				) => Promise<{ stdout: string; stderr: string }>;
 			};
-			const directory = await mkdtemp(join(tmpdir(), "backlog-git-timeout-"));
+			const directory = await mkdtemp(join(tmpdir(), "agentic-workspace-git-timeout-"));
 			const scriptPath = join(directory, "hang.sh");
 			const pidPath = join(directory, "child.pid");
 			let childPid: number | undefined;
@@ -187,7 +187,7 @@ describe("Git Operations", () => {
 trap '' TERM
 (trap '' TERM; sleep 30) &
 child_pid=$!
-printf '%s\\n' "$child_pid" > "$BACKLOG_TIMEOUT_PID_FILE"
+printf '%s\\n' "$child_pid" > "$AGENTIC_WORKSPACE_TIMEOUT_PID_FILE"
 wait "$child_pid"
 `,
 					{ mode: 0o755 },
@@ -195,7 +195,7 @@ wait "$child_pid"
 
 				command = internals.execGit(["-c", `alias.hang=!${scriptPath}`, "hang"], {
 					timeoutMs: 500,
-					env: { BACKLOG_TIMEOUT_PID_FILE: pidPath },
+					env: { AGENTIC_WORKSPACE_TIMEOUT_PID_FILE: pidPath },
 				});
 				const readinessDeadline = Date.now() + 5_000;
 				while (childPid === undefined) {
@@ -450,7 +450,7 @@ wait "$child_pid"
 				stderr: "",
 			});
 
-			expect(await git.getBranchLastModifiedMap("abc123", "backlog")).toEqual(
+			expect(await git.getBranchLastModifiedMap("abc123", "agentic-workspace")).toEqual(
 				new Map([["123", new Date(1_700_000_000 * 1_000)]]),
 			);
 		});
@@ -469,7 +469,7 @@ wait "$child_pid"
 			};
 			const cutoff = new Date("2026-07-11T00:00:00Z");
 
-			expect(await git.getBranchLastModifiedMap("abc123", "backlog", cutoff)).toEqual(new Map());
+			expect(await git.getBranchLastModifiedMap("abc123", "agentic-workspace", cutoff)).toEqual(new Map());
 			expect(capturedArgs).toContain("--raw");
 			expect(capturedArgs).toContain(`--since=@${Math.floor(cutoff.getTime() / 1000)}`);
 		});
@@ -485,7 +485,7 @@ wait "$child_pid"
 				throw new Error("history unavailable");
 			};
 
-			await expect(git.getBranchLastModifiedMap("abc123", "backlog")).rejects.toThrow("history unavailable");
+			await expect(git.getBranchLastModifiedMap("abc123", "agentic-workspace")).rejects.toThrow("history unavailable");
 		});
 	});
 

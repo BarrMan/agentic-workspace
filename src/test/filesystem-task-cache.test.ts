@@ -36,7 +36,7 @@ describe("FileSystem task parse cache", () => {
 	beforeEach(async () => {
 		testDir = createUniqueTestDir("test-task-file-cache");
 		filesystem = new FileSystem(testDir);
-		await filesystem.ensureBacklogStructure();
+		await filesystem.ensureAgenticWorkspaceStructure();
 	});
 
 	afterEach(async () => {
@@ -131,10 +131,10 @@ describe("FileSystem task parse cache", () => {
 		expect((await filesystem.listTasks())[0]?.title).toBe("Original task");
 	});
 
-	it("keeps parsed tasks scoped to independently selected backlog roots", async () => {
+	it("keeps parsed tasks scoped to independently selected agentic-workspace roots", async () => {
 		await filesystem.saveTask(task("TASK-1", "Primary root"));
-		const secondary = new FileSystem(testDir, { backlogDirectory: "secondary", configLocation: "folder" });
-		await secondary.ensureBacklogStructure();
+		const secondary = new FileSystem(testDir, { agenticWorkspaceDirectory: "secondary", configLocation: "folder" });
+		await secondary.ensureAgenticWorkspaceStructure();
 		await secondary.saveTask(task("TASK-1", "Secondary root"));
 		expect((await filesystem.listTasks())[0]?.title).toBe("Primary root");
 		expect((await secondary.listTasks())[0]?.title).toBe("Secondary root");

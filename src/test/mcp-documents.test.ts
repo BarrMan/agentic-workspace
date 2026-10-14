@@ -20,7 +20,7 @@ let mcpServer: McpServer;
 async function loadConfig(server: McpServer) {
 	const config = await server.application.filesystem.loadConfig();
 	if (!config) {
-		throw new Error("Failed to load backlog configuration for tests");
+		throw new Error("Failed to load agentic-workspace configuration for tests");
 	}
 	return config;
 }
@@ -310,7 +310,7 @@ describe("MCP document tools", () => {
 		});
 		expect(result.isError).toBe(true);
 		expect(getText(result.content)).toContain("Document ID doc-1 is ambiguous");
-		expect(getText(result.content)).toContain("backlog doctor");
+		expect(getText(result.content)).toContain("agentic-workspace doctor");
 		expect(await Bun.file(primaryPath).text()).toBe(primaryBefore);
 		expect(await Bun.file(duplicatePath).text()).toBe(duplicateBefore);
 	});

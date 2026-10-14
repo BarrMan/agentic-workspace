@@ -10,7 +10,7 @@ import { renderSessionBootstrap } from "./bootstrap.ts";
 import { prepareHarnessEnvironment } from "./harness-environment.ts";
 import { preflightAgentLaunch, prepareAgentAsk, prepareAgentLaunch } from "./session-launch.ts";
 import { STATUS_DIR_ENV, sessionActivityDir } from "./status-hooks.ts";
-import { BACKLOG_TASK_SKILL } from "./task-skill.ts";
+import { AGENTIC_WORKSPACE_TASK_SKILL } from "./task-skill.ts";
 import { usePromptInjectionAgent } from "./test-fake-agent.ts";
 import type { AgentPreset, ModeProfile } from "./types.ts";
 
@@ -24,7 +24,7 @@ async function fakeOpenCodeV1(root: string): Promise<string> {
 }
 
 async function fixture() {
-	const root = await mkdtemp(join(tmpdir(), "backlog-launch-test-"));
+	const root = await mkdtemp(join(tmpdir(), "agentic-workspace-launch-test-"));
 	const bootstrapPath = join(root, "agent's bootstrap.md");
 	await writeFile(bootstrapPath, renderSessionBootstrap({ taskId: "BACK-42" }));
 	return { root, bootstrapPath };
@@ -180,10 +180,10 @@ describe("session-local agent launch", () => {
 			command: await fakeOpenCodeV1(root),
 			env: {
 				CUSTOM_SETTING: "keep",
-				BACKLOG_CWD: "/wrong",
-				BACKLOG_TASK_ID: "WRONG",
-				BACKLOG_SESSION_ID: "WRONG",
-				BACKLOG_PROJECT_ROOT: "/wrong",
+				AGENTIC_WORKSPACE_CWD: "/wrong",
+				AGENTIC_WORKSPACE_TASK_ID: "WRONG",
+				AGENTIC_WORKSPACE_SESSION_ID: "WRONG",
+				AGENTIC_WORKSPACE_PROJECT_ROOT: "/wrong",
 				TASK_ID: "WRONG",
 				SESSION_ID: "WRONG",
 				OPENCODE_CONFIG_CONTENT: original,
@@ -195,19 +195,19 @@ describe("session-local agent launch", () => {
 				intent: { kind: "resume", nativeSessionId: "ses_existing" },
 			});
 			const config = JSON.parse(launch.env.OPENCODE_CONFIG_CONTENT ?? "{}");
-			const skillPath = join(config.skills.paths[1], "backlog-task-management", "SKILL.md");
+			const skillPath = join(config.skills.paths[1], "agentic-workspace-task-management", "SKILL.md");
 			try {
 				expect(config.model).toBe("user/model");
 				expect(config.skills.paths[0]).toBe("/user/skills");
 				expect(config.skills.urls).toEqual(["https://example.test/skills"]);
 				expect(skillPath.startsWith(`${root}/`)).toBe(false);
-				expect(await readFile(skillPath, "utf8")).toContain(`\n${BACKLOG_TASK_SKILL}`);
+				expect(await readFile(skillPath, "utf8")).toContain(`\n${AGENTIC_WORKSPACE_TASK_SKILL}`);
 				expect(launch.env.CUSTOM_SETTING).toBe("keep");
 				for (const name of [
-					"BACKLOG_CWD",
-					"BACKLOG_TASK_ID",
-					"BACKLOG_SESSION_ID",
-					"BACKLOG_PROJECT_ROOT",
+					"AGENTIC_WORKSPACE_CWD",
+					"AGENTIC_WORKSPACE_TASK_ID",
+					"AGENTIC_WORKSPACE_SESSION_ID",
+					"AGENTIC_WORKSPACE_PROJECT_ROOT",
 					"TASK_ID",
 					"SESSION_ID",
 				]) {
@@ -233,7 +233,7 @@ describe("session-local agent launch", () => {
 		await writeFile(bootstrapPath, prompt);
 		await writeFile(
 			agentPath,
-			`const args = process.argv.slice(2); const plugin = args[args.indexOf("--plugin-dir") + 1]; await Bun.write(process.env.CAPTURE!, JSON.stringify({args, cwd:process.cwd(), skill:await Bun.file(plugin + "/skills/backlog-task-management/SKILL.md").text(), env: {cwd:process.env.BACKLOG_CWD, task:process.env.BACKLOG_TASK_ID, session:process.env.BACKLOG_SESSION_ID, root:process.env.BACKLOG_PROJECT_ROOT, taskId:process.env.TASK_ID, sessionId:process.env.SESSION_ID, custom:process.env.CUSTOM_SETTING}}));`,
+			`const args = process.argv.slice(2); const plugin = args[args.indexOf("--plugin-dir") + 1]; await Bun.write(process.env.CAPTURE!, JSON.stringify({args, cwd:process.cwd(), skill:await Bun.file(plugin + "/skills/agentic-workspace-task-management/SKILL.md").text(), env: {cwd:process.env.AGENTIC_WORKSPACE_CWD, task:process.env.AGENTIC_WORKSPACE_TASK_ID, session:process.env.AGENTIC_WORKSPACE_SESSION_ID, root:process.env.AGENTIC_WORKSPACE_PROJECT_ROOT, taskId:process.env.TASK_ID, sessionId:process.env.SESSION_ID, custom:process.env.CUSTOM_SETTING}}));`,
 		);
 		try {
 			const launch = await prepareAgentLaunch(
@@ -251,10 +251,10 @@ describe("session-local agent launch", () => {
 					cwd: root,
 					env: {
 						...launch.env,
-						BACKLOG_CWD: "/wrong",
-						BACKLOG_TASK_ID: "inherited-wrong",
-						BACKLOG_SESSION_ID: "inherited-wrong",
-						BACKLOG_PROJECT_ROOT: "/wrong",
+						AGENTIC_WORKSPACE_CWD: "/wrong",
+						AGENTIC_WORKSPACE_TASK_ID: "inherited-wrong",
+						AGENTIC_WORKSPACE_SESSION_ID: "inherited-wrong",
+						AGENTIC_WORKSPACE_PROJECT_ROOT: "/wrong",
 						TASK_ID: "inherited-wrong",
 						SESSION_ID: "inherited-wrong",
 					},
@@ -266,7 +266,7 @@ describe("session-local agent launch", () => {
 				expect(captured.args[0]).toBe("--existing");
 				expect(captured.args.at(-1)).toBe(prompt);
 				expect(captured.args.slice(-3, -1)).toEqual(["--session-id", launch.identity?.id]);
-				expect(captured.skill).toContain(BACKLOG_TASK_SKILL);
+				expect(captured.skill).toContain(AGENTIC_WORKSPACE_TASK_SKILL);
 				expect(captured.env).toEqual({ custom: "safe ' $(false)" });
 				expect(existsSync(marker)).toBe(false);
 				expect(existsSync(captured.args[captured.args.indexOf("--plugin-dir") + 1])).toBe(false);
@@ -293,17 +293,17 @@ describe("session-local agent launch", () => {
 					taskRoot: taskDir,
 					environment: {
 						VALUE: "$SHOULD_NOT_EXPAND",
-						BACKLOG_PROJECT_DIR: "/untrusted",
-						BACKLOG_CWD: "/legacy",
+						AGENTIC_WORKSPACE_PROJECT_DIR: "/untrusted",
+						AGENTIC_WORKSPACE_CWD: "/legacy",
 					},
 				},
 			);
 			try {
 				expect(launch.env.VALUE).toBe("$SHOULD_NOT_EXPAND");
-				expect(launch.env.BACKLOG_PROJECT_DIR).toBe(projectDir);
-				expect(launch.env.BACKLOG_WORKTREE_DIR).toBe(root);
-				expect(launch.env.BACKLOG_TASK_DIR).toBe(taskDir);
-				expect(launch.env.BACKLOG_CWD).toBeUndefined();
+				expect(launch.env.AGENTIC_WORKSPACE_PROJECT_DIR).toBe(projectDir);
+				expect(launch.env.AGENTIC_WORKSPACE_WORKTREE_DIR).toBe(root);
+				expect(launch.env.AGENTIC_WORKSPACE_TASK_DIR).toBe(taskDir);
+				expect(launch.env.AGENTIC_WORKSPACE_CWD).toBeUndefined();
 			} finally {
 				await launch.cleanup();
 			}
@@ -316,10 +316,10 @@ describe("session-local agent launch", () => {
 				{ repositoryRoot: projectDir, taskRoot: taskDir, cwd: root },
 			);
 			try {
-				expect(ask.env.BACKLOG_PROJECT_DIR).toBe(projectDir);
-				expect(ask.env.BACKLOG_WORKTREE_DIR).toBe(root);
-				expect(ask.env.BACKLOG_TASK_DIR).toBe(taskDir);
-				expect(ask.command).toContain("unset BACKLOG_CWD BACKLOG_TASK_ID");
+				expect(ask.env.AGENTIC_WORKSPACE_PROJECT_DIR).toBe(projectDir);
+				expect(ask.env.AGENTIC_WORKSPACE_WORKTREE_DIR).toBe(root);
+				expect(ask.env.AGENTIC_WORKSPACE_TASK_DIR).toBe(taskDir);
+				expect(ask.command).toContain("unset AGENTIC_WORKSPACE_CWD AGENTIC_WORKSPACE_TASK_ID");
 			} finally {
 				await ask.cleanup();
 			}
@@ -347,16 +347,16 @@ describe("session-local agent launch", () => {
 					...options,
 					environment: {
 						EXPANDED: "tampered",
-						BACKLOG_PROJECT_DIR: "/untrusted",
-						BACKLOG_WORKSPACE_CONTEXT: "context",
+						AGENTIC_WORKSPACE_PROJECT_DIR: "/untrusted",
+						AGENTIC_WORKSPACE_WORKSPACE_CONTEXT: "context",
 					},
 				},
 				preflight,
 			);
 			try {
 				expect(launch.env.EXPANDED).toBe("once");
-				expect(launch.env.BACKLOG_PROJECT_DIR).toBe(root);
-				expect(launch.env.BACKLOG_WORKSPACE_CONTEXT).toBe("context");
+				expect(launch.env.AGENTIC_WORKSPACE_PROJECT_DIR).toBe(root);
+				expect(launch.env.AGENTIC_WORKSPACE_WORKSPACE_CONTEXT).toBe("context");
 				expect(await readFile(counter, "utf8")).toBe("x");
 			} finally {
 				await launch.cleanup();
@@ -405,9 +405,9 @@ describe("session-local agent launch", () => {
 			try {
 				const config = JSON.parse(v1.env.OPENCODE_CONFIG_CONTENT ?? "{}");
 				expect(config.skills.paths).toHaveLength(1);
-				expect(await readFile(join(config.skills.paths[0], "backlog-task-management", "SKILL.md"), "utf8")).toContain(
-					BACKLOG_TASK_SKILL,
-				);
+				expect(
+					await readFile(join(config.skills.paths[0], "agentic-workspace-task-management", "SKILL.md"), "utf8"),
+				).toContain(AGENTIC_WORKSPACE_TASK_SKILL);
 				expect(v1.command).toContain("provider/model");
 			} finally {
 				await v1.cleanup();
@@ -429,9 +429,9 @@ describe("session-local agent launch", () => {
 				const config = JSON.parse(v2.env.OPENCODE_CONFIG_CONTENT ?? "{}");
 				expect(config.skills).toHaveLength(1);
 				expect(config.model).toBe("provider/model");
-				expect(await readFile(join(config.skills[0], "backlog-task-management", "SKILL.md"), "utf8")).toContain(
-					BACKLOG_TASK_SKILL,
-				);
+				expect(
+					await readFile(join(config.skills[0], "agentic-workspace-task-management", "SKILL.md"), "utf8"),
+				).toContain(AGENTIC_WORKSPACE_TASK_SKILL);
 			} finally {
 				await v2.cleanup();
 			}
@@ -480,7 +480,7 @@ describe("session-local agent launch", () => {
 			...preset,
 			bootstrap: "claude",
 			command: quote(process.execPath),
-			env: { BACKLOG_PROJECT_DIR: "/preset-override" },
+			env: { AGENTIC_WORKSPACE_PROJECT_DIR: "/preset-override" },
 		};
 		const warnings: string[] = [];
 		const stderrWrites: string[] = [];
@@ -494,9 +494,9 @@ describe("session-local agent launch", () => {
 				...prepared,
 				env: {
 					...prepared.env,
-					BACKLOG_PROJECT_DIR: "/adapter-project",
-					BACKLOG_WORKTREE_DIR: "/adapter-worktree",
-					BACKLOG_TASK_DIR: "/adapter-task",
+					AGENTIC_WORKSPACE_PROJECT_DIR: "/adapter-project",
+					AGENTIC_WORKSPACE_WORKTREE_DIR: "/adapter-worktree",
+					AGENTIC_WORKSPACE_TASK_DIR: "/adapter-task",
 				},
 			};
 		};
@@ -524,9 +524,9 @@ describe("session-local agent launch", () => {
 				expect(warnings).toHaveLength(1);
 				expect(stderrWrites).toHaveLength(1);
 				expect(launch.env).toMatchObject({
-					BACKLOG_PROJECT_DIR: projectDir,
-					BACKLOG_WORKTREE_DIR: root,
-					BACKLOG_TASK_DIR: taskDir,
+					AGENTIC_WORKSPACE_PROJECT_DIR: projectDir,
+					AGENTIC_WORKSPACE_WORKTREE_DIR: root,
+					AGENTIC_WORKSPACE_TASK_DIR: taskDir,
 				});
 			} finally {
 				await launch.cleanup();
@@ -563,7 +563,7 @@ describe("session-local agent launch", () => {
 					stderr: "pipe",
 				});
 				expect(await child.exited).toBe(0);
-				expect(await readFile(output, "utf8")).toContain(BACKLOG_TASK_SKILL);
+				expect(await readFile(output, "utf8")).toContain(AGENTIC_WORKSPACE_TASK_SKILL);
 			} finally {
 				await launch.cleanup();
 			}
@@ -604,13 +604,13 @@ describe("session-local agent launch", () => {
 				expect(captured.args.slice(0, 3)).toEqual(["--existing", "--skill", expect.any(String)]);
 				// The process-scoped status extension is appended beside the skill, before the session id.
 				expect(captured.args[3]).toBe("--extension");
-				expect(captured.args[4]).toMatch(/backlog-status-extension\.ts$/);
+				expect(captured.args[4]).toMatch(/agentic-workspace-status-extension\.ts$/);
 				expect(captured.args.slice(5)).toEqual([
 					"--session-id",
 					launch.identity?.id,
 					"Active task: BACK-42.\nWait for user instructions.",
 				]);
-				expect(captured.skill).toContain(BACKLOG_TASK_SKILL);
+				expect(captured.skill).toContain(AGENTIC_WORKSPACE_TASK_SKILL);
 			} finally {
 				await launch.cleanup();
 			}
@@ -659,10 +659,10 @@ describe("session-local agent launch", () => {
 				// The sidecar is the deterministic per-session path; the hook file sits in the temp
 				// plugin dir that --plugin-dir exposes.
 				expect(statusDir).toBe(sessionActivityDir(root, "sess-1"));
-				const pluginDir = launch.command.match(/(\/\S*backlog-agent-skill-[A-Za-z0-9]+)/)?.[1] ?? "";
+				const pluginDir = launch.command.match(/(\/\S*agentic-workspace-agent-skill-[A-Za-z0-9]+)/)?.[1] ?? "";
 				expect(launch.resources?.skill.path).toBe(await realpath(pluginDir));
 				expect(launch.resources?.activity?.path).toBe(await realpath(statusDir));
-				expect(await readFile(join(pluginDir, ".backlog-launch-owner"), "utf8")).toBe(
+				expect(await readFile(join(pluginDir, ".agentic-workspace-launch-owner"), "utf8")).toBe(
 					launch.resources?.skill.marker ?? "",
 				);
 				const hooksPath = join(pluginDir, "hooks", "hooks.json");
@@ -703,7 +703,7 @@ describe("session-local agent launch", () => {
 			try {
 				const configDir = launch.env.OPENCODE_CONFIG_DIR;
 				if (!configDir) throw new Error("OpenCode launch is missing its owned config dir.");
-				expect(existsSync(join(configDir, "plugins", "backlog-status.ts"))).toBe(true);
+				expect(existsSync(join(configDir, "plugins", "agentic-workspace-status.ts"))).toBe(true);
 				expect(launch.env[STATUS_DIR_ENV]).toBe(sessionActivityDir(root, "sess-1"));
 				// The user's original inline config (skills) is preserved, not replaced.
 				expect(JSON.parse(launch.env.OPENCODE_CONFIG_CONTENT ?? "{}").skills.paths).toHaveLength(1);
@@ -724,7 +724,7 @@ describe("session-local agent launch", () => {
 				sessionId: "sess-1",
 			});
 			try {
-				const match = launch.command.match(/(\/\S*backlog-status-extension\.ts)/);
+				const match = launch.command.match(/(\/\S*agentic-workspace-status-extension\.ts)/);
 				expect(match?.[1]).toBeString();
 				expect(existsSync(match?.[1] ?? "")).toBe(true);
 				expect(launch.env[STATUS_DIR_ENV]).toBe(sessionActivityDir(root, "sess-1"));
@@ -757,7 +757,7 @@ describe("session-local agent launch", () => {
 					const statusDir = launch.env[STATUS_DIR_ENV];
 					expect(statusDir).toBeString();
 					expect(statusDir?.endsWith(".activity")).toBe(true);
-					const pluginDir = launch.command.match(/(\/\S*backlog-agent-skill-[A-Za-z0-9]+)/)?.[1] ?? "";
+					const pluginDir = launch.command.match(/(\/\S*agentic-workspace-agent-skill-[A-Za-z0-9]+)/)?.[1] ?? "";
 					expect(existsSync(join(pluginDir, "hooks", "hooks.json"))).toBe(true);
 				} finally {
 					await launch.cleanup();

@@ -5,7 +5,7 @@ import { Writable } from "node:stream";
 import { $ as shell } from "bun";
 import { runCli } from "../cli/register.ts";
 import { CLI_AGENT_NUDGE, Core } from "../index.ts";
-import { BACKLOG_CWD_ENV } from "../utils/runtime-cwd.ts";
+import { AGENTIC_WORKSPACE_CWD_ENV } from "../utils/runtime-cwd.ts";
 import { LOCAL_TASK_LOOKUP_HINT } from "../utils/task-path.ts";
 import { createUniqueTestDir, initializeTestProject, safeCleanup } from "./test-utils.ts";
 
@@ -13,7 +13,7 @@ let TEST_DIR: string;
 let INIT_FIXTURE_DIR: string;
 let CREATE_FIXTURE_DIR: string;
 let initFixtureDirectoryNumber = 0;
-const CLI_COMMAND = ["agenticworkspace"];
+const CLI_COMMAND = ["agentic-workspace"];
 
 function $(parts: TemplateStringsArray, ...values: unknown[]) {
 	const source = parts.reduce(
@@ -21,7 +21,7 @@ function $(parts: TemplateStringsArray, ...values: unknown[]) {
 			`${text}${part}${Array.isArray(values[index]) ? values[index].map((value) => JSON.stringify(value)).join(" ") : values[index] === undefined ? "" : JSON.stringify(values[index])}`,
 		"",
 	);
-	if (!source.startsWith('"agenticworkspace"')) return shell(parts, ...values);
+	if (!source.startsWith('"agentic-workspace"')) return shell(parts, ...values);
 	const args =
 		source
 			.match(/"(?:\\.|[^"\\])*"|'[^']*'|[^\s]+/g)
@@ -55,7 +55,7 @@ function $(parts: TemplateStringsArray, ...values: unknown[]) {
 		let exitCode: number;
 		try {
 			exitCode = await runCli(args.slice(CLI_COMMAND.length), {
-				cwd: config.env?.[BACKLOG_CWD_ENV] ? undefined : config.cwd,
+				cwd: config.env?.[AGENTIC_WORKSPACE_CWD_ENV] ? undefined : config.cwd,
 				stdout: out,
 				stderr: err,
 			});
@@ -101,21 +101,21 @@ function $(parts: TemplateStringsArray, ...values: unknown[]) {
 }
 
 describe("CLI Integration", () => {
-	// Every CLI invocation below shares this process's environment. A BACKLOG_CWD exported in
+	// Every CLI invocation below shares this process's environment. A AGENTIC_WORKSPACE_CWD exported in
 	// the developer's shell would otherwise pin them to a real board outside the test directory,
 	// so it is removed here and restored afterwards; tests that need it set it explicitly.
-	let originalBacklogCwd: string | undefined;
+	let originalAgenticWorkspaceCwd: string | undefined;
 
 	beforeAll(() => {
-		originalBacklogCwd = process.env[BACKLOG_CWD_ENV];
-		delete process.env[BACKLOG_CWD_ENV];
+		originalAgenticWorkspaceCwd = process.env[AGENTIC_WORKSPACE_CWD_ENV];
+		delete process.env[AGENTIC_WORKSPACE_CWD_ENV];
 	});
 
 	afterAll(() => {
-		if (originalBacklogCwd === undefined) {
-			delete process.env[BACKLOG_CWD_ENV];
+		if (originalAgenticWorkspaceCwd === undefined) {
+			delete process.env[AGENTIC_WORKSPACE_CWD_ENV];
 		} else {
-			process.env[BACKLOG_CWD_ENV] = originalBacklogCwd;
+			process.env[AGENTIC_WORKSPACE_CWD_ENV] = originalAgenticWorkspaceCwd;
 		}
 	});
 
@@ -128,7 +128,7 @@ describe("CLI Integration", () => {
 		await safeCleanup(TEST_DIR);
 	});
 
-	describe("agenticworkspace init command", () => {
+	describe("agentic-workspace init command", () => {
 		beforeAll(async () => {
 			INIT_FIXTURE_DIR = createUniqueTestDir("test-cli-init");
 			await mkdir(INIT_FIXTURE_DIR, { recursive: true });
@@ -151,16 +151,16 @@ describe("CLI Integration", () => {
 
 			// Check all expected directories exist
 			const expectedDirs = [
-				"backlog",
-				"backlog/tasks",
-				"backlog/drafts",
-				"backlog/archive",
-				"backlog/archive/tasks",
-				"backlog/archive/drafts",
-				"backlog/archive/milestones",
-				"backlog/milestones",
-				"backlog/docs",
-				"backlog/decisions",
+				"agentic-workspace",
+				"agentic-workspace/tasks",
+				"agentic-workspace/drafts",
+				"agentic-workspace/archive",
+				"agentic-workspace/archive/tasks",
+				"agentic-workspace/archive/drafts",
+				"agentic-workspace/archive/milestones",
+				"agentic-workspace/milestones",
+				"agentic-workspace/docs",
+				"agentic-workspace/decisions",
 			];
 
 			for (const dir of expectedDirs) {
@@ -208,7 +208,7 @@ describe("CLI Integration", () => {
 
 			expect(output).toContain("AI Integration: MCP connector");
 			expect(output).toContain("Agent instruction files: guidance is provided through the MCP connector.");
-			expect(output).toContain("MCP server name: agenticworkspace");
+			expect(output).toContain("MCP server name: agentic-workspace");
 			expect(output).toContain("MCP client setup: skipped (non-interactive)");
 			const agentsFile = await Bun.file(join(TEST_DIR, "AGENTS.md")).exists();
 			const claudeFile = await Bun.file(join(TEST_DIR, "CLAUDE.md")).exists();
@@ -223,8 +223,8 @@ describe("CLI Integration", () => {
 			expect(output).toContain("Agent instructions: AGENTS.md");
 			const agents = await Bun.file(join(TEST_DIR, "AGENTS.md")).text();
 			expect(agents).toContain(CLI_AGENT_NUDGE);
-			expect(agents).not.toContain("`backlog instructions` to list available guides");
-			expect(agents).not.toContain("# Instructions for the usage of Backlog.md CLI Tool");
+			expect(agents).not.toContain("`agentic-workspace instructions` to list available guides");
+			expect(agents).not.toContain("# Instructions for the usage of AgenticWorkspace.md CLI Tool");
 		});
 
 		it("maps Cursor to AGENTS.md while preserving existing instructions and user Cursor rules", async () => {
@@ -245,10 +245,10 @@ describe("CLI Integration", () => {
 			expect(secondOutput).toContain("Unchanged: AGENTS.md");
 			expect(agents).toContain("Existing team instructions");
 			expect(agents).toContain(CLI_AGENT_NUDGE);
-			expect((agents.match(/<!-- BACKLOG\.MD GUIDELINES START -->/g) || []).length).toBe(1);
+			expect((agents.match(/<!-- AGENTIC_WORKSPACE GUIDELINES START -->/g) || []).length).toBe(1);
 			expect(await Bun.file(userRulePath).text()).toBe("User-managed Cursor rule\n");
 			expect(await Bun.file(join(TEST_DIR, ".cursorrules")).exists()).toBe(false);
-			expect(await Bun.file(join(TEST_DIR, ".cursor", "rules", "backlog.mdc")).exists()).toBe(false);
+			expect(await Bun.file(join(TEST_DIR, ".cursor", "rules", "agentic-workspace.mdc")).exists()).toBe(false);
 		});
 
 		it("deduplicates Cursor and agents in combined instruction selections", async () => {
@@ -259,7 +259,7 @@ describe("CLI Integration", () => {
 			expect(output).toContain("Agent instructions: AGENTS.md, CLAUDE.md");
 			expect(await Bun.file(join(TEST_DIR, "AGENTS.md")).exists()).toBe(true);
 			expect(await Bun.file(join(TEST_DIR, "CLAUDE.md")).exists()).toBe(true);
-			expect(await Bun.file(join(TEST_DIR, ".cursor", "rules", "backlog.mdc")).exists()).toBe(false);
+			expect(await Bun.file(join(TEST_DIR, ".cursor", "rules", "agentic-workspace.mdc")).exists()).toBe(false);
 		});
 
 		// Both help assertions read the same output, so fetch `init --help` once.
@@ -300,47 +300,49 @@ describe("CLI Integration", () => {
 			expect(claudeFile).toBe(false);
 		});
 
-		it("should support non-interactive .backlog selection via --backlog-dir", async () => {
-			const output = await $`${CLI_COMMAND} init HiddenProj --defaults --integration-mode none --backlog-dir .backlog`
-				.cwd(TEST_DIR)
-				.text();
-
-			expect(output).toContain("Backlog directory: .backlog");
-			expect(await Bun.file(join(TEST_DIR, ".backlog", "config.yml")).exists()).toBe(true);
-			expect(await Bun.file(join(TEST_DIR, "backlog", "config.yml")).exists()).toBe(false);
-		});
-
-		it("should store custom non-interactive backlog dir in root backlog.config.yml", async () => {
+		it("should support non-interactive .agentic-workspace selection via --agentic-workspace-dir", async () => {
 			const output =
-				await $`${CLI_COMMAND} init CustomProj --defaults --integration-mode none --backlog-dir planning/backlog-data`
+				await $`${CLI_COMMAND} init HiddenProj --defaults --integration-mode none --agentic-workspace-dir .agentic-workspace`
 					.cwd(TEST_DIR)
 					.text();
 
-			expect(output).toContain("Backlog directory: planning/backlog-data");
-			expect(output).toContain("Config location: backlog.config.yml");
-			expect(await Bun.file(join(TEST_DIR, "backlog.config.yml")).exists()).toBe(true);
-			const rootConfig = await Bun.file(join(TEST_DIR, "backlog.config.yml")).text();
-			expect(rootConfig).toContain('backlog_directory: "planning/backlog-data"');
+			expect(output).toContain("AgenticWorkspace directory: .agentic-workspace");
+			expect(await Bun.file(join(TEST_DIR, ".agentic-workspace", "config.yml")).exists()).toBe(true);
+			expect(await Bun.file(join(TEST_DIR, "agentic-workspace", "config.yml")).exists()).toBe(false);
 		});
 
-		it("should reject invalid --backlog-dir values", async () => {
+		it("should store custom non-interactive agentic-workspace dir in root agentic-workspace.config.yml", async () => {
+			const output =
+				await $`${CLI_COMMAND} init CustomProj --defaults --integration-mode none --agentic-workspace-dir planning/agentic-workspace-data`
+					.cwd(TEST_DIR)
+					.text();
+
+			expect(output).toContain("AgenticWorkspace directory: planning/agentic-workspace-data");
+			expect(output).toContain("Config location: agentic-workspace.config.yml");
+			expect(await Bun.file(join(TEST_DIR, "agentic-workspace.config.yml")).exists()).toBe(true);
+			const rootConfig = await Bun.file(join(TEST_DIR, "agentic-workspace.config.yml")).text();
+			expect(rootConfig).toContain('agentic_workspace_directory: "planning/agentic-workspace-data"');
+		});
+
+		it("should reject invalid --agentic-workspace-dir values", async () => {
 			const result =
-				await $`${CLI_COMMAND} init InvalidDirProj --defaults --integration-mode none --backlog-dir ../outside`
+				await $`${CLI_COMMAND} init InvalidDirProj --defaults --integration-mode none --agentic-workspace-dir ../outside`
 					.cwd(TEST_DIR)
 					.nothrow()
 					.quiet();
 			const output = result.stdout.toString() + result.stderr.toString();
 			expect(result.exitCode).toBe(1);
-			expect(output).toContain("Invalid --backlog-dir value");
+			expect(output).toContain("Invalid --agentic-workspace-dir value");
 		});
 
-		it("should reject --backlog-dir during re-initialization", async () => {
+		it("should reject --agentic-workspace-dir during re-initialization", async () => {
 			await $`${CLI_COMMAND} init ReinitProj --defaults --integration-mode none`.cwd(TEST_DIR).quiet();
 
-			const result = await $`${CLI_COMMAND} init ReinitProj --defaults --integration-mode none --backlog-dir .backlog`
-				.cwd(TEST_DIR)
-				.nothrow()
-				.quiet();
+			const result =
+				await $`${CLI_COMMAND} init ReinitProj --defaults --integration-mode none --agentic-workspace-dir .agentic-workspace`
+					.cwd(TEST_DIR)
+					.nothrow()
+					.quiet();
 			const output = result.stdout.toString() + result.stderr.toString();
 			expect(result.exitCode).toBe(1);
 			expect(output).toContain("fixed after initialization");
@@ -370,7 +372,7 @@ describe("CLI Integration", () => {
 			expect(agentsFile).toBe(true);
 		});
 
-		describe("BACKLOG_CWD", () => {
+		describe("AGENTIC_WORKSPACE_CWD", () => {
 			async function createSiblingRepos(): Promise<{ pinnedDir: string; processDir: string }> {
 				const pinnedDir = join(TEST_DIR, "pinned");
 				const processDir = join(TEST_DIR, "process-dir");
@@ -384,13 +386,13 @@ describe("CLI Integration", () => {
 
 				const output = await $`${CLI_COMMAND} init PinnedProj --defaults --agent-instructions agents`
 					.cwd(processDir)
-					.env({ ...process.env, [BACKLOG_CWD_ENV]: pinnedDir })
+					.env({ ...process.env, [AGENTIC_WORKSPACE_CWD_ENV]: pinnedDir })
 					.text();
 
-				expect(output).toContain("Initialized backlog project: PinnedProj");
-				expect(await Bun.file(join(pinnedDir, "backlog", "config.yml")).exists()).toBe(true);
+				expect(output).toContain("Initialized AgenticWorkspace project: PinnedProj");
+				expect(await Bun.file(join(pinnedDir, "agentic-workspace", "config.yml")).exists()).toBe(true);
 				expect(await Bun.file(join(pinnedDir, "AGENTS.md")).exists()).toBe(true);
-				expect(await Bun.file(join(processDir, "backlog", "config.yml")).exists()).toBe(false);
+				expect(await Bun.file(join(processDir, "agentic-workspace", "config.yml")).exists()).toBe(false);
 				expect(await Bun.file(join(processDir, "AGENTS.md")).exists()).toBe(false);
 			});
 
@@ -401,10 +403,10 @@ describe("CLI Integration", () => {
 					.cwd(processDir)
 					.text();
 
-				expect(output).toContain("Initialized backlog project: ProcessProj");
-				expect(await Bun.file(join(processDir, "backlog", "config.yml")).exists()).toBe(true);
+				expect(output).toContain("Initialized AgenticWorkspace project: ProcessProj");
+				expect(await Bun.file(join(processDir, "agentic-workspace", "config.yml")).exists()).toBe(true);
 				expect(await Bun.file(join(processDir, "AGENTS.md")).exists()).toBe(true);
-				expect(await Bun.file(join(pinnedDir, "backlog", "config.yml")).exists()).toBe(false);
+				expect(await Bun.file(join(pinnedDir, "agentic-workspace", "config.yml")).exists()).toBe(false);
 			});
 
 			it("fails without initializing anything when the override points at a missing directory", async () => {
@@ -413,14 +415,14 @@ describe("CLI Integration", () => {
 
 				const result = await $`${CLI_COMMAND} init MissingProj --defaults --integration-mode none`
 					.cwd(processDir)
-					.env({ ...process.env, [BACKLOG_CWD_ENV]: missingDir })
+					.env({ ...process.env, [AGENTIC_WORKSPACE_CWD_ENV]: missingDir })
 					.nothrow()
 					.quiet();
 				const output = result.stdout.toString() + result.stderr.toString();
 
 				expect(result.exitCode).toBe(1);
-				expect(output).toContain(`Invalid directory from ${BACKLOG_CWD_ENV}`);
-				expect(await Bun.file(join(processDir, "backlog", "config.yml")).exists()).toBe(false);
+				expect(output).toContain(`Invalid directory from ${AGENTIC_WORKSPACE_CWD_ENV}`);
+				expect(await Bun.file(join(processDir, "agentic-workspace", "config.yml")).exists()).toBe(false);
 			});
 		});
 
@@ -451,7 +453,7 @@ describe("CLI Integration", () => {
 
 				expect(result.exitCode).toBe(1);
 				expect(output).toContain("is reserved for drafts, docs, or decisions");
-				expect(await Bun.file(join(TEST_DIR, "backlog", "config.yml")).exists()).toBe(false);
+				expect(await Bun.file(join(TEST_DIR, "agentic-workspace", "config.yml")).exists()).toBe(false);
 			});
 		}
 
@@ -466,7 +468,7 @@ describe("CLI Integration", () => {
 
 			expect(result.exitCode).toBe(1);
 			expect(output).toContain("Task prefix must contain only letters (a-z, A-Z).");
-			expect(await Bun.file(join(TEST_DIR, "backlog", "config.yml")).exists()).toBe(false);
+			expect(await Bun.file(join(TEST_DIR, "agentic-workspace", "config.yml")).exists()).toBe(false);
 		});
 	});
 
@@ -476,12 +478,12 @@ describe("CLI Integration", () => {
 			await $`git init -b main`.cwd(TEST_DIR).quiet();
 		});
 
-		it("should create initial commit with backlog structure", async () => {
+		it("should create initial commit with agentic-workspace structure", async () => {
 			const core = new Core(TEST_DIR);
 			await initializeTestProject(core, "Git Integration Test", true);
 
 			const lastCommit = await core.git.getLastCommitMessage();
-			expect(lastCommit).toBe("backlog: Initialize backlog project: Git Integration Test");
+			expect(lastCommit).toBe("agentic-workspace: Initialize agentic-workspace project: Git Integration Test");
 
 			// Verify git status is clean after initialization
 			const isClean = await core.git.isClean();
@@ -583,7 +585,7 @@ describe("CLI Integration", () => {
 				dependencies: [],
 				rawContent: "Created on feature branch",
 			});
-			await $`git add backlog/tasks`.cwd(CREATE_FIXTURE_DIR).quiet();
+			await $`git add agentic-workspace/tasks`.cwd(CREATE_FIXTURE_DIR).quiet();
 			await $`git commit -m "Add cross-branch dependency fixture"`.cwd(CREATE_FIXTURE_DIR).quiet();
 			await $`git push -u origin feature`.cwd(CREATE_FIXTURE_DIR).quiet();
 			await $`git remote update origin --prune`.cwd(CREATE_FIXTURE_DIR).quiet();

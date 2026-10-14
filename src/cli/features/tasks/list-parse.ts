@@ -95,7 +95,7 @@ export async function parseTaskListRequest(
 	const { filters, labels } = parsedFilters;
 	let limit: number | undefined;
 	if (options.limit !== undefined) {
-		const parsedLimit = parsePositiveIntegerOption(options.limit, "--limit", "agenticworkspace task list --help");
+		const parsedLimit = parsePositiveIntegerOption(options.limit, "--limit", "agentic-workspace task list --help");
 		if (parsedLimit === null) return null;
 		limit = parsedLimit;
 	}

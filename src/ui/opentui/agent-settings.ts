@@ -392,7 +392,7 @@ export function mountOpenTuiAgentSettings(
 		keyBindings: [{ name: "return", shift: true, action: "newline" }],
 	});
 	const environmentDescription = fieldDescription(
-		"One NAME=value per line. Shell variables expand: BACKLOG_PROJECT_DIR, BACKLOG_WORKTREE_DIR, BACKLOG_TASK_DIR. Example: OUTPUT_DIR=$BACKLOG_TASK_DIR. Shift+Enter adds a line; Enter commits.",
+		"One NAME=value per line. Shell variables expand: AGENTIC_WORKSPACE_PROJECT_DIR, AGENTIC_WORKSPACE_WORKTREE_DIR, AGENTIC_WORKSPACE_TASK_DIR. Example: OUTPUT_DIR=$AGENTIC_WORKSPACE_TASK_DIR. Shift+Enter adds a line; Enter commits.",
 	);
 	const fieldGroup = (...children: Array<TextRenderable | InputRenderable | TextareaRenderable>): BoxRenderable => {
 		const group = new BoxRenderable(renderer, {

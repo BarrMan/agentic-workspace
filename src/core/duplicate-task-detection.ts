@@ -3,7 +3,7 @@ import { parseTask } from "../markdown/parser.ts";
 import type { Task } from "../types/index.ts";
 import { type DuplicateGroup, detectDuplicateTaskIds } from "../utils/duplicate-detection.ts";
 import { canonicalTaskId } from "../utils/task-id.ts";
-import type { Core } from "./backlog.ts";
+import type { Core } from "./agentic-workspace.ts";
 import type { BranchTaskStateEntry, TaskCorpusSnapshot } from "./task-loader.ts";
 
 export interface CrossBranchDuplicateLocation {

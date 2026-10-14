@@ -1,5 +1,5 @@
 {
-  "name": "agenticworkspace",
+  "name": "agentic-workspace",
   "version": "1.53.0",
   "type": "module",
   "module": "src/cli/index.ts",
@@ -9,15 +9,15 @@
     "LICENSE"
   ],
   "bin": {
-    "agenticworkspace": "scripts/cli.cjs"
+    "agentic-workspace": "scripts/cli.cjs"
   },
   "optionalDependencies": {
-    "agenticworkspace-darwin-arm64": "*",
-    "agenticworkspace-darwin-x64": "*",
-    "agenticworkspace-linux-arm64": "*",
-    "agenticworkspace-linux-x64": "*",
-    "agenticworkspace-windows-arm64": "*",
-    "agenticworkspace-windows-x64": "*"
+    "agentic-workspace-darwin-arm64": "*",
+    "agentic-workspace-darwin-x64": "*",
+    "agentic-workspace-linux-arm64": "*",
+    "agentic-workspace-linux-x64": "*",
+    "agentic-workspace-windows-arm64": "*",
+    "agentic-workspace-windows-x64": "*"
   },
   "devDependencies": {
     "@biomejs/biome": "2.5.3",
@@ -61,7 +61,7 @@
       "biome check --write --files-ignore-unknown=true"
     ]
   },
-  "author": "Alex Gavrilescu (https://github.com/MrLesk)",
+  "author": "Imri Barr",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/BarrMan/agentic-workspace.git"

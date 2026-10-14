@@ -2,11 +2,11 @@
 
 **Status:** implemented and verified live on 2026-10-07 (HEAD `46dc8840` plus uncommitted work); spec locked with the owner the same day. §7 records the measured evidence, §8 the residual limits. Every anchor was read in the working tree on 2026-10-07.
 
-**Rule that governs this plan (owner's words):** a session started by `agenticworkspace agent-session start` must behave **exactly** as if it had been started from the workspace view. The workspace owns every session's lifetime.
+**Rule that governs this plan (owner's words):** a session started by `agentic-workspace agent-session start` must behave **exactly** as if it had been started from the workspace view. The workspace owns every session's lifetime.
 
 **Scope:** the ownership/lifetime axis only. The activity axis belongs to `docs/aoe-status-tracking-plan.md`; the efficiency axis to `docs/aoe-lifecycle-implementation-plan.md`. Neither is re-planned here.
 
-**Review command for every phase:** `agenticworkspace workspace` (equivalently `bun run cli workspace`).
+**Review command for every phase:** `agentic-workspace workspace` (equivalently `bun run cli workspace`).
 
 ---
 
@@ -44,7 +44,7 @@ So the change is: **one context channel, one registration path, one adoption pas
 
 ## 3. The context channel
 
-**Variable:** `BACKLOG_WORKSPACE_CONTEXT`. Value: compact JSON `{"v":1,"pid":<workspace pid>,"socket":"<ink-proto-<pid>-<n>>","rootDir":"<abs project root>"}`.
+**Variable:** `AGENTIC_WORKSPACE_WORKSPACE_CONTEXT`. Value: compact JSON `{"v":1,"pid":<workspace pid>,"socket":"<ink-proto-<pid>-<n>>","rootDir":"<abs project root>"}`.
 
 **Written** only at the workspace's own agent-pane launch site, into the `prepared.env` copy that becomes the pane command (`workspace-controller.ts:1079-1081`). Never written to the workspace's own `process.env`, never persisted into `presetSnapshot.env`, never inherited by anything the workspace did not launch as an agent pane.
 
@@ -57,7 +57,7 @@ So the change is: **one context channel, one registration path, one adoption pas
 
 The durable record alone is not enough to make adoption *timely*: the workspace's refresh is event-driven, so a record written by another process can sit unnoticed until the user presses a key. The channel therefore has a second, non-durable half:
 
-- `workspaceRequestDir(rootDir)` = `<project root>/.backlog/agent-requests`; one JSON file per pending request (`{ taskId, sessionId, pid }`), written by `writeWorkspaceRequest` after the durable record exists, deleted by `deleteWorkspaceRequest` on adoption, on cancel, and by the boot sweep.
+- `workspaceRequestDir(rootDir)` = `<project root>/.agentic-workspace/agent-requests`; one JSON file per pending request (`{ taskId, sessionId, pid }`), written by `writeWorkspaceRequest` after the durable record exists, deleted by `deleteWorkspaceRequest` on adoption, on cancel, and by the boot sweep.
 - The controller's request timer (started at boot, rescheduled at `min(activityInterval, 1 s)`) **readdirs only that directory** and reads only the requested task's state — never a global `readAll()` per tick. `readWorkspaceRequests` never creates the directory and never throws: an absent directory is the normal state.
 - A marker whose `pid` is not this process, or is not alive, never launches a session.
 - If writing the marker fails, the durable record is removed again, so a task is never left reserved by a request nobody can see.
@@ -70,7 +70,7 @@ The durable record alone is not enough to make adoption *timely*: the workspace'
 **Deliverable:** a pane launched by the workspace carries the context; the CLI can read and validate it.
 **Slices:** (a) `workspace-context.ts` with the schema, `serializeWorkspaceContext`, `readWorkspaceContext`, `workspaceContextInto(env, {pid, socket, rootDir})`; (b) one injection at the controller's pane launch site; (c) unit tests for the validator's failure matrix (absent, malformed, wrong version, dead pid, self pid, root mismatch, dead socket).
 **Review evidence:** launch a workspace in tmux, read a pane's env (`tmux -L <sock> show-environment` or run a command inside the pane), see the variable and only there.
-**Stop condition:** the variable is present in agent panes, absent from a plain `backlog` invocation in the user's own shell.
+**Stop condition:** the variable is present in agent panes, absent from a plain `agentic-workspace` invocation in the user's own shell.
 
 ### Phase S2 — CLI `agent-session start` branches
 **Deliverable:** the owned branch registers and returns; the unowned branch launches and stops.
@@ -97,7 +97,7 @@ The durable record alone is not enough to make adoption *timely*: the workspace'
 
 ### Phase S6 — Live proof (owner-visible)
 1. Bare terminal: `agent-session start TASK-1 --preset opencode` → command returns, `tmux -L default list-sessions` shows nothing left, record `stopped` with a native session id, log present.
-2. Open `agenticworkspace workspace` → select TASK-1 → the session shows stopped with the resume affordance → resume → it runs on the workspace's private socket, killed when the workspace exits.
+2. Open `agentic-workspace workspace` → select TASK-1 → the session shows stopped with the resume affordance → resume → it runs on the workspace's private socket, killed when the workspace exits.
 3. Inside a live pane: run `agent-session start TASK-2 --preset opencode` from the agent's own shell → the workspace launches it for TASK-2 with no further interaction; quitting the workspace kills it.
 4. Kill the workspace while a pending record exists → reopen → the task shows stopped, resumable.
 
@@ -130,7 +130,7 @@ Every item below was observed on a real fixture with the real CLI and a real ope
 
 | Claim | Evidence |
 |---|---|
-| Unowned branch launches then stops | `agent-session start TASK-1 --preset opencode` from a bare terminal printed `Started and stopped session <id> (preset: opencode); the next workspace offers to resume it.`; record `stopped` with `endedAt` and a retained `nativeSessionId`; the shared server held no `backlog-*` session afterwards; no `opencode --session` process survived; reopening the workspace showed the session stopped. |
+| Unowned branch launches then stops | `agent-session start TASK-1 --preset opencode` from a bare terminal printed `Started and stopped session <id> (preset: opencode); the next workspace offers to resume it.`; record `stopped` with `endedAt` and a retained `nativeSessionId`; the shared server held no `agentic-workspace-*` session afterwards; no `opencode --session` process survived; reopening the workspace showed the session stopped. |
 | Owned branch registers and launches nothing | With the context inherited, the CLI printed `Registered session <id> for the owning workspace to launch (preset: opencode)` and the record was `nativeWorkspace: true`, `status: starting`, `ownerPid: <workspace pid>`, `tmuxName: ink-proto-<pid>-1`. |
 | The context really reaches the pane | The launched pane's `pane_start_command` contains exactly `{"v":1,"pid":<wspid>,"socket":"ink-proto-<pid>-<n>","rootDir":"<realpath of the project>"}` — the same bytes §3 validates. The in-pane invocation was replayed with those exact bytes; driving opencode's own tool call was **not** exercised. |
 | Adoption happens without user input | Within one tick the record became `running` with `tmuxName: ink-proto-<pid>-2` and a real `nativeSessionId`; both task rows showed `●`. |
@@ -139,11 +139,11 @@ Every item below was observed on a real fixture with the real CLI and a real ope
 
 Suites run one file per process: `workspace-context` 19, `live/tmux/socket` 4, `agent-sessions` 36, `opentui-workspace-controller` 31, `session-launch` 14, `status-hooks` 12, `opentui-agent-host-cleanup` 5, `session-store` 1 — all passing. `bunx tsc --noEmit` clean; `bunx @biomejs/biome check src` clean apart from the pre-existing broken-symlink warning. Full suite: 257/257 files, 2332 passed, 151.4 s at 5 lanes. Two files are red and are **not** counted by the runner's summary line: `branch-task-loader-resilience` and `frontmatter-diagnostic-propagation`, both from the pre-existing `hydrateTasks` error-swallowing bug in `src/core/task-loader.ts` (`if (w.stateEntry) continue;`), which predates this work and is untouched by it.
 
-Docs updated with this change: this plan, `docs/opentui-workspace-session-contract.md` (new `Command-line sessions and ownership` section, and the external-session bullet scoped to the unowned branch), `docs/aoe-status-tracking-plan.md` (Phase 1 evidence now states which process installs the hook artefacts in each branch), and `.gitignore` (the transient request-marker directory and `*.activity/` sidecars, which are recreated per session and would otherwise litter a tracked `.backlog/`). `docs/opentui-workspace-spec.md` needed no change: §9.1 describes the derived activity overlay, while ownership is a contract-level property. `docs/app-directory-map.md` still needs its regeneration for `.backlog/agent-requests/`.
+Docs updated with this change: this plan, `docs/opentui-workspace-session-contract.md` (new `Command-line sessions and ownership` section, and the external-session bullet scoped to the unowned branch), `docs/aoe-status-tracking-plan.md` (Phase 1 evidence now states which process installs the hook artefacts in each branch), and `.gitignore` (the transient request-marker directory and `*.activity/` sidecars, which are recreated per session and would otherwise litter a tracked `.agentic-workspace/`). `docs/opentui-workspace-spec.md` needed no change: §9.1 describes the derived activity overlay, while ownership is a contract-level property. `docs/app-directory-map.md` still needs its regeneration for `.agentic-workspace/agent-requests/`.
 
 ## 8. Residual limits
 
-1. **A forged context can wedge one task.** An invocation that presents a live non-workspace pid, this project's root, and any live workspace-shaped socket registers a `starting` record nobody adopts and no sweep demotes (the owner pid is alive). Impact is limited to that task's session state, which `agent-session reset <task>` clears; it grants nothing, because the trust model is already "a local process that can write inside `.backlog`".
+1. **A forged context can wedge one task.** An invocation that presents a live non-workspace pid, this project's root, and any live workspace-shaped socket registers a `starting` record nobody adopts and no sweep demotes (the owner pid is alive). Impact is limited to that task's session state, which `agent-session reset <task>` clears; it grants nothing, because the trust model is already "a local process that can write inside `.agentic-workspace`".
 2. **Adoption is workspace-view only.** The request timer only launches while the workspace view is mounted; a request registered from board view waits for the view to return. The marker survives, so nothing is lost.
 3. **`agent-session attach` still cannot reach an owned session** (§6.1) — it targets the shared server, the session lives on the workspace's private socket.
-4. **`.backlog/agent-requests/` is new user-visible state.** Created only when a request exists, removed once empty; it must be reflected in `docs/app-directory-map.md` at the next regeneration.
+4. **`.agentic-workspace/agent-requests/` is new user-visible state.** Created only when a request exists, removed once empty; it must be reflected in `docs/app-directory-map.md` at the next regeneration.

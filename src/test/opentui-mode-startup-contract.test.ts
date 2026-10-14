@@ -11,7 +11,7 @@ import type { AgentConfiguration, TaskSessions } from "../agent-workspace/types.
 import * as viewStores from "../agent-workspace/view-state-store.ts";
 import type { WorkspaceStateService } from "../agent-workspace/workspace-state.ts";
 import { runCli } from "../cli/register.ts";
-import type { Core } from "../core/backlog.ts";
+import type { Core } from "../core/agentic-workspace.ts";
 import type { Task } from "../types/index.ts";
 import type { OpenTuiHost } from "../ui/opentui/host.ts";
 import { createWorkspaceFilters, type SharedWorkspaceState } from "../ui/opentui/workspace/state.ts";
@@ -72,20 +72,21 @@ function snapshot(root: string): Record<string, { bytes?: string; mtime: number;
 }
 
 function project(configuration?: AgentConfiguration) {
-	const rootDir = mkdtempSync(join(tmpdir(), "backlog-mode-startup-contract-"));
-	const backlogDir = join(rootDir, "backlog");
-	mkdirSync(join(backlogDir, "tasks"), { recursive: true });
-	mkdirSync(join(rootDir, ".backlog", "sessions", task.id), { recursive: true });
-	writeFileSync(join(backlogDir, "config.yml"), "project_name: Startup contract\nstatuses: [To Do]\n");
+	const rootDir = mkdtempSync(join(tmpdir(), "agentic-workspace-mode-startup-contract-"));
+	const agenticWorkspaceDir = join(rootDir, "agentic-workspace");
+	mkdirSync(join(agenticWorkspaceDir, "tasks"), { recursive: true });
+	mkdirSync(join(rootDir, ".agentic-workspace", "sessions", task.id), { recursive: true });
+	writeFileSync(join(agenticWorkspaceDir, "config.yml"), "project_name: Startup contract\nstatuses: [To Do]\n");
 	writeFileSync(
-		join(backlogDir, "tasks", "back-1.md"),
+		join(agenticWorkspaceDir, "tasks", "back-1.md"),
 		"---\nid: BACK-1\ntitle: Startup contract\nstatus: To Do\n---\nKeep task bytes.\n",
 	);
 	writeFileSync(
-		join(rootDir, ".backlog", "sessions", task.id, "state.json"),
+		join(rootDir, ".agentic-workspace", "sessions", task.id, "state.json"),
 		'{"version":1,"taskId":"BACK-1","sessions":[]}\n',
 	);
-	if (configuration) writeFileSync(join(backlogDir, "agents.json"), `${JSON.stringify(configuration, null, 2)}\n`);
+	if (configuration)
+		writeFileSync(join(agenticWorkspaceDir, "agents.json"), `${JSON.stringify(configuration, null, 2)}\n`);
 	const core = {
 		loadTasks: async () => [task],
 		loadTaskSnapshot: async () => ({
@@ -97,7 +98,7 @@ function project(configuration?: AgentConfiguration) {
 		filesystem: {
 			rootDir,
 			projectRoot: rootDir,
-			backlogDir,
+			agenticWorkspaceDir,
 			loadConfig: async () => ({ projectName: "Startup contract", statuses: ["To Do"] }),
 			listMilestones: async () => [],
 			listArchivedMilestones: async () => [],
@@ -176,7 +177,7 @@ describe("public controller.run project mode startup contract", () => {
 						const message = (error as Error).message;
 						expect(message).toMatch(/project.*modes|modes.*project/i);
 						expect(message).toMatch(/setup|initializ/i);
-						expect(message).toMatch(/agenticworkspace\s+agent-config\s+init\s+project/i);
+						expect(message).toMatch(/agentic-workspace\s+agent-config\s+init\s+project/i);
 						expect(createHost).toHaveBeenCalledTimes(0);
 						expect(viewOpen).toHaveBeenCalledTimes(0);
 						expect(groupOpen).toHaveBeenCalledTimes(0);
@@ -277,7 +278,7 @@ describe("source entrypoint mode startup contract", () => {
 				const exitCode = await runCli(["workspace"], { cwd: fixture.rootDir, stdout, stderr });
 				expect(exitCode).not.toBe(0);
 				expect(output).toMatch(/project.*modes|modes.*project/i);
-				expect(output).toMatch(/agenticworkspace\s+agent-config\s+init\s+project/i);
+				expect(output).toMatch(/agentic-workspace\s+agent-config\s+init\s+project/i);
 				expect(snapshot(fixture.rootDir)).toEqual(before);
 			} finally {
 				rmSync(fixture.rootDir, { recursive: true, force: true });

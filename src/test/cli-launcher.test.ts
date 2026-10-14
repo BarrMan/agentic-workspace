@@ -15,7 +15,7 @@ const tempDirs: string[] = [];
 
 /** Copy the launcher scripts into a temp dir with an optional fixture platform binary. */
 async function createLauncherDir(binaryContent?: string): Promise<string> {
-	const dir = await mkdtemp(join(tmpdir(), "backlog-launcher-"));
+	const dir = await mkdtemp(join(tmpdir(), "agentic-workspace-launcher-"));
 	tempDirs.push(dir);
 	await createLauncherInstall(dir, binaryContent === undefined ? undefined : (path) => writeFile(path, binaryContent));
 	return dir;

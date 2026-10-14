@@ -7,7 +7,7 @@ describe("resolveInProgressStatus", () => {
 	});
 
 	it("falls back to the second configured status when In Progress is renamed", () => {
-		expect(resolveInProgressStatus(["Backlog", "Doing", "Shipped"])).toBe("Doing");
+		expect(resolveInProgressStatus(["AgenticWorkspace", "Doing", "Shipped"])).toBe("Doing");
 	});
 
 	it("uses the default statuses when none are configured", () => {

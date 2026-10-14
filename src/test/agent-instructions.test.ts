@@ -30,21 +30,21 @@ describe("addAgentInstructions", () => {
 		const copilot = await Bun.file(join(TEST_DIR, ".github/copilot-instructions.md")).text();
 
 		// Check that files contain the markers and content
-		expect(agents).toContain("<!-- BACKLOG.MD GUIDELINES START -->");
-		expect(agents).toContain("<!-- BACKLOG.MD GUIDELINES END -->");
+		expect(agents).toContain("<!-- AGENTIC_WORKSPACE GUIDELINES START -->");
+		expect(agents).toContain("<!-- AGENTIC_WORKSPACE GUIDELINES END -->");
 		expect(agents).toContain(CLI_AGENT_NUDGE);
-		expect(agents).not.toContain("# Instructions for the usage of Backlog.md CLI Tool");
+		expect(agents).not.toContain("# Instructions for the usage of AgenticWorkspace.md CLI Tool");
 
-		expect(claude).toContain("<!-- BACKLOG.MD GUIDELINES START -->");
-		expect(claude).toContain("<!-- BACKLOG.MD GUIDELINES END -->");
+		expect(claude).toContain("<!-- AGENTIC_WORKSPACE GUIDELINES START -->");
+		expect(claude).toContain("<!-- AGENTIC_WORKSPACE GUIDELINES END -->");
 		expect(claude).toContain(CLI_AGENT_NUDGE);
 
-		expect(gemini).toContain("<!-- BACKLOG.MD GUIDELINES START -->");
-		expect(gemini).toContain("<!-- BACKLOG.MD GUIDELINES END -->");
+		expect(gemini).toContain("<!-- AGENTIC_WORKSPACE GUIDELINES START -->");
+		expect(gemini).toContain("<!-- AGENTIC_WORKSPACE GUIDELINES END -->");
 		expect(gemini).toContain(CLI_AGENT_NUDGE);
 
-		expect(copilot).toContain("<!-- BACKLOG.MD GUIDELINES START -->");
-		expect(copilot).toContain("<!-- BACKLOG.MD GUIDELINES END -->");
+		expect(copilot).toContain("<!-- AGENTIC_WORKSPACE GUIDELINES START -->");
+		expect(copilot).toContain("<!-- AGENTIC_WORKSPACE GUIDELINES END -->");
 		expect(copilot).toContain(CLI_AGENT_NUDGE);
 	});
 
@@ -53,10 +53,10 @@ describe("addAgentInstructions", () => {
 		const agents = await Bun.file(join(TEST_DIR, "AGENTS.md")).text();
 
 		expect(agents).toContain("when the user requests task operations or this session is explicitly assigned");
-		expect(agents).toContain("agenticworkspace task create");
-		expect(agents).toContain("agenticworkspace task view <id> --plain");
-		expect(agents).toContain("agenticworkspace task edit <id>");
-		expect(agents).not.toContain("agenticworkspace instructions");
+		expect(agents).toContain("agentic-workspace task create");
+		expect(agents).toContain("agentic-workspace task view <id> --plain");
+		expect(agents).toContain("agentic-workspace task edit <id>");
+		expect(agents).not.toContain("agentic-workspace instructions");
 	});
 
 	it("appends guideline files when they already exist", async () => {
@@ -64,8 +64,8 @@ describe("addAgentInstructions", () => {
 		const results = await addAgentInstructions(TEST_DIR);
 		const agents = await Bun.file(join(TEST_DIR, "AGENTS.md")).text();
 		expect(agents.startsWith("Existing\n")).toBe(true);
-		expect(agents).toContain("<!-- BACKLOG.MD GUIDELINES START -->");
-		expect(agents).toContain("<!-- BACKLOG.MD GUIDELINES END -->");
+		expect(agents).toContain("<!-- AGENTIC_WORKSPACE GUIDELINES START -->");
+		expect(agents).toContain("<!-- AGENTIC_WORKSPACE GUIDELINES END -->");
 		expect(agents).toContain(CLI_AGENT_NUDGE);
 		expect(results.find((result) => result.fileName === "AGENTS.md")?.action).toBe("updated");
 		expect(results.find((result) => result.fileName === "CLAUDE.md")?.action).toBe("created");
@@ -90,9 +90,9 @@ describe("addAgentInstructions", () => {
 			agentsPath,
 			[
 				"Existing header",
-				"<!-- BACKLOG.MD GUIDELINES START -->",
-				"Old generated Backlog guidance",
-				"<!-- BACKLOG.MD GUIDELINES END -->",
+				"<!-- AGENTIC_WORKSPACE GUIDELINES START -->",
+				"Old generated AgenticWorkspace guidance",
+				"<!-- AGENTIC_WORKSPACE GUIDELINES END -->",
 				"Existing footer",
 				"",
 			].join("\n"),
@@ -111,8 +111,8 @@ describe("addAgentInstructions", () => {
 		expect(agents).toContain("Existing header");
 		expect(agents).toContain("Existing footer");
 		expect(agents).toContain(CLI_AGENT_NUDGE);
-		expect(agents).not.toContain("Old generated Backlog guidance");
-		expect((agents.match(/<!-- BACKLOG\.MD GUIDELINES START -->/g) || []).length).toBe(1);
+		expect(agents).not.toContain("Old generated AgenticWorkspace guidance");
+		expect((agents.match(/<!-- AGENTIC_WORKSPACE GUIDELINES START -->/g) || []).length).toBe(1);
 	});
 
 	it("creates only selected files", async () => {
@@ -128,12 +128,12 @@ describe("addAgentInstructions", () => {
 		expect(claudeExists).toBe(false);
 		expect(geminiExists).toBe(false);
 		expect(copilotExists).toBe(false);
-		expect(readme).toContain("<!-- BACKLOG.MD GUIDELINES START -->");
-		expect(readme).toContain("<!-- BACKLOG.MD GUIDELINES END -->");
+		expect(readme).toContain("<!-- AGENTIC_WORKSPACE GUIDELINES START -->");
+		expect(readme).toContain("<!-- AGENTIC_WORKSPACE GUIDELINES END -->");
 		expect(readme).toContain(await _loadAgentGuideline(README_GUIDELINES));
 	});
 
-	it("preserves existing content and adds Backlog.md content only once", async () => {
+	it("preserves existing content and adds AgenticWorkspace.md content only once", async () => {
 		const existingContent = "# My Existing Claude Instructions\n\nThis is my custom content.\n";
 		await Bun.write(join(TEST_DIR, "CLAUDE.md"), existingContent);
 
@@ -141,18 +141,18 @@ describe("addAgentInstructions", () => {
 		await addAgentInstructions(TEST_DIR, ["CLAUDE.md"]);
 		const firstRun = await Bun.file(join(TEST_DIR, "CLAUDE.md")).text();
 
-		// Second run - should not duplicate Backlog.md content
+		// Second run - should not duplicate AgenticWorkspace.md content
 		await addAgentInstructions(TEST_DIR, ["CLAUDE.md"]);
 		const secondRun = await Bun.file(join(TEST_DIR, "CLAUDE.md")).text();
 
 		expect(firstRun).toBe(secondRun);
 		expect(firstRun).toContain(existingContent);
-		expect(firstRun).toContain("<!-- BACKLOG.MD GUIDELINES START -->");
-		expect(firstRun).toContain("<!-- BACKLOG.MD GUIDELINES END -->");
+		expect(firstRun).toContain("<!-- AGENTIC_WORKSPACE GUIDELINES START -->");
+		expect(firstRun).toContain("<!-- AGENTIC_WORKSPACE GUIDELINES END -->");
 
 		// Count occurrences of the marker to ensure it's only there once
-		const startMarkerCount = (firstRun.match(/<!-- BACKLOG\.MD GUIDELINES START -->/g) || []).length;
-		const endMarkerCount = (firstRun.match(/<!-- BACKLOG\.MD GUIDELINES END -->/g) || []).length;
+		const startMarkerCount = (firstRun.match(/<!-- AGENTIC_WORKSPACE GUIDELINES START -->/g) || []).length;
+		const endMarkerCount = (firstRun.match(/<!-- AGENTIC_WORKSPACE GUIDELINES END -->/g) || []).length;
 		expect(startMarkerCount).toBe(1);
 		expect(endMarkerCount).toBe(1);
 	});
@@ -161,9 +161,9 @@ describe("addAgentInstructions", () => {
 		const agentsPath = join(TEST_DIR, "AGENTS.md");
 		const cliBlock = [
 			"Preface content",
-			"<!-- BACKLOG.MD GUIDELINES START -->",
+			"<!-- AGENTIC_WORKSPACE GUIDELINES START -->",
 			"CLI instructions here",
-			"<!-- BACKLOG.MD GUIDELINES END -->",
+			"<!-- AGENTIC_WORKSPACE GUIDELINES END -->",
 			"Footer line",
 			"",
 		].join("\n");
@@ -172,10 +172,10 @@ describe("addAgentInstructions", () => {
 		await ensureMcpGuidelines(TEST_DIR, "AGENTS.md");
 		const updated = await Bun.file(agentsPath).text();
 
-		expect(updated).not.toContain("<!-- BACKLOG.MD GUIDELINES START -->");
-		expect(updated).not.toContain("<!-- BACKLOG.MD GUIDELINES END -->");
-		expect(updated).toContain("<!-- BACKLOG.MD MCP GUIDELINES START -->");
-		expect(updated).toContain("<!-- BACKLOG.MD MCP GUIDELINES END -->");
+		expect(updated).not.toContain("<!-- AGENTIC_WORKSPACE GUIDELINES START -->");
+		expect(updated).not.toContain("<!-- AGENTIC_WORKSPACE GUIDELINES END -->");
+		expect(updated).toContain("<!-- AGENTIC_WORKSPACE MCP GUIDELINES START -->");
+		expect(updated).toContain("<!-- AGENTIC_WORKSPACE MCP GUIDELINES END -->");
 		expect(updated).toContain("Preface content");
 		expect(updated).toContain("Footer line");
 	});
@@ -185,16 +185,18 @@ describe("addAgentInstructions", () => {
 	// a project's local instructions against the bundled ones.
 	it("writes a version marker matching package.json inside the guidelines block (BACK-267)", async () => {
 		const { version } = await Bun.file(join(__dirname, "../../package.json")).json();
-		const versionMarker = `<!-- backlog.md-instructions-version: ${version} -->`;
+		const versionMarker = `<!-- agentic-workspace-instructions-version: ${version} -->`;
 
 		await addAgentInstructions(TEST_DIR);
 		for (const fileName of ["AGENTS.md", "CLAUDE.md", "GEMINI.md", ".github/copilot-instructions.md"]) {
 			const content = await Bun.file(join(TEST_DIR, fileName)).text();
 			expect(content).toContain(versionMarker);
 			// Marker lives inside the managed block, right after the start marker
-			expect(content.indexOf(versionMarker)).toBeGreaterThan(content.indexOf("<!-- BACKLOG.MD GUIDELINES START -->"));
-			expect(content.indexOf(versionMarker)).toBeLessThan(content.indexOf("<!-- BACKLOG.MD GUIDELINES END -->"));
-			expect((content.match(/<!-- backlog\.md-instructions-version: /g) || []).length).toBe(1);
+			expect(content.indexOf(versionMarker)).toBeGreaterThan(
+				content.indexOf("<!-- AGENTIC_WORKSPACE GUIDELINES START -->"),
+			);
+			expect(content.indexOf(versionMarker)).toBeLessThan(content.indexOf("<!-- AGENTIC_WORKSPACE GUIDELINES END -->"));
+			expect((content.match(/<!-- agentic-workspace-instructions-version: /g) || []).length).toBe(1);
 		}
 	});
 
@@ -205,10 +207,10 @@ describe("addAgentInstructions", () => {
 			agentsPath,
 			[
 				"Existing header",
-				"<!-- BACKLOG.MD GUIDELINES START -->",
-				"<!-- backlog.md-instructions-version: 0.0.1 -->",
-				"Old generated Backlog guidance",
-				"<!-- BACKLOG.MD GUIDELINES END -->",
+				"<!-- AGENTIC_WORKSPACE GUIDELINES START -->",
+				"<!-- agentic-workspace-instructions-version: 0.0.1 -->",
+				"Old generated AgenticWorkspace guidance",
+				"<!-- AGENTIC_WORKSPACE GUIDELINES END -->",
 				"",
 			].join("\n"),
 		);
@@ -216,8 +218,8 @@ describe("addAgentInstructions", () => {
 		await addAgentInstructions(TEST_DIR, ["AGENTS.md"]);
 		const agents = await Bun.file(agentsPath).text();
 
-		expect(agents).not.toContain("backlog.md-instructions-version: 0.0.1");
-		expect(agents).toContain(`<!-- backlog.md-instructions-version: ${version} -->`);
+		expect(agents).not.toContain("agentic-workspace-instructions-version: 0.0.1");
+		expect(agents).toContain(`<!-- agentic-workspace-instructions-version: ${version} -->`);
 		expect(agents).toContain("Existing header");
 	});
 
@@ -226,20 +228,24 @@ describe("addAgentInstructions", () => {
 
 		await ensureMcpGuidelines(TEST_DIR, "AGENTS.md");
 		const content = await Bun.file(join(TEST_DIR, "AGENTS.md")).text();
-		const versionMarker = `<!-- backlog.md-instructions-version: ${version} -->`;
+		const versionMarker = `<!-- agentic-workspace-instructions-version: ${version} -->`;
 
 		expect(content).toContain(versionMarker);
-		expect(content.indexOf(versionMarker)).toBeGreaterThan(content.indexOf("<!-- BACKLOG.MD MCP GUIDELINES START -->"));
-		expect(content.indexOf(versionMarker)).toBeLessThan(content.indexOf("<!-- BACKLOG.MD MCP GUIDELINES END -->"));
+		expect(content.indexOf(versionMarker)).toBeGreaterThan(
+			content.indexOf("<!-- AGENTIC_WORKSPACE MCP GUIDELINES START -->"),
+		);
+		expect(content.indexOf(versionMarker)).toBeLessThan(
+			content.indexOf("<!-- AGENTIC_WORKSPACE MCP GUIDELINES END -->"),
+		);
 	});
 
 	it("replaces MCP nudge with CLI guidelines when switching modes", async () => {
 		const agentsPath = join(TEST_DIR, "AGENTS.md");
 		const mcpBlock = [
 			"Header",
-			"<!-- BACKLOG.MD MCP GUIDELINES START -->",
+			"<!-- AGENTIC_WORKSPACE MCP GUIDELINES START -->",
 			"MCP reminder here",
-			"<!-- BACKLOG.MD MCP GUIDELINES END -->",
+			"<!-- AGENTIC_WORKSPACE MCP GUIDELINES END -->",
 			"",
 		].join("\n");
 		await Bun.write(agentsPath, mcpBlock);
@@ -247,10 +253,10 @@ describe("addAgentInstructions", () => {
 		await addAgentInstructions(TEST_DIR, ["AGENTS.md"]);
 		const updated = await Bun.file(agentsPath).text();
 
-		expect(updated).toContain("<!-- BACKLOG.MD GUIDELINES START -->");
-		expect(updated).toContain("<!-- BACKLOG.MD GUIDELINES END -->");
-		expect(updated).not.toContain("<!-- BACKLOG.MD MCP GUIDELINES START -->");
-		expect(updated).not.toContain("<!-- BACKLOG.MD MCP GUIDELINES END -->");
+		expect(updated).toContain("<!-- AGENTIC_WORKSPACE GUIDELINES START -->");
+		expect(updated).toContain("<!-- AGENTIC_WORKSPACE GUIDELINES END -->");
+		expect(updated).not.toContain("<!-- AGENTIC_WORKSPACE MCP GUIDELINES START -->");
+		expect(updated).not.toContain("<!-- AGENTIC_WORKSPACE MCP GUIDELINES END -->");
 		expect(updated).toContain("Header");
 	});
 });

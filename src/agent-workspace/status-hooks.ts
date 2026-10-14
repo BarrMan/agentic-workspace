@@ -21,7 +21,7 @@ export type { HookStatus };
 export { buildHookCommand, HOOK_STATUS_VALUES, STATUS_HOOK_OWNERSHIP_TRAILER };
 
 /** The environment variable a launched agent reads to find its owned status sidecar directory. */
-export const STATUS_DIR_ENV = "BACKLOG_AGENT_STATUS_DIR";
+export const STATUS_DIR_ENV = "AGENTIC_WORKSPACE_AGENT_STATUS_DIR";
 
 /**
  * The deterministic, ephemeral activity sidecar directory for one session.
@@ -64,7 +64,7 @@ export async function installStatusHooks(
 	const agent = agentFor(preset.bootstrap);
 	if (!agent) {
 		throw new Error(
-			`Provider ${preset.bootstrap} has no process-scoped status-hook loader; Backlog must not install it globally.`,
+			`Provider ${preset.bootstrap} has no process-scoped status-hook loader; AgenticWorkspace must not install it globally.`,
 		);
 	}
 	return agent.installStatusHooks(options);

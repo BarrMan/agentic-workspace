@@ -19,8 +19,8 @@ async function initWithClosedInput(args: string[]) {
 				done();
 			},
 		});
-	const originalBacklogCwd = process.env.BACKLOG_CWD;
-	delete process.env.BACKLOG_CWD;
+	const originalAgenticWorkspaceCwd = process.env.AGENTIC_WORKSPACE_CWD;
+	delete process.env.AGENTIC_WORKSPACE_CWD;
 	try {
 		const exitCode = await runCli(["init", ...args], {
 			cwd: testDir,
@@ -29,8 +29,8 @@ async function initWithClosedInput(args: string[]) {
 		});
 		return { exitCode, output: stdout.join("") + stderr.join("") };
 	} finally {
-		if (originalBacklogCwd === undefined) delete process.env.BACKLOG_CWD;
-		else process.env.BACKLOG_CWD = originalBacklogCwd;
+		if (originalAgenticWorkspaceCwd === undefined) delete process.env.AGENTIC_WORKSPACE_CWD;
+		else process.env.AGENTIC_WORKSPACE_CWD = originalAgenticWorkspaceCwd;
 	}
 }
 
@@ -53,8 +53,8 @@ describe("CLI init with closed stdin", () => {
 
 			expect(result.exitCode).toBe(1);
 			expect(result.output).toContain("Project name is required");
-			expect(result.output).toContain('agenticworkspace init "My Project"');
-			expect(result.output).not.toContain("Initialized backlog project");
+			expect(result.output).toContain('agentic-workspace init "My Project"');
+			expect(result.output).not.toContain("Initialized agentic-workspace project");
 			expect(await readdir(testDir)).toEqual(before);
 		});
 
@@ -66,8 +66,10 @@ describe("CLI init with closed stdin", () => {
 			const result = await initWithClosedInput(args);
 
 			expect(result.exitCode).toBe(0);
-			expect(result.output).toContain("Initialized backlog project: Input Test");
-			expect(await Bun.file(join(testDir, "backlog", "config.yml")).text()).toContain('project_name: "Input Test"');
+			expect(result.output).toContain("Initialized AgenticWorkspace project: Input Test");
+			expect(await Bun.file(join(testDir, "agentic-workspace", "config.yml")).text()).toContain(
+				'project_name: "Input Test"',
+			);
 			expect((await readdir(testDir)).includes(".git")).toBe(git);
 		});
 	}

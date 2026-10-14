@@ -1,5 +1,5 @@
 import { FALLBACK_STATUS } from "../constants/index.ts";
-import { type BacklogConfig, EntityType, type Task, type TaskCreateInput } from "../types/index.ts";
+import { type AgenticWorkspaceConfig, EntityType, type Task, type TaskCreateInput } from "../types/index.ts";
 import { normalizeDueDate } from "../utils/due-date.ts";
 import { normalizeStringList, parseDelimitedStringList } from "../utils/task-builders.ts";
 
@@ -75,7 +75,7 @@ function createdTaskOptionalFields(
 export function buildCreatedTask(
 	input: TaskCreateInput,
 	prepared: PreparedTaskCreationInput,
-	config: BacklogConfig | null,
+	config: AgenticWorkspaceConfig | null,
 	resolved: {
 		id: string;
 		parentTaskId: string | undefined;

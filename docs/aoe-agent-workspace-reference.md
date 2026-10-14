@@ -1,4 +1,4 @@
-# Agent of Empires — Reference Architecture for `agenticworkspace workspace`
+# Agent of Empires — Reference Architecture for `agentic-workspace workspace`
 
 **Status:** reference notes. Specifies **no** AgenticWorkspace change and authorises **no** implementation.
 
@@ -40,7 +40,7 @@ explicit process-exit step on top of it, which §5 alone does not describe.
 
 ## 0. Why this document exists
 
-`agenticworkspace workspace` currently uses **tmux as its UI substrate**: the outer process hands the terminal
+`agentic-workspace workspace` currently uses **tmux as its UI substrate**: the outer process hands the terminal
 to tmux via inherited stdio and tmux draws everything. That single choice produces both reported bugs.
 
 | Symptom | Measured / observed |
@@ -688,4 +688,4 @@ AOE's full-window attach path is a presentation reference, not a terminal-owners
 - [Attach sizing](https://github.com/agent-of-empires/agent-of-empires/blob/0a17c859173a8794abfb55ae7e8038c4c4b17e7d/src/tui/app.rs#L2680-L2705) gives the pane the client dimensions, attaches, then restores preview sizing.
 - [Terminal handoff](https://github.com/agent-of-empires/agent-of-empires/blob/0a17c859173a8794abfb55ae7e8038c4c4b17e7d/src/tui/app.rs#L412-L473) releases raw-mode, alternate-screen, and input ownership around tmux attachment, then restores the TUI.
 
-Backlog's `f` instead expands the same retained `EmbeddedTerminalRenderable` and hides workspace chrome. It does not run `tmux attach` or install another terminal emulator. OpenTUI keeps input, rendering, cursor, and scrolling ownership in both embedded and fullscreen views. `Ctrl+C` and `Ctrl+Q` return to navigation without interrupting the agent.
+AgenticWorkspace's `f` instead expands the same retained `EmbeddedTerminalRenderable` and hides workspace chrome. It does not run `tmux attach` or install another terminal emulator. OpenTUI keeps input, rendering, cursor, and scrolling ownership in both embedded and fullscreen views. `Ctrl+C` and `Ctrl+Q` return to navigation without interrupting the agent.

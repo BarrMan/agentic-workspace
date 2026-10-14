@@ -12,7 +12,7 @@ describe("serializable prepared resource ownership", () => {
 	});
 	async function fixture() {
 		const root = await mkdtemp(join(tmpdir(), "completion-resource-project-"));
-		const skill = await mkdtemp(join(tmpdir(), "backlog-agent-skill-"));
+		const skill = await mkdtemp(join(tmpdir(), "agentic-workspace-agent-skill-"));
 		roots.push(root, skill);
 		const activity = join(root, "one.activity");
 		await mkdir(activity);
@@ -62,7 +62,7 @@ describe("serializable prepared resource ownership", () => {
 		await expect(
 			cleanupPreparedLaunchResources({ ...f.resources, skill: { ...f.resources.skill, path: f.root } }, f.context),
 		).rejects.toThrow("containment");
-		await writeFile(join(f.activity, ".backlog-launch-owner"), "replacement");
+		await writeFile(join(f.activity, ".agentic-workspace-launch-owner"), "replacement");
 		await expect(cleanupPreparedLaunchResources(f.resources, f.context)).rejects.toThrow("marker changed");
 		expect(existsSync(f.skill)).toBe(true);
 	});
@@ -81,7 +81,7 @@ describe("serializable prepared resource ownership", () => {
 
 	it("retains ownership marker across partial content deletion and retries from a fresh caller", async () => {
 		const f = await fixture();
-		const marker = await readFile(join(f.skill, ".backlog-launch-owner"), "utf8");
+		const marker = await readFile(join(f.skill, ".agentic-workspace-launch-owner"), "utf8");
 		const identity = await lstat(f.skill);
 		const blocked = join(f.skill, "blocked");
 		await writeFile(join(f.skill, "first"), "remove first");
@@ -90,7 +90,7 @@ describe("serializable prepared resource ownership", () => {
 		await chmod(blocked, 0o500);
 		try {
 			await expect(cleanupPreparedLaunchResources(f.resources, f.context)).rejects.toThrow();
-			expect(await readFile(join(f.skill, ".backlog-launch-owner"), "utf8")).toBe(marker);
+			expect(await readFile(join(f.skill, ".agentic-workspace-launch-owner"), "utf8")).toBe(marker);
 			expect(await lstat(f.skill)).toMatchObject({ dev: identity.dev, ino: identity.ino });
 			expect(existsSync(join(f.skill, "first"))).toBe(false);
 			await chmod(blocked, 0o700);

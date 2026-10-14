@@ -4,12 +4,12 @@ const { spawn } = require("node:child_process");
 
 // Platform-specific packages to uninstall
 const platformPackages = [
-	"agenticworkspace-linux-x64",
-	"agenticworkspace-linux-arm64",
-	"agenticworkspace-darwin-x64",
-	"agenticworkspace-darwin-arm64",
-	"agenticworkspace-windows-arm64",
-	"agenticworkspace-windows-x64",
+	"agentic-workspace-linux-x64",
+	"agentic-workspace-linux-arm64",
+	"agentic-workspace-darwin-x64",
+	"agentic-workspace-darwin-arm64",
+	"agentic-workspace-windows-arm64",
+	"agentic-workspace-windows-x64",
 ];
 
 // Detect package manager

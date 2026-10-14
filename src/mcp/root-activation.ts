@@ -3,12 +3,12 @@ import { dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { RequestHandlerExtra } from "@modelcontextprotocol/sdk/shared/protocol.js";
 import { ListRootsResultSchema, type ServerNotification, type ServerRequest } from "@modelcontextprotocol/sdk/types.js";
-import type { Core } from "../core/backlog.ts";
-import type { BacklogConfig } from "../types/index.ts";
-import { findBacklogRoot } from "../utils/find-backlog-root.ts";
+import type { Core } from "../core/agentic-workspace.ts";
+import type { AgenticWorkspaceConfig } from "../types/index.ts";
+import { findAgenticWorkspaceRoot } from "../utils/find-agentic-workspace-root.ts";
 
 type ServerRequestExtra = RequestHandlerExtra<ServerRequest, ServerNotification>;
-type RootActivationOptions = { debug?: boolean; startupConfig: BacklogConfig | null };
+type RootActivationOptions = { debug?: boolean; startupConfig: AgenticWorkspaceConfig | null };
 
 /** Owns project-root transitions requested by the optional MCP roots protocol. */
 export class McpRootActivation {
@@ -16,14 +16,14 @@ export class McpRootActivation {
 	private dirty = false;
 	private inFlight?: Promise<void>;
 	private debug = false;
-	private startupConfig: BacklogConfig | null = null;
+	private startupConfig: AgenticWorkspaceConfig | null = null;
 
 	constructor(
 		private readonly getApplication: () => Core,
 		private readonly createApplication: (projectRoot: string) => Core,
 		private readonly replaceApplication: (application: Core) => void,
 		private readonly initialProjectRoot: string,
-		private readonly setCapabilities: (config: BacklogConfig | null, projectRoot: string) => Promise<void>,
+		private readonly setCapabilities: (config: AgenticWorkspaceConfig | null, projectRoot: string) => Promise<void>,
 		private readonly log: (message: string, options?: { debug?: boolean }) => void,
 	) {}
 
@@ -61,7 +61,7 @@ export class McpRootActivation {
 			for (const root of roots) {
 				const rootPath = await resolveRootSearchPath(root.uri);
 				if (!rootPath) continue;
-				const resolved = (await findBacklogRoot(rootPath)) ?? rootPath;
+				const resolved = (await findAgenticWorkspaceRoot(rootPath)) ?? rootPath;
 				if (await this.activate(resolved)) return;
 			}
 			await this.restoreStartupMode();
@@ -81,7 +81,7 @@ export class McpRootActivation {
 			const current = this.getApplication().filesystem;
 			if (
 				current.rootDir === application.filesystem.rootDir &&
-				current.backlogDir === application.filesystem.backlogDir &&
+				current.agenticWorkspaceDir === application.filesystem.agenticWorkspaceDir &&
 				current.configFilePath === application.filesystem.configFilePath
 			)
 				return true;

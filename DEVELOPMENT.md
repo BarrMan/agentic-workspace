@@ -35,8 +35,8 @@ The command pins the bun2nix generator version, so commit the resulting
 `bun.nix` change together with the lockfile change. Validate the package with:
 
 ```bash
-nix build .#agenticworkspace
-./result/bin/agenticworkspace --version
+nix build .#agentic-workspace
+./result/bin/agentic-workspace --version
 ```
 
 The package build also runs the installed CLI and MCP smoke checks. Lock
@@ -88,25 +88,25 @@ Choose one of the methods below based on your agent:
 **Claude Code (Recommended for Development):**
 ```bash
 # Add to project (creates .mcp.json)
-claude mcp add backlog-dev -- bun run mcp
+claude mcp add agentic-workspace-dev -- bun run mcp
 ```
 
 **Codex CLI:**
 ```bash
 # Edit ~/.codex/config.toml
-[mcp_servers.backlog-dev]
+[mcp_servers.agentic-workspace-dev]
 command = "bun"
 args = ["run", "mcp"]
 ```
 
 **Gemini CLI:**
 ```bash
-gemini mcp add backlog-dev bun run mcp
+gemini mcp add agentic-workspace-dev bun run mcp
 ```
 
 **Kiro CLI:**
 ```bash
-kiro-cli mcp add --scope global --name backlog-dev --command bun --args run,mcp
+kiro-cli mcp add --scope global --name agentic-workspace-dev --command bun --args run,mcp
 ```
 
 #### 3. Test the Connection
@@ -128,7 +128,7 @@ Open your agent and test:
 Each AI agent has different configuration requirements. Start the server from your project root and follow the assistant's instructions to register it:
 
 ```bash
-agenticworkspace mcp start
+agentic-workspace mcp start
 ```
 
 ### Testing with MCP Inspector
@@ -204,9 +204,9 @@ provenance automatically. Follow the steps below to keep the setup healthy.
   version field manually.
 - In npm's **Trusted publishers** settings, link the
   `BarrMan/agentic-workspace` repository and the `Release multi-platform executables`
-  workflow for each package: `agenticworkspace`,
-  `agenticworkspace-linux-{x64,arm64}`, `agenticworkspace-darwin-{x64,arm64}`, and
-  `agenticworkspace-windows-x64`.
+  workflow for each package: `agentic-workspace`,
+  `agentic-workspace-linux-{x64,arm64}`, `agentic-workspace-darwin-{x64,arm64}`, and
+  `agentic-workspace-windows-x64`.
 - Remove the legacy `NODE_AUTH_TOKEN` repository secret. Publishing now uses
   the GitHub-issued OIDC token, so no long-lived npm tokens should remain.
 - The workflow activates `npm@latest` (currently 11.6.0 as of 2025-09-18) via

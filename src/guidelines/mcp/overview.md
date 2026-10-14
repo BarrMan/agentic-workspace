@@ -1,8 +1,8 @@
-## Backlog.md Overview (MCP)
+## AgenticWorkspace Overview (MCP)
 
-Backlog.md tracks committed work: what will be built, fixed, or changed.
+AgenticWorkspace tracks committed work: what will be built, fixed, or changed.
 
-### When to Use Backlog
+### When to Use AgenticWorkspace
 
 Create a task when work needs durable tracking. Skip task creation for questions, exploration, and obvious mechanical edits.
 
@@ -12,9 +12,9 @@ Search first with `task_search` or `task_list`, then read matching work with `ta
 
 Read the matching resource before taking these actions; this overview does not replace it:
 
-- `backlog://workflow/task-creation` — before creating or splitting tasks
-- `backlog://workflow/task-execution` — before changing status or assignee, updating durable working state, or implementing
-- `backlog://workflow/task-finalization` — before verifying work or marking it finished
+- `agentic-workspace://workflow/task-creation` — before creating or splitting tasks
+- `agentic-workspace://workflow/task-execution` — before changing status or assignee, updating durable working state, or implementing
+- `agentic-workspace://workflow/task-finalization` — before verifying work or marking it finished
 
 ### Task Lifecycle
 

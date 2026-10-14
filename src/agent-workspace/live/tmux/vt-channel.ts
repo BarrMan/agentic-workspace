@@ -51,7 +51,7 @@
 
  * ---------------------------------------------------------------------------
  *
- * Backlog's CLI routes `__vt-pipe` before loading normal CLI registration.
+ * AgenticWorkspace's CLI routes `__vt-pipe` before loading normal CLI registration.
  * The same command works through Bun source execution and a compiled binary.
  */
 
@@ -99,7 +99,7 @@ const VT_PIPE_OWNER_OPT = "@aoe_vt_pipe_owner";
 const VT_HEARTBEAT_MS = 1_000;
 /** A heartbeat older than this means the owner is gone. */
 const VT_HEARTBEAT_STALE_MS = 3_500;
-const MAX_VT_INPUT_BACKLOG_BYTES = 64 * 1024;
+const __KEEP_MAX___KEEP_VT_INPUT_AGENTIC_WORKSPACE___BYTES__ = 64 * 1024;
 const VT_SHUTDOWN_TIMEOUT_MS = 2_000;
 
 /** Tmux 3.8 is where AoE starts using `-IO`; we detect rather than gate. */
@@ -613,7 +613,8 @@ export const tryWriteVtInput = (
 	onRejected: () => void = () => {},
 ): boolean | "overloaded" => {
 	if (!socket.writable) return false;
-	if (socket.writableLength + bytes.length > MAX_VT_INPUT_BACKLOG_BYTES) return "overloaded";
+	if (socket.writableLength + bytes.length > __KEEP_MAX___KEEP_VT_INPUT_AGENTIC_WORKSPACE___BYTES__)
+		return "overloaded";
 	try {
 		onAccepted();
 		socket.write(bytes, (error) => onSettled(error ?? undefined));
@@ -658,7 +659,7 @@ const createVtChannel = async (opts: VtChannelOptions): Promise<VtChannel | null
 	}
 
 	// --- socket ------------------------------------------------------------
-	const socketPath = opts.socketPath ?? `/tmp/backlog-vt-${opts.sessionName}-${process.pid}.sock`;
+	const socketPath = opts.socketPath ?? `/tmp/agentic-workspace-vt-${opts.sessionName}-${process.pid}.sock`;
 	const forwarderExe = opts.forwarderExe ?? process.execPath;
 	const command = buildForwarderCommand(forwarderExe, socketPath);
 

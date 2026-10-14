@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from "bun:test";
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { $ } from "bun";
-import { Core } from "../core/backlog.ts";
+import { Core } from "../core/agentic-workspace.ts";
 import type { Task } from "../types/index.ts";
 import { createUniqueTestDir, initGitRepo, initializeTestProject, safeCleanup } from "./test-utils.ts";
 
@@ -129,7 +129,7 @@ describe("task ID allocation across git worktrees", () => {
 		if (!config) throw new Error("Expected initialized config");
 		config.prefixes = { task: "OPS" };
 		await mainCore.filesystem.saveConfig(config);
-		const repoRoot = await mainCore.git.stageBacklogDirectory(mainCore.filesystem.backlogDirName);
+		const repoRoot = await mainCore.git.stageAgenticWorkspaceDirectory(mainCore.filesystem.agenticWorkspaceDirName);
 		await mainCore.git.commitChanges("test: set custom task prefix", repoRoot);
 
 		const sibling = await addWorktree(mainRepo, testDir, "feature-prefix");

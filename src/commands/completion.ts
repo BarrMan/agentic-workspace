@@ -25,10 +25,10 @@ type CompletionInstallOptions = {
 
 function getScriptFilename(shell: Shell): string {
 	const scriptFiles: Record<Shell, string> = {
-		bash: "agenticworkspace.bash",
-		zsh: "_agenticworkspace",
-		fish: "agenticworkspace.fish",
-		pwsh: "agenticworkspace.ps1",
+		bash: "agentic-workspace.bash",
+		zsh: "_agentic-workspace",
+		fish: "agentic-workspace.fish",
+		pwsh: "agentic-workspace.ps1",
 	};
 
 	return scriptFiles[shell];
@@ -139,18 +139,18 @@ async function getCompletionScript(shell: Shell): Promise<string> {
 function getEmbeddedCompletionScript(shell: Shell): string {
 	const scripts: Record<Shell, string> = {
 		bash: `#!/usr/bin/env bash
-# Bash completion script for agenticworkspace CLI
+# Bash completion script for agentic-workspace CLI
 #
 # Installation:
-#   - Copy to /etc/bash_completion.d/agenticworkspace
-#   - Or source directly in ~/.bashrc: source /path/to/agenticworkspace.bash
+#   - Copy to /etc/bash_completion.d/agentic-workspace
+#   - Or source directly in ~/.bashrc: source /path/to/agentic-workspace.bash
 #
 # Requirements:
 #   - Bash 3.2 or later
 #   - bash-completion package (optional but recommended)
 
-# Main completion function for agenticworkspace CLI
-_agenticworkspace() {
+# Main completion function for agentic-workspace CLI
+_agentic-workspace() {
 	# Initialize completion variables using bash-completion helper if available
 	# Falls back to manual initialization if bash-completion is not installed
 	local cur prev words cword
@@ -173,7 +173,7 @@ _agenticworkspace() {
 	# This delegates all completion logic to the TypeScript implementation
 	# Output format: one completion per line
 	local completions
-	completions=$(agenticworkspace completion __complete "$line" "$point" 2>/dev/null)
+	completions=$(agentic-workspace completion __complete "$line" "$point" 2>/dev/null)
 
 	# Check if the completion command failed
 	if [[ $? -ne 0 ]]; then
@@ -193,31 +193,31 @@ _agenticworkspace() {
 	return 0
 }
 
-# Register the completion function for the 'agenticworkspace' command
+# Register the completion function for the 'agentic-workspace' command
 # -F: use function for completion
-# _agenticworkspace: name of the completion function
-# agenticworkspace: command to complete
-complete -F _agenticworkspace agenticworkspace
+# _agentic-workspace: name of the completion function
+# agentic-workspace: command to complete
+complete -F _agentic-workspace agentic-workspace
 `,
-		zsh: `#compdef agenticworkspace
+		zsh: `#compdef agentic-workspace
 
-# Zsh completion script for agenticworkspace CLI
+# Zsh completion script for agentic-workspace CLI
 #
 # Installation:
 #   1. Copy this file to a directory in your $fpath
 #   2. Run: compinit
 #
-# Or use: agenticworkspace completion install --shell zsh
+# Or use: agentic-workspace completion install --shell zsh
 
-_agenticworkspace() {
+_agentic-workspace() {
 	# Get the current command line buffer and cursor position
 	local line=$BUFFER
 	local point=$CURSOR
 
-	# Call the agenticworkspace completion command to get dynamic completions
+	# Call the agentic-workspace completion command to get dynamic completions
 	# The __complete command returns one completion per line
 	local -a completions
-	completions=(\${(f)"$(agenticworkspace completion __complete "$line" "$point" 2>/dev/null)"})
+	completions=(\${(f)"$(agentic-workspace completion __complete "$line" "$point" 2>/dev/null)"})
 
 	# Check if we got any completions
 	if (( \${#completions[@]} == 0 )); then
@@ -228,25 +228,25 @@ _agenticworkspace() {
 	# Present the completions to the user
 	# _describe shows completions with optional descriptions
 	# The first argument is the tag name shown in completion groups
-	_describe 'agenticworkspace commands' completions
+	_describe 'agentic-workspace commands' completions
 }
 
-# Register the completion function for the agenticworkspace command
-compdef _agenticworkspace agenticworkspace
+# Register the completion function for the agentic-workspace command
+compdef _agentic-workspace agentic-workspace
 `,
 		fish: `#!/usr/bin/env fish
-# Fish completion script for agenticworkspace CLI
+# Fish completion script for agentic-workspace CLI
 #
 # Installation:
-#   - Copy to ~/.config/fish/completions/agenticworkspace.fish
-#   - Or use: agenticworkspace completion install --shell fish
+#   - Copy to ~/.config/fish/completions/agentic-workspace.fish
+#   - Or use: agentic-workspace completion install --shell fish
 #
 # Requirements:
 #   - Fish 3.x or later
 
 # Helper function to get completions from the CLI
 # This delegates all completion logic to the TypeScript implementation
-function __agenticworkspace_complete
+function __agentic-workspace_complete
 	# Get the current command line and cursor position
 	# -cp: get the command line with cursor position preserved
 	set -l line (commandline -cp)
@@ -258,28 +258,28 @@ function __agenticworkspace_complete
 	# Call the CLI's internal completion command
 	# Output format: one completion per line
 	# Redirect stderr to /dev/null to suppress error messages
-	agenticworkspace completion __complete "$line" "$point" 2>/dev/null
+	agentic-workspace completion __complete "$line" "$point" 2>/dev/null
 
 	# Fish will automatically handle the exit status
 	# If the command fails, no completions will be shown
 end
 
-# Register completion for the 'agenticworkspace' command
+# Register completion for the 'agentic-workspace' command
 # -c: specify the command to complete
 # -f: disable file completion (we handle all completions dynamically)
 # -a: add completion candidates from the function output
-complete -c agenticworkspace -f -a '(__agenticworkspace_complete)'
+complete -c agentic-workspace -f -a '(__agentic-workspace_complete)'
 `,
-		pwsh: `# PowerShell completion script for agenticworkspace CLI
+		pwsh: `# PowerShell completion script for agentic-workspace CLI
 #
 # Installation:
-#   - Recommended: agenticworkspace completion install --shell pwsh
+#   - Recommended: agentic-workspace completion install --shell pwsh
 #   - Manual: Save this file and source it from your $PROFILE.CurrentUserAllHosts
 #
 # Requirements:
 #   - PowerShell 7+ recommended
 
-$__agenticworkspaceCompletionScriptBlock = {
+$__agentic-workspaceCompletionScriptBlock = {
 	param($wordToComplete, $commandAst, $cursorPosition)
 
 	$line = $commandAst.ToString()
@@ -292,7 +292,7 @@ $__agenticworkspaceCompletionScriptBlock = {
 	$point = [Math]::Min([Math]::Max($cursorPosition, 0), $line.Length)
 
 	try {
-		$completions = @(agenticworkspace completion __complete "$line" "$point" 2>$null)
+		$completions = @(agentic-workspace completion __complete "$line" "$point" 2>$null)
 		foreach ($completion in $completions) {
 			if ($completion) {
 				$completionText = "$completion "
@@ -309,7 +309,7 @@ $__agenticworkspaceCompletionScriptBlock = {
 	}
 }
 
-Register-ArgumentCompleter -Native -CommandName @("agenticworkspace", "agenticworkspace.exe") -ScriptBlock $__agenticworkspaceCompletionScriptBlock
+Register-ArgumentCompleter -Native -CommandName @("agentic-workspace", "agentic-workspace.exe") -ScriptBlock $__agentic-workspaceCompletionScriptBlock
 `,
 	};
 
@@ -329,22 +329,22 @@ function getInstallPaths(
 		const profileDir = dirname(profilePath);
 
 		return {
-			user: join(profileDir, "Completions", "agenticworkspace-completion.ps1"),
+			user: join(profileDir, "Completions", "agentic-workspace-completion.ps1"),
 		};
 	}
 
 	const paths: Record<Exclude<Shell, "pwsh">, InstallPaths> = {
 		bash: {
-			system: "/etc/bash_completion.d/agenticworkspace",
-			user: join(home, ".local/share/bash-completion/completions/agenticworkspace"),
+			system: "/etc/bash_completion.d/agentic-workspace",
+			user: join(home, ".local/share/bash-completion/completions/agentic-workspace"),
 		},
 		zsh: {
-			system: "/usr/local/share/zsh/site-functions/_agenticworkspace",
-			user: join(home, ".zsh/completions/_agenticworkspace"),
+			system: "/usr/local/share/zsh/site-functions/_agentic-workspace",
+			user: join(home, ".zsh/completions/_agentic-workspace"),
 		},
 		fish: {
-			system: "/usr/share/fish/vendor_completions.d/agenticworkspace.fish",
-			user: join(home, ".config/fish/completions/agenticworkspace.fish"),
+			system: "/usr/share/fish/vendor_completions.d/agentic-workspace.fish",
+			user: join(home, ".config/fish/completions/agentic-workspace.fish"),
 		},
 	};
 
@@ -379,7 +379,7 @@ exec fish
 `,
 		pwsh: `
 To enable completions, add this to your PowerShell profile ($PROFILE.CurrentUserAllHosts):
-$completionScript = Join-Path (Split-Path -Parent $PROFILE.CurrentUserAllHosts) "Completions/agenticworkspace-completion.ps1"
+$completionScript = Join-Path (Split-Path -Parent $PROFILE.CurrentUserAllHosts) "Completions/agentic-workspace-completion.ps1"
 if (Test-Path $completionScript) { . $completionScript }
 
 Then restart PowerShell or run:
@@ -405,10 +405,10 @@ export async function installCompletion(
 		const message = [
 			"Could not detect your shell.",
 			"Please specify it manually:",
-			"  agenticworkspace completion install --shell bash",
-			"  agenticworkspace completion install --shell zsh",
-			"  agenticworkspace completion install --shell fish",
-			"  agenticworkspace completion install --shell pwsh",
+			"  agentic-workspace completion install --shell bash",
+			"  agentic-workspace completion install --shell zsh",
+			"  agentic-workspace completion install --shell fish",
+			"  agentic-workspace completion install --shell pwsh",
 		].join("\n");
 		throw new Error(message);
 	}
@@ -450,10 +450,10 @@ export async function installCompletion(
 						`Target path: ${installPath}`,
 						"",
 						"Ensure the profile directory is writable and run again:",
-						"  agenticworkspace completion install --shell pwsh",
+						"  agentic-workspace completion install --shell pwsh",
 						"",
 						"Then add this to your PowerShell profile ($PROFILE.CurrentUserAllHosts):",
-						'$completionScript = Join-Path (Split-Path -Parent $PROFILE.CurrentUserAllHosts) "Completions/agenticworkspace-completion.ps1"',
+						'$completionScript = Join-Path (Split-Path -Parent $PROFILE.CurrentUserAllHosts) "Completions/agentic-workspace-completion.ps1"',
 						"if (Test-Path $completionScript) { . $completionScript }",
 					].join("\n")
 				: [
@@ -500,7 +500,7 @@ export function registerCompletionCommand(program: Command): void {
 		.action(async (options: { shell?: string }) => {
 			try {
 				const result = await installCompletion(options.shell);
-				console.log(`📦 Installed ${result.shell} completion for agenticworkspace CLI.`);
+				console.log(`📦 Installed ${result.shell} completion for agentic-workspace CLI.`);
 				console.log(`✅ Completion script written to ${result.installPath}`);
 				console.log(result.instructions.trimEnd());
 			} catch (error) {

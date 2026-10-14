@@ -2,8 +2,8 @@ import { afterEach, beforeEach, describe, expect, it, spyOn } from "bun:test";
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { $ } from "bun";
-import { Core } from "../core/backlog.ts";
-import type { BacklogConfig, Task } from "../types/index.ts";
+import { Core } from "../core/agentic-workspace.ts";
+import type { AgenticWorkspaceConfig, Task } from "../types/index.ts";
 import { createUniqueTestDir, initGitRepo, initializeTestProject, safeCleanup } from "./test-utils.ts";
 
 let TEST_DIR: string;
@@ -14,7 +14,7 @@ describe("Board Loading with checkActiveBranches", () => {
 	beforeEach(async () => {
 		TEST_DIR = createUniqueTestDir("test-board-loading");
 		core = new Core(TEST_DIR);
-		await core.filesystem.ensureBacklogStructure();
+		await core.filesystem.ensureAgenticWorkspaceStructure();
 
 		// Initialize git repository for testing
 		initGitRepo(TEST_DIR);
@@ -78,7 +78,7 @@ describe("Board Loading with checkActiveBranches", () => {
 			// Set activeBranchDays to 30 (should exclude the old branch)
 			const config = await core.filesystem.loadConfig();
 			if (!config) throw new Error("Config not loaded");
-			const updatedConfig: BacklogConfig = {
+			const updatedConfig: AgenticWorkspaceConfig = {
 				...config,
 				checkActiveBranches: true,
 				activeBranchDays: 30,
@@ -95,7 +95,7 @@ describe("Board Loading with checkActiveBranches", () => {
 
 		it("should handle empty task list gracefully", async () => {
 			// Remove all tasks
-			await $`rm -rf backlog/tasks/*`.cwd(TEST_DIR).quiet();
+			await $`rm -rf agentic-workspace/tasks/*`.cwd(TEST_DIR).quiet();
 
 			const tasks = await core.loadTasks();
 			expect(tasks).toEqual([]);
@@ -127,7 +127,7 @@ describe("Board Loading with checkActiveBranches", () => {
 			expect(tasks.map((task) => task.id)).not.toContain("TASK-2");
 			expect(warning).toHaveBeenCalledWith(
 				expect.stringContaining(
-					"backlog/completed/task-2/task.md: Task TASK-2 has no task frontmatter schema version.",
+					"agentic-workspace/completed/task-2/task.md: Task TASK-2 has no task frontmatter schema version.",
 				),
 			);
 		} finally {
@@ -138,7 +138,7 @@ describe("Board Loading with checkActiveBranches", () => {
 	describe("Config integration", () => {
 		it("should use default values when config properties are undefined", async () => {
 			// Save a minimal config without the branch-related settings
-			const minimalConfig: BacklogConfig = {
+			const minimalConfig: AgenticWorkspaceConfig = {
 				projectName: "Test Project",
 				statuses: ["To Do", "In Progress", "Done"],
 				defaultStatus: "To Do",

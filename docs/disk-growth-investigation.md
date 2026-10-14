@@ -27,7 +27,7 @@ Evidence gathered:
 - 6,197 such files had accumulated since 2026-10-03, totalling **30.9 GB**.
 - Measured growth while processes were spawning: **761 -> 788 files in 6 s** (~25 MB/s).
 - `lsof` showed the open holders were `opencode` processes (10 PIDs), several launched by this app's own
-  session launcher (`/bin/sh -c unset BACKLOG_CWD BACKLOG_TASK_ID ...`), one from the ink prototype.
+  session launcher (`/bin/sh -c unset AGENTIC_WORKSPACE_CWD AGENTIC_WORKSPACE_TASK_ID ...`), one from the ink prototype.
 
 Why this app amplified it: the CLI is compiled with the OpenTUI addon embedded, and the test suite spawns
 that compiled binary thousands of times per full run. Every spawn that is killed rather than exits cleanly
