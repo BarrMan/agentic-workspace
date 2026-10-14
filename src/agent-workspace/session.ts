@@ -105,7 +105,9 @@ export class Session implements SessionContract {
 				sessionId: this.id,
 			},
 			expectedMembership: {
-				kind: "present",
+				// Reservation publishes the provisional record for the first time, so the store must
+				// not already hold it; every later phase updates a record that is already present.
+				kind: phase === "reservation" ? "absent" : "present",
 				taskId: this.context.taskId,
 				modeId: this.context.modeId,
 				sessionId: this.id,

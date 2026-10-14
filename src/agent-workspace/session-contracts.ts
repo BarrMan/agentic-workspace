@@ -35,6 +35,15 @@ export type ExpectedSessionMembership =
 	| { readonly kind: "absent"; readonly taskId: string; readonly modeId: ModeId; readonly sessionId: string }
 	| { readonly kind: "present"; readonly taskId: string; readonly modeId: ModeId; readonly sessionId: string };
 
+/**
+ * Checkpoint emission ownership and membership contract:
+ * - `reservation` expects `absent` and is the FIRST durable publication of the provisional record;
+ *   `identity` and `ready` expect `present` and update it. Session emits these during startup.
+ * - `rollback` expects `present` and REMOVES the provisional record. It is emitted by the
+ *   CONTROLLER after execution cleanup succeeds, with `origin.kind === "creation"`, because only
+ *   the controller holds the captured `previousActiveSessionId` needed to restore the prior
+ *   selection. Session cannot emit it.
+ */
 export interface LifecycleCheckpoint {
 	readonly phase: SessionCheckpointPhase;
 	readonly origin: SessionCheckpointOrigin;
