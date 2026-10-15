@@ -61,7 +61,8 @@ describe("provider prompt-acceptance receipts", () => {
 			create: async () => {},
 			preparePane: async () => {},
 			assertNoPreparedResources: async () => {},
-			launchPrepared: async () => writeFile(join(root, "session-1.prompt-accepted"), "native-session"),
+			launchPrepared: async (_record: AgentSession, prepared: { identity?: { id: string } }) =>
+				writeFile(join(root, "session-1.prompt-accepted"), prepared.identity?.id ?? ""),
 			alive: async () => ({ exitCode: 0, stdout: "0", stderr: "" }),
 			kill: async () => {},
 			input: async (_record: AgentSession, text: string) => typed.push(text),
@@ -71,7 +72,9 @@ describe("provider prompt-acceptance receipts", () => {
 			await writeFile(record.bootstrapPath, "old prompt");
 			const execution = await new Harness(root, fakeProcess).launch(context);
 			expect(execution.providerConversationId).toBeString();
-			expect(await readFile(join(root, "session-1.prompt-accepted"), "utf8")).toBe("native-session");
+			const nativeId = execution.providerConversationId;
+			if (!nativeId) throw new Error("Claude launch did not return its native identity.");
+			expect(await readFile(join(root, "session-1.prompt-accepted"), "utf8")).toBe(nativeId);
 			await execution.sendKey("C-c");
 			await execution.input("literal prompt");
 			expect(sentKeys).toEqual(["C-c"]);

@@ -239,7 +239,8 @@ export class Harness implements HarnessProvider {
 			);
 			if (intent.kind === "new") {
 				if (!prepared.identity) await waitForReceipts([identityPath], undefined, record, this.process);
-				await waitForReceipts([promptPath], undefined, record, this.process);
+				const nativeId = prepared.identity?.id ?? (await readFile(identityPath, "utf8")).trim();
+				await waitForReceipts([promptPath], nativeId, record, this.process);
 			} else {
 				await waitForReceipts([join(activityDir, "status")], undefined, record, this.process);
 			}

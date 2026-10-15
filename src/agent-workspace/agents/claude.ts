@@ -22,7 +22,11 @@ import { buildHookCommand, buildPromptReceiptCommand, type HookStatus } from "./
 import { sanitizeProfilePreset, withExplicitModel } from "./profile.ts";
 
 /** The Claude Code event → status map, expressed as a settings-shaped hooks object. */
-export function claudeHooksConfig(statusDir: string, sessionId?: string): Record<string, unknown> {
+export function claudeHooksConfig(
+	statusDir: string,
+	sessionId?: string,
+	nativeSessionId = sessionId,
+): Record<string, unknown> {
 	const command = (status: HookStatus): { hooks: Array<{ type: "command"; command: string }> } => ({
 		hooks: [{ type: "command", command: buildHookCommand(statusDir, status) }],
 	});
@@ -46,7 +50,7 @@ export function claudeHooksConfig(statusDir: string, sessionId?: string): Record
 										type: "command" as const,
 										command: buildPromptReceiptCommand(
 											join(dirname(statusDir), `${sessionId}.prompt-accepted`),
-											sessionId,
+											nativeSessionId ?? sessionId,
 										),
 									},
 								],
@@ -127,12 +131,12 @@ export class ClaudeAgent implements Agent {
 			{ mode: 0o600 },
 		);
 		// The plugin's own hooks/hooks.json is discovered from --plugin-dir, session-only.
-		if (statusDir) await this.installStatusHooks({ pluginDir: directory, statusDir, sessionId });
-		const base = `${preset.command} --plugin-dir ${shellQuote(directory)}`;
 		const identity: NativeIdentity =
 			intent.kind === "resume"
 				? { id: intent.nativeSessionId, basis: "client-established" }
 				: { id: randomUUID(), basis: "client-established" };
+		if (statusDir) await this.installStatusHooks({ pluginDir: directory, statusDir, sessionId }, identity.id);
+		const base = `${preset.command} --plugin-dir ${shellQuote(directory)}`;
 		const withIdentity = { ...preset, command: base };
 		const command =
 			intent.kind === "resume"
@@ -151,17 +155,18 @@ export class ClaudeAgent implements Agent {
 		else this.launchCommand({ ...request, bootstrapPath: request.bootstrapPath });
 	}
 
-	async installStatusHooks({
-		pluginDir,
-		statusDir,
-		sessionId,
-	}: StatusHookInstallOptions): Promise<InstalledStatusHook> {
+	async installStatusHooks(
+		{ pluginDir, statusDir, sessionId }: StatusHookInstallOptions,
+		nativeSessionId?: string,
+	): Promise<InstalledStatusHook> {
 		// The sidecar is the deterministic per-session directory; the hook file lives in the temp dir.
 		await mkdir(statusDir, { recursive: true, mode: 0o700 });
 		const hooksDir = join(pluginDir, "hooks");
 		await mkdir(hooksDir, { recursive: true, mode: 0o700 });
 		const path = join(hooksDir, "hooks.json");
-		await writeFile(path, `${JSON.stringify(claudeHooksConfig(statusDir, sessionId), null, 2)}\n`, { mode: 0o600 });
+		await writeFile(path, `${JSON.stringify(claudeHooksConfig(statusDir, sessionId, nativeSessionId), null, 2)}\n`, {
+			mode: 0o600,
+		});
 		return { provider: "claude", paths: [path], env: {}, args: [] };
 	}
 }

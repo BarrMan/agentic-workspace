@@ -21,14 +21,14 @@ import { PI_CHROME_RULES } from "./chrome-rules.ts";
 import { discoverModels, withExplicitModel } from "./profile.ts";
 
 /** Pi extension source. Non-throwing, same contract as the OpenCode plugin. */
-export function piExtensionSource(statusDir: string, sessionId?: string): string {
+export function piExtensionSource(statusDir: string, sessionId?: string, nativeSessionId = sessionId): string {
 	return `// agentic-workspace-hooks
 // Process-scoped status emitter. Installed inside AgenticWorkspace's owned temp dir and removed with it.
 import { existsSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 const STATUS_DIR = ${JSON.stringify(statusDir)};
-const SESSION_ID = ${JSON.stringify(sessionId ?? "")};
+const SESSION_ID = ${JSON.stringify(nativeSessionId ?? "")};
 const PROMPT_ACCEPTED_PATH = ${JSON.stringify(join(dirname(statusDir), `${sessionId ?? ""}.prompt-accepted`))};
 void SESSION_ID;
 
@@ -112,15 +112,15 @@ export class PiAgent implements Agent {
 		const { preset, directory, skillPath, statusDir, sessionId, env, bootstrapPath, intent } = request;
 		// pi --skill loads this session-local SKILL.md without writing user or project settings.
 		let base = `${preset.command} --skill ${shellQuote(skillPath)}`;
-		if (statusDir) {
-			// https://pi.dev/docs/latest/extensions: --extension loads one file for the session.
-			const installed = await this.installStatusHooks({ pluginDir: directory, statusDir, sessionId });
-			base += installed.args.map((argument) => ` ${shellQuote(argument)}`).join("");
-		}
 		const identity: NativeIdentity =
 			intent.kind === "resume"
 				? { id: intent.nativeSessionId, basis: "client-established" }
 				: { id: randomUUID(), basis: "client-established" };
+		if (statusDir) {
+			// https://pi.dev/docs/latest/extensions: --extension loads one file for the session.
+			const installed = await this.installStatusHooks({ pluginDir: directory, statusDir, sessionId }, identity.id);
+			base += installed.args.map((argument) => ` ${shellQuote(argument)}`).join("");
+		}
 		const withIdentity = { ...preset, command: base };
 		const command =
 			intent.kind === "resume"
@@ -139,15 +139,14 @@ export class PiAgent implements Agent {
 		else this.launchCommand(request);
 	}
 
-	async installStatusHooks({
-		pluginDir,
-		statusDir,
-		sessionId,
-	}: StatusHookInstallOptions): Promise<InstalledStatusHook> {
+	async installStatusHooks(
+		{ pluginDir, statusDir, sessionId }: StatusHookInstallOptions,
+		nativeSessionId?: string,
+	): Promise<InstalledStatusHook> {
 		// The sidecar is the deterministic per-session directory; the hook file lives in the temp dir.
 		await mkdir(statusDir, { recursive: true, mode: 0o700 });
 		const path = join(pluginDir, "agentic-workspace-status-extension.ts");
-		await writeFile(path, piExtensionSource(statusDir, sessionId), { mode: 0o600 });
+		await writeFile(path, piExtensionSource(statusDir, sessionId, nativeSessionId), { mode: 0o600 });
 		return { provider: "pi", paths: [path], env: {}, args: ["--extension", path] };
 	}
 }
