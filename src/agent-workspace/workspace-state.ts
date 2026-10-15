@@ -1,5 +1,6 @@
 import { DEFAULT_STATUSES } from "../constants/index.ts";
 import type { Core } from "../core/agentic-workspace.ts";
+import { SessionApplication } from "../core/session-application.ts";
 import type { Task } from "../types/index.ts";
 import { resolveInProgressStatus } from "../utils/status.ts";
 import { getTerminalStatus, isTerminalStatus } from "../utils/terminal-status.ts";
@@ -9,14 +10,16 @@ import type { SessionHandoff } from "./workspace-context.ts";
 
 export class WorkspaceStateService {
 	private readonly sessions: AgentSessionService;
+	readonly sessionApplication: SessionApplication;
 
 	constructor(
 		private readonly core: Core,
-		options: { sessions?: AgentSessionService; stateRoot?: string } = {},
+		options: { sessions?: AgentSessionService; sessionApplication?: SessionApplication; stateRoot?: string } = {},
 	) {
 		if (options.sessions && options.stateRoot !== undefined)
 			throw new Error("Supply either a pinned session service or stateRoot, not both.");
 		this.sessions = options.sessions ?? new AgentSessionService(core, { stateRoot: options.stateRoot });
+		this.sessionApplication = options.sessionApplication ?? new SessionApplication(core);
 	}
 
 	get stateRoot(): Promise<string> {

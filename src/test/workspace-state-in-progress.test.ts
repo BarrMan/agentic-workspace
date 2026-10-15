@@ -5,6 +5,7 @@ import { join } from "node:path";
 import type { AgentSessionService, SessionRuntimeOrigin } from "../agent-workspace/sessions.ts";
 import { WorkspaceStateService } from "../agent-workspace/workspace-state.ts";
 import { Core } from "../core/agentic-workspace.ts";
+import { SessionApplication } from "../core/session-application.ts";
 import { initializeTestProject } from "./test-utils.ts";
 
 const roots: string[] = [];
@@ -55,6 +56,15 @@ afterEach(async () => {
 });
 
 describe("WorkspaceStateService.activateSession", () => {
+	test("owns a distinct session application for each workspace context", async () => {
+		const core = await project();
+		const first = new WorkspaceStateService(core);
+		const second = new WorkspaceStateService(core);
+		expect(first.sessionApplication).toBeInstanceOf(SessionApplication);
+		expect(second.sessionApplication).toBeInstanceOf(SessionApplication);
+		expect(first.sessionApplication).not.toBe(second.sessionApplication);
+	});
+
 	test("moves a To Do task into the configured In Progress status", async () => {
 		const core = await project();
 		const { task } = await core.createTaskFromInput({ title: "Move me", status: "To Do" });
@@ -85,6 +95,7 @@ describe("WorkspaceStateService.activateSession", () => {
 		} as unknown as Core;
 		const status = await new WorkspaceStateService(core, {
 			sessions: { activateNativeSession: async () => false } as unknown as AgentSessionService,
+			sessionApplication: {} as SessionApplication,
 		}).activateSession("TASK-1", "session-1", origin("TASK-1", "session-1"));
 		expect(status).toEqual({ activated: false });
 	});

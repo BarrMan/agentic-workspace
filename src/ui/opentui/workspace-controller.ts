@@ -1716,6 +1716,7 @@ export class OpenTuiWorkspaceController {
 			this.#view !== "workspace"
 		)
 			throw new Error(`Task ${taskId} is no longer selected.`);
+		let applicationOwned = false;
 		let attachment = sessionId
 			? adopt
 				? await this.#workspaceState.adoptPendingSession(taskId, sessionId)
@@ -1736,9 +1737,25 @@ export class OpenTuiWorkspaceController {
 		const selectionKey = localModeId ? `${taskId}\u0000${localModeId}` : undefined;
 		const selectionAtAdmission = selectionKey ? this.#localSelections.get(selectionKey) : undefined;
 		if (!attachment) {
-			if (options.newSession) {
+			const application = this.#workspaceState.sessionApplication;
+			if (!application) {
+				attachment = options.newSession
+					? await this.#workspaceState.prepareNewSession(taskId, options.modeId ?? "")
+					: await this.#workspaceState.prepareSession(taskId, sessionId, options.modeId);
+			} else if (options.newSession && options.handoff) {
 				if (!options.modeId) throw new Error("A mode is required when creating a handoff session.");
 				attachment = await this.#workspaceState.prepareNewSession(taskId, options.modeId);
+			} else if (options.newSession || !sessionId) {
+				if (!options.modeId) throw new Error("A mode is required when creating a session.");
+				const record = await application.newSession(taskId, options.modeId);
+				applicationOwned = true;
+				attachment = await this.#workspaceState.liveSession(taskId, record.id);
+				if (!attachment) throw new Error(`Could not attach to new session ${record.id}.`);
+			} else if (sessionId && !adopt && !attachOnly) {
+				const record = await application.resumeSession(taskId, sessionId);
+				applicationOwned = true;
+				attachment = await this.#workspaceState.liveSession(taskId, record.id);
+				if (!attachment) throw new Error(`Could not attach to resumed session ${record.id}.`);
 			} else attachment = await this.#workspaceState.prepareSession(taskId, sessionId, options.modeId);
 		}
 		if (launch.invalidated || this.#deletingTasks.has(taskId)) return false;
@@ -1787,7 +1804,10 @@ export class OpenTuiWorkspaceController {
 			};
 			owner = createWorkspaceAgentHostOwner(
 				host,
-				() => this.#workspaceState.stopSession(taskId, record.id),
+				() =>
+					applicationOwned
+						? this.#workspaceState.sessionApplication.stopSession(taskId, record.id)
+						: this.#workspaceState.stopSession(taskId, record.id),
 				() => this.#forgetActivity(record.id),
 			);
 			session.hostOwner = owner;

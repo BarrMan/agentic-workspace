@@ -2098,6 +2098,17 @@ describe("OpenTuiWorkspaceController", () => {
 			return picker;
 		};
 		let freshStarts = 0;
+		const application = {
+			newSession: async () => {
+				freshStarts++;
+				activeSessionId = fresh.id;
+				return fresh;
+			},
+			resumeSession: async () => {
+				throw new ExactResumeUnavailableError("previous-resume-failed", "pi", "ses_original");
+			},
+			stopSession: async () => {},
+		};
 		let confirmationMessage = "";
 		const confirms = confirmQueue();
 		const history = (): TaskSessions => ({ taskId: "TASK-1", activeSessionId, sessions: [original, fresh] });
@@ -2106,15 +2117,12 @@ describe("OpenTuiWorkspaceController", () => {
 			listSessions: async () => history(),
 			listModeSessions: async () => history(),
 			listAllSessions: async () => new Map([["TASK-1", history()]]),
-			liveSession: async () => undefined,
+			liveSession: async (_taskId: string, id: string) => (id === fresh.id ? fakeAttachment(fresh) : undefined),
 			prepareSession: async () => {
 				throw new ExactResumeUnavailableError("previous-resume-failed", "pi", "ses_original");
 			},
-			prepareNewSession: async () => {
-				freshStarts++;
-				activeSessionId = fresh.id;
-				return fakeAttachment(fresh);
-			},
+			sessionApplication: application,
+			prepareNewSession: async () => fakeAttachment(fresh),
 			activateSession: async (_taskId: string, id: string) => {
 				activeSessionId = id;
 				if (id === fresh.id) fresh.status = "running";
@@ -2136,7 +2144,7 @@ describe("OpenTuiWorkspaceController", () => {
 				},
 				mountConfirm: (_renderer, _root, options) => {
 					confirmationMessage = options.message;
-					return confirms.mount(options);
+					return confirms.mount({ title: options.title ?? "", message: options.message });
 				},
 				createExistingAgentHost: (options) =>
 					fakeExistingAgentHost(options, {
