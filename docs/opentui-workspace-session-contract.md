@@ -22,7 +22,7 @@ Shared-runtime implementation/acceptance checkpoint: [canonical handoff](./share
 ### Command-line sessions and ownership
 
 - Native process/session persistence is frontend-independent; CLI sessions do not have command-scoped lifetime. Task deletion forgets its session association only; explicit stop and completion remain separate lifecycle operations.
-- `agentic-workspace agent-session start` with a validated pane context registers a `nativeWorkspace` session record and request marker under `<root>/.agentic-workspace/agent-requests/`, and launches nothing. Timer polling delegates admission to `AgentSessionService`; requester PID is informational, not authority. A marker plus `starting` record is necessary but runtime identity is verified under task/session claims. A missing exact runtime launches fresh once; a live exact runtime attaches without redispatch; dead or uncertain runtimes fail closed. The marker remains until service publication succeeds. The adopter need not inherit the requester's pane context.
+- `agentic-workspace agent-session start` with a validated pane context registers a `nativeWorkspace` session record and request marker under `<root>/.agentic-workspace/agent-requests/`, and launches nothing. Timer polling delegates admission through the shared owners in the [session-service target design](./session-service-redesign.md#ownership); requester PID is informational, not authority. A marker plus `starting` record is necessary but runtime identity is verified under task/session claims. A missing exact runtime launches fresh once; a live exact runtime attaches without redispatch; dead or uncertain runtimes fail closed. The marker remains until publication succeeds. The adopter need not inherit the requester's pane context.
 - Without that context, `agent-session start` launches on the shared backend and records the session independently of the command process lifetime. An explicit stop or completion operation handles termination.
 - Observation never kills: verified dead/missing nonqueued runtimes settle `stopped`; a valid queued request with a missing runtime remains `starting` until marker polling admits it. Unknown/uncertain observation does not mutate. `ownerPid` and marker PID are informational compatibility fields, not authority.
 - Stopping a never-launched pending record cancels the request and removes its marker.
@@ -33,7 +33,7 @@ Shared-runtime implementation/acceptance checkpoint: [canonical handoff](./share
 - Selecting a retained live session displays that terminal. Selecting an externally owned live session attaches its preview. Selecting a parked or stopped session resumes its exact stored native conversation.
 - Resume resolves the stored preset name through current task, project, then user configuration. It keeps the exact native conversation ID and saved path context, never a guessed ID or a “latest session” flag. An unavailable exact-resume mechanism fails explicitly.
 - Selection failure preserves the previously active conversation. Late output belongs to its retained session terminal, not whichever task happens to be selected.
-- Session records and output remain owned by `AgentSessionService` and `SessionStore`; the picker does not create a second history store.
+- Session records and output follow the ownership boundaries in the [session-service target design](./session-service-redesign.md#ownership); the picker does not create a second history store.
 
 ### Scoped configuration
 
@@ -126,11 +126,11 @@ Project-local view state persists selection, filters, status tab, visibility pre
 
 ## Historical Phase 0 contract
 
-The following sections preserve the original migration requirements and source anchors. Their rules about separate temporary agents, teardown, status changes, worktrees, and read-only stopped-session history do not describe the current native behavior above.
+The following sections preserve the original Phase 0 migration requirements and source anchors. They are historical references: their rules about separate temporary agents, teardown, status changes, worktrees, and read-only stopped-session history do not describe the current native behavior above.
 
 ## Scope
 
-This contract covers durable task-scoped agent sessions. It covers `AgentSessionService`, `SessionProcess`, session persistence, workspace view persistence, and current workspace callers.
+This contract specifies current behavior for durable task-scoped agent sessions, persistence, workspace view state, and workspace callers, except where explicitly superseded. Its source anchors are historical references; current ownership follows the [session-service target design](./session-service-redesign.md#ownership).
 
 It does not preserve tmux as presentation. It preserves tmux-backed agent processes until a later approved replacement.
 
@@ -150,9 +150,9 @@ Existing domain services
 
 The renderer and controller MAY preview the selected mode's session regardless of lifecycle status, attaching only when it is running; non-running sessions show read-only details. They MUST NOT create, kill, stop, reset, reconcile, resume, or hand off a durable session as a side effect of mounting, selection, unmounting, app exit, or terminal cleanup.
 
-Only explicit user lifecycle intents may call `WorkspaceStateService` or `AgentSessionService` lifecycle methods. `SessionProcess` remains the sole tmux-process adapter. `SessionStore` remains the durable state owner.
+Only explicit user lifecycle intents may drive lifecycle operations; application controllers coordinate them through the owners in the [session-service target design](./session-service-redesign.md#ownership). `SessionProcess` remains the sole tmux-process adapter, and `SessionStore` remains the durable state owner.
 
-`WorkspaceStateService` is intentionally a thin facade over `Core` and `AgentSessionService`; reads do not reconcile tmux state ([`workspace-state.ts:27-55`](../src/agent-workspace/workspace-state.ts#L27-L55)). The OpenTUI controller must use it rather than reproduce session lookups or persistence.
+The live `WorkspaceStateService` composition facade pins the session application for the controller. The OpenTUI controller MUST use it rather than reproduce session lookups or persistence; its reads do not reconcile tmux state ([`workspace-state.ts:27-55`](../src/agent-workspace/workspace-state.ts#L27-L55)). Current ownership follows the [session-service target design](./session-service-redesign.md#ownership).
 
 ## Durable records and identities
 
@@ -243,7 +243,7 @@ This extends existing task/session checks in history view and selection code. It
 
 | Decision | Disposition |
 | --- | --- |
-| `AgentSessionService`, `SessionProcess`, session store, session logs, and tmux agent processes | Retain. |
+| Session lifecycle, process adapter, durable records, logs, and tmux agent processes | Retain the contract behavior; current ownership follows the [session-service target design](./session-service-redesign.md#ownership). |
 | Task/config/session state persistence and watcher patterns | Retain. |
  | Configuration precedence, preset snapshots, native session identity, output history, and worktree reuse | Retain. |
 | Tmux/Blessed presentation attach, pane swapping, workspace panes, and legacy quit behavior | Replace after parity. |

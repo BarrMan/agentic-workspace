@@ -60,7 +60,7 @@ It replaces tmux/Blessed presentation. It retains existing task domain services,
 ### Out of scope
 
 - Replacing `Core` task persistence or domain logic.
-- Replacing `AgentSessionService`, `SessionProcess`, or durable tmux agent processes.
+- Replacing durable agent processes; session lifecycle ownership follows the [session-service target design](./session-service-redesign.md#ownership).
 - Changing agent-provider semantics.
 - Adding a second public workspace command or compatibility UI.
 
@@ -154,7 +154,7 @@ Retain current domain behavior for:
 - Agent start/open, live output, history, handoff, configuration, and worktree selection.
 - Task/config/session watcher refresh.
 
-All mutations use existing `Core`, workspace state, and agent-session services.
+Mutations use the shared owners defined in the [session-service target design](./session-service-redesign.md#ownership).
 
 Closing the workspace detaches the UI only. It must never terminate a durable agent session.
 
@@ -274,8 +274,7 @@ status tabs. The status tabs keep rendering task statuses only.
 | `src/ui/opentui/filters.ts` | Filter editor |
 | `src/ui/opentui/controls.ts` | Shared modal controls |
 | `Core` | Task reads, writes, and lifecycle mutations |
-| `AgentSessionService` | Session lifecycle and discovery |
-| `SessionProcess` | Durable tmux-backed agent processes |
+| Session and Harness | Session lifecycle and provider execution, as defined in the [session-service target design](./session-service-redesign.md#ownership) |
 | Existing task/config/session watchers | Live refresh |
 
 ### Remove after successful cutover
