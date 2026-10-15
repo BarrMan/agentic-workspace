@@ -26,6 +26,7 @@ describe("SessionProcess tmux instance lifecycle", () => {
 		const root = await realpath(await mkdtemp(join(tmpdir(), "agentic-workspace-tmux-lifecycle-")));
 		roots.push(root);
 		const events: string[] = [];
+		const killedPaneIds: string[] = [];
 		let instanceState = state;
 		const options = new Map<string, string>([
 			["@agentic_workspace_root", root],
@@ -37,6 +38,7 @@ describe("SessionProcess tmux instance lifecycle", () => {
 			id: "%731",
 			kill: async () => {
 				events.push("kill-pane");
+				killedPaneIds.push(pane.id);
 				options.clear();
 				instanceState = "absent";
 			},
@@ -82,7 +84,7 @@ describe("SessionProcess tmux instance lifecycle", () => {
 				throw new Error("No OS process probes/signals expected");
 			},
 		};
-		return { process: new SessionProcess(runner, root, server), events, options, pane, server };
+		return { process: new SessionProcess(runner, root, server), events, killedPaneIds, options, pane, server };
 	}
 
 	it("explicitly stops a live owned pane without OS-group probes or signals", async () => {
@@ -100,6 +102,22 @@ describe("SessionProcess tmux instance lifecycle", () => {
 		});
 		await f.process.kill({ ...session, cwd: await realpath(session.cwd) });
 		expect(f.events).toEqual(["kill-pane"]);
+	});
+
+	it("stops only the pane captured for this execution", async () => {
+		const replaced = await fixture();
+		const record = { ...session, cwd: await realpath(session.cwd) };
+		const capturedPaneId = await replaced.process.paneId(record, { roles: ["live-preview"] });
+		replaced.pane.id = "%732";
+
+		await expect(replaced.process.killCaptured(record, capturedPaneId)).rejects.toThrow(/pane incarnation changed/);
+		expect(replaced.killedPaneIds).toEqual([]);
+
+		const current = await fixture();
+		const currentRecord = { ...session, cwd: await realpath(session.cwd) };
+		const currentPaneId = await current.process.paneId(currentRecord, { roles: ["live-preview"] });
+		await current.process.killCaptured(currentRecord, currentPaneId);
+		expect(current.killedPaneIds).toEqual(["%731"]);
 	});
 
 	it("treats a conclusive absent instance as already stopped", async () => {
