@@ -3,18 +3,138 @@ import { watch } from "node:fs";
 import { readFile, rm } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { resolveLaunchPreset } from "./agents/opencode-resolution.ts";
-import type {
-	ExecutionIdentity,
-	Harness as HarnessContract,
-	RecoverableExecutionFailure,
-	RunningExecution,
-	RunningExecutionEvent,
-	SessionLaunchContext,
-} from "./session-contracts.ts";
 import { prepareAgentLaunch } from "./session-launch.ts";
 import { BunRunner, LAUNCH_PROBE_DURATION_MS, missingPaneStderr, SessionProcess } from "./session-process.ts";
 import { sessionActivityDir } from "./status-hooks.ts";
-import type { AgentSession } from "./types.ts";
+import type {
+	AgentActivity,
+	AgentPreset,
+	AgentSession,
+	ModeId,
+	ModeProfile,
+	ResolvedAgentConfiguration,
+} from "./types.ts";
+
+export type Unsubscribe = () => void;
+
+export interface SessionLaunchContext {
+	readonly taskId: string;
+	readonly modeId: ModeId;
+	readonly sessionId: string;
+	readonly record: Readonly<AgentSession>;
+	readonly configuration: ResolvedAgentConfiguration;
+	readonly profile: Readonly<ModeProfile>;
+	readonly preset: Readonly<AgentPreset>;
+	readonly prompt: string;
+}
+
+export interface ExecutionIdentity {
+	readonly taskId: string;
+	readonly modeId: ModeId;
+	readonly sessionId: string;
+	readonly executionId: string;
+	readonly nativeSessionId?: string;
+}
+
+export interface RunningExecutionEvents {
+	readonly turnCompleted: "supported" | "unsupported";
+	readonly permissionWait: "supported" | "unsupported";
+	readonly executionExit: "supported" | "unsupported";
+	readonly activity: "supported" | "unsupported";
+}
+
+export interface RunningExecutionEvent {
+	readonly kind: "turn-completed" | "permission-wait" | "execution-exit" | "activity";
+	readonly activity?: AgentActivity;
+	readonly exitCode?: number;
+}
+
+export interface RunningExecution {
+	readonly identity: ExecutionIdentity;
+	readonly providerConversationId?: string;
+	readonly events: Readonly<RunningExecutionEvents>;
+	input(text: string): Promise<void>;
+	sendKey(key: string): Promise<void>;
+	stop(): Promise<void>;
+	observe(listener: (event: RunningExecutionEvent) => void): Unsubscribe;
+	teardownListeners(): void;
+}
+
+export interface RecoverableExecutionFailure extends Error {
+	readonly execution?: RunningExecution;
+	readonly identity?: ExecutionIdentity;
+}
+
+export interface HarnessProvider {
+	launch(context: SessionLaunchContext): Promise<RunningExecution>;
+	resume(nativeId: string, context: SessionLaunchContext): Promise<RunningExecution>;
+}
+
+export interface HarnessReadinessEvidence {
+	readonly identity: string;
+	readonly initialization: string;
+	readonly promptAcknowledgment: string;
+	readonly resume: string;
+	readonly failure: string;
+	readonly events: RunningExecutionEvents;
+}
+
+export const HARNESS_READINESS_MATRIX = {
+	"opencode-v1": {
+		identity: "Plugin `session.created` event, written as the `<sessionId>.native-session-id` receipt.",
+		initialization: "Owned pane live and the plugin has flushed the identity receipt.",
+		promptAcknowledgment: "Project-authored plugin emits prompt-accepted after bootstrap submission.",
+		resume: "Identity receipt plus a live initialized pane; no bootstrap replay.",
+		failure:
+			"Owned pane disappears or exits within `LAUNCH_PROBE_DURATION_MS`; the v1 CLI preflight has its own bounded timeout.",
+		events: {
+			turnCompleted: "supported",
+			permissionWait: "supported",
+			executionExit: "supported",
+			activity: "supported",
+		},
+	},
+	"opencode-v2": {
+		identity: "Client-allocated `ses_<uuid>` confirmed by the server session response.",
+		initialization: "Server session lookup succeeds for the launched session.",
+		promptAcknowledgment: "Server accepts the bootstrap message (API ack / SSE event).",
+		resume: "Server session lookup for the exact native id; no bootstrap replay.",
+		failure:
+			"Version probe (5s) and resume-session probe (8s) preflight; pane disappearance or exit within the shared launch-probe deadline is conclusive.",
+		events: {
+			turnCompleted: "supported",
+			permissionWait: "unsupported",
+			executionExit: "supported",
+			activity: "supported",
+		},
+	},
+	claude: {
+		identity: "Client `--session-id`, correlated with the `SessionStart` hook `session_id`.",
+		initialization: "`SessionStart` hook observed for the launched session.",
+		promptAcknowledgment: "`UserPromptSubmit` hook fires for the bootstrap prompt.",
+		resume: "`SessionStart` hook with `source: resume`; no bootstrap replay.",
+		failure: "Pane disappearance or exit within the shared launch-probe deadline.",
+		events: {
+			turnCompleted: "supported",
+			permissionWait: "supported",
+			executionExit: "supported",
+			activity: "supported",
+		},
+	},
+	pi: {
+		identity: "Client `--session-id`, correlated with `session_start` session metadata.",
+		initialization: "`session_start` extension event observed.",
+		promptAcknowledgment: "`before_agent_start` carries the accepted bootstrap prompt.",
+		resume: "`session_start` event; no bootstrap replay.",
+		failure: "Pane disappearance or exit within the shared launch-probe deadline.",
+		events: {
+			turnCompleted: "supported",
+			permissionWait: "unsupported",
+			executionExit: "supported",
+			activity: "supported",
+		},
+	},
+} as const satisfies Record<"opencode-v1" | "opencode-v2" | "claude" | "pi", HarnessReadinessEvidence>;
 
 async function receipt(path: string, expected?: string): Promise<boolean> {
 	try {
@@ -68,7 +188,7 @@ async function waitForReceipts(
 	throw new Error(`Provider readiness timed out for session ${session.id}.`);
 }
 
-export class Harness implements HarnessContract {
+export class Harness implements HarnessProvider {
 	private readonly process: SessionProcess;
 	constructor(rootDir: string, process?: SessionProcess) {
 		this.process = process ?? new SessionProcess(new BunRunner(), rootDir);

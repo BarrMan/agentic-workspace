@@ -1,4 +1,4 @@
-import type { LifecycleCheckpoint, LifecycleCheckpointSink } from "./session-contracts.ts";
+import type { LifecycleCheckpoint, LifecycleCheckpointSink } from "./session.ts";
 import type { SessionState, SessionStore } from "./session-store.ts";
 import type { AgentSession, ModeSessionHistory } from "./types.ts";
 

@@ -1,16 +1,60 @@
-import type {
-	RunningExecution,
-	RunningExecutionEvent,
-	Session as SessionContract,
-	SessionEvent,
-	SessionLaunchOperation,
-	SessionPublication,
-	SessionStartupCheckpointPhase,
-	Unsubscribe,
-} from "./session-contracts.ts";
-import { AGENT_SESSION_STATUS, type AgentSession, type ModeId } from "./types.ts";
+import type { HarnessProvider, RunningExecution, RunningExecutionEvent, SessionLaunchContext } from "./harness.ts";
+import type { SessionCreationIdentity } from "./task.ts";
+import { AGENT_SESSION_STATUS, type AgentActivity, type AgentSession, type ModeId } from "./types.ts";
 
-export class Session implements SessionContract {
+export type SessionStartupCheckpointPhase = "reservation" | "identity" | "ready" | "rollback";
+export type SessionCheckpointOrigin =
+	| { readonly kind: "creation"; readonly creation: SessionCreationIdentity }
+	| { readonly kind: "session"; readonly taskId: string; readonly modeId: ModeId; readonly sessionId: string };
+export type ExpectedSessionMembership =
+	| { readonly kind: "absent"; readonly taskId: string; readonly modeId: ModeId; readonly sessionId: string }
+	| { readonly kind: "present"; readonly taskId: string; readonly modeId: ModeId; readonly sessionId: string };
+
+export type Immutable<T> = T extends (...args: never[]) => unknown
+	? T
+	: T extends readonly (infer Item)[]
+		? readonly Immutable<Item>[]
+		: T extends object
+			? { readonly [Key in keyof T]: Immutable<T[Key]> }
+			: T;
+
+/** Reservation expects absent membership; startup transitions expect present membership. */
+export interface SessionStartupCheckpoint {
+	readonly phase: SessionStartupCheckpointPhase;
+	readonly origin: SessionCheckpointOrigin;
+	readonly expectedMembership: ExpectedSessionMembership;
+	readonly record: Immutable<AgentSession>;
+}
+
+export interface SessionUpdateCheckpoint {
+	readonly phase: "update";
+	readonly reason: "activate" | "stop" | "park" | "finish" | "observation";
+	readonly origin: Extract<SessionCheckpointOrigin, { kind: "session" }>;
+	readonly expectedMembership: Extract<ExpectedSessionMembership, { kind: "present" }>;
+	readonly previous: Immutable<AgentSession>;
+	readonly record: Immutable<AgentSession>;
+}
+
+export type LifecycleCheckpoint = SessionStartupCheckpoint | SessionUpdateCheckpoint;
+export type LifecycleCheckpointSink = (checkpoint: LifecycleCheckpoint) => Promise<void>;
+export interface SessionPublication {
+	readonly checkpoint: LifecycleCheckpointSink;
+}
+export interface SessionLaunchOperation extends SessionPublication {
+	readonly harness: HarnessProvider;
+	readonly context: SessionLaunchContext;
+}
+export interface SessionEvent {
+	readonly kind: "turn-completed" | "permission-wait" | "execution-exit" | "activity";
+	readonly activity?: AgentActivity;
+	readonly status: AgentSession["status"];
+	readonly executionIdentity: RunningExecution["identity"];
+	readonly record: Immutable<AgentSession>;
+}
+
+export type Unsubscribe = () => void;
+
+export class Session {
 	readonly id: string;
 	private currentRecord: Readonly<AgentSession>;
 	private currentExecution?: RunningExecution;

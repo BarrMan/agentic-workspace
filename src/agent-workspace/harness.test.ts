@@ -4,8 +4,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Agent } from "./agents/agent.ts";
 import { agentFor, registerAgent } from "./agents/agents.ts";
+import type { SessionLaunchContext } from "./harness.ts";
 import { Harness } from "./harness.ts";
-import type { SessionLaunchContext } from "./session-contracts.ts";
 import type { AgentSession } from "./types.ts";
 
 describe("provider prompt-acceptance receipts", () => {

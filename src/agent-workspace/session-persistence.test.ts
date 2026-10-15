@@ -2,10 +2,11 @@ import { afterEach, describe, expect, it } from "bun:test";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { LifecycleCheckpoint, SessionCreationIdentity } from "./session-contracts.ts";
+import type { LifecycleCheckpoint } from "./session.ts";
 import { createSessionPersistence } from "./session-persistence.ts";
 import type { ProcessRunner } from "./session-process.ts";
 import { SessionStore } from "./session-store.ts";
+import type { SessionCreationIdentity } from "./task.ts";
 import type { AgentSession } from "./types.ts";
 
 class InertRunner implements ProcessRunner {

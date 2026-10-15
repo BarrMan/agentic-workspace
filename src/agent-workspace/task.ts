@@ -1,21 +1,36 @@
 import type { Task as TaskRecord } from "../types/index.ts";
 import { isLocalEditableTask } from "../types/index.ts";
-import type {
-	SessionCreationFactory,
-	SessionCreationIdentity,
-	Task as TaskContract,
-	TaskHydrationInput,
-	TaskSessionCreation,
-} from "./session-contracts.ts";
+import type { Session } from "./session.ts";
 import type { AgentSession, ModeId, ModeProfile, ModeSessionHistory, ResolvedAgentConfiguration } from "./types.ts";
 
-export class Task implements TaskContract {
+export interface SessionCreationIdentity {
+	readonly taskId: TaskRecord["id"];
+	readonly modeId: ModeId;
+	readonly provisionalSessionId: AgentSession["id"];
+	readonly previousActiveSessionId?: AgentSession["id"];
+}
+
+export interface TaskHydrationInput {
+	readonly task: TaskRecord;
+	readonly modes: Readonly<Record<ModeId, ModeProfile>>;
+	readonly configuration: ResolvedAgentConfiguration;
+	readonly sessionRecords: Readonly<Record<ModeId, ModeSessionHistory>>;
+	readonly selectedModeId: ModeId;
+	readonly createSession: (input: { readonly taskId: string; readonly modeId: ModeId }) => Session;
+}
+
+export interface TaskSessionCreation {
+	readonly session: Session;
+	readonly creation: SessionCreationIdentity;
+}
+
+export class Task {
 	readonly id: string;
 	readonly modes: Record<ModeId, ModeSessionHistory>;
 	readonly profiles: Record<ModeId, ModeProfile>;
 	readonly task: TaskRecord;
 	readonly configuration: ResolvedAgentConfiguration;
-	readonly createSession: SessionCreationFactory;
+	readonly createSession: TaskHydrationInput["createSession"];
 	#selectedModeId: ModeId;
 
 	constructor(input: TaskHydrationInput) {
@@ -65,7 +80,7 @@ export class Task implements TaskContract {
 	reserveSession(modeId: ModeId): TaskSessionCreation {
 		const history = this.#requireMode(modeId);
 		const previousActiveSessionId = history.activeSessionId;
-		const session = this.createSession.provision({ taskId: this.id, modeId });
+		const session = this.createSession({ taskId: this.id, modeId });
 		const creation: SessionCreationIdentity = {
 			taskId: this.id,
 			modeId,
@@ -171,7 +186,7 @@ export function createTask(input: {
 	title: string;
 	modes: Record<ModeId, ModeProfile>;
 	configuration: ResolvedAgentConfiguration;
-	createSession: SessionCreationFactory;
+	createSession: TaskHydrationInput["createSession"];
 }): Task {
 	const now = new Date().toISOString();
 	const task: TaskRecord = {

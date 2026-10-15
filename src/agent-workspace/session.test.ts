@@ -1,13 +1,7 @@
 import { describe, expect, test } from "bun:test";
+import type { HarnessProvider as Harness, RunningExecution, RunningExecutionEvent } from "./harness.ts";
+import type { LifecycleCheckpoint, SessionLaunchOperation, SessionPublication } from "./session.ts";
 import { Session } from "./session.ts";
-import type {
-	Harness,
-	LifecycleCheckpoint,
-	RunningExecution,
-	RunningExecutionEvent,
-	SessionLaunchOperation,
-	SessionPublication,
-} from "./session-contracts.ts";
 import { AGENT_SESSION_STATUS, type AgentSession } from "./types.ts";
 
 const record: AgentSession = {

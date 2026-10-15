@@ -1,6 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import type { Task as TaskRecord } from "../types/index.ts";
-import type { Session, SessionCreationFactory, TaskHydrationInput } from "./session-contracts.ts";
+import { Session } from "./session.ts";
+import type { TaskHydrationInput } from "./task.ts";
 import { Task } from "./task.ts";
 import type { AgentSession, ModeProfile, ResolvedAgentConfiguration } from "./types.ts";
 
@@ -15,36 +16,20 @@ const configuration: ResolvedAgentConfiguration = { scope: "project", config: { 
 
 function fixture(overrides: Partial<TaskHydrationInput> = {}) {
 	let provisions = 0;
-	const factory: SessionCreationFactory = {
-		provision: ({ taskId }) => {
-			provisions++;
-			const record: AgentSession = {
-				id: `s${provisions}`,
-				taskId,
-				preset: "x",
-				tmuxName: "",
-				cwd: "/",
-				createdAt: "now",
-				status: "starting",
-				outputPath: "",
-				bootstrapPath: "",
-			};
-			return {
-				id: record.id,
-				record,
-				start: async () => {},
-				resume: async () => {},
-				stop: async () => {},
-				inject: async () => {},
-				bindExecution: () => {},
-				activate: async () => {},
-				park: async () => {},
-				finish: async () => {},
-				sendKey: async () => {},
-				subscribe: () => () => {},
-				serialize: () => record,
-			} satisfies Session;
-		},
+	const createSession: TaskHydrationInput["createSession"] = ({ taskId, modeId }) => {
+		provisions++;
+		const record: AgentSession = {
+			id: `s${provisions}`,
+			taskId,
+			preset: "x",
+			tmuxName: "",
+			cwd: "/",
+			createdAt: "now",
+			status: "starting",
+			outputPath: "",
+			bootstrapPath: "",
+		};
+		return new Session(record, modeId);
 	};
 	const dto: TaskRecord = {
 		id: "T-1",
@@ -63,7 +48,7 @@ function fixture(overrides: Partial<TaskHydrationInput> = {}) {
 		configuration,
 		sessionRecords: {},
 		selectedModeId: "a",
-		createSession: factory,
+		createSession,
 		...overrides,
 	});
 	return {
