@@ -315,6 +315,25 @@ function createController(core: Core, options: ControllerTestOptions = {}) {
 	// The controller now consults Core's session facade as well as the workspace projection. Fake
 	// cores have no durable store, so resolve those lookups from the fixture's own session history.
 	const workspaceState = supplied.workspaceState;
+	if (workspaceState && !workspaceState.sessionApplication) {
+		Object.assign(workspaceState, {
+			sessionApplication: {
+				newSession: async (taskId: string, modeId: string) => {
+					const attachment = await workspaceState.prepareNewSession(taskId, modeId);
+					return attachment.record;
+				},
+				resumeSession: async (taskId: string, sessionId: string) => {
+					const history = await workspaceState.listSessions(taskId);
+					const modeId =
+						Object.entries(history.modes ?? {}).find(([, mode]) =>
+							mode.sessions.some(({ id }) => id === sessionId),
+						)?.[0] ?? getDefaultModeCatalog().defaultModeId;
+					const attachment = await workspaceState.prepareSession(taskId, sessionId, modeId);
+					return attachment.record;
+				},
+			},
+		});
+	}
 	if (workspaceState && !core.sessions) {
 		Object.defineProperty(core, "sessions", {
 			configurable: true,
@@ -664,7 +683,14 @@ function pendingRecord(taskId: string, id: string, ownerPid: number): AgentSessi
 	};
 }
 
-type AdoptionCounters = { prepares: string[]; activated: string[]; finished: string[]; preparedModes?: string[] };
+type AdoptionCounters = {
+	prepares: string[];
+	activated: string[];
+	finished: string[];
+	preparedModes?: string[];
+	applicationResumes?: string[];
+	applicationStarts?: number;
+};
 
 /** Workspace state whose per-task sessions come from `sessionsByTask`, recording each prepared launch. */
 function adoptionWorkspaceState(
@@ -681,10 +707,13 @@ function adoptionWorkspaceState(
 		return {
 			...history,
 			sessions: [...history.sessions, ...(freshSessions.get(taskId) ?? [])],
-			activeSessionId: activeSessionIds.has(taskId) ? activeSessionIds.get(taskId) : history.activeSessionId,
+			activeSessionId:
+				activeSessionIds.get(`${taskId}\u0000${getDefaultModeCatalog().defaultModeId}`) ?? history.activeSessionId,
 		};
 	};
-	return {
+	const activeModeSessionId = (taskId: string, modeId: string, fallback?: string) =>
+		activeSessionIds.get(`${taskId}\u0000${modeId}`) ?? fallback;
+	const service = {
 		listTasks: async () => tasks,
 		listSessions: async (taskId: string) => histories(taskId),
 		listAllSessions: async () => new Map(tasks.map((task) => [task.id, histories(task.id)] as const)),
@@ -698,10 +727,18 @@ function adoptionWorkspaceState(
 					...(stored?.sessions ?? (modeId === getDefaultModeCatalog().defaultModeId ? history.sessions : [])),
 					...fresh,
 				],
-				activeSessionId: activeSessionIds.get(taskId) ?? stored?.activeSessionId ?? history.activeSessionId,
+				activeSessionId: activeModeSessionId(
+					taskId,
+					modeId,
+					stored?.activeSessionId ??
+						(modeId === getDefaultModeCatalog().defaultModeId ? history.activeSessionId : undefined),
+				),
 			};
 		},
-		liveSession: async () => undefined,
+		liveSession: async (taskId: string, id: string) => {
+			const record = histories(taskId).sessions.find((candidate) => candidate.id === id);
+			return record?.status === "running" ? fakeAttachment(record) : undefined;
+		},
 		prepareSession: async (taskId: string, id?: string, modeId?: string) => {
 			const history = sessionsByTask(taskId);
 			const sessionId = id ?? `fresh-${taskId}-${++freshSequence}`;
@@ -718,10 +755,11 @@ function adoptionWorkspaceState(
 				const mode = modeId ?? getDefaultModeCatalog().defaultModeId;
 				modes.set(mode, [...(modes.get(mode) ?? []), record]);
 				freshByMode.set(taskId, modes);
+				activeSessionIds.set(`${taskId}\u0000${mode}`, record.id);
 			}
 			// The service contract reserves the session and publishes its active pointer before
 			// returning, so a concurrent workspace refresh can observe/adopt the handoff.
-			activeSessionIds.set(taskId, record.id);
+			activeSessionIds.set(`${taskId}\u0000${modeId ?? getDefaultModeCatalog().defaultModeId}`, record.id);
 			return fakeAttachment(record);
 		},
 		adoptPendingSession: async (taskId: string, id: string) => {
@@ -749,7 +787,34 @@ function adoptionWorkspaceState(
 		},
 		stopSession: async (_taskId: string, _id: string) => {},
 		parkSession: async () => {},
-	} as unknown as WorkspaceStateService;
+		sessionApplication: undefined as unknown as WorkspaceStateService["sessionApplication"],
+	};
+	service.sessionApplication = {
+		newSession: async (taskId: string, modeId: string) => {
+			counters.applicationStarts = (counters.applicationStarts ?? 0) + 1;
+			const record = { ...session(taskId), id: `fresh-${taskId}-${++freshSequence}`, status: "running" as const };
+			freshSessions.set(taskId, [...(freshSessions.get(taskId) ?? []), record]);
+			const modes = freshByMode.get(taskId) ?? new Map<string, AgentSession[]>();
+			modes.set(modeId, [...(modes.get(modeId) ?? []), record]);
+			freshByMode.set(taskId, modes);
+			activeSessionIds.set(`${taskId}\u0000${modeId}`, record.id);
+			return record;
+		},
+		resumeSession: async (taskId: string, id: string) => {
+			counters.applicationResumes?.push(id);
+			const modeId =
+				[...(freshByMode.get(taskId) ?? new Map())].find(([, records]) =>
+					records.some((candidate: AgentSession) => candidate.id === id),
+				)?.[0] ??
+				Object.entries(sessionsByTask(taskId).modes ?? {}).find(([, mode]) =>
+					mode.sessions.some((candidate) => candidate.id === id),
+				)?.[0] ??
+				getDefaultModeCatalog().defaultModeId;
+			const attachment = await service.prepareSession(taskId, id, modeId);
+			return histories(taskId).sessions.find((candidate) => candidate.id === id) ?? attachment.record;
+		},
+	} as unknown as WorkspaceStateService["sessionApplication"];
+	return service as unknown as WorkspaceStateService;
 }
 
 async function persistedPendingHostProject(root: string, title: string, modeIds: string[]) {
@@ -1986,7 +2051,10 @@ describe("OpenTuiWorkspaceController", () => {
 			listTasks: async () => tasks,
 			listSessions: async () => ({ taskId: "TASK-1", activeSessionId, sessions: records }),
 			listAllSessions: async () => new Map([["TASK-1", { taskId: "TASK-1", activeSessionId, sessions: records }]]),
-			liveSession: async () => undefined,
+			liveSession: async (_taskId: string, id: string) => {
+				const record = records.find((candidate) => candidate.id === id);
+				return requested.includes(id) && record ? fakeAttachment(record) : undefined;
+			},
 			deleteSession: async (taskId: string, id: string, options?: { force?: boolean }) => {
 				deleted.push({ taskId, id, force: options?.force });
 			},
@@ -2003,6 +2071,17 @@ describe("OpenTuiWorkspaceController", () => {
 			},
 			finishSession: async () => {},
 			parkSession: async () => {},
+			sessionApplication: {
+				newSession: async () => {
+					throw new Error("Unexpected new session");
+				},
+				resumeSession: async (taskId: string, id: string) => {
+					await service.prepareSession(taskId, id);
+					const record = records.find((candidate) => candidate.id === id);
+					if (!record) throw new Error("Missing test session");
+					return record;
+				},
+			},
 		} as unknown as WorkspaceStateService;
 		const controller = createController(core(), {
 			viewStateStore: new MemoryViewStateStore(state()),
@@ -2533,7 +2612,13 @@ describe("OpenTuiWorkspaceController", () => {
 	])("real Enter waits for preparation and mount before focusing embedded preview (failure: %s)", async (fail) => {
 		const tasks = [task("TASK-1", { title: "ENTER TASK ROW" })];
 		const parked = { ...session("TASK-1"), id: "enter-exact", status: "stopped" as const };
-		const counters: AdoptionCounters = { prepares: [], activated: [], finished: [], preparedModes: [] };
+		const counters: AdoptionCounters = {
+			prepares: [],
+			activated: [],
+			finished: [],
+			preparedModes: [],
+			applicationResumes: [],
+		};
 		const recorder = new MountRecorder();
 		const setup = await createTestRenderer({ width: 120, height: 40, exitOnCtrlC: false });
 		const store = new MemoryViewStateStore(state({ selectedTaskId: "TASK-1" }));
@@ -2672,9 +2757,11 @@ describe("OpenTuiWorkspaceController", () => {
 				await setup.flush();
 				expect(setup.renderer.currentFocusedRenderable === terminal).toBe(true);
 				expect(requested).toBe(2);
-				expect(counters.prepares).toEqual(["fresh-TASK-1-1", "failed-resume"]);
+				expect(counters.prepares).toEqual([parked.id, "failed-resume"]);
 				expect(counters.preparedModes).toEqual(["plan", "plan"]);
-				expect(counters.activated).toEqual(["fresh-TASK-1-1"]);
+				expect(counters.applicationResumes).toEqual([parked.id, "failed-resume"]);
+				expect(counters.applicationStarts).toBeUndefined();
+				expect(counters.activated).toEqual([parked.id]);
 				setup.mockInput.pressCtrlC();
 				await setup.flush();
 				expect(terminal?.focused).toBe(false);
@@ -2720,6 +2807,40 @@ describe("OpenTuiWorkspaceController", () => {
 			expect(recorder.options.at(-1)?.liveAgent?.terminal).toBeDefined();
 			expect(counters.preparedModes).toEqual(["plan"]);
 			expect(counters.activated).toEqual([parked.id]);
+		} finally {
+			controller.destroy();
+			await running;
+		}
+	});
+
+	it("prepares the active running session when no retained terminal is usable", async () => {
+		const tasks = [task("TASK-1")];
+		const active = { ...session("TASK-1"), id: "running-active", status: "running" as const };
+		const counters: AdoptionCounters = { prepares: [], activated: [], finished: [], preparedModes: [] };
+		const recorder = new MountRecorder();
+		const service = adoptionWorkspaceState(
+			tasks,
+			() => ({ taskId: "TASK-1", activeSessionId: active.id, sessions: [active] }),
+			counters,
+		);
+		service.liveSession = async () => undefined;
+		const controller = createController(core(), {
+			viewStateStore: new MemoryViewStateStore(state({ selectedTaskId: "TASK-1" })),
+			workspaceState: service,
+			runtime: adoptionRuntime(recorder),
+		});
+		const running = controller.run();
+		try {
+			const mounted = await recorder.next(0);
+			const entry = mounted.tasks.find((candidate) => candidate.id === "TASK-1");
+			if (!entry) throw new Error("Expected selected task entry.");
+			mounted.onAgentStart?.(entry, 80, 24);
+			await waitUntil(() => counters.prepares.includes(active.id));
+			await waitUntil(() => recorder.options.at(-1)?.liveAgent?.terminal !== undefined);
+			expect(counters.prepares).toEqual([active.id]);
+			expect(counters.applicationResumes ?? []).toEqual([]);
+			expect(counters.applicationStarts).toBeUndefined();
+			expect(recorder.options.at(-1)?.notice).toBeUndefined();
 		} finally {
 			controller.destroy();
 			await running;
@@ -4088,7 +4209,10 @@ describe("OpenTuiWorkspaceController", () => {
 			listSessions: async () => history(),
 			listAllSessions: async () => new Map([["TASK-1", history()]]),
 			listModeSessions: async () => ({ sessions: records, activeSessionId }),
-			liveSession: async () => undefined,
+			liveSession: async (_taskId: string, id: string) => {
+				const record = records.find((candidate) => candidate.id === id);
+				return prepared.includes(id) && record ? fakeAttachment(record) : undefined;
+			},
 			prepareSession: async (_taskId: string, id?: string) => {
 				const record = records.find((candidate) => candidate.id === id);
 				if (!record) throw new Error(`Missing local history ${id ?? "fresh"}`);
@@ -4112,6 +4236,17 @@ describe("OpenTuiWorkspaceController", () => {
 			},
 			finishSession: async () => {},
 			parkSession: async () => {},
+			sessionApplication: {
+				newSession: async () => {
+					throw new Error("Unexpected new session");
+				},
+				resumeSession: async (taskId: string, id: string) => {
+					await service.prepareSession(taskId, id, "plan");
+					const record = records.find((candidate) => candidate.id === id);
+					if (!record) throw new Error(`Missing local history ${id}`);
+					return record;
+				},
+			},
 		} as unknown as WorkspaceStateService;
 		const controller = createController(core("Roadmap", tasks), {
 			viewStateStore: new MemoryViewStateStore(state({ selectedTaskId: "TASK-1" })),

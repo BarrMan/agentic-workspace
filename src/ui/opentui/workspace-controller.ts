@@ -1672,9 +1672,19 @@ export class OpenTuiWorkspaceController {
 		launch: PendingAgentLaunch,
 	): Promise<AgentSession | false> {
 		const attachOnly = options.attachOnly === true;
+		let resolvedSessionId = sessionId;
 		// Adoption launches a pending record for any task, not only the selected one; the pane is
 		// retained in `#agents` and appears when the user selects its task.
 		const adopt = options.adopt === true;
+		if (!resolvedSessionId && !options.newSession && options.modeId) {
+			const selected = this.#localSelections.get(`${taskId}\u0000${options.modeId}`);
+			const retained = selected ? this.#agents.get(selected) : undefined;
+			if (retained?.terminal && !retained.terminal.isDestroyed) resolvedSessionId = selected;
+			else {
+				const history = await this.#workspaceState.listModeSessions(taskId, options.modeId);
+				resolvedSessionId = history.activeSessionId;
+			}
+		}
 		if (
 			launch.invalidated ||
 			this.#closed ||
@@ -1683,22 +1693,26 @@ export class OpenTuiWorkspaceController {
 			this.#view !== "workspace"
 		)
 			throw new Error(`Task ${taskId} is no longer selected.`);
-		const retained = sessionId ? this.#agents.get(sessionId) : undefined;
-		const alive = sessionId ? this.#agentAlive.get(sessionId) : undefined;
+		const retained = resolvedSessionId ? this.#agents.get(resolvedSessionId) : undefined;
+		const alive = resolvedSessionId ? this.#agentAlive.get(resolvedSessionId) : undefined;
 		if (retained?.origin && alive) {
 			const retainedAlive = await alive();
 			if (launch.invalidated || this.#deletingTasks.has(taskId)) return false;
 			if (retainedAlive) {
 				if (!attachOnly && !adopt) {
-					const activation = await this.#workspaceState.activateSession(taskId, sessionId as string, retained.origin);
+					const activation = await this.#workspaceState.activateSession(
+						taskId,
+						resolvedSessionId as string,
+						retained.origin,
+					);
 					if (launch.invalidated || this.#deletingTasks.has(taskId)) return false;
 					if (activation?.activated === false) return false;
 					this.#followActivationStatus(taskId, activation?.status, adopt);
 				}
-				this.#activeAgents.set(taskId, sessionId as string);
+				this.#activeAgents.set(taskId, resolvedSessionId as string);
 				if (options.modeId) {
-					this.#localSelections.set(`${taskId}\u0000${options.modeId}`, sessionId as string);
-					this.#localSessionModes.set(sessionId as string, options.modeId);
+					this.#localSelections.set(`${taskId}\u0000${options.modeId}`, resolvedSessionId as string);
+					this.#localSessionModes.set(resolvedSessionId as string, options.modeId);
 				}
 				return retained.origin.record;
 			}
@@ -1717,15 +1731,15 @@ export class OpenTuiWorkspaceController {
 		)
 			throw new Error(`Task ${taskId} is no longer selected.`);
 		let applicationOwned = false;
-		let attachment = sessionId
+		let attachment = resolvedSessionId
 			? adopt
-				? await this.#workspaceState.adoptPendingSession(taskId, sessionId)
-				: await this.#workspaceState.liveSession(taskId, sessionId, { passive: attachOnly })
+				? await this.#workspaceState.adoptPendingSession(taskId, resolvedSessionId)
+				: await this.#workspaceState.liveSession(taskId, resolvedSessionId, { passive: attachOnly })
 			: undefined;
 		if (attachOnly && !attachment) {
 			// The durable session claimed RUNNING but the pane is gone; `liveSession` settled it.
 			// Report the truth instead of resuming, relaunching, or attaching a second parser.
-			this.#notice = `Agent session ${sessionId ?? "active"} is no longer running.`;
+			this.#notice = `Agent session ${resolvedSessionId ?? "active"} is no longer running.`;
 			return false;
 		}
 		if (this.#closed || !this.#host || this.#view !== "workspace")
@@ -1738,25 +1752,27 @@ export class OpenTuiWorkspaceController {
 		const selectionAtAdmission = selectionKey ? this.#localSelections.get(selectionKey) : undefined;
 		if (!attachment) {
 			const application = this.#workspaceState.sessionApplication;
-			if (!application) {
-				attachment = options.newSession
-					? await this.#workspaceState.prepareNewSession(taskId, options.modeId ?? "")
-					: await this.#workspaceState.prepareSession(taskId, sessionId, options.modeId);
-			} else if (options.newSession && options.handoff) {
+			if (options.newSession && options.handoff) {
 				if (!options.modeId) throw new Error("A mode is required when creating a handoff session.");
 				attachment = await this.#workspaceState.prepareNewSession(taskId, options.modeId);
-			} else if (options.newSession || !sessionId) {
+			} else if (options.newSession) {
 				if (!options.modeId) throw new Error("A mode is required when creating a session.");
 				const record = await application.newSession(taskId, options.modeId);
 				applicationOwned = true;
 				attachment = await this.#workspaceState.liveSession(taskId, record.id);
 				if (!attachment) throw new Error(`Could not attach to new session ${record.id}.`);
-			} else if (sessionId && !adopt && !attachOnly) {
-				const record = await application.resumeSession(taskId, sessionId);
-				applicationOwned = true;
-				attachment = await this.#workspaceState.liveSession(taskId, record.id);
-				if (!attachment) throw new Error(`Could not attach to resumed session ${record.id}.`);
-			} else attachment = await this.#workspaceState.prepareSession(taskId, sessionId, options.modeId);
+			} else if (resolvedSessionId && !adopt && !attachOnly) {
+				const active = await this.#workspaceState.listModeSessions(taskId, options.modeId ?? "");
+				const durable = active.sessions.find(({ id }) => id === resolvedSessionId);
+				if (durable?.status === AGENT_SESSION_STATUS.RUNNING || durable?.status === AGENT_SESSION_STATUS.STARTING) {
+					attachment = await this.#workspaceState.prepareSession(taskId, resolvedSessionId, options.modeId);
+				} else {
+					const record = await application.resumeSession(taskId, resolvedSessionId);
+					applicationOwned = true;
+					attachment = await this.#workspaceState.liveSession(taskId, record.id);
+					if (!attachment) throw new Error(`Could not attach to resumed session ${record.id}.`);
+				}
+			} else attachment = await this.#workspaceState.prepareSession(taskId, resolvedSessionId, options.modeId);
 		}
 		if (launch.invalidated || this.#deletingTasks.has(taskId)) return false;
 		const { record } = attachment;
