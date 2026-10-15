@@ -8,6 +8,8 @@ All documentation for this project lives in this repository under `docs/`. Creat
 
 **MUST READ before shared-runtime work:** [canonical handoff](docs/shared-agent-runtime-handoff.md), then its scoped contract/plan pointers. **MUST READ before test-remediation work:** [remediation plan](docs/test-suite-remediation-plan.md). **MUST READ before session-service redesign work:** the [target design](docs/session-service-redesign.md) and its operative [correction plan](docs/session-service-redesign-correction-plan.md); the earlier [implementation plan](docs/session-service-redesign-implementation-plan.md) is superseded wherever they conflict. Authority order for that work: `docs/SPEC.md` (behaviour) → target design (ownership) → correction plan (execution). These carry the current checkpoint, bounded-agent/commit sequencing, evidence limits, and remaining policy questions.
 
+Follow SPEC's Current-contract-only policy in every assignment and worker brief. Scope limits do not authorize compatibility retention; unresolved ownership or data-policy questions must be escalated explicitly.
+
 ## Dog-fooding: the installed `agentic-workspace` command is authoritative
 
 This repo builds AgenticWorkspace and also uses it to manage its own tasks. The globally installed `agentic-workspace` command (see the symlink below) defines CLI behavior; the working copy's `src/` and any task worktree can lag it. To answer what the CLI supports, run the command or `agentic-workspace <command> --help` — never infer it from the source tree, git branches, or `origin/main`.

@@ -21,7 +21,7 @@ Inspected source may continue changing in another worktree/session. Before editi
 - Task hydration and `serializeSessions()` retain stored histories across configured mode catalogs. Preserve this durable serialization path when writing an envelope.
 - `session-persistence.ts` has been removed. Its former insertion/selection/rollback/lifecycle responsibilities must not return as a second persistence model; keep the remaining storage work in the store and application composition.
 - `session.ts` emits lifecycle publication checkpoints. Adapt their consumers to model-owned mutation; removing a deleted persistence helper alone does not complete that ownership change.
-- `sessions.ts` still contains `AgentSessionService`. The application composition and compatibility routes remain to be reconciled against the actual worktree; do not create a competing service/controller or assume all callers have migrated.
+- All work and acceptance follow SPEC's Current-contract-only policy and the target design's ownership boundary. File assignments constrain individual workers, not the supported architecture. If an assignment cannot satisfy that boundary, report the dependency to the integrator; do not preserve a compatibility route as its resolution.
 
 ## Execution order and file ownership
 
@@ -32,7 +32,7 @@ The persistence/model correction is coupled. One coherent integrator owns the mu
 | C0: current-state reconciliation | Integrator; planning/file ledger only | None |
 | C1: remove mirrored contracts | One fresh @fixer worker; contract hub, model imports/declarations, exact referencing consumers/tests | C0 |
 | C2: model-owned durable mutations | One fresh @fixer worker; Task, Session publication, persistence/store integration, focused tests | C1 integrated |
-| C3: application wiring | Integrator or fresh @fixer worker; actual controller/service composition and callers | C2 integrated |
+| C3: application wiring | Integrator or fresh @fixer worker; application controller and all supported callers | C2 integrated |
 | C4: independent review | Fresh @oracle reviewer; read-only | C3 integrated |
 
 These corrective slices are sequential because their files and contracts overlap. Parallelism resumes for disjoint CLI/UI consumer work only after C3 freezes the implemented seam. A read-only reference inventory can run alongside C1, but no parallel writer may edit the same contracts, models, or test helpers. Use fresh bounded agents and provide only the assigned slice, target design, and relevant file pointers.
@@ -41,7 +41,7 @@ These corrective slices are sequential because their files and contracts overlap
 
 1. Inspect Git status and targeted diffs. Identify active writers and completed-but-unintegrated controller changes. Do not overwrite or cherry-pick partial work blindly.
 2. Enumerate production and test references separately for lifecycle checkpoints/publication and remaining Task/Session aliases. Record exact files in the worker ledger; keep the completed no-mirrored-contracts requirement in force, using Task/Session/Harness as the type owners.
-3. Record the active composition as fact, not assumption. Identify the real vertical-slice composition owner and its callers from the current worktree. Keep the legacy `AgentSessionService` route for compatibility callers that have not migrated; do not create a competing service/controller or claim every caller has converged.
+3. Record the active composition as fact, not assumption. Identify the application controller and every supported caller from the current worktree. All supported callers must use the owners in the target design; report dependencies that prevent satisfying this boundary rather than preserving a separate route.
 4. Record targeted test/typecheck baseline. Verify Bun version and enabled automations according to repository instructions. Do not reuse historical pass counts or “15 pre-existing errors” without checking the current base.
 
 Success: no overlapping writer, actual caller inventory, single composition owner, baseline evidence. No source design is accepted merely because an old contract compiles.
@@ -72,19 +72,14 @@ Evidence already established — verify, do not re-derive:
 - **Flat/nested projection.** `projectBuildCompatibility` (`:957`) resolves the active pointer from the valid flat pointer, then the valid nested pointer, then the first flat record (`:962-970`). Replacing `state.modes` alone can be overwritten by stale flat state; every mutation must leave both projections consistent.
 - **Unknown fields.** `isSession` (`:314`) hard-rejects any key outside `SESSION_KEYS` (`:292`, 19 keys). "Preserve unknown fields" can only mean fields this schema already supports.
 - **Task admission.** `withTaskSessionAdmission` (`sessions.ts:340`) holds a non-reentrant per-task file lock (`retries: 0`). Do not call `start`, `stop`, `ask`, `delete`, `purge`, `reset`, `liveSession`, `prepare*`, `adoptPendingSession`, `finalizeHandoff`, `activateNativeSession`, `finishNativeSession`, `parkNativeSession`, or `reconcileTaskSessions` from inside it. Established safe inside it: `rollbackHandoff` (`:1777`), `forgetTaskSessions` (`:735`), `publishNativeIdentity` (`:409`), `stopAllTaskSessions` (`:1875`), `output`, `sendKey`, `attach`, `touchUsage`, `list*`, `deleteMode`, and the privates `finalizeHandoffLocked` (`:1806`), `failReservation` (`:1739`), `stopClaimedSession` (`:1830`).
-- **Preparation ownership.** The authorized preparation/configuration and provenance closure is extracted into `session-service-mechanics.ts` and consumed by the legacy routes. Harness independently uses the shared provider-preparation APIs in `session-launch.ts`; application composition reuses applicable input and provenance helpers but does not redirect Harness through `prepareSessionLaunch`. Admission and failure-settlement methods excluded from the extraction remain with the legacy routes.
+- **Preparation ownership.** The preparation/configuration and provenance helpers are shared by their supported callers. Harness uses the provider-preparation APIs in `session-launch.ts`; application composition reuses applicable input and provenance helpers. All callers follow the target design's ownership boundary.
 - **Bounded Harness corrections.** Harness still needs launch-local workspace context after pane creation, resume ordering that cleans outgoing resources before preparing replacement activity resources (with preflight first), and cleanup of an owned execution when startup fails. These are launch-boundary fixes in Harness, not a reason to introduce another preparation abstraction or route Harness through the application service; durable/native publication remains outside Harness.
 
-### Retained as-is (this correction does not reopen these)
+### Existing behavior constraints
 
 - Selected-mode persistence: `selectedModeByTask` serialization and its existing reload behavior stay exactly as implemented.
-- Mode deletion refuses while any task still holds sessions in that mode, including the recovery path (`mode-lifecycle.ts:155-158,185-196`). Keep that precondition; do not reduce it to a bare history removal.
-- C3's authorization is limited to the named migrated vertical slice; it does not authorize general legacy-service cleanup. The previously extracted three-symbol carve-out is insufficient: `stopClaimedSession` still applies lifecycle and survivor-selection policy inline, and extracted mechanics still need service-private helpers. For that slice only, C3 is authorized to:
-  1. Move `assertSameSessionMembership`, `clearNativeSessionPaneTag`, `sameRoot`, and `NATIVE_SESSION_PANE_OPTION` from `AgentSessionService` into `session-service-mechanics.ts` — done; reuse them there.
-  2. Modify the extracted `stopClaimedSession` so Session owns the stopped lifecycle transition and Task owns survivor selection, instead of assigning `status`/`endedAt`/`ownerPid` and choosing the survivor inline.
-  3. Reuse by move (never copy) the bounded preparation closure the slice needs: `prepareSessionLaunch`, `pathContextForSession`, `tagNativeSessionPane`, `warnEnvironment`, `profileFor`, `profileWithCurrentArtifacts`, `executionPresetWithEnvironment`, `pathContextFor`, `sessionCwdFor`, `createSessionRecord`, `resolveModeId`, `assertSameSession`, `assertSessionIdentity`, `ownedLaunchPaneState`, `publishNativeIdentity`, `reconcileDeferredIdentity`, and the verification/preflight/cleanup sequence in `resumeExistingTarget`.
-
-  `withLifecycleAdmission`, `failReservation`, `settleDispatchedLaunchFailure`, and `failBeforeDispatch` are explicitly not authorized for this slice; they stay with legacy routes. In particular, `settleDispatchedLaunchFailure` preserves a confirmed-live failed launch as running, while the target requires stopping that execution and rolling back creation, so moving it unchanged cannot satisfy the slice. Keep all existing legacy callers working; I2 retires the remainder.
+- Mode deletion refuses while any task still holds sessions in that mode, including the recovery path (`mode-lifecycle.ts:155-158,185-196`). Keep that precondition; do not reduce it to a bare history removal. Keep direct model rejection coverage and the relevant orchestration assertion.
+- All work and acceptance follow SPEC's Current-contract-only policy and the target design's ownership boundary. File assignments constrain individual workers, not the supported architecture. If an assignment cannot satisfy that boundary, report the dependency to the integrator; do not preserve a compatibility route as its resolution.
 
 ## C1 — concrete classes and locally owned types
 
@@ -132,7 +127,7 @@ Evidence already established — verify, do not re-derive:
 
 8. `Task.activeSession` returns the durable `AgentSession` record (`task.ts:48-50`) and that projection is intentional: it is the Task-owned durable view, not the live object. Execution, subscriptions, and publication belong to `Session` (`session.ts:15-19,32-33,118-121`), which is resolved by session identity, while records are cloned on insert and update (`task.ts:75,111`). A publication therefore updates the durable projection without reaching into the object that owns the execution, and must not overwrite a newer UI selection. Add one reload/publication test covering that relationship.
 
-9. Keep the mode-deletion precondition inside the model path. `Task.removeMode` refuses while the mode holds sessions (`task.ts:157-161`); retain direct model rejection coverage as well as the legacy orchestration check.
+9. Keep the mode-deletion precondition inside the model path. `Task.removeMode` refuses while the mode holds sessions (`task.ts:157-161`); cover model rejection and the relevant orchestration assertion.
 
 ### Controller-owned durable mutation sequence
 
@@ -150,7 +145,7 @@ Use the existing `SessionStore.mutate` machinery. Check its real signature befor
 - Keep insertion, selection, rollback, and lifecycle interpretation out of the removed `createSessionPersistence` path.
 - Keep the persistence factory/file absent; do not replace it with `SessionPersistence` having the same switch over phases.
 - Delete the rollback publication command and associated duplicate behavior contracts. Useful lifecycle snapshot/event data can remain, but no storage consumer decides what domain action a phase means.
-- Keep storage integrity validation, path checks, atomic writes, membership/provenance checks, and required compatibility serialization. Mechanical legacy mirror maintenance belongs to serialization, not another selection policy.
+- Keep storage integrity validation, path checks, atomic writes, membership/provenance checks, and required serialization projections. Flat projection maintenance belongs to serialization, not another selection policy.
 - Avoid introducing a generic repository transaction interface, unit-of-work abstraction, event bus, or change tracker. One existing mutation callback is enough unless a concrete source constraint proves otherwise.
 - Keep the store's post-write release path (`session-store.ts:453-468`) throwing a committed-write failure distinct from a no-write failure; test both outcomes.
 
@@ -171,22 +166,21 @@ Prove:
 9. Resume clears durable `error`/`endedAt`, asserted from reloaded state rather than the in-memory record.
 10. A flush that published no change and a flush whose write committed but whose release failed are distinguished and reported differently.
 
-Success includes source inspection: there is only one implementation of each insertion/selection/rollback rule, in Task, for the named migrated slice. Passing equivalent tests against two implementations is not acceptance.
+Success includes source inspection: there is only one implementation of each insertion/selection/rollback rule, in Task, across all supported paths. Passing equivalent tests against two implementations is not acceptance.
 
 ## C3 — integrate actual application callers
 
-1. Wire C2's flow into the actual shared application controller identified by C0. If it has not been built, implement the smallest vertical new/resume/stop/rollback path there before converting every caller. Do not create both a new service and a new controller that own the same policy.
-2. Keep old checkpoint adapter construction and imports out of the migrated slice. Remove Session publication methods that exist solely to encode Task relationship changes; activation of a mode's active pointer belongs to Task, not Session.
+1. Wire C2's flow into the actual shared application controller identified by C0 and connect every supported caller to it. Do not create both a new service and a new controller that own the same policy.
+2. Keep old checkpoint adapter construction and imports out of supported paths. Remove Session publication methods that exist solely to encode Task relationship changes; activation of a mode's active pointer belongs to Task, not Session.
 3. Keep Session's start/resume/stop behavior concrete; Harness errors bubble, with catches only for needed cleanup. Controller handles command failure, persistence, locks, and rollback coordination.
 4. Preserve exact resume, current configuration, R-A readiness, one initial prompt, successor-first hand-off, separate predecessor-retirement failure, stopped-only ask, forget-only deletion, and capture/provenance semantics.
-5. Scope: C3 converts the callers the vertical slice needs, plus any remaining callers that construct the old checkpoint adapter. The retained compatibility routes are `Core.sessions` and its direct `AgentSessionService` callers, plus `WorkspaceStateService`'s default construction when no service is pinned; keep these working where not migrated by this slice. Broader CLI/TUI/Core/MCP convergence is reissued after C4. Do not read this item as requiring every consumer in this pass. Use the earlier migration inventory as reference, not its superseded dependency interfaces.
-   The OpenTUI controller now owns its `SessionApplication` through its `WorkspaceStateService` context: fresh start and exact resume use `sessionApplication.newSession` / `resumeSession`, and app-owned host cleanup uses `sessionApplication.stopSession`. Handoff creation, passive attach/adoption, and all other session operations remain on the compatibility service routes.
-6. Remove transitional wrappers after their last consumer moves. Correct SPEC source pointers and approved rollback behavior when the implementation changes those claims. Correction happens in the same change that alters the behavior, not deferred to a later ticket.
-7. Acceptance boundary: C4 approves the corrected vertical slice — new, resume, stop, and rollback through the real application path with model-owned mutations — not the finished CLI/UI/Core migration. Unfinished CLI/UI/Core tickets are reissued afterwards, per the final section.
+5. Connect every supported CLI, TUI, Core, and MCP caller to the same model owners and application operations. File assignments constrain individual workers, not the supported architecture. If a dependency blocks this boundary, report it to the integrator; do not preserve a separate route as a workaround.
+6. Correct SPEC source pointers and approved rollback behavior in the same change that alters those claims.
+7. Acceptance requires the complete supported ownership boundary: every supported caller uses model-owned behavior through the application operations. A bounded checkpoint may be reported as incomplete, but does not satisfy this acceptance condition.
 
 Validate the affected controller/service tests, at minimum `src/agent-workspace/shared-runtime-service.test.ts`, `src/agent-workspace/mode-session-reservation-contract.test.ts`, `src/agent-workspace/failed-mode-handoff-contract.test.ts`, and `src/test/agent-sessions.test.ts`. Add `src/test/agent-workspace-cli.test.ts` and `src/test/opentui-workspace-controller.test.ts` when their wiring changes. Run each with `bun test <file> --timeout=10000`; run any new controller integration file as well.
 
-Success: the named migrated vertical-slice production path uses model-owned mutations. `AgentSessionService` remains a compatibility route for the unmigrated callers listed in §C3. A controller cannot pass tests by leaving the corrected models unused behind the old service. No foreign runtime is signalled, and no stale callback resurrects a deleted association.
+Success: every supported production path uses the model-owned mutations and application operations in the target design. No supported path independently implements those ownership rules. No foreign runtime is signalled, and no stale callback resurrects a deleted association.
 
 ## C4 — independent ownership review and handoff
 
@@ -194,20 +188,20 @@ Success: the named migrated vertical-slice production path uses model-owned muta
 
 The migrated application path now preserves exact-resume provider/root/working-directory checks, the failed-probe and auto-resume confirmation errors, launch preflight, and identity revalidation. Application-created native sessions carry the durable `nativeWorkspace` ownership marker. Stops validate the durable incarnation and `ownerPid`, publish under the store lock only while the in-process execution token remains current, and Harness stop handles are bound to the pane captured for that launch. Session retains stopped lifecycle publication for retry after a failed write and can settle a stopped record after execution exit; Task still performs survivor selection. `WorkspaceStateService` passes its configured state root to the application store.
 
-The instruction to modify the extracted `stopClaimedSession` to use Session lifecycle plus Task survivor selection (§C3 retained-as-is, lines 82–85) is **STILL NOT done**: that helper remains on the retained compatibility route in `session-service-mechanics.ts` and continues to apply the stopped fields and survivor selection inline. Do not claim this migrated-slice correction retires or changes that compatibility behavior.
+Implementation status must be reported against the complete target ownership boundary. A partial checkpoint is incomplete and does not create an exception to that boundary.
 
 A fresh @oracle reviewer traces reservation, successful publication, rollback, activation, stop, and external observation from entry point through model to durable write. Read-only findings must identify exact source symbols and the duplicated rule or unjustified interface. Do not judge by line count or interface-keyword count.
 
 Acceptance checklist:
 
-- Concrete Task/Session/controller types are used directly in the migrated slice; no method-list mirrors or speculative dependency graph.
+- Concrete Task/Session/controller types are used directly across supported paths; no method-list mirrors or speculative dependency graph.
 - Harness and any retained execution interface have named real alternative implementations.
-- In the migrated slice, Task owns membership/order/selection/rollback once; Session owns individual lifecycle once. Legacy compatibility routes remain until their later migration and are not duplicate implementations within this C4 ownership assertion.
+- Across every supported entry point, Task owns membership/order/selection/rollback once; Session owns individual lifecycle once.
 - Storage never switches on a domain phase to insert/remove/select/restore.
 - Fresh-state publication preserves concurrent and unknown data, with provenance checks under lock.
 - Rehydrated rollback works without a private map surviving from an earlier object.
 - New/resume/rollback behavior remains as approved; no product decision is reopened.
-- No obsolete persistence adapter or unreachable transitional path remains in the migrated slice. The retained compatibility routes are `Core.sessions`/direct `AgentSessionService` callers and `WorkspaceStateService`'s default service construction, as described in §C3.
+- No alternative owner or compatibility route implements behavior owned by Task, Session, or the application controller.
 - A stale event from a previous resume incarnation cannot mutate the current record, and a concurrent deletion cannot be revived by a relayed publication.
 - A successful write whose release fails is reported to the caller, and no mutation leaves the flat and nested projections disagreeing.
 - Readiness correlation must be established deterministically, not only live. `HARNESS_READINESS_MATRIX` lives in `harness.ts`, and the former weak resume receipt check has been replaced by expected-receipt parsing/waiting there; keep provider-specific signal requirements accurate and implement the corresponding awaited-signal behavior. This requires implementation, not tests alone: a test cannot prove that a signal which is never emitted is awaited, and raw-JSON receipts captured by some providers cannot be validated by a trim-and-compare string predicate. Add production-adapter tests per provider proving the claimed signal is the one actually awaited, and keep live-provider acceptance as a separate, still-unverified gate.
@@ -220,6 +214,6 @@ Before runnable handoff, the main agent runs `bun run build` and the repository-
 
 ## Resume the remaining migration
 
-After C4 passes, reissue unfinished CLI/UI/Core tickets from the earlier plan with concrete class imports and the implemented model-owned mutation seam. Preserve disjoint file ownership. Do not restart completed features just to match proposed filenames, and do not dispatch a separate persistence worker to reconstruct domain rules again.
+All supported CLI/UI/Core/MCP callers must satisfy the same target ownership boundary before acceptance. Preserve disjoint file ownership. Do not restart completed features just to match proposed filenames, and do not dispatch a separate persistence worker to reconstruct domain rules again.
 
 Worker handoff: exact allowed paths, integrated base revision, this ticket, current target design, relevant tests, and expected result. Return changed paths, validation evidence, and blockers only. Commits require the user's actual authorization; this document grants none.

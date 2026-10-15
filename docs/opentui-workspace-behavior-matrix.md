@@ -2,6 +2,8 @@
 
 **Status:** The current native behavior table supersedes conflicting Phase 0 targets below. Legacy source anchors describe the pre-cutover implementation.
 
+Session-service ownership entries in this historical matrix are superseded by the current [session-service target design](./session-service-redesign.md).
+
 **Cross-links:** [approved specification](./opentui-workspace-spec.md) · [approved phased implementation plan](./opentui-workspace-implementation-plan.md)
 
 ## Current native behavior

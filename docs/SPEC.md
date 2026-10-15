@@ -19,19 +19,27 @@ backend, except for the explicitly approved creation-rollback change.
 This document states rules and points at the code that implements them. It is not a code
 description; read the referenced `file:line` for mechanics.
 
+### Current-contract-only policy
+
+The current specification and target design define the supported application. We do not maintain legacy code or backward-compatibility paths. Existing callers, tests, historical behavior, and bounded work assignments do not authorize exceptions.
+
+Where the specification or design is incomplete or unclear, resolve the gap in the owning document rather than preserving an older implementation as an alternative. If you believe backward compatibility is needed, you MUST explicitly ask the user whether backward compatibility is wanted before acting. Do not infer permission from existing code or from an earlier plan.
+
+Preserving user data is a separate obligation. This policy does not authorize deleting, resetting, rewriting, or making existing persisted data unusable. If a proposed contract change affects stored data, identify the affected artifacts and obtain the user's decision about preservation and manual conversion before changing them. Do not introduce compatibility or migration code without an explicit user decision changing this policy.
+
 ## 1. Scope
 
 The native terminal workspace (`agentic-workspace workspace`, interactive board), the shared
-durable agent-session backend, and the CLI/MCP surfaces that act on the same state. Task
-persistence, configuration, and process lifecycle remain owned by the existing domain services
-(`Core`, `AgentSessionService`, `SessionProcess`, `SessionStore`); the renderer emits intent only.
+durable agent-session backend, and the CLI/MCP surfaces that act on the same state. Ownership is
+defined by the [target design's ownership table](./session-service-redesign.md#ownership); the
+renderer emits intent only.
 
 ## 2. Modes and configuration
 
 - **Sessions live per mode.** A task's durable session state is a map from mode id to a session
   history (`TaskSessions.modes`, `src/agent-workspace/types.ts:276-283`; read/write at
   `src/agent-workspace/session-store.ts:444-483`). The flat `sessions` / `activeSessionId` fields
-  are a legacy compatibility mirror, not a second home (`session-store.ts:469-471`).
+  are a serialization mirror, not a second home (`session-store.ts:469-471`).
 - **`Tab` cycles modes.** Cycling changes the selected mode for the selected task only; it never
   launches, resumes, or stops anything (`src/ui/opentui/workspace-controller.ts:2052`; binding
   `src/ui/opentui/keybindings.ts:193`).

@@ -114,7 +114,7 @@ All workers in a wave start from the same integrated base in isolated worktrees.
 
 The integrator owns shared types, `sessions.ts`, `workspace-state.ts`, Core integration, and final cutover. UI controller and renderer are deliberately separate waves because both otherwise need `workspace.ts`. Providers and Session are likewise separated by the frozen execution contract.
 
-Retain the old application path until a complete vertical slice is wired. Temporary adapters must be explicit, single-hop, and have a deletion ticket in Wave 5. They are not the final architecture.
+Superseded: temporary adapters and retaining the old application path are not authorized. Follow the current-contract-only policy and [target ownership design](session-service-redesign.md).
 
 The runtime plan requires a verified checkpoint commit before the next implementation slice. Workers do not commit independently. Obtain explicit commit authorization at execution kickoff; without it, stop at the first verified checkpoint rather than bypassing that rule. Parallel tickets in one wave form one integrated slice. No push is implied.
 
@@ -223,12 +223,12 @@ Validate each owned test file in its own Bun process with `--timeout=10000`, plu
 2. Move coordination out of the old service, not lifecycle into a newly named monolith. Controller owns admission/claims, reload, current configuration, running-limit decisions, hand-off, batch preflight, persistence, and command error reporting. Session owns individual execution lifecycle.
 3. Migrate queued request admission and finalization, verified live attachment, reconciliation, park/finish, active selection, previous session, output, ask, input, deletion, forget, and task-wide cleanup per the G0 method inventory. Preserve stopped-only ask, timeouts/partial output, and non-launching reads.
 4. Implement full creation rollback on every critical failure, including final persistence failure with a live execution. Stop/release that execution before removing its tracking; preserve evidence and report both errors if rollback fails. Preserve successor-first hand-off and captured predecessor identity, restore selection only while the failed successor is still selected, and retain a successfully created successor if only predecessor retirement fails.
-5. Supply a temporary compatibility export only where old callers still need it. No duplicated stateful implementation. Existing tests may cross that adapter until C1/U1/K1 migrate them.
+5. Superseded: temporary compatibility exports are not authorized. Follow the current-contract-only policy and [target ownership design](session-service-redesign.md).
 6. Add deterministic races: same-session two-controller admission, different sessions preserved, delete during startup, same-ID replacement, navigation during launch, and store failure after dispatch. Assert final-persistence failure attempts execution teardown and Task rollback; failed teardown retains tracking; failed rollback persistence reports original plus rollback errors; successful rollback removes the provisional entry; a newer selection survives.
 
 Validate each owned test file in its own Bun process with `--timeout=10000`, plus Wave 1 new tests after integration. Run `bun run check:types` and scoped Biome checks.
 
-Success: CLI/TUI can consume the same complete operations; models know no storage/locks; one controller-owned coordination path; no same-operation fresh fallback; no store lock across runtime awaits; verified source vertical slice remains runnable through temporary old entry points. All G0 methods accounted for.
+Superseded: success does not permit a source vertical slice to remain runnable through temporary old entry points; see the complete supported ownership boundary in the target design.
 
 ### C1 — CLI migration
 

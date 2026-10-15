@@ -284,7 +284,7 @@ Every appendix row inherits its family guidance. S rows require targeted confirm
 
 - Name tests for lifecycle, mode switching, artifact approval, prompt/edit/save/cancel, permission boundaries and legacy-read behavior, not retired flags/protocols.
 - Use table cases for the catalog/default mode, custom modes, stale active IDs, stopped/starting/running states, and malformed config. Keep mode-local histories independent.
-- Preserve missing-pane queued STARTING, nonmutating errors, no observation teardown, and explicit stop ownership. Legacy migration tests remain necessary until the supported persisted legacy input contract changes.
+- Preserve missing-pane queued STARTING, nonmutating errors, no observation teardown, and explicit stop ownership. Do not add backward-compatibility tests for unsupported persisted formats; ask the user if you believe that contract should change.
 
 ### Agent workspace/session — 37 direct + 6 provider adapter + 6 live tests
 

@@ -35,7 +35,7 @@ No feature removal is implied by removing a helper or protocol. Retain only the 
 ## Minimum boundaries and safeguards
 
 - Reuse `createSessionTransport()` in `src/agent-workspace/session-process.ts` for socket/executor routing; `preparePane()` already supplies tmux-owned append capture.
-- Keep `AgentSessionService` as the orchestration boundary for new, verified attach, exact stopped resume, exact stop and deletion-specific forget. Introduce no replacement service hierarchy.
+- Superseded: `AgentSessionService` as the orchestration boundary. Follow the current ownership rules in [the target design](session-service-redesign.md).
 - Reuse `SessionStore` locked reload/mutate and task/reference/admission locks. The complete read-modify-write must occur under the same state lock.
 - Keep instance/task admission locks and current-record checks around publication races. They protect one Backlog instance's state; do not claim or implement global/exact provider-native-ID execution exclusion across instances. A verified live owned pane attaches; a dead/missing owned pane is not-live and can be resumed by explicit intent.
 - Preserve durable logging independently of every UI reader. Attaching another client must not replace the log capture pipe, truncate output or steal another reader's VT lease.
@@ -101,7 +101,7 @@ Proof: owned/foreign RUNNING, STARTING, PARKED and stopped records, mixed modes,
 
 Scope: `src/commands/agent-workspace.ts`, existing runtime/discovery consumers and version-2 history writers/readers.
 
-Only after all consumers are removed, stop writing the optional runtime field. Retain compatible reads of existing v2 JSON while required; do not rewrite records, add a descriptor, or retain a permanent dual reader. Resolve live-delete and running-limit policy with the user before removing their last dependency. Keep persistent CLI execution and explicit stop/completion contracts.
+Superseded: compatible reads of earlier v2 JSON are not authorized by this plan. Follow SPEC's Current-contract-only policy; identify affected stored data and ask the user about preservation and manual conversion before changing its contract.
 
 Proof: no field-dependent behavior differences in attach/send-key, stop, cleanup, classification or discovery; retained ask timeout/partial output and provider-mismatch refusal; stop failures and completion behavior. Do not silently change running-limit kills.
 

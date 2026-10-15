@@ -22,6 +22,10 @@ The goal is meaningful ownership: each model manages its own properties and beha
 
 Models do not acquire application locks or know about lock files, UI infrastructure, or persistence infrastructure. Controllers do not directly maintain model-owned relationships in place of model methods.
 
+These ownership rules apply to every supported entry point, not only a migrated vertical slice. Task is the sole owner of task/session relationships; Session is the sole owner of individual lifecycle; Harness owns provider execution; application controllers coordinate operations and durability. CLI, TUI, Core, and MCP use these same owners.
+
+Build order follows these ownership dependencies: establish the owning behavior, connect every supported caller of that behavior, then verify the complete ownership boundary. Bounded assignments divide work; they do not authorize an alternative legacy owner or compatibility route. A checkpoint may be reported as incomplete, but cannot be accepted as satisfying an ownership rule while another supported path implements that rule independently.
+
 ## Concrete models and necessary interfaces
 
 `Task`, `Session`, and the application controller are concrete classes. Callers use those classes directly, including type-only imports where appropriate. Do not mirror their public methods in `TaskContract`, `SessionContract`, controller-constructor interfaces, or equivalent behavioral type aliases.
