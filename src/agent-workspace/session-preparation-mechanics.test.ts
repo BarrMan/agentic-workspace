@@ -6,9 +6,18 @@ import { Core } from "../core/agentic-workspace.ts";
 import { initializeTestProject } from "../test/test-utils.ts";
 import type { ProcessRunner, TmuxServer } from "./session-process.ts";
 import { SessionProcess } from "./session-process.ts";
-import { pathContextForSession, prepareSessionLaunch, tagNativeSessionPane } from "./session-service-mechanics.ts";
+import {
+	assertSameSession,
+	executionPresetWithEnvironment,
+	pathContextForSession,
+	prepareSessionLaunch,
+	profileFor,
+	resolveModeId,
+	resumeExistingTarget,
+	tagNativeSessionPane,
+} from "./session-service-mechanics.ts";
 import { SessionStore } from "./session-store.ts";
-import { AGENT_SESSION_STATUS, type AgentPreset, type AgentSession } from "./types.ts";
+import { AGENT_SESSION_STATUS, type AgentSession } from "./types.ts";
 import { WORKSPACE_CONTEXT_ENV } from "./workspace-context.ts";
 
 describe("session preparation mechanics", () => {
@@ -68,7 +77,9 @@ describe("session preparation mechanics", () => {
 			},
 		);
 		const store = new SessionStore(root, runner);
-		const preset: AgentPreset = { command: "pi", env: {}, prepare: "setup", bootstrap: "pi" };
+		const preset = await executionPresetWithEnvironment(core, task.id, "opencode", pathContext);
+		const modeId = await resolveModeId(core, store, task.id, "build");
+		const resolvedProfile = await profileFor(core, modeId, preset.preset);
 		const result = await prepareSessionLaunch(
 			core,
 			store,
@@ -76,14 +87,15 @@ describe("session preparation mechanics", () => {
 			server,
 			task,
 			record,
-			"build",
-			preset,
+			modeId,
+			resolvedProfile.preset,
 			{ yoloMode: false, worktreePerTask: false },
 			{
 				intent: { kind: "new" },
+				profile: resolvedProfile.profile,
 				prepare: "setup",
 				bootstrapBeforeCreate: true,
-				environment: { PREPARATION_MARKER: "resolved" },
+				environment: { ...preset.environment, PREPARATION_MARKER: "resolved" },
 			},
 		);
 
@@ -93,13 +105,85 @@ describe("session preparation mechanics", () => {
 		expect(await pathContextForSession(core, task, record)).toEqual(pathContext);
 		expect(result.paneId).toBe("%1");
 		expect(result.agent).toBeDefined();
-		expect(result.prepared.command).toContain("pi");
+		expect(result.prepared.command).toContain("opencode");
 		expect(result.prepared.env.PREPARATION_MARKER).toBe("resolved");
 		expect(result.prepared.env[WORKSPACE_CONTEXT_ENV]).toBeDefined();
 		expect(result.prepared.resources).toBeDefined();
 		expect(typeof result.prepared.cleanup).toBe("function");
 		expect(Object.keys(result.prepared)).toEqual(expect.arrayContaining(["command", "env", "resources", "cleanup"]));
 		await result.prepared.cleanup();
+	});
+
+	it("keeps exact-resume identity validation and delegates settlement after cleanup", async () => {
+		const root = await mkdtemp(join(tmpdir(), "session-resume-mechanics-"));
+		roots.push(root);
+		const core = new Core(root);
+		await initializeTestProject(core, "Resume mechanics");
+		await core.createTaskFromInput({ title: "Resume task", status: "To Do" });
+		const taskId = "TASK-1";
+		const task = await core.loadTaskById(taskId, { includeCrossBranch: false, includeArchived: true });
+		if (!task) throw new Error("Test task could not be loaded");
+		const store = new SessionStore(root, { run: async () => ({ exitCode: 0, stdout: "", stderr: "" }) });
+		const record: AgentSession = {
+			id: "exact-resume-session",
+			taskId,
+			preset: "test-pi",
+			tmuxName: "agentic-exact-resume-test",
+			cwd: root,
+			pathContext: {
+				projectDir: root,
+				worktreeDir: root,
+				taskDir: await core.filesystem.taskArtifacts.containerPath(taskId),
+			},
+			createdAt: new Date().toISOString(),
+			status: AGENT_SESSION_STATUS.STOPPED,
+			nativeSessionId: "native-exact-resume",
+			outputPath: join(root, "resume.log"),
+			bootstrapPath: join(root, "resume.md"),
+		};
+		await store.mutateMode(taskId, "build", async (history) => {
+			history.sessions.push(record);
+			history.activeSessionId = record.id;
+		});
+		expect(() => assertSameSession(record, { ...record, nativeSessionId: undefined })).toThrow(
+			"native identity changed",
+		);
+
+		const events: string[] = [];
+		const process = new PreparationProcess(
+			{ run: async () => ({ exitCode: 0, stdout: "", stderr: "" }) },
+			root,
+			new PreparationServer(root, taskId, record.id),
+			async () => root,
+			events,
+			() => undefined,
+		);
+		process.kill = async () => {
+			events.push("cleanup");
+		};
+		let settled = false;
+		const result = await resumeExistingTarget(
+			core,
+			store,
+			process,
+			task,
+			{
+				record,
+				preset: { command: "pi", env: {}, prepare: "", bootstrap: "pi" },
+				receipt: undefined,
+				environment: {},
+				settings: { yoloMode: false, worktreePerTask: false },
+			},
+			async (_taskId, observed, preserveQueuedRequest) => {
+				expect(observed.id).toBe(record.id);
+				expect(preserveQueuedRequest).toBe(false);
+				expect(events).toEqual(["cleanup"]);
+				settled = true;
+			},
+		);
+		expect(settled).toBe(true);
+		expect(result.record.id).toBe(record.id);
+		expect(result.preflight.options.intent).toEqual({ kind: "resume", nativeSessionId: "native-exact-resume" });
 	});
 });
 
