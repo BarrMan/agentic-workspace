@@ -7,6 +7,15 @@ document disagrees with this one, this one wins. Superseded (kept for history on
 [`modes-phase1-contract.md`](./modes-phase1-contract.md),
 [`modes-delivery-plan.md`](./modes-delivery-plan.md).
 
+The session-service redesign is the operative *design and execution* authority for the shared
+agent-session backend: [`session-service-redesign.md`](./session-service-redesign.md)
+(target design) and
+[`session-service-redesign-correction-plan.md`](./session-service-redesign-correction-plan.md)
+(execution). The
+[`session-service-redesign-implementation-plan.md`](./session-service-redesign-implementation-plan.md)
+is superseded wherever they conflict. This document remains the *behaviour* contract for that
+backend, except for the explicitly approved creation-rollback change.
+
 This document states rules and points at the code that implements them. It is not a code
 description; read the referenced `file:line` for mechanics.
 

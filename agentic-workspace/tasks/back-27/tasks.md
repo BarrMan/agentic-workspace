@@ -1,8 +1,8 @@
 # BACK-27 — Execution checklist (draft)
 
-Unchecked items are remaining proof/reconciliation gates, not a claim that no implementation exists. Use the [handoff](../../../../../docs/agentic-workspace/shared-agent-runtime-handoff.md) for the current source checkpoint and the [remediation plan](../../../../../docs/agentic-workspace/test-suite-remediation-plan.md) before changing a failing area. Use isolated disposable tasks; never use BACK-27 as a deletion fixture.
+Unchecked items are remaining proof/reconciliation gates, not a claim that no implementation exists. Use the [handoff](../../../docs/shared-agent-runtime-handoff.md) for the current source checkpoint and the [remediation plan](../../../docs/test-suite-remediation-plan.md) before changing a failing area. Use isolated disposable tasks; never use BACK-27 as a deletion fixture.
 
-Execution is PAUSED for user handoff; preserve this checklist without advancing implementation, dispatch, commits or builds. The runtime plan's [cross-mode admission recommendation](../../../../../docs/agentic-workspace/shared-agent-server-plan.md#1-simplify-classification-admission-and-local-selection) remains unimplemented, with controller proof failing.
+Execution is PAUSED for user handoff; preserve this checklist without advancing implementation, dispatch, commits or builds. The runtime plan's [cross-mode admission recommendation](../../../docs/shared-agent-server-plan.md#1-simplify-classification-admission-and-local-selection) remains unimplemented, with controller proof failing.
 
 ## Phase 1 — Baseline and tests
 

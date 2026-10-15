@@ -1,8 +1,12 @@
 # Agent Instructions — AgenticWorkspace
 
-## Shared-runtime and test-remediation work
+## Documentation
 
-**MUST READ before shared-runtime work:** [canonical handoff](../../docs/agentic-workspace/shared-agent-runtime-handoff.md), then its scoped contract/plan pointers. **MUST READ before test-remediation work:** [remediation plan](../../docs/agentic-workspace/test-suite-remediation-plan.md). These carry the current checkpoint, bounded-agent/commit sequencing, evidence limits, and remaining policy questions.
+All documentation for this project lives in this repository under `docs/`. Create new project documents there, not outside the repository.
+
+## Shared-runtime, test-remediation, and session-service redesign work
+
+**MUST READ before shared-runtime work:** [canonical handoff](docs/shared-agent-runtime-handoff.md), then its scoped contract/plan pointers. **MUST READ before test-remediation work:** [remediation plan](docs/test-suite-remediation-plan.md). **MUST READ before session-service redesign work:** the [target design](docs/session-service-redesign.md) and its operative [correction plan](docs/session-service-redesign-correction-plan.md); the earlier [implementation plan](docs/session-service-redesign-implementation-plan.md) is superseded wherever they conflict. Authority order for that work: `docs/SPEC.md` (behaviour) → target design (ownership) → correction plan (execution). These carry the current checkpoint, bounded-agent/commit sequencing, evidence limits, and remaining policy questions.
 
 ## Dog-fooding: the installed `agentic-workspace` command is authoritative
 

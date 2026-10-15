@@ -1,6 +1,6 @@
 # BACK-27 — Implementation plan (draft)
 
-Spec: `spec.md`. This planning artifact remains draft; shared-runtime implementation authorization does not approve it. The [runtime plan](../../../../../docs/agentic-workspace/shared-agent-server-plan.md) owns working-slice order; the [handoff](../../../../../docs/agentic-workspace/shared-agent-runtime-handoff.md) owns current proof and lane state.
+Spec: `spec.md`. This planning artifact remains draft; shared-runtime implementation authorization does not approve it. The [runtime plan](../../../docs/shared-agent-server-plan.md) owns working-slice order; the [handoff](../../../docs/shared-agent-runtime-handoff.md) owns current proof and lane state.
 
 ## Approach
 
@@ -24,7 +24,7 @@ The current task profile and artifact API reserve approval for the user; this se
 
 ## Checks for build mode
 
-Audit fixture safety before bounded named suites using `bun scripts/run-ci-tests.ts <affected-test-file> --timeout=10000` (likely `src/test/agent-sessions.test.ts`, `src/test/task-delete.test.ts`, the controller suites, and only host/hook suites actually touched). For a failing area, first apply its relevant [report remediation](../../../../../docs/agentic-workspace/test-suite-remediation-plan.md), then fix residual failures. Runner-owned temporary CLI bundles are ordinary test mechanics, not an installed MAIN rebuild. Parent performs assembled typecheck/scoped lint/diff checks, MAIN `bun run build`, and `AGENTS.md` freshness/installed-binary verification before a runnable handoff. Artifact approval and task Done require their own evidence/user authority.
+Audit fixture safety before bounded named suites using `bun scripts/run-ci-tests.ts <affected-test-file> --timeout=10000` (likely `src/test/agent-sessions.test.ts`, `src/test/task-delete.test.ts`, the controller suites, and only host/hook suites actually touched). For a failing area, first apply its relevant [report remediation](../../../docs/test-suite-remediation-plan.md), then fix residual failures. Runner-owned temporary CLI bundles are ordinary test mechanics, not an installed MAIN rebuild. Parent performs assembled typecheck/scoped lint/diff checks, MAIN `bun run build`, and `AGENTS.md` freshness/installed-binary verification before a runnable handoff. Artifact approval and task Done require their own evidence/user authority.
 
 ## Risks and explicit non-goals
 
