@@ -11,7 +11,7 @@ import type { Agent, LaunchOrigin, NativeIdentity, SessionIntent } from "./agent
 import { agentFor } from "./agents/agents.ts";
 import { resolveLaunchPreset } from "./agents/opencode-resolution.ts";
 import { validateExplicitModel } from "./agents/profile.ts";
-import { buildAgentResumeCommand, renderSessionBootstrap } from "./bootstrap.ts";
+import { buildAgentResumeCommand } from "./bootstrap.ts";
 import {
 	getEditableAgentConfiguration,
 	loadAgentConfiguration,
@@ -28,7 +28,6 @@ import {
 	type PreparedAgentLaunch,
 	preflightAgentLaunch,
 	prepareAgentAsk,
-	prepareAgentLaunchResources,
 } from "./session-launch.ts";
 import {
 	BunRunner,
@@ -42,10 +41,13 @@ import {
 import {
 	assertSameSessionMembership,
 	clearNativeSessionPaneTag,
-	NATIVE_SESSION_PANE_OPTION,
+	pathContextForSession,
+	prepareSessionLaunch,
 	sameRoot,
 	stopClaimedSession,
+	tagNativeSessionPane,
 	timestamp,
+	warnEnvironment,
 	withTaskSessionAdmission,
 	withVerifiedNativeOrigin,
 } from "./session-service-mechanics.ts";
@@ -366,15 +368,6 @@ export class AgentSessionService {
 		};
 	}
 
-	private async pathContextForSession(task: { id: string }, session: AgentSession): Promise<AgentSessionPathContext> {
-		const saved = session.pathContext;
-		return {
-			projectDir: saved?.projectDir ?? this.core.filesystem.rootDir,
-			worktreeDir: saved?.worktreeDir ?? session.cwd,
-			taskDir: saved?.taskDir ?? (await this.core.filesystem.taskArtifacts.containerPath(task.id)),
-		};
-	}
-
 	/**
 	 * The single native-identity publisher. Runs inside the caller's existing admission boundary (it
 	 * never claims, so it cannot recurse). It verifies the exact record membership, owning mode, and
@@ -421,7 +414,12 @@ export class AgentSessionService {
 				`Session ${origin.record.id} already has native identity '${conflict}'; refusing to publish '${identity.id}'.`,
 			);
 		if (published && paneState === "owned")
-			await this.tagNativeSessionPane({ ...origin.record, nativeSessionId: identity.id }, origin.paneId);
+			await tagNativeSessionPane(
+				this.core,
+				this.server,
+				{ ...origin.record, nativeSessionId: identity.id },
+				origin.paneId,
+			);
 	}
 
 	/**
@@ -447,42 +445,6 @@ export class AgentSessionService {
 		});
 	}
 
-	private async tagNativeSessionPane(session: AgentSession, paneId: string, publish = true): Promise<void> {
-		const pathContext = await this.pathContextForSession({ id: session.taskId }, session);
-		if (!sameRoot(pathContext.projectDir, this.core.filesystem.rootDir))
-			throw new Error(`Session ${session.id} has a mismatched canonical project root.`);
-		const panes = await this.server.cmd("list-panes", [
-			"-t",
-			paneId,
-			"-F",
-			`#{@agentic_workspace_root}\t#{@agentic_workspace_task}\t#{@agentic_workspace_session}\t#{pane_id}\t#{${NATIVE_SESSION_PANE_OPTION}}\t#{@agentic_workspace_native_provider}`,
-		]);
-		const [rootDir, taskId, sessionId, observedPaneId, nativeSessionId, nativeProvider] =
-			panes.length === 1 ? (panes[0]?.split("\t") ?? []) : [];
-		if (
-			!sameRoot(rootDir ?? "", this.core.filesystem.rootDir) ||
-			taskId !== session.taskId ||
-			sessionId !== session.id ||
-			observedPaneId !== paneId
-		)
-			throw new Error(`Could not verify exact pane ownership for native session ${session.id}.`);
-		if (
-			(nativeSessionId && nativeSessionId !== session.nativeSessionId) ||
-			(nativeProvider && session.nativeProvider && nativeProvider !== session.nativeProvider)
-		)
-			throw new Error(`Native pane identity conflicts with session ${session.id}; refusing to retag it.`);
-		if (!publish || !session.nativeSessionId) return;
-		await this.server.cmd("set-option", ["-p", "-t", paneId, NATIVE_SESSION_PANE_OPTION, session.nativeSessionId]);
-		if (session.nativeProvider)
-			await this.server.cmd("set-option", [
-				"-p",
-				"-t",
-				paneId,
-				"@agentic_workspace_native_provider",
-				session.nativeProvider,
-			]);
-	}
-
 	private assertSameSession(current: AgentSession, expected: AgentSession): void {
 		assertSameSessionMembership(current, expected);
 		if (current.nativeSessionId !== expected.nativeSessionId)
@@ -501,7 +463,7 @@ export class AgentSessionService {
 	): Promise<{ preset: AgentPreset; environment: Record<string, string> }> {
 		const preset = await resolveSessionPreset(this.core, { taskId, preset: name });
 		const environment = await prepareHarnessEnvironment(preset.env, paths, {
-			onWarning: (text) => this.warnEnvironment(text),
+			onWarning: warnEnvironment,
 		});
 		return {
 			preset: await resolveLaunchPreset(preset, {
@@ -514,82 +476,6 @@ export class AgentSessionService {
 
 	private async executionPreset(taskId: string, name: string, paths: AgentSessionPathContext): Promise<AgentPreset> {
 		return (await this.executionPresetWithEnvironment(taskId, name, paths)).preset;
-	}
-
-	private async prepareSessionLaunch(
-		task: { id: string; title: string },
-		record: AgentSession,
-		modeId: ModeId,
-		preset: AgentPreset,
-		settings: SessionSettings,
-		options: {
-			profile?: ModeProfile;
-			intent: SessionIntent;
-			prepare?: string;
-			clearWorkspaceContext?: boolean;
-			bootstrapBeforeCreate?: boolean;
-			preflight?: PreflightedAgentLaunch;
-			environment?: Record<string, string>;
-		},
-	): Promise<{ paneId: string; prepared: PreparedAgentLaunch; agent: Agent }> {
-		const pathContext = await this.pathContextForSession(task, record);
-		const warnings: string[] = [];
-		let environment = options.preflight
-			? { ...options.preflight.environment }
-			: options.environment
-				? { ...options.environment }
-				: await prepareHarnessEnvironment(preset.env, pathContext, {
-						onWarning: (text) => {
-							warnings.push(text);
-							this.warnEnvironment(text);
-						},
-					});
-		const preflight =
-			options.preflight ??
-			(await preflightAgentLaunch(preset, record.bootstrapPath, {
-				cwd: pathContext.worktreeDir,
-				intent: options.intent,
-				sessionId: record.id,
-				yolo: settings.yoloMode,
-				profile: options.profile,
-				repositoryRoot: pathContext.projectDir,
-				taskRoot: pathContext.taskDir,
-				environment,
-			}));
-		const nativeProvider = preflight.agent.nativeNamespace;
-		if (record.nativeProvider && nativeProvider && record.nativeProvider !== nativeProvider)
-			throw new Error(`Session ${record.id} belongs to provider ${record.nativeProvider}, not ${nativeProvider}.`);
-		if (options.clearWorkspaceContext) delete environment[WORKSPACE_CONTEXT_ENV];
-		if (options.bootstrapBeforeCreate)
-			await this.store.write(record.bootstrapPath, renderSessionBootstrap({ taskId: task.id }));
-		await this.process.assertNoPreparedResources(record);
-		await this.process.create(record, environment);
-		const paneId = await this.process.paneId(record);
-		// A fresh intent discards any prior native identity; only a resume carries the record's exact ID
-		// onto the pane before the adapter prepares the launch.
-		const paneRecord = options.intent.kind === "resume" ? record : { ...record, nativeSessionId: undefined };
-		environment = workspaceContextInto(environment, {
-			paneId,
-			rootDir: pathContext.projectDir,
-			conversation: { taskId: task.id, modeId, sessionId: record.id },
-			...(paneRecord.nativeSessionId ? { nativeSessionId: paneRecord.nativeSessionId } : {}),
-		});
-		await this.tagNativeSessionPane(paneRecord, paneId);
-		if (options.prepare) await this.process.prepare(options.prepare, pathContext.worktreeDir, environment);
-		if (!options.bootstrapBeforeCreate)
-			await this.store.write(record.bootstrapPath, renderSessionBootstrap({ taskId: task.id }));
-		await this.process.preparePane(record);
-		const prepared = await prepareAgentLaunchResources(
-			record.bootstrapPath,
-			{ ...preflight, options: { ...preflight.options, profile: undefined } },
-			environment,
-		);
-		if (warnings.length > 0) prepared.warnings = warnings;
-		return { paneId, prepared, agent: preflight.agent };
-	}
-
-	private warnEnvironment(text: string): void {
-		process.stderr.write(`warning: ${text}\n`);
 	}
 
 	private async profileWithCurrentArtifacts(
@@ -813,10 +699,10 @@ export class AgentSessionService {
 				const preset = await this.executionPreset(
 					task.id,
 					record.preset,
-					await this.pathContextForSession(task, record),
+					await pathContextForSession(this.core, task, record),
 				);
 				if (record.nativeWorkspace) {
-					await this.tagNativeSessionPane(record, paneId, false);
+					await tagNativeSessionPane(this.core, this.server, record, paneId, false);
 					const agent = agentFor(preset.bootstrap);
 					const resources = await this.process.launchResources(paneId);
 					const modeId = findSessionMode(state.modes, record.id);
@@ -903,7 +789,7 @@ export class AgentSessionService {
 				if (queuedRequest) queuedRecord = record;
 				if (intent === "adopt" && !queuedRequest)
 					throw new Error(`Session ${record.id} is not a verified queued workspace request; refusing adoption.`);
-				const pathContext = await this.pathContextForSession(task, record);
+				const pathContext = await pathContextForSession(this.core, task, record);
 				const execution = await this.executionPresetWithEnvironment(task.id, record.preset, pathContext);
 				({ preset, profile } = await this.profileFor(modeId, execution.preset));
 				environment = execution.environment;
@@ -925,11 +811,11 @@ export class AgentSessionService {
 					throw new Error(`Could not inspect native session ${record.id}: ${runtime.reason}`);
 				if (runtime.status === "live") {
 					const paneId = runtime.paneId;
-					await this.tagNativeSessionPane(record, paneId, false);
+					await tagNativeSessionPane(this.core, this.server, record, paneId, false);
 					const resources = await this.process.launchResources(paneId);
 					if (agent && resources) await this.reconcileDeferredIdentity(agent, { record, modeId, paneId, resources });
 					const observed = this.session(await this.store.read(task.id), record.id);
-					await this.tagNativeSessionPane(observed, paneId);
+					await tagNativeSessionPane(this.core, this.server, observed, paneId);
 					launched = true;
 					if (request?.handoff) await this.finalizeHandoffLocked(task.id, observed, request.handoff);
 					if (queuedRequest) await deleteWorkspaceRequest(this.core.filesystem.rootDir, record.id);
@@ -1032,7 +918,7 @@ export class AgentSessionService {
 		const cwd = await this.sessionCwdFor(task, settings);
 		const pathContext = await this.pathContextFor(task.id, cwd);
 		const environment = await prepareHarnessEnvironment(configured.env, pathContext, {
-			onWarning: (text) => this.warnEnvironment(text),
+			onWarning: warnEnvironment,
 		});
 		const preset = await resolveLaunchPreset(configured, { cwd, env: environment });
 		const record = await this.createSessionRecord(task.id, presetName, pathContext);
@@ -1069,7 +955,7 @@ export class AgentSessionService {
 		buildAgentResumeCommand(target.preset, resumeNativeSessionId);
 		const preset = target.preset;
 		const settings = target.settings;
-		const pathContext = await this.pathContextForSession(task, record);
+		const pathContext = await pathContextForSession(this.core, task, record);
 		if (!(await isDirectory(pathContext.worktreeDir)))
 			throw new Error(`Session ${record.id} working directory is missing: ${pathContext.worktreeDir}`);
 		const profile = await this.profileWithCurrentArtifacts(target.profile, task.id, pathContext.taskDir);
@@ -1141,14 +1027,14 @@ export class AgentSessionService {
 						worktreeDir: options.preflight.options.cwd,
 						taskDir: options.preflight.taskDir,
 					}
-				: await this.pathContextForSession(task, record);
+				: await pathContextForSession(this.core, task, record);
 		if (nativePathContext && !(await isDirectory(nativePathContext.worktreeDir)))
 			throw new Error(`Session ${record.id} working directory is missing: ${nativePathContext.worktreeDir}`);
 		let dispatchAttempted = false;
 		let launchRecord = record;
 		let prepared: PreparedAgentLaunch | undefined;
 		try {
-			const pathContext = nativePathContext ?? (await this.pathContextForSession(task, record));
+			const pathContext = nativePathContext ?? (await pathContextForSession(this.core, task, record));
 			const profile =
 				options.preflight || directReservation
 					? currentProfile.profile
@@ -1156,15 +1042,26 @@ export class AgentSessionService {
 			const intent: SessionIntent = resume
 				? { kind: "resume", nativeSessionId: record.nativeSessionId ?? "" }
 				: { kind: "new" };
-			const launch = await this.prepareSessionLaunch(task, record, modeId, launchPreset, settings, {
-				profile,
-				intent,
-				prepare: resume ? undefined : launchPreset.prepare,
-				bootstrapBeforeCreate: !directReservation,
-				clearWorkspaceContext: !!directReservation,
-				preflight: options.preflight,
-				environment: options.environment,
-			});
+			const launch = await prepareSessionLaunch(
+				this.core,
+				this.store,
+				this.process,
+				this.server,
+				task,
+				record,
+				modeId,
+				launchPreset,
+				settings,
+				{
+					profile,
+					intent,
+					prepare: resume ? undefined : launchPreset.prepare,
+					bootstrapBeforeCreate: !directReservation,
+					clearWorkspaceContext: !!directReservation,
+					preflight: options.preflight,
+					environment: options.environment,
+				},
+			);
 			prepared = launch.prepared;
 			const agent = launch.agent;
 			const nativeProvider = agent.nativeNamespace;
@@ -1543,7 +1440,7 @@ export class AgentSessionService {
 		const launchPreset = await resolveLaunchPreset(preset, {
 			cwd,
 			env: await prepareHarnessEnvironment(preset.env, pathContext, {
-				onWarning: (text) => this.warnEnvironment(text),
+				onWarning: warnEnvironment,
 			}),
 		});
 		const profile = await this.profileFor(modeId, launchPreset);
@@ -1867,7 +1764,7 @@ export class AgentSessionService {
 				target = current;
 				if (target.status !== AGENT_SESSION_STATUS.STOPPED)
 					throw new Error(`Agent session ${target.id} is ${target.status}. Stop it before asking a question.`);
-				const pathContext = await this.pathContextForSession(task, target);
+				const pathContext = await pathContextForSession(this.core, task, target);
 				if (!(await isDirectory(pathContext.worktreeDir)))
 					throw new Error(`Session ${target.id} working directory is missing: ${pathContext.worktreeDir}`);
 				const currentProfile = await this.profileFor(
