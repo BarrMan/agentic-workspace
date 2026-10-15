@@ -3,7 +3,12 @@ import { watch } from "node:fs";
 import { readFile, rm } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
 import { resolveLaunchPreset } from "./agents/opencode-resolution.ts";
-import { initializedReceiptPath, prepareAgentLaunch, promptAcceptedReceiptPath } from "./session-launch.ts";
+import {
+	initializedReceiptPath,
+	preflightAgentLaunch,
+	prepareAgentLaunchResources,
+	promptAcceptedReceiptPath,
+} from "./session-launch.ts";
 import { BunRunner, missingPaneStderr, SessionProcess } from "./session-process.ts";
 import { sessionActivityDir } from "./status-hooks.ts";
 import type {
@@ -14,6 +19,7 @@ import type {
 	ModeProfile,
 	ResolvedAgentConfiguration,
 } from "./types.ts";
+import { workspaceContextInto } from "./workspace-context.ts";
 
 export type Unsubscribe = () => void;
 
@@ -248,8 +254,10 @@ async function observedNativeId(path: string): Promise<string> {
 
 export class Harness implements HarnessProvider {
 	private readonly process: SessionProcess;
+	private readonly rootDir: string;
 	private readonly readinessDeadlineMs: number;
 	constructor(rootDir: string, process?: SessionProcess, readinessDeadlineMs = PROVIDER_READINESS_DEADLINE_MS) {
+		this.rootDir = rootDir;
 		this.process = process ?? new SessionProcess(new BunRunner(), rootDir);
 		this.readinessDeadlineMs = readinessDeadlineMs;
 	}
@@ -270,7 +278,7 @@ export class Harness implements HarnessProvider {
 		const executionId = randomUUID();
 		const env = { ...context.configuration.config.presets[record.preset]?.env, ...context.preset.env };
 		const preset = await resolveLaunchPreset(context.preset, { cwd: record.cwd, env });
-		const prepared = await prepareAgentLaunch(preset, record.bootstrapPath, {
+		const options = {
 			cwd: record.cwd,
 			intent,
 			sessionId: record.id,
@@ -279,17 +287,27 @@ export class Harness implements HarnessProvider {
 			repositoryRoot: record.pathContext?.projectDir,
 			taskRoot: record.pathContext?.taskDir,
 			yolo: context.configuration.config.sessions?.yoloMode,
-		});
+		};
+		const preflight = await preflightAgentLaunch(preset, record.bootstrapPath, options);
 		const taskDir = context.record.pathContext?.taskDir ?? dirname(record.bootstrapPath);
 		const identityPath = join(taskDir, `${record.id}.native-session-id`);
 		let owned = false;
+		let prepared: Awaited<ReturnType<typeof prepareAgentLaunchResources>> | undefined;
 		try {
+			if (intent.kind === "resume") await this.process.assertNoPreparedResources(record);
+			prepared = await prepareAgentLaunchResources(record.bootstrapPath, preflight);
 			if (intent.kind === "new") await rm(identityPath, { force: true });
 			await this.process.prepare(preset.prepare, record.cwd, prepared.env);
-			if (intent.kind === "resume") await this.process.assertNoPreparedResources(record);
 			await this.process.create(record, prepared.env);
 			owned = true;
 			await this.process.preparePane(record);
+			prepared.env = workspaceContextInto(prepared.env, {
+				// Test process doubles may omit pane lookup; SessionProcess resolves the created pane.
+				paneId: (await this.process.paneId?.(record)) ?? "%0",
+				rootDir: record.pathContext?.projectDir ?? this.rootDir,
+				conversation: { taskId: context.taskId, modeId: context.modeId, sessionId: record.id },
+				...(intent.kind === "resume" ? { nativeSessionId: intent.nativeSessionId } : {}),
+			});
 			await this.process.launchPrepared(record, prepared);
 			const launchDirectory = prepared.resources.skill.path;
 			const initializedPath = initializedReceiptPath(launchDirectory);
@@ -326,7 +344,19 @@ export class Harness implements HarnessProvider {
 			return this.execution(context, record, identity, prepared, executionId);
 		} catch (cause) {
 			let startupError = cause;
-			if (!owned) {
+			let execution: RunningExecution | undefined;
+			if (owned && prepared) {
+				execution = this.execution(context, record, prepared.identity?.id ?? "", prepared, executionId);
+				try {
+					await execution.stop();
+					execution = undefined;
+				} catch (cleanupError) {
+					startupError = new AggregateError(
+						[cause, cleanupError],
+						`Could not clean failed startup for session ${record.id}`,
+					);
+				}
+			} else if (prepared) {
 				try {
 					await prepared.cleanup();
 				} catch (cleanupError) {
@@ -337,23 +367,18 @@ export class Harness implements HarnessProvider {
 				}
 			}
 			const failure = Object.assign(
-				new Error(
-					`Could not start session ${record.id}: ${startupError instanceof Error ? startupError.message : String(startupError)}`,
-					{
-						cause: startupError,
-					},
-				),
+				new Error(`Could not start session ${record.id}: ${cause instanceof Error ? cause.message : String(cause)}`, {
+					cause: startupError,
+				}),
 				{
 					identity: {
 						taskId: context.taskId,
 						modeId: context.modeId,
 						sessionId: record.id,
 						executionId,
-						nativeSessionId: prepared.identity?.id,
+						nativeSessionId: prepared?.identity?.id,
 					},
-					...(owned
-						? { execution: this.execution(context, record, prepared.identity?.id ?? "", prepared, executionId) }
-						: {}),
+					...(execution ? { execution } : {}),
 				},
 			) as RecoverableExecutionFailure;
 			throw failure;
@@ -364,7 +389,7 @@ export class Harness implements HarnessProvider {
 		context: SessionLaunchContext,
 		record: AgentSession,
 		nativeId: string,
-		prepared: Awaited<ReturnType<typeof prepareAgentLaunch>>,
+		prepared: Awaited<ReturnType<typeof prepareAgentLaunchResources>>,
 		executionId: string,
 	): RunningExecution {
 		const identity: ExecutionIdentity = {
