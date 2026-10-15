@@ -29,6 +29,7 @@ export interface SessionStartupCheckpoint {
 	readonly origin: SessionCheckpointOrigin;
 	readonly expectedMembership: ExpectedSessionMembership;
 	readonly record: Immutable<AgentSession>;
+	readonly applyTo: (current: AgentSession) => AgentSession;
 }
 
 export interface SessionUpdateCheckpoint {
@@ -38,6 +39,7 @@ export interface SessionUpdateCheckpoint {
 	readonly expectedMembership: Extract<ExpectedSessionMembership, { kind: "present" }>;
 	readonly previous: Immutable<AgentSession>;
 	readonly record: Immutable<AgentSession>;
+	readonly applyTo: (current: AgentSession) => AgentSession;
 }
 
 export type LifecycleCheckpoint = SessionStartupCheckpoint | SessionUpdateCheckpoint;
@@ -98,8 +100,8 @@ export class Session {
 		delete resumed.endedAt;
 		delete resumed.error;
 		this.currentRecord = resumed;
-		await this.emitCheckpoint(operation, "identity");
-		await this.emitCheckpoint(operation, "ready", AGENT_SESSION_STATUS.RUNNING);
+		await this.emitCheckpoint(operation, "identity", undefined, true);
+		await this.emitCheckpoint(operation, "ready", AGENT_SESSION_STATUS.RUNNING, true);
 	}
 
 	async stop(publication: SessionPublication): Promise<void> {
@@ -203,10 +205,16 @@ export class Session {
 		publication: SessionPublication,
 		phase: SessionStartupCheckpointPhase,
 		status: AgentSession["status"] = this.record.status,
+		clearTerminal = false,
 	): Promise<void> {
 		const record: AgentSession = { ...this.record, status };
 		const nativeId = this.currentExecution?.providerConversationId ?? this.currentExecution?.identity.nativeSessionId;
 		if (phase === "identity" && nativeId) record.nativeSessionId = nativeId;
+		const fields: Partial<AgentSession> = {};
+		const clear: (keyof AgentSession)[] = [];
+		if (phase === "identity" && nativeId) fields.nativeSessionId = nativeId;
+		if (phase === "ready") fields.status = status;
+		if (clearTerminal) clear.push("error", "endedAt");
 		await publication.checkpoint({
 			phase,
 			origin: { kind: "session", taskId: record.taskId, modeId: this.modeId, sessionId: this.id },
@@ -217,6 +225,7 @@ export class Session {
 				sessionId: this.id,
 			},
 			record,
+			applyTo: (current) => this.applyLifecycleFields(current, fields, clear),
 		});
 		this.currentRecord = record;
 	}
@@ -227,6 +236,36 @@ export class Session {
 		record: AgentSession,
 	): Promise<void> {
 		const previous = this.currentRecord;
+		const fields: Partial<AgentSession> = {};
+		const clear: (keyof AgentSession)[] = [];
+		switch (reason) {
+			case "activate":
+				fields.status = record.status;
+				clear.push("error", "endedAt");
+				break;
+			case "stop":
+				fields.status = record.status;
+				fields.endedAt = record.endedAt;
+				clear.push("ownerPid");
+				break;
+			case "park":
+				fields.status = record.status;
+				clear.push("ownerPid", "error", "endedAt");
+				break;
+			case "finish":
+				fields.status = record.status;
+				fields.endedAt = record.endedAt;
+				if (record.error === undefined) clear.push("error");
+				else fields.error = record.error;
+				clear.push("ownerPid");
+				break;
+			case "observation":
+				fields.status = record.status;
+				if (record.endedAt !== undefined) fields.endedAt = record.endedAt;
+				if (record.error === undefined) clear.push("error");
+				else fields.error = record.error;
+				break;
+		}
 		await publication.checkpoint({
 			phase: "update",
 			reason,
@@ -234,8 +273,19 @@ export class Session {
 			expectedMembership: { kind: "present", taskId: record.taskId, modeId: this.modeId, sessionId: this.id },
 			previous,
 			record,
+			applyTo: (current) => this.applyLifecycleFields(current, fields, clear),
 		});
 		this.currentRecord = record;
+	}
+
+	private applyLifecycleFields(
+		current: AgentSession,
+		fields: Partial<AgentSession>,
+		clear: (keyof AgentSession)[],
+	): AgentSession {
+		const result = { ...current, ...fields };
+		for (const key of clear) delete result[key];
+		return result;
 	}
 
 	private publish(event: RunningExecutionEvent, execution: RunningExecution): void {

@@ -263,6 +263,87 @@ describe("Session lifecycle", () => {
 		expect(reloaded?.error).toBeUndefined();
 	});
 
+	test("lifecycle publication applies owned changes to newer durable data", async () => {
+		const root = await mkdtemp(join(tmpdir(), "session-lifecycle-current-record-"));
+		roots.push(root);
+		const store = new SessionStore(root, { run: async () => ({ exitCode: 1, stdout: "", stderr: "unused" }) });
+		const session = new Session({ ...record, error: "old failure", endedAt: "then" }, "mode");
+		const running = execution("resume", "resumed-native");
+		const resumeCheckpoints: LifecycleCheckpoint[] = [];
+		await session.resume(
+			"resumed-native",
+			operation({ ...unusedHarness(), resume: async () => running.value }, async (checkpoint) => {
+				resumeCheckpoints.push(checkpoint);
+			}),
+		);
+		await store.mutateMode("task", "mode", async (history) => {
+			history.sessions.push({
+				...record,
+				useCount: 17,
+				lastUsedAt: "concurrent-use",
+				error: "old failure",
+				endedAt: "then",
+				ownerPid: 123,
+			});
+			history.activeSessionId = record.id;
+		});
+		for (const checkpoint of resumeCheckpoints) {
+			await store.mutateMode("task", "mode", async (history) => {
+				const index = history.sessions.findIndex(({ id }) => id === record.id);
+				if (index < 0) throw new Error("missing session");
+				const current = history.sessions[index];
+				if (!current) throw new Error("missing session");
+				history.sessions[index] = checkpoint.applyTo(current);
+			});
+		}
+		const durable = (await store.readMode("task", "mode")).sessions[0];
+		if (!durable) throw new Error("missing durable session");
+		expect(durable).toMatchObject({
+			status: AGENT_SESSION_STATUS.RUNNING,
+			nativeSessionId: "resumed-native",
+			useCount: 17,
+			lastUsedAt: "concurrent-use",
+			ownerPid: 123,
+		});
+		expect(durable.error).toBeUndefined();
+		expect(durable.endedAt).toBeUndefined();
+
+		const finishing = new Session({ ...record, error: "stale", endedAt: "old-end" }, "mode");
+		let finishCheckpoint: LifecycleCheckpoint | undefined;
+		await finishing.finish({
+			checkpoint: async (checkpoint) => {
+				finishCheckpoint = checkpoint;
+			},
+		});
+		await store.mutateMode("task", "mode", async (history) => {
+			const index = history.sessions.findIndex(({ id }) => id === record.id);
+			if (index < 0) throw new Error("missing session");
+			const current = history.sessions[index];
+			if (!current) throw new Error("missing session");
+			history.sessions[index] = { ...current, error: "stale", useCount: 18 };
+		});
+		let finished: AgentSession | undefined;
+		if (!finishCheckpoint) throw new Error("missing finish checkpoint");
+		const checkpoint = finishCheckpoint;
+		await store.mutateMode("task", "mode", async (history) => {
+			const index = history.sessions.findIndex(({ id }) => id === record.id);
+			if (index < 0) throw new Error("missing session");
+			const current = history.sessions[index];
+			if (!current) throw new Error("missing session");
+			const result = checkpoint.applyTo(current);
+			finished = result;
+			history.sessions[index] = result;
+		});
+		expect(finished).toMatchObject({
+			status: AGENT_SESSION_STATUS.STOPPED,
+			useCount: 18,
+			lastUsedAt: "concurrent-use",
+		});
+		expect(finished?.error).toBeUndefined();
+		expect(finished?.endedAt).toBeString();
+		expect(finished?.ownerPid).toBeUndefined();
+	});
+
 	test("an obsolete execution event cannot replace durable state after resume", async () => {
 		const root = await mkdtemp(join(tmpdir(), "session-stale-event-reload-"));
 		roots.push(root);
