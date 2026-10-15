@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import lockfile from "proper-lockfile";
 import type { ProcessRunner } from "./session-process.ts";
-import { SessionStore } from "./session-store.ts";
+import { SessionMutationError, SessionStore } from "./session-store.ts";
 import type { AgentSession } from "./types.ts";
 
 class FakeRunner implements ProcessRunner {
@@ -113,6 +113,39 @@ describe("SessionStore", () => {
 			modes: {},
 			legacyModeId: "build",
 		});
+	});
+
+	it("distinguishes an uncommitted mutation error from a committed write with release failure", async () => {
+		const root = await mkdtemp(join(tmpdir(), "agentic-workspace-session-store-release-"));
+		directories.push(root);
+		const store = new SessionStore(root, new FakeRunner());
+		const before = new Error("callback failed");
+		await expect(
+			store.mutate("TASK-1", async () => {
+				throw before;
+			}),
+		).rejects.toBe(before);
+		const originalLock = lockfile.lock;
+		try {
+			lockfile.lock = (async (...args: Parameters<typeof lockfile.lock>) => {
+				const release = await originalLock(...args);
+				return async () => {
+					await release();
+					throw new Error("release failed");
+				};
+			}) as typeof lockfile.lock;
+			const failure = await store
+				.mutate("TASK-1", async (state) => {
+					state.sessions.push(session("committed"));
+					state.activeSessionId = "committed";
+				})
+				.catch((error: unknown) => error);
+			expect(failure).toBeInstanceOf(SessionMutationError);
+			expect((failure as SessionMutationError).writeCommitted).toBe(true);
+		} finally {
+			lockfile.lock = originalLock;
+		}
+		expect((await store.read("TASK-1")).sessions.map(({ id }) => id)).toEqual(["committed"]);
 	});
 
 	it("round-trips optional native providers while preserving older exact-ID histories", async () => {

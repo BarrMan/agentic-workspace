@@ -7,6 +7,7 @@ export interface SessionCreationIdentity {
 	readonly taskId: TaskRecord["id"];
 	readonly modeId: ModeId;
 	readonly provisionalSessionId: AgentSession["id"];
+	readonly createdAt: AgentSession["createdAt"];
 	readonly previousActiveSessionId?: AgentSession["id"];
 }
 
@@ -85,11 +86,11 @@ export class Task {
 			taskId: this.id,
 			modeId,
 			provisionalSessionId: session.id,
+			createdAt: session.record.createdAt,
 			...(previousActiveSessionId === undefined ? {} : { previousActiveSessionId }),
 		};
 		history.sessions.unshift(structuredClone(session.record) as AgentSession);
 		history.activeSessionId = session.id;
-		this.#reservations.set(session.id, structuredClone(session.record) as AgentSession);
 		return { session, creation };
 	}
 
@@ -100,8 +101,7 @@ export class Task {
 		if (matches.length !== 1) throw new Error(`Expected one provisional session: ${creation.provisionalSessionId}`);
 		const provisional = matches[0];
 		if (!provisional) throw new Error(`Missing provisional session: ${creation.provisionalSessionId}`);
-		const reserved = this.#reservations.get(creation.provisionalSessionId);
-		if (!reserved || !sameIncarnation(reserved, provisional))
+		if (creation.createdAt !== provisional.createdAt)
 			throw new Error(`Reservation incarnation changed: ${creation.provisionalSessionId}`);
 		history.sessions = history.sessions.filter(({ id }) => id !== creation.provisionalSessionId);
 		if (history.activeSessionId === creation.provisionalSessionId) {
@@ -109,10 +109,7 @@ export class Task {
 				? creation.previousActiveSessionId
 				: history.sessions[0]?.id;
 		}
-		this.#reservations.delete(creation.provisionalSessionId);
 	}
-
-	#reservations = new Map<string, AgentSession>();
 
 	updateSessionRecord(modeId: ModeId, record: Readonly<AgentSession>): void {
 		if (record.taskId !== this.id) throw new Error(`Session belongs to another task: ${record.taskId}`);
@@ -132,6 +129,13 @@ export class Task {
 		history.activeSessionId = sessionId;
 	}
 
+	selectSurvivorAfterStop(modeId: ModeId, stoppedSessionId: string): void {
+		const history = this.#requireMode(modeId);
+		if (!history.sessions.some(({ id }) => id === stoppedSessionId))
+			throw new Error(`Unknown session: ${stoppedSessionId}`);
+		history.activeSessionId = history.sessions.find(({ id }) => id !== stoppedSessionId)?.id ?? stoppedSessionId;
+	}
+
 	registerSession(modeId: ModeId, record: Readonly<AgentSession>): void {
 		if (record.taskId !== this.id) throw new Error(`Session belongs to another task: ${record.taskId}`);
 		const history = this.#requireMode(modeId);
@@ -144,13 +148,13 @@ export class Task {
 	removeSession(modeId: ModeId, sessionId: string): void {
 		const history = this.#requireMode(modeId);
 		history.sessions = history.sessions.filter(({ id }) => id !== sessionId);
-		this.#reservations.delete(sessionId);
 		if (history.activeSessionId === sessionId || !history.sessions.some(({ id }) => id === history.activeSessionId)) {
 			history.activeSessionId = history.sessions[0]?.id;
 		}
 	}
 
 	removeMode(modeId: ModeId): void {
+		if (this.modes[modeId]?.sessions.length) throw new Error(`Cannot remove mode with sessions: ${modeId}`);
 		delete this.modes[modeId];
 		delete this.profiles[modeId];
 		if (this.#selectedModeId === modeId) this.#selectedModeId = Object.keys(this.modes)[0] ?? "";
@@ -167,6 +171,10 @@ export class Task {
 
 	serialize(): TaskRecord {
 		return structuredClone(this.task);
+	}
+
+	serializeSessions(): Record<ModeId, ModeSessionHistory> {
+		return structuredClone(this.modes);
 	}
 
 	#requireMode(modeId: ModeId): ModeSessionHistory {

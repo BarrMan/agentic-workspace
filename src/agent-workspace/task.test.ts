@@ -1,6 +1,12 @@
-import { describe, expect, it } from "bun:test";
+import { afterEach, describe, expect, it } from "bun:test";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import type { Task as TaskRecord } from "../types/index.ts";
+import type { RunningExecution, RunningExecutionEvent } from "./harness.ts";
 import { Session } from "./session.ts";
+import type { ProcessRunner } from "./session-process.ts";
+import { SessionStore } from "./session-store.ts";
 import type { TaskHydrationInput } from "./task.ts";
 import { Task } from "./task.ts";
 import type { AgentSession, ModeProfile, ResolvedAgentConfiguration } from "./types.ts";
@@ -61,6 +67,75 @@ function fixture(overrides: Partial<TaskHydrationInput> = {}) {
 }
 
 describe("Task", () => {
+	const roots: string[] = [];
+	afterEach(async () => await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true }))));
+
+	it("persists one Task reservation before real Session startup and readiness", async () => {
+		const root = await mkdtemp(join(tmpdir(), "task-session-store-"));
+		roots.push(root);
+		const runner: ProcessRunner = { run: async () => ({ exitCode: 1, stdout: "", stderr: "unused" }) };
+		const store = new SessionStore(root, runner);
+		const { task } = fixture();
+		let session: Session | undefined;
+		let creation: ReturnType<Task["reserveSession"]>["creation"] | undefined;
+		await store.mutate("T-1", async (state) => {
+			({ session, creation } = task.reserveSession("a"));
+			state.modes = task.serializeSessions();
+			state.sessions = state.modes.build?.sessions ?? [];
+			state.activeSessionId = state.modes.build?.activeSessionId;
+		});
+		if (!session || !creation) throw new Error("reservation was not created");
+		const reservedSession = session;
+		const creationIdentity = creation;
+		const calls: string[] = [];
+		const running: RunningExecution = {
+			identity: {
+				taskId: "T-1",
+				modeId: "a",
+				sessionId: reservedSession.id,
+				executionId: "launch",
+				nativeSessionId: "native",
+			},
+			providerConversationId: "native",
+			events: {
+				turnCompleted: "unsupported",
+				permissionWait: "unsupported",
+				executionExit: "unsupported",
+				activity: "unsupported",
+			},
+			input: async () => {},
+			sendKey: async () => {},
+			stop: async () => {},
+			observe: (_listener: (event: RunningExecutionEvent) => void) => () => {},
+			teardownListeners: () => {},
+		};
+		await reservedSession.start({
+			context: { taskId: "T-1", modeId: "a", sessionId: reservedSession.id, record: reservedSession.record } as never,
+			harness: {
+				launch: async () => {
+					const persisted = await store.readMode("T-1", "a");
+					expect(persisted.sessions.map(({ id }) => id)).toEqual([reservedSession.id]);
+					calls.push("launch");
+					return running;
+				},
+				resume: async () => running,
+			},
+			checkpoint: async ({ phase }) => {
+				calls.push(phase);
+				if (phase === "identity" || phase === "ready") {
+					await store.mutate("T-1", async (state) => {
+						const history = state.modes.a;
+						if (!history) throw new Error("missing reservation");
+						history.sessions[0] = reservedSession.serialize();
+					});
+				}
+			},
+		});
+		expect(calls).toEqual(["launch", "identity", "ready"]);
+		expect((await store.readMode("T-1", "a")).sessions).toHaveLength(1);
+		expect(creationIdentity.createdAt).toBe(reservedSession.record.createdAt);
+	});
+
 	it("retains each selected mode across A→B→A", () => {
 		const { task } = fixture();
 		expect(task.cycleMode()).toBe("b");
@@ -80,7 +155,12 @@ describe("Task", () => {
 		expect(task.modes.a?.sessions).toHaveLength(0);
 		expect(task.modes.b?.sessions.map(({ id }) => id)).toEqual([session.id]);
 		expect(task.modes.b?.activeSessionId).toBe(session.id);
-		expect(creation).toEqual({ taskId: "T-1", modeId: "b", provisionalSessionId: session.id });
+		expect(creation).toEqual({
+			taskId: "T-1",
+			modeId: "b",
+			provisionalSessionId: session.id,
+			createdAt: session.record.createdAt,
+		});
 		for (const history of Object.values(task.modes)) {
 			expect(
 				history.activeSessionId === undefined || history.sessions.some(({ id }) => id === history.activeSessionId),
@@ -88,13 +168,28 @@ describe("Task", () => {
 		}
 	});
 
-	it("rolls back the failed entry without replacing a newer active selection", () => {
+	it("rehydrates creation identity and preserves a newer selection during rollback", () => {
+		const { task: original } = fixture();
+		const task = original;
+		const { creation } = task.reserveSession("a");
+		const newer = task.reserveSession("a").session.record;
+		const history = task.modes.a;
+		if (!history) throw new Error("missing mode");
+		const rehydrated = fixture({ sessionRecords: { a: structuredClone(history) } }).task;
+		rehydrated.rollbackSession(creation);
+		expect(rehydrated.modes.a?.sessions.map(({ id }) => id)).toEqual([newer.id]);
+		expect(rehydrated.modes.a?.activeSessionId).toBe(newer.id);
+	});
+
+	it("rejects rollback of a same-id replacement incarnation", () => {
 		const { task } = fixture();
 		const { creation } = task.reserveSession("a");
-		task.reserveSession("a");
-		task.rollbackSession(creation);
-		expect(task.modes.a?.sessions.map(({ id }) => id)).toEqual(["s2"]);
-		expect(task.modes.a?.activeSessionId).toBe("s2");
+		const history = task.modes.a;
+		if (!history) throw new Error("missing mode");
+		const provisional = history.sessions[0];
+		if (!provisional) throw new Error("missing provisional session");
+		history.sessions[0] = { ...provisional, createdAt: "replacement" };
+		expect(() => task.rollbackSession(creation)).toThrow(/incarnation changed/);
 	});
 
 	it("updates only an existing same-incarnation record without changing relationships", () => {
@@ -142,7 +237,18 @@ describe("Task", () => {
 		expect(task.modes.a?.activeSessionId).toBe("other");
 	});
 
-	it("removes a mode history without merging its sessions", () => {
+	it("selects another survivor on stop, retaining the stopped session when it is alone", () => {
+		const { task } = fixture();
+		const one = task.reserveSession("a").session.record;
+		const two = task.reserveSession("a").session.record;
+		task.selectSurvivorAfterStop("a", two.id);
+		expect(task.modes.a?.activeSessionId).toBe(one.id);
+		task.removeSession("a", two.id);
+		task.selectSurvivorAfterStop("a", one.id);
+		expect(task.modes.a?.activeSessionId).toBe(one.id);
+	});
+
+	it("refuses deleting a mode with session history and removes an empty mode", () => {
 		const { task } = fixture();
 		task.registerSession("a", {
 			id: "only-a",
@@ -155,6 +261,8 @@ describe("Task", () => {
 			outputPath: "",
 			bootstrapPath: "",
 		});
+		expect(() => task.removeMode("a")).toThrow(/with sessions/);
+		task.removeSession("a", "only-a");
 		task.removeMode("a");
 		expect(task.modes.a).toBeUndefined();
 		expect(task.modes.b?.sessions).toEqual([]);

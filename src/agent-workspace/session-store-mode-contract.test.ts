@@ -137,6 +137,33 @@ describe("SessionStore mode persistence contract", () => {
 		}
 	});
 
+	it("keeps flat and nested build projections consistent when the flat pointer is malformed", async () => {
+		const { store, statePath } = await fixture();
+		const selected = session("selected");
+		await mkdir(join(statePath, ".."), { recursive: true });
+		await writeFile(
+			statePath,
+			JSON.stringify({
+				version: 2,
+				taskId: "TASK-23",
+				sessions: [selected],
+				activeSessionId: 42,
+				modes: { build: { sessions: [selected], activeSessionId: selected.id } },
+			}),
+		);
+		expect((await store.read("TASK-23")).activeSessionId).toBe(selected.id);
+		await store.mutate("TASK-23", async (state) => {
+			const current = state.sessions[0];
+			if (!current) throw new Error("missing flat compatibility session");
+			current.lastUsedAt = "now";
+		});
+		const persisted = JSON.parse(await readFile(statePath, "utf8"));
+		expect(persisted.modes.build).toMatchObject({
+			activeSessionId: selected.id,
+			sessions: [{ id: selected.id, lastUsedAt: "now" }],
+		});
+	});
+
 	it("rejects obsolete session records without writing during read", async () => {
 		const { store, statePath } = await fixture();
 		await mkdir(join(statePath, ".."), { recursive: true });

@@ -453,7 +453,6 @@ export class SessionStore {
 			await this.write(paths.statePath, `${JSON.stringify(this.toVersioned(validated), null, "\t")}\n`);
 			writeCommitted = true;
 			if (isEnabled("store")) debug("store", "mutate.end", { taskId, ms: Date.now() - startedAt });
-			return result;
 		} catch (error) {
 			operationError = error;
 		} finally {
@@ -959,11 +958,15 @@ export class SessionStore {
 		const build = state.modes?.build ?? { sessions: [] };
 		// `mutate` passes the compatibility projection back through validation; its flat changes
 		// remain authoritative only when explicitly present.
-		const legacy = Array.isArray(original.sessions)
-			? {
-					sessions: original.sessions as AgentSession[],
-					...(typeof original.activeSessionId === "string" ? { activeSessionId: original.activeSessionId } : {}),
-				}
+		const flatSessions = Array.isArray(original.sessions) ? (original.sessions as AgentSession[]) : undefined;
+		const activeSessionId =
+			typeof original.activeSessionId === "string" && flatSessions?.some(({ id }) => id === original.activeSessionId)
+				? original.activeSessionId
+				: build.activeSessionId && flatSessions?.some(({ id }) => id === build.activeSessionId)
+					? build.activeSessionId
+					: flatSessions?.[0]?.id;
+		const legacy = flatSessions
+			? { sessions: flatSessions, ...(activeSessionId === undefined ? {} : { activeSessionId }) }
 			: build;
 		state.modes ??= {};
 		state.modes.build = legacy;

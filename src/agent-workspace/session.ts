@@ -103,12 +103,13 @@ export class Session {
 		const previous = this.currentRecord;
 		await execution.stop();
 		this.releaseExecution(execution);
-		await this.emitUpdate(publication, "stop", {
+		const record = {
 			...previous,
 			status: AGENT_SESSION_STATUS.STOPPED,
 			endedAt: new Date().toISOString(),
-			ownerPid: undefined,
-		});
+		} as AgentSession;
+		delete record.ownerPid;
+		await this.emitUpdate(publication, "stop", record);
 	}
 
 	bindExecution(modeId: ModeId, execution: RunningExecution): void {
@@ -118,34 +119,40 @@ export class Session {
 
 	async activate(publication: SessionPublication): Promise<void> {
 		const previous = this.currentRecord;
-		await this.emitUpdate(publication, "activate", {
+		const record = {
 			...previous,
 			status: AGENT_SESSION_STATUS.RUNNING,
-			error: undefined,
-			endedAt: undefined,
-		});
+		} as AgentSession;
+		delete record.error;
+		delete record.endedAt;
+		await this.emitUpdate(publication, "activate", record);
 	}
 
 	async park(publication: SessionPublication): Promise<void> {
 		const previous = this.currentRecord;
-		await this.emitUpdate(publication, "park", {
+		const record = {
 			...previous,
 			status: AGENT_SESSION_STATUS.PARKED,
 			ownerPid: undefined,
-			error: undefined,
-			endedAt: undefined,
-		});
+		} as AgentSession;
+		delete record.ownerPid;
+		delete record.error;
+		delete record.endedAt;
+		await this.emitUpdate(publication, "park", record);
 	}
 
 	async finish(publication: SessionPublication, error?: string): Promise<void> {
 		const previous = this.currentRecord;
-		await this.emitUpdate(publication, "finish", {
+		const record = {
 			...previous,
 			status: error ? AGENT_SESSION_STATUS.FAILED : AGENT_SESSION_STATUS.STOPPED,
 			error,
 			endedAt: new Date().toISOString(),
 			ownerPid: undefined,
-		});
+		} as AgentSession;
+		delete record.ownerPid;
+		if (error === undefined) delete record.error;
+		await this.emitUpdate(publication, "finish", record);
 	}
 
 	async sendKey(key: string): Promise<void> {

@@ -153,6 +153,22 @@ describe("Session lifecycle", () => {
 		expect(publications).toBe(0);
 	});
 
+	test("stop failure retains execution tracking and does not publish a stopped record", async () => {
+		const running = execution("exec");
+		const failure = new Error("stop failed");
+		running.value.stop = async () => {
+			running.calls.stop++;
+			throw failure;
+		};
+		const session = new Session(record, "mode");
+		await session.resume("native", operation({ ...unusedHarness(), resume: async () => running.value }));
+		let publications = 0;
+		await expect(session.stop({ checkpoint: async () => void publications++ })).rejects.toBe(failure);
+		expect(session.execution).toBe(running.value);
+		expect(running.observerCount()).toBe(1);
+		expect(publications).toBe(0);
+	});
+
 	test("park settles without signalling and finish carries its error", async () => {
 		const session = new Session(record, "mode");
 		const checkpoints: LifecycleCheckpoint[] = [];
