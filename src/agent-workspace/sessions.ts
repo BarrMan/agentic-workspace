@@ -1,5 +1,4 @@
 import { randomUUID } from "node:crypto";
-import { realpathSync } from "node:fs";
 import { lstat, realpath, rm, rmdir, stat } from "node:fs/promises";
 import { basename, dirname, join, resolve, sep } from "node:path";
 import type { Core } from "../core/agentic-workspace.ts";
@@ -41,6 +40,10 @@ import {
 	type TmuxServer,
 } from "./session-process.ts";
 import {
+	assertSameSessionMembership,
+	clearNativeSessionPaneTag,
+	NATIVE_SESSION_PANE_OPTION,
+	sameRoot,
 	stopClaimedSession,
 	timestamp,
 	withTaskSessionAdmission,
@@ -83,7 +86,6 @@ import {
 
 const DEFAULT_MAX_RUNNING_AGENT_SESSIONS = 10;
 const ASK_TIMEOUT_MS = 120_000;
-const NATIVE_SESSION_PANE_OPTION = "@agentic_workspace_native_session_id";
 
 export type { ProcessRunner, SessionTransport, TmuxServer } from "./session-process.ts";
 
@@ -146,14 +148,6 @@ function cleanupSnapshotFingerprint({ session, modeId }: { session: AgentSession
 		session.nativeSessionId,
 		session.ownerPid,
 	]);
-}
-
-function sameRoot(left: string, right: string): boolean {
-	try {
-		return realpathSync(left) === realpathSync(right);
-	} catch {
-		return false;
-	}
 }
 
 async function isDirectory(path: string): Promise<boolean> {
@@ -395,7 +389,7 @@ export class AgentSessionService {
 		if (!current) return; // deleted: never resurrect
 		if (findSessionMode(state.modes, origin.record.id) !== origin.modeId) return; // moved mode: not this launch
 		try {
-			this.assertSameSessionMembership(current, origin.record);
+			assertSameSessionMembership(current, origin.record);
 		} catch {
 			return; // replaced record: never publish into a replacement launch
 		}
@@ -408,7 +402,7 @@ export class AgentSessionService {
 			async (record, _history, currentModeId) => {
 				if (currentModeId !== origin.modeId) return false;
 				try {
-					this.assertSameSessionMembership(record, origin.record);
+					assertSameSessionMembership(record, origin.record);
 				} catch {
 					return false;
 				}
@@ -489,25 +483,8 @@ export class AgentSessionService {
 			]);
 	}
 
-	private assertSameSessionMembership(current: AgentSession, expected: AgentSession): void {
-		if (
-			current.taskId !== expected.taskId ||
-			current.id !== expected.id ||
-			current.tmuxName !== expected.tmuxName ||
-			current.createdAt !== expected.createdAt ||
-			current.nativeWorkspace !== expected.nativeWorkspace ||
-			current.nativeProvider !== expected.nativeProvider ||
-			current.cwd !== expected.cwd ||
-			JSON.stringify(current.pathContext) !== JSON.stringify(expected.pathContext) ||
-			(current.nativeSessionId !== undefined &&
-				expected.nativeSessionId !== undefined &&
-				current.nativeSessionId !== expected.nativeSessionId)
-		)
-			throw new Error(`Session ${expected.id} was removed or replaced before runtime publication.`);
-	}
-
 	private assertSameSession(current: AgentSession, expected: AgentSession): void {
-		this.assertSameSessionMembership(current, expected);
+		assertSameSessionMembership(current, expected);
 		if (current.nativeSessionId !== expected.nativeSessionId)
 			throw new Error(`Session ${expected.id} native identity changed before runtime publication.`);
 	}
@@ -515,29 +492,6 @@ export class AgentSessionService {
 	private async assertSessionIdentity(expected: AgentSession): Promise<void> {
 		const state = await this.store.read(expected.taskId);
 		this.assertSameSession(this.session(state, expected.id), expected);
-	}
-
-	private async clearNativeSessionPaneTag(session: AgentSession): Promise<void> {
-		if (!session.nativeSessionId) return;
-		const lines = await this.server.cmd("list-panes", [
-			"-t",
-			`=${session.tmuxName}:`,
-			"-F",
-			`#{@agentic_workspace_root}\t#{@agentic_workspace_task}\t#{@agentic_workspace_session}\t#{pane_id}\t#{${NATIVE_SESSION_PANE_OPTION}}`,
-		]);
-		for (const line of lines) {
-			const [rootDir, taskId, sessionId, paneId, nativeSessionId] = line.split("\t");
-			if (
-				!sameRoot(rootDir ?? "", this.core.filesystem.rootDir) ||
-				taskId !== session.taskId ||
-				sessionId !== session.id ||
-				paneId === undefined ||
-				nativeSessionId !== session.nativeSessionId
-			)
-				continue;
-			await this.server.cmd("set-option", ["-p", "-u", "-t", paneId, NATIVE_SESSION_PANE_OPTION]);
-			await this.server.cmd("set-option", ["-p", "-u", "-t", paneId, "@agentic_workspace_native_provider"]);
-		}
 	}
 
 	private async executionPresetWithEnvironment(
@@ -1236,7 +1190,7 @@ export class AgentSessionService {
 			if (intent.kind === "new") await this.store.clearNativeSessionReceipt(next);
 			if (!directReservation)
 				await this.store.mutateSession(task.id, next.id, async (current) => {
-					this.assertSameSessionMembership(current, record);
+					assertSameSessionMembership(current, record);
 					Object.assign(current, next);
 					// Object.assign never removes keys; fresh identity belongs to publishNativeIdentity.
 					if (intent.kind === "new") delete current.nativeSessionId;
@@ -1326,7 +1280,6 @@ export class AgentSessionService {
 			this.core,
 			this.store,
 			this.process,
-			this.assertSameSessionMembership.bind(this),
 			taskId,
 			sessionId,
 			origin,
@@ -1352,7 +1305,6 @@ export class AgentSessionService {
 			this.core,
 			this.store,
 			this.process,
-			this.assertSameSessionMembership.bind(this),
 			taskId,
 			sessionId,
 			origin,
@@ -1363,12 +1315,12 @@ export class AgentSessionService {
 				session.ownerPid = undefined;
 			},
 		);
-		if (finished) await this.clearNativeSessionPaneTag(origin.record);
+		if (finished) await clearNativeSessionPaneTag(origin.record, this.core.filesystem.rootDir, this.server);
 	}
 
 	private async finishNativeSessionRecord(expected: AgentSession, error?: string): Promise<void> {
 		await this.store.mutateSession(expected.taskId, expected.id, async (session) => {
-			this.assertSameSessionMembership(session, expected);
+			assertSameSessionMembership(session, expected);
 			if (session.status !== expected.status || session.ownerPid !== expected.ownerPid) return false;
 			session.status = error ? AGENT_SESSION_STATUS.FAILED : AGENT_SESSION_STATUS.STOPPED;
 			session.error = error;
@@ -1390,7 +1342,7 @@ export class AgentSessionService {
 		}
 		try {
 			await this.store.mutateSession(expected.taskId, expected.id, async (session) => {
-				this.assertSameSessionMembership(session, expected);
+				assertSameSessionMembership(session, expected);
 				if (session.status !== AGENT_SESSION_STATUS.STARTING) return;
 				if (runtime === "live") {
 					session.status = AGENT_SESSION_STATUS.RUNNING;
@@ -1449,22 +1401,13 @@ export class AgentSessionService {
 	 * is non-terminal and never `stopped`/`failed`.
 	 */
 	async parkNativeSession(taskId: string, sessionId: string, origin: SessionRuntimeOrigin): Promise<void> {
-		await withVerifiedNativeOrigin(
-			this.core,
-			this.store,
-			this.process,
-			this.assertSameSessionMembership.bind(this),
-			taskId,
-			sessionId,
-			origin,
-			async (session) => {
-				if (session.status === AGENT_SESSION_STATUS.STOPPED || session.status === AGENT_SESSION_STATUS.FAILED) return;
-				session.status = AGENT_SESSION_STATUS.PARKED;
-				session.ownerPid = undefined;
-				session.error = undefined;
-				session.endedAt = undefined;
-			},
-		);
+		await withVerifiedNativeOrigin(this.core, this.store, this.process, taskId, sessionId, origin, async (session) => {
+			if (session.status === AGENT_SESSION_STATUS.STOPPED || session.status === AGENT_SESSION_STATUS.FAILED) return;
+			session.status = AGENT_SESSION_STATUS.PARKED;
+			session.ownerPid = undefined;
+			session.error = undefined;
+			session.endedAt = undefined;
+		});
 	}
 
 	async start(
@@ -1769,26 +1712,18 @@ export class AgentSessionService {
 		try {
 			const state = await this.store.read(taskId);
 			const current = this.session(state, successor.id);
-			this.assertSameSessionMembership(current, successor);
+			assertSameSessionMembership(current, successor);
 			const predecessor = this.handoffPredecessor(state, current, handoff);
 			const runtime = await this.process.nativeRuntimeClassification(current);
 			if (runtime.status !== "live") throw new Error("Handoff successor is not confirmed running.");
 			await this.store.mutateSession(taskId, current.id, async (record) => {
-				this.assertSameSessionMembership(record, current);
+				assertSameSessionMembership(record, current);
 				record.status = AGENT_SESSION_STATUS.RUNNING;
 			});
 			if (predecessor?.nativeWorkspace !== true) return;
 			const release = await this.store.claimSession(taskId, predecessor.id);
 			try {
-				await stopClaimedSession(
-					this.core,
-					this.store,
-					this.process,
-					this.assertSameSessionMembership.bind(this),
-					this.clearNativeSessionPaneTag.bind(this),
-					taskId,
-					predecessor,
-				);
+				await stopClaimedSession(this.core, this.store, this.process, this.server, taskId, predecessor);
 			} finally {
 				await release();
 			}
@@ -1806,15 +1741,7 @@ export class AgentSessionService {
 			if (!selected) throw new Error("Agent session not found: active");
 			const release = await this.store.claimSession(task.id, selected.id);
 			try {
-				await stopClaimedSession(
-					this.core,
-					this.store,
-					this.process,
-					this.assertSameSessionMembership.bind(this),
-					this.clearNativeSessionPaneTag.bind(this),
-					task.id,
-					selected,
-				);
+				await stopClaimedSession(this.core, this.store, this.process, this.server, task.id, selected);
 			} finally {
 				await release();
 			}
@@ -1869,8 +1796,7 @@ export class AgentSessionService {
 					this.core,
 					this.store,
 					this.process,
-					this.assertSameSessionMembership.bind(this),
-					this.clearNativeSessionPaneTag.bind(this),
+					this.server,
 					taskId,
 					session,
 					session.nativeWorkspace,
@@ -1937,7 +1863,7 @@ export class AgentSessionService {
 			try {
 				const current = allModeSessions(await this.store.read(task.id)).find((session) => session.id === target.id);
 				if (!current) throw new Error(`Agent session not found: ${target.id}`);
-				this.assertSameSessionMembership(current, target);
+				assertSameSessionMembership(current, target);
 				target = current;
 				if (target.status !== AGENT_SESSION_STATUS.STOPPED)
 					throw new Error(`Agent session ${target.id} is ${target.status}. Stop it before asking a question.`);
@@ -2078,7 +2004,7 @@ export class AgentSessionService {
 		preserveQueuedRequest: boolean,
 	): Promise<void> {
 		await this.store.mutateSession(taskId, observed.id, async (current) => {
-			this.assertSameSessionMembership(current, observed);
+			assertSameSessionMembership(current, observed);
 			if (
 				current.status !== observed.status ||
 				current.ownerPid !== observed.ownerPid ||

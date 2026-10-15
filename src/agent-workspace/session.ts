@@ -1,14 +1,19 @@
 import type { HarnessProvider, RunningExecution, RunningExecutionEvent, SessionLaunchContext } from "./harness.ts";
-import type { SessionCreationIdentity } from "./task.ts";
 import { AGENT_SESSION_STATUS, type AgentActivity, type AgentSession, type ModeId } from "./types.ts";
 
-export type SessionStartupCheckpointPhase = "reservation" | "identity" | "ready" | "rollback";
-export type SessionCheckpointOrigin =
-	| { readonly kind: "creation"; readonly creation: SessionCreationIdentity }
-	| { readonly kind: "session"; readonly taskId: string; readonly modeId: ModeId; readonly sessionId: string };
-export type ExpectedSessionMembership =
-	| { readonly kind: "absent"; readonly taskId: string; readonly modeId: ModeId; readonly sessionId: string }
-	| { readonly kind: "present"; readonly taskId: string; readonly modeId: ModeId; readonly sessionId: string };
+export type SessionStartupCheckpointPhase = "identity" | "ready";
+export type SessionCheckpointOrigin = {
+	readonly kind: "session";
+	readonly taskId: string;
+	readonly modeId: ModeId;
+	readonly sessionId: string;
+};
+export type ExpectedSessionMembership = {
+	readonly kind: "present";
+	readonly taskId: string;
+	readonly modeId: ModeId;
+	readonly sessionId: string;
+};
 
 export type Immutable<T> = T extends (...args: never[]) => unknown
 	? T
@@ -18,7 +23,7 @@ export type Immutable<T> = T extends (...args: never[]) => unknown
 			? { readonly [Key in keyof T]: Immutable<T[Key]> }
 			: T;
 
-/** Reservation expects absent membership; startup transitions expect present membership. */
+/** Startup transitions apply only to an already registered session. */
 export interface SessionStartupCheckpoint {
 	readonly phase: SessionStartupCheckpointPhase;
 	readonly origin: SessionCheckpointOrigin;
@@ -206,7 +211,7 @@ export class Session {
 			phase,
 			origin: { kind: "session", taskId: record.taskId, modeId: this.modeId, sessionId: this.id },
 			expectedMembership: {
-				kind: phase === "reservation" ? "absent" : "present",
+				kind: "present",
 				taskId: record.taskId,
 				modeId: this.modeId,
 				sessionId: this.id,

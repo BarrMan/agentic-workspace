@@ -1,7 +1,12 @@
-import { describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, test } from "bun:test";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import type { HarnessProvider as Harness, RunningExecution, RunningExecutionEvent } from "./harness.ts";
 import type { LifecycleCheckpoint, SessionLaunchOperation, SessionPublication } from "./session.ts";
 import { Session } from "./session.ts";
+import type { ProcessRunner } from "./session-process.ts";
+import { SessionStore } from "./session-store.ts";
 import { AGENT_SESSION_STATUS, type AgentSession } from "./types.ts";
 
 const record: AgentSession = {
@@ -70,6 +75,9 @@ function unusedHarness(): Harness {
 }
 
 describe("Session lifecycle", () => {
+	const roots: string[] = [];
+	afterEach(async () => await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true }))));
+
 	test("start waits for readiness and checkpoints in order", async () => {
 		let ready!: (value: RunningExecution) => void;
 		const launched = new Promise<RunningExecution>((resolve) => {
@@ -206,6 +214,65 @@ describe("Session lifecycle", () => {
 		});
 		expect(session.serialize().endedAt).toBeUndefined();
 		expect(session.serialize().error).toBeUndefined();
+	});
+
+	test("resume durably clears prior terminal fields in reloaded state", async () => {
+		const root = await mkdtemp(join(tmpdir(), "session-resume-reload-"));
+		roots.push(root);
+		const runner: ProcessRunner = { run: async () => ({ exitCode: 1, stdout: "", stderr: "unused" }) };
+		const store = new SessionStore(root, runner);
+		await store.mutateMode("task", "mode", async (history) => {
+			history.sessions.push({ ...record, endedAt: "then", error: "old failure" });
+			history.activeSessionId = record.id;
+		});
+		const resumed = new Session({ ...record, endedAt: "then", error: "old failure" }, "mode");
+		const running = execution("resume");
+		await resumed.resume(
+			"native",
+			operation({ ...unusedHarness(), resume: async () => running.value }, async (checkpoint) => {
+				await store.mutateMode("task", "mode", async (history) => {
+					const index = history.sessions.findIndex(({ id }) => id === checkpoint.record.id);
+					if (index < 0) throw new Error("missing session");
+					history.sessions[index] = structuredClone(checkpoint.record) as AgentSession;
+				});
+			}),
+		);
+		const reloaded = (await store.readMode("task", "mode")).sessions[0];
+		expect(reloaded?.endedAt).toBeUndefined();
+		expect(reloaded?.error).toBeUndefined();
+	});
+
+	test("an obsolete execution event cannot replace durable state after resume", async () => {
+		const root = await mkdtemp(join(tmpdir(), "session-stale-event-reload-"));
+		roots.push(root);
+		const runner: ProcessRunner = { run: async () => ({ exitCode: 1, stdout: "", stderr: "unused" }) };
+		const store = new SessionStore(root, runner);
+		await store.mutateMode("task", "mode", async (history) => {
+			history.sessions.push(record);
+			history.activeSessionId = record.id;
+		});
+		const session = new Session(record, "mode");
+		session.subscribe(async ({ record: eventRecord }) => {
+			await store.mutateMode("task", "mode", async (history) => {
+				const index = history.sessions.findIndex(({ id }) => id === eventRecord.id);
+				if (index >= 0) history.sessions[index] = structuredClone(eventRecord) as AgentSession;
+			});
+		});
+		const first = execution("first", "old-native");
+		const second = execution("second", "current-native");
+		const harness = { ...unusedHarness(), launch: async () => first.value, resume: async () => second.value };
+		const persist = async (checkpoint: LifecycleCheckpoint) => {
+			await store.mutateMode("task", "mode", async (history) => {
+				const index = history.sessions.findIndex(({ id }) => id === checkpoint.record.id);
+				if (index < 0) throw new Error("missing session");
+				history.sessions[index] = structuredClone(checkpoint.record) as AgentSession;
+			});
+		};
+		await session.start(operation(harness, persist));
+		await session.resume("current-native", operation(harness, persist));
+		first.emit({ kind: "execution-exit", exitCode: 1 });
+		const reloaded = (await store.readMode("task", "mode")).sessions[0];
+		expect(reloaded).toMatchObject({ nativeSessionId: "current-native", status: AGENT_SESSION_STATUS.RUNNING });
 	});
 
 	test("execution exit updates record and emits its snapshot without publishing", async () => {

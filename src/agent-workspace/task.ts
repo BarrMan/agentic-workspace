@@ -41,7 +41,7 @@ export class Task {
 		this.createSession = input.createSession;
 		this.profiles = structuredClone(input.modes);
 		this.modes = Object.fromEntries(
-			Object.keys(input.modes).map((modeId) => {
+			[...new Set([...Object.keys(input.modes), ...Object.keys(input.sessionRecords)])].map((modeId) => {
 				const sessions = structuredClone(input.sessionRecords[modeId]?.sessions ?? []);
 				const persistedActiveId = input.sessionRecords[modeId]?.activeSessionId;
 				return [
@@ -54,7 +54,7 @@ export class Task {
 			}),
 		);
 		this.#selectedModeId =
-			input.selectedModeId in this.modes ? input.selectedModeId : (Object.keys(this.modes)[0] ?? "");
+			input.selectedModeId in input.modes ? input.selectedModeId : (Object.keys(input.modes)[0] ?? "");
 	}
 
 	get selectedModeId(): ModeId {
@@ -133,6 +133,7 @@ export class Task {
 		const history = this.#requireMode(modeId);
 		if (!history.sessions.some(({ id }) => id === stoppedSessionId))
 			throw new Error(`Unknown session: ${stoppedSessionId}`);
+		if (history.activeSessionId !== stoppedSessionId) return;
 		history.activeSessionId = history.sessions.find(({ id }) => id !== stoppedSessionId)?.id ?? stoppedSessionId;
 	}
 

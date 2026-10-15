@@ -1,10 +1,65 @@
+import { realpathSync } from "node:fs";
 import type { Core } from "../core/agentic-workspace.ts";
 import { TASK_SOURCE, type Task } from "../types/index.ts";
-import type { SessionProcess } from "./session-process.ts";
+import type { SessionProcess, TmuxServer } from "./session-process.ts";
 import type { SessionStore } from "./session-store.ts";
 import { allModeSessions } from "./session-utils.ts";
 import { AGENT_SESSION_STATUS, type AgentSession } from "./types.ts";
 import { deleteWorkspaceRequest } from "./workspace-context.ts";
+
+export const NATIVE_SESSION_PANE_OPTION = "@agentic_workspace_native_session_id";
+
+export function sameRoot(left: string, right: string): boolean {
+	try {
+		return realpathSync(left) === realpathSync(right);
+	} catch {
+		return false;
+	}
+}
+
+export function assertSameSessionMembership(current: AgentSession, expected: AgentSession): void {
+	if (
+		current.taskId !== expected.taskId ||
+		current.id !== expected.id ||
+		current.tmuxName !== expected.tmuxName ||
+		current.createdAt !== expected.createdAt ||
+		current.nativeWorkspace !== expected.nativeWorkspace ||
+		current.nativeProvider !== expected.nativeProvider ||
+		current.cwd !== expected.cwd ||
+		JSON.stringify(current.pathContext) !== JSON.stringify(expected.pathContext) ||
+		(current.nativeSessionId !== undefined &&
+			expected.nativeSessionId !== undefined &&
+			current.nativeSessionId !== expected.nativeSessionId)
+	)
+		throw new Error(`Session ${expected.id} was removed or replaced before runtime publication.`);
+}
+
+export async function clearNativeSessionPaneTag(
+	session: AgentSession,
+	rootDir: string,
+	server: TmuxServer,
+): Promise<void> {
+	if (!session.nativeSessionId) return;
+	const lines = await server.cmd("list-panes", [
+		"-t",
+		`=${session.tmuxName}:`,
+		"-F",
+		`#{@agentic_workspace_root}\t#{@agentic_workspace_task}\t#{@agentic_workspace_session}\t#{pane_id}\t#{${NATIVE_SESSION_PANE_OPTION}}`,
+	]);
+	for (const line of lines) {
+		const [observedRoot, taskId, sessionId, paneId, nativeSessionId] = line.split("\t");
+		if (
+			!sameRoot(observedRoot ?? "", rootDir) ||
+			taskId !== session.taskId ||
+			sessionId !== session.id ||
+			paneId === undefined ||
+			nativeSessionId !== session.nativeSessionId
+		)
+			continue;
+		await server.cmd("set-option", ["-p", "-u", "-t", paneId, NATIVE_SESSION_PANE_OPTION]);
+		await server.cmd("set-option", ["-p", "-u", "-t", paneId, "@agentic_workspace_native_provider"]);
+	}
+}
 
 export async function withTaskSessionAdmission<T>(
 	core: Core,
@@ -36,7 +91,6 @@ export async function withVerifiedNativeOrigin(
 	core: Core,
 	store: SessionStore,
 	process: SessionProcess,
-	assertSameSessionMembership: (current: AgentSession, expected: AgentSession) => void,
 	taskId: string,
 	sessionId: string,
 	origin: NativeOrigin,
@@ -91,8 +145,7 @@ export async function stopClaimedSession(
 	core: Core,
 	store: SessionStore,
 	process: SessionProcess,
-	assertSameSessionMembership: (current: AgentSession, expected: AgentSession) => void,
-	clearNativeSessionPaneTag: (session: AgentSession) => Promise<void>,
+	server: TmuxServer,
 	taskId: string,
 	expected: AgentSession,
 	runtimePreflighted = false,
@@ -120,6 +173,6 @@ export async function stopClaimedSession(
 	});
 	if (current.nativeWorkspace) {
 		await deleteWorkspaceRequest(core.filesystem.rootDir, current.id);
-		await clearNativeSessionPaneTag(current);
+		await clearNativeSessionPaneTag(current, core.filesystem.rootDir, server);
 	}
 }

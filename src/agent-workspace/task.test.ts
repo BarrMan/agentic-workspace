@@ -237,15 +237,27 @@ describe("Task", () => {
 		expect(task.modes.a?.activeSessionId).toBe("other");
 	});
 
-	it("selects another survivor on stop, retaining the stopped session when it is alone", () => {
+	it("selects a survivor only when stopping the active session", async () => {
 		const { task } = fixture();
 		const one = task.reserveSession("a").session.record;
 		const two = task.reserveSession("a").session.record;
+		task.selectSession("a", one.id);
 		task.selectSurvivorAfterStop("a", two.id);
 		expect(task.modes.a?.activeSessionId).toBe(one.id);
-		task.removeSession("a", two.id);
-		task.selectSurvivorAfterStop("a", one.id);
+		const root = await mkdtemp(join(tmpdir(), "task-stop-selection-reload-"));
+		roots.push(root);
+		const store = new SessionStore(root, { run: async () => ({ exitCode: 1, stdout: "", stderr: "unused" }) });
+		await store.mutate("T-1", async (state) => {
+			state.modes = task.serializeSessions();
+		});
+		expect((await store.readMode("T-1", "a")).activeSessionId).toBe(one.id);
+		task.selectSession("a", two.id);
+		task.selectSurvivorAfterStop("a", two.id);
 		expect(task.modes.a?.activeSessionId).toBe(one.id);
+		const only = fixture().task;
+		const sole = only.reserveSession("a").session.record;
+		only.selectSurvivorAfterStop("a", sole.id);
+		expect(only.modes.a?.activeSessionId).toBe(sole.id);
 	});
 
 	it("refuses deleting a mode with session history and removes an empty mode", () => {
@@ -307,5 +319,31 @@ describe("Task", () => {
 		expect(valid.activeSession?.id).toBe("second");
 		const stale = fixture({ sessionRecords: { a: { sessions, activeSessionId: "missing" } } }).task;
 		expect(stale.modes.a?.activeSessionId).toBe("first");
+	});
+
+	it("round-trips uncatalogued histories, usage, and their active selection from reloaded state", async () => {
+		const root = await mkdtemp(join(tmpdir(), "task-hidden-mode-round-trip-"));
+		roots.push(root);
+		const store = new SessionStore(root, { run: async () => ({ exitCode: 1, stdout: "", stderr: "unused" }) });
+		const hidden: AgentSession = {
+			id: "hidden-session",
+			taskId: "T-1",
+			preset: "x",
+			tmuxName: "",
+			cwd: "/",
+			createdAt: "then",
+			status: "stopped",
+			outputPath: "",
+			bootstrapPath: "",
+			useCount: 4,
+			lastUsedAt: "2026-10-15T00:00:00.000Z",
+		};
+		const task = fixture({ sessionRecords: { hidden: { sessions: [hidden], activeSessionId: hidden.id } } }).task;
+		expect(task.selectedModeId).toBe("a");
+		await store.mutate("T-1", async (state) => {
+			state.modes = task.serializeSessions();
+		});
+		const reloaded = await store.read("T-1");
+		expect(reloaded.modes.hidden).toEqual({ sessions: [hidden], activeSessionId: hidden.id });
 	});
 });
