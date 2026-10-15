@@ -19,7 +19,8 @@ export class WorkspaceStateService {
 		if (options.sessions && options.stateRoot !== undefined)
 			throw new Error("Supply either a pinned session service or stateRoot, not both.");
 		this.sessions = options.sessions ?? new AgentSessionService(core, { stateRoot: options.stateRoot });
-		this.sessionApplication = options.sessionApplication ?? new SessionApplication(core);
+		this.sessionApplication =
+			options.sessionApplication ?? new SessionApplication(core, { stateRoot: options.stateRoot });
 	}
 
 	get stateRoot(): Promise<string> {

@@ -150,15 +150,19 @@ describe("Session lifecycle", () => {
 		expect(publications[0]).toMatchObject({ phase: "update", reason: "stop", expectedMembership: { kind: "present" } });
 	});
 
-	test("stop without an installed execution publishes nothing", async () => {
+	test("stop without an installed execution still publishes stopped lifecycle", async () => {
 		const session = new Session(record, "mode");
-		let publications = 0;
+		let published: LifecycleCheckpoint | undefined;
 		await session.stop({
-			checkpoint: async () => {
-				publications++;
+			checkpoint: async (checkpoint) => {
+				published = checkpoint;
 			},
 		});
-		expect(publications).toBe(0);
+		expect(published).toMatchObject({
+			phase: "update",
+			reason: "stop",
+			record: { status: AGENT_SESSION_STATUS.STOPPED },
+		});
 	});
 
 	test("stop failure retains execution tracking and does not publish a stopped record", async () => {
@@ -175,6 +179,32 @@ describe("Session lifecycle", () => {
 		expect(session.execution).toBe(running.value);
 		expect(running.observerCount()).toBe(1);
 		expect(publications).toBe(0);
+	});
+
+	test("stop retries durable publication after execution has been released", async () => {
+		const running = execution("retry-stop");
+		const session = new Session(record, "mode");
+		await session.resume("native", operation({ ...unusedHarness(), resume: async () => running.value }));
+		const failure = new Error("publication failed");
+		await expect(
+			session.stop({
+				checkpoint: async () => {
+					throw failure;
+				},
+			}),
+		).rejects.toBe(failure);
+		expect(session.execution).toBeUndefined();
+		let published: LifecycleCheckpoint | undefined;
+		await session.stop({
+			checkpoint: async (checkpoint) => {
+				published = checkpoint;
+			},
+		});
+		expect(published).toMatchObject({
+			phase: "update",
+			reason: "stop",
+			record: { status: AGENT_SESSION_STATUS.STOPPED },
+		});
 	});
 
 	test("park settles without signalling and finish carries its error", async () => {
@@ -403,6 +433,24 @@ describe("Session lifecycle", () => {
 			record: { status: AGENT_SESSION_STATUS.FAILED },
 		});
 		expect(checkpoints).toHaveLength(before);
+	});
+
+	test("explicit stop publishes lifecycle after the execution has exited", async () => {
+		const running = execution("exited-stop");
+		const session = new Session(record, "mode");
+		await session.start(operation({ ...unusedHarness(), launch: async () => running.value }));
+		running.emit({ kind: "execution-exit", exitCode: 0 });
+		let published: LifecycleCheckpoint | undefined;
+		await session.stop({
+			checkpoint: async (checkpoint) => {
+				published = checkpoint;
+			},
+		});
+		expect(published).toMatchObject({
+			phase: "update",
+			reason: "stop",
+			record: { status: AGENT_SESSION_STATUS.STOPPED },
+		});
 	});
 
 	test("unsupported events are suppressed without synthetic activity", async () => {

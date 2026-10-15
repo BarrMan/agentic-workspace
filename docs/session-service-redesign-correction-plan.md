@@ -190,6 +190,12 @@ Success: the named migrated vertical-slice production path uses model-owned muta
 
 ## C4 — independent ownership review and handoff
 
+### Review corrections
+
+The migrated application path now preserves exact-resume provider/root/working-directory checks, the failed-probe and auto-resume confirmation errors, launch preflight, and identity revalidation. Application-created native sessions carry the durable `nativeWorkspace` ownership marker. Stops validate the durable incarnation and `ownerPid`, publish under the store lock only while the in-process execution token remains current, and Harness stop handles are bound to the pane captured for that launch. Session retains stopped lifecycle publication for retry after a failed write and can settle a stopped record after execution exit; Task still performs survivor selection. `WorkspaceStateService` passes its configured state root to the application store.
+
+The instruction to modify the extracted `stopClaimedSession` to use Session lifecycle plus Task survivor selection (§C3 retained-as-is, lines 82–85) is **STILL NOT done**: that helper remains on the retained compatibility route in `session-service-mechanics.ts` and continues to apply the stopped fields and survivor selection inline. Do not claim this migrated-slice correction retires or changes that compatibility behavior.
+
 A fresh @oracle reviewer traces reservation, successful publication, rollback, activation, stop, and external observation from entry point through model to durable write. Read-only findings must identify exact source symbols and the duplicated rule or unjustified interface. Do not judge by line count or interface-keyword count.
 
 Acceptance checklist:

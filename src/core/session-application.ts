@@ -1,4 +1,6 @@
+import { stat } from "node:fs/promises";
 import { agentFor } from "../agent-workspace/agents/agents.ts";
+import { buildAgentResumeCommand } from "../agent-workspace/bootstrap.ts";
 import { loadProjectModeCatalog, resolveAgentConfiguration, resolveSessionPreset } from "../agent-workspace/config.ts";
 import {
 	Harness,
@@ -8,15 +10,18 @@ import {
 	type SessionLaunchContext,
 } from "../agent-workspace/harness.ts";
 import { type LifecycleCheckpoint, Session } from "../agent-workspace/session.ts";
+import { preflightAgentLaunch } from "../agent-workspace/session-launch.ts";
 import { BunRunner, SessionProcess } from "../agent-workspace/session-process.ts";
 import {
 	createSessionRecord,
 	pathContextFor,
 	profileFor,
 	profileWithCurrentArtifacts,
+	sameRoot,
 	sessionCwdFor,
 } from "../agent-workspace/session-service-mechanics.ts";
 import { SessionMutationError, SessionStore } from "../agent-workspace/session-store.ts";
+import { ExactResumeUnavailableError } from "../agent-workspace/sessions.ts";
 import { type SessionCreationIdentity, Task } from "../agent-workspace/task.ts";
 import { type AgentSession, type ModeId, type ModeProfile, resolveSessionSettings } from "../agent-workspace/types.ts";
 import type { Core } from "./agentic-workspace.ts";
@@ -24,6 +29,7 @@ import type { Core } from "./agentic-workspace.ts";
 type SessionApplicationOptions = {
 	store?: SessionStore;
 	harness?: HarnessProvider;
+	stateRoot?: string;
 };
 
 type CapturedLaunch = {
@@ -55,7 +61,9 @@ export class SessionApplication {
 		const runner = new BunRunner();
 		this.store =
 			options.store ??
-			new SessionStore(core.filesystem.rootDir, runner, async (record) => await resolveSessionPreset(core, record));
+			new SessionStore(core.filesystem.rootDir, runner, async (record) => await resolveSessionPreset(core, record), {
+				stateRoot: options.stateRoot,
+			});
 		this.harness =
 			options.harness ?? new Harness(core.filesystem.rootDir, new SessionProcess(runner, core.filesystem.rootDir));
 	}
@@ -92,6 +100,7 @@ export class SessionApplication {
 			if (!launchProfile) throw new Error(`Mode profile unavailable: ${selectedMode}`);
 			const record = await createSessionRecord(this.store, taskRecord.id, selectedPreset, pathContext);
 			record.nativeProvider = agentFor(preset.bootstrap)?.nativeNamespace;
+			record.nativeWorkspace = true;
 			const provisionalSession = new Session(record, selectedMode);
 			let creation!: SessionCreationIdentity;
 			let session!: Session;
@@ -161,7 +170,35 @@ export class SessionApplication {
 				const configuredPreset = resolved.config.presets[record.preset];
 				if (!configuredPreset) throw new Error(`Agent preset not found for existing session: ${record.preset}`);
 				const { profile, preset } = await profileFor(this.core, modeId, configuredPreset);
+				const agent = agentFor(preset.bootstrap);
+				if (record.nativeProvider && agent?.nativeNamespace && record.nativeProvider !== agent.nativeNamespace)
+					throw new Error(
+						`Session ${record.id} belongs to provider ${record.nativeProvider}, not ${agent.nativeNamespace}.`,
+					);
+				const settings = resolveSessionSettings(resolved.config);
+				const marker = record.resumeProbeFailed;
+				if (
+					marker &&
+					record.nativeProvider === marker.nativeProvider &&
+					record.nativeSessionId === marker.nativeSessionId
+				)
+					throw new ExactResumeUnavailableError(
+						"previous-resume-failed",
+						marker.nativeProvider,
+						marker.nativeSessionId,
+						record.error ? new Error(record.error) : undefined,
+					);
+				if (!settings.autoResumeOnRestart)
+					throw new ExactResumeUnavailableError("auto-resume-disabled", record.nativeProvider, record.nativeSessionId);
 				const pathContext = record.pathContext ?? (await pathContextFor(this.core, taskRecord.id, record.cwd));
+				if (!sameRoot(pathContext.projectDir, this.core.filesystem.rootDir))
+					throw new Error(`Session ${record.id} has a mismatched canonical project root.`);
+				if (
+					!(await stat(pathContext.worktreeDir)
+						.then((result) => result.isDirectory())
+						.catch(() => false))
+				)
+					throw new Error(`Session ${record.id} working directory is missing: ${pathContext.worktreeDir}`);
 				const launchProfile = await profileWithCurrentArtifacts(
 					this.core,
 					profile ?? modeProfile,
@@ -169,6 +206,32 @@ export class SessionApplication {
 					pathContext.taskDir,
 				);
 				if (!launchProfile) throw new Error(`Mode profile unavailable: ${modeId}`);
+				const receipt = await this.store.readNativeSessionIdCandidate(taskId, sessionId);
+				const nativeId = record.nativeSessionId ?? receipt;
+				if (!nativeId) throw new Error(`Session ${sessionId} has no exact native conversation identity to resume.`);
+				buildAgentResumeCommand(preset, nativeId);
+				await preflightAgentLaunch(preset, record.bootstrapPath, {
+					cwd: pathContext.worktreeDir,
+					intent: { kind: "resume", nativeSessionId: nativeId },
+					sessionId,
+					yolo: settings.yoloMode,
+					profile: launchProfile,
+					repositoryRoot: pathContext.projectDir,
+					taskRoot: pathContext.taskDir,
+				});
+				const revalidatedReceipt = await this.store.readNativeSessionIdCandidate(taskId, sessionId);
+				const revalidatedState = await this.store.read(taskId);
+				const revalidated = Object.values(revalidatedState.modes)
+					.flatMap(({ sessions }) => sessions)
+					.find(({ id }) => id === sessionId);
+				if (
+					!revalidated ||
+					revalidated.createdAt !== record.createdAt ||
+					revalidated.nativeSessionId !== record.nativeSessionId ||
+					revalidated.ownerPid !== record.ownerPid ||
+					revalidatedReceipt !== receipt
+				)
+					throw new Error(`Session ${sessionId} changed during exact-resume preflight.`);
 				const launch = this.launchContext(record, modeId, resolved, preset, launchProfile);
 				const session = new Session(record, modeId);
 				this.capturedTasks.set(this.key(taskId, sessionId), {
@@ -178,8 +241,6 @@ export class SessionApplication {
 				});
 				this.executions.set(this.key(taskId, sessionId), session);
 				this.executionIds.delete(this.key(taskId, sessionId));
-				const nativeId = record.nativeSessionId ?? (await this.store.readNativeSessionIdCandidate(taskId, sessionId));
-				if (!nativeId) throw new Error(`Session ${sessionId} has no exact native conversation identity to resume.`);
 				await session.resume(nativeId, {
 					harness: this.harness,
 					context: launch,
@@ -198,6 +259,17 @@ export class SessionApplication {
 			try {
 				const session = this.executions.get(this.key(taskId, sessionId));
 				if (!session) throw new Error(`Session execution is not owned by this application: ${sessionId}`);
+				const durable = await this.store.read(taskId);
+				const current = Object.values(durable.modes)
+					.flatMap(({ sessions }) => sessions)
+					.find(({ id }) => id === sessionId);
+				if (!current || current.taskId !== taskId || current.createdAt !== session.record.createdAt)
+					throw new Error(`Session ${sessionId} was removed or replaced before stop.`);
+				if (current.ownerPid !== session.record.ownerPid)
+					throw new Error(`Session ${sessionId} execution authority changed before stop.`);
+				const execution = session.execution;
+				if (execution && execution.identity.executionId !== this.executionIds.get(this.key(taskId, sessionId)))
+					throw new Error(`Session ${sessionId} execution incarnation is no longer current.`);
 				await session.stop({ checkpoint: async (checkpoint) => await this.publish(session, checkpoint) });
 				this.executions.delete(this.key(taskId, sessionId));
 				this.executionIds.delete(this.key(taskId, sessionId));
@@ -218,14 +290,27 @@ export class SessionApplication {
 		if (executionId) this.executionIds.set(key, executionId);
 		else if (!capturedExecutionId)
 			throw new Error(`Session ${checkpoint.origin.sessionId} has no owned execution publication token.`);
+		const expectedExecutionId = capturedExecutionId ?? executionId;
 		await this.store.mutate(checkpoint.origin.taskId, async (state) => {
+			const currentExecution = session.execution;
+			const currentExecutionId = currentExecution?.identity.executionId;
+			if (
+				this.executions.get(key) !== session ||
+				(this.executionIds.get(key) !== undefined && this.executionIds.get(key) !== expectedExecutionId) ||
+				(expectedExecutionId !== undefined &&
+					currentExecutionId !== undefined &&
+					expectedExecutionId !== currentExecutionId) ||
+				(executionId !== undefined && currentExecutionId !== executionId)
+			)
+				throw new Error(`Stale execution publication for session ${checkpoint.origin.sessionId}.`);
 			const history = state.modes[checkpoint.origin.modeId];
 			const current = history?.sessions.find(({ id }) => id === checkpoint.origin.sessionId);
 			if (
 				!history ||
 				!current ||
 				current.taskId !== checkpoint.origin.taskId ||
-				current.createdAt !== checkpoint.record.createdAt
+				current.createdAt !== checkpoint.record.createdAt ||
+				current.ownerPid !== (checkpoint.phase === "update" ? checkpoint.previous.ownerPid : checkpoint.record.ownerPid)
 			)
 				throw new Error(`Session ${checkpoint.origin.sessionId} was removed or replaced before publication.`);
 			if (

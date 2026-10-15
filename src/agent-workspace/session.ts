@@ -106,10 +106,11 @@ export class Session {
 
 	async stop(publication: SessionPublication): Promise<void> {
 		const execution = this.currentExecution;
-		if (!execution) return;
 		const previous = this.currentRecord;
-		await execution.stop();
-		this.releaseExecution(execution);
+		if (execution) {
+			await execution.stop();
+			this.releaseExecution(execution);
+		}
 		const record = {
 			...previous,
 			status: AGENT_SESSION_STATUS.STOPPED,

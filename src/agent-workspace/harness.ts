@@ -341,12 +341,12 @@ export class Harness implements HarnessProvider {
 			}
 			const identity = intent.kind === "resume" ? intent.nativeSessionId : await observedNativeId(initializedPath);
 			if (!identity) throw new Error(`Provider identity missing for session ${record.id}.`);
-			return this.execution(context, record, identity, prepared, executionId);
+			return await this.execution(context, record, identity, prepared, executionId);
 		} catch (cause) {
 			let startupError = cause;
 			let execution: RunningExecution | undefined;
 			if (owned && prepared) {
-				execution = this.execution(context, record, prepared.identity?.id ?? "", prepared, executionId);
+				execution = await this.execution(context, record, prepared.identity?.id ?? "", prepared, executionId);
 				try {
 					await execution.stop();
 					execution = undefined;
@@ -385,13 +385,14 @@ export class Harness implements HarnessProvider {
 		}
 	}
 
-	private execution(
+	private async execution(
 		context: SessionLaunchContext,
 		record: AgentSession,
 		nativeId: string,
 		prepared: Awaited<ReturnType<typeof prepareAgentLaunchResources>>,
 		executionId: string,
-	): RunningExecution {
+	): Promise<RunningExecution> {
+		const paneId = await this.process.paneId(record, { roles: ["live-preview"] });
 		const identity: ExecutionIdentity = {
 			taskId: context.taskId,
 			modeId: context.modeId,
@@ -414,7 +415,8 @@ export class Harness implements HarnessProvider {
 			input: (text) => this.process.input(record, text),
 			sendKey: (key) => this.process.sendKey(record, key),
 			stop: async () => {
-				await this.process.kill(record);
+				if (typeof this.process.killCaptured === "function") await this.process.killCaptured(record, paneId);
+				else await this.process.kill(record);
 				await prepared.cleanup();
 			},
 			observe: (listener) => {

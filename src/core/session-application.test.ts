@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it } from "bun:test";
+import { createHash } from "node:crypto";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -39,7 +40,7 @@ class Runtime implements RunningExecution {
 	readonly events = {
 		turnCompleted: "unsupported",
 		permissionWait: "unsupported",
-		executionExit: "unsupported",
+		executionExit: "supported",
 		activity: "unsupported",
 	} as const;
 	private listeners = new Set<(event: never) => void>();
@@ -65,6 +66,9 @@ class Runtime implements RunningExecution {
 	}
 	teardownListeners(): void {
 		this.listeners.clear();
+	}
+	exit(): void {
+		for (const listener of this.listeners) listener({ kind: "execution-exit", exitCode: 0 } as never);
 	}
 }
 
@@ -136,6 +140,7 @@ describe("SessionApplication", () => {
 		expect(provider.calls).toBe(1);
 		expect(published).toHaveLength(1);
 		expect(published[0]?.status).toBe("running");
+		expect(published[0]?.nativeWorkspace).toBe(true);
 		expect(reloaded.sessions).toEqual(reloaded.modes[reloaded.legacyModeId]?.sessions ?? []);
 		expect(reloaded.activeSessionId).toBe(reloaded.modes[reloaded.legacyModeId]?.activeSessionId);
 	});
@@ -292,6 +297,86 @@ describe("SessionApplication", () => {
 		});
 		await expect(application.stopSession(task.id, current.id)).rejects.toThrow();
 		expect(Object.values((await store.read(task.id)).modes).flatMap(({ sessions }) => sessions)).toHaveLength(0);
+	});
+
+	it("preserves exact-resume confirmation errors and rejects changed durable stop authority", async () => {
+		const { application, store, provider, task } = await fixture();
+		const current = await application.newSession(task.id);
+		await store.mutate(task.id, async (state) => {
+			const entry = Object.values(state.modes)
+				.flatMap(({ sessions }) => sessions)
+				.find(({ id }) => id === current.id);
+			if (!entry) throw new Error("Expected session");
+			entry.status = "stopped";
+			entry.nativeSessionId = "native-exact";
+			entry.resumeProbeFailed = { nativeProvider: "pi", nativeSessionId: "native-exact" };
+		});
+		await expect(application.resumeSession(task.id, current.id)).rejects.toMatchObject({
+			name: "ExactResumeUnavailableError",
+			reason: "previous-resume-failed",
+		});
+		await store.mutate(task.id, async (state) => {
+			const entry = Object.values(state.modes)
+				.flatMap(({ sessions }) => sessions)
+				.find(({ id }) => id === current.id);
+			if (!entry) throw new Error("Expected session");
+			entry.resumeProbeFailed = undefined;
+			entry.ownerPid = process.pid + 1;
+		});
+		await expect(application.stopSession(task.id, current.id)).rejects.toThrow(/authority changed/);
+		expect(provider.lastExecution?.stops).toBe(0);
+	});
+
+	it("rejects a launch publication when durable owner authority changes under the store lock", async () => {
+		const { core, store, task } = await fixture();
+		const provider = new Provider(store, undefined, async (context) => {
+			await store.mutate(context.taskId, async (state) => {
+				const current = Object.values(state.modes)
+					.flatMap(({ sessions }) => sessions)
+					.find(({ id }) => id === context.sessionId);
+				if (!current) throw new Error("Expected reserved session");
+				current.ownerPid = process.pid + 1;
+			});
+		});
+		const application = new SessionApplication(core, { store, harness: provider });
+		await expect(application.newSession(task.id)).rejects.toThrow(/removed or replaced before publication/);
+		expect(Object.values((await store.read(task.id)).modes).flatMap(({ sessions }) => sessions)).toHaveLength(0);
+	});
+
+	it("retries a stopped lifecycle publication after its durable write fails", async () => {
+		const { application, store, task } = await fixture();
+		const session = await application.newSession(task.id);
+		store.failWrites.add(store.writes + 1);
+		await expect(application.stopSession(task.id, session.id)).rejects.toThrow(/write .* failed/);
+		await application.stopSession(task.id, session.id);
+		const persisted = Object.values((await store.read(task.id)).modes)
+			.flatMap(({ sessions }) => sessions)
+			.find(({ id }) => id === session.id);
+		expect(persisted?.status).toBe("stopped");
+		expect(persisted?.ownerPid).toBeUndefined();
+	});
+
+	it("explicitly stops and durably settles after the execution exit was observed", async () => {
+		const { application, store, provider, task } = await fixture();
+		const session = await application.newSession(task.id);
+		provider.lastExecution?.exit();
+		await application.stopSession(task.id, session.id);
+		const persisted = Object.values((await store.read(task.id)).modes)
+			.flatMap(({ sessions }) => sessions)
+			.find(({ id }) => id === session.id);
+		expect(persisted?.status).toBe("stopped");
+		expect(persisted?.endedAt).toBeString();
+	});
+
+	it("uses the configured state root for application persistence", async () => {
+		const root = await mkdtemp(join(tmpdir(), "session-application-root-"));
+		roots.push(root);
+		const core = new Core(root);
+		await initializeTestProject(core, "Pinned state root");
+		const hash = createHash("sha256").update(root).digest("hex").slice(0, 16);
+		const stateRoot = join(process.env.HOME ?? "/tmp", ".agentic-workspace", hash);
+		const application = new SessionApplication(core, { stateRoot });
+		expect(await application.store.stateRoot).toBe(stateRoot);
 	});
 
 	it("accepts the provider boundary option without leaking a second controller path", async () => {

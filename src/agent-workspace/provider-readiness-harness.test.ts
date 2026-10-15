@@ -57,6 +57,11 @@ async function harnessFixture(provider: Provider, omitted?: OmittedStage) {
 		prepare: async () => {},
 		create: async () => {},
 		preparePane: async () => {},
+		paneId: async (_record: AgentSession, options: { roles?: string[] } = {}) => {
+			if (!(options.roles ?? ["live-preview"]).includes("live-preview"))
+				throw new Error(`Agent pane for session ${_record.id} no longer exists`);
+			return "%42";
+		},
 		assertNoPreparedResources: async () => {},
 		launchPrepared: async (
 			_record: AgentSession,
@@ -118,6 +123,10 @@ async function harnessFixture(provider: Provider, omitted?: OmittedStage) {
 		},
 		alive: async () => ({ exitCode: 0, stdout: "0", stderr: "" }),
 		kill: async () => {},
+		killCaptured: async (_record: AgentSession, expectedPaneId: string) => {
+			if (expectedPaneId !== "%42")
+				throw new Error("Session session-readiness pane incarnation changed; refusing to stop a replacement.");
+		},
 		input: async () => {},
 		sendKey: async () => {},
 	};

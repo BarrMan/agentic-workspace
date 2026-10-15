@@ -390,12 +390,18 @@ export class SessionProcess {
 		await this.killPane(session, [LIVE_PREVIEW_ROLE]);
 	}
 
+	async killCaptured(session: AgentSession, paneId: string): Promise<void> {
+		await this.killPane(session, [LIVE_PREVIEW_ROLE], paneId);
+	}
+
 	async killRetired(session: AgentSession): Promise<void> {
 		await this.killPane(session, [RETIRED_SESSION_ROLE]);
 	}
 
-	private async killPane(session: AgentSession, roles: string[]): Promise<void> {
+	private async killPane(session: AgentSession, roles: string[], expectedPaneId?: string): Promise<void> {
 		const paneId = await this.ownedInstancePane(session, roles);
+		if (expectedPaneId !== undefined && paneId !== expectedPaneId)
+			throw new Error(`Session ${session.id} pane incarnation changed; refusing to stop a replacement.`);
 		const pane = paneId ? await this.paneById(paneId) : undefined;
 		if (paneId && !pane) throw new Error(`Owned pane ${paneId} disappeared during stop for session ${session.id}.`);
 		const resources = (pane && (await this.launchResources(pane.id))) ?? this.launches.get(session.id)?.resources;
