@@ -40,6 +40,12 @@ import {
 	type SessionTransport,
 	type TmuxServer,
 } from "./session-process.ts";
+import {
+	stopClaimedSession,
+	timestamp,
+	withTaskSessionAdmission,
+	withVerifiedNativeOrigin,
+} from "./session-service-mechanics.ts";
 import { type SessionState, SessionStore } from "./session-store.ts";
 import {
 	allModeSessions,
@@ -126,10 +132,6 @@ export type SharedAgentAttachment = {
 };
 
 export type SessionRuntimeOrigin = Readonly<Pick<SharedAgentAttachment, "record" | "paneId">>;
-
-function timestamp(): string {
-	return new Date().toISOString();
-}
 
 function cleanupSnapshotFingerprint({ session, modeId }: { session: AgentSession; modeId: ModeId }): string {
 	return JSON.stringify([
@@ -335,26 +337,6 @@ export class AgentSessionService {
 			throw new Error(`Calling session ${identity.sessionId} is not present in current task history.`);
 		}
 		return catalog?.defaultModeId ?? "build";
-	}
-
-	private async withTaskSessionAdmission<T>(taskId: string, operation: (task: Task) => Promise<T>): Promise<T> {
-		if (process.env.USE_GLOBAL_TASK_ID_LOCK?.toLowerCase() === "false")
-			throw new Error(`Task session locking is disabled; refusing session operation for ${taskId}.`);
-		const task = await this.core.loadTaskForMutation(taskId, { includeCrossBranch: false });
-		if (!task || !task.filePath || task.source === TASK_SOURCE.REMOTE || task.source === TASK_SOURCE.LOCAL_BRANCH)
-			throw new Error(`Locally editable task not found: ${taskId}`);
-		return await this.core.filesystem.withTaskLock(task, async () => {
-			const current = await this.core.loadTaskForMutation(task.id, { includeCrossBranch: false });
-			if (
-				!current ||
-				!current.filePath ||
-				current.filePath !== task.filePath ||
-				current.source === TASK_SOURCE.REMOTE ||
-				current.source === TASK_SOURCE.LOCAL_BRANCH
-			)
-				throw new Error(`Locally editable task changed or no longer exists: ${task.id}`);
-			return await operation(current);
-		});
 	}
 
 	private async launchConfiguration(taskId: string) {
@@ -687,7 +669,7 @@ export class AgentSessionService {
 	}
 
 	async reset(taskId: string): Promise<void> {
-		await this.withTaskSessionAdmission(taskId, async (task) => {
+		await withTaskSessionAdmission(this.core, taskId, async (task) => {
 			this.assertNoLiveSessions(task.id, await this.store.read(task.id));
 			await this.store.reset(task.id);
 		});
@@ -696,7 +678,8 @@ export class AgentSessionService {
 	async purge(taskId: string): Promise<void> {
 		const task = await this.core.loadTaskById(taskId, { includeCrossBranch: false });
 		if (task)
-			return await this.withTaskSessionAdmission(
+			return await withTaskSessionAdmission(
+				this.core,
 				taskId,
 				async (current) => await this.purgeTaskSessions(current.id, current),
 			);
@@ -833,7 +816,7 @@ export class AgentSessionService {
 	 * `STARTING` record is an unlaunched request and is removed with its marker.
 	 */
 	async delete(taskId: string, sessionId: string, options: { force?: boolean } = {}): Promise<void> {
-		await this.withTaskSessionAdmission(taskId, async (task) => {
+		await withTaskSessionAdmission(this.core, taskId, async (task) => {
 			const session = this.session(await this.store.read(task.id), sessionId);
 			const pendingNative = session.nativeWorkspace === true && session.status === AGENT_SESSION_STATUS.STARTING;
 			const live = session.status === AGENT_SESSION_STATUS.RUNNING || session.status === AGENT_SESSION_STATUS.STARTING;
@@ -863,7 +846,7 @@ export class AgentSessionService {
 		sessionId: string,
 		_options: { passive?: boolean } = {},
 	): Promise<SharedAgentAttachment | undefined> {
-		return await this.withTaskSessionAdmission(taskId, async (task) => {
+		return await withTaskSessionAdmission(this.core, taskId, async (task) => {
 			const state = await this.store.read(task.id);
 			const record = this.session(state, sessionId);
 			if (record.status !== AGENT_SESSION_STATUS.RUNNING && record.status !== AGENT_SESSION_STATUS.STARTING)
@@ -902,7 +885,8 @@ export class AgentSessionService {
 
 	/** Select or reserve a conversation in one mode. Other mode histories/processes remain untouched. */
 	async prepareNativeSession(taskId: string, sessionId?: string, requestedModeId?: ModeId) {
-		const prepared = await this.withTaskSessionAdmission(
+		const prepared = await withTaskSessionAdmission(
+			this.core,
 			taskId,
 			async (task) => await this.prepareNativeSessionLocked(task, sessionId, requestedModeId),
 		);
@@ -911,7 +895,8 @@ export class AgentSessionService {
 
 	/** Create a distinct session despite an active session in the requested mode. */
 	async prepareNewSession(taskId: string, modeId: ModeId) {
-		const prepared = await this.withTaskSessionAdmission(
+		const prepared = await withTaskSessionAdmission(
+			this.core,
 			taskId,
 			async (task) => await this.prepareNativeSessionLocked(task, undefined, modeId, "prepare", true),
 		);
@@ -1162,7 +1147,8 @@ export class AgentSessionService {
 	 * The marker and durable STARTING record authorize admission; requester PID is informational.
 	 */
 	async adoptPendingSession(taskId: string, sessionId: string): Promise<SharedAgentAttachment & { modeId: ModeId }> {
-		const prepared = await this.withTaskSessionAdmission(
+		const prepared = await withTaskSessionAdmission(
+			this.core,
 			taskId,
 			async (task) => await this.prepareNativeSessionLocked(task, sessionId, undefined, "adopt"),
 		);
@@ -1336,7 +1322,11 @@ export class AgentSessionService {
 		origin: SessionRuntimeOrigin,
 		afterActivate?: (currentTask: Task) => Promise<void>,
 	): Promise<boolean> {
-		return await this.withVerifiedNativeOrigin(
+		return await withVerifiedNativeOrigin(
+			this.core,
+			this.store,
+			this.process,
+			this.assertSameSessionMembership.bind(this),
 			taskId,
 			sessionId,
 			origin,
@@ -1358,12 +1348,21 @@ export class AgentSessionService {
 		origin: SessionRuntimeOrigin,
 		error?: string,
 	): Promise<void> {
-		const finished = await this.withVerifiedNativeOrigin(taskId, sessionId, origin, async (session) => {
-			session.status = error ? AGENT_SESSION_STATUS.FAILED : AGENT_SESSION_STATUS.STOPPED;
-			session.error = error;
-			session.endedAt = timestamp();
-			session.ownerPid = undefined;
-		});
+		const finished = await withVerifiedNativeOrigin(
+			this.core,
+			this.store,
+			this.process,
+			this.assertSameSessionMembership.bind(this),
+			taskId,
+			sessionId,
+			origin,
+			async (session) => {
+				session.status = error ? AGENT_SESSION_STATUS.FAILED : AGENT_SESSION_STATUS.STOPPED;
+				session.error = error;
+				session.endedAt = timestamp();
+				session.ownerPid = undefined;
+			},
+		);
 		if (finished) await this.clearNativeSessionPaneTag(origin.record);
 	}
 
@@ -1450,60 +1449,22 @@ export class AgentSessionService {
 	 * is non-terminal and never `stopped`/`failed`.
 	 */
 	async parkNativeSession(taskId: string, sessionId: string, origin: SessionRuntimeOrigin): Promise<void> {
-		await this.withVerifiedNativeOrigin(taskId, sessionId, origin, async (session) => {
-			if (session.status === AGENT_SESSION_STATUS.STOPPED || session.status === AGENT_SESSION_STATUS.FAILED) return;
-			session.status = AGENT_SESSION_STATUS.PARKED;
-			session.ownerPid = undefined;
-			session.error = undefined;
-			session.endedAt = undefined;
-		});
-	}
-
-	private async withVerifiedNativeOrigin(
-		taskId: string,
-		sessionId: string,
-		origin: SessionRuntimeOrigin,
-		mutate: (session: AgentSession, history: { sessions: AgentSession[]; activeSessionId?: string }) => Promise<void>,
-		afterMutation?: (currentTask: Task) => Promise<void>,
-		requireLive = false,
-	): Promise<boolean> {
-		return await this.withTaskSessionAdmission(taskId, async (task) => {
-			if (origin.record.taskId !== task.id || origin.record.id !== sessionId) return false;
-			const release = await this.store.claimSession(task.id, sessionId);
-			try {
-				const currentState = await this.store.read(task.id);
-				const current = allModeSessions(currentState).find((session) => session.id === sessionId);
-				if (!current) return false;
-				try {
-					this.assertSameSessionMembership(current, origin.record);
-				} catch {
-					return false;
-				}
-				const runtime = await this.process.nativeRuntimeClassification(current);
-				if (runtime.status === "uncertain")
-					throw new Error(`Could not inspect native session ${sessionId}: ${runtime.reason}`);
-				if (
-					runtime.status === "missing" ||
-					runtime.paneId !== origin.paneId ||
-					(requireLive && runtime.status !== "live")
-				)
-					return false;
-				const published = await this.store.mutateSession(task.id, sessionId, async (record, history) => {
-					try {
-						this.assertSameSessionMembership(record, origin.record);
-					} catch {
-						return false;
-					}
-					if (record.status !== current.status || record.ownerPid !== current.ownerPid) return false;
-					await mutate(record, history);
-					return true;
-				});
-				if (published) await afterMutation?.(task);
-				return published;
-			} finally {
-				await release();
-			}
-		});
+		await withVerifiedNativeOrigin(
+			this.core,
+			this.store,
+			this.process,
+			this.assertSameSessionMembership.bind(this),
+			taskId,
+			sessionId,
+			origin,
+			async (session) => {
+				if (session.status === AGENT_SESSION_STATUS.STOPPED || session.status === AGENT_SESSION_STATUS.FAILED) return;
+				session.status = AGENT_SESSION_STATUS.PARKED;
+				session.ownerPid = undefined;
+				session.error = undefined;
+				session.endedAt = undefined;
+			},
+		);
 	}
 
 	async start(
@@ -1519,7 +1480,7 @@ export class AgentSessionService {
 		if (context) return await this.registerPendingSession(taskId, options, context);
 		return await this.withLifecycleAdmission(
 			async () =>
-				await this.withTaskSessionAdmission(taskId, async (task) => {
+				await withTaskSessionAdmission(this.core, taskId, async (task) => {
 					const modeId = await this.resolveModeId(task.id, options.modeId);
 					const resolved = await this.launchConfiguration(task.id);
 					const presetName = options.preset ?? resolved.config.selectedPreset;
@@ -1551,7 +1512,8 @@ export class AgentSessionService {
 	): Promise<AgentSession> {
 		return await this.withLifecycleAdmission(
 			async () =>
-				await this.withTaskSessionAdmission(
+				await withTaskSessionAdmission(
+					this.core,
 					taskId,
 					async (task) => await this.registerPendingSessionGated(task, options, context),
 				),
@@ -1793,7 +1755,7 @@ export class AgentSessionService {
 	}
 
 	async finalizeHandoff(taskId: string, successor: AgentSession, handoff: SessionHandoff): Promise<void> {
-		await this.withTaskSessionAdmission(taskId, async (task) => {
+		await withTaskSessionAdmission(this.core, taskId, async (task) => {
 			const release = await this.store.claimSession(task.id, successor.id);
 			try {
 				await this.finalizeHandoffLocked(task.id, successor, handoff);
@@ -1818,7 +1780,15 @@ export class AgentSessionService {
 			if (predecessor?.nativeWorkspace !== true) return;
 			const release = await this.store.claimSession(taskId, predecessor.id);
 			try {
-				await this.stopClaimedSession(taskId, predecessor);
+				await stopClaimedSession(
+					this.core,
+					this.store,
+					this.process,
+					this.assertSameSessionMembership.bind(this),
+					this.clearNativeSessionPaneTag.bind(this),
+					taskId,
+					predecessor,
+				);
 			} finally {
 				await release();
 			}
@@ -1827,36 +1797,8 @@ export class AgentSessionService {
 		}
 	}
 
-	private async stopClaimedSession(taskId: string, expected: AgentSession, runtimePreflighted = false): Promise<void> {
-		const current = allModeSessions(await this.store.read(taskId)).find((candidate) => candidate.id === expected.id);
-		if (!current) throw new Error(`Agent session not found: ${expected.id}`);
-		this.assertSameSessionMembership(current, expected);
-		if (current.status !== expected.status || current.ownerPid !== expected.ownerPid)
-			throw new Error(`Cannot safely stop session ${current.id}: its status or owner changed during shutdown.`);
-		if (current.nativeWorkspace && !runtimePreflighted) {
-			const runtime = await this.process.nativeRuntimeClassification(current);
-			if (runtime.status === "uncertain")
-				throw new Error(`Cannot safely inspect native session ${current.id}: ${runtime.reason}`);
-		}
-		await this.process.kill(current);
-		await this.store.mutateSession(taskId, current.id, async (record, history) => {
-			this.assertSameSessionMembership(record, current);
-			if (record.status !== current.status || record.ownerPid !== current.ownerPid)
-				throw new Error(`Cannot safely stop session ${current.id}: its status or owner changed during shutdown.`);
-			record.status = AGENT_SESSION_STATUS.STOPPED;
-			record.endedAt = timestamp();
-			record.ownerPid = undefined;
-			if (history.activeSessionId === record.id)
-				history.activeSessionId = history.sessions.find((candidate) => candidate.id !== record.id)?.id ?? record.id;
-		});
-		if (current.nativeWorkspace) {
-			await deleteWorkspaceRequest(this.core.filesystem.rootDir, current.id);
-			await this.clearNativeSessionPaneTag(current);
-		}
-	}
-
 	async stop(taskId: string, sessionId?: string, modeId?: ModeId): Promise<void> {
-		await this.withTaskSessionAdmission(taskId, async (task) => {
+		await withTaskSessionAdmission(this.core, taskId, async (task) => {
 			const state = await this.store.read(task.id);
 			const selected = sessionId
 				? this.session(state, sessionId)
@@ -1864,7 +1806,15 @@ export class AgentSessionService {
 			if (!selected) throw new Error("Agent session not found: active");
 			const release = await this.store.claimSession(task.id, selected.id);
 			try {
-				await this.stopClaimedSession(task.id, selected);
+				await stopClaimedSession(
+					this.core,
+					this.store,
+					this.process,
+					this.assertSameSessionMembership.bind(this),
+					this.clearNativeSessionPaneTag.bind(this),
+					task.id,
+					selected,
+				);
 			} finally {
 				await release();
 			}
@@ -1915,7 +1865,16 @@ export class AgentSessionService {
 					throw new Error(`Cannot safely inspect native session ${session.id}: ${runtime.reason}`);
 			}
 			for (const { session } of targets) {
-				await this.stopClaimedSession(taskId, session, session.nativeWorkspace);
+				await stopClaimedSession(
+					this.core,
+					this.store,
+					this.process,
+					this.assertSameSessionMembership.bind(this),
+					this.clearNativeSessionPaneTag.bind(this),
+					taskId,
+					session,
+					session.nativeWorkspace,
+				);
 			}
 		} catch (error) {
 			failures.push(error);
@@ -1964,7 +1923,7 @@ export class AgentSessionService {
 		question: string,
 		options: { sessionId?: string; modeId?: ModeId } = {},
 	): Promise<{ answer: string; timedOut: boolean }> {
-		return await this.withTaskSessionAdmission(taskId, async (task) => {
+		return await withTaskSessionAdmission(this.core, taskId, async (task) => {
 			const state = await this.store.read(task.id);
 			const context = await this.readContext();
 			const modeId = options.sessionId
@@ -2075,7 +2034,8 @@ export class AgentSessionService {
 		const startedAt = Date.now();
 		const task = await this.requireTask(taskId);
 		if (isEnabled("session")) debug("session", "reconcile.begin", { taskId });
-		await this.withTaskSessionAdmission(
+		await withTaskSessionAdmission(
+			this.core,
 			task.id,
 			async (currentTask) => await this.settleDeadSessions(currentTask.id, await this.store.read(currentTask.id)),
 		);
