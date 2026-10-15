@@ -54,6 +54,8 @@ describe("provider prompt-acceptance receipts", () => {
 			preset: { command: "claude", bootstrap: "claude", env: {}, prepare: "" },
 			prompt: "composed startup prompt",
 		};
+		const sentKeys: string[] = [];
+		const typed: string[] = [];
 		const fakeProcess = {
 			prepare: async () => {},
 			create: async () => {},
@@ -62,13 +64,27 @@ describe("provider prompt-acceptance receipts", () => {
 			launchPrepared: async () => writeFile(join(root, "session-1.prompt-accepted"), "native-session"),
 			alive: async () => ({ exitCode: 0, stdout: "0", stderr: "" }),
 			kill: async () => {},
-			input: async () => {},
+			input: async (_record: AgentSession, text: string) => typed.push(text),
+			sendKey: async (_record: AgentSession, key: string) => sentKeys.push(key),
 		} as unknown as ConstructorParameters<typeof Harness>[1];
 		try {
 			await writeFile(record.bootstrapPath, "old prompt");
 			const execution = await new Harness(root, fakeProcess).launch(context);
 			expect(execution.providerConversationId).toBeString();
 			expect(await readFile(join(root, "session-1.prompt-accepted"), "utf8")).toBe("native-session");
+			await execution.sendKey("C-c");
+			await execution.input("literal prompt");
+			expect(sentKeys).toEqual(["C-c"]);
+			expect(typed).toEqual(["literal prompt"]);
+			const executionId = execution.identity.executionId;
+			const next = await new Harness(root, fakeProcess).launch(context);
+			expect(next.identity.executionId).not.toBe(executionId);
+			expect(next.identity.executionId).toBe(next.identity.executionId);
+			const unsubscribe = next.observe(() => {});
+			unsubscribe();
+			next.teardownListeners();
+			next.teardownListeners();
+			await next.stop();
 			await execution.stop();
 		} finally {
 			registerAgent(original);

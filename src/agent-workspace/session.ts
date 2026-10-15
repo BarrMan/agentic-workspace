@@ -1,11 +1,11 @@
 import type {
-	LifecycleCheckpoint,
 	RunningExecution,
 	RunningExecutionEvent,
 	Session as SessionContract,
 	SessionEvent,
 	SessionLaunchOperation,
 	SessionPublication,
+	SessionStartupCheckpointPhase,
 	Unsubscribe,
 } from "./session-contracts.ts";
 import { AGENT_SESSION_STATUS, type AgentSession, type ModeId } from "./types.ts";
@@ -14,14 +14,15 @@ export class Session implements SessionContract {
 	readonly id: string;
 	private currentRecord: Readonly<AgentSession>;
 	private currentExecution?: RunningExecution;
-	private modeId?: ModeId;
+	private readonly modeId: ModeId;
 	private stopObserving?: Unsubscribe;
 	private readonly listeners = new Set<(event: SessionEvent) => void>();
 	private disposed = false;
 
-	constructor(record: Readonly<AgentSession>) {
+	constructor(record: Readonly<AgentSession>, modeId: ModeId) {
 		this.id = record.id;
 		this.currentRecord = record;
+		this.modeId = modeId;
 	}
 
 	get record(): Readonly<AgentSession> {
@@ -33,8 +34,7 @@ export class Session implements SessionContract {
 	}
 
 	async start(operation: SessionLaunchOperation): Promise<void> {
-		this.modeId = operation.context.modeId;
-		await this.emitCheckpoint(operation, "reservation");
+		if (this.modeId !== operation.context.modeId) throw new Error(`Session ${this.id} belongs to another mode`);
 		const execution = await operation.harness.launch(operation.context);
 		await this.installExecution(execution);
 		await this.emitCheckpoint(operation, "identity");
@@ -42,7 +42,7 @@ export class Session implements SessionContract {
 	}
 
 	async resume(nativeId: string, operation: SessionLaunchOperation): Promise<void> {
-		this.modeId = operation.context.modeId;
+		if (this.modeId !== operation.context.modeId) throw new Error(`Session ${this.id} belongs to another mode`);
 		const execution = await operation.harness.resume(nativeId, operation.context);
 		await this.installExecution(execution);
 		const resumed = { ...this.currentRecord, endedAt: undefined, error: undefined };
@@ -56,9 +56,57 @@ export class Session implements SessionContract {
 	async stop(publication: SessionPublication): Promise<void> {
 		const execution = this.currentExecution;
 		if (!execution) return;
+		const previous = this.currentRecord;
 		await execution.stop();
 		this.releaseExecution(execution);
-		await this.emitCheckpoint(publication, "ready", AGENT_SESSION_STATUS.STOPPED);
+		await this.emitUpdate(publication, "stop", {
+			...previous,
+			status: AGENT_SESSION_STATUS.STOPPED,
+			endedAt: new Date().toISOString(),
+			ownerPid: undefined,
+		});
+	}
+
+	bindExecution(modeId: ModeId, execution: RunningExecution): void {
+		if (modeId !== this.modeId) throw new Error(`Session ${this.id} belongs to another mode`);
+		this.installExecution(execution);
+	}
+
+	async activate(publication: SessionPublication): Promise<void> {
+		const previous = this.currentRecord;
+		await this.emitUpdate(publication, "activate", {
+			...previous,
+			status: AGENT_SESSION_STATUS.RUNNING,
+			error: undefined,
+			endedAt: undefined,
+		});
+	}
+
+	async park(publication: SessionPublication): Promise<void> {
+		const previous = this.currentRecord;
+		await this.emitUpdate(publication, "park", {
+			...previous,
+			status: AGENT_SESSION_STATUS.PARKED,
+			ownerPid: undefined,
+			error: undefined,
+			endedAt: undefined,
+		});
+	}
+
+	async finish(publication: SessionPublication, error?: string): Promise<void> {
+		const previous = this.currentRecord;
+		await this.emitUpdate(publication, "finish", {
+			...previous,
+			status: error ? AGENT_SESSION_STATUS.FAILED : AGENT_SESSION_STATUS.STOPPED,
+			error,
+			endedAt: new Date().toISOString(),
+			ownerPid: undefined,
+		});
+	}
+
+	async sendKey(key: string): Promise<void> {
+		if (!this.currentExecution) throw new Error(`Session ${this.id} has no running execution`);
+		await this.currentExecution.sendKey(key);
 	}
 
 	async inject(text: string): Promise<void> {
@@ -76,7 +124,7 @@ export class Session implements SessionContract {
 		return { ...this.currentRecord };
 	}
 
-	private async installExecution(execution: RunningExecution): Promise<void> {
+	private installExecution(execution: RunningExecution): void {
 		const previous = this.currentExecution;
 		this.releaseExecution(previous);
 		this.currentExecution = execution;
@@ -97,10 +145,9 @@ export class Session implements SessionContract {
 
 	private async emitCheckpoint(
 		publication: SessionPublication,
-		phase: LifecycleCheckpoint["phase"],
+		phase: SessionStartupCheckpointPhase,
 		status: AgentSession["status"] = this.record.status,
 	): Promise<void> {
-		if (!this.modeId) throw new Error(`Session ${this.id} has no mode identity`);
 		const record: AgentSession = { ...this.record, status };
 		const nativeId = this.currentExecution?.providerConversationId ?? this.currentExecution?.identity.nativeSessionId;
 		if (phase === "identity" && nativeId) record.nativeSessionId = nativeId;
@@ -113,6 +160,23 @@ export class Session implements SessionContract {
 				modeId: this.modeId,
 				sessionId: this.id,
 			},
+			record,
+		});
+		this.currentRecord = record;
+	}
+
+	private async emitUpdate(
+		publication: SessionPublication,
+		reason: "activate" | "stop" | "park" | "finish" | "observation",
+		record: AgentSession,
+	): Promise<void> {
+		const previous = this.currentRecord;
+		await publication.checkpoint({
+			phase: "update",
+			reason,
+			origin: { kind: "session", taskId: record.taskId, modeId: this.modeId, sessionId: this.id },
+			expectedMembership: { kind: "present", taskId: record.taskId, modeId: this.modeId, sessionId: this.id },
+			previous,
 			record,
 		});
 		this.currentRecord = record;
@@ -137,6 +201,8 @@ export class Session implements SessionContract {
 			this.releaseExecution(execution);
 		}
 		const snapshot = { ...this.currentRecord };
-		for (const listener of this.listeners) listener({ ...event, status: snapshot.status, record: snapshot });
+		const executionIdentity = execution.identity;
+		for (const listener of this.listeners)
+			listener({ ...event, status: snapshot.status, executionIdentity, record: snapshot });
 	}
 }

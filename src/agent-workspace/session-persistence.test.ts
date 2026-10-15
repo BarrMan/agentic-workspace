@@ -49,6 +49,27 @@ describe("session checkpoint persistence", () => {
 			sessionId: creation.provisionalSessionId,
 		},
 	): LifecycleCheckpoint {
+		if (phase === "update") {
+			const prior = recordValue;
+			return {
+				phase,
+				reason: "stop",
+				origin: {
+					kind: "session",
+					taskId: creation.taskId,
+					modeId: creation.modeId,
+					sessionId: creation.provisionalSessionId,
+				},
+				expectedMembership: {
+					kind: "present",
+					taskId: creation.taskId,
+					modeId: creation.modeId,
+					sessionId: creation.provisionalSessionId,
+				},
+				previous: prior,
+				record: recordValue,
+			};
+		}
 		return {
 			phase,
 			origin: { kind: "creation", creation },
@@ -96,6 +117,62 @@ describe("session checkpoint persistence", () => {
 			activeSessionId: "other",
 			sessions: [{ id: "other", useCount: 7 }],
 		});
+	});
+
+	it("updates only an existing membership and never moves its active pointer", async () => {
+		const { store, persistence } = await fixture();
+		const creation = { taskId: "TASK-1", modeId: "plan", provisionalSessionId: "member" };
+		const starting = record("member");
+		await persistence.checkpoint(checkpoint("reservation", starting, creation));
+		await store.mutateMode("TASK-1", "plan", async (history) => {
+			history.sessions.push(record("other", { status: "stopped" }));
+			history.activeSessionId = "other";
+		});
+		const updated = { ...starting, status: "stopped" as const, endedAt: "now", ownerPid: undefined };
+		await persistence.checkpoint({
+			phase: "update",
+			reason: "stop",
+			origin: {
+				kind: "session",
+				taskId: creation.taskId,
+				modeId: creation.modeId,
+				sessionId: creation.provisionalSessionId,
+			},
+			expectedMembership: {
+				kind: "present",
+				taskId: creation.taskId,
+				modeId: creation.modeId,
+				sessionId: creation.provisionalSessionId,
+			},
+			previous: starting,
+			record: updated,
+		});
+		expect(await store.readMode("TASK-1", "plan")).toMatchObject({
+			activeSessionId: "other",
+			sessions: [{ id: "member", status: "stopped", endedAt: "now" }, { id: "other" }],
+		});
+		await store.remove("TASK-1", "member");
+		await expect(
+			persistence.checkpoint({
+				phase: "update",
+				reason: "finish",
+				origin: {
+					kind: "session",
+					taskId: creation.taskId,
+					modeId: creation.modeId,
+					sessionId: creation.provisionalSessionId,
+				},
+				expectedMembership: {
+					kind: "present",
+					taskId: creation.taskId,
+					modeId: creation.modeId,
+					sessionId: creation.provisionalSessionId,
+				},
+				previous: updated,
+				record: updated,
+			}),
+		).rejects.toThrow(/membership changed/);
+		expect((await store.readMode("TASK-1", "plan")).activeSessionId).toBe("other");
 	});
 
 	it("rejects stale, replaced, and wrong-origin checkpoints without resurrecting membership", async () => {

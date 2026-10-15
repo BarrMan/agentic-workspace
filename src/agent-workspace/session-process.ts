@@ -421,7 +421,7 @@ export class SessionProcess {
 		return (await this.exactPane(session, roles))?.paneId;
 	}
 
-	private async exactPane(
+	async exactPane(
 		session: AgentSession,
 		roles: readonly string[],
 		timeoutMs?: number,
@@ -491,7 +491,7 @@ export class SessionProcess {
 		return resources as unknown as PreparedLaunchResources;
 	}
 
-	private async validateLaunchResources(
+	async validateLaunchResources(
 		session: AgentSession,
 		resources: PreparedLaunchResources,
 		verifyOnly: boolean,

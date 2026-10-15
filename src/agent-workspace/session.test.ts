@@ -36,6 +36,7 @@ function execution(id: string, nativeId = id) {
 			activity: "supported",
 		},
 		input: async () => {},
+		sendKey: async () => {},
 		stop: async () => {
 			calls.stop++;
 		},
@@ -81,7 +82,7 @@ describe("Session lifecycle", () => {
 			ready = resolve;
 		});
 		const phases: LifecycleCheckpoint["phase"][] = [];
-		const session = new Session(record);
+		const session = new Session(record, "mode");
 		let settled = false;
 		const starting = session
 			.start(
@@ -97,19 +98,20 @@ describe("Session lifecycle", () => {
 		const running = execution("exec");
 		ready(running.value);
 		await starting;
-		expect(phases).toEqual(["reservation", "identity", "ready"]);
+		expect(phases).toEqual(["identity", "ready"]);
 		expect(session.execution).toBe(running.value);
 	});
 
-	test("checkpoint rejection prevents dependent launch", async () => {
-		const failure = new Error("reservation failed");
+	test("checkpoint rejection propagates after installing execution", async () => {
+		const failure = new Error("identity checkpoint failed");
 		let launches = 0;
-		const session = new Session(record);
+		const session = new Session(record, "mode");
+		const launched = execution("x");
 		const harness = {
 			...unusedHarness(),
 			launch: async () => {
 				launches++;
-				return execution("x").value;
+				return launched.value;
 			},
 		};
 		await expect(
@@ -119,12 +121,13 @@ describe("Session lifecycle", () => {
 				}),
 			),
 		).rejects.toBe(failure);
-		expect(launches).toBe(0);
+		expect(launches).toBe(1);
+		expect(session.execution).toBe(launched.value);
 	});
 
 	test("stop retains conversation and releases execution listeners", async () => {
 		const running = execution("exec", "native-conversation");
-		const session = new Session(record);
+		const session = new Session(record, "mode");
 		const harness = { ...unusedHarness(), resume: async () => running.value };
 		await session.resume("native-conversation", operation(harness));
 		const publications: LifecycleCheckpoint[] = [];
@@ -142,12 +145,40 @@ describe("Session lifecycle", () => {
 		expect(running.calls.stop).toBe(1);
 		expect(running.observerCount()).toBe(0);
 		expect(publications).toHaveLength(1);
+		expect(publications[0]).toMatchObject({ phase: "update", reason: "stop", expectedMembership: { kind: "present" } });
+	});
+
+	test("stop without an installed execution publishes nothing", async () => {
+		const session = new Session(record, "mode");
+		let publications = 0;
+		await session.stop({
+			checkpoint: async () => {
+				publications++;
+			},
+		});
+		expect(publications).toBe(0);
+	});
+
+	test("park settles without signalling and finish carries its error", async () => {
+		const session = new Session(record, "mode");
+		const checkpoints: LifecycleCheckpoint[] = [];
+		const publication = {
+			checkpoint: async (checkpoint: LifecycleCheckpoint) => {
+				checkpoints.push(checkpoint);
+			},
+		};
+		await session.park(publication);
+		await session.finish(publication, "provider failed");
+		expect(checkpoints).toMatchObject([
+			{ phase: "update", reason: "park", record: { status: AGENT_SESSION_STATUS.PARKED } },
+			{ phase: "update", reason: "finish", record: { status: AGENT_SESSION_STATUS.FAILED, error: "provider failed" } },
+		]);
 	});
 
 	test("resume replaces execution, clears prior terminal fields, and ignores obsolete events", async () => {
 		const first = execution("first");
 		const second = execution("second", "same-conversation");
-		const session = new Session({ ...record, endedAt: "then", error: "old failure" });
+		const session = new Session({ ...record, endedAt: "then", error: "old failure" }, "mode");
 		const harness = { ...unusedHarness(), launch: async () => first.value, resume: async () => second.value };
 		const received: string[] = [];
 		session.subscribe((event) => received.push(event.kind));
@@ -169,7 +200,7 @@ describe("Session lifecycle", () => {
 
 	test("execution exit updates record and emits its snapshot without publishing", async () => {
 		const running = execution("exec");
-		const session = new Session(record);
+		const session = new Session(record, "mode");
 		const events: Array<{ record: Readonly<AgentSession>; kind: string }> = [];
 		const checkpoints: LifecycleCheckpoint[] = [];
 		session.subscribe((event) => events.push(event));
@@ -187,13 +218,17 @@ describe("Session lifecycle", () => {
 		expect(session.serialize().endedAt).toBeString();
 		expect(session.execution).toBeUndefined();
 		expect(running.observerCount()).toBe(0);
-		expect(events.at(-1)).toMatchObject({ kind: "execution-exit", record: { status: AGENT_SESSION_STATUS.FAILED } });
+		expect(events.at(-1)).toMatchObject({
+			kind: "execution-exit",
+			executionIdentity: running.value.identity,
+			record: { status: AGENT_SESSION_STATUS.FAILED },
+		});
 		expect(checkpoints).toHaveLength(before);
 	});
 
 	test("unsupported events are suppressed without synthetic activity", async () => {
 		const running = execution("exec");
-		const session = new Session(record);
+		const session = new Session(record, "mode");
 		const received: string[] = [];
 		session.subscribe((event) => received.push(event.kind));
 		await session.resume("exec", operation({ ...unusedHarness(), resume: async () => running.value }));

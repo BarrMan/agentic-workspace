@@ -30,6 +30,8 @@ function assertCheckpoint(checkpoint: LifecycleCheckpoint): void {
 		throw new Error("Checkpoint identity does not match its expected membership and origin.");
 	if ((checkpoint.phase === "reservation") !== (expectedMembership.kind === "absent"))
 		throw new Error("Checkpoint phase does not match expected session membership.");
+	if (checkpoint.phase === "update" && (expectedMembership.kind !== "present" || origin.kind !== "session"))
+		throw new Error("Update checkpoints require a present membership and session origin.");
 	if (checkpoint.phase === "rollback" && origin.kind !== "creation")
 		throw new Error("Rollback checkpoints require a creation origin.");
 }
@@ -58,6 +60,16 @@ export function createSessionPersistence(store: SessionStore): { checkpoint: Lif
 					current.session.nativeSessionId !== checkpoint.record.nativeSessionId
 				)
 					throw new Error(`Session ${sessionId} native identity conflicts with the existing launch incarnation.`);
+				if (checkpoint.phase === "update" && current) {
+					const previous = checkpoint.previous;
+					if (
+						current.session.status !== previous.status ||
+						current.session.ownerPid !== previous.ownerPid ||
+						current.session.error !== previous.error ||
+						current.session.endedAt !== previous.endedAt
+					)
+						throw new Error(`Session ${sessionId} lifecycle changed before update publication.`);
+				}
 
 				state.modes ??= {};
 				const history: ModeSessionHistory = state.modes[modeId] ?? { sessions: [] };
@@ -75,12 +87,20 @@ export function createSessionPersistence(store: SessionStore): { checkpoint: Lif
 					}
 				} else if (current) {
 					const index = history.sessions.indexOf(current.session);
-					history.sessions[index] = {
+					const merged = {
 						...current.session,
 						...structuredClone(checkpoint.record),
 						...(current.session.useCount !== undefined ? { useCount: current.session.useCount } : {}),
 						...(current.session.lastUsedAt !== undefined ? { lastUsedAt: current.session.lastUsedAt } : {}),
 					} as AgentSession;
+					if (checkpoint.phase === "update") {
+						merged.error = checkpoint.record.error;
+						merged.endedAt = checkpoint.record.endedAt;
+						merged.ownerPid = checkpoint.record.ownerPid;
+					}
+					history.sessions[index] = merged;
+				} else if (checkpoint.phase === "update") {
+					throw new Error(`Session ${sessionId} membership changed before update publication.`);
 				} else {
 					history.sessions.unshift(structuredClone(checkpoint.record) as AgentSession);
 					history.activeSessionId = sessionId;

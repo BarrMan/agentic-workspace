@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { watch } from "node:fs";
 import { readFile, rm } from "node:fs/promises";
 import { dirname, join } from "node:path";
@@ -86,6 +87,7 @@ export class Harness implements HarnessContract {
 		intent: { kind: "new" } | { kind: "resume"; nativeSessionId: string },
 	): Promise<RunningExecution> {
 		const record = context.record as AgentSession;
+		const executionId = randomUUID();
 		const env = { ...context.configuration.config.presets[record.preset]?.env, ...context.preset.env };
 		const preset = await resolveLaunchPreset(context.preset, { cwd: record.cwd, env });
 		const prepared = await prepareAgentLaunch(preset, record.bootstrapPath, {
@@ -123,7 +125,7 @@ export class Harness implements HarnessContract {
 			}
 			const identity = prepared.identity?.id ?? (await readFile(identityPath, "utf8")).trim();
 			if (!identity) throw new Error(`Provider identity missing for session ${record.id}.`);
-			return this.execution(context, record, identity, prepared);
+			return this.execution(context, record, identity, prepared, executionId);
 		} catch (cause) {
 			let startupError = cause;
 			if (!owned) {
@@ -148,10 +150,12 @@ export class Harness implements HarnessContract {
 						taskId: context.taskId,
 						modeId: context.modeId,
 						sessionId: record.id,
-						executionId: record.id,
+						executionId,
 						nativeSessionId: prepared.identity?.id,
 					},
-					...(owned ? { execution: this.execution(context, record, prepared.identity?.id ?? "", prepared) } : {}),
+					...(owned
+						? { execution: this.execution(context, record, prepared.identity?.id ?? "", prepared, executionId) }
+						: {}),
 				},
 			) as RecoverableExecutionFailure;
 			throw failure;
@@ -163,12 +167,13 @@ export class Harness implements HarnessContract {
 		record: AgentSession,
 		nativeId: string,
 		prepared: Awaited<ReturnType<typeof prepareAgentLaunch>>,
+		executionId: string,
 	): RunningExecution {
 		const identity: ExecutionIdentity = {
 			taskId: context.taskId,
 			modeId: context.modeId,
 			sessionId: record.id,
-			executionId: record.id,
+			executionId,
 			nativeSessionId: nativeId,
 		};
 		const permissionWait: RunningExecution["events"]["permissionWait"] =
@@ -184,6 +189,7 @@ export class Harness implements HarnessContract {
 				activity: "supported",
 			},
 			input: (text) => this.process.input(record, text),
+			sendKey: (key) => this.process.sendKey(record, key),
 			stop: async () => {
 				await this.process.kill(record);
 				await prepared.cleanup();

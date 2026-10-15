@@ -1,17 +1,23 @@
+import type { OwnedNativeSessionStops } from "../git/task-worktree-cleanup.ts";
 import type { Task as TaskRecord } from "../types/index.ts";
 import type { LaunchOrigin, NativeIdentity } from "./agents/agent.ts";
+import type { TmuxExec } from "./live/tmux/types.ts";
+import type { TmuxServer } from "./session-process.ts";
+import type { SessionPaths, SessionState } from "./session-store.ts";
 import type {
 	AgentActivity,
+	AgentConfiguration,
 	AgentPreset,
 	AgentSession,
 	AgentSessionStatus,
+	ArtifactStatus,
 	ModeId,
 	ModeProfile,
 	ModeSessionHistory,
 	ResolvedAgentConfiguration,
 	TaskSessions,
 } from "./types.ts";
-import type { SessionHandoff, WorkspaceContext } from "./workspace-context.ts";
+import type { SessionHandoff, WorkspaceContext, WorkspaceRequest } from "./workspace-context.ts";
 
 export type Unsubscribe = () => void;
 
@@ -30,7 +36,8 @@ export interface SessionCreationIdentity {
 	readonly previousActiveSessionId?: AgentSession["id"];
 }
 
-export type SessionCheckpointPhase = "reservation" | "identity" | "ready" | "rollback";
+export type SessionStartupCheckpointPhase = "reservation" | "identity" | "ready" | "rollback";
+export type SessionCheckpointPhase = SessionStartupCheckpointPhase | "update";
 export type SessionCheckpointOrigin =
 	| { readonly kind: "creation"; readonly creation: SessionCreationIdentity }
 	| { readonly kind: "session"; readonly taskId: string; readonly modeId: ModeId; readonly sessionId: string };
@@ -46,13 +53,28 @@ export type ExpectedSessionMembership =
  *   CONTROLLER after execution cleanup succeeds, with `origin.kind === "creation"`, because only
  *   the controller holds the captured `previousActiveSessionId` needed to restore the prior
  *   selection. Session cannot emit it.
+ * - `update` settles an EXISTING membership after startup: stop, park, finish, activation, and
+ *   observation. It never inserts, selects, removes, or restores a pointer. "ready" means launch
+ *   readiness only — never "some record was saved".
  */
-export interface LifecycleCheckpoint {
-	readonly phase: SessionCheckpointPhase;
+export interface SessionStartupCheckpoint {
+	readonly phase: SessionStartupCheckpointPhase;
 	readonly origin: SessionCheckpointOrigin;
 	readonly expectedMembership: ExpectedSessionMembership;
 	readonly record: Immutable<AgentSession>;
 }
+
+export interface SessionUpdateCheckpoint {
+	readonly phase: "update";
+	readonly reason: "activate" | "stop" | "park" | "finish" | "observation";
+	readonly origin: Extract<SessionCheckpointOrigin, { kind: "session" }>;
+	readonly expectedMembership: Extract<ExpectedSessionMembership, { kind: "present" }>;
+	/** Accepted record before this transition; used for lifecycle-field compare-and-set. */
+	readonly previous: Immutable<AgentSession>;
+	readonly record: Immutable<AgentSession>;
+}
+
+export type LifecycleCheckpoint = SessionStartupCheckpoint | SessionUpdateCheckpoint;
 
 export type LifecycleCheckpointSink = (checkpoint: LifecycleCheckpoint) => Promise<void>;
 
@@ -99,6 +121,8 @@ export interface RunningExecution {
 	readonly providerConversationId?: string;
 	readonly events: Readonly<RunningExecutionEvents>;
 	input(text: string): Promise<void>;
+	/** Terminal key semantics; distinct from literal prompt input. */
+	sendKey(key: string): Promise<void>;
 	stop(): Promise<void>;
 	observe(listener: (event: RunningExecutionEvent) => void): Unsubscribe;
 	teardownListeners(): void;
@@ -125,6 +149,11 @@ export interface SessionEvent {
 	readonly kind: "turn-completed" | "permission-wait" | "execution-exit" | "activity";
 	readonly activity?: AgentActivity;
 	readonly status: AgentSessionStatus;
+	/**
+	 * Captured before execution teardown. Identifies the execution INCARNATION, not the
+	 * conversation: the controller rejects events from a superseded execution after an exact resume.
+	 */
+	readonly executionIdentity: ExecutionIdentity;
 	/**
 	 * Snapshot of the session record after the observed change. An asynchronous observation has no
 	 * operation-scoped publication authority, so the controller must publish this snapshot under a
@@ -162,9 +191,31 @@ export interface Session {
 	 * plus provider initialization only; no bootstrap is replayed. Clears a prior `endedAt`/`error`.
 	 */
 	resume(nativeId: string, operation: SessionLaunchOperation): Promise<void>;
-	/** Stop the current execution and publish the stopped record. Retains the conversation. */
+	/**
+	 * Install an already-verified existing execution and its subscriptions. Used for adoption of a
+	 * live/dead owned execution and for pending-request registration. Performs no startup, no
+	 * publication, no usage update, and never mutates the active pointer.
+	 */
+	bindExecution(modeId: ModeId, execution: RunningExecution): void;
+	/** Publish an activation of an existing membership. */
+	activate(publication: SessionPublication): Promise<void>;
+	/**
+	 * Stop the INSTALLED execution and publish the stopped record. Retains the conversation.
+	 *
+	 * This settles only what Session can observe: an execution installed in this process. Proving
+	 * that a durably running execution is absent — and that an `uncertain` runtime is NOT absence —
+	 * is verified runtime evidence, and therefore the CONTROLLER's responsibility: the controller
+	 * inspects through `SessionRuntime.inspect`/`cleanupOwned` and settles a session it holds no
+	 * handle for through `park`/`finish`. `stop` must never treat a missing local handle as proof
+	 * of absence, and a no-op with no installed execution is honest, not a silent downgrade.
+	 */
 	stop(publication: SessionPublication): Promise<void>;
+	/** Settle an execution already released or observed absent; does not signal it. */
+	park(publication: SessionPublication): Promise<void>;
+	finish(publication: SessionPublication, error?: string): Promise<void>;
 	inject(text: string): Promise<void>;
+	/** Terminal key semantics; distinct from literal prompt input. */
+	sendKey(key: string): Promise<void>;
 	subscribe(listener: (event: SessionEvent) => void): Unsubscribe;
 	serialize(): AgentSession;
 }
@@ -235,10 +286,232 @@ export interface SessionRuntimeOrigin {
 }
 
 /**
+ * Construction contract for the shared application controller.
+ *
+ * The controller owns admission ORDERING, current-state loading, policy decisions, model
+ * invocation, publication, and rollback. These ports perform storage, configuration, locking, and
+ * verified runtime mechanics — never whole session operations. Do NOT add a port that implements
+ * `prepareSession`, `launchAndPersist`, `stopAndSave`, or `hydrateCurrentTask`: those are exactly
+ * the behavior the controller must own. Injecting `Core`, `AgentSessionService`, or a `Pick` of its
+ * orchestration methods is likewise forbidden — it re-creates the orchestration being retired.
+ */
+export interface SessionTaskRepository {
+	/** Working-copy reads; never admit remote or cross-branch mutation implicitly. */
+	load(
+		taskId: string,
+		options: { readonly forMutation: boolean; readonly includeArchived: boolean },
+	): Promise<TaskRecord | null>;
+	/** Active, draft, completed, and archived task IDs; used by mode deletion. */
+	listTaskIds(): Promise<string[]>;
+	/** Configured statuses, including the existing default fallback. */
+	statuses(): Promise<readonly string[]>;
+	/**
+	 * Separate task mutation transaction, invoked AFTER session admission and claims are released.
+	 * Reloads and compares filePath/status with `expected`; returns undefined if it changed.
+	 * Preserves canonical validation and status hooks. Never re-enters the session controller.
+	 */
+	setStatus(expected: Readonly<TaskRecord>, status: string): Promise<TaskRecord | undefined>;
+}
+
+export interface SessionAdmission {
+	/** Refuse operations when the required task-lock mechanism is disabled. */
+	assertEnabled(): void;
+	/**
+	 * Only the filesystem task lock. The controller owns load → validate → lock → reload →
+	 * validate and decides the lifetime of this boundary.
+	 */
+	withTaskLock<T>(task: Pick<TaskRecord, "id" | "filePath">, operation: () => Promise<T>): Promise<T>;
+	/** Existing cross-process per-conversation claim; release errors propagate. */
+	claimSession(taskId: string, sessionId: string): Promise<() => Promise<void>>;
+}
+
+export interface SessionConfiguration {
+	/** Current effective card/project/root configuration; no hydration-time cache. */
+	resolve(taskId: string): Promise<ResolvedAgentConfiguration>;
+	/** Exact project scope: the mode catalog is NOT inherited from card/root. */
+	readProject(): Promise<AgentConfiguration | null>;
+	/** Existing editable-project semantics, for journaled mode deletion. */
+	readEditableProject(): Promise<AgentConfiguration>;
+	updateProject(update: (current: AgentConfiguration) => AgentConfiguration): Promise<AgentConfiguration>;
+}
+
+export interface SessionTaskPaths {
+	/** Return an existing task worktree, or undefined. NEVER create or remove one. */
+	existingWorktree(task: Pick<TaskRecord, "id" | "title">): Promise<string | undefined>;
+	artifactDirectory(taskId: string): Promise<string>;
+	listArtifacts(taskId: string): Promise<readonly ArtifactStatus[]>;
+	/** Canonical project-root and existing working-directory validation. */
+	validateSessionPaths(record: Immutable<AgentSession>): Promise<void>;
+}
+
+export interface SessionControllerStore {
+	readonly stateRoot: Promise<string>;
+	read(taskId: string): Promise<SessionState>;
+	readAll(): Promise<SessionState[]>;
+	paths(taskId: string): Promise<SessionPaths>;
+	exists(taskId: string): Promise<boolean>;
+	/**
+	 * Short lock → authoritative reload → synchronous edit → validate → atomic write → unlock.
+	 * The adapter maintains the legacy flat-mode projection. No provider, filesystem cleanup, hook,
+	 * or application callback may run inside `edit`. Returning undefined rather than void rejects
+	 * async callbacks at the type level.
+	 *
+	 * Rejections propagate the store's `SessionMutationError` unchanged (including
+	 * `writeCommitted`); never swallow it.
+	 */
+	mutate(taskId: string, edit: (current: SessionState) => undefined): Promise<void>;
+	/** The controller has already checked reset/purge eligibility. */
+	reset(taskId: string): Promise<void>;
+	removeTaskDir(taskId: string): Promise<void>;
+}
+
+export interface SessionFiles {
+	readOutput(record: Immutable<AgentSession>): Promise<string>;
+	/**
+	 * Validate canonical state/request directories and owned sidecar paths before destructive task
+	 * cleanup. No deletion and no runtime probes.
+	 */
+	validateTaskCleanup(taskId: string, records: readonly Immutable<AgentSession>[]): Promise<void>;
+	/** Existing per-session delete policy: best-effort log/bootstrap removal. */
+	removeSessionSidecars(record: Immutable<AgentSession>): Promise<void>;
+	/**
+	 * Forget-only policy: strict owned log/bootstrap/identity/activity/request removal. No
+	 * session-state write, process signal, or provider call.
+	 */
+	forgetSessionFiles(record: Immutable<AgentSession>): Promise<void>;
+}
+
+export interface SessionWorkspaceRequests {
+	/** Parse and verify canonical root and exact pane tags; not a raw environment read. */
+	readContext(): Promise<WorkspaceContext | undefined>;
+	read(): Promise<WorkspaceRequest[]>;
+	write(request: WorkspaceRequest): Promise<void>;
+	/** Existing best-effort request-marker removal policy. */
+	remove(sessionId: string): Promise<void>;
+}
+
+export interface SessionModeSelection {
+	read(): Promise<Readonly<Record<string, ModeId>>>;
+	/**
+	 * Locked update of selectedModeByTask ONLY; preserve every other view field. The controller
+	 * owns selection validation, fallback, and affected-entry pruning.
+	 */
+	update(edit: (current: Readonly<Record<string, ModeId>>) => Record<string, ModeId>): Promise<void>;
+}
+
+export interface SessionModeDeletionJournal {
+	readonly version: 2;
+	readonly operationId: string;
+	readonly source: ModeId;
+	readonly destination?: ModeId;
+	readonly phase: "prepared" | "histories" | "view" | "configuration";
+	readonly tasks: readonly string[];
+}
+
+export interface SessionModeLifecycleStorage {
+	/** The existing mode-lifecycle gate, using the same canonical key. */
+	withGate<T>(operation: () => Promise<T>): Promise<T>;
+	/** Preserve existing validation, including refusal of a version-1 journal. */
+	readJournal(): Promise<SessionModeDeletionJournal | undefined>;
+	writeJournal(journal: SessionModeDeletionJournal): Promise<void>;
+	removeJournal(): Promise<void>;
+}
+
+export type SessionRuntimeInspection =
+	| { readonly status: "live"; readonly paneId: string }
+	| { readonly status: "dead"; readonly paneId: string }
+	| { readonly status: "missing" }
+	| { readonly status: "uncertain"; readonly reason: string };
+
+export interface SessionPreviewTarget {
+	readonly origin: SessionRuntimeOrigin;
+	readonly server: TmuxServer;
+	readonly exec: TmuxExec;
+}
+
+/**
+ * Verified runtime mechanics: provider startup, receipts, exact-instance verification, handles,
+ * hooks, ask transport, and preview transport. Knows nothing about session state, Task history, or
+ * selection. It never decides durable publication.
+ */
+export interface SessionRuntime extends Harness {
+	/** Exact owned-instance inspection; never launches or alters durable state. */
+	inspect(record: Immutable<AgentSession>): Promise<SessionRuntimeInspection>;
+	/**
+	 * Reconstruct a handle for an existing live/dead owned execution. Verifies the supplied origin;
+	 * never spawns, resumes, selects, or publishes.
+	 */
+	openExecution(context: SessionLaunchContext, origin: SessionRuntimeOrigin): Promise<RunningExecution>;
+	/**
+	 * Cleanup recoverable allocations without a returned execution handle. Validates exact resource
+	 * provenance; never kills a replacement execution.
+	 */
+	cleanupOwned(record: Immutable<AgentSession>): Promise<void>;
+	/** Recover receipt/resource provenance for an already-existing launch. */
+	launchOrigin(record: Immutable<AgentSession>, modeId: ModeId): Promise<LaunchOrigin | undefined>;
+	inspectLaunch(origin: LaunchOrigin): Promise<"owned" | "absent" | "replacement">;
+	/** Provider receipt discovery only; the controller decides durable publication. */
+	discoverIdentity(context: SessionLaunchContext, origin: LaunchOrigin): Promise<NativeIdentity | undefined>;
+	/** Verify exact pane/root/provider/resource identity before changing tags. */
+	tagIdentity(origin: LaunchOrigin, identity: NativeIdentity): Promise<void>;
+	clearIdentity(origin: SessionRuntimeOrigin): Promise<void>;
+	/**
+	 * Provider ask preparation, invocation, timeout/partial-output handling, and temporary-resource
+	 * cleanup. No target selection, admission, or durable writes.
+	 */
+	ask(
+		context: SessionLaunchContext,
+		nativeId: string,
+		question: string,
+		options: { readonly timeoutMs: number; readonly workspaceContext?: WorkspaceContext },
+	): Promise<{ answer: string; timedOut: boolean }>;
+	/** Transport-only operations; never establish a new conversation. */
+	preview(origin: SessionRuntimeOrigin): Promise<SessionPreviewTarget>;
+	attach(origin: SessionRuntimeOrigin): Promise<void>;
+}
+
+export interface SessionStartOptions {
+	readonly preset?: string;
+	readonly modeId?: ModeId;
+	readonly replace?: boolean;
+	readonly maxRunningSessions?: number;
+}
+
+export interface SessionActivationResult {
+	readonly activated: boolean;
+	readonly status?: string;
+}
+
+export interface SessionControllerDependencies {
+	readonly rootDir: string;
+	readonly ownerPid: number;
+
+	readonly taskRepository: SessionTaskRepository;
+	readonly admission: SessionAdmission;
+	readonly configuration: SessionConfiguration;
+	readonly paths: SessionTaskPaths;
+	readonly store: SessionControllerStore;
+	readonly files: SessionFiles;
+	readonly requests: SessionWorkspaceRequests;
+	readonly selection: SessionModeSelection;
+	readonly modeLifecycle: SessionModeLifecycleStorage;
+	readonly runtime: SessionRuntime;
+
+	readonly now: () => string;
+	readonly newSessionId: () => string;
+	/** Existing environment override and default, resolved at operation time. */
+	readonly askTimeoutMs: () => number;
+}
+
+/** Implemented by the exported class in `session-controller.ts`. */
+export interface SessionControllerConstructor {
+	new (dependencies: SessionControllerDependencies): SessionController;
+}
+
+/**
  * Shared application controller. Maps the existing `AgentSessionService` public operations
  * one-for-one (see `AGENT_SESSION_SERVICE_MIGRATION`) and adds Task hydration. Construction is
- * UI-independent. The inputs the old service required are preserved deliberately: deletion
- * `force`, hand-off successor/predecessor identity, verified runtime origin, and mode destination.
+ * UI-independent — see {@link SessionControllerDependencies} for the boundary.
  */
 export interface SessionController {
 	readonly tasks: readonly Task[];
@@ -249,34 +522,63 @@ export interface SessionController {
 	liveSession(taskId: string, sessionId: string, options?: { passive?: boolean }): Promise<Session | undefined>;
 	output(taskId: string, sessionId?: string, modeId?: ModeId): Promise<string>;
 	touchUsage(taskId: string, sessionId?: string, modeId?: ModeId): Promise<void>;
+	/** Verified transport projection for UI attachment; never launches. */
+	preview(taskId: string, sessionId: string): Promise<SessionPreviewTarget | undefined>;
 
 	// Creation, resume and adoption.
+	/**
+	 * Owns inherited-context routing, replacement, and the direct-start running-limit policy.
+	 * Creation is reserve-then-start: `Task.reserveSession` inserts the provisional membership and
+	 * this operation obtains fresh authority, calls `session.start(...)`, waits for readiness, and
+	 * rolls back on failure.
+	 */
+	start(taskId: string, options?: SessionStartOptions): Promise<Session>;
 	prepareNewSession(taskId: string, modeId: ModeId): Promise<Session>;
 	prepareNativeSession(taskId: string, sessionId?: string, requestedModeId?: ModeId): Promise<Session>;
 	adoptPendingSession(taskId: string, sessionId: string): Promise<Session>;
+	/**
+	 * Registers a pending request and provisions the session WITHOUT provider startup. The
+	 * operation-scoped sink validates the captured pending reservation and treats that reservation
+	 * checkpoint as verification, never as a reinsertion.
+	 */
 	registerPendingSession(
 		taskId: string,
 		options: { preset?: string; replace?: boolean; modeId?: ModeId },
 		context: WorkspaceContext,
-	): Promise<void>;
+	): Promise<Session>;
 	publishNativeIdentity(origin: LaunchOrigin, identity: NativeIdentity): Promise<void>;
 
 	// Verified runtime transitions — origin is mandatory, never inferred from selection.
-	activateNativeSession(taskId: string, sessionId: string, origin: SessionRuntimeOrigin): Promise<void>;
-	finishNativeSession(taskId: string, sessionId: string, origin: SessionRuntimeOrigin): Promise<void>;
+	activateNativeSession(
+		taskId: string,
+		sessionId: string,
+		origin: SessionRuntimeOrigin,
+	): Promise<SessionActivationResult>;
+	finishNativeSession(taskId: string, sessionId: string, origin: SessionRuntimeOrigin, error?: string): Promise<void>;
 	parkNativeSession(taskId: string, sessionId: string, origin: SessionRuntimeOrigin): Promise<void>;
 
 	// Stop and hand-off. Hand-off carries the captured successor and predecessor identity.
 	stop(taskId: string, sessionId?: string, modeId?: ModeId): Promise<void>;
-	stopAllTaskSessions(taskId: string): Promise<void>;
+	/**
+	 * Core completion entry: the caller ALREADY holds task admission. Acquire session claims here,
+	 * but never re-acquire the task lock. Successor-retirement failure after a successful creation
+	 * does not roll the creation back.
+	 */
+	stopAllTaskSessions(taskId: string, ownedStops?: OwnedNativeSessionStops): Promise<void>;
 	finalizeHandoff(taskId: string, successor: Immutable<AgentSession>, handoff: SessionHandoff): Promise<void>;
 	rollbackHandoff(taskId: string, successor: Immutable<AgentSession>, handoff: SessionHandoff): Promise<void>;
 
 	// Mutation and deletion.
 	delete(taskId: string, sessionId: string, options?: { force?: boolean }): Promise<void>;
+	/**
+	 * Core deletion entry: the caller already holds task/reference admission. Forgets associations
+	 * and owned files; never inspects or signals a runtime.
+	 */
 	forgetTaskSessions(taskId: string): Promise<void>;
 	purge(taskId: string): Promise<void>;
 	reset(taskId: string): Promise<void>;
+	/** Task behavior followed by a locked selectedModeByTask entry update. */
+	cycleMode(taskId: string, direction?: number): Promise<ModeId>;
 	deleteMode(modeId: ModeId, destinationModeId?: ModeId): Promise<void>;
 
 	// Interaction and reconciliation.
@@ -290,6 +592,8 @@ export interface SessionController {
 	reconcileTaskSessions(taskId: string): Promise<void>;
 
 	hydrateTask(input: TaskHydrationInput): Task;
+	/** Release local subscriptions only; never stop shared executions. */
+	dispose(): void;
 }
 
 /**

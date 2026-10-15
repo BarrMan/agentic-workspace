@@ -36,6 +36,11 @@ function fixture(overrides: Partial<TaskHydrationInput> = {}) {
 				resume: async () => {},
 				stop: async () => {},
 				inject: async () => {},
+				bindExecution: () => {},
+				activate: async () => {},
+				park: async () => {},
+				finish: async () => {},
+				sendKey: async () => {},
 				subscribe: () => () => {},
 				serialize: () => record,
 			} satisfies Session;
