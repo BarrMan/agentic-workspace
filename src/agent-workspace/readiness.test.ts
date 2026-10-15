@@ -15,6 +15,14 @@ describe("launch readiness plumbing", () => {
 		expect(parseReadinessReceipt(" native-1\n", "native-1")).toBe(true);
 		expect(parseReadinessReceipt(" native-1\n", "native-2")).toBe(false);
 		expect(parseReadinessReceipt(" \n")).toBe(false);
+		expect(parseReadinessReceipt('{"session_id":"native-1","source":"resume"}', { session_id: "native-1" })).toBe(true);
+		expect(
+			parseReadinessReceipt('{"session_id":"native-1","source":"startup"}', {
+				session_id: "native-1",
+				source: "resume",
+			}),
+		).toBe(false);
+		expect(parseReadinessReceipt("not-json", { session_id: "native-1" })).toBe(false);
 	});
 
 	it("expires against the independently configurable provider-readiness deadline", async () => {
@@ -40,6 +48,19 @@ describe("launch readiness plumbing", () => {
 			).rejects.toThrow("Provider readiness timed out");
 		} finally {
 			await Promise.all([rm(earlier, { recursive: true, force: true }), rm(later, { recursive: true, force: true })]);
+		}
+	});
+
+	it("reports a present but invalid stage receipt as mismatched", async () => {
+		const directory = await mkdtemp(join(tmpdir(), "readiness-mismatch-test-"));
+		const path = initializedReceiptPath(directory);
+		try {
+			await writeFile(path, '{"session_id":"other","source":"startup"}');
+			await expect(
+				waitForReceipts([path], { session_id: "expected", source: "resume" }, session, liveProcess as never, 5),
+			).rejects.toThrow("mismatched initialized receipt");
+		} finally {
+			await rm(directory, { recursive: true, force: true });
 		}
 	});
 });

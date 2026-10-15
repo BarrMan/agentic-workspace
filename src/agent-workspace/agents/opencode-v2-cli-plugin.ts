@@ -1,16 +1,17 @@
 import { join } from "node:path";
 
 export function createOpencodeV2CliPlugin(options: {
-	metadataRoot: string;
-	agenticWorkspaceSessionId: string;
+	launchDirectory: string;
+	expectedNativeSessionId: string;
 	statusDir?: string;
 }): string {
 	return `import { Plugin } from "@opencode/plugin/tui";
 import { mkdirSync, writeFileSync, renameSync, rmSync } from "node:fs";
 import { dirname, join } from "node:path";
 
-const SIDECAR = ${JSON.stringify(join(options.metadataRoot, `${options.agenticWorkspaceSessionId}.native-session-id`))};
-const PROMPT_ACCEPTED = ${JSON.stringify(join(options.metadataRoot, `${options.agenticWorkspaceSessionId}.prompt-accepted`))};
+const INITIALIZED = ${JSON.stringify(join(options.launchDirectory, "initialized"))};
+const PROMPT_ACCEPTED = ${JSON.stringify(join(options.launchDirectory, "prompt-accepted"))};
+const EXPECTED_SESSION_ID = ${JSON.stringify(options.expectedNativeSessionId)};
 const STATUS = ${JSON.stringify(options.statusDir ? join(options.statusDir, "status") : "")};
 let writeSequence = 0;
 
@@ -36,10 +37,11 @@ export default Plugin.define({
           /^ses_[A-Za-z0-9_-]+$/.test(route.sessionID) ? route : undefined;
       } catch { return undefined; }
     };
-    const receipt = (sessionID) => {
+    const routeReceipt = (sessionID) => {
       try {
         const route = activeRoute();
-        if (route && sessionID === route.sessionID) atomicWrite(SIDECAR, sessionID);
+        if (route && sessionID === route.sessionID && sessionID === EXPECTED_SESSION_ID)
+          atomicWrite(INITIALIZED, sessionID);
       } catch {}
     };
     const status = (event, value) => {
@@ -54,7 +56,7 @@ export default Plugin.define({
       const dispose = ctx.ui.slot({ append: "app", render: () => {
         try {
           const route = activeRoute();
-          if (route) receipt(route.sessionID);
+          if (route) routeReceipt(route.sessionID);
         } catch {}
         return null;
       } });
@@ -74,7 +76,8 @@ export default Plugin.define({
         try {
           const info = event && event.data && event.data.info;
           const route = activeRoute();
-          if (route && info && info.sessionID === route.sessionID && info.role === "user") atomicWrite(PROMPT_ACCEPTED, info.sessionID);
+          if (route && info && info.sessionID === route.sessionID && info.sessionID === EXPECTED_SESSION_ID && info.role === "user")
+            atomicWrite(PROMPT_ACCEPTED, info.sessionID);
         } catch {}
       });
       if (typeof messageDispose === "function") cleanup.push(messageDispose);

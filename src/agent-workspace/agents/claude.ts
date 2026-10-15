@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { mkdir, writeFile } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
 import { appendArguments, filePrompt } from "../bootstrap.ts";
 import type { InstalledStatusHook } from "../status-hooks.ts";
 import type { AgentPreset, ModeProfile } from "../types.ts";
@@ -18,14 +18,14 @@ import {
 	shellQuote,
 } from "./agent.ts";
 import { CLAUDE_CHROME_RULES } from "./chrome-rules.ts";
-import { buildHookCommand, buildPromptReceiptCommand, type HookStatus } from "./hook-script.ts";
+import { buildHookCommand, buildReadinessReceiptCommand, type HookStatus } from "./hook-script.ts";
 import { sanitizeProfilePreset, withExplicitModel } from "./profile.ts";
 
 /** The Claude Code event → status map, expressed as a settings-shaped hooks object. */
 export function claudeHooksConfig(
 	statusDir: string,
 	sessionId?: string,
-	nativeSessionId = sessionId,
+	launchDirectory = statusDir,
 ): Record<string, unknown> {
 	const command = (status: HookStatus): { hooks: Array<{ type: "command"; command: string }> } => ({
 		hooks: [{ type: "command", command: buildHookCommand(statusDir, status) }],
@@ -39,7 +39,17 @@ export function claudeHooksConfig(
 	});
 	return {
 		hooks: {
-			SessionStart: [command("idle")],
+			SessionStart: [
+				command("idle"),
+				{
+					hooks: [
+						{
+							type: "command",
+							command: buildReadinessReceiptCommand(launchDirectory, join(launchDirectory, "initialized")),
+						},
+					],
+				},
+			],
 			UserPromptSubmit: [
 				command("running"),
 				...(sessionId
@@ -48,10 +58,7 @@ export function claudeHooksConfig(
 								hooks: [
 									{
 										type: "command" as const,
-										command: buildPromptReceiptCommand(
-											join(dirname(statusDir), `${sessionId}.prompt-accepted`),
-											nativeSessionId ?? sessionId,
-										),
+										command: buildReadinessReceiptCommand(launchDirectory, join(launchDirectory, "prompt-accepted")),
 									},
 								],
 							},
@@ -157,14 +164,14 @@ export class ClaudeAgent implements Agent {
 
 	async installStatusHooks(
 		{ pluginDir, statusDir, sessionId }: StatusHookInstallOptions,
-		nativeSessionId?: string,
+		_nativeSessionId?: string,
 	): Promise<InstalledStatusHook> {
 		// The sidecar is the deterministic per-session directory; the hook file lives in the temp dir.
 		await mkdir(statusDir, { recursive: true, mode: 0o700 });
 		const hooksDir = join(pluginDir, "hooks");
 		await mkdir(hooksDir, { recursive: true, mode: 0o700 });
 		const path = join(hooksDir, "hooks.json");
-		await writeFile(path, `${JSON.stringify(claudeHooksConfig(statusDir, sessionId, nativeSessionId), null, 2)}\n`, {
+		await writeFile(path, `${JSON.stringify(claudeHooksConfig(statusDir, sessionId, pluginDir), null, 2)}\n`, {
 			mode: 0o600,
 		});
 		return { provider: "claude", paths: [path], env: {}, args: [] };

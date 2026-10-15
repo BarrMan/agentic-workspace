@@ -82,7 +82,7 @@ describe("process-scoped provider install", () => {
 		const piPath = join(root, "pi.mjs");
 		const opencodePath = join(root, "opencode.mjs");
 		await writeFile(piPath, piExtensionSource(statusDir));
-		await writeFile(opencodePath, openCodeV1PluginSource(statusDir, root, "session"));
+		await writeFile(opencodePath, openCodeV1PluginSource(statusDir, root, "session", root));
 		try {
 			await rm(statusDir, { recursive: true });
 			const pi = await import(`${new URL(`file://${piPath}`).href}?${Date.now()}`);

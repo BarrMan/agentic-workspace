@@ -1,9 +1,9 @@
 import { randomUUID } from "node:crypto";
 import { watch } from "node:fs";
 import { readFile, rm } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { resolveLaunchPreset } from "./agents/opencode-resolution.ts";
-import { prepareAgentLaunch } from "./session-launch.ts";
+import { initializedReceiptPath, prepareAgentLaunch, promptAcceptedReceiptPath } from "./session-launch.ts";
 import { BunRunner, missingPaneStderr, SessionProcess } from "./session-process.ts";
 import { sessionActivityDir } from "./status-hooks.ts";
 import type {
@@ -151,12 +151,26 @@ export const HARNESS_READINESS_MATRIX = {
 	},
 } as const satisfies Record<"opencode-v1" | "opencode-v2" | "claude" | "pi", HarnessReadinessEvidence>;
 
-export function parseReadinessReceipt(contents: string, expected?: string): boolean {
+export type ReadinessReceiptExpectation = string | Readonly<Record<string, string>>;
+
+export function parseReadinessReceipt(contents: string, expected?: ReadinessReceiptExpectation): boolean {
 	const value = contents.trim();
-	return !!value && (expected === undefined || value === expected);
+	if (!value) return false;
+	if (expected === undefined) return true;
+	if (typeof expected === "string") return value === expected;
+	try {
+		const parsed: unknown = JSON.parse(value);
+		return (
+			typeof parsed === "object" &&
+			parsed !== null &&
+			Object.entries(expected).every(([field, required]) => (parsed as Record<string, unknown>)[field] === required)
+		);
+	} catch {
+		return false;
+	}
 }
 
-async function receipt(path: string, expected?: string): Promise<boolean> {
+async function receipt(path: string, expected?: ReadinessReceiptExpectation): Promise<boolean> {
 	try {
 		return parseReadinessReceipt(await readFile(path, "utf8"), expected);
 	} catch {
@@ -166,7 +180,7 @@ async function receipt(path: string, expected?: string): Promise<boolean> {
 
 export async function waitForReceipts(
 	paths: string[],
-	expected: string | undefined,
+	expected: ReadinessReceiptExpectation | undefined,
 	session: AgentSession,
 	process: SessionProcess,
 	timeoutMs = PROVIDER_READINESS_DEADLINE_MS,
@@ -205,13 +219,39 @@ export async function waitForReceipts(
 			});
 		});
 	}
-	throw new Error(`Provider readiness timed out for session ${session.id}.`);
+	const mismatched = await receiptExists(firstPath);
+	throw new Error(
+		`Provider readiness timed out for session ${session.id}; ${mismatched ? "mismatched" : "missing"} ${basename(firstPath)} receipt.`,
+	);
+}
+
+async function receiptExists(path: string): Promise<boolean> {
+	try {
+		await readFile(path, "utf8");
+		return true;
+	} catch {
+		return false;
+	}
+}
+
+async function observedNativeId(path: string): Promise<string> {
+	const value = (await readFile(path, "utf8")).trim();
+	try {
+		const parsed: unknown = JSON.parse(value);
+		if (parsed && typeof parsed === "object" && typeof (parsed as { session_id?: unknown }).session_id === "string")
+			return (parsed as { session_id: string }).session_id;
+	} catch {
+		// Other providers emit their native ID as a plain string.
+	}
+	return value;
 }
 
 export class Harness implements HarnessProvider {
 	private readonly process: SessionProcess;
-	constructor(rootDir: string, process?: SessionProcess) {
+	private readonly readinessDeadlineMs: number;
+	constructor(rootDir: string, process?: SessionProcess, readinessDeadlineMs = PROVIDER_READINESS_DEADLINE_MS) {
 		this.process = process ?? new SessionProcess(new BunRunner(), rootDir);
+		this.readinessDeadlineMs = readinessDeadlineMs;
 	}
 
 	launch(context: SessionLaunchContext): Promise<RunningExecution> {
@@ -242,29 +282,46 @@ export class Harness implements HarnessProvider {
 		});
 		const taskDir = context.record.pathContext?.taskDir ?? dirname(record.bootstrapPath);
 		const identityPath = join(taskDir, `${record.id}.native-session-id`);
-		const promptPath = join(taskDir, `${record.id}.prompt-accepted`);
 		let owned = false;
 		try {
-			if (intent.kind === "new")
-				await Promise.all([rm(identityPath, { force: true }), rm(promptPath, { force: true })]);
+			if (intent.kind === "new") await rm(identityPath, { force: true });
 			await this.process.prepare(preset.prepare, record.cwd, prepared.env);
 			if (intent.kind === "resume") await this.process.assertNoPreparedResources(record);
 			await this.process.create(record, prepared.env);
 			owned = true;
 			await this.process.preparePane(record);
 			await this.process.launchPrepared(record, prepared);
-			const activityDir = sessionActivityDir(
-				context.record.pathContext?.taskDir ?? dirname(record.bootstrapPath),
-				record.id,
-			);
+			const launchDirectory = prepared.resources.skill.path;
+			const initializedPath = initializedReceiptPath(launchDirectory);
 			if (intent.kind === "new") {
-				if (!prepared.identity) await waitForReceipts([identityPath], undefined, record, this.process);
-				const nativeId = prepared.identity?.id ?? (await readFile(identityPath, "utf8")).trim();
-				await waitForReceipts([promptPath], nativeId, record, this.process);
+				const initializedExpected: ReadinessReceiptExpectation | undefined =
+					context.preset.bootstrap === "claude" && prepared.identity
+						? { session_id: prepared.identity.id }
+						: prepared.identity?.id;
+				await waitForReceipts([initializedPath], initializedExpected, record, this.process, this.readinessDeadlineMs);
+				const nativeId = await observedNativeId(initializedPath);
+				if (!nativeId) throw new Error(`Provider initialized receipt has no native identity for session ${record.id}.`);
+				await waitForReceipts(
+					[promptAcceptedReceiptPath(launchDirectory)],
+					context.preset.bootstrap === "claude" ? { session_id: nativeId } : nativeId,
+					record,
+					this.process,
+					this.readinessDeadlineMs,
+				);
+				if (context.preset.bootstrap === "opencode-v2") {
+					if (!prepared.confirmSession)
+						throw new Error(`OpenCode v2 confirmation is unavailable for session ${record.id}.`);
+					if (!(await prepared.confirmSession(nativeId)))
+						throw new Error(`OpenCode v2 could not confirm session ${nativeId} after prompt acceptance.`);
+				}
 			} else {
-				await waitForReceipts([join(activityDir, "status")], undefined, record, this.process);
+				const expected: ReadinessReceiptExpectation =
+					context.preset.bootstrap === "claude"
+						? { session_id: intent.nativeSessionId, source: "resume" }
+						: intent.nativeSessionId;
+				await waitForReceipts([initializedPath], expected, record, this.process, this.readinessDeadlineMs);
 			}
-			const identity = prepared.identity?.id ?? (await readFile(identityPath, "utf8")).trim();
+			const identity = intent.kind === "resume" ? intent.nativeSessionId : await observedNativeId(initializedPath);
 			if (!identity) throw new Error(`Provider identity missing for session ${record.id}.`);
 			return this.execution(context, record, identity, prepared, executionId);
 		} catch (cause) {

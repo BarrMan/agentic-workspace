@@ -47,8 +47,20 @@ describe("OpenCode v2 adapter", () => {
 			await mkdir(metadataRoot, { recursive: true });
 			const taskRoot = join(directory, "task");
 			const statusDir = join(metadataRoot, "BACK-1.activity");
+			const lookupCli = join(directory, "opencode-lookup");
+			await writeFile(
+				lookupCli,
+				`#!/bin/sh
+[ "$1" = api ] && [ "$2" = --standalone ] && [ "$3" = get ] || exit 2
+[ "${"$LOOKUP_FAIL"}" != 1 ] || exit 1
+printf '%s\\n' "$LOOKUP_RESULT"
+`,
+			);
+			await chmod(lookupCli, 0o700);
 			const env = {
 				PATH: process.env.PATH ?? "",
+				LOOKUP_RESULT: '{"data":{"id":"ses_wrong"}}',
+				LOOKUP_FAIL: "0",
 				OPENCODE_CONFIG_CONTENT: '{ /* preserve existing skill paths */ "skills": ["/user/skills"] }',
 				OPENCODE_CLI_CONFIG_CONTENT: '{ // existing CLI plugin\n "plugins": ["user-plugin"] }',
 			};
@@ -67,7 +79,7 @@ describe("OpenCode v2 adapter", () => {
 				}),
 			).rejects.toThrow("requires its durable status directory");
 			const prepared = await new OpencodeV2Agent().prepare({
-				preset,
+				preset: { ...preset, command: lookupCli },
 				cwd: launchDirectory,
 				bootstrapPath: join(launchDirectory, "profile-bootstrap.md"),
 				directory: launchDirectory,
@@ -94,7 +106,8 @@ describe("OpenCode v2 adapter", () => {
 			expect(plugin).toContain("ctx.data.on(name,");
 			expect(plugin).not.toContain('ctx.data.on("session.created"');
 			expect(plugin).toContain('ctx.ui.slot({ append: "app"');
-			expect(plugin).toContain(join(metadataRoot, "BACK-1.native-session-id"));
+			expect(plugin).toContain(join(launchDirectory, "initialized"));
+			expect(plugin).toContain(join(launchDirectory, "prompt-accepted"));
 			expect(plugin).toContain("return null");
 			expect(plugin).not.toContain("OPENCODE_CONFIG_DIR");
 
@@ -133,23 +146,44 @@ describe("OpenCode v2 adapter", () => {
 				},
 			});
 			expect(render()).toBeNull();
-			expect(await readFile(join(metadataRoot, "BACK-1.native-session-id"), "utf8")).toBe("ses_other");
+			expect(await Bun.file(join(launchDirectory, "initialized")).exists()).toBe(false);
 			listeners.get("session.execution.started")?.({ data: { sessionID: prepared.identity?.id } });
 			expect(await Bun.file(join(statusDir, "status")).exists()).toBe(false);
 			route = { type: "session", sessionID: "ses_second" };
 			expect(render()).toBeNull();
+			listeners.get("message.updated")?.({ data: { info: { sessionID: "ses_second", role: "user" } } });
+			expect(await Bun.file(join(launchDirectory, "prompt-accepted")).exists()).toBe(false);
 			listeners.get("session.execution.started")?.({ data: { sessionID: prepared.identity?.id } });
 			expect(await Bun.file(join(statusDir, "status")).exists()).toBe(false);
 			listeners.get("session.execution.started")?.({ data: { sessionID: "ses_second" } });
+			const expectedId = prepared.identity?.id ?? "";
+			route = { type: "session", sessionID: expectedId };
+			expect(render()).toBeNull();
+			expect(await Bun.file(join(launchDirectory, "initialized")).exists()).toBe(true);
+			expect(await Bun.file(join(launchDirectory, "prompt-accepted")).exists()).toBe(false);
+			listeners.get("message.updated")?.({ data: { info: { sessionID: "ses_wrong", role: "user" } } });
+			expect(await Bun.file(join(launchDirectory, "prompt-accepted")).exists()).toBe(false);
+			listeners.get("message.updated")?.({ data: { info: { sessionID: expectedId, role: "assistant" } } });
+			expect(await Bun.file(join(launchDirectory, "prompt-accepted")).exists()).toBe(false);
+			listeners.get("message.updated")?.({ data: { info: { sessionID: expectedId, role: "user" } } });
 			for (let attempt = 0; attempt < 20; attempt++) {
 				if (
-					(await Bun.file(join(metadataRoot, "BACK-1.native-session-id")).exists()) &&
+					(await Bun.file(join(launchDirectory, "initialized")).exists()) &&
+					(await Bun.file(join(launchDirectory, "prompt-accepted")).exists()) &&
 					(await Bun.file(join(statusDir, "status")).exists())
 				)
 					break;
 				await new Promise((resolve) => setTimeout(resolve, 5));
 			}
-			expect(await readFile(join(metadataRoot, "BACK-1.native-session-id"), "utf8")).toBe("ses_second");
+			expect(await readFile(join(launchDirectory, "initialized"), "utf8")).toBe(expectedId);
+			expect(await readFile(join(launchDirectory, "prompt-accepted"), "utf8")).toBe(expectedId);
+			expect(await prepared.confirmSession?.(expectedId)).toBe(false);
+			env.LOOKUP_RESULT = JSON.stringify({ data: { id: expectedId } });
+			expect(await prepared.confirmSession?.(expectedId)).toBe(true);
+			env.LOOKUP_FAIL = "1";
+			expect(await prepared.confirmSession?.(expectedId)).toBe(false);
+			env.LOOKUP_FAIL = "0";
+			expect(await prepared.confirmSession?.("ses_other")).toBe(false);
 			expect(await Bun.file(join(taskRoot, "BACK-1.native-session-id")).exists()).toBe(false);
 			expect(await readFile(join(statusDir, "status"), "utf8")).toBe("running");
 			for (const [event, value] of [
@@ -157,18 +191,64 @@ describe("OpenCode v2 adapter", () => {
 				["permission.asked", "waiting"],
 				["session.execution.failed", "error"],
 			] as const) {
-				listeners.get(event)?.({ data: { sessionID: "ses_second" } });
+				listeners.get(event)?.({ data: { sessionID: expectedId } });
 				for (let attempt = 0; attempt < 20; attempt++) {
 					if ((await readFile(join(statusDir, "status"), "utf8")) === value) break;
 					await new Promise((resolve) => setTimeout(resolve, 5));
 				}
 				expect(await readFile(join(statusDir, "status"), "utf8")).toBe(value);
 			}
+			const resumeDirectory = join(directory, "resume-launch");
+			await mkdir(resumeDirectory, { recursive: true });
+			const resumeEnv = { ...env, LOOKUP_RESULT: '{"data":{"id":"ses_saved"}}', LOOKUP_FAIL: "0" };
+			const resumePrepared = await new OpencodeV2Agent().prepare({
+				preset: { ...preset, command: lookupCli },
+				cwd: resumeDirectory,
+				bootstrapPath: join(resumeDirectory, "bootstrap"),
+				directory: resumeDirectory,
+				skillRoot: join(resumeDirectory, "skills"),
+				skillPath: join(resumeDirectory, "skills", "SKILL.md"),
+				statusDir: join(metadataRoot, "BACK-RESUME.activity"),
+				sessionId: "BACK-RESUME",
+				env: resumeEnv,
+				intent: { kind: "resume", nativeSessionId: "ses_saved" },
+			});
+			const resumeConfig = Bun.JSONC.parse(resumePrepared.env.OPENCODE_CLI_CONFIG_CONTENT ?? "{}") as {
+				plugins: string[];
+			};
+			const resumePlugin = resumeConfig.plugins.at(-1);
+			if (!resumePlugin) throw new Error("Expected resume plugin path.");
+			const { default: resumeDefinition } = await import(
+				`${pathToFileURL(join(resumePlugin, "tui.js")).href}?resume=${Date.now()}`
+			);
+			let resumeRender!: () => unknown;
+			const resumeListeners = new Map<string, (event: unknown) => void>();
+			const resumeCleanup = resumeDefinition.setup({
+				ui: {
+					router: { current: () => ({ type: "session", sessionID: "ses_saved" }) },
+					slot: (slot: { render: () => unknown }) => {
+						resumeRender = slot.render;
+						return () => {};
+					},
+				},
+				data: {
+					on: (name: string, handler: (event: unknown) => void) => {
+						resumeListeners.set(name, handler);
+						return () => resumeListeners.delete(name);
+					},
+				},
+			});
+			expect(resumeRender()).toBeNull();
+			expect(await readFile(join(resumeDirectory, "initialized"), "utf8")).toBe("ses_saved");
+			expect(await Bun.file(join(resumeDirectory, "prompt-accepted")).exists()).toBe(false);
+			expect(resumePrepared.identity?.id).toBe("ses_saved");
+			expect(await resumePrepared.confirmSession?.("ses_saved")).toBe(true);
+			resumeCleanup();
+			expect(await readFile(join(launchDirectory, "initialized"), "utf8")).toBe(expectedId);
 			cleanup();
 			expect(slotDisposed).toBe(true);
 			expect(listeners.size).toBe(0);
 			await rm(launchDirectory, { recursive: true, force: true });
-			expect(await readFile(join(metadataRoot, "BACK-1.native-session-id"), "utf8")).toBe("ses_second");
 		} finally {
 			await rm(directory, { recursive: true, force: true });
 		}
@@ -276,7 +356,7 @@ esac
 				});
 			expect((await prepareResume("ses_existing")).identity?.id).toBe("ses_existing");
 			await expect(preflightResume("ses_missing")).rejects.toThrow("was not found or is unavailable");
-			await expect(preflightResume("ses_wrong")).rejects.toThrow("did not confirm 'ses_wrong'");
+			await expect(preflightResume("ses_wrong")).rejects.toThrow("session lookup did not confirm 'ses_wrong'");
 			await expect(
 				agent.preflightLaunch({
 					preset: { ...preset, command: binary },

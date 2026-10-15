@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { mkdir, writeFile } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
 import { appendArguments, filePrompt } from "../bootstrap.ts";
 import type { InstalledStatusHook } from "../status-hooks.ts";
 import type { ModeProfile } from "../types.ts";
@@ -21,16 +21,14 @@ import { PI_CHROME_RULES } from "./chrome-rules.ts";
 import { discoverModels, withExplicitModel } from "./profile.ts";
 
 /** Pi extension source. Non-throwing, same contract as the OpenCode plugin. */
-export function piExtensionSource(statusDir: string, sessionId?: string, nativeSessionId = sessionId): string {
+export function piExtensionSource(statusDir: string, launchDirectory = ""): string {
 	return `// agentic-workspace-hooks
 // Process-scoped status emitter. Installed inside AgenticWorkspace's owned temp dir and removed with it.
 import { existsSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 const STATUS_DIR = ${JSON.stringify(statusDir)};
-const SESSION_ID = ${JSON.stringify(nativeSessionId ?? "")};
-const PROMPT_ACCEPTED_PATH = ${JSON.stringify(join(dirname(statusDir), `${sessionId ?? ""}.prompt-accepted`))};
-void SESSION_ID;
+const LAUNCH_DIRECTORY = ${JSON.stringify(launchDirectory)};
 
 function emit(status) {
   try {
@@ -43,9 +41,19 @@ function emit(status) {
 
 export default function agenticWorkspaceStatus(pi) {
   try {
-    pi.on("session_start", () => emit("idle"));
-    pi.on("before_agent_start", () => {
-      try { writeFileSync(PROMPT_ACCEPTED_PATH, SESSION_ID, { mode: 0o600 }); } catch {}
+    pi.on("session_start", (_event, ctx) => {
+      emit("idle");
+      try {
+        const sessionId = ctx.sessionManager.getSessionId();
+        if (LAUNCH_DIRECTORY && sessionId) writeFileSync(join(LAUNCH_DIRECTORY, "initialized"), sessionId, { mode: 0o600 });
+      } catch {}
+    });
+    pi.on("before_agent_start", (event, ctx) => {
+      try {
+        if (typeof event?.prompt !== "string") return;
+        const sessionId = ctx.sessionManager.getSessionId();
+        if (LAUNCH_DIRECTORY && sessionId) writeFileSync(join(LAUNCH_DIRECTORY, "prompt-accepted"), sessionId, { mode: 0o600 });
+      } catch {}
     });
     pi.on("tool_call", () => emit("running"));
     pi.on("turn_end", () => emit("idle"));
@@ -140,13 +148,13 @@ export class PiAgent implements Agent {
 	}
 
 	async installStatusHooks(
-		{ pluginDir, statusDir, sessionId }: StatusHookInstallOptions,
-		nativeSessionId?: string,
+		{ pluginDir, statusDir }: StatusHookInstallOptions,
+		_nativeSessionId?: string,
 	): Promise<InstalledStatusHook> {
 		// The sidecar is the deterministic per-session directory; the hook file lives in the temp dir.
 		await mkdir(statusDir, { recursive: true, mode: 0o700 });
 		const path = join(pluginDir, "agentic-workspace-status-extension.ts");
-		await writeFile(path, piExtensionSource(statusDir, sessionId, nativeSessionId), { mode: 0o600 });
+		await writeFile(path, piExtensionSource(statusDir, pluginDir), { mode: 0o600 });
 		return { provider: "pi", paths: [path], env: {}, args: ["--extension", path] };
 	}
 }

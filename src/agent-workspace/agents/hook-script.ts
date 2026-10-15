@@ -27,6 +27,9 @@ export function buildHookCommand(statusDir: string, status: HookStatus): string 
 	return `sh -c ${quoteShell(hookScript(quoteShell(statusDir), status))}`;
 }
 
-export function buildPromptReceiptCommand(path: string, sessionId: string): string {
-	return `sh -c ${quoteShell(`umask 077; printf %s ${quoteShell(sessionId)} > ${quoteShell(path)}`)}`;
+/** Save provider hook stdin verbatim; parsing belongs to the harness. */
+export function buildReadinessReceiptCommand(directory: string, path: string): string {
+	return `sh -c ${quoteShell(
+		`umask 077; D=${quoteShell(directory)}; P=${quoteShell(path)}; [ -d "$D" ] || exit 0; T="$P.tmp.$$"; if cat > "$T" 2>/dev/null && mv "$T" "$P" 2>/dev/null; then exit 0; fi; rm -f "$T"; exit 0 # agentic-workspace-hooks`,
+	)}`;
 }

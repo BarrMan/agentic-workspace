@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { mkdir, writeFile } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
 import type { AgentPreset } from "../types.ts";
 import type {
 	Agent,
@@ -91,12 +91,12 @@ async function assertOpenCodeV2(preset: AgentPreset, cwd: string, env: Record<st
 	}
 }
 
-async function assertNativeSessionExists(
+async function lookupNativeSession(
 	preset: AgentPreset,
 	cwd: string,
 	env: Record<string, string>,
 	sessionId: string,
-) {
+): Promise<string | undefined> {
 	if (!/^ses_[A-Za-z0-9_-]+$/.test(sessionId)) {
 		throw new Error("Cannot resume OpenCode v2: saved native session ID is invalid.");
 	}
@@ -106,26 +106,17 @@ async function assertNativeSessionExists(
 		env,
 		8_000,
 	);
-	if (exitCode !== 0) {
-		throw new Error(`Cannot resume OpenCode v2: saved native session '${sessionId}' was not found or is unavailable.`);
-	}
+	if (exitCode !== 0) return undefined;
 	let result: unknown;
 	try {
 		result = JSON.parse(output.trim());
 	} catch {
-		throw new Error(`Cannot resume OpenCode v2: session lookup did not confirm '${sessionId}'.`);
+		return undefined;
 	}
-	if (
-		!result ||
-		typeof result !== "object" ||
-		!("data" in result) ||
-		!result.data ||
-		typeof result.data !== "object" ||
-		!("id" in result.data) ||
-		result.data.id !== sessionId
-	) {
-		throw new Error(`Cannot resume OpenCode v2: session lookup did not confirm '${sessionId}'.`);
-	}
+	// Report the observed ID rather than a bare boolean so a lookup that answers with a different
+	// session stays distinguishable from one that finds nothing.
+	const observed = (result as { data?: { id?: unknown } } | null)?.data?.id;
+	return typeof observed === "string" ? observed : undefined;
 }
 
 export class OpencodeV2Agent implements Agent {
@@ -197,6 +188,10 @@ export class OpencodeV2Agent implements Agent {
 			skills: [...skills, skillRoot],
 			...(explicitModel ? { model: explicitModel } : {}),
 		});
+		const identity: NativeIdentity =
+			intent.kind === "resume"
+				? { id: intent.nativeSessionId, basis: "client-established" }
+				: { id: this.allocateNativeSessionId(), basis: "client-established" };
 		if (sessionId) {
 			if (!statusDir) throw new Error("OpenCode v2 session launch requires its durable status directory.");
 			await this.installStatusHooks({ pluginDir: directory, statusDir, sessionId });
@@ -215,24 +210,37 @@ export class OpencodeV2Agent implements Agent {
 			await writeFile(
 				join(cliPlugin, "tui.js"),
 				createOpencodeV2CliPlugin({
-					metadataRoot: dirname(statusDir),
-					agenticWorkspaceSessionId: sessionId,
+					launchDirectory: directory,
 					statusDir,
+					expectedNativeSessionId: identity.id,
 				}),
 				{ mode: 0o600 },
 			);
 			const cli = preflight?.cli ?? parseCliConfig(env.OPENCODE_CLI_CONFIG_CONTENT);
 			env.OPENCODE_CLI_CONFIG_CONTENT = cliConfig(cli, cliPlugin);
 		}
-		const identity: NativeIdentity =
-			intent.kind === "resume"
-				? { id: intent.nativeSessionId, basis: "client-established" }
-				: { id: this.allocateNativeSessionId(), basis: "client-established" };
 		const command =
 			intent.kind === "resume"
 				? this.resumeCommand({ preset, nativeSessionId: identity.id })
 				: this.launchCommand({ preset, bootstrapPath, nativeSessionId: identity.id });
-		return { command, env, identity };
+		return {
+			command,
+			env,
+			identity,
+			...(sessionId
+				? {
+						confirmSession: async (expectedNativeSessionId: string) => {
+							if (expectedNativeSessionId !== identity.id) return false;
+							try {
+								const observed = await lookupNativeSession(preset, request.cwd, env, expectedNativeSessionId);
+								return observed === expectedNativeSessionId;
+							} catch {
+								return false;
+							}
+						},
+					}
+				: {}),
+		};
 	}
 
 	async reconcileIdentity(
@@ -246,8 +254,15 @@ export class OpencodeV2Agent implements Agent {
 		// real ID is privately allocated during prepare.
 		else this.launchCommand({ ...request, nativeSessionId: request.nativeSessionId ?? this.allocateNativeSessionId() });
 		await assertOpenCodeV2(request.preset, request.cwd, request.env);
-		if (request.resume && request.nativeSessionId)
-			await assertNativeSessionExists(request.preset, request.cwd, request.env, request.nativeSessionId);
+		if (request.resume && request.nativeSessionId) {
+			const observed = await lookupNativeSession(request.preset, request.cwd, request.env, request.nativeSessionId);
+			if (observed !== request.nativeSessionId)
+				throw new Error(
+					observed === undefined
+						? `Cannot resume OpenCode v2: saved native session '${request.nativeSessionId}' was not found or is unavailable.`
+						: `Cannot resume OpenCode v2: session lookup did not confirm '${request.nativeSessionId}'.`,
+				);
+		}
 		const explicitModel = request.profile?.model.kind === "explicit" ? request.profile.model.id : undefined;
 		if (explicitModel) withExplicitModel(request.preset, explicitModel);
 		const opencode = parseOpenCodeConfig(request.env.OPENCODE_CONFIG_CONTENT);
