@@ -4,7 +4,7 @@ import { readFile, rm } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { resolveLaunchPreset } from "./agents/opencode-resolution.ts";
 import { prepareAgentLaunch } from "./session-launch.ts";
-import { BunRunner, LAUNCH_PROBE_DURATION_MS, missingPaneStderr, SessionProcess } from "./session-process.ts";
+import { BunRunner, missingPaneStderr, SessionProcess } from "./session-process.ts";
 import { sessionActivityDir } from "./status-hooks.ts";
 import type {
 	AgentActivity,
@@ -79,6 +79,21 @@ export interface HarnessReadinessEvidence {
 	readonly events: RunningExecutionEvents;
 }
 
+export const PROVIDER_READINESS_DEADLINE_MS = 10_000;
+
+export interface ProviderReadinessFailureDiagnostic {
+	readonly provider: string;
+	readonly intent: "new" | "resume";
+	readonly workspaceTaskId: string;
+	readonly expectedNativeId: string | undefined;
+	readonly stage: {
+		readonly name: "initialized" | "prompt-accepted" | "resume-initialized";
+		readonly outcome: "missing" | "mismatched";
+	};
+	readonly elapsedMs: number;
+	readonly receiptPath: string;
+}
+
 export const HARNESS_READINESS_MATRIX = {
 	"opencode-v1": {
 		identity: "Plugin `session.created` event, written as the `<sessionId>.native-session-id` receipt.",
@@ -136,25 +151,30 @@ export const HARNESS_READINESS_MATRIX = {
 	},
 } as const satisfies Record<"opencode-v1" | "opencode-v2" | "claude" | "pi", HarnessReadinessEvidence>;
 
+export function parseReadinessReceipt(contents: string, expected?: string): boolean {
+	const value = contents.trim();
+	return !!value && (expected === undefined || value === expected);
+}
+
 async function receipt(path: string, expected?: string): Promise<boolean> {
 	try {
-		const value = (await readFile(path, "utf8")).trim();
-		return !!value && (expected === undefined || value === expected);
+		return parseReadinessReceipt(await readFile(path, "utf8"), expected);
 	} catch {
 		return false;
 	}
 }
 
-async function waitForReceipts(
+export async function waitForReceipts(
 	paths: string[],
 	expected: string | undefined,
 	session: AgentSession,
 	process: SessionProcess,
+	timeoutMs = PROVIDER_READINESS_DEADLINE_MS,
 ): Promise<void> {
 	const firstPath = paths[0];
 	if (!firstPath) throw new Error("No provider readiness receipts were configured.");
 	const directory = dirname(firstPath);
-	const deadline = Date.now() + LAUNCH_PROBE_DURATION_MS;
+	const deadline = Date.now() + timeoutMs;
 	while (Date.now() < deadline) {
 		const pane = await process.alive(session);
 		if (pane.exitCode !== 0 || pane.stdout.trim() !== "0")

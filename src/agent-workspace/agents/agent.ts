@@ -97,6 +97,8 @@ export interface AgentPreparation {
 	env: Record<string, string>;
 	/** Present when the adapter established an identity during prepare; absent means it is deferred. */
 	identity?: NativeIdentity;
+	/** Optional transient exact-session confirmation; never persisted beyond this prepared launch. */
+	confirmSession?: (expectedNativeSessionId: string) => Promise<boolean>;
 }
 
 export interface StatusHookInstallOptions {

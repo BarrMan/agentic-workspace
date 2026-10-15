@@ -28,11 +28,28 @@ export interface PreparedAgentLaunch {
 	env: Record<string, string>;
 	/** The adapter-established native identity, or absent when the identity is deferred. */
 	identity?: NativeIdentity;
+	/** Optional transient exact-session confirmation supplied by the provider adapter. */
+	confirmSession?: (expectedNativeSessionId: string) => Promise<boolean>;
 	/** Non-blocking preset-environment warnings, available to native workspace presentation. */
 	warnings?: string[];
 	resources: PreparedLaunchResources;
 	/** Release only after the agent stops, or if starting the agent fails. */
 	cleanup(): Promise<void>;
+}
+
+export type ReadinessReceiptName = "initialized" | "prompt-accepted";
+
+/** Receipt paths are scoped to the unique owned directory for this launch, never the session activity directory. */
+export function readinessReceiptPath(launchDirectory: string, name: ReadinessReceiptName): string {
+	return join(launchDirectory, name);
+}
+
+export function initializedReceiptPath(launchDirectory: string): string {
+	return readinessReceiptPath(launchDirectory, "initialized");
+}
+
+export function promptAcceptedReceiptPath(launchDirectory: string): string {
+	return readinessReceiptPath(launchDirectory, "prompt-accepted");
 }
 
 export interface PrepareAgentLaunchOptions {
@@ -235,6 +252,7 @@ export async function prepareAgentLaunchResources(
 			command: `/bin/sh -c ${quote(script)}`,
 			env: preparedEnvironment,
 			identity: prepared.identity,
+			confirmSession: prepared.confirmSession,
 			resources,
 			cleanup,
 		};
