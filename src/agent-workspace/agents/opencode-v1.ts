@@ -112,7 +112,12 @@ export class OpencodeV1Agent implements Agent {
 			skillRoot,
 		);
 		if (statusDir) {
-			const installed = await this.installStatusHooks({ pluginDir: directory, statusDir, sessionId });
+			const installed = await this.installStatusHooks({
+				pluginDir: directory,
+				statusDir,
+				sessionId,
+				expectedNativeSessionId: intent.kind === "resume" ? intent.nativeSessionId : undefined,
+			});
 			Object.assign(env, installed.env);
 		}
 		if (intent.kind === "resume")
@@ -148,19 +153,30 @@ export class OpencodeV1Agent implements Agent {
 		pluginDir,
 		statusDir,
 		sessionId,
-	}: StatusHookInstallOptions): Promise<InstalledStatusHook> {
+		expectedNativeSessionId,
+	}: StatusHookInstallOptions & { expectedNativeSessionId?: string }): Promise<InstalledStatusHook> {
 		if (!sessionId) throw new Error("OpenCode 1.19 status hooks require a AgenticWorkspace session ID.");
 		await mkdir(statusDir, { recursive: true, mode: 0o700 });
 		const pluginsDir = join(pluginDir, "plugins");
 		await mkdir(pluginsDir, { recursive: true, mode: 0o700 });
 		const path = join(pluginsDir, "agentic-workspace-status.ts");
-		await writeFile(path, openCodeV1PluginSource(statusDir, dirname(statusDir), sessionId), { mode: 0o600 });
+		await writeFile(
+			path,
+			openCodeV1PluginSource(statusDir, dirname(statusDir), sessionId, pluginDir, expectedNativeSessionId),
+			{ mode: 0o600 },
+		);
 		return { provider: "opencode-v1", paths: [path], env: { OPENCODE_CONFIG_DIR: pluginDir }, args: [] };
 	}
 }
 
 /** OpenCode 1.19 plugin source for the TUI launch path. */
-export function openCodeV1PluginSource(statusDir: string, taskRoot: string, agenticWorkspaceSessionId: string): string {
+export function openCodeV1PluginSource(
+	statusDir: string,
+	taskRoot: string,
+	agenticWorkspaceSessionId: string,
+	launchDirectory: string,
+	expectedNativeSessionId?: string,
+): string {
 	return `// agentic-workspace-hooks
 // Process-scoped status and native-session emitter for OpenCode 1.19.
 import { existsSync, mkdirSync, renameSync, writeFileSync } from "node:fs";
@@ -169,8 +185,11 @@ import { join } from "node:path";
 const STATUS_DIR = ${JSON.stringify(statusDir)};
 const TASK_ROOT = ${JSON.stringify(taskRoot)};
 const AGENTIC_WORKSPACE_SESSION_ID = ${JSON.stringify(agenticWorkspaceSessionId)};
+const LAUNCH_DIRECTORY = ${JSON.stringify(launchDirectory)};
+const EXPECTED_NATIVE_SESSION_ID = ${JSON.stringify(expectedNativeSessionId)};
 const NATIVE_SESSION_ID_PATH = join(TASK_ROOT, AGENTIC_WORKSPACE_SESSION_ID + ".native-session-id");
-const PROMPT_ACCEPTED_PATH = join(TASK_ROOT, AGENTIC_WORKSPACE_SESSION_ID + ".prompt-accepted");
+const INITIALIZED_PATH = join(LAUNCH_DIRECTORY, "initialized");
+const PROMPT_ACCEPTED_PATH = join(LAUNCH_DIRECTORY, "prompt-accepted");
 const topLevelSessionIDs = new Set();
 const childSessionIDs = new Set();
 let activeTopLevelSessionID;
@@ -193,6 +212,7 @@ function recordNativeSessionId(sessionID) {
     writeFileSync(temporaryPath, sessionID + "\\n", { mode: 0o600 });
     renameSync(temporaryPath, NATIVE_SESSION_ID_PATH);
     activeTopLevelSessionID = sessionID;
+    writeReceipt(INITIALIZED_PATH, sessionID);
   } catch {
     // Never throw from an event handler.
   }
@@ -201,15 +221,36 @@ function recordNativeSessionId(sessionID) {
 function recordPromptAccepted(sessionID) {
   try {
     if (sessionID !== activeTopLevelSessionID) return;
-    const temporaryPath = PROMPT_ACCEPTED_PATH + "." + process.pid + ".tmp";
-    writeFileSync(temporaryPath, sessionID + "\\n", { mode: 0o600 });
-    renameSync(temporaryPath, PROMPT_ACCEPTED_PATH);
+    writeReceipt(PROMPT_ACCEPTED_PATH, sessionID);
   } catch {
     // Never throw from an event handler.
   }
 }
 
-export const AgenticWorkspaceStatus = async ({ client }) => ({
+function writeReceipt(path, sessionID) {
+  try {
+    const temporaryPath = path + "." + process.pid + ".tmp";
+    writeFileSync(temporaryPath, sessionID + "\\n", { mode: 0o600 });
+    renameSync(temporaryPath, path);
+  } catch {
+    // Never throw from an event handler.
+  }
+}
+
+export const AgenticWorkspaceStatus = async ({ client }) => {
+  if (EXPECTED_NATIVE_SESSION_ID) {
+    try {
+      const response = await client.session.get({ sessionID: EXPECTED_NATIVE_SESSION_ID });
+      const session = response && response.data;
+      if (session && session.id === EXPECTED_NATIVE_SESSION_ID && !session.parentID) {
+        topLevelSessionIDs.add(session.id);
+        recordNativeSessionId(session.id);
+      }
+    } catch {
+      // A failed read-only lookup must not block plugin initialization.
+    }
+  }
+  return {
   event: async ({ event }) => {
     try {
       const type = event && event.type;
@@ -261,7 +302,8 @@ export const AgenticWorkspaceStatus = async ({ client }) => ({
   },
   "permission.ask": async (input) => emit("waiting", input && input.sessionID),
   "tool.execute.before": async (input) => emit("running", input && input.sessionID),
-});
+  };
+};
 `;
 }
 
