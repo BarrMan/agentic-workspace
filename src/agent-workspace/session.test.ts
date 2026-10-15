@@ -193,6 +193,27 @@ describe("Session lifecycle", () => {
 		]);
 	});
 
+	test("park clears obsolete lifecycle fields while retaining unrelated record data", async () => {
+		const session = new Session(
+			{ ...record, ownerPid: 42, endedAt: "then", error: "old failure", useCount: 9, nativeSessionId: "native" },
+			"mode",
+		);
+		let published: LifecycleCheckpoint | undefined;
+		await session.park({
+			checkpoint: async (checkpoint) => {
+				published = checkpoint;
+			},
+		});
+		expect(published).toMatchObject({
+			phase: "update",
+			reason: "park",
+			record: { status: AGENT_SESSION_STATUS.PARKED, useCount: 9, nativeSessionId: "native" },
+		});
+		expect(published?.record.ownerPid).toBeUndefined();
+		expect(published?.record.endedAt).toBeUndefined();
+		expect(published?.record.error).toBeUndefined();
+	});
+
 	test("resume replaces execution, clears prior terminal fields, and ignores obsolete events", async () => {
 		const first = execution("first");
 		const second = execution("second", "same-conversation");

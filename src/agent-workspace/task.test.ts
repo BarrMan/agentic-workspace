@@ -168,6 +168,33 @@ describe("Task", () => {
 		}
 	});
 
+	it("prepends one reservation and reloads the same selected session", async () => {
+		const root = await mkdtemp(join(tmpdir(), "task-reservation-reload-"));
+		roots.push(root);
+		const store = new SessionStore(root, { run: async () => ({ exitCode: 1, stdout: "", stderr: "unused" }) });
+		const previous = {
+			id: "previous",
+			taskId: "T-1",
+			preset: "x",
+			tmuxName: "",
+			cwd: "/",
+			createdAt: "then",
+			status: "stopped" as const,
+			outputPath: "",
+			bootstrapPath: "",
+		};
+		const { task } = fixture({ sessionRecords: { a: { sessions: [previous], activeSessionId: previous.id } } });
+		const { session } = task.reserveSession("a");
+		expect(task.modes.a?.sessions.map(({ id }) => id)).toEqual([session.id, previous.id]);
+		expect(task.modes.a?.activeSessionId).toBe(session.id);
+		await store.mutate("T-1", async (state) => {
+			state.modes = task.serializeSessions();
+		});
+		const reloaded = await store.readMode("T-1", "a");
+		expect(reloaded.sessions.map(({ id }) => id)).toEqual([session.id, previous.id]);
+		expect(reloaded.activeSessionId).toBe(session.id);
+	});
+
 	it("rehydrates creation identity and preserves a newer selection during rollback", () => {
 		const { task: original } = fixture();
 		const task = original;
@@ -179,6 +206,37 @@ describe("Task", () => {
 		rehydrated.rollbackSession(creation);
 		expect(rehydrated.modes.a?.sessions.map(({ id }) => id)).toEqual([newer.id]);
 		expect(rehydrated.modes.a?.activeSessionId).toBe(newer.id);
+	});
+
+	it("restores the previous pointer only while rolling back the selected creation", () => {
+		const prior = {
+			id: "prior",
+			taskId: "T-1",
+			preset: "x",
+			tmuxName: "",
+			cwd: "/",
+			createdAt: "prior-time",
+			status: "stopped" as const,
+			outputPath: "",
+			bootstrapPath: "",
+		};
+		const { task } = fixture({ sessionRecords: { a: { sessions: [prior], activeSessionId: prior.id } } });
+		const { creation, session } = task.reserveSession("a");
+		task.rollbackSession(creation);
+		expect(task.modes.a?.activeSessionId).toBe(prior.id);
+		expect(task.modes.a?.sessions.map(({ id }) => id)).toEqual([prior.id]);
+
+		const noPrevious = fixture({
+			sessionRecords: {
+				a: { sessions: [prior, { ...prior, id: "survivor", createdAt: "survivor-time" }], activeSessionId: prior.id },
+			},
+		}).task;
+		const { creation: firstCreation } = noPrevious.reserveSession("a");
+		noPrevious.removeSession("a", prior.id);
+		noPrevious.rollbackSession(firstCreation);
+		expect(noPrevious.modes.a?.activeSessionId).toBe("survivor");
+		expect(noPrevious.modes.a?.sessions.map(({ id }) => id)).toEqual(["survivor"]);
+		expect(task.modes.a?.sessions.some(({ id }) => id === session.id)).toBe(false);
 	});
 
 	it("rejects rollback of a same-id replacement incarnation", () => {
@@ -344,6 +402,48 @@ describe("Task", () => {
 			state.modes = task.serializeSessions();
 		});
 		const reloaded = await store.read("T-1");
+		expect(reloaded.modes.hidden).toEqual({ sessions: [hidden], activeSessionId: hidden.id });
+	});
+
+	it("publishes a record update while preserving unrelated histories, counters, and selection", async () => {
+		const root = await mkdtemp(join(tmpdir(), "task-publication-preserves-history-"));
+		roots.push(root);
+		const store = new SessionStore(root, { run: async () => ({ exitCode: 1, stdout: "", stderr: "unused" }) });
+		const selected = {
+			id: "selected",
+			taskId: "T-1",
+			preset: "x",
+			tmuxName: "",
+			cwd: "/",
+			createdAt: "one",
+			status: "stopped" as const,
+			outputPath: "",
+			bootstrapPath: "",
+		};
+		const other = { ...selected, id: "other", createdAt: "two", useCount: 7 };
+		const hidden = { ...selected, id: "hidden", createdAt: "three", useCount: 4, lastUsedAt: "recent" };
+		const task = fixture({
+			sessionRecords: {
+				a: { sessions: [selected, other], activeSessionId: selected.id },
+				b: { sessions: [{ ...selected, id: "mode-b" }], activeSessionId: "mode-b" },
+				hidden: { sessions: [hidden], activeSessionId: hidden.id },
+			},
+		}).task;
+		const updated = { ...selected, status: "running" as const };
+		task.updateSessionRecord("a", updated);
+		task.selectSession("a", other.id);
+		await store.mutate("T-1", async (state) => {
+			state.modes = task.serializeSessions();
+		});
+		const reloaded = await store.read("T-1");
+		expect(reloaded.modes.a).toMatchObject({
+			activeSessionId: other.id,
+			sessions: [
+				{ id: selected.id, status: "running" },
+				{ id: other.id, useCount: 7 },
+			],
+		});
+		expect(reloaded.modes.b).toMatchObject({ activeSessionId: "mode-b", sessions: [{ id: "mode-b" }] });
 		expect(reloaded.modes.hidden).toEqual({ sessions: [hidden], activeSessionId: hidden.id });
 	});
 });
