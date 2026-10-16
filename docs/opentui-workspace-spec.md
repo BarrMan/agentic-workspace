@@ -76,7 +76,7 @@ It replaces tmux/Blessed presentation. It retains existing task domain services,
 ### Out of scope
 
 - Replacing `Core` task persistence or domain logic. <!-- consolidation: discard; ref: docs/BLUEPRINT.md#component-ownership; reason: Historical migration scope cannot freeze current domain design. -->
-- Replacing durable agent processes; session lifecycle ownership follows the [session-service target design](./session-service-redesign.md#ownership). <!-- consolidation: exists; ref: docs/BLUEPRINT.md#component-ownership; reason: Runtime lifecycle remains outside presentation. -->
+- Replacing durable agent processes; session lifecycle ownership follows the [session-service target design](BLUEPRINT.md#component-ownership). <!-- consolidation: exists; ref: docs/BLUEPRINT.md#component-ownership; reason: Runtime lifecycle remains outside presentation. -->
 - Changing agent-provider semantics. <!-- consolidation: discard; ref: none; reason: Historical bounded migration scope. -->
 - Adding a second public workspace command or compatibility UI. <!-- consolidation: unconfirmed; ref: none; reason: Unapproved compatibility surfaces are excluded. -->
 
@@ -178,7 +178,7 @@ Retain current domain behavior for:
 - Agent start/open, live output, history, handoff, configuration, and worktree selection. <!-- consolidation: exists; ref: docs/specs/sessions.md#starting-a-session; reason: Session start uses effective configuration and work context. --> <!-- consolidation: exists; ref: docs/specs/sessions.md#handoff; reason: Handoff remains supported. --> <!-- consolidation: exists; ref: docs/specs/sessions.md#observe-and-detach-from-a-live-session; reason: Live output and retained conversations remain distinct. -->
 - Task/config/session watcher refresh. <!-- consolidation: integrate; ref: docs/architecture/application-boundaries.md#ui-controller-feature-modules-renderer-and-terminal-host; reason: Preserve subscriptions to existing task configuration and session refresh sources. -->
 
-Mutations use the shared owners defined in the [session-service target design](./session-service-redesign.md#ownership). <!-- consolidation: exists; ref: docs/BLUEPRINT.md#component-ownership; reason: Shared model and application owners are specified. -->
+Mutations use the shared owners defined in the [session-service target design](BLUEPRINT.md#component-ownership). <!-- consolidation: exists; ref: docs/BLUEPRINT.md#component-ownership; reason: Shared model and application owners are specified. -->
 
 Closing the workspace detaches the UI only. It must never terminate a durable agent session. <!-- consolidation: exists; ref: docs/specs/sessions.md#observe-and-detach-from-a-live-session; reason: Client exit leaves executions running. -->
 
@@ -305,7 +305,7 @@ status tabs. The status tabs keep rendering task statuses only. <!-- consolidati
 | `src/ui/opentui/filters.ts` | Filter editor <!-- consolidation: exists; ref: docs/screens/help-dialogs.md#dialogs-and-editors; reason: Filter editor contract is specified. --> |
 | `src/ui/opentui/controls.ts` | Shared modal controls <!-- consolidation: discard; ref: none; reason: Historical source reuse inventory. --> |
 | `Core` | Task reads, writes, and lifecycle mutations <!-- consolidation: discard; ref: docs/BLUEPRINT.md#component-ownership; reason: Task model application and repository now have explicit separate ownership. --> |
-| Session and Harness | Session lifecycle and provider execution, as defined in the [session-service target design](./session-service-redesign.md#ownership) <!-- consolidation: exists; ref: docs/BLUEPRINT.md#component-ownership; reason: Session and Harness own conversation and execution. --> |
+| Session and Harness | Session lifecycle and provider execution, as defined in the [session-service target design](BLUEPRINT.md#component-ownership) <!-- consolidation: exists; ref: docs/BLUEPRINT.md#component-ownership; reason: Session and Harness own conversation and execution. --> |
 | Existing task/config/session watchers | Live refresh <!-- consolidation: integrate; ref: docs/architecture/application-boundaries.md#ui-controller-feature-modules-renderer-and-terminal-host; reason: Retain shared watcher subscriptions rather than a second refresh authority. --> |
 
 ### Remove after successful cutover

@@ -32,7 +32,7 @@ Items 1–5 below are **settled and implemented** — this file is background fo
 | 5 worktree task creation | tasks live in the main worktree's store; linked worktrees share it | implemented, including the synchronous/async root-resolution guard <!-- consolidation: exists; ref: docs/specs/tasks.md#tasks-and-storage; reason: Linked worktrees use the main project's store. --> <!-- consolidation: discard; ref: none; reason: Root-resolution implementation checkpoint is not current proof. --> |
 | unattributed test hangs | not product defects: the survivors were machine starvation and one test-design race (comparing two runs' generated timestamps). The remaining flake is spawn cost | see next action 2 in [handoff.md](handoff.md) <!-- consolidation: discard; ref: none; reason: Historical test diagnosis belongs in evidence ledger. --> |
 
-Open with the owner: [decision-answers-5.md](decision-answers-5.md) (input on close) and [decision-answers-6.md](decision-answers-6.md) (items 1–3). <!-- consolidation: unconfirmed; ref: docs/SPEC.md#open-product-decisions; reason: Retain input-close and watcher decision pointers pending current disposition. --> Current suite state and ordered next actions: [handoff.md](handoff.md).
+Open with the owner: [open product decisions](SPEC.md#open-product-decisions). <!-- consolidation: unconfirmed; ref: docs/SPEC.md#open-product-decisions; reason: Retain input-close and watcher decision pointers pending current disposition. --> Current suite state and ordered next actions: [handoff.md](handoff.md).
 
 ## Where things stand
 

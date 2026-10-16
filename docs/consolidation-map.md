@@ -25,13 +25,11 @@ These are section-level holds, not indefinite retention of entire files. Do not 
 |---|---:|---:|---:|---:|---:|
 | [docs/test-suite-improvement-report.md](../docs/test-suite-improvement-report.md) | 685 | 54 (7.88%) | 462 (67.45%) | 103 (15.04%) | 66 (9.64%) |
 | [docs/aoe-functionality-map.md](../docs/aoe-functionality-map.md) | 480 | 1 (0.21%) | 472 (98.33%) | 4 (0.83%) | 3 (0.63%) |
-| [docs/session-service-redesign-implementation-plan.md](../docs/session-service-redesign-implementation-plan.md) | 356 | 224 (62.92%) | 102 (28.65%) | 4 (1.12%) | 26 (7.30%) |
 | [docs/aoe-agent-workspace-reference.md](../docs/aoe-agent-workspace-reference.md) | 312 | 8 (2.56%) | 249 (79.81%) | 4 (1.28%) | 51 (16.35%) |
 | [docs/aoe-status-tracking-plan.md](../docs/aoe-status-tracking-plan.md) | 302 | 49 (16.23%) | 128 (42.38%) | 44 (14.57%) | 81 (26.82%) |
 | [docs/opentui-workspace-session-contract.md](../docs/opentui-workspace-session-contract.md) | 256 | 100 (39.06%) | 79 (30.86%) | 42 (16.41%) | 35 (13.67%) |
 | [docs/opentui-workspace-spec.md](../docs/opentui-workspace-spec.md) | 237 | 115 (48.52%) | 59 (24.89%) | 38 (16.03%) | 25 (10.55%) |
 | [docs/opentui-workspace-implementation-plan.md](../docs/opentui-workspace-implementation-plan.md) | 222 | 69 (31.08%) | 92 (41.44%) | 22 (9.91%) | 39 (17.57%) |
-| [docs/session-service-redesign-correction-plan.md](../docs/session-service-redesign-correction-plan.md) | 216 | 133 (61.57%) | 43 (19.91%) | 0 (0.00%) | 40 (18.52%) |
 | [docs/shared-agent-server-plan.md](../docs/shared-agent-server-plan.md) | 207 | 88 (42.51%) | 67 (32.37%) | 20 (9.66%) | 32 (15.46%) |
 | [docs/aoe-lifecycle-implementation-plan.md](../docs/aoe-lifecycle-implementation-plan.md) | 202 | 25 (12.38%) | 137 (67.82%) | 1 (0.50%) | 39 (19.31%) |
 | [docs/questionnaire-02.md](../docs/questionnaire-02.md) | 195 | 61 (31.28%) | 36 (18.46%) | 0 (0.00%) | 98 (50.26%) |
@@ -43,7 +41,6 @@ These are section-level holds, not indefinite retention of entire files. Do not 
 | [docs/recent-app-file-activity.md](../docs/recent-app-file-activity.md) | 179 | 0 (0.00%) | 144 (80.45%) | 0 (0.00%) | 35 (19.55%) |
 | [docs/BACK-728-handoff.md](../docs/BACK-728-handoff.md) | 172 | 16 (9.30%) | 115 (66.86%) | 13 (7.56%) | 28 (16.28%) |
 | [docs/tmux-call-sites.md](../docs/tmux-call-sites.md) | 149 | 1 (0.67%) | 93 (62.42%) | 0 (0.00%) | 55 (36.91%) |
-| [docs/session-service-redesign.md](../docs/session-service-redesign.md) | 148 | 139 (93.92%) | 8 (5.41%) | 0 (0.00%) | 1 (0.68%) |
 | [docs/storage-review-zesty.md](../docs/storage-review-zesty.md) | 138 | 0 (0.00%) | 119 (86.23%) | 0 (0.00%) | 19 (13.77%) |
 | [docs/questionnaire.md](../docs/questionnaire.md) | 123 | 79 (64.23%) | 34 (27.64%) | 0 (0.00%) | 10 (8.13%) |
 | [docs/app-directory-map.md](../docs/app-directory-map.md) | 118 | 1 (0.85%) | 116 (98.31%) | 0 (0.00%) | 1 (0.85%) |
@@ -58,24 +55,17 @@ These are section-level holds, not indefinite retention of entire files. Do not 
 | [docs/shared-agent-runtime-simplification.md](../docs/shared-agent-runtime-simplification.md) | 98 | 40 (40.82%) | 35 (35.71%) | 7 (7.14%) | 16 (16.33%) |
 | [docs/agent-session-ownership-plan.md](../docs/agent-session-ownership-plan.md) | 97 | 10 (10.31%) | 75 (77.32%) | 0 (0.00%) | 12 (12.37%) |
 | [docs/pending-decisions.md](../docs/pending-decisions.md) | 96 | 7 (7.29%) | 70 (72.92%) | 10 (10.42%) | 9 (9.38%) |
-| [docs/decision-answers.md](../docs/decision-answers.md) | 95 | 10 (10.53%) | 55 (57.89%) | 13 (13.68%) | 17 (17.89%) |
 | [docs/storage-review-projects.md](../docs/storage-review-projects.md) | 94 | 0 (0.00%) | 84 (89.36%) | 0 (0.00%) | 10 (10.64%) |
-| [docs/decision-answers-8.md](../docs/decision-answers-8.md) | 91 | 5 (5.49%) | 52 (57.14%) | 21 (23.08%) | 13 (14.29%) |
-| [docs/session-service-redesign-brief.md](../docs/session-service-redesign-brief.md) | 84 | 30 (35.71%) | 49 (58.33%) | 0 (0.00%) | 5 (5.95%) |
 | [docs/questionnaire-05.md](../docs/questionnaire-05.md) | 83 | 57 (68.67%) | 12 (14.46%) | 0 (0.00%) | 14 (16.87%) |
 | [docs/storage-review-gvm.md](../docs/storage-review-gvm.md) | 81 | 0 (0.00%) | 57 (70.37%) | 0 (0.00%) | 24 (29.63%) |
 | [docs/aoe-multi-client-deletion-source-audit.md](../docs/aoe-multi-client-deletion-source-audit.md) | 76 | 12 (15.79%) | 56 (73.68%) | 0 (0.00%) | 8 (10.53%) |
 | [docs/handoff.md](../docs/handoff.md) | 73 | 7 (9.59%) | 52 (71.23%) | 4 (5.48%) | 10 (13.70%) |
-| [docs/session-persistence-decisions.md](../docs/session-persistence-decisions.md) | 72 | 34 (47.22%) | 17 (23.61%) | 4 (5.56%) | 17 (23.61%) |
-| [docs/decision-answers-2.md](../docs/decision-answers-2.md) | 67 | 5 (7.46%) | 39 (58.21%) | 17 (25.37%) | 6 (8.96%) |
 | [docs/refactoring-review.md](../docs/refactoring-review.md) | 66 | 11 (16.67%) | 27 (40.91%) | 17 (25.76%) | 11 (16.67%) |
 | [docs/opencode-migration.md](../docs/opencode-migration.md) | 63 | 1 (1.59%) | 21 (33.33%) | 0 (0.00%) | 41 (65.08%) |
 | [docs/aoe-lifecycle-comparison.md](../docs/aoe-lifecycle-comparison.md) | 62 | 3 (4.84%) | 51 (82.26%) | 0 (0.00%) | 8 (12.90%) |
 | [docs/storage-review-docker.md](../docs/storage-review-docker.md) | 61 | 0 (0.00%) | 54 (88.52%) | 0 (0.00%) | 7 (11.48%) |
 | [docs/agent-of-empires-runtime-research.md](../docs/agent-of-empires-runtime-research.md) | 59 | 22 (37.29%) | 32 (54.24%) | 0 (0.00%) | 5 (8.47%) |
 | [docs/refactoring-handoff.md](../docs/refactoring-handoff.md) | 56 | 9 (16.07%) | 21 (37.50%) | 14 (25.00%) | 12 (21.43%) |
-| [docs/decision-answers-6.md](../docs/decision-answers-6.md) | 53 | 4 (7.55%) | 37 (69.81%) | 4 (7.55%) | 8 (15.09%) |
-| [docs/decision-answers-7.md](../docs/decision-answers-7.md) | 53 | 3 (5.66%) | 37 (69.81%) | 6 (11.32%) | 7 (13.21%) |
 | [docs/modes-phase1-contract.md](../docs/modes-phase1-contract.md) | 47 | 9 (19.15%) | 18 (38.30%) | 8 (17.02%) | 12 (25.53%) |
 | [docs/storage-cleanup-plan.md](../docs/storage-cleanup-plan.md) | 38 | 0 (0.00%) | 9 (23.68%) | 0 (0.00%) | 29 (76.32%) |
 | [docs/questionnaire-06.md](../docs/questionnaire-06.md) | 34 | 9 (26.47%) | 9 (26.47%) | 0 (0.00%) | 16 (47.06%) |
@@ -83,24 +73,20 @@ These are section-level holds, not indefinite retention of entire files. Do not 
 | [docs/questionnaire-04.md](../docs/questionnaire-04.md) | 32 | 26 (81.25%) | 6 (18.75%) | 0 (0.00%) | 0 (0.00%) |
 | [docs/aoe-natural-completion-resume-source-audit.md](../docs/aoe-natural-completion-resume-source-audit.md) | 30 | 6 (20.00%) | 22 (73.33%) | 0 (0.00%) | 2 (6.67%) |
 | [docs/research-requirements-documentation.md](../docs/research-requirements-documentation.md) | 30 | 8 (26.67%) | 12 (40.00%) | 0 (0.00%) | 10 (33.33%) |
-| [docs/consolidation-audit.md](../docs/consolidation-audit.md) | 25 | 1 (4.00%) | 23 (92.00%) | 0 (0.00%) | 1 (4.00%) |
-| [docs/decision-answers-5.md](../docs/decision-answers-5.md) | 25 | 4 (16.00%) | 11 (44.00%) | 3 (12.00%) | 7 (28.00%) |
 | [docs/research-architecture-documentation.md](../docs/research-architecture-documentation.md) | 25 | 8 (32.00%) | 10 (40.00%) | 0 (0.00%) | 7 (28.00%) |
 | [docs/research-ui-documentation.md](../docs/research-ui-documentation.md) | 23 | 10 (43.48%) | 9 (39.13%) | 0 (0.00%) | 4 (17.39%) |
-| [docs/decision-answers-3.md](../docs/decision-answers-3.md) | 20 | 2 (10.00%) | 11 (55.00%) | 0 (0.00%) | 7 (35.00%) |
-| [docs/decision-answers-4.md](../docs/decision-answers-4.md) | 16 | 2 (12.50%) | 7 (43.75%) | 0 (0.00%) | 7 (43.75%) |
+| [docs/consolidation-audit.md](../docs/consolidation-audit.md) | 20 | 1 (5.00%) | 18 (90.00%) | 0 (0.00%) | 1 (5.00%) |
 | [docs/IMPACT_LATEST.md](../docs/IMPACT_LATEST.md) | 15 | 6 (40.00%) | 3 (20.00%) | 1 (6.67%) | 5 (33.33%) |
 | [docs/questionnaire-07.md](../docs/questionnaire-07.md) | 15 | 4 (26.67%) | 4 (26.67%) | 0 (0.00%) | 7 (46.67%) |
-| [docs/decision-answers-9.md](../docs/decision-answers-9.md) | 9 | 3 (33.33%) | 5 (55.56%) | 0 (0.00%) | 1 (11.11%) |
 
 ## Aggregate (weighted by atomic units)
 
-Total units: **8493**
+Total units: **7183**
 
-- **exists:** 1889 (22.24%)
-- **discard:** 4482 (52.77%)
-- **integrate:** 576 (6.78%)
-- **unconfirmed:** 1546 (18.20%)
+- **exists:** 1291 (17.97%)
+- **discard:** 4004 (55.74%)
+- **integrate:** 504 (7.02%)
+- **unconfirmed:** 1384 (19.27%)
 
 ## Exclusions
 
