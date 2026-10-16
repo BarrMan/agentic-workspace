@@ -2,17 +2,30 @@
 
 ## Documentation
 
-All documentation for this project lives in this repository under `docs/`. Create new project documents there, not outside the repository.
+Project documentation lives under `docs/`; the root `README.md` is the user entry point and this file is the agent workflow entry point. Start with the [documentation map](docs/README.md).
 
-## Shared-runtime, test-remediation, and session-service redesign work
+### Read by the work being changed
 
-**MUST READ before shared-runtime work:** [canonical handoff](docs/shared-agent-runtime-handoff.md), then its scoped contract/plan pointers. **MUST READ before test-remediation work:** [remediation plan](docs/test-suite-remediation-plan.md). **MUST READ before session-service redesign work:** the [target design](docs/session-service-redesign.md) and its operative [correction plan](docs/session-service-redesign-correction-plan.md); the earlier [implementation plan](docs/session-service-redesign-implementation-plan.md) is superseded wherever they conflict. Authority order for that work: `docs/SPEC.md` (behaviour) → target design (ownership) → correction plan (execution). These carry the current checkpoint, bounded-agent/commit sequencing, evidence limits, and remaining policy questions.
+- **Product behavior, API, failure or recovery:** read [SPEC](docs/SPEC.md) and the relevant linked feature contract, including its edge cases and unresolved decisions.
+- **Ownership, interfaces, persistence or refactoring:** read [BLUEPRINT](docs/BLUEPRINT.md) and relevant [ADRs](docs/adr/README.md).
+- **A screen, dialog, focus or key interaction:** read its [screen specification](docs/screens/README.md) and [DESIGN-SYSTEM](docs/DESIGN-SYSTEM.md).
+- **Implementation or tests:** read [CONVENTIONS](docs/CONVENTIONS.md).
+- **Scope or product purpose:** read [PRODUCT](docs/PRODUCT.md).
+- **Alignment, shared-runtime, session-service or test-remediation work:** also read the relevant section of the [alignment plan](docs/alignment-plan.md), including its scoped execution/safety references. The plan owns work sequencing, not product behavior.
 
-Follow SPEC's Current-contract-only policy in every assignment and worker brief. Scope limits do not authorize compatibility retention; unresolved ownership or data-policy questions must be escalated explicitly.
+### Authority and decisions
 
-## Dog-fooding: the installed `agentic-workspace` command is authoritative
+- **Provisional authority during documentation repair:** primary confirmed sources are `docs/session-service-redesign.md`, `docs/session-service-redesign-brief.md`, actually answered questionnaire items, and recorded owner decision answers. All other documents are unconfirmed unless validated against that source set. Use source-first traceability; do not infer approval from reports, code, current core documents, or unanswered recommendations. Core documents (including SPEC and BLUEPRINT) are intended consolidation destinations, not independent approval evidence during this repair. If confirmed sources conflict, escalate unless an explicit supersession is recorded. Stop pruning until the source-to-core audit and safe-disposal checks are complete. Preserve the root README, this AGENTS entrypoint, and `docs/README.md` as core entrypoints.
+- Code, installed help, tests and screenshots establish implementation evidence; a discrepancy is an alignment issue, not permission to redefine the contract. Do not weaken runtime or execution-safety gates.
+- Each claim has one owning document. Link to that owner rather than copying its rules into other documents. BLUEPRINT records logical architecture and operation contracts; ADRs preserve accepted technology and significant architecture decisions with their rationale. New significant decisions require approval, and accepted records remain preserved with explicit supersession; current owning contracts state effective decisions.
+- Before asking about behavior, read the relevant contract and its failure/recovery scenarios. Ask only about an identified omission, contradiction or requested change. Investigate discoverable facts instead of asking the owner to research them.
+- Promote confirmed owner decisions and actually answered questionnaire items into the owning contract only after source validation; track remaining implementation work in the alignment plan. Unanswered recommendations have no authority.
+- Apply the current approved contract in assignments and worker briefs. Scope limits do not justify keeping compatibility behavior; unresolved ownership or data-policy decisions must be escalated explicitly. Retain execution-safety gates until their requirements are folded and satisfied.
+- Before retiring a document, account for its unique requirements, update inbound references, and preserve unresolved material in the alignment plan. Existing unclassified documents remain source material, not default authority.
 
-This repo builds AgenticWorkspace and also uses it to manage its own tasks. The globally installed `agentic-workspace` command (see the symlink below) defines CLI behavior; the working copy's `src/` and any task worktree can lag it. To answer what the CLI supports, run the command or `agentic-workspace <command> --help` — never infer it from the source tree, git branches, or `origin/main`.
+## Dog-fooding: inspect the installed CLI for current behavior
+
+This repo builds AgenticWorkspace and also uses it to manage tasks. The globally installed command can differ from the working source. To establish what the installed binary currently exposes, run `agentic-workspace <command> --help`; do not infer installed behavior from branches or source alone. Compare that evidence with SPEC's supported API contract. During alignment, track work in `docs/alignment-plan.md` rather than creating application tasks.
 
 ## Rebuild before a runnable handoff
 

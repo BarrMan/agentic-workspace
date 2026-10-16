@@ -1,217 +1,163 @@
-# AgenticWorkspace — Behaviour Specification
+# Product Specification: AgenticWorkspace
 
-This is the authoritative behaviour contract for `agentic-workspace`. Where an older
-document disagrees with this one, this one wins. Superseded (kept for history only):
-[`opentui-workspace-spec.md`](./opentui-workspace-spec.md),
-[`opentui-workspace-session-contract.md`](./opentui-workspace-session-contract.md),
-[`modes-phase1-contract.md`](./modes-phase1-contract.md),
-[`modes-delivery-plan.md`](./modes-delivery-plan.md).
+## Overview
 
-The session-service redesign is the operative *design and execution* authority for the shared
-agent-session backend: [`session-service-redesign.md`](./session-service-redesign.md)
-(target design) and
-[`session-service-redesign-correction-plan.md`](./session-service-redesign-correction-plan.md)
-(execution). The
-[`session-service-redesign-implementation-plan.md`](./session-service-redesign-implementation-plan.md)
-is superseded wherever they conflict. This document remains the *behaviour* contract for that
-backend, except for the explicitly approved creation-rollback change.
+AgenticWorkspace organizes project tasks, configurable agent work, retained conversations, and live terminal interaction through a TUI-first workspace and selective integration API. [PRODUCT](PRODUCT.md) owns product purpose, vision, users, goals, and scope. This specification and its indexed feature contracts are the authoritative source of intended product behavior. [BLUEPRINT](BLUEPRINT.md) owns technical design; [DESIGN-SYSTEM](DESIGN-SYSTEM.md) and [screen specifications](screens/README.md) own visual rules and screen composition.
 
-This document states rules and points at the code that implements them. It is not a code
-description; read the referenced `file:line` for mechanics.
+## Features
 
-### Current-contract-only policy
+| Feature | Description | Contract |
+|---|---|---|
+| Tasks and storage | Task model, dependencies, deterministic storage and relocation, artifacts, worktrees, completion, milestones, and task deletion. | [Tasks and storage](specs/tasks.md) |
+| Sessions | Session identity, observation, launch, exact resume, handoff, running-session limit, terminal lifetime, and session deletion. | [Sessions](specs/sessions.md) |
+| Configuration and modes | TUI settings, precedence, dynamic modes, task/mode approval, presets, permissions, models, and mode deletion. | [Configuration and modes](specs/configuration.md) |
+| Interfaces | TUI and selective external API, workspace and board behavior, search, feedback, and supported integration operations. | [Interfaces](specs/interfaces.md) |
 
-The current specification and target design define the supported application. We do not maintain legacy code or backward-compatibility paths. Existing callers, tests, historical behavior, and bounded work assignments do not authorize exceptions.
+## Feature Contracts
 
-Where the specification or design is incomplete or unclear, resolve the gap in the owning document rather than preserving an older implementation as an alternative. If you believe backward compatibility is needed, you MUST explicitly ask the user whether backward compatibility is wanted before acting. Do not infer permission from existing code or from an earlier plan.
+### Tasks and storage
 
-Preserving user data is a separate obligation. This policy does not authorize deleting, resetting, rewriting, or making existing persisted data unusable. If a proposed contract change affects stored data, identify the affected artifacts and obtain the user's decision about preservation and manual conversion before changing them. Do not introduce compatibility or migration code without an explicit user decision changing this policy.
+#### Purpose
 
-## 1. Scope
+Define task organization, persistence, work context, artifacts, completion, milestones, and deletion behavior.
 
-The native terminal workspace (`agentic-workspace workspace`, interactive board), the shared
-durable agent-session backend, and the CLI/MCP surfaces that act on the same state. Ownership is
-defined by the [target design's ownership table](./session-service-redesign.md#ownership); the
-renderer emits intent only.
+#### Requirements
 
-## 2. Modes and configuration
-
-- **Sessions live per mode.** A task's durable session state is a map from mode id to a session
-  history (`TaskSessions.modes`, `src/agent-workspace/types.ts:276-283`; read/write at
-  `src/agent-workspace/session-store.ts:444-483`). The flat `sessions` / `activeSessionId` fields
-  are a serialization mirror, not a second home (`session-store.ts:469-471`).
-- **`Tab` cycles modes.** Cycling changes the selected mode for the selected task only; it never
-  launches, resumes, or stops anything (`src/ui/opentui/workspace-controller.ts:2052`; binding
-  `src/ui/opentui/keybindings.ts:193`).
-- **Configuration is always the current one.** Every launch, resume, and ask resolves the mode
-  profile and preset from the current configuration; nothing is restored from an immutable
-  creation-time snapshot, and mode configuration is never merged across snapshots. A session
-  record stores its native identity and preset name, not commands, environment, or profile
-  snapshots (`AgentSession`, `src/agent-workspace/types.ts:242-268`).
-- **A mode's sessions are never merged into another mode.** Deleting a mode does not fold its
-  sessions into a destination mode.
-- The mode catalog is project-scoped and must exist for the workspace to start; there is no
-  built-in, root, or card catalog fallback (`src/agent-workspace/config.ts`).
-
-## 3. Session state and the active-session invariant
-
-- Durable statuses are `starting`, `running`, `parked`, `stopped`, `failed`
-  (`src/agent-workspace/types.ts:102-114`). `error` is **not** durable — it is a UI-local
-  presentation state.
-- **Invariant:** a mode with one or more sessions ALWAYS has a valid `activeSessionId` pointing at
-  one of its sessions. It is enforced on every write (`src/agent-workspace/session-store.ts:461-467`).
-  - Creating a session makes it active in the same write
-    (`src/agent-workspace/sessions.ts:1845-1852`).
-  - Hand-off makes the successor active.
-  - Stop moves the pointer to another surviving session, and keeps the stopped record as the
-    pointer when it is the only session (`sessions.ts:1932-1934`).
-  - Eviction, deletion, and rollback keep a valid pointer (`sessions.ts:1877-1890`).
-- A mode with zero sessions has no active pointer, no dot, and no header.
-
-## 4. Status vocabulary
-
-| Durable status | Meaning |
+| ID | Requirement |
 |---|---|
-| `starting` | A record is reserved and a launch is in flight. |
-| `running` | The agent process is live for this session. |
-| `parked` | The process is released but the conversation is retained and resumable. This is **not** an ended state. The name is misleading: users see this as *idle work*, rendered as the blue dot. |
-| `stopped` | The session is ended; `endedAt` is set (`sessions.ts:1929-1930`). |
-| `failed` | The launch did not succeed (`sessions.ts:1894-1896`). |
+| TASK-001–TASK-019 | The complete requirements, flows, edge cases, invariants, acceptance criteria, and open decisions are in the [Tasks and storage contract](specs/tasks.md). |
 
-`error` is a UI-local state used when an attach or runtime inspection fails
-(`workspace-controller.ts:1690-1691`); it is never written to durable session state as a status.
+#### Behavioral Flows
 
-## 5. Selection and preview
+See the flows in the [Tasks and storage contract](specs/tasks.md).
 
-Selecting a task shows the selected mode's active session. Selecting does not create a session and
-does not mutate lifecycle except as noted:
+#### Edge Cases and Failures
 
-- **Running** → attach the real terminal, passively: no `Enter`, no start, no resume, no ownership
-  change (`workspace-controller.ts:1356-1384`).
-- **Parked (released)** → auto-resume the exact stored conversation
-  (`workspace-controller.ts:1322-1330`).
-- **Starting** → stay passive; attach or resume only once it is usable
-  (`workspace-controller.ts:1322-1323`).
+See the conditions and required outcomes in the [Tasks and storage contract](specs/tasks.md).
 
-With **no session in the mode**:
+#### Behavioral Invariants
 
-- the header is hidden;
-- the body placeholder is exactly `` No session in <mode> `` (`src/ui/opentui/workspace.ts:677`);
-- the footer cue is `[<select shortcut>] Start` (`workspace.ts:697`; shortcut
-  `src/ui/opentui/keybindings.ts:201,273`).
+See the invariants in the [Tasks and storage contract](specs/tasks.md).
 
-With an **ended session** (an active session whose status is `stopped`): one body line,
-`` Session ended · press <key> to resume ``, where `<key>` is the configured shortcut for starting
-or resuming that mode's session.
+#### Acceptance Criteria
 
-All of the above happens on app start with no keypress.
+See the verifiable criteria in the [Tasks and storage contract](specs/tasks.md).
 
-## 6. Header, dots, footer
+#### Open Decisions
 
-- **Header.** Exactly one line: `` Agent session · <mode> · <status> ``
-  (`src/ui/opentui/workspace.ts:669-671`). Hidden when the mode has no active session.
-- **Dots.** One dot per task row, belonging to that task's active session in the **currently
-  selected mode** (`workspace-controller.ts:884-891`; rendering `workspace.ts:586-622`). The dot is
-  coloured by the session's **activity events**, never by its durable lifecycle status:
-  - green = actively working (we are waiting on it);
-  - orange = waiting on the user (for example, asking for permissions);
-  - blue = idle — it was running and is now doing nothing (the durable state confusingly named
-    `parked` is exactly this case);
-  - grey = ended;
-  - red = error.
+See the unresolved task and storage decisions in the [Tasks and storage contract](specs/tasks.md).
 
-  Mapping lives at `workspace-controller.ts:218-223` and
-  `src/agent-workspace/types.ts:140-169`; colours at `src/formatters/status-icon.ts:88-122`.
-  A mode with no active session renders no dot.
-- The footer shows essential actions for the current focus; the full list lives in help.
+### Sessions
 
-## 7. Starting, resuming, and hand-off
+#### Purpose
 
-- **Starting** creates a session and makes it active in the same durable write (see §3). The UI and
-  the CLI behave identically for the same action — there is no differentiation — and starting a
-  session from either moves the task to the configured In Progress status
-  (`src/agent-workspace/workspace-state.ts:92-112`). A terminal (`Done`) task is never moved.
-- **Resume always continues the same conversation.** If an exact resume is impossible (auto-resume
-  disabled, or a previous resume attempt failed), the app surfaces the reason and asks; it never
-  silently starts a fresh conversation. A fresh conversation starts only on an explicit affirmative
-  choice (`workspace-controller.ts:1472-1494`).
-- **Hand-off.** The successor is a distinct session. It is launched and confirmed running FIRST,
-  and the explicitly captured predecessor is ended only if `nativeWorkspace === true`, through
-  the ordinary verified stop path (`AgentSessionService.finalizeHandoff` / `stopClaimedSession`
-  in `src/agent-workspace/sessions.ts`). Unflagged predecessors remain running. The TUI captures
-  its local predecessor separately from the durable active pointer; another client's selection
-  never chooses the runtime to retire (`workspace-controller.ts`, `#handoffLocalSession`).
-  Launch failure preserves the predecessor's record and runtime and restores the prior active
-  pointer only while the successor is still selected (`rollbackHandoff`). Retirement failure
-  reports "successor running; predecessor cleanup failed" without rolling back or killing the
-  successor. If a launch fails *after* dispatch, the successor settles
-  `failed` unless its pane is confirmed live, in which case it settles `running`
-  (`settleDispatchedLaunchFailure`).
-- **Queued hand-off** carries the captured predecessor identity, mode, and rollback selection
-  in the existing `WorkspaceRequest` marker (`src/agent-workspace/workspace-context.ts`). Adoption
-  validates these references and can finalize an already-live successor without relaunching it;
-  the marker is consumed after successful finalization (`prepareNativeSessionLocked`).
+Define creation, observation, continuation, handoff, live terminal interaction, and deletion of retained agent conversations.
 
-## 8. Lifecycle at the edges
+#### Requirements
 
-- **App exit = detach only.** On close, each live host is detached; nothing is stopped, parked, or
-  killed; durable records stay `running`; the active pointer is untouched; the tmux pane survives
-  (`workspace-controller.ts:1970-1986`; `src/agent-workspace/live/agent-host.ts:13`).
-- **Crash = the same.** No cleanup runs; the tmux pane survives; a stale record settles to
-  `stopped` lazily on first observation.
-- **Explicit stop** kills the pane, writes `stopped` + `endedAt`, and moves the active pointer to a
-  surviving session (`sessions.ts`, `stopClaimedSession`).
-- **Park has no production trigger today.** The explicit park operation has no caller
-  (`WorkspaceStateService.parkSession`; `AgentSessionService.parkNativeSession`). Hand-off never
-  parks a predecessor.
-- **Recovery is lazy.** Bulk settling of stale records happens only through the explicit
-  `agentic-workspace agent-session reconcile <taskId>` command
-  (`src/commands/agent-workspace.ts:255-258`).
+| ID | Requirement |
+|---|---|
+| SESSION-001–SESSION-020 | The complete requirements, flows, edge cases, invariants, acceptance criteria, and open decisions are in the [Sessions contract](specs/sessions.md). |
 
-## 9. Task lifecycle and deletion
+#### Behavioral Flows
 
-- **Task deletion is forget-only.** It removes the session records, history, sidecars, and the
-  session state directory. It does **not** stop a running agent — the agent keeps running orphaned
-  — and it does **not** remove the worktree (`src/core/task-lifecycle-service.ts:156-179`;
-  `sessions.ts:726`). See the known gap in §12.
-- **Completion** is a separate operation: it cleans the task's sessions and removes the task's
-  worktree (`task-lifecycle-service.ts:226-245`).
+See the flows in the [Sessions contract](specs/sessions.md).
 
-## 10. Tasks, list, and UI/CLI parity
+#### Edge Cases and Failures
 
-- The UI and the CLI behave identically for the same action; the surface does not change the
-  result (§7).
-- The task list is **one grouped list** (`src/ui/opentui/groups.ts`, mounted at
-  `workspace.ts:24,272-299`) with a **35-column cap** — not status tabs and not a percentage width
-  (`workspace.ts:73-88`).
+See the conditions and required outcomes in the [Sessions contract](specs/sessions.md).
 
-## 11. Testing
+#### Behavioral Invariants
 
-The suite is valid only under `bun test --parallel` (`package.json:40`). Running many test files
-in one process produces false failures because a test registers a global agent name that leaks
-between files (`src/test/agent-test-helpers.ts:19-27`). The test preload owns isolation; see
-[`test-suite-runtime-report.md`](./test-suite-runtime-report.md).
+See the invariants in the [Sessions contract](specs/sessions.md).
 
-## 12. Known gaps
+#### Acceptance Criteria
 
-These are current defects, not intended behaviour:
+See the verifiable criteria in the [Sessions contract](specs/sessions.md).
 
-- Task deletion orphans a live agent (the running process is not stopped; §9;
-  `src/core/task-lifecycle-service.ts:165`).
-- The session picker cannot open an externally running session
-  (`src/ui/opentui/session-picker.ts:88`).
-- A late launch can steal task selection back (`workspace-controller.ts:2021-2033`).
-- The background liveness sweep skips tasks that were never opened
-  (`src/ui/opentui/workspace-controller.ts:744`).
-- Mode and approval badges appear only on the selected row
-  (`src/ui/opentui/mode-row-label.ts:52`).
-- The startup prompt appends mode-profile text, whereas the contract promises identity only
-  (`src/agent-workspace/bootstrap.ts:33` vs `src/agent-workspace/agents/profile.ts:234`).
+#### Open Decisions
 
-## 13. References
+See the unresolved session creation, recovery, handoff, and deletion decisions in the [Sessions contract](specs/sessions.md).
 
-- [`opentui-workspace-spec.md`](./opentui-workspace-spec.md) — superseded design + TTT/AOE composition references.
-- [`opentui-workspace-session-contract.md`](./opentui-workspace-session-contract.md) — superseded session contract + ownership detail.
-- [`modes-phase1-contract.md`](./modes-phase1-contract.md) — superseded mode/artifact data contracts.
-- [`modes-delivery-plan.md`](./modes-delivery-plan.md) — superseded delivery plan.
-- [`test-suite-runtime-report.md`](./test-suite-runtime-report.md) — test isolation and runtime.
+### Configuration and modes
+
+#### Purpose
+
+Define workspace settings and the configuration, approval, and lifecycle of agent modes.
+
+#### Requirements
+
+| ID | Requirement |
+|---|---|
+| CONFIG-001–CONFIG-012 | The complete requirements, flows, edge cases, invariants, acceptance criteria, and open decisions are in the [Configuration and modes contract](specs/configuration.md). |
+
+#### Behavioral Flows
+
+See the flows in the [Configuration and modes contract](specs/configuration.md).
+
+#### Edge Cases and Failures
+
+See the conditions and required outcomes in the [Configuration and modes contract](specs/configuration.md).
+
+#### Behavioral Invariants
+
+See the invariants in the [Configuration and modes contract](specs/configuration.md).
+
+#### Acceptance Criteria
+
+See the verifiable criteria in the [Configuration and modes contract](specs/configuration.md).
+
+#### Open Decisions
+
+See the unresolved mode-deletion decisions in the [Configuration and modes contract](specs/configuration.md).
+
+### Interfaces
+
+#### Purpose
+
+Define user-facing workspace interactions and the selective external integration API.
+
+#### Requirements
+
+| ID | Requirement |
+|---|---|
+| IF-WB-001–IF-WB-008; IF-FS-001–IF-FS-003; IF-SI-001–IF-SI-007; IF-API-001–IF-API-013 | The complete requirements, flows, edge cases, invariants, acceptance criteria, and open decisions are in the [Interfaces contract](specs/interfaces.md). |
+
+#### Behavioral Flows
+
+See the flows in the [Interfaces contract](specs/interfaces.md).
+
+#### Edge Cases and Failures
+
+See the conditions and required outcomes in the [Interfaces contract](specs/interfaces.md).
+
+#### Behavioral Invariants
+
+See the invariants in the [Interfaces contract](specs/interfaces.md).
+
+#### Acceptance Criteria
+
+See the verifiable criteria in the [Interfaces contract](specs/interfaces.md).
+
+#### Open Decisions
+
+See the unsettled integration scope and syntax decisions in the [Interfaces contract](specs/interfaces.md).
+
+## Global Behavioral Invariants
+
+- Intended behavior in this specification and its indexed feature contracts applies across supported product surfaces. Legacy compatibility requires an explicit approved exception.
+- Approved safety and identity constraints remain in force across features. An unresolved policy does not weaken an established guarantee.
+- Product behavior is distinct from visual composition: screen-specific composition belongs in the [screen specifications](screens/README.md), and colors belong to the [design system](DESIGN-SYSTEM.md). Session-header composition and task-list width are specified by the [workspace screen](screens/workspace.md#ordered-regions).
+- Implementation changes must align supported callers, fixtures, and persisted representations with the current contract. [CONVENTIONS](CONVENTIONS.md#changes-and-refactoring) owns implementation alignment and escalation of unresolved ownership or data policy.
+
+## Open Product Decisions
+
+The affected feature contracts retain the detailed constraints and decision context. The following product policies remain unresolved:
+
+| Decision | Affected Features | Status |
+|---|---|---|
+| Task-deletion confirmation and consent; provider-owned file and multi-session scope; partial-failure continuation; interruption recovery; retry; and concurrency. | [Tasks and storage](specs/tasks.md#task-deletion) | Open |
+| Storage-relocation collisions, failure or interruption, configuration-switch timing, recovery, and concurrent access. | [Tasks and storage](specs/tasks.md#changing-the-storage-location) | Open |
+| Provider-owned file scope, default/last-mode handling, cross-task extent, and remaining recovery policy for session and mode deletion. | [Sessions](specs/sessions.md#deleting-a-session); [Configuration and modes](specs/configuration.md#delete-a-mode) | Open |
+| Automatic crash/interruption recovery, retry UX, and repeated or concurrent operations for session creation and handoff. | [Sessions](specs/sessions.md#creation-failure-and-recovery); [Sessions](specs/sessions.md#handoff) | Open |
+| Unsettled command surfaces and syntax, MCP retention, and broad setup/guidance APIs. | [Interfaces](specs/interfaces.md#supported-integration-operations) | Open |
