@@ -11,7 +11,10 @@ AgenticWorkspace organizes project tasks, configurable agent work, retained conv
 | Tasks and storage | Task model, dependencies, deterministic storage and relocation, artifacts, worktrees, completion, milestones, and task deletion. | [Tasks and storage](specs/tasks.md) |
 | Sessions | Session identity, observation, launch, exact resume, handoff, running-session limit, terminal lifetime, and session deletion. | [Sessions](specs/sessions.md) |
 | Configuration and modes | TUI settings, precedence, dynamic modes, task/mode approval, presets, permissions, models, and mode deletion. | [Configuration and modes](specs/configuration.md) |
-| Interfaces | TUI and selective external API, workspace and board behavior, search, feedback, and supported integration operations. | [Interfaces](specs/interfaces.md) |
+| Workspace and board | Browse and organize project tasks through grouped-list and status-column views. | [Workspace and board](specs/workspace-and-board.md) |
+| Filtering and search | Filter workspace tasks and search across project records. | [Filtering and search](specs/filtering-and-search.md) |
+| Session interaction and feedback | Select, observe, start, resume, and identify task sessions in the workspace. | [Session interaction and feedback](specs/session-interaction-and-feedback.md) |
+| Supported Integration Operations | Use the explicitly supported selective CLI operations. | [Supported Integration Operations](specs/supported-integration-operations.md) |
 
 ## Feature Contracts
 
@@ -111,37 +114,133 @@ See the verifiable criteria in the [Configuration and modes contract](specs/conf
 
 See the unresolved mode-deletion decisions in the [Configuration and modes contract](specs/configuration.md).
 
-### Interfaces
+### Workspace and board
 
 #### Purpose
 
-Define user-facing workspace interactions and the selective external integration API.
+Let users inspect and organize project tasks in a grouped workspace list or a status-column board.
 
 #### Requirements
 
 | ID | Requirement |
 |---|---|
-| IF-WB-001–IF-WB-008; IF-FS-001–IF-FS-003; IF-SI-001–IF-SI-007; IF-API-001–IF-API-013 | The complete requirements, flows, edge cases, invariants, acceptance criteria, and open decisions are in the [Interfaces contract](specs/interfaces.md). |
+| IF-WB-001–IF-WB-008 | The complete requirements, flows, edge cases, invariants, and acceptance criteria are in the [Workspace and board contract](specs/workspace-and-board.md). |
 
 #### Behavioral Flows
 
-See the flows in the [Interfaces contract](specs/interfaces.md).
+See the flows in the [Workspace and board contract](specs/workspace-and-board.md).
 
 #### Edge Cases and Failures
 
-See the conditions and required outcomes in the [Interfaces contract](specs/interfaces.md).
+See the conditions and required outcomes in the [Workspace and board contract](specs/workspace-and-board.md).
 
 #### Behavioral Invariants
 
-See the invariants in the [Interfaces contract](specs/interfaces.md).
+See the invariants in the [Workspace and board contract](specs/workspace-and-board.md).
 
 #### Acceptance Criteria
 
-See the verifiable criteria in the [Interfaces contract](specs/interfaces.md).
+See the verifiable criteria in the [Workspace and board contract](specs/workspace-and-board.md).
 
 #### Open Decisions
 
-See the unsettled integration scope and syntax decisions in the [Interfaces contract](specs/interfaces.md).
+No workspace and board open product decisions are currently listed in the [Workspace and board contract](specs/workspace-and-board.md).
+
+### Filtering and search
+
+#### Purpose
+
+Let users narrow the workspace task list and find records across project tasks, documents, and decision records.
+
+#### Requirements
+
+| ID | Requirement |
+|---|---|
+| IF-FS-001–IF-FS-003 | The complete requirements, flows, edge cases, invariants, acceptance criteria, and open decisions are in the [Filtering and search contract](specs/filtering-and-search.md). |
+
+#### Behavioral Flows
+
+See the flows in the [Filtering and search contract](specs/filtering-and-search.md).
+
+#### Edge Cases and Failures
+
+See the conditions and required outcomes in the [Filtering and search contract](specs/filtering-and-search.md).
+
+#### Behavioral Invariants
+
+See the invariants in the [Filtering and search contract](specs/filtering-and-search.md).
+
+#### Acceptance Criteria
+
+See the verifiable criteria in the [Filtering and search contract](specs/filtering-and-search.md).
+
+#### Open Decisions
+
+See the unresolved search support decisions in the [Filtering and search contract](specs/filtering-and-search.md).
+
+### Session interaction and feedback
+
+#### Purpose
+
+Let users inspect the selected task's session, safely attach to or resume it, and understand the selected session's identity, execution context, and state.
+
+#### Requirements
+
+| ID | Requirement |
+|---|---|
+| IF-SI-001–IF-SI-007 | The complete requirements, flows, edge cases, invariants, and acceptance criteria are in the [Session interaction and feedback contract](specs/session-interaction-and-feedback.md). |
+
+#### Behavioral Flows
+
+See the flows in the [Session interaction and feedback contract](specs/session-interaction-and-feedback.md).
+
+#### Edge Cases and Failures
+
+See the conditions and required outcomes in the [Session interaction and feedback contract](specs/session-interaction-and-feedback.md).
+
+#### Behavioral Invariants
+
+See the invariants in the [Session interaction and feedback contract](specs/session-interaction-and-feedback.md).
+
+#### Acceptance Criteria
+
+See the verifiable criteria in the [Session interaction and feedback contract](specs/session-interaction-and-feedback.md).
+
+#### Open Decisions
+
+No session interaction and feedback open product decisions are currently listed in the [Session interaction and feedback contract](specs/session-interaction-and-feedback.md).
+
+### Supported Integration Operations
+
+#### Purpose
+
+Provide agents inside sessions and external applications with a selective public CLI API for supported integration operations, without automatically duplicating every internal setting or TUI action.
+
+#### Requirements
+
+| ID | Requirement |
+|---|---|
+| IF-API-001–IF-API-013 | The complete requirements, flows, edge cases, invariants, acceptance criteria, and open decisions are in the [Supported Integration Operations contract](specs/supported-integration-operations.md). |
+
+#### Behavioral Flows
+
+See the flows in the [Supported Integration Operations contract](specs/supported-integration-operations.md).
+
+#### Edge Cases and Failures
+
+See the conditions and required outcomes in the [Supported Integration Operations contract](specs/supported-integration-operations.md).
+
+#### Behavioral Invariants
+
+See the invariants in the [Supported Integration Operations contract](specs/supported-integration-operations.md).
+
+#### Acceptance Criteria
+
+See the verifiable criteria in the [Supported Integration Operations contract](specs/supported-integration-operations.md).
+
+#### Open Decisions
+
+See the unsettled integration scope and syntax decisions in the [Supported Integration Operations contract](specs/supported-integration-operations.md).
 
 ## Global Behavioral Invariants
 
@@ -160,4 +259,4 @@ The affected feature contracts retain the detailed constraints and decision cont
 | Storage-relocation collisions, failure or interruption, configuration-switch timing, recovery, and concurrent access. | [Tasks and storage](specs/tasks.md#changing-the-storage-location) | Open |
 | Provider-owned file scope, default/last-mode handling, cross-task extent, and remaining recovery policy for session and mode deletion. | [Sessions](specs/sessions.md#deleting-a-session); [Configuration and modes](specs/configuration.md#delete-a-mode) | Open |
 | Automatic crash/interruption recovery, retry UX, and repeated or concurrent operations for session creation and handoff. | [Sessions](specs/sessions.md#creation-failure-and-recovery); [Sessions](specs/sessions.md#handoff) | Open |
-| Unsettled command surfaces and syntax, MCP retention, and broad setup/guidance APIs. | [Interfaces](specs/interfaces.md#supported-integration-operations) | Open |
+| Unsettled command surfaces and syntax, MCP retention, and broad setup/guidance APIs. | [Supported Integration Operations](specs/supported-integration-operations.md#supported-integration-operations) | Open |

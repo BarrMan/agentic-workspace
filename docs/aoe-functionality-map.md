@@ -370,7 +370,7 @@ file:fn:line (`path:line` per the lane; blob base per §1); **grade** + **gaps**
 
 #### S15 — Manual group list/create/delete/move [F]
 - **WHAT.** Nested group tree over sessions.
-<!-- consolidation: discard; ref: docs/specs/interfaces.md#workspace-and-board; reason: Approved grouping is over tasks rather than AoE session rows. -->
+<!-- consolidation: discard; ref: docs/specs/workspace-and-board.md#workspace-and-board; reason: Approved grouping is over tasks rather than AoE session rows. -->
 - **HOW.** `cli/group.rs::run`: `list_groups` (counts/JSON); `create_group` (parent/name nesting,
   refuse existing); `delete_group` (count members, refuse unless `--force`, move to default);
   `move_session` (`patch_instance` group_path + `create_group`). Persistence via `storage.update` on

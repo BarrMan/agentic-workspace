@@ -13,7 +13,7 @@ consolidation:
     unconfirmed: 8.96%
 ---
 # Decision answer sheet 2 — Backlog.md
-> **Non-authoritative supporting material.** This file is not a contract. Authoritative owner(s): [SPEC](SPEC.md), [task behavior](specs/tasks.md), [sessions](specs/sessions.md), [interfaces](specs/interfaces.md), [BLUEPRINT](BLUEPRINT.md), [architecture](architecture/session-harness.md), [CONVENTIONS](CONVENTIONS.md).
+> **Non-authoritative supporting material.** This file is not a contract. Authoritative owner(s): [SPEC](SPEC.md), [task behavior](specs/tasks.md), [sessions](specs/sessions.md), [supported integration operations](specs/supported-integration-operations.md), [BLUEPRINT](BLUEPRINT.md), [architecture](architecture/session-harness.md), [CONVENTIONS](CONVENTIONS.md).
 > Disposition: Mixed — see markers.
 
 Answer inline, right after each `Answer:`, then tell me "answers are in the file".
@@ -25,12 +25,12 @@ Keep the file afterwards — it is the record. Nothing here needs a tool call; e
 
 - **Q1** — Delete the duplicate *repair* feature entirely; doctor keeps *detecting*. Implemented, in flight.
 <!-- consolidation: integrate; ref: docs/specs/tasks.md#tasks-and-storage; reason: Accepted removal of automatic duplicate repair is missing from core. -->
-<!-- consolidation: discard; ref: docs/specs/interfaces.md#supported-integration-operations; reason: Doctor retention is superseded by item 3 below and implementation status is historical. -->
+<!-- consolidation: discard; ref: docs/specs/supported-integration-operations.md#supported-integration-operations; reason: Doctor retention is superseded by item 3 below and implementation status is historical. -->
 - **Q2** — Slice I. Durable receipts kept for v1, deleted for v2 (verified: v1's receipt is the only recovery path when the launcher dies between provider creation and Backlog persistence; v2 names its own session, so its receipt is redundant). No `HarnessBuilder` — the existing adapter registry is the ownership boundary.
 <!-- consolidation: unconfirmed; ref: docs/BLUEPRINT.md#durable-conversation-and-operation-records; reason: Provider-version-specific receipt necessity or redundancy is historical recovery evidence requiring verification before retirement. -->
 <!-- consolidation: exists; ref: docs/architecture/session-harness.md#harness; reason: Provider-owned identity and simple factory construction replace a speculative builder. -->
 - **Q3** — Corrupted data: warn, skip the record, never fail the process. No repair code. Implemented.
-<!-- consolidation: integrate; ref: docs/specs/interfaces.md#filtering-and-search; reason: Tolerant collection reads with visible warnings and no repair are missing from core and clarified in items 3 and 5. -->
+<!-- consolidation: integrate; ref: docs/specs/filtering-and-search.md#filtering-and-search; reason: Tolerant collection reads with visible warnings and no repair are missing from core and clarified in items 3 and 5. -->
 <!-- consolidation: discard; ref: none; reason: Implemented status is historical rather than verification of today's source. -->
 - **Q4** — Task ids are literal whole strings: `TASK-01` is not `TASK-1`, and we do not compare numbers. Queued behind Q1.
 <!-- consolidation: integrate; ref: docs/specs/tasks.md#tasks-and-storage; reason: Accepted literal-string task identity is absent from core. -->
@@ -75,55 +75,55 @@ Keep the file afterwards — it is the record. Nothing here needs a tool call; e
 ## 3 — Keep `doctor`, in report-only form?  [you asked what it does]
 
 **Context.** `backlog doctor` currently checks six things: reserved-prefix collisions; duplicate task ids in active/completed; cross-branch id collisions (manual review); document and decision identity health (duplicates, missing ids, unreadable files); draft identity health (duplicate numeric ids, filename/frontmatter drift, unreadable files); dependency self-references and cycles. It reports only and exits 1 on findings. Repair was its *only* mutation, and repair is being deleted.
-<!-- consolidation: discard; ref: docs/specs/interfaces.md#supported-integration-operations; reason: Doctor reserved-prefix scan is part of the command explicitly rejected below. -->
-<!-- consolidation: discard; ref: docs/specs/interfaces.md#supported-integration-operations; reason: Doctor active or completed duplicate scan is part of the command explicitly rejected below. -->
+<!-- consolidation: discard; ref: docs/specs/supported-integration-operations.md#supported-integration-operations; reason: Doctor reserved-prefix scan is part of the command explicitly rejected below. -->
+<!-- consolidation: discard; ref: docs/specs/supported-integration-operations.md#supported-integration-operations; reason: Doctor active or completed duplicate scan is part of the command explicitly rejected below. -->
 <!-- consolidation: discard; ref: docs/specs/tasks.md#tasks-and-storage; reason: Doctor cross-branch collision scan is superseded by one configured store without branch discovery. -->
-<!-- consolidation: discard; ref: docs/specs/interfaces.md#supported-integration-operations; reason: Doctor document and decision health checks are inventory of the explicitly rejected diagnostic command. -->
+<!-- consolidation: discard; ref: docs/specs/supported-integration-operations.md#supported-integration-operations; reason: Doctor document and decision health checks are inventory of the explicitly rejected diagnostic command. -->
 <!-- consolidation: discard; ref: docs/specs/tasks.md#tasks-and-storage; reason: Doctor draft identity checks concern draft behavior absent from the current model. -->
-<!-- consolidation: discard; ref: docs/specs/interfaces.md#supported-integration-operations; reason: Doctor dependency-cycle reporting is inventory of the rejected command rather than approval of a new diagnostic surface. -->
-<!-- consolidation: discard; ref: docs/specs/interfaces.md#supported-integration-operations; reason: Doctor report-only exit code and repair-deletion status are historical command mechanics superseded by complete removal. -->
+<!-- consolidation: discard; ref: docs/specs/supported-integration-operations.md#supported-integration-operations; reason: Doctor dependency-cycle reporting is inventory of the rejected command rather than approval of a new diagnostic surface. -->
+<!-- consolidation: discard; ref: docs/specs/supported-integration-operations.md#supported-integration-operations; reason: Doctor report-only exit code and repair-deletion status are historical command mechanics superseded by complete removal. -->
 
 **Recommendation: keep it, report-only.** Five of the six checks have no other surface in the CLI; deleting doctor silently drops prefix-collision, doc/decision and draft-drift reporting.
-<!-- consolidation: discard; ref: docs/specs/interfaces.md#supported-integration-operations; reason: Explicit owner answer rejects doctor retention. -->
+<!-- consolidation: discard; ref: docs/specs/supported-integration-operations.md#supported-integration-operations; reason: Explicit owner answer rejects doctor retention. -->
 
 - **A (recommended)** — Keep doctor, report-only (`--fix` and `--yes` disappear).
-<!-- consolidation: discard; ref: docs/specs/interfaces.md#supported-integration-operations; reason: Rejected by the owner below. -->
+<!-- consolidation: discard; ref: docs/specs/supported-integration-operations.md#supported-integration-operations; reason: Rejected by the owner below. -->
 - **B** — Delete doctor entirely.
-<!-- consolidation: integrate; ref: docs/specs/interfaces.md#supported-integration-operations; reason: Explicitly accepted doctor removal is not named among core's rejected surfaces. -->
+<!-- consolidation: integrate; ref: docs/specs/supported-integration-operations.md#supported-integration-operations; reason: Explicitly accepted doctor removal is not named among core's rejected surfaces. -->
 
 **Answer:** delete doctor entirely. I'll say that again if it's not written anywhere. We do not support any data corruption whatsoever. If there is data corruption, it means one of two things: either the app is corrupting data -> we have a bug -> we fix the bug. or "something" is corrupting the data from external source -> we do not support this -> we fail when we actually try to access / read or do an action that errors - the mentality should be, we try to fail only specifically what went wrong and not the whole app and provide a user friendly error message so the user could troubleshoot what went wrong. Fixing corruptions masks real problems - if a user wrote a program or told an agent to write docs in a certain corrupted format and we keep fixing it without the user ever knowing it's corrupted, then we're masking the underlying issue. If we instead, fail and provide a helpful message to the user, the user will see this, correct its script / agent's format and it will never happen again.
-<!-- consolidation: integrate; ref: docs/specs/interfaces.md#supported-integration-operations; reason: Explicit removal of doctor is missing from core. -->
+<!-- consolidation: integrate; ref: docs/specs/supported-integration-operations.md#supported-integration-operations; reason: Explicit removal of doctor is missing from core. -->
 <!-- consolidation: integrate; ref: docs/specs/tasks.md#tasks-and-storage; reason: Do not automatically repair corrupted data is an accepted rule missing from core. -->
 <!-- consolidation: integrate; ref: docs/CONVENTIONS.md#error-handling; reason: App-created corruption is a defect to fix at its source rather than compensate for with repair code. -->
-<!-- consolidation: integrate; ref: docs/specs/interfaces.md#filtering-and-search; reason: Fail only the affected access or action with helpful context while preserving unaffected application work. -->
+<!-- consolidation: integrate; ref: docs/specs/filtering-and-search.md#filtering-and-search; reason: Fail only the affected access or action with helpful context while preserving unaffected application work. -->
 <!-- consolidation: integrate; ref: docs/CONVENTIONS.md#error-handling; reason: Accepted rationale is that silent repair masks the external writer defect rather than exposing actionable errors. -->
 
 ## 4 — Should doctor also scan *archived* records for duplicates?
 
 **Context.** Its duplicate scan covers active and completed only, so a duplicate whose other side is archived is not reported there. Resolving such an id already fails closed and names both containers, so this is about reporting, not safety.
-<!-- consolidation: discard; ref: docs/specs/interfaces.md#supported-integration-operations; reason: Removed doctor's scan scope is obsolete implementation inventory. -->
+<!-- consolidation: discard; ref: docs/specs/supported-integration-operations.md#supported-integration-operations; reason: Removed doctor's scan scope is obsolete implementation inventory. -->
 <!-- consolidation: unconfirmed; ref: docs/specs/tasks.md#tasks-and-storage; reason: Exact cross-state duplicate resolution evidence is historical and must not imply numeric equivalence rejected by literal-ID policy. -->
 
 - **A (recommended)** — Include archived, so hand-made duplicates stay findable.
-<!-- consolidation: discard; ref: docs/specs/interfaces.md#supported-integration-operations; reason: Doctor removal rejects expanding its scan. -->
+<!-- consolidation: discard; ref: docs/specs/supported-integration-operations.md#supported-integration-operations; reason: Doctor removal rejects expanding its scan. -->
 - **B** — Leave it; the fail-closed path already surfaces it.
-<!-- consolidation: discard; ref: docs/specs/interfaces.md#supported-integration-operations; reason: Doctor removal supersedes its retained scan options. -->
+<!-- consolidation: discard; ref: docs/specs/supported-integration-operations.md#supported-integration-operations; reason: Doctor removal supersedes its retained scan options. -->
 
 **Answer:** Per decision #3 - we remove doctor.
-<!-- consolidation: integrate; ref: docs/specs/interfaces.md#supported-integration-operations; reason: Reaffirms explicit doctor removal missing from core. -->
+<!-- consolidation: integrate; ref: docs/specs/supported-integration-operations.md#supported-integration-operations; reason: Reaffirms explicit doctor removal missing from core. -->
 
 ## 5 — Tolerant reads: confirm the exit code
 
 **Context.** Implemented per your Q3 answer: a malformed record produces one warning naming the file and the parse error, is skipped, and the command still succeeds. The consequence is that scripts and MCP callers now get exit 0 with that record simply absent from the results.
-<!-- consolidation: integrate; ref: docs/specs/interfaces.md#filtering-and-search; reason: Confirmed warning naming the file and error plus skipped-record successful results are absent from core. -->
+<!-- consolidation: integrate; ref: docs/specs/filtering-and-search.md#filtering-and-search; reason: Confirmed warning naming the file and error plus skipped-record successful results are absent from core. -->
 
 - **A (as implemented, recommended)** — Exit 0; the stderr warning is the signal.
-<!-- consolidation: integrate; ref: docs/specs/interfaces.md#filtering-and-search; reason: Accepted successful collection-read exit with stderr warning is not explicit in core. -->
+<!-- consolidation: integrate; ref: docs/specs/filtering-and-search.md#filtering-and-search; reason: Accepted successful collection-read exit with stderr warning is not explicit in core. -->
 - **B** — Print the readable results, then exit non-zero, so automation can detect that corruption exists.
-<!-- consolidation: discard; ref: docs/specs/interfaces.md#filtering-and-search; reason: Owner explicitly selects exit zero instead. -->
+<!-- consolidation: discard; ref: docs/specs/filtering-and-search.md#filtering-and-search; reason: Owner explicitly selects exit zero instead. -->
 
 **Answer:** I think I already answered this a couple of times. Yes. A.
-<!-- consolidation: integrate; ref: docs/specs/interfaces.md#filtering-and-search; reason: Explicitly confirms tolerant collection reads return success and a warning. -->
+<!-- consolidation: integrate; ref: docs/specs/filtering-and-search.md#filtering-and-search; reason: Explicitly confirms tolerant collection reads return success and a warning. -->
 
 ## 6 — Demotion response text  [R1, reframed]
 

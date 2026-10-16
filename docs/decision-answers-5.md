@@ -13,7 +13,7 @@ consolidation:
     unconfirmed: 28.00%
 ---
 # Decision answer sheet 5 — the input-during-close question, with the code facts
-> **Non-authoritative supporting material.** This file is not a contract. Authoritative owner(s): [SPEC](SPEC.md), [sessions](specs/sessions.md), [interfaces](specs/interfaces.md), [BLUEPRINT](BLUEPRINT.md), [session harness](architecture/session-harness.md), [CONVENTIONS](CONVENTIONS.md).
+> **Non-authoritative supporting material.** This file is not a contract. Authoritative owner(s): [SPEC](SPEC.md), [sessions](specs/sessions.md), [supported integration operations](specs/supported-integration-operations.md), [BLUEPRINT](BLUEPRINT.md), [session harness](architecture/session-harness.md), [CONVENTIONS](CONVENTIONS.md).
 > Disposition: Mixed — see markers.
 
 Your question: why cancel instead of "keep sending until the buffer is empty"? I went and read the code rather than guess. Two things I had wrong in sheet 4 are corrected here, and one of them matters for your answer.
@@ -69,7 +69,7 @@ So: waiting for the in-flight write to finish makes the message actually land in
 ## 4. One thing that is today's bug, not a preference
 
 The app barely tells you this happened — it surfaces as an error notice / a stderr line, not something you would reliably see. Losing a message you typed while being told almost nothing about it is worse than the loss itself.
-<!-- consolidation: unconfirmed; ref: docs/specs/interfaces.md#session-interaction-and-feedback; reason: Historical visibility defect needs verification and exact post-close failure presentation is not settled. -->
+<!-- consolidation: unconfirmed; ref: docs/specs/session-interaction-and-feedback.md#session-interaction-and-feedback; reason: Historical visibility defect needs verification and exact post-close failure presentation is not settled. -->
 
 ## 5. The question
 

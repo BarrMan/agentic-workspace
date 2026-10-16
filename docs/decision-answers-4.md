@@ -13,7 +13,7 @@ consolidation:
     unconfirmed: 43.75%
 ---
 # Decision answer sheet 4
-> **Non-authoritative supporting material.** This file is not a contract. Authoritative owner(s): [SPEC](SPEC.md), [task behavior](specs/tasks.md), [sessions](specs/sessions.md), [interfaces](specs/interfaces.md), [BLUEPRINT](BLUEPRINT.md), [architecture](architecture/session-harness.md), [CONVENTIONS](CONVENTIONS.md).
+> **Non-authoritative supporting material.** This file is not a contract. Authoritative owner(s): [SPEC](SPEC.md), [task behavior](specs/tasks.md), [sessions](specs/sessions.md), [supported integration operations](specs/supported-integration-operations.md), [BLUEPRINT](BLUEPRINT.md), [architecture](architecture/session-harness.md), [CONVENTIONS](CONVENTIONS.md).
 > Disposition: Mixed — see markers.
 
 Item 1 from sheet 3 is settled; item 2 is restated below with the actual event, because "the session ends or is torn down" was too vague to picture.

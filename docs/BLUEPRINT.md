@@ -382,5 +382,5 @@ for batch cleanup:
 | Task deletion, storage-move failure/concurrency, session/mode deletion, repeated-operation recovery, and other unresolved outcomes | Follow the current product contracts and unresolved items in [SPEC](SPEC.md), including [task contracts](specs/tasks.md) and [session contracts](specs/sessions.md); safety and cleanup invariants above continue to apply | Open |
 | Exact activity triggers that clear task/mode approval | Approval remains owned by Task and follows [SPEC](SPEC.md); do not equate passive observation/attachment with activity | Open |
 | Provider event names/capability and unsubscribe representation | Events must distinguish turn completion from execution exit; unsupported/missing events cannot imply idle state | Open |
-| Exact ask eligibility and any stopped-only restriction | Use [SPEC](specs/interfaces.md); do not infer permission for a running session | Open |
+| Exact ask eligibility and any stopped-only restriction | Use [SPEC](specs/supported-integration-operations.md); do not infer permission for a running session | Open |
 | Automatic resume consent, interruption recovery, and retry policy | Exact resume identity and safety invariants remain required; policy follows [SPEC](specs/sessions.md) | Open |

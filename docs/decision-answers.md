@@ -13,7 +13,7 @@ consolidation:
     unconfirmed: 17.89%
 ---
 # Decision answer sheet — Backlog.md
-> **Non-authoritative supporting material.** This file is not a contract. Authoritative owner(s): [SPEC](SPEC.md), [task behavior](specs/tasks.md), [sessions](specs/sessions.md), [interfaces](specs/interfaces.md), [BLUEPRINT](BLUEPRINT.md), [architecture](architecture/session-harness.md), [CONVENTIONS](CONVENTIONS.md).
+> **Non-authoritative supporting material.** This file is not a contract. Authoritative owner(s): [SPEC](SPEC.md), [task behavior](specs/tasks.md), [sessions](specs/sessions.md), [supported integration operations](specs/supported-integration-operations.md), [BLUEPRINT](BLUEPRINT.md), [architecture](architecture/session-harness.md), [CONVENTIONS](CONVENTIONS.md).
 > Disposition: Mixed — see markers.
 
 Answer inline (put your choice after each `Answer:`), then tell me "answers are in the file" or paste them back.
@@ -42,18 +42,18 @@ Blocking 27 failing tests: `duplicate-task-repair` (20), `cli-doctor` (6), `cont
 - **A — Build whole-container repair.** It picks a winner, moves the loser's content, preserves artifacts/sidecars. New destructive code, needs a preservation design, and we cannot reproduce the case in normal use any more.
 <!-- consolidation: discard; ref: none; reason: The answer explicitly deletes repair instead of approving this merge proposal. -->
 - **B — Keep the refusal; fix the 7 assertions** to expect a blocked preview and no mutation. Duplicates are reported, never merged.
-<!-- consolidation: discard; ref: docs/specs/interfaces.md#supported-integration-operations; reason: Rejected by repair deletion here and doctor deletion in sheet 2 item 3. -->
+<!-- consolidation: discard; ref: docs/specs/supported-integration-operations.md#supported-integration-operations; reason: Rejected by repair deletion here and doctor deletion in sheet 2 item 3. -->
 - **C — Delete the repair feature entirely** (doctor reports duplicates only).
 <!-- consolidation: integrate; ref: docs/specs/tasks.md#tasks-and-storage; reason: Accepted removal of automatic duplicate repair is not explicit in core. -->
-<!-- consolidation: discard; ref: docs/specs/interfaces.md#supported-integration-operations; reason: Report-only doctor portion was superseded by sheet 2 item 3 deleting doctor entirely. -->
+<!-- consolidation: discard; ref: docs/specs/supported-integration-operations.md#supported-integration-operations; reason: Report-only doctor portion was superseded by sheet 2 item 3 deleting doctor entirely. -->
 
 **Recommended: B.** Allocation can no longer mint a collision (`backlog.ts:557-571`), so the only remaining duplicates are damaged or hand-made data — precisely where a human should look before anything merges. A ships destructive merge semantics for a case we can't reproduce; C throws away the detection that makes duplicates findable.
-<!-- consolidation: discard; ref: docs/specs/interfaces.md#supported-integration-operations; reason: Recommendation was rejected by this answer and subsequent explicit doctor removal. -->
+<!-- consolidation: discard; ref: docs/specs/supported-integration-operations.md#supported-integration-operations; reason: Recommendation was rejected by this answer and subsequent explicit doctor removal. -->
 
 **Answer:** Delete the repair feature entirely. Also, please tell me what the doctor actually does. It might not be necessary anymore. As per our rule - no migration or legacy code should be written. We're currently the only users for this app and in development so any breaking change we introduce, we manually repair any broken data, schema, files without introducing permanent migration code. So regarding this question, make sure we do not get to the situation where we have duplicated tasks in the first place. If the code already uses our new structure and nothing in the code uses the legacy old structure then we're fine. If there are leftovers, please clean them up and fix them to use the new structure altogether. we do not need migration for that or special code.
 <!-- consolidation: integrate; ref: docs/specs/tasks.md#tasks-and-storage; reason: Explicit duplicate-repair removal is missing from core. -->
 <!-- consolidation: integrate; ref: docs/specs/tasks.md#tasks-and-storage; reason: Preventing app-created duplicate task identities is an accepted missing task rule. -->
-<!-- consolidation: discard; ref: docs/specs/interfaces.md#supported-integration-operations; reason: Doctor explanation request was answered in sheet 2 item 3 and followed by explicit removal. -->
+<!-- consolidation: discard; ref: docs/specs/supported-integration-operations.md#supported-integration-operations; reason: Doctor explanation request was answered in sheet 2 item 3 and followed by explicit removal. -->
 <!-- consolidation: unconfirmed; ref: none; reason: Current-only behavior disallows permanent legacy compatibility without approval. -->
 <!-- consolidation: exists; ref: docs/CONVENTIONS.md#changes-and-refactoring; reason: Superseded behavior and callers or fixtures must be removed together. -->
 <!-- consolidation: integrate; ref: docs/CONVENTIONS.md#changes-and-refactoring; reason: Owner's development policy uses manual broken-data correction rather than permanent schema migration code. -->
@@ -114,24 +114,24 @@ Blocking 2 failing tests in `cli-task-list`.
 <!-- consolidation: discard; ref: none; reason: Historical test count. -->
 
 **What's going on.** With a canonical but malformed record (`backlog/completed/task-99/task.md`, `title: [unclosed`), `backlog task list` warns on stderr, prints nothing, and exits 1. `backlog search` behaves the same. The exit 1 comes from the corpus loader (`persistent-task-read.ts:49-69` → `task-repository.ts:82-101` propagates the parse error), **not** from the tolerant duplicate scan (`duplicate-task-repair.ts:116-124`), which skips and warns. `6cb96c42 fix(tasks): enforce current-only local and Git reads` deliberately **removed** a catch that used to swallow non-fatal parse errors.
-<!-- consolidation: discard; ref: docs/specs/interfaces.md#filtering-and-search; reason: Historical strict-loader implementation is replaced by the explicit tolerant-read answers here and in sheet 2 item 5. -->
+<!-- consolidation: discard; ref: docs/specs/filtering-and-search.md#filtering-and-search; reason: Historical strict-loader implementation is replaced by the explicit tolerant-read answers here and in sheet 2 item 5. -->
 
 **Scenario.** You (or a teammate) hand-edit a task and break its YAML. Next morning every `backlog list` and `backlog search` fails until you find and fix the file. Alternative reading: that is exactly what you want — silent skipping hides corruption.
-<!-- consolidation: discard; ref: docs/specs/interfaces.md#filtering-and-search; reason: Owner rejects whole-process failure and chooses visible localized corruption reporting. -->
+<!-- consolidation: discard; ref: docs/specs/filtering-and-search.md#filtering-and-search; reason: Owner rejects whole-process failure and chooses visible localized corruption reporting. -->
 
 **Options.**
 - **A — Keep strict; update the two tests** to expect the failure and name the offending record.
-<!-- consolidation: discard; ref: docs/specs/interfaces.md#filtering-and-search; reason: Rejected by the tolerant-read answer. -->
+<!-- consolidation: discard; ref: docs/specs/filtering-and-search.md#filtering-and-search; reason: Rejected by the tolerant-read answer. -->
 - **B — Restore tolerant skip-and-warn in the corpus loader**, matching the duplicate scan. Reverses `6cb96c42`.
-<!-- consolidation: integrate; ref: docs/specs/interfaces.md#filtering-and-search; reason: Accepted collection-read warning and skip behavior is absent from core. -->
+<!-- consolidation: integrate; ref: docs/specs/filtering-and-search.md#filtering-and-search; reason: Accepted collection-read warning and skip behavior is absent from core. -->
 - **C — Keep strict but improve the error** to name the file and the manual fix instead of a bare repeated `YAML Parse error: Unexpected token`.
-<!-- consolidation: discard; ref: docs/specs/interfaces.md#filtering-and-search; reason: Strict whole-command failure was rejected although helpful error reporting was accepted separately. -->
+<!-- consolidation: discard; ref: docs/specs/filtering-and-search.md#filtering-and-search; reason: Strict whole-command failure was rejected although helpful error reporting was accepted separately. -->
 
 **Recommended: A.** Failing loudly on corrupt data is defensible and it is the recent deliberate decision; tolerance already exists where it matters (the duplicate scan); the tests in question only expect success because their filters never load the corpus. C is a worthwhile refinement on top of A if the current error text feels unhelpful.
-<!-- consolidation: discard; ref: docs/specs/interfaces.md#filtering-and-search; reason: Explicit owner answer rejects this strict-failure recommendation. -->
+<!-- consolidation: discard; ref: docs/specs/filtering-and-search.md#filtering-and-search; reason: Explicit owner answer rejects this strict-failure recommendation. -->
 
 **Answer:** The behavior should be, if data is corrupted, we provide a user friendly error but do not fail the process itself. We do not try to fix any broken thing that might happen. This is wrong and it just adds a lot of complexity to the code. If a user or "something" corrupts our data, we error and continue (if possible) but we do not account for all cases where things might go wrong and try to fix those ahead of time.
-<!-- consolidation: integrate; ref: docs/specs/interfaces.md#filtering-and-search; reason: Approved localized helpful errors and continuation where possible are absent from core and clarified by sheet 2 items 3 and 5. -->
+<!-- consolidation: integrate; ref: docs/specs/filtering-and-search.md#filtering-and-search; reason: Approved localized helpful errors and continuation where possible are absent from core and clarified by sheet 2 items 3 and 5. -->
 <!-- consolidation: integrate; ref: docs/specs/tasks.md#tasks-and-storage; reason: Approved no-automatic-corruption-repair policy is absent from core. -->
 
 ---
@@ -218,7 +218,7 @@ The diagnostic pass landed three of these as **stale expectations / unfaithful f
 - `session-snapshot-adoption-contract.test.ts` — the override warning is never produced on this adoption path (it reuses the queued request's saved environment rather than re-preparing), so the assertion is removed. Nothing was dropped in production.
 <!-- consolidation: discard; ref: docs/specs/configuration.md#configuration-and-modes; reason: Historical fake correction does not establish retained snapshot semantics over current effective configuration. -->
 - `mode-workspace-render-contract.test.ts` — the badge renders only on a **selected** row (`mode-row-label.ts:46-54`); the fixture never selected the row, so the fixture now selects it and the badge intent is preserved.
-<!-- consolidation: discard; ref: docs/specs/interfaces.md#session-interaction-and-feedback; reason: Historical fixture fix is not approval of a selected-row-only badge contract. -->
+<!-- consolidation: discard; ref: docs/specs/session-interaction-and-feedback.md#session-interaction-and-feedback; reason: Historical fixture fix is not approval of a selected-row-only badge contract. -->
 - `opentui-mode-passive-preview.test.ts` — the fake was unfaithful: the controller reads the selected mode's session from its **local selection map** (`workspace-controller.ts:1223-1231`), not the history's `activeSessionId`. The fake now drives a local selection instead.
 <!-- consolidation: discard; ref: docs/BLUEPRINT.md#models-and-relationships; reason: Old controller-local selection ownership is superseded by Task-owned active-session selection. -->
 

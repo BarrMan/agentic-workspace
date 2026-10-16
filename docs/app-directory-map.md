@@ -763,7 +763,7 @@ Tags are grouped by the purpose they describe. A tag's carrying set is listed ex
 - **`#library-export`** — 1 file(s): `src/index.ts`
 <!-- consolidation: discard; ref: none; reason: Export-tag membership and count do not define a supported public API. -->
 - **`#cli-command`** — 42 file(s): `src/cli/` ×2; `src/cli/features/` ×1; `src/cli/features/config/` ×4; `src/cli/features/drafts/` ×1; `src/cli/features/init/` ×3; `src/cli/features/milestones/` ×1; `src/cli/features/task/` ×1; `src/cli/features/tasks/` ×14; `src/commands/` ×15
-<!-- consolidation: discard; ref: docs/specs/interfaces.md#supported-integration-operations; reason: CLI file counts are implementation inventory rather than public command approval. -->
+<!-- consolidation: discard; ref: docs/specs/supported-integration-operations.md#supported-integration-operations; reason: CLI file counts are implementation inventory rather than public command approval. -->
 - **`#cli-feature`** — 25 file(s): `src/cli/features/` ×1; `src/cli/features/config/` ×4; `src/cli/features/drafts/` ×1; `src/cli/features/init/` ×3; `src/cli/features/milestones/` ×1; `src/cli/features/task/` ×1; `src/cli/features/tasks/` ×14
 <!-- consolidation: discard; ref: none; reason: CLI-feature tag membership and counts are source inventory. -->
 - **`#cli-registry`** — 2 file(s): `src/cli/index.ts`, `src/cli/register.ts`
@@ -817,7 +817,7 @@ Tags are grouped by the purpose they describe. A tag's carrying set is listed ex
 ### Transports (MCP)
 
 - **`#mcp-server`** — 24 file(s): `src/mcp/` ×5; `src/mcp/errors/` ×1; `src/mcp/resources/init-required/` ×1; `src/mcp/resources/workflow/` ×1; `src/mcp/tools/documents/` ×3; `src/mcp/tools/milestones/` ×3; `src/mcp/tools/tasks/` ×3; `src/mcp/tools/workflow/` ×1; `src/mcp/utils/` ×4; `src/mcp/validation/` ×2
-<!-- consolidation: discard; ref: docs/specs/interfaces.md#supported-integration-operations; reason: MCP source inventory does not resolve the explicitly undecided integration retention. -->
+<!-- consolidation: discard; ref: docs/specs/supported-integration-operations.md#supported-integration-operations; reason: MCP source inventory does not resolve the explicitly undecided integration retention. -->
 - **`#mcp-tool`** — 10 file(s): `src/mcp/tools/documents/handlers.ts`, `src/mcp/tools/documents/index.ts`, `src/mcp/tools/documents/schemas.ts`, `src/mcp/tools/milestones/handlers.ts`, `src/mcp/tools/milestones/index.ts`, `src/mcp/tools/milestones/schemas.ts`, `src/mcp/tools/tasks/handlers.ts`, `src/mcp/tools/tasks/index.ts`, `src/mcp/tools/tasks/schemas.ts`, `src/mcp/tools/workflow/index.ts`
 <!-- consolidation: discard; ref: none; reason: MCP-tool tag membership and count are source inventory rather than approved interfaces. -->
 - **`#mcp-tool-index`** — 4 file(s): `src/mcp/tools/documents/index.ts`, `src/mcp/tools/milestones/index.ts`, `src/mcp/tools/tasks/index.ts`, `src/mcp/tools/workflow/index.ts`
@@ -1141,7 +1141,7 @@ Each file appears exactly once, under its dominant purpose group; tags are shown
 ```
 
 ### Transports (MCP) — `transports` (24 files, 110,000 B)
-<!-- consolidation: discard; ref: docs/specs/interfaces.md#supported-integration-operations; reason: MCP grouped tree and measured aggregate are inventory and do not settle MCP retention or API approval. -->
+<!-- consolidation: discard; ref: docs/specs/supported-integration-operations.md#supported-integration-operations; reason: MCP grouped tree and measured aggregate are inventory and do not settle MCP retention or API approval. -->
 
 ```
 .

@@ -535,7 +535,7 @@ The delay is measured, not guessed — **[comment]**: "Claude's 100ms paste comp
 earlier Enter"; "Codex's 120ms paste-burst window swallows an earlier Enter." <!-- consolidation: discard; ref: docs/architecture/session-harness.md#readiness-and-identity-correlation; reason: External Claude paste timing measurement is not local startup readiness evidence. --> <!-- consolidation: discard; ref: docs/architecture/session-harness.md#readiness-and-identity-correlation; reason: External Codex paste timing measurement is not local startup readiness evidence. -->
 
 **[inference]** If we ever grow a multi-agent surface, `a` → Allow is the highest value-per-line
-dashboard action available, and the per-agent token table is the entire mechanism. <!-- consolidation: unconfirmed; ref: docs/specs/interfaces.md#session-interaction-and-feedback; reason: Proposed dashboard permission action has no recorded approval here. --> <!-- consolidation: unconfirmed; ref: docs/architecture/session-harness.md#runningexecution; reason: Sufficiency of token tables for safe provider permission responses requires verification. -->
+dashboard action available, and the per-agent token table is the entire mechanism. <!-- consolidation: unconfirmed; ref: docs/specs/session-interaction-and-feedback.md#session-interaction-and-feedback; reason: Proposed dashboard permission action has no recorded approval here. --> <!-- consolidation: unconfirmed; ref: docs/architecture/session-harness.md#runningexecution; reason: Sufficiency of token tables for safe provider permission responses requires verification. -->
 
 ---
 

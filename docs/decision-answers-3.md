@@ -13,7 +13,7 @@ consolidation:
     unconfirmed: 35.00%
 ---
 # Decision answer sheet 3 — the two I explained badly
-> **Non-authoritative supporting material.** This file is not a contract. Authoritative owner(s): [SPEC](SPEC.md), [task behavior](specs/tasks.md), [sessions](specs/sessions.md), [interfaces](specs/interfaces.md), [BLUEPRINT](BLUEPRINT.md), [architecture](architecture/session-harness.md), [CONVENTIONS](CONVENTIONS.md).
+> **Non-authoritative supporting material.** This file is not a contract. Authoritative owner(s): [SPEC](SPEC.md), [task behavior](specs/tasks.md), [sessions](specs/sessions.md), [supported integration operations](specs/supported-integration-operations.md), [BLUEPRINT](BLUEPRINT.md), [architecture](architecture/session-harness.md), [CONVENTIONS](CONVENTIONS.md).
 > Disposition: Mixed — see markers.
 
 You said twice that I failed to explain these, and you were right: I used internal names for things instead of describing what you actually see. Both are written below as product behaviour first, then the question. Answer inline after each `Answer:`.

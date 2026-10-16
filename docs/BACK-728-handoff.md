@@ -14,7 +14,7 @@ consolidation:
 ---
 # BACK-728 — Handoff Document
 
-> **Non-authoritative supporting material.** This file is not a contract. Authoritative owner(s): [sessions](specs/sessions.md), [interfaces](specs/interfaces.md), [BLUEPRINT](BLUEPRINT.md), [application boundaries](architecture/application-boundaries.md), [CONVENTIONS](CONVENTIONS.md), [ADRs](adr/README.md).
+> **Non-authoritative supporting material.** This file is not a contract. Authoritative owner(s): [sessions](specs/sessions.md), [supported integration operations](specs/supported-integration-operations.md), [BLUEPRINT](BLUEPRINT.md), [application boundaries](architecture/application-boundaries.md), [CONVENTIONS](CONVENTIONS.md), [ADRs](adr/README.md).
 > Disposition: Mixed — see markers.
 
 **Status as of:** 2026-10-04, ~11:00 local <!-- consolidation: discard; ref: none; reason: Historical checkpoint timestamp. -->

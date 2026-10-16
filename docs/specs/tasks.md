@@ -14,7 +14,7 @@ This contract defines task identity and data, project storage, artifacts, work c
 
 ### Tasks and storage
 
-[Product contract](../SPEC.md) · Related: [sessions](sessions.md), [configuration](configuration.md), [interfaces](interfaces.md)
+[Product contract](../SPEC.md) · Related: [sessions](sessions.md), [configuration](configuration.md), [supported integration operations](supported-integration-operations.md)
 
 #### Purpose
 
