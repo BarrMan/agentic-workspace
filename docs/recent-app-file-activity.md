@@ -13,6 +13,8 @@ consolidation:
     unconfirmed: 19.55%
 ---
 # Recent apps and file activity — storage review
+> **Non-authoritative supporting material.** This file is not a contract. Authoritative owner(s): [docs/PRODUCT.md](PRODUCT.md), [docs/specs/sessions.md](specs/sessions.md), [docs/BLUEPRINT.md](BLUEPRINT.md).
+> Disposition: Mixed — see markers.
 
 ## Scope and interpretation
 

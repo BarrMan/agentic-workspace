@@ -2,28 +2,30 @@
 consolidation:
   total: 59
   counts:
-    exists: 23
+    exists: 22
     discard: 32
     integrate: 0
-    unconfirmed: 4
+    unconfirmed: 5
   percentages:
-    exists: 38.98%
+    exists: 37.29%
     discard: 54.24%
     integrate: 0.00%
-    unconfirmed: 6.78%
+    unconfirmed: 8.47%
 ---
 # Agent of Empires: runtime lessons for Backlog
+> **Non-authoritative supporting material.** This file is not a contract. Authoritative owner(s): [PRODUCT](PRODUCT.md), [SPEC](SPEC.md), [BLUEPRINT](BLUEPRINT.md), [session harness](architecture/session-harness.md), [CONVENTIONS](CONVENTIONS.md).
+> Disposition: Historical — discard.
 
 ## Scope and evidence
 
 This note synthesizes verified librarian findings; it does not authorize implementation or migration.
-<!-- consolidation: exists; ref: docs/SPEC.md#authority; reason: Research evidence does not authorize product changes. -->
+<!-- consolidation: unconfirmed; ref: none; reason: Research evidence does not authorize product changes. -->
 Canonical project: [agent-of-empires/agent-of-empires](https://github.com/agent-of-empires/agent-of-empires).
 Canonical documentation: [agent-of-empires.com/docs](https://agent-of-empires.com/docs/).
 Source links below target unpinned `main`; use the [pinned deletion audit](aoe-multi-client-deletion-source-audit.md) and [completion/resume audit](aoe-natural-completion-resume-source-audit.md) for immutable evidence and the separately inspected stop-order delta. Simultaneous multi-TUI sharing was not tested.
 <!-- consolidation: discard; ref: none; reason: Citation provenance and historical verification limit remain in this research source. -->
 Parent owns validation. Treat source-backed behavior separately from inferred design lessons.
-<!-- consolidation: exists; ref: docs/CONVENTIONS.md#checks-and-test-ownership; reason: Evidence reporting distinguishes inspection from runtime verification. -->
+<!-- consolidation: exists; ref: docs/CONVENTIONS.md#testing; reason: Evidence reporting distinguishes inspection from runtime verification. -->
 
 ## Verified architecture
 
@@ -44,7 +46,7 @@ Parent owns validation. Treat source-backed behavior separately from inferred de
 - `Storage` persists profile session rows in `sessions.json`; those rows do not persist the view's selection fields.
 <!-- consolidation: discard; ref: none; reason: External storage schema is reference evidence. -->
 - AOE profiles are not Backlog task modes. This is evidence for local UI selection, not a direct replacement contract for Backlog `activeSessionId`.
-<!-- consolidation: exists; ref: docs/BLUEPRINT.md#task-and-mode-relationships; reason: Task selection is explicitly distinct from presentation focus. -->
+<!-- consolidation: exists; ref: docs/BLUEPRINT.md#models-and-relationships; reason: Task selection is explicitly distinct from presentation focus. -->
 - Sources: [`src/tui/home/mod.rs`](https://github.com/agent-of-empires/agent-of-empires/blob/main/src/tui/home/mod.rs), [`src/session/storage.rs`](https://github.com/agent-of-empires/agent-of-empires/blob/main/src/session/storage.rs).
 
 ### Explicit creation, attachment, and termination
@@ -82,37 +84,37 @@ Parent owns validation. Treat source-backed behavior separately from inferred de
 | Concern | AOE evidence | Backlog target |
 |---|---|---|
 | Ordinary UI | Local TUI; optional feature paths can serve | No central lifecycle daemon <!-- consolidation: discard; ref: none; reason: AOE local-versus-serve behavior is external evidence. --> <!-- consolidation: unconfirmed; ref: docs/BLUEPRINT.md#component-ownership; reason: Shared application ownership is specified but a blanket daemon prohibition is not. --> |
-| Terminal backend | Shared tmux by default; socket configurable | Shared normal tmux or existing configured override <!-- consolidation: discard; ref: none; reason: AOE socket defaults are external evidence. --> <!-- consolidation: exists; ref: docs/BLUEPRINT.md#launch-context-and-terminal-transport; reason: Explicit shared backend and configured socket override are required. --> |
-| View selection | Local `HomeView` selection | Local UI selection, with task/mode history semantics defined separately <!-- consolidation: discard; ref: none; reason: AOE HomeView ownership is external evidence. --> <!-- consolidation: exists; ref: docs/BLUEPRINT.md#task-and-mode-relationships; reason: Task selection and presentation focus have distinct owners. --> |
-| Conversation creation | Explicit new/attach workflow | Distinct saved/native conversations by default on requested execution; history viewing creates none <!-- consolidation: discard; ref: none; reason: AOE workflow is external evidence. --> <!-- consolidation: exists; ref: docs/architecture/application-boundaries.md#shared-application-operations; reason: Start and retained-session selection are separate operations with no startup on reads. --> |
-| History | Profile session rows in filesystem | Shared task-owned filesystem history; fixed modes and preset-only current configuration <!-- consolidation: discard; ref: none; reason: AOE profile row storage is external evidence. --> <!-- consolidation: exists; ref: docs/BLUEPRINT.md#conversation-records-versus-runtime; reason: Task-owned retained history persists. --> <!-- consolidation: discard; ref: docs/specs/configuration.md#modes-and-approval; reason: A fixed catalogue is superseded by configurable modes while session membership stays fixed. --> <!-- consolidation: discard; ref: docs/specs/configuration.md#configuration-access-and-precedence; reason: Preset-only framing is superseded by field-by-field effective configuration. --> |
-| UI close | Sessions survive quit/disconnect | Dispose frontend transport only; no last-client/idle/completion-helper garbage collection <!-- consolidation: discard; ref: none; reason: AOE persistence after quit is external evidence. --> <!-- consolidation: exists; ref: docs/BLUEPRINT.md#launch-context-and-terminal-transport; reason: Client disposal cannot own execution or shared-server lifetime. --> |
-| Nonworking runtime | Explicit lifecycle actions documented | Observe verified natural exit as stopped; explicit exact resume/stop, unknown nonmutating <!-- consolidation: discard; ref: none; reason: AOE documented lifecycle actions are external evidence. --> <!-- consolidation: exists; ref: docs/specs/sessions.md#identity-and-observed-state; reason: Observed stopped and unknown states retain non-destructive uncertainty semantics. --> <!-- consolidation: exists; ref: docs/specs/sessions.md#stopping-and-exact-resume; reason: Stop and exact resume are explicit conversation operations. --> |
-| Coordination | Mutator and recovery locks | Existing task/session admission and short locked mutations; no global native-ID exclusion <!-- consolidation: discard; ref: none; reason: AOE mutation and recovery locks are external evidence. --> <!-- consolidation: exists; ref: docs/BLUEPRINT.md#mutation-and-concurrency-boundary; reason: Admission and short fresh-state mutations are required. --> <!-- consolidation: exists; ref: docs/BLUEPRINT.md#launch-context-and-terminal-transport; reason: Global provider-native-ID exclusion is explicitly rejected. --> |
+| Terminal backend | Shared tmux by default; socket configurable | Shared normal tmux or existing configured override <!-- consolidation: discard; ref: none; reason: AOE socket defaults are external evidence. --> <!-- consolidation: exists; ref: docs/BLUEPRINT.md#launch-context-and-shared-terminal-transport; reason: Explicit shared backend and configured socket override are required. --> |
+| View selection | Local `HomeView` selection | Local UI selection, with task/mode history semantics defined separately <!-- consolidation: discard; ref: none; reason: AOE HomeView ownership is external evidence. --> <!-- consolidation: exists; ref: docs/BLUEPRINT.md#models-and-relationships; reason: Task selection and presentation focus have distinct owners. --> |
+| Conversation creation | Explicit new/attach workflow | Distinct saved/native conversations by default on requested execution; history viewing creates none <!-- consolidation: discard; ref: none; reason: AOE workflow is external evidence. --> <!-- consolidation: exists; ref: docs/architecture/application-boundaries.md#application-controller; reason: Start and retained-session selection are separate operations with no startup on reads. --> |
+| History | Profile session rows in filesystem | Shared task-owned filesystem history; fixed modes and preset-only current configuration <!-- consolidation: discard; ref: none; reason: AOE profile row storage is external evidence. --> <!-- consolidation: exists; ref: docs/BLUEPRINT.md#durable-conversation-and-operation-records; reason: Task-owned retained history persists. --> <!-- consolidation: discard; ref: docs/specs/configuration.md#configuration-and-modes; reason: A fixed catalogue is superseded by configurable modes while session membership stays fixed. --> <!-- consolidation: discard; ref: docs/specs/configuration.md#configuration-and-modes; reason: Preset-only framing is superseded by field-by-field effective configuration. --> |
+| UI close | Sessions survive quit/disconnect | Dispose frontend transport only; no last-client/idle/completion-helper garbage collection <!-- consolidation: discard; ref: none; reason: AOE persistence after quit is external evidence. --> <!-- consolidation: exists; ref: docs/BLUEPRINT.md#launch-context-and-shared-terminal-transport; reason: Client disposal cannot own execution or shared-server lifetime. --> |
+| Nonworking runtime | Explicit lifecycle actions documented | Observe verified natural exit as stopped; explicit exact resume/stop, unknown nonmutating <!-- consolidation: discard; ref: none; reason: AOE documented lifecycle actions are external evidence. --> <!-- consolidation: exists; ref: docs/specs/sessions.md#sessions; reason: Observed stopped and unknown states retain non-destructive uncertainty semantics. --> <!-- consolidation: exists; ref: docs/specs/sessions.md#stop-and-resume-a-session; reason: Stop and exact resume are explicit conversation operations. --> |
+| Coordination | Mutator and recovery locks | Existing task/session admission and short locked mutations; no global native-ID exclusion <!-- consolidation: discard; ref: none; reason: AOE mutation and recovery locks are external evidence. --> <!-- consolidation: exists; ref: docs/BLUEPRINT.md#authoritative-mutation-and-publication; reason: Admission and short fresh-state mutations are required. --> <!-- consolidation: exists; ref: docs/BLUEPRINT.md#launch-context-and-shared-terminal-transport; reason: Global provider-native-ID exclusion is explicitly rejected. --> |
 
 ## Adopt the patterns, preserve Backlog policy
 
 - Keep UI cursor/selection local; preserve shared conversation history independently of which UI displays it.
-<!-- consolidation: exists; ref: docs/architecture/application-boundaries.md#ui-controller-and-modules; reason: UI navigation and shared domain histories have separate ownership. -->
+<!-- consolidation: exists; ref: docs/architecture/application-boundaries.md#ui-controller-feature-modules-renderer-and-terminal-host; reason: UI navigation and shared domain histories have separate ownership. -->
 - Make new execution and attachment explicit. Merely reading/selecting history must not create an unrequested conversation.
-<!-- consolidation: exists; ref: docs/architecture/application-boundaries.md#shared-application-operations; reason: Reads and selection have no launch side effect. -->
+<!-- consolidation: exists; ref: docs/architecture/application-boundaries.md#application-controller; reason: Reads and selection have no launch side effect. -->
 - Separate presentation state, persisted history, and runtime authority; reuse verified identities for recovery rather than fabricating native IDs.
-<!-- consolidation: exists; ref: docs/BLUEPRINT.md#conversation-records-versus-runtime; reason: History and observations are separate and saved IDs alone confer no runtime authority. -->
+<!-- consolidation: exists; ref: docs/BLUEPRINT.md#durable-conversation-and-operation-records; reason: History and observations are separate and saved IDs alone confer no runtime authority. -->
 - Keep existing task-admission/session claims and current-record publication checks. They protect a Backlog instance, not global provider-native-ID execution uniqueness.
-<!-- consolidation: exists; ref: docs/BLUEPRINT.md#mutation-and-concurrency-boundary; reason: Admission and incarnation-validated publication protect current records. -->
+<!-- consolidation: exists; ref: docs/BLUEPRINT.md#authoritative-mutation-and-publication; reason: Admission and incarnation-validated publication protect current records. -->
 - Keep fixed modes, current task → project → user preset resolution, runtime OpenCode adapter selection, and existing harness-independent activity detection.
-<!-- consolidation: discard; ref: docs/specs/configuration.md#modes-and-approval; reason: Fixed catalogue is superseded by configurable modes. -->
-<!-- consolidation: exists; ref: docs/specs/configuration.md#configuration-access-and-precedence; reason: Current task over project over root resolution is required. -->
-<!-- consolidation: unconfirmed; ref: docs/architecture/session-harness.md#harness-construction-and-promises; reason: Exact OpenCode runtime adapter selection needs current adoption evidence beyond source. -->
-<!-- consolidation: unconfirmed; ref: docs/architecture/session-harness.md#session-subscriptions-and-event-ownership; reason: Retaining existing harness-independent activity detection needs current adoption and provider evidence. -->
+<!-- consolidation: discard; ref: docs/specs/configuration.md#configuration-and-modes; reason: Fixed catalogue is superseded by configurable modes. -->
+<!-- consolidation: exists; ref: docs/specs/configuration.md#configuration-and-modes; reason: Current task over project over root resolution is required. -->
+<!-- consolidation: unconfirmed; ref: docs/architecture/session-harness.md#harness; reason: Exact OpenCode runtime adapter selection needs current adoption evidence beyond source. -->
+<!-- consolidation: unconfirmed; ref: docs/architecture/session-harness.md#route-runtime-events-and-observe; reason: Retaining existing harness-independent activity detection needs current adoption and provider evidence. -->
 - Apply the [authorized shared-runtime plan](shared-agent-server-plan.md), which supersedes isolated servers and retained-work completion helpers. Adopt instance-owned lifecycle and local selection; Backlog task deletion remains forget-only, unlike AoE purge.
-<!-- consolidation: exists; ref: docs/BLUEPRINT.md#launch-context-and-terminal-transport; reason: Shared runtime replaces frontend-owned servers and client-count cleanup. -->
-<!-- consolidation: discard; ref: docs/specs/tasks.md#scope; reason: Forget-only deletion is superseded by agent and work-context cleanup. -->
+<!-- consolidation: exists; ref: docs/BLUEPRINT.md#launch-context-and-shared-terminal-transport; reason: Shared runtime replaces frontend-owned servers and client-count cleanup. -->
+<!-- consolidation: discard; ref: docs/specs/tasks.md#purpose; reason: Forget-only deletion is superseded by agent and work-context cleanup. -->
 - Verified survivor recovery sends no new prompt or history mutation. Unknown/unreachable attribution fails closed rather than enabling cleanup or duplicate execution.
-<!-- consolidation: exists; ref: docs/architecture/application-boundaries.md#ui-controller-and-modules; reason: Verified attachment updates presentation without lifecycle or input effects. -->
-<!-- consolidation: exists; ref: docs/BLUEPRINT.md#shared-operation-protocol; reason: Failed probes cannot authorize destructive effects or fabricated liveness. -->
+<!-- consolidation: exists; ref: docs/architecture/application-boundaries.md#ui-controller-feature-modules-renderer-and-terminal-host; reason: Verified attachment updates presentation without lifecycle or input effects. -->
+<!-- consolidation: exists; ref: docs/BLUEPRINT.md#application-controller-and-stores; reason: Failed probes cannot authorize destructive effects or fabricated liveness. -->
 - Preserve exact runtime/resource validators and truthful teardown errors; remove superseded private lifecycle machinery only after its consumers are replaced.
-<!-- consolidation: exists; ref: docs/BLUEPRINT.md#stop-deletion-and-completion; reason: Provenance validation and truthful cleanup outcomes are mandatory. -->
+<!-- consolidation: exists; ref: docs/BLUEPRINT.md#observation-stop-and-deletion; reason: Provenance validation and truthful cleanup outcomes are mandatory. -->
 <!-- consolidation: exists; ref: docs/CONVENTIONS.md#changes-and-refactoring; reason: Superseded behavior and callers must be aligned together. -->
 
 ## Limits and next reference
@@ -122,10 +124,10 @@ No concurrent two-TUI behavior, provider shared-backend guarantees, exact native
 No new source inspection, runtime launches, tests, or builds were performed for this synthesis.
 <!-- consolidation: discard; ref: none; reason: Historical execution report. -->
 The authorized [runtime plan](shared-agent-server-plan.md) owns target choices, the [findings](shared-agent-runtime-simplification.md) own technical safeguards, and the [handoff](shared-agent-runtime-handoff.md) owns current proof gaps. Full AoE UI activation-chain and CLI/UI backend equivalence remain UNKNOWN.
-<!-- consolidation: discard; ref: docs/SPEC.md#authority; reason: Core contracts now own target choices and older plans retain evidence only. -->
+<!-- consolidation: discard; ref: none; reason: Core contracts now own target choices and older plans retain evidence only. -->
 <!-- consolidation: discard; ref: none; reason: External activation-chain coverage limit is retained with the audit. -->
 Permanent logs and bootstrap delivery are supported features. This note authorizes no schema/path change.
-<!-- consolidation: discard; ref: docs/specs/sessions.md#live-terminal-and-client-lifetime; reason: Permanent terminal logs conflict with live-stream-only retention. -->
-<!-- consolidation: exists; ref: docs/specs/sessions.md#inputs-delivered-to-the-agent; reason: Startup instruction delivery remains supported with in-memory composition. -->
+<!-- consolidation: discard; ref: docs/specs/sessions.md#observe-and-detach-from-a-live-session; reason: Permanent terminal logs conflict with live-stream-only retention. -->
+<!-- consolidation: exists; ref: docs/specs/sessions.md#starting-a-session; reason: Startup instruction delivery remains supported with in-memory composition. -->
 Schema migration remains paused; any later migration requires final decisions and separate authorization, with backup and quiesced writers.
 <!-- consolidation: unconfirmed; ref: docs/CONVENTIONS.md#changes-and-refactoring; reason: Retain migration authorization backup and writer-quiescence gate until its current disposition is confirmed. -->

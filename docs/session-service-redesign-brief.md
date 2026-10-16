@@ -2,17 +2,20 @@
 consolidation:
   total: 84
   counts:
-    exists: 31
+    exists: 30
     discard: 49
     integrate: 0
-    unconfirmed: 4
+    unconfirmed: 5
   percentages:
-    exists: 36.90%
+    exists: 35.71%
     discard: 58.33%
     integrate: 0.00%
-    unconfirmed: 4.76%
+    unconfirmed: 5.95%
 ---
 # Session service (`sessions.ts`) — owner proposal vs. oracle review
+
+> **Non-authoritative supporting material.** This file is not a contract. Authoritative owner(s): [SPEC sessions](specs/sessions.md#sessions), [BLUEPRINT](BLUEPRINT.md), [Task architecture](architecture/task.md), [Session/Harness architecture](architecture/session-harness.md), [Application boundaries](architecture/application-boundaries.md), [ADR 0001](adr/0001-model-owned-domain-behavior.md).
+> Disposition: Historical — discard.
 
 **Purpose.** This is a planning brief. It records, verbatim, the *owner's* proposed
 simplification of `src/agent-workspace/sessions.ts` and the *oracle's* review of each
@@ -36,7 +39,7 @@ present state, not the original. Part E is the open architectural surface that r
   and no clever inner-function machinery. <!-- consolidation: discard; ref: none; reason: Historical simplification request is design input rather than authorization to remove safety checks. -->
 - `docs/SPEC.md` is the authoritative behaviour contract (sections 7–9 cover modes,
   selection/lifecycle, deletion). It takes precedence over older plans. In particular it
-  forbids silently replacing a failed exact resume with a fresh conversation. <!-- consolidation: exists; ref: docs/SPEC.md#authority; reason: Approved product contract takes precedence. --> <!-- consolidation: exists; ref: docs/specs/sessions.md#stopping-and-exact-resume; reason: Exact resume cannot silently become a new conversation. -->
+  forbids silently replacing a failed exact resume with a fresh conversation. <!-- consolidation: unconfirmed; ref: none; reason: Approved product contract takes precedence. --> <!-- consolidation: exists; ref: docs/specs/sessions.md#stop-and-resume-a-session; reason: Exact resume cannot silently become a new conversation. -->
 - **Anchor caveat:** all `file:line` references in this brief are **as-reviewed** (pre-refactor,
   2,308-line file). Re-locate by symbol — the recent stages shifted lines. <!-- consolidation: discard; ref: none; reason: Historical source-anchor caveat remains navigation guidance. -->
 
@@ -96,11 +99,11 @@ const identity = ({ session, modeId }: (typeof entries)[number]) =>
 this.assertSameSessionMembership(current, expected);
 ```
 
-<!-- consolidation: exists; ref: docs/BLUEPRINT.md#mutation-and-concurrency-boundary; reason: Assertion example illustrates required membership revalidation. -->
+<!-- consolidation: exists; ref: docs/BLUEPRINT.md#authoritative-mutation-and-publication; reason: Assertion example illustrates required membership revalidation. -->
 > "what is this for? It's for protecting against what exactly? The expected session is not the
 > current session anymore? **Use locks / mutex for this if needed and not this.** if you really
 > cared about protecting it so much, then what happens if current changes right after you
-> assert? do better!" <!-- consolidation: discard; ref: docs/BLUEPRINT.md#mutation-and-concurrency-boundary; reason: Replacing provenance validation with locks alone is rejected by current boundary. -->
+> assert? do better!" <!-- consolidation: discard; ref: docs/BLUEPRINT.md#authoritative-mutation-and-publication; reason: Replacing provenance validation with locks alone is rejected by current boundary. -->
 
 ### A4. `launchReserved` and the proposed target shape
 
@@ -140,9 +143,9 @@ return harnessSession
 
 ---
 
-<!-- consolidation: exists; ref: docs/architecture/task.md#session-relationship-operations; reason: Sketch caller task.newSession intent is retained. -->
+<!-- consolidation: exists; ref: docs/architecture/task.md#session; reason: Sketch caller task.newSession intent is retained. -->
 <!-- consolidation: discard; ref: docs/BLUEPRINT.md#new-session; reason: Sketch Task lock around asynchronous startup and post-start insertion is superseded by synchronous reservation then external startup. -->
-<!-- consolidation: exists; ref: docs/architecture/session-harness.md#session-operations; reason: Sketch Session creation delegates provider execution to Harness. -->
+<!-- consolidation: exists; ref: docs/architecture/session-harness.md#session; reason: Sketch Session creation delegates provider execution to Harness. -->
 ## Part B — The oracle's review, item by item
 
 **Headline recommendation:** *"Simplify the duplicated workflows, not the safety boundaries.
@@ -156,13 +159,13 @@ Anchor: `sessions.ts:1915–1990`, especially `1969–1979`.
 
 > "These are intentionally separate phases: (1) verify **every** native target before stopping
 > anything; (2) perform the stops. Combining them would stop session A before discovering that
-> session B has uncertain/foreign ownership. Existing tests explicitly protect against this." <!-- consolidation: exists; ref: docs/specs/sessions.md#native-cleanup-preflight; reason: Every relevant native target is validated before any stop. --> <!-- consolidation: discard; ref: none; reason: Historical test-presence claim is evidence only. -->
+> session B has uncertain/foreign ownership. Existing tests explicitly protect against this." <!-- consolidation: exists; ref: docs/specs/sessions.md#stop-and-resume-a-session; reason: Every relevant native target is validated before any stop. --> <!-- consolidation: discard; ref: none; reason: Historical test-presence claim is evidence only. -->
 
 **Minimal remedy:** compute the non-terminal targets once, then retain two straightforward
-loops. Preserve claims, batch revalidation, and release-error handling. <!-- consolidation: discard; ref: none; reason: Computing targets once and exact loop shape are implementation recommendations. --> <!-- consolidation: exists; ref: docs/BLUEPRINT.md#mutation-and-concurrency-boundary; reason: Claims revalidation and release-failure distinctions remain required. -->
+loops. Preserve claims, batch revalidation, and release-error handling. <!-- consolidation: discard; ref: none; reason: Computing targets once and exact loop shape are implementation recommendations. --> <!-- consolidation: exists; ref: docs/BLUEPRINT.md#authoritative-mutation-and-publication; reason: Claims revalidation and release-failure distinctions remain required. -->
 
 > "This is preflight-before-effects, **not** an atomic transaction: a later kill can still fail
-> after earlier kills succeeded." <!-- consolidation: exists; ref: docs/specs/sessions.md#native-cleanup-preflight; reason: Preflight is not transactional rollback. -->
+> after earlier kills succeeded." <!-- consolidation: exists; ref: docs/specs/sessions.md#stop-and-resume-a-session; reason: Preflight is not transactional rollback. -->
 
 ### B2. HINT 2 — `identity()` is just `session.getId()` → **RENAMED, NOT DELETED**
 
@@ -178,7 +181,7 @@ Anchor: `sessions.ts:1920–1958`.
 - Flatten `Object.entries(state.modes)` directly into mode/session entries. <!-- consolidation: discard; ref: none; reason: Historical local refactoring recommendation. -->
 - Use one plainly named, **module-level** cleanup-snapshot helper for both reads. <!-- consolidation: discard; ref: none; reason: Private helper placement is not a required architecture seam. -->
 - **Retain the relevant-field comparison**; do not replace it with UUID equality or
-  whole-record JSON equality (e.g. usage timestamps must not invalidate cleanup). <!-- consolidation: exists; ref: docs/BLUEPRINT.md#mutation-and-concurrency-boundary; reason: Validate relevant incarnation and provenance while preserving unrelated usage updates. -->
+  whole-record JSON equality (e.g. usage timestamps must not invalidate cleanup). <!-- consolidation: exists; ref: docs/BLUEPRINT.md#authoritative-mutation-and-publication; reason: Validate relevant incarnation and provenance while preserving unrelated usage updates. -->
 - The validated store guarantees unique session IDs across modes, so there is no need to
   rediscover the owning mode for every flattened session. <!-- consolidation: discard; ref: none; reason: Historical validator evidence and lookup optimization. -->
 
@@ -191,33 +194,33 @@ Real locks already exist:
 | Boundary | Protection |
 |---|---|
 | Task admission, `sessions.ts:342–359` | Cross-process task-file lock; same-task lifecycle ops contend here <!-- consolidation: discard; ref: none; reason: Historical source lock inventory is not a frozen implementation mandate. --> |
-| Session claim, `session-store.ts:524` | Cross-process exclusion for operations on one conversation <!-- consolidation: exists; ref: docs/architecture/application-boundaries.md#durability-checkpoint-collaboration; reason: Operation admission and session coordination remain required. --> |
-| Store mutation | Locked reload → callback → validation → atomic write <!-- consolidation: exists; ref: docs/architecture/application-boundaries.md#storage-and-configuration-interfaces; reason: SessionStore.mutate has this exact durable boundary. --> |
-| Mode lifecycle gate | In-process serialization only; **not** a universal cross-process mutex <!-- consolidation: unconfirmed; ref: docs/BLUEPRINT.md#mutation-and-concurrency-boundary; reason: Historical gate scope must be verified before relying on it for cross-process safety. --> |
+| Session claim, `session-store.ts:524` | Cross-process exclusion for operations on one conversation <!-- consolidation: exists; ref: docs/architecture/application-boundaries.md#authoritative-mutation-and-publication; reason: Operation admission and session coordination remain required. --> |
+| Store mutation | Locked reload → callback → validation → atomic write <!-- consolidation: exists; ref: docs/architecture/application-boundaries.md#stores-and-repositories; reason: SessionStore.mutate has this exact durable boundary. --> |
+| Mode lifecycle gate | In-process serialization only; **not** a universal cross-process mutex <!-- consolidation: unconfirmed; ref: docs/BLUEPRINT.md#authoritative-mutation-and-publication; reason: Historical gate scope must be verified before relying on it for cross-process safety. --> |
 
 > "Concurrency still exists: multiple CLI/TUI processes, delayed host callbacks, store-only
 > updates such as usage tracking, running-limit operations targeting other tasks, and
-> provider-written receipts/tmux changes." <!-- consolidation: exists; ref: docs/BLUEPRINT.md#mutation-and-concurrency-boundary; reason: Fresh-state publication and execution provenance address concurrent writers and stale callbacks. -->
+> provider-written receipts/tmux changes." <!-- consolidation: exists; ref: docs/BLUEPRINT.md#authoritative-mutation-and-publication; reason: Fresh-state publication and execution provenance address concurrent writers and stale callbacks. -->
 
 > "The assert inside `mutateSession()` is useful: comparison and durable publication happen
 > under the same state lock. It prevents stale work from updating a removed/replaced record. A
 > callback can also already be stale *before* acquiring its lock; locking alone does not
 > establish its provenance. Outside a mutation, the assert is only a revalidation checkpoint —
-> not protection against every future change." <!-- consolidation: exists; ref: docs/architecture/application-boundaries.md#durability-checkpoint-collaboration; reason: Membership and execution origin are checked at each locked publication rather than assumed from lock acquisition. -->
+> not protection against every future change." <!-- consolidation: exists; ref: docs/architecture/application-boundaries.md#authoritative-mutation-and-publication; reason: Membership and execution origin are checked at each locked publication rather than assumed from lock acquisition. -->
 
 > "Runtime ownership checks remain necessary because tmux and providers do not participate in
-> the JSON lock." <!-- consolidation: exists; ref: docs/BLUEPRINT.md#shared-operation-protocol; reason: Execution effects require validated runtime ownership independently of storage coordination. -->
+> the JSON lock." <!-- consolidation: exists; ref: docs/BLUEPRINT.md#application-controller-and-stores; reason: Execution effects require validated runtime ownership independently of storage coordination. -->
 
 **Minimal remedy:** retain commit-time membership checks and exact pane/resource provenance;
 remove redundant reads only where the existing lock and intervening writers have been
 accounted for. **Do not add another mutex, and do not hold the state-file lock across launch or
-terminal operations.** <!-- consolidation: exists; ref: docs/BLUEPRINT.md#mutation-and-concurrency-boundary; reason: Provenance validation and short non-nested state locks are explicit. --> <!-- consolidation: discard; ref: none; reason: Removing particular redundant reads requires local source proof rather than a new core method. -->
+terminal operations.** <!-- consolidation: exists; ref: docs/BLUEPRINT.md#authoritative-mutation-and-publication; reason: Provenance validation and short non-nested state locks are explicit. --> <!-- consolidation: discard; ref: none; reason: Removing particular redundant reads requires local source proof rather than a new core method. -->
 
 Additional point:
 
 > "`assertSameSessionMembership()` does **not** identify a launch generation by itself: resuming
 > the same record preserves its UUID and creation time. Pane ID/resource provenance supplies
-> that distinction." <!-- consolidation: exists; ref: docs/architecture/application-boundaries.md#durability-checkpoint-collaboration; reason: Record incarnation and per-launch execution identity protect different boundaries. -->
+> that distinction." <!-- consolidation: exists; ref: docs/architecture/application-boundaries.md#authoritative-mutation-and-publication; reason: Record incarnation and per-launch execution identity protect different boundaries. -->
 
 ### B4. HINT 4 — resolve the adapter once / class split → **SUBSTANCE ADOPTED, SHAPE REJECTED**
 
@@ -233,12 +236,12 @@ Call chain:
 
 Rejection of the class shape:
 
-> "However, the proposed `harness.new()` model is too small: <!-- consolidation: discard; ref: docs/architecture/session-harness.md#harness-construction-and-promises; reason: Accepted Harness boundary includes deferred identity and readiness. -->
-> - OpenCode v1 supplies identity **later**, through a receipt. <!-- consolidation: unconfirmed; ref: docs/architecture/session-harness.md#readiness-evidence-and-failure-stages; reason: Provider-specific signal timing is historical evidence requiring adapter verification. -->
-> - Claude, Pi and OpenCode v2 establish identity during preparation. <!-- consolidation: unconfirmed; ref: docs/architecture/session-harness.md#readiness-evidence-and-failure-stages; reason: Provider-specific preparation timing requires verification rather than becoming a universal guarantee. -->
-> - Exact resume has prerequisites that must pass **before** outgoing-runtime cleanup. <!-- consolidation: exists; ref: docs/architecture/session-harness.md#session-operations; reason: Resume validates provider identity and paths before retiring outgoing resources. -->
+> "However, the proposed `harness.new()` model is too small: <!-- consolidation: discard; ref: docs/architecture/session-harness.md#harness; reason: Accepted Harness boundary includes deferred identity and readiness. -->
+> - OpenCode v1 supplies identity **later**, through a receipt. <!-- consolidation: unconfirmed; ref: docs/architecture/session-harness.md#readiness-and-identity-correlation; reason: Provider-specific signal timing is historical evidence requiring adapter verification. -->
+> - Claude, Pi and OpenCode v2 establish identity during preparation. <!-- consolidation: unconfirmed; ref: docs/architecture/session-harness.md#readiness-and-identity-correlation; reason: Provider-specific preparation timing requires verification rather than becoming a universal guarantee. -->
+> - Exact resume has prerequisites that must pass **before** outgoing-runtime cleanup. <!-- consolidation: exists; ref: docs/architecture/session-harness.md#session; reason: Resume validates provider identity and paths before retiring outgoing resources. -->
 > - Durable reservation, active-pointer publication, resource ownership and failure settlement
->   belong to the application, not the adapter. <!-- consolidation: exists; ref: docs/architecture/application-boundaries.md#durability-checkpoint-collaboration; reason: Application coordinates reservation publication ownership and settlement. -->
+>   belong to the application, not the adapter. <!-- consolidation: exists; ref: docs/architecture/application-boundaries.md#authoritative-mutation-and-publication; reason: Application coordinates reservation publication ownership and settlement. -->
 >
 > Keep plain records and the existing service/store/process/adapter boundaries. Make their
 > sequencing visible." <!-- consolidation: discard; ref: docs/adr/0001-model-owned-domain-behavior.md#alternatives-considered; reason: Plain-record service-boundary recommendation was superseded by meaningful model ownership. -->
@@ -254,26 +257,26 @@ Rejection of the class shape:
 | Three record/reservation implementations: `createNewTarget:1037`, `registerPendingSessionGated:1605`, `reserveSession:1680` | **Consolidate.** One record constructor and one mode reservation mutation. Retain the durable reservation itself. <!-- consolidation: exists; ref: docs/BLUEPRINT.md#new-session; reason: One Task-owned reservation precedes startup. --> <!-- consolidation: discard; ref: none; reason: Exact predecessor helpers are historical inventory. --> |
 | Two launch bodies: `launchNativeRecord:1223`, `launchReserved:1764` | **Consolidate.** They repeat preparation, identity publication, environment binding, dispatch, running publication and failure handling. <!-- consolidation: discard; ref: none; reason: Historical duplication finding and refactoring step. --> |
 | `ResolvedTarget` / admission helper chain: `914–1201` | **Flatten.** One readable select/attach/resume/new decision sequence; keep helpers only for substantive operations. <!-- consolidation: discard; ref: none; reason: Historical private helper simplification. --> |
-| Release callback passed through launch, `940–943, 1352` | **Remove the ownership inversion.** The caller already owns the claim; make resume-failure publication use that claim instead of releasing it so the store re-acquires it (`session-store.ts:552`). <!-- consolidation: exists; ref: docs/architecture/application-boundaries.md#durability-checkpoint-collaboration; reason: Application owns coordination across the operation without reentering held admission. --> |
+| Release callback passed through launch, `940–943, 1352` | **Remove the ownership inversion.** The caller already owns the claim; make resume-failure publication use that claim instead of releasing it so the store re-acquires it (`session-store.ts:552`). <!-- consolidation: exists; ref: docs/architecture/application-boundaries.md#authoritative-mutation-and-publication; reason: Application owns coordination across the operation without reentering held admission. --> |
 | Generic cleanup action-array callbacks, `1467–1485` | Replace with explicit cleanup steps and explicit error precedence. Still clean resources, kill the prepared pane and publish failure even if an earlier step failed. <!-- consolidation: discard; ref: none; reason: Exact action-array replacement is a historical implementation choice. --> <!-- consolidation: exists; ref: docs/BLUEPRINT.md#new-session; reason: Attempt remaining safe settlement and retain primary plus secondary errors. --> |
-| Flat-mode compatibility searches | Remove locally redundant fallbacks using the validated `modes` envelope. Do **not** undertake a repository-wide compatibility migration. <!-- consolidation: discard; ref: docs/SPEC.md#current-contract-only-policy; reason: Historical local scope does not authorize current compatibility paths or automatic conversion. --> |
+| Flat-mode compatibility searches | Remove locally redundant fallbacks using the validated `modes` envelope. Do **not** undertake a repository-wide compatibility migration. <!-- consolidation: discard; ref: none; reason: Historical local scope does not authorize current compatibility paths or automatic conversion. --> |
 
 ### C2. What must be KEPT (contract-protected)
 
-- Native identity **receipts** and pane/resource provenance checks (deferred identity is real). <!-- consolidation: exists; ref: docs/architecture/session-harness.md#harness-construction-and-promises; reason: Harness retains identity discovery and exact resource provenance. -->
+- Native identity **receipts** and pane/resource provenance checks (deferred identity is real). <!-- consolidation: exists; ref: docs/architecture/session-harness.md#harness; reason: Harness retains identity discovery and exact resource provenance. -->
 - `nativeWorkspace`, owner attribution, and direct/native distinctions — hand-off, deletion,
   input/attach and running-limit policies still consume them. *Sharing launch mechanics does
-  not authorize changing those policies.* <!-- consolidation: exists; ref: docs/specs/sessions.md#handoff; reason: App-owned predecessor eligibility remains required. --> <!-- consolidation: discard; ref: docs/BLUEPRINT.md#decision-reconciliation; reason: Historical native fields and every policy consuming them are not permanent schema requirements. -->
+  not authorize changing those policies.* <!-- consolidation: exists; ref: docs/specs/sessions.md#handoff; reason: App-owned predecessor eligibility remains required. --> <!-- consolidation: discard; ref: docs/BLUEPRINT.md#open-design-decisions; reason: Historical native fields and every policy consuming them are not permanent schema requirements. -->
 - Forget-only deletion (`728–807`): keep separate from stop/purge; its path validation and
-  no-signalling behaviour are contract-protected. <!-- consolidation: discard; ref: docs/specs/tasks.md#success-and-failure; reason: Forget-only task deletion is superseded by required cleanup. --> <!-- consolidation: exists; ref: docs/architecture/application-boundaries.md#storage-and-configuration-interfaces; reason: Path validation survives the changed deletion policy. -->
-- At least one launch per mode, and concurrent-callback guards that JSON validation cannot prove. <!-- consolidation: unconfirmed; ref: docs/BLUEPRINT.md#launch-context-and-terminal-transport; reason: At least one launch wording is ambiguous and cannot justify per-mode exclusion or mandatory launch. --> <!-- consolidation: exists; ref: docs/BLUEPRINT.md#mutation-and-concurrency-boundary; reason: Stale callback and execution-origin validation are required beyond schema checks. -->
+  no-signalling behaviour are contract-protected. <!-- consolidation: discard; ref: docs/specs/tasks.md#task-deletion; reason: Forget-only task deletion is superseded by required cleanup. --> <!-- consolidation: exists; ref: docs/architecture/application-boundaries.md#stores-and-repositories; reason: Path validation survives the changed deletion policy. -->
+- At least one launch per mode, and concurrent-callback guards that JSON validation cannot prove. <!-- consolidation: unconfirmed; ref: docs/BLUEPRINT.md#launch-context-and-shared-terminal-transport; reason: At least one launch wording is ambiguous and cannot justify per-mode exclusion or mandatory launch. --> <!-- consolidation: exists; ref: docs/BLUEPRINT.md#authoritative-mutation-and-publication; reason: Stale callback and execution-origin validation are required beyond schema checks. -->
 
 ### C3. The envelope constraint (why guards can't be declared "impossible")
 
 > "`SessionStore` validates unique IDs, task ownership, allowed record fields and valid active
 > pointers on writes (`871–945`). It does **not** prove runtime ownership, immutable record
 > identity, one launch per mode, or absence of concurrent callbacks. Those guards cannot be
-> declared impossible merely because JSON is validated." <!-- consolidation: exists; ref: docs/BLUEPRINT.md#architectural-invariants; reason: Schema validation alone does not establish runtime ownership or current incarnation. --> <!-- consolidation: discard; ref: docs/BLUEPRINT.md#launch-context-and-terminal-transport; reason: Historical one-launch-per-mode constraint is superseded by independent conversations. --> <!-- consolidation: discard; ref: none; reason: Validator line-number inventory is historical evidence. -->
+> declared impossible merely because JSON is validated." <!-- consolidation: exists; ref: docs/BLUEPRINT.md#architectural-invariants; reason: Schema validation alone does not establish runtime ownership or current incarnation. --> <!-- consolidation: discard; ref: docs/BLUEPRINT.md#launch-context-and-shared-terminal-transport; reason: Historical one-launch-per-mode constraint is superseded by independent conversations. --> <!-- consolidation: discard; ref: none; reason: Validator line-number inventory is historical evidence. -->
 
 ---
 
@@ -324,7 +327,7 @@ hint 2's naming/structure was applied, and hint 4's "resolve the adapter once" w
 4. **Is the concurrency model** (JSON store lock + task-file lock + claim + runtime provenance)
    the minimal correct one, or can it be reduced without reintroducing TOCTOU? The owner wants a
    mutex; the prior oracle argued the existing locks already cover the real boundaries and the
-   commit-time assert is a necessary revalidation, not a substitute for locking. <!-- consolidation: exists; ref: docs/BLUEPRINT.md#mutation-and-concurrency-boundary; reason: Required fresh-state validation and short coordination are settled while private synchronization remains implementation work. -->
+   commit-time assert is a necessary revalidation, not a substitute for locking. <!-- consolidation: exists; ref: docs/BLUEPRINT.md#authoritative-mutation-and-publication; reason: Required fresh-state validation and short coordination are settled while private synchronization remains implementation work. -->
 5. **"Guards for states that can never occur"** — which of the file's guards genuinely cannot
    occur (and can be deleted), versus which merely *look* impossible under JSON validation but
    are reachable through runtime/provenance/concurrency (and must stay)? <!-- consolidation: discard; ref: none; reason: Guard-by-guard source investigation is historical refactoring work rather than a new core requirement. -->

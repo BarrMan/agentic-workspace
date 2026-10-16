@@ -13,6 +13,8 @@ consolidation:
     unconfirmed: 20.43%
 ---
 # Downloads storage review
+> **Non-authoritative supporting material.** This file is not a contract. Authoritative owner(s): [docs/PRODUCT.md](PRODUCT.md).
+> Disposition: Mixed — see markers.
 
 ## Result
 

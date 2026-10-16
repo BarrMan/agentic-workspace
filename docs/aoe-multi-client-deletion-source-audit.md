@@ -2,17 +2,19 @@
 consolidation:
   total: 76
   counts:
-    exists: 15
+    exists: 12
     discard: 56
     integrate: 0
-    unconfirmed: 5
+    unconfirmed: 8
   percentages:
-    exists: 19.74%
+    exists: 15.79%
     discard: 73.68%
     integrate: 0.00%
-    unconfirmed: 6.58%
+    unconfirmed: 10.53%
 ---
 # AoE multi-client and deletion source audit
+> **Non-authoritative supporting material.** This file is not a contract. Authoritative owner(s): [SPEC](SPEC.md), [BLUEPRINT](BLUEPRINT.md), [tasks](specs/tasks.md), [session harness](architecture/session-harness.md).
+> Disposition: Historical — discard.
 
 ## Revision and scope
 
@@ -79,53 +81,53 @@ The source examined here contains no evidence that delete coordinates Backlog fr
 ## Small applicable patterns and remaining Backlog deletion plan
 
 Useful bounded patterns: keep each UI’s selection local; serialize authoritative persisted mutations and reload current disk state under that lock; use notifications as refresh hints with a bounded fallback; invalidate local selection when a shared row disappears. AOE’s purge claim protects deletion of an AOE runtime session; do not add another Backlog claim if its existing mutation mutex/claim already serializes task deletion. These are observations, not authorization to copy AOE’s shared tmux configuration, profiles, lifecycle, or native-session mapping.
-<!-- consolidation: exists; ref: docs/architecture/application-boundaries.md#ui-controller-and-modules; reason: Local task navigation is distinct from shared domain ownership. -->
-<!-- consolidation: exists; ref: docs/BLUEPRINT.md#mutation-and-concurrency-boundary; reason: Mutations reload current data under short locks. -->
-<!-- consolidation: unconfirmed; ref: docs/architecture/application-boundaries.md#storage-and-configuration-interfaces; reason: Exact peer notification fallback and selection clearing policy are not approved merely by upstream behavior. -->
+<!-- consolidation: exists; ref: docs/architecture/application-boundaries.md#ui-controller-feature-modules-renderer-and-terminal-host; reason: Local task navigation is distinct from shared domain ownership. -->
+<!-- consolidation: exists; ref: docs/BLUEPRINT.md#authoritative-mutation-and-publication; reason: Mutations reload current data under short locks. -->
+<!-- consolidation: unconfirmed; ref: docs/architecture/application-boundaries.md#stores-and-repositories; reason: Exact peer notification fallback and selection clearing policy are not approved merely by upstream behavior. -->
 <!-- consolidation: exists; ref: docs/CONVENTIONS.md#general-principles; reason: Avoid duplicating an existing coordination mechanism. -->
-<!-- consolidation: exists; ref: docs/SPEC.md#authority; reason: Research observations do not authorize architecture adoption. -->
+<!-- consolidation: unconfirmed; ref: none; reason: Research observations do not authorize architecture adoption. -->
 
 ### Backlog target is deliberately different (BACK-27)
 
 The supplied **BACK-27/spec.md** contract is task deletion = forget task and Backlog associations for every status/owner. It expressly does **not** stop/kill a provider, delete provider conversations, remove worktrees/branches, or later sweep/kill on exit. Do not transplant AOE’s runtime-session purge, kill-first ordering, resource cleanup, trash, or a new per-record purge claim. Do not resurrect associations after callbacks or reuse the deleted task ID. Parent owns validation of the actual spec/callers and writes the implementation plan; this audit does not propose a competing lifecycle redesign.
-<!-- consolidation: discard; ref: docs/specs/tasks.md#scope; reason: BACK-27 forget-only and no-cleanup policy is superseded by current destructive task deletion. -->
-<!-- consolidation: exists; ref: docs/BLUEPRINT.md#mutation-and-concurrency-boundary; reason: Delayed callbacks cannot resurrect removed or replaced records. -->
-<!-- consolidation: unconfirmed; ref: docs/specs/tasks.md#repeated-and-concurrent-requests; reason: Permanent prohibition on deleted task-ID reuse is not settled by current deletion policy. -->
+<!-- consolidation: discard; ref: docs/specs/tasks.md#purpose; reason: BACK-27 forget-only and no-cleanup policy is superseded by current destructive task deletion. -->
+<!-- consolidation: exists; ref: docs/BLUEPRINT.md#authoritative-mutation-and-publication; reason: Delayed callbacks cannot resurrect removed or replaced records. -->
+<!-- consolidation: unconfirmed; ref: docs/specs/tasks.md#edge-cases-and-failures; reason: Permanent prohibition on deleted task-ID reuse is not settled by current deletion policy. -->
 <!-- consolidation: discard; ref: none; reason: Parent implementation assignment is historical operational context. -->
 
 Operational caveat: a still-running process may recreate Backlog-owned sidecars after task associations are forgotten. Removing those sidecars requires explicit user acceptance of that disruption; there is no later exit sweep under this contract. Do not delete provider/user data or stop the agent under task deletion.
-<!-- consolidation: discard; ref: docs/specs/tasks.md#success-and-failure; reason: Forget-first sidecar disruption scenario is superseded by cleanup before association removal. -->
-<!-- consolidation: unconfirmed; ref: docs/specs/tasks.md#scope; reason: Provider-owned file scope and any consent for its removal remain explicitly unresolved. -->
+<!-- consolidation: discard; ref: docs/specs/tasks.md#task-deletion; reason: Forget-first sidecar disruption scenario is superseded by cleanup before association removal. -->
+<!-- consolidation: unconfirmed; ref: docs/specs/tasks.md#purpose; reason: Provider-owned file scope and any consent for its removal remain explicitly unresolved. -->
 
 ## Remaining scoped Backlog tasks
 
 This is a proposed implementation sequence, not approval of BACK-27's draft artifacts or authorization to implement.
-<!-- consolidation: exists; ref: docs/SPEC.md#authority; reason: Draft implementation work is not behavioral approval. -->
+<!-- consolidation: unconfirmed; ref: none; reason: Draft implementation work is not behavioral approval. -->
 
 1. **Pin deletion regressions in existing suites.** Cover owned/foreign RUNNING, STARTING, PARKED, stopped and mixed-mode records; assert task/association removal with zero stop, kill, provider-delete or Git-removal calls. Retain cancellation and failure-notice coverage.
-<!-- consolidation: discard; ref: docs/specs/tasks.md#acceptance-scenarios; reason: Zero-cleanup deletion assertions now contradict approved outcomes. -->
-<!-- consolidation: exists; ref: docs/CONVENTIONS.md#checks-and-test-ownership; reason: Preserve observable cancellation and failure behavior tests. -->
+<!-- consolidation: discard; ref: docs/specs/tasks.md#acceptance-criteria; reason: Zero-cleanup deletion assertions now contradict approved outcomes. -->
+<!-- consolidation: exists; ref: docs/CONVENTIONS.md#testing; reason: Preserve observable cancellation and failure behavior tests. -->
 2. **Core forgetting under existing locks.** Change deletion's lifecycle wiring in `src/core/backlog.ts` and `src/core/task-lifecycle-service.ts` to a deletion-specific association/file cleanup in `src/agent-workspace/sessions.ts`. Keep explicit stop/completion cleanup unchanged. Validate exact Backlog-owned paths; do not let status or process ownership block forgetting. Avoid a second unlocked UI purge.
-<!-- consolidation: discard; ref: docs/specs/tasks.md#success-and-failure; reason: Forgetting despite live ownership is superseded by cleanup-before-removal. -->
-<!-- consolidation: exists; ref: docs/BLUEPRINT.md#stop-deletion-and-completion; reason: Exact provenance validation and coordinated deletion cannot be bypassed by UI purge. -->
+<!-- consolidation: discard; ref: docs/specs/tasks.md#task-deletion; reason: Forgetting despite live ownership is superseded by cleanup-before-removal. -->
+<!-- consolidation: exists; ref: docs/BLUEPRINT.md#observation-stop-and-deletion; reason: Exact provenance validation and coordinated deletion cannot be bypassed by UI purge. -->
 3. **Non-stopping local and peer removal.** Update `src/ui/opentui/workspace-controller.ts` for both confirmation and watched removal. Clear selection and local management without owned-stop callbacks or a detach-to-stop fallback. Check `live/agent-host.ts`, `live/existing-agent-host.ts`, and directly implicated helper release/exit paths before using detach: display detach alone does not establish that later teardown will spare the process. Add only the required relinquishment behavior; do not redesign the helper.
-<!-- consolidation: discard; ref: docs/specs/tasks.md#scope; reason: Non-stopping task deletion is obsolete. -->
-<!-- consolidation: exists; ref: docs/architecture/application-boundaries.md#ui-controller-and-modules; reason: Transport detach itself must not stop execution even though explicit deletion has separate cleanup. -->
+<!-- consolidation: discard; ref: docs/specs/tasks.md#purpose; reason: Non-stopping task deletion is obsolete. -->
+<!-- consolidation: exists; ref: docs/architecture/application-boundaries.md#ui-controller-feature-modules-renderer-and-terminal-host; reason: Transport detach itself must not stop execution even though explicit deletion has separate cleanup. -->
 <!-- consolidation: discard; ref: none; reason: Old controller/helper landing points and bounded work scope are operational history. -->
 4. **Fence late association writes.** Exercise pending launch/adoption, delayed status/output, duplicate deletion and same-ID replacement. Reuse task admission locks and exact session identities; add a narrowly scoped guard where a test demonstrates missing protection. Sidecar recreation by already-running hooks remains an accepted limit, not a reason to kill them.
-<!-- consolidation: exists; ref: docs/BLUEPRINT.md#mutation-and-concurrency-boundary; reason: Admission and exact incarnation checks reject obsolete publication. -->
-<!-- consolidation: discard; ref: docs/specs/tasks.md#success-and-failure; reason: Sidecar recreation after forgetting is not the approved cleanup ordering. -->
+<!-- consolidation: exists; ref: docs/BLUEPRINT.md#authoritative-mutation-and-publication; reason: Admission and exact incarnation checks reject obsolete publication. -->
+<!-- consolidation: discard; ref: docs/specs/tasks.md#task-deletion; reason: Sidecar recreation after forgetting is not the approved cleanup ordering. -->
 5. **Verify two-client behavior and failures.** One client deletes while another views/hosts the task; both forget it without stopping agents, including on later exit/sweep. Preserve unrelated tasks, provider conversations and Git worktrees/branches. Preserve truthful pre-removal versus post-removal error notices.
-<!-- consolidation: discard; ref: docs/specs/tasks.md#scope; reason: Preserving task agents and worktrees during deletion conflicts with current scope. -->
-<!-- consolidation: exists; ref: docs/specs/tasks.md#success-and-failure; reason: Completed and incomplete deletion effects require truthful reporting. -->
+<!-- consolidation: discard; ref: docs/specs/tasks.md#purpose; reason: Preserving task agents and worktrees during deletion conflicts with current scope. -->
+<!-- consolidation: exists; ref: docs/specs/tasks.md#task-deletion; reason: Completed and incomplete deletion effects require truthful reporting. -->
 6. **Integrate only the deletion changes and rebuild.** Run affected suites and assembled types, build MAIN once after integration, verify binary freshness, then use disposable isolated fixtures against the rebuilt CLI. Account for already-committed broader changes without an unsolicited reset or rollback.
-<!-- consolidation: exists; ref: docs/CONVENTIONS.md#validation; reason: Integration requires relevant checks and rebuilt fresh binary before runnable handoff. -->
-<!-- consolidation: exists; ref: docs/CONVENTIONS.md#checks-and-test-ownership; reason: Runtime verification uses isolated owned fixtures. -->
+<!-- consolidation: exists; ref: docs/CONVENTIONS.md#tooling-and-validation; reason: Integration requires relevant checks and rebuilt fresh binary before runnable handoff. -->
+<!-- consolidation: exists; ref: docs/CONVENTIONS.md#testing; reason: Runtime verification uses isolated owned fixtures. -->
 <!-- consolidation: exists; ref: docs/CONVENTIONS.md#general-principles; reason: Preserve unrelated work and avoid unsolicited rollback. -->
 
 Migration, new-project admission, modes/schema conversion, startup witnesses, provider-v2 readiness, new daemons and changing tmux topology are not deletion prerequisites established by this audit. Their parked patches are not accepted for integration. The earlier accidental-live cleanup uncertainty remains separate and unresolved.
 <!-- consolidation: discard; ref: none; reason: Historical excluded work and parked-patch inventory do not define current architecture. -->
-<!-- consolidation: unconfirmed; ref: docs/SPEC.md#evidence-and-decisions; reason: Accidental-live cleanup uncertainty must remain open until verified rather than being retired by annotation. -->
+<!-- consolidation: unconfirmed; ref: none; reason: Accidental-live cleanup uncertainty must remain open until verified rather than being retired by annotation. -->
 
 ## Evidence limits
 
@@ -149,6 +151,6 @@ No concurrent two-TUI experiment or concurrency-test result is claimed. Watch no
 - **TUI Enter mapping remains unverified:** `home/input.rs` dispatches selected Enter to `activate_selected_session`; the exact implementation/direct call chain was not available from the bounded raw excerpts/search. Therefore cannot say whether it attaches, starts, or restarts in each state, or whether it creates/reuses the persisted Instance. Do not map AOE start/recovery behavior onto that UI action without this missing callsite.
 <!-- consolidation: discard; ref: none; reason: Unverified upstream activation callsite is a research gap rather than a product open decision. -->
 - **Backlog mapping:** BACK-27 still means forgetting task associations, not AOE runtime-session deletion. AOE is a precedent only for shared tmux persistence and per-client selection; its resume/recovery methods do not authorize stopping/deleting a Backlog process or provider conversation. An interactive/noninteractive Backlog ask with no verified agent-wait/ask counterexample is **unknown**, not inferred equivalent to AOE stop or prompt behavior.
-<!-- consolidation: discard; ref: docs/specs/tasks.md#scope; reason: Historical BACK-27 forgetting no longer defines task deletion. -->
-<!-- consolidation: exists; ref: docs/SPEC.md#authority; reason: External recovery methods do not authorize product lifecycle changes. -->
-<!-- consolidation: unconfirmed; ref: docs/architecture/application-boundaries.md#shared-application-operations; reason: Interactive versus noninteractive ask runtime proof is unresolved even though stopped-only ask intent is approved. -->
+<!-- consolidation: discard; ref: docs/specs/tasks.md#purpose; reason: Historical BACK-27 forgetting no longer defines task deletion. -->
+<!-- consolidation: unconfirmed; ref: none; reason: External recovery methods do not authorize product lifecycle changes. -->
+<!-- consolidation: unconfirmed; ref: docs/architecture/application-boundaries.md#application-controller; reason: Interactive versus noninteractive ask runtime proof is unresolved even though stopped-only ask intent is approved. -->

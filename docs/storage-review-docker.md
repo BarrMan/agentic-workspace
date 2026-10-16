@@ -13,6 +13,8 @@ consolidation:
     unconfirmed: 11.48%
 ---
 # Docker storage review — macOS
+> **Non-authoritative supporting material.** This file is not a contract. Authoritative owner(s): [docs/PRODUCT.md](PRODUCT.md), [docs/BLUEPRINT.md](BLUEPRINT.md).
+> Disposition: Mixed — see markers.
 
 Docker Desktop recovery and the user-authorized cleanup completed on **2026-10-13**. The daemon was recovered after graceful quit/relaunch failed; Paca resources, build cache, and unreferenced images were then removed. The 11:55 inventory below is retained as a clearly marked pre-cleanup historical snapshot. <!-- consolidation: discard; ref: none; reason: Historical authorized host cleanup and chronology. -->
 

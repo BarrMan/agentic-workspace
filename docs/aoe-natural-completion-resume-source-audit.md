@@ -13,6 +13,8 @@ consolidation:
     unconfirmed: 6.67%
 ---
 # AoE natural completion and resume: bounded source audit
+> **Non-authoritative supporting material.** This file is not a contract. Authoritative owner(s): [SPEC](SPEC.md), [BLUEPRINT](BLUEPRINT.md), [sessions](specs/sessions.md), [session harness](architecture/session-harness.md).
+> Disposition: Historical — discard.
 
 ## Revision / evidence
 
@@ -47,19 +49,19 @@ Primary source: [agent-of-empires/agent-of-empires](https://github.com/agent-of-
 ## Applicability to Backlog.md
 
 AOE demonstrates a useful distinction between provider-native conversation identity, AOE instance identity, and tmux pane lifecycle, plus restart-with-same-native-ID semantics. Backlog adopts that instance-owned lifecycle rather than requiring global/exact native-ID exclusion or all-descendant settlement. This accepts that a dead pane does not prove every descendant exited, and that separate Backlog instances are not globally excluded by native ID. Some AOE teardown paths can swallow kill errors; Backlog must retain truthful errors. AOE's destructive stop/delete behavior does not apply to Backlog's forget-task contract.
-<!-- consolidation: exists; ref: docs/architecture/session-harness.md#session-properties; reason: Application conversation provider identity and replaceable execution are distinct. -->
-<!-- consolidation: exists; ref: docs/BLUEPRINT.md#launch-context-and-terminal-transport; reason: Global native-ID exclusion is explicitly prohibited. -->
-<!-- consolidation: unconfirmed; ref: docs/architecture/session-harness.md#runningexecution-interaction-contract; reason: Blanket waiver of descendant settlement is not stated by the current owned-resource cleanup contract. -->
-<!-- consolidation: exists; ref: docs/CONVENTIONS.md#error-handling-and-cleanup; reason: Teardown failures must remain visible. -->
-<!-- consolidation: discard; ref: docs/specs/tasks.md#scope; reason: Forget-only deletion conflicts with the approved destructive task-deletion scope. -->
+<!-- consolidation: exists; ref: docs/architecture/session-harness.md#session; reason: Application conversation provider identity and replaceable execution are distinct. -->
+<!-- consolidation: exists; ref: docs/BLUEPRINT.md#launch-context-and-shared-terminal-transport; reason: Global native-ID exclusion is explicitly prohibited. -->
+<!-- consolidation: unconfirmed; ref: docs/architecture/session-harness.md#runningexecution; reason: Blanket waiver of descendant settlement is not stated by the current owned-resource cleanup contract. -->
+<!-- consolidation: exists; ref: docs/CONVENTIONS.md#error-handling; reason: Teardown failures must remain visible. -->
+<!-- consolidation: discard; ref: docs/specs/tasks.md#purpose; reason: Forget-only deletion conflicts with the approved destructive task-deletion scope. -->
 
 **Concrete takeaway:** AOE's live owned pane makes start skip; a dead pane is cleaned and the same instance's stored native conversation ID is relaunched with provider-native resume flags (subject to capability/policy). Explicit restart tears down the outgoing pane before relaunch. Backlog adopts this instance lifecycle: reconcile verified natural exit as stopped, and on explicit resume clear the validated outgoing owned pane/resource reservation before resuming the saved identity. No descendant ledger/receipt or all-descendant settlement proof is required. Exact target validation, truthful probe/teardown errors, and Backlog's separate forget-only deletion contract remain required.
 <!-- consolidation: discard; ref: none; reason: Repeated upstream start and restart summary is reference evidence. -->
-<!-- consolidation: exists; ref: docs/specs/sessions.md#identity-and-observed-state; reason: Stopped state requires current exit evidence. -->
-<!-- consolidation: exists; ref: docs/architecture/session-harness.md#session-operations; reason: Exact resume validates outgoing ownership and cleans resources before replacement activity preparation. -->
-<!-- consolidation: unconfirmed; ref: docs/architecture/session-harness.md#runningexecution-interaction-contract; reason: Confirm whether the no-descendant-proof exception meets the current complete owned-resource cleanup obligation. -->
-<!-- consolidation: exists; ref: docs/BLUEPRINT.md#stop-deletion-and-completion; reason: Exact targets and truthful probe and teardown errors remain mandatory. -->
-<!-- consolidation: discard; ref: docs/specs/tasks.md#success-and-failure; reason: Forgetting alone explicitly fails the current task-deletion contract. -->
+<!-- consolidation: exists; ref: docs/specs/sessions.md#sessions; reason: Stopped state requires current exit evidence. -->
+<!-- consolidation: exists; ref: docs/architecture/session-harness.md#session; reason: Exact resume validates outgoing ownership and cleans resources before replacement activity preparation. -->
+<!-- consolidation: unconfirmed; ref: docs/architecture/session-harness.md#runningexecution; reason: Confirm whether the no-descendant-proof exception meets the current complete owned-resource cleanup obligation. -->
+<!-- consolidation: exists; ref: docs/BLUEPRINT.md#observation-stop-and-deletion; reason: Exact targets and truthful probe and teardown errors remain mandatory. -->
+<!-- consolidation: discard; ref: docs/specs/tasks.md#task-deletion; reason: Forgetting alone explicitly fails the current task-deletion contract. -->
 
 **Scope:** remote official upstream raw/API source only; no checkout, build, tests, runtime, tmux, Backlog CLI, or provider invocation. Line links target immutable commits; current main inspected only for the stop-order delta and its stated lines.
 <!-- consolidation: discard; ref: none; reason: Historical inspection scope is retained in the source audit. -->

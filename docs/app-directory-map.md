@@ -14,6 +14,9 @@ consolidation:
 ---
 # AgenticWorkspace — App Directory Map
 
+> **Non-authoritative supporting material.** This file is not a contract. Authoritative owner(s): [BLUEPRINT](BLUEPRINT.md), [CONVENTIONS](CONVENTIONS.md).
+> Disposition: Historical — discard.
+
 Root: `/Users/imribarr/Projects/agentic-workspace` <!-- consolidation: discard; ref: none; reason: Machine-local snapshot root is reference metadata. -->
 Measured: **2026-10-08** at HEAD `dd00d061` (working tree).   <!-- consolidation: discard; ref: none; reason: Snapshot date and revision are historical measurement metadata. -->
 Files mapped: **651**  ·  Measured bytes: **18,816,852 B** (~17.9 MiB)   <!-- consolidation: discard; ref: none; reason: Historical file and byte totals are not durable requirements. -->
@@ -22,11 +25,11 @@ Sizes measured with `stat -f %z`; line counts with `wc -l`; `binary` = non-text 
 Tags come from path, directory role and targeted symbol/export peeks (`head`/grep). Anything not read end-to-end is `[INFERENCE]`.   <!-- consolidation: discard; ref: none; reason: Tag evidence qualification belongs to this historical inventory. -->
 Empty directories carry no files and are omitted. <!-- consolidation: discard; ref: none; reason: Inventory omission convention is not a core contract. -->
 
-> **Historical snapshot.** This map measures the tree as of the date and HEAD above; it is not regenerated. <!-- consolidation: discard; ref: none; reason: Historical snapshot maintenance status stays with this reference. --> Entries naming the legacy blessed TUI (`neo-neo-bblessed`, `src/ui/task-viewer/`, `src/ui/unified/`, `src/ui/components/`, `src/ui/overview-tui.ts`, `src/ui/overview-content.ts`, `src/core/tui-task-edit-session.ts`, `scripts/run-tui-interactive-tests.sh`, `tools/tui-screenshot-compare.sh`, and the blessed-only tests) have since been removed. <!-- consolidation: discard; ref: docs/SPEC.md#current-contract-only-policy; reason: Removed-source inventory is historical implementation evidence rather than a new removal requirement. --> The surviving interactive UI is OpenTUI. <!-- consolidation: discard; ref: docs/BLUEPRINT.md#descriptive-source-navigation; reason: Current UI implementation identification is source navigation rather than technology-decision rationale. --> The test-helper inventory selectively omits a removed test-the-test entry; aggregate snapshot totals remain historical. <!-- consolidation: discard; ref: none; reason: Selective inventory correction and stale aggregate qualification are historical metadata. -->
+> **Historical snapshot.** This map measures the tree as of the date and HEAD above; it is not regenerated. <!-- consolidation: discard; ref: none; reason: Historical snapshot maintenance status stays with this reference. --> Entries naming the legacy blessed TUI (`neo-neo-bblessed`, `src/ui/task-viewer/`, `src/ui/unified/`, `src/ui/components/`, `src/ui/overview-tui.ts`, `src/ui/overview-content.ts`, `src/core/tui-task-edit-session.ts`, `scripts/run-tui-interactive-tests.sh`, `tools/tui-screenshot-compare.sh`, and the blessed-only tests) have since been removed. <!-- consolidation: discard; ref: none; reason: Removed-source inventory is historical implementation evidence rather than a new removal requirement. --> The surviving interactive UI is OpenTUI. <!-- consolidation: discard; ref: none; reason: Current UI implementation identification is source navigation rather than technology-decision rationale. --> The test-helper inventory selectively omits a removed test-the-test entry; aggregate snapshot totals remain historical. <!-- consolidation: discard; ref: none; reason: Selective inventory correction and stale aggregate qualification are historical metadata. -->
 
 ## 1. Full inventory tree
 
-Every non-excluded file, with measured size, line count and tags. <!-- consolidation: discard; ref: docs/BLUEPRINT.md#descriptive-source-navigation; reason: The following coherent full-tree inventory records paths and measurements rather than independent design contracts. -->
+Every non-excluded file, with measured size, line count and tags. <!-- consolidation: discard; ref: none; reason: The following coherent full-tree inventory records paths and measurements rather than independent design contracts. -->
 
 ```
 .
@@ -742,12 +745,12 @@ Every non-excluded file, with measured size, line count and tags. <!-- consolida
 
 ### Ignored transient runtime state
 
-Nothing below appears in the tree above: <!-- consolidation: discard; ref: none; reason: Tree-exclusion statement describes inventory scope. --> each path is recreated by the process that owns it, <!-- consolidation: unconfirmed; ref: docs/BLUEPRINT.md#conversation-records-versus-runtime; reason: Directory recreation must not imply retained conversations or recovery evidence are disposable or reconstructible. The blanket transient-state characterization needs qualification. --> and none of it is repository content. <!-- consolidation: discard; ref: none; reason: Git-tracking status is a source inventory observation rather than a durability policy. -->
+Nothing below appears in the tree above: <!-- consolidation: discard; ref: none; reason: Tree-exclusion statement describes inventory scope. --> each path is recreated by the process that owns it, <!-- consolidation: unconfirmed; ref: docs/BLUEPRINT.md#durable-conversation-and-operation-records; reason: Directory recreation must not imply retained conversations or recovery evidence are disposable or reconstructible. The blanket transient-state characterization needs qualification. --> and none of it is repository content. <!-- consolidation: discard; ref: none; reason: Git-tracking status is a source inventory observation rather than a durability policy. -->
 
 | Path | Role | `.gitignore` rule |
 |---|---|---|
-| `.agentic-workspace/` | The project's local runtime state root: pane view state (`view-state.json`), one session record directory per task (`<task-slug>/state.json` plus its logs), the `agent-requests/` markers written by `writeWorkspaceRequest` and consumed by the owning workspace's boot sweep (`workspaceRequestDir()` in `src/agent-workspace/workspace-context.ts`), and the `**/*.activity/` sidecars written by the agent status hooks (`src/agent-workspace/status-hooks.ts`, read back by `agent-status-probe.ts`). Resolved as `<executionDir>/.agentic-workspace`, with a `~/.agentic-workspace/<hash>` fallback when that path is not writable (`src/agent-workspace/session-store.ts`). | `.agentic-workspace/` <!-- consolidation: discard; ref: docs/architecture/application-boundaries.md#storage-and-configuration-interfaces; reason: Exact filenames and writer-reader locations are snapshot navigation. Core separately owns history and preferences persistence rather than adopting this runtime-layout inventory. --> <!-- consolidation: discard; ref: docs/BLUEPRINT.md#project-storage-and-configuration; reason: Execution-directory resolution and automatic unwritable-path fallback are superseded by one authoritative configured project store shared across worktrees. --> |
-| `agentic-workspace/.locks/` | Lock files for task writes (`create`, `<scope>-<key>`) and for the workspace view state (`src/file-system/operations.ts`, `src/agent-workspace/view-state-store.ts`). Held only for the duration of a mutation. | `agentic-workspace/.locks/` <!-- consolidation: discard; ref: none; reason: Exact lock directory names and source locations are implementation inventory. --> <!-- consolidation: exists; ref: docs/BLUEPRINT.md#mutation-and-concurrency-boundary; reason: Short authoritative mutations hold the store lock and external execution occurs outside it. --> |
+| `.agentic-workspace/` | The project's local runtime state root: pane view state (`view-state.json`), one session record directory per task (`<task-slug>/state.json` plus its logs), the `agent-requests/` markers written by `writeWorkspaceRequest` and consumed by the owning workspace's boot sweep (`workspaceRequestDir()` in `src/agent-workspace/workspace-context.ts`), and the `**/*.activity/` sidecars written by the agent status hooks (`src/agent-workspace/status-hooks.ts`, read back by `agent-status-probe.ts`). Resolved as `<executionDir>/.agentic-workspace`, with a `~/.agentic-workspace/<hash>` fallback when that path is not writable (`src/agent-workspace/session-store.ts`). | `.agentic-workspace/` <!-- consolidation: discard; ref: docs/architecture/application-boundaries.md#stores-and-repositories; reason: Exact filenames and writer-reader locations are snapshot navigation. Core separately owns history and preferences persistence rather than adopting this runtime-layout inventory. --> <!-- consolidation: discard; ref: docs/BLUEPRINT.md#application-controller-and-stores; reason: Execution-directory resolution and automatic unwritable-path fallback are superseded by one authoritative configured project store shared across worktrees. --> |
+| `agentic-workspace/.locks/` | Lock files for task writes (`create`, `<scope>-<key>`) and for the workspace view state (`src/file-system/operations.ts`, `src/agent-workspace/view-state-store.ts`). Held only for the duration of a mutation. | `agentic-workspace/.locks/` <!-- consolidation: discard; ref: none; reason: Exact lock directory names and source locations are implementation inventory. --> <!-- consolidation: exists; ref: docs/BLUEPRINT.md#authoritative-mutation-and-publication; reason: Short authoritative mutations hold the store lock and external execution occurs outside it. --> |
 
 ## 2. Tag catalog, grouped by purpose
 
@@ -780,7 +783,7 @@ Tags are grouped by the purpose they describe. A tag's carrying set is listed ex
 - **`#domain-core`** — 37 file(s): `src/` ×2; `src/core/` ×31; `src/core/task-update/` ×4
 <!-- consolidation: discard; ref: docs/BLUEPRINT.md#component-ownership; reason: Historical path-based domain tag counts do not determine logical domain ownership. -->
 - **`#task-model`** — 2 file(s): `src/types/index.ts`, `src/types/task-edit-args.ts`
-<!-- consolidation: discard; ref: docs/BLUEPRINT.md#dependency-direction; reason: Type-file inventory is not approval for behavioral model ownership in a central types package. -->
+<!-- consolidation: discard; ref: docs/BLUEPRINT.md#component-ownership; reason: Type-file inventory is not approval for behavioral model ownership in a central types package. -->
 - **`#task-update`** — 4 file(s): `src/core/task-update/collections.ts`, `src/core/task-update/content.ts`, `src/core/task-update/index.ts`, `src/core/task-update/scalars.ts`
 <!-- consolidation: discard; ref: none; reason: Task-update tag membership and count are source inventory. -->
 - **`#board-model`** — 1 file(s): `src/board.ts`
@@ -844,9 +847,9 @@ Tags are grouped by the purpose they describe. A tag's carrying set is listed ex
 - **`#agent-status`** — 3 file(s): `src/agent-workspace/agent-status-probe.ts`, `src/agent-workspace/agent-status.ts`, `src/agent-workspace/status-hooks.ts`
 <!-- consolidation: discard; ref: none; reason: Status-tag membership and count are source inventory rather than observed-state semantics. -->
 - **`#workspace-state`** — 3 file(s): `src/agent-workspace/session-store.ts`, `src/agent-workspace/view-state-store.ts`, `src/agent-workspace/workspace-state.ts`
-<!-- consolidation: discard; ref: docs/BLUEPRINT.md#conversation-records-versus-runtime; reason: State-tag membership is inventory and does not merge conversation persistence with view preferences. -->
+<!-- consolidation: discard; ref: docs/BLUEPRINT.md#durable-conversation-and-operation-records; reason: State-tag membership is inventory and does not merge conversation persistence with view preferences. -->
 - **`#workspace-controller`** — 5 file(s): `src/ui/opentui/workspace-agent.ts`, `src/ui/opentui/workspace-controller.ts`, `src/ui/opentui/workspace.ts`, `src/ui/workspace/model/drafts.ts`, `src/ui/workspace/state.ts`
-<!-- consolidation: discard; ref: docs/architecture/application-boundaries.md#ui-controller-and-modules; reason: Controller-tag membership is source navigation rather than application or UI ownership approval. -->
+<!-- consolidation: discard; ref: docs/architecture/application-boundaries.md#ui-controller-feature-modules-renderer-and-terminal-host; reason: Controller-tag membership is source navigation rather than application or UI ownership approval. -->
 ### Terminal UI (TUI / OpenTUI)
 
 - **`#opentui-view`** — 16 file(s): `src/ui/opentui/agent-settings.ts`, `src/ui/opentui/board.ts`, `src/ui/opentui/controls.ts`, `src/ui/opentui/filters.ts`, `src/ui/opentui/host.ts`, `src/ui/opentui/keybindings.ts`, `src/ui/opentui/navigation-history.ts`, `src/ui/opentui/scrollable-viewer.ts`, `src/ui/opentui/session-picker.ts`, `src/ui/opentui/status-tabs.ts`, `src/ui/opentui/task-actions.ts`, `src/ui/opentui/task-composer.ts`, `src/ui/opentui/task-viewer.ts`, `src/ui/opentui/workspace-agent.ts`, `src/ui/opentui/workspace-controller.ts`, `src/ui/opentui/workspace.ts`
@@ -868,7 +871,7 @@ Tags are grouped by the purpose they describe. A tag's carrying set is listed ex
 ### Tests
 
 - **`#test-suite`** — 243 file(s): `src/agent-workspace/` ×8; `src/agent-workspace/live/tmux/` ×1; `src/commands/` ×2; `src/completions/` ×1; `src/file-system/` ×1; `src/test/` ×229; `src/utils/` ×1
-<!-- consolidation: discard; ref: docs/CONVENTIONS.md#checks-and-test-ownership; reason: Historical test membership and counts are not verification evidence or coverage requirements. -->
+<!-- consolidation: discard; ref: docs/CONVENTIONS.md#testing; reason: Historical test membership and counts are not verification evidence or coverage requirements. -->
 - **`#test-unit`** — 171 file(s): `src/agent-workspace/` ×7; `src/agent-workspace/live/tmux/` ×1; `src/commands/` ×2; `src/completions/` ×1; `src/file-system/` ×1; `src/test/` ×158; `src/utils/` ×1
 <!-- consolidation: discard; ref: none; reason: Unit-test tag membership and counts are source inventory. -->
 - **`#test-integration`** — 68 file(s): `src/agent-workspace/` ×1; `src/test/` ×67
@@ -882,7 +885,7 @@ Tags are grouped by the purpose they describe. A tag's carrying set is listed ex
 ### Docs & guidance
 
 - **`#doc-spec`** — 14 file(s): `docs/BACK-728-handoff.md`, `docs/agent-session-ownership-plan.md`, `docs/aoe-agent-workspace-reference.md`, `docs/aoe-lifecycle-comparison.md`, `docs/aoe-lifecycle-implementation-plan.md`, `docs/aoe-status-tracking-plan.md`, `docs/disk-growth-investigation.md`, `docs/opentui-workspace-behavior-matrix.md`, `docs/opentui-workspace-implementation-plan.md`, `docs/opentui-workspace-session-contract.md`, `docs/opentui-workspace-spec.md`, `docs/test-suite-runtime-report.md`, `docs/tmux-call-sites.md`, `docs/tmux-layer-spec.md`
-<!-- consolidation: discard; ref: docs/SPEC.md#authority; reason: Historical document tags do not make plans or research approved specifications. -->
+<!-- consolidation: discard; ref: none; reason: Historical document tags do not make plans or research approved specifications. -->
 - **`#doc-repo`** — 7 file(s): `ADVANCED-CONFIG.md`, `AGENTS.md`, `CLI-INSTRUCTIONS.md`, `CONTRIBUTING.md`, `DEVELOPMENT.md`, `LICENSE`, `README.md`
 <!-- consolidation: discard; ref: none; reason: Root-document tag membership and count are source inventory. -->
 - **`#guidance-doc`** — 18 file(s): `src/guidelines/cli-agent-nudge.md`, `src/guidelines/cli-instructions/agent-workspace.md`, `src/guidelines/cli-instructions/index.ts`, `src/guidelines/cli-instructions/init-required.md`, `src/guidelines/cli-instructions/overview.md`, `src/guidelines/cli-instructions/task-creation.md`, `src/guidelines/cli-instructions/task-execution.md`, `src/guidelines/cli-instructions/task-finalization.md`, `src/guidelines/index.ts`, `src/guidelines/mcp/agent-nudge.md`, `src/guidelines/mcp/index.ts`, `src/guidelines/mcp/init-required.md`, `src/guidelines/mcp/overview-tools.md`, `src/guidelines/mcp/overview.md`, `src/guidelines/mcp/task-creation.md`, `src/guidelines/mcp/task-execution.md`, `src/guidelines/mcp/task-finalization.md`, `src/mcp/README.md`
@@ -892,7 +895,7 @@ Tags are grouped by the purpose they describe. A tag's carrying set is listed ex
 ### AgenticWorkspace runtime data
 
 - **`#agentic-workspace-config`** — 1 file(s): `agentic-workspace/config.yml`
-<!-- consolidation: discard; ref: docs/BLUEPRINT.md#project-storage-and-configuration; reason: Historical config-file tag is inventory rather than the approved configured-store contract. -->
+<!-- consolidation: discard; ref: docs/BLUEPRINT.md#application-controller-and-stores; reason: Historical config-file tag is inventory rather than the approved configured-store contract. -->
 ### Tooling, config & environment
 
 - **`#build-script`** — 8 file(s): `scripts/benchmark-task-loading.ts`, `scripts/build.ts`, `scripts/cli.cjs`, `scripts/postuninstall.cjs`, `scripts/resolveBinary.cjs`, `scripts/run-tui-interactive-tests.sh`, `scripts/smoke-compiled-build.ts`, `scripts/smoke-parallel-task-locking.sh`
@@ -927,7 +930,7 @@ Tags are grouped by the purpose they describe. A tag's carrying set is listed ex
 Each file appears exactly once, under its dominant purpose group; tags are shown inline (`#` list), so cross-cutting roles stay visible. `*` marks the dominant tag used for the grouping when a file has several. <!-- consolidation: discard; ref: none; reason: Grouped-tree notation is reference formatting metadata. -->
 
 ### Entry & CLI surface — `entry-cli` (54 files, 365,891 B)
-<!-- consolidation: discard; ref: docs/BLUEPRINT.md#descriptive-source-navigation; reason: CLI grouped tree and measured aggregate are one coherent historical source inventory. -->
+<!-- consolidation: discard; ref: none; reason: CLI grouped tree and measured aggregate are one coherent historical source inventory. -->
 
 ```
 .
@@ -999,7 +1002,7 @@ Each file appears exactly once, under its dominant purpose group; tags are shown
 ```
 
 ### Task domain, core & shared utilities — `task-domain` (100 files, 528,663 B)
-<!-- consolidation: discard; ref: docs/BLUEPRINT.md#descriptive-source-navigation; reason: Task-domain grouped tree and measured aggregate are one coherent historical source inventory rather than model ownership requirements. -->
+<!-- consolidation: discard; ref: none; reason: Task-domain grouped tree and measured aggregate are one coherent historical source inventory rather than model ownership requirements. -->
 
 ```
 .
@@ -1114,7 +1117,7 @@ Each file appears exactly once, under its dominant purpose group; tags are shown
 ```
 
 ### Persistence, markdown, filesystem & git — `persistence` (14 files, 168,984 B)
-<!-- consolidation: discard; ref: docs/BLUEPRINT.md#descriptive-source-navigation; reason: Persistence grouped tree and measured aggregate are one coherent historical source inventory. -->
+<!-- consolidation: discard; ref: none; reason: Persistence grouped tree and measured aggregate are one coherent historical source inventory. -->
 
 ```
 .
@@ -1182,7 +1185,7 @@ Each file appears exactly once, under its dominant purpose group; tags are shown
 ```
 
 ### Agent workspace & sessions — `agent-workspace` (27 files, 234,499 B)
-<!-- consolidation: discard; ref: docs/BLUEPRINT.md#descriptive-source-navigation; reason: Session grouped tree and measured aggregate are one historical source inventory rather than the current Task-Session-Harness ownership contract. -->
+<!-- consolidation: discard; ref: none; reason: Session grouped tree and measured aggregate are one historical source inventory rather than the current Task-Session-Harness ownership contract. -->
 
 ```
 .
@@ -1221,7 +1224,7 @@ Each file appears exactly once, under its dominant purpose group; tags are shown
 ```
 
 ### Terminal UI (TUI / OpenTUI) — `ui-tui` (77 files, 614,173 B)
-<!-- consolidation: discard; ref: docs/BLUEPRINT.md#descriptive-source-navigation; reason: UI grouped tree and measured aggregate are a historical source inventory including removed legacy code. -->
+<!-- consolidation: discard; ref: none; reason: UI grouped tree and measured aggregate are a historical source inventory including removed legacy code. -->
 
 ```
 .
@@ -1319,7 +1322,7 @@ Each file appears exactly once, under its dominant purpose group; tags are shown
 ```
 
 ### Test suites & harness — `tests` (243 files, 2,145,713 B)
-<!-- consolidation: discard; ref: docs/CONVENTIONS.md#checks-and-test-ownership; reason: Test grouped tree and measured aggregate are inventory rather than verification requirements or proof of coverage. -->
+<!-- consolidation: discard; ref: docs/CONVENTIONS.md#testing; reason: Test grouped tree and measured aggregate are inventory rather than verification requirements or proof of coverage. -->
 
 ```
 .
@@ -1622,7 +1625,7 @@ Each file appears exactly once, under its dominant purpose group; tags are shown
 ```
 
 ### AgenticWorkspace runtime data — `agentic-workspace-data` (1 files, 576 B)
-<!-- consolidation: discard; ref: docs/BLUEPRINT.md#project-storage-and-configuration; reason: Historical config path and measurement in this coherent tree do not define the current authoritative store location. -->
+<!-- consolidation: discard; ref: docs/BLUEPRINT.md#application-controller-and-stores; reason: Historical config path and measurement in this coherent tree do not define the current authoritative store location. -->
 
 ```
 .

@@ -13,6 +13,8 @@ consolidation:
     unconfirmed: 29.63%
 ---
 # GVM package-set storage review
+> **Non-authoritative supporting material.** This file is not a contract. Authoritative owner(s): [docs/PRODUCT.md](PRODUCT.md).
+> Disposition: Mixed — see markers.
 
 ## Decision
 

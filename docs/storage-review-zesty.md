@@ -13,6 +13,8 @@ consolidation:
     unconfirmed: 13.77%
 ---
 # Zesty allocated-storage map
+> **Non-authoritative supporting material.** This file is not a contract. Authoritative owner(s): [docs/PRODUCT.md](PRODUCT.md).
+> Disposition: Mixed — see markers.
 
 ## Scope and result
 

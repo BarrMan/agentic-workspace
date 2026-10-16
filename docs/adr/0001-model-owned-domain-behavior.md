@@ -1,7 +1,7 @@
 # ADR-0001: Model-owned domain behavior
 
 **Status:** Accepted  
-**Date:** Not recorded  
+**Date:** 2026-10-16  
 **Supersedes:** None
 
 ## Context

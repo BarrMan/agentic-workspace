@@ -14,12 +14,15 @@ consolidation:
 ---
 # BACK-728 — Handoff Document
 
+> **Non-authoritative supporting material.** This file is not a contract. Authoritative owner(s): [sessions](specs/sessions.md), [interfaces](specs/interfaces.md), [BLUEPRINT](BLUEPRINT.md), [application boundaries](architecture/application-boundaries.md), [CONVENTIONS](CONVENTIONS.md), [ADRs](adr/README.md).
+> Disposition: Mixed — see markers.
+
 **Status as of:** 2026-10-04, ~11:00 local <!-- consolidation: discard; ref: none; reason: Historical checkpoint timestamp. -->
 **Repo:** `/Users/imribarr/Projects/agentic-workspace` <!-- consolidation: discard; ref: none; reason: Local checkout locator. -->
 **HEAD:** `243ba18b` — `BACK-728 - Exit on quit, fix footer focus matcher, stop tick re-presenting` <!-- consolidation: discard; ref: none; reason: Historical checkpoint identity. -->
 
 > **You have no prior context.** Read this whole document before touching anything. <!-- consolidation: discard; ref: none; reason: Historical handoff reading instruction. -->
-> Nothing here is speculative unless explicitly marked "unverified". <!-- consolidation: discard; ref: docs/SPEC.md#authority; reason: Blanket historical certainty assertion cannot override evidence or approval requirements. -->
+> Nothing here is speculative unless explicitly marked "unverified". <!-- consolidation: discard; ref: none; reason: Blanket historical certainty assertion cannot override evidence or approval requirements. -->
 
 ---
 
@@ -33,15 +36,15 @@ user-visible problems: <!-- consolidation: discard; ref: none; reason: Historica
 2. **It is laggy.** Measured: ~240 tmux subprocess calls and ~1,836 ms of serialized tmux
    wait per **30 seconds of idle**, with no user input. <!-- consolidation: discard; ref: none; reason: Historical idle latency measurement. -->
 
-There are two candidate resolutions, and **the decision between them has not been made**: <!-- consolidation: unconfirmed; ref: docs/adr/README.md#active-accepted-decisions; reason: This handoff provides no approved UI technology selection. -->
+There are two candidate resolutions, and **the decision between them has not been made**: <!-- consolidation: unconfirmed; ref: docs/adr/README.md#active-decisions; reason: This handoff provides no approved UI technology selection. -->
 
 - **(A) Narrow fix** — repair the Ctrl+C/exit path inside the existing tmux-as-UI-substrate
-  architecture. Days of work. Preserves everything. <!-- consolidation: unconfirmed; ref: docs/adr/README.md#record-and-approval-process; reason: Narrow tmux UI repair was an unapproved option with unverified effort and preservation claims. -->
+  architecture. Days of work. Preserves everything. <!-- consolidation: unconfirmed; ref: docs/adr/README.md#active-decisions; reason: Narrow tmux UI repair was an unapproved option with unverified effort and preservation claims. -->
 - **(B) Replace the UI substrate** — one Ink process owns the terminal; tmux survives only
-  as a private, never-attached PTY container for agent processes. Verified viable (see §6). <!-- consolidation: unconfirmed; ref: docs/adr/README.md#active-accepted-decisions; reason: Ink/private-tmux substrate proposal lacks technology approval despite spike evidence. -->
+  as a private, never-attached PTY container for agent processes. Verified viable (see §6). <!-- consolidation: unconfirmed; ref: docs/adr/README.md#active-decisions; reason: Ink/private-tmux substrate proposal lacks technology approval despite spike evidence. -->
 
 The user has expressed a clear preference for **(B)**, and it has been validated by a
-working spike. It has **not** been formally approved, and no migration work has started. <!-- consolidation: discard; ref: none; reason: Historical preference spike and rollout status. --> <!-- consolidation: unconfirmed; ref: docs/adr/README.md#record-and-approval-process; reason: Expressed preference and a spike do not establish formal architecture approval. -->
+working spike. It has **not** been formally approved, and no migration work has started. <!-- consolidation: discard; ref: none; reason: Historical preference spike and rollout status. --> <!-- consolidation: unconfirmed; ref: docs/adr/README.md#active-decisions; reason: Expressed preference and a spike do not establish formal architecture approval. -->
 
 ---
 
@@ -64,7 +67,7 @@ Untracked directories, **none of which should be committed**: <!-- consolidation
 | `.pi/` | appeared during this session | likely agent-session scratch <!-- consolidation: unconfirmed; ref: docs/CONVENTIONS.md#general-principles; reason: Scratch origin is speculative and does not authorize cleanup. --> |
 
 ### Project scripts (note the exact names — there is no `typecheck` script)
-<!-- consolidation: discard; ref: docs/CONVENTIONS.md#validation; reason: Historical script inventory belongs to package scripts rather than a duplicate contract. -->
+<!-- consolidation: discard; ref: docs/CONVENTIONS.md#tooling-and-validation; reason: Historical script inventory belongs to package scripts rather than a duplicate contract. -->
 
 ```sh
 bun run check:types     # tsc --noEmit — THIS is the typecheck
@@ -73,26 +76,26 @@ bun run build           # produces dist/agentic-workspace
 bun run check           # biome check (lint+format)
 bun run lint            # biome lint --write
 ```
-<!-- consolidation: discard; ref: docs/CONVENTIONS.md#validation; reason: Historical command example and timing yield to current package inventory. -->
+<!-- consolidation: discard; ref: docs/CONVENTIONS.md#tooling-and-validation; reason: Historical command example and timing yield to current package inventory. -->
 
 ---
 
 ## 3. Hard project rules — violating these has caused real damage before
 
 ### 3.1 Rebuild after every source change (MANDATORY, not batchable)
-<!-- consolidation: discard; ref: docs/CONVENTIONS.md#validation; reason: Per-edit unbatchable builds are superseded by rebuilding after integration before runnable handoff. -->
+<!-- consolidation: discard; ref: docs/CONVENTIONS.md#tooling-and-validation; reason: Per-edit unbatchable builds are superseded by rebuilding after integration before runnable handoff. -->
 
 `/opt/homebrew/bin/agentic-workspace` is a symlink to `/Users/imribarr/Projects/agentic-workspace/dist/agentic-workspace`. <!-- consolidation: exists; ref: AGENTS.md#why; reason: The documented installed-command symlink explains the rebuild-before-handoff rule, this claim is documented, not runtime-verified. -->
-Editing `src/**` changes nothing about what the `agentic-workspace` command actually runs. <!-- consolidation: exists; ref: docs/CONVENTIONS.md#validation; reason: Source edits/tests do not refresh the installed binary. -->
+Editing `src/**` changes nothing about what the `agentic-workspace` command actually runs. <!-- consolidation: exists; ref: docs/CONVENTIONS.md#tooling-and-validation; reason: Source edits/tests do not refresh the installed binary. -->
 
 ```sh
 bun run build
 find src -name '*.ts' -newer dist/agentic-workspace   # MUST print nothing
 ```
-<!-- consolidation: exists; ref: docs/CONVENTIONS.md#validation; reason: Rebuild and freshness procedure is explicitly delegated to AGENTS. -->
+<!-- consolidation: exists; ref: docs/CONVENTIONS.md#tooling-and-validation; reason: Rebuild and freshness procedure is explicitly delegated to AGENTS. -->
 
 If the second command lists files, the build did not pick them up. **Do not proceed to
-manual testing.** This has caused repeated false "verified" claims on this project. <!-- consolidation: exists; ref: docs/CONVENTIONS.md#validation; reason: Verified binary freshness is required before installed-runtime handoff. --> <!-- consolidation: discard; ref: none; reason: Historical false-verification incident summary. -->
+manual testing.** This has caused repeated false "verified" claims on this project. <!-- consolidation: exists; ref: docs/CONVENTIONS.md#tooling-and-validation; reason: Verified binary freshness is required before installed-runtime handoff. --> <!-- consolidation: discard; ref: none; reason: Historical false-verification incident summary. -->
 
 ### 3.2 Never run these in the main working tree
 
@@ -105,18 +108,18 @@ The dirty tree is the only copy of the work. Use a separate `git worktree` if yo
 clean checkout for comparison. <!-- consolidation: discard; ref: none; reason: Historical only-copy baseline observation. --> <!-- consolidation: integrate; ref: docs/CONVENTIONS.md#changes-and-refactoring; reason: Use a separate worktree for clean comparisons rather than manipulating the dirty baseline. -->
 
 ### 3.3 Never `tmux kill-server` without `-L`
-<!-- consolidation: exists; ref: docs/CONVENTIONS.md#checks-and-test-ownership; reason: Bare kill-server and developer/default sockets are forbidden. -->
+<!-- consolidation: exists; ref: docs/CONVENTIONS.md#testing; reason: Bare kill-server and developer/default sockets are forbidden. -->
 
 A bare `tmux kill-server` resolves to the **developer's default socket** and destroys every
 unrelated session on the machine. The project has a dedicated guard for this at
 `src/test/tmux-test-server.ts` (`TEST_TMUX_SOCKET_PREFIX = "agentic-workspace-test"`, plus
-`assertIsolatedSocket`). Kill tmux servers **by PID** or via a private socket. <!-- consolidation: exists; ref: docs/CONVENTIONS.md#checks-and-test-ownership; reason: Tests use isolated tmux helpers and only owned resources. --> <!-- consolidation: discard; ref: none; reason: Historical helper symbol and prefix inventory. --> <!-- consolidation: unconfirmed; ref: docs/BLUEPRINT.md#stop-deletion-and-completion; reason: PID-only wording must retain provenance checks because a PID alone does not authorize termination. -->
+`assertIsolatedSocket`). Kill tmux servers **by PID** or via a private socket. <!-- consolidation: exists; ref: docs/CONVENTIONS.md#testing; reason: Tests use isolated tmux helpers and only owned resources. --> <!-- consolidation: discard; ref: none; reason: Historical helper symbol and prefix inventory. --> <!-- consolidation: unconfirmed; ref: docs/BLUEPRINT.md#observation-stop-and-deletion; reason: PID-only wording must retain provenance checks because a PID alone does not authorize termination. -->
 
 Also note: `tmux list-panes -a` **ignores `-t`** and shows real user sessions. Do not run it
-against the default socket. <!-- consolidation: exists; ref: docs/CONVENTIONS.md#checks-and-test-ownership; reason: Broad default-server process discovery is forbidden. --> <!-- consolidation: discard; ref: none; reason: External tmux flag behavior is supporting operational evidence. -->
+against the default socket. <!-- consolidation: exists; ref: docs/CONVENTIONS.md#testing; reason: Broad default-server process discovery is forbidden. --> <!-- consolidation: discard; ref: none; reason: External tmux flag behavior is supporting operational evidence. -->
 
 ### 3.4 Never claim an e2e fix without testing the real process
-<!-- consolidation: integrate; ref: docs/CONVENTIONS.md#validation; reason: End-to-end fixes must exercise the actual user-launched outer process. -->
+<!-- consolidation: integrate; ref: docs/CONVENTIONS.md#tooling-and-validation; reason: End-to-end fixes must exercise the actual user-launched outer process. -->
 
 There is a genuine trap here, described in §4.2 — a test passed and the user-visible bug
 persisted, because the test exercised a different process than the one the user launches. <!-- consolidation: discard; ref: none; reason: Historical wrong-process verification incident. -->
@@ -152,9 +155,9 @@ Two further defects compound it:
 <!-- consolidation: discard; ref: none; reason: Historical implementation status introduction. -->
 
 1. On explicit quit, kill the tmux session rather than preserving it — **or** redesign exit
-   semantics explicitly. This is an open product decision, not purely technical. <!-- consolidation: discard; ref: docs/specs/sessions.md#live-terminal-and-client-lifetime; reason: Current exit behavior detaches clients and preserves running agents. -->
+   semantics explicitly. This is an open product decision, not purely technical. <!-- consolidation: discard; ref: docs/specs/sessions.md#observe-and-detach-from-a-live-session; reason: Current exit behavior detaches clients and preserves running agents. -->
 2. Correct `detach()` for the `attach-session` entry path. <!-- consolidation: discard; ref: none; reason: Historical proposed implementation repair. -->
-3. Make the outer process explicitly `process.exit(0)` after the client returns. <!-- consolidation: unconfirmed; ref: docs/architecture/application-boundaries.md#ui-controller-and-modules; reason: Explicit process.exit implementation proposal is not an approved cleanup strategy. -->
+3. Make the outer process explicitly `process.exit(0)` after the client returns. <!-- consolidation: unconfirmed; ref: docs/architecture/application-boundaries.md#ui-controller-feature-modules-renderer-and-terminal-host; reason: Explicit process.exit implementation proposal is not an approved cleanup strategy. -->
 
 ### 4.2 A "verified fix" that was not
 
@@ -225,7 +228,7 @@ bun test  →  345 files, 2894 pass, 15 fail, 0 skips, exit 1, ~170s
 under full-suite load only. <!-- consolidation: discard; ref: none; reason: Historical load-dependent failure diagnosis. -->
 
 A previously relayed baseline claimed `tui-window-title.test.ts` was failing. **It passes.**
-Do not treat relayed baselines as authoritative; re-measure. <!-- consolidation: discard; ref: none; reason: Historical corrected baseline result. --> <!-- consolidation: exists; ref: docs/CONVENTIONS.md#checks-and-test-ownership; reason: Re-measure baselines rather than copying old counts. -->
+Do not treat relayed baselines as authoritative; re-measure. <!-- consolidation: discard; ref: none; reason: Historical corrected baseline result. --> <!-- consolidation: exists; ref: docs/CONVENTIONS.md#testing; reason: Re-measure baselines rather than copying old counts. -->
 
 ---
 
@@ -297,21 +300,21 @@ These are not theoretical — each one is a bug if unhandled. <!-- consolidation
    firing after Ctrl+C and `waitUntilExit` never resolved. You must opt in explicitly or
    handle it in `useInput`. *(This is the same class of bug we are trying to eliminate.)* <!-- consolidation: discard; ref: none; reason: Ink-version-specific default and spike diagnosis do not establish current implementation requirements. -->
 2. **Ink never enters the alternate screen.** `ESC[?1049h` is never emitted. Full-screen Ink
-   pollutes terminal scrollback. You must wrap this yourself. <!-- consolidation: unconfirmed; ref: docs/adr/README.md#active-accepted-decisions; reason: Ink alternate-screen wrapper applies only if that unapproved substrate is selected. -->
+   pollutes terminal scrollback. You must wrap this yourself. <!-- consolidation: unconfirmed; ref: docs/adr/README.md#active-decisions; reason: Ink alternate-screen wrapper applies only if that unapproved substrate is selected. -->
 3. **`useInput` delivers stdin in CHUNKS, not per key.** `if (input.length === 1)` silently
-   drops pasted or fast-typed text. Must split/batch. <!-- consolidation: integrate; ref: docs/CONVENTIONS.md#code-and-organization; reason: Terminal input handlers must accept paste and multi-key chunks without dropping text. --> <!-- consolidation: discard; ref: none; reason: Ink-specific input delivery observation is supporting spike evidence. -->
+   drops pasted or fast-typed text. Must split/batch. <!-- consolidation: integrate; ref: docs/CONVENTIONS.md#code-structure; reason: Terminal input handlers must accept paste and multi-key chunks without dropping text. --> <!-- consolidation: discard; ref: none; reason: Ink-specific input delivery observation is supporting spike evidence. -->
 4. **`@xterm/headless.write()` is async** even headless. Reading `buffer.active` in the same
-   tick yields an **empty grid**. Needs a pending-write counter or the pane renders blank. <!-- consolidation: discard; ref: none; reason: External parser timing observation from the spike. --> <!-- consolidation: unconfirmed; ref: docs/adr/README.md#active-accepted-decisions; reason: Pending-write-counter remedy depends on unapproved rendering pipeline selection. -->
+   tick yields an **empty grid**. Needs a pending-write counter or the pane renders blank. <!-- consolidation: discard; ref: none; reason: External parser timing observation from the spike. --> <!-- consolidation: unconfirmed; ref: docs/adr/README.md#active-decisions; reason: Pending-write-counter remedy depends on unapproved rendering pipeline selection. -->
 5. **`pipe-pane` cannot be attached retroactively.** Attach to a bare shell, then
-   `send-keys` the agent command — otherwise the splash is lost. <!-- consolidation: discard; ref: docs/BLUEPRINT.md#launch-context-and-terminal-transport; reason: Spike startup-stream workaround superseded by current-screen seeding plus live updates. -->
+   `send-keys` the agent command — otherwise the splash is lost. <!-- consolidation: discard; ref: docs/BLUEPRINT.md#launch-context-and-shared-terminal-transport; reason: Spike startup-stream workaround superseded by current-screen seeding plus live updates. -->
 6. **`send-keys` per keystroke is a `spawnSync` fork (~20–30 ms)** that blocks the Ink event
-   loop. Batch into a single `send-keys -l`. <!-- consolidation: discard; ref: none; reason: Historical synchronous-spawn timing observation. --> <!-- consolidation: unconfirmed; ref: docs/architecture/application-boundaries.md#ui-controller-and-modules; reason: Batching mechanism is a spike recommendation rather than approved input transport. -->
+   loop. Batch into a single `send-keys -l`. <!-- consolidation: discard; ref: none; reason: Historical synchronous-spawn timing observation. --> <!-- consolidation: unconfirmed; ref: docs/architecture/application-boundaries.md#ui-controller-feature-modules-renderer-and-terminal-host; reason: Batching mechanism is a spike recommendation rather than approved input transport. -->
 7. **Claude Code renders with ZERO color inside tmux** — 0 SGR sequences in 2,830 bytes.
    Almost certainly tmux's default `TERM=screen`. Likely fix is
-   `set -g default-terminal "tmux-256color"`, **but this is UNVERIFIED.** <!-- consolidation: discard; ref: none; reason: Historical zero-color observation. --> <!-- consolidation: unconfirmed; ref: docs/adr/README.md#active-accepted-decisions; reason: TERM attribution and proposed color remedy were never verified. -->
+   `set -g default-terminal "tmux-256color"`, **but this is UNVERIFIED.** <!-- consolidation: discard; ref: none; reason: Historical zero-color observation. --> <!-- consolidation: unconfirmed; ref: docs/adr/README.md#active-decisions; reason: TERM attribution and proposed color remedy were never verified. -->
 8. **Render cost is the real scaling risk.** A 122×34 grid is ~7 KB of Ink output and ~2,400
    `<Text>` nodes per frame. One pane works; a multi-pane workspace needs cell-diffing or it
-   re-emits the whole grid every tick — the exact class of bug already being fixed. <!-- consolidation: discard; ref: none; reason: Historical grid-size and render-cost measurements. --> <!-- consolidation: unconfirmed; ref: docs/adr/README.md#active-accepted-decisions; reason: Cell-diffing requirement is an unapproved scaling recommendation for the Ink proposal. -->
+   re-emits the whole grid every tick — the exact class of bug already being fixed. <!-- consolidation: discard; ref: none; reason: Historical grid-size and render-cost measurements. --> <!-- consolidation: unconfirmed; ref: docs/adr/README.md#active-decisions; reason: Cell-diffing requirement is an unapproved scaling recommendation for the Ink proposal. -->
 9. Non-TTY stdout: Ink renders but chalk strips all color, and React logs a spurious
    "two children with the same key" warning into the frame. <!-- consolidation: discard; ref: none; reason: Historical non-TTY rendering observation. -->
 10. `resize-window` from the host works (confirmed 120×34 → 80×24) but was **not** wired to
@@ -324,14 +327,14 @@ These are not theoretical — each one is a bug if unhandled. <!-- consolidation
 ### 8.1 Does `tmux-256color` restore Claude's colors? (highest value, ~2 minutes)
 
 This decides whether claude can be supported in an Ink pane at all. Silent color loss is
-indistinguishable from a broken pipeline, so it must be proven either way. <!-- consolidation: unconfirmed; ref: docs/adr/README.md#active-accepted-decisions; reason: Claude color viability question remains unanswered for the unapproved Ink proposal. -->
+indistinguishable from a broken pipeline, so it must be proven either way. <!-- consolidation: unconfirmed; ref: docs/adr/README.md#active-decisions; reason: Claude color viability question remains unanswered for the unapproved Ink proposal. -->
 
 ### 8.2 `nativeSessionId` capture is NOT verified end to end
-<!-- consolidation: unconfirmed; ref: docs/specs/sessions.md#startup-completion; reason: Current real-provider identity capture acceptance is not established by this handoff. -->
+<!-- consolidation: unconfirmed; ref: docs/specs/sessions.md#starting-a-session; reason: Current real-provider identity capture acceptance is not established by this handoff. -->
 
 This **gates the resume-based architecture**. If agents are killed with the TUI (which the
 new design requires) and the session ID is wrong or missing, resume fails and you have lost
-the user's agent conversation. Verify before relying on it. <!-- consolidation: discard; ref: docs/specs/sessions.md#live-terminal-and-client-lifetime; reason: Agents dying with TUI exit contradicts current client-detach lifetime contract. --> <!-- consolidation: integrate; ref: docs/CONVENTIONS.md#validation; reason: Verify exact provider conversation identity and resume end to end before relying on it for conversation preservation. -->
+the user's agent conversation. Verify before relying on it. <!-- consolidation: discard; ref: docs/specs/sessions.md#observe-and-detach-from-a-live-session; reason: Agents dying with TUI exit contradicts current client-detach lifetime contract. --> <!-- consolidation: integrate; ref: docs/CONVENTIONS.md#tooling-and-validation; reason: Verify exact provider conversation identity and resume end to end before relying on it for conversation preservation. -->
 
 Resume commands already exist in `src/agent-workspace/bootstrap.ts`: <!-- consolidation: discard; ref: none; reason: Historical resume command source locator. -->
 
@@ -344,12 +347,12 @@ Resume commands already exist in `src/agent-workspace/bootstrap.ts`: <!-- consol
 | antigravity | `--conversation <id>` <!-- consolidation: discard; ref: none; reason: Historical provider CLI syntax inventory. --> |
 
 `buildAgentResumeCommand` also handles unknown IDs via `--continue`, `resume --last`, or
-`--resume latest`. <!-- consolidation: discard; ref: docs/specs/sessions.md#stopping-and-exact-resume; reason: Unknown-ID latest-conversation fallback contradicts exact resume with explicit user choice on failure. -->
+`--resume latest`. <!-- consolidation: discard; ref: docs/specs/sessions.md#stop-and-resume-a-session; reason: Unknown-ID latest-conversation fallback contradicts exact resume with explicit user choice on failure. -->
 
 ### 8.3 Exit semantics on explicit quit (blocks option A)
 
 Does explicit quit **kill** the tmux session, or preserve it and return the terminal? The
-user must decide. This is a product decision, not a technical one. <!-- consolidation: discard; ref: docs/specs/sessions.md#live-terminal-and-client-lifetime; reason: Exit policy is now settled as client detachment preserving running agents. -->
+user must decide. This is a product decision, not a technical one. <!-- consolidation: discard; ref: docs/specs/sessions.md#observe-and-detach-from-a-live-session; reason: Exit policy is now settled as client detachment preserving running agents. -->
 
 ---
 
@@ -390,7 +393,7 @@ Supporting facts:
 - `@xterm/headless@5.5.0` **is already installed** in `node_modules`. <!-- consolidation: discard; ref: none; reason: Historical dependency inventory. -->
 - tmux is **not** currently drawing the UI. `tmux-workspace.ts:637` respawns panes as the
   same binary running blessed via `workspace-ui`. <!-- consolidation: discard; ref: none; reason: Historical pane-rendering architecture observation. -->
-- Agent output is scraped by `capture-pane` polling at `src/agent-workspace/tmux/pane.ts:187`. <!-- consolidation: discard; ref: docs/BLUEPRINT.md#launch-context-and-terminal-transport; reason: Historical polling implementation does not replace current live stream contract. -->
+- Agent output is scraped by `capture-pane` polling at `src/agent-workspace/tmux/pane.ts:187`. <!-- consolidation: discard; ref: docs/BLUEPRINT.md#launch-context-and-shared-terminal-transport; reason: Historical polling implementation does not replace current live stream contract. -->
 - Debug instrumentation already supports `AGENTIC_WORKSPACE_DEBUG=tmux,view,session,store`,
   `AGENTIC_WORKSPACE_DEBUG_FILE`, `AGENTIC_WORKSPACE_DEBUG_VERBOSE`; pane children receive these env vars. <!-- consolidation: discard; ref: none; reason: Historical debug instrumentation inventory. -->
 - `Bun.file(p).text()` is safe against atomic-rename writes. `Bun.Glob` does **not** descend
@@ -408,31 +411,31 @@ agentic-workspace workspace
        └─ (agents die with the TUI; resume from persisted nativeSessionId next launch)
   └─ private tmux session on a private socket — never attached, PTY + agents only
 ```
-<!-- consolidation: unconfirmed; ref: docs/adr/README.md#active-accepted-decisions; reason: One Ink terminal owner and Yoga UI tree are unapproved technology proposals. -->
-<!-- consolidation: unconfirmed; ref: docs/adr/README.md#active-accepted-decisions; reason: Pipe-pane through xterm into Ink cells is an unapproved rendering pipeline. -->
-<!-- consolidation: discard; ref: docs/specs/sessions.md#live-terminal-and-client-lifetime; reason: Diagram agents-die-with-TUI lifetime contradicts current detach semantics. -->
-<!-- consolidation: unconfirmed; ref: docs/BLUEPRINT.md#launch-context-and-terminal-transport; reason: Proposed per-launch private tmux topology needs reconciliation with explicit shared backend ownership. -->
+<!-- consolidation: unconfirmed; ref: docs/adr/README.md#active-decisions; reason: One Ink terminal owner and Yoga UI tree are unapproved technology proposals. -->
+<!-- consolidation: unconfirmed; ref: docs/adr/README.md#active-decisions; reason: Pipe-pane through xterm into Ink cells is an unapproved rendering pipeline. -->
+<!-- consolidation: discard; ref: docs/specs/sessions.md#observe-and-detach-from-a-live-session; reason: Diagram agents-die-with-TUI lifetime contradicts current detach semantics. -->
+<!-- consolidation: unconfirmed; ref: docs/BLUEPRINT.md#launch-context-and-shared-terminal-transport; reason: Proposed per-launch private tmux topology needs reconciliation with explicit shared backend ownership. -->
 
 **Deletes:** the terminal-handover layer (~450 lines), six UI processes, cross-process state
 races, the tmux key-table, and the `capture-pane` polling loop. **Agents already die on a
 clean quit** via `quitWorkspace()` → `killPaneProcessTrees()` (descendants-first SIGTERM,
-100 ms grace, then SIGKILL), so allowing them not to outlive the TUI costs nothing new. <!-- consolidation: discard; ref: none; reason: Historical estimated deletion scope and quit implementation evidence. --> <!-- consolidation: discard; ref: docs/specs/sessions.md#live-terminal-and-client-lifetime; reason: Existing kill-on-quit behavior cannot justify violating current agent lifetime guarantees. -->
+100 ms grace, then SIGKILL), so allowing them not to outlive the TUI costs nothing new. <!-- consolidation: discard; ref: none; reason: Historical estimated deletion scope and quit implementation evidence. --> <!-- consolidation: discard; ref: docs/specs/sessions.md#observe-and-detach-from-a-live-session; reason: Existing kill-on-quit behavior cannot justify violating current agent lifetime guarantees. -->
 
 ---
 
 ## 11. Recommended next steps, in order
 
 1. **Resolve §8.1** — confirm or refute `tmux-256color` fixing claude colors. Cheapest
-   highest-information test available. <!-- consolidation: unconfirmed; ref: docs/adr/README.md#active-accepted-decisions; reason: Claude color viability probe remains proposal-specific unanswered work. -->
+   highest-information test available. <!-- consolidation: unconfirmed; ref: docs/adr/README.md#active-decisions; reason: Claude color viability probe remains proposal-specific unanswered work. -->
 2. **Verify §8.2** — trace `nativeSessionId` capture for all five presets end to end. This
-   gates the whole resume-based design. <!-- consolidation: unconfirmed; ref: docs/CONVENTIONS.md#validation; reason: Real-provider exact identity/resume verification completion remains unestablished. -->
-3. **Decide A vs B** with the user, presenting §7 findings honestly. <!-- consolidation: unconfirmed; ref: docs/adr/README.md#record-and-approval-process; reason: Historical architecture alternatives lack an approval record. -->
+   gates the whole resume-based design. <!-- consolidation: unconfirmed; ref: docs/CONVENTIONS.md#tooling-and-validation; reason: Real-provider exact identity/resume verification completion remains unestablished. -->
+3. **Decide A vs B** with the user, presenting §7 findings honestly. <!-- consolidation: unconfirmed; ref: docs/adr/README.md#active-decisions; reason: Historical architecture alternatives lack an approval record. -->
 4. If **B**: scope a vertical slice — one Ink process, one private-socket tmux for agent PTYs,
    explicit shutdown, resume on relaunch. Reuse `/Users/imribarr/Projects/ink-pty-spike` as
-   the starting skeleton. <!-- consolidation: unconfirmed; ref: docs/adr/README.md#active-accepted-decisions; reason: Ink vertical slice and spike reuse remain unapproved implementation proposals. -->
+   the starting skeleton. <!-- consolidation: unconfirmed; ref: docs/adr/README.md#active-decisions; reason: Ink vertical slice and spike reuse remain unapproved implementation proposals. -->
 5. If **A**: resolve §8.3, implement the three changes in §4.1, rebuild, and **test the outer
-   `agentic-workspace workspace` process** — not the inner `workspace-ui`. <!-- consolidation: discard; ref: docs/specs/sessions.md#live-terminal-and-client-lifetime; reason: Old exit policy choice superseded by detach-preserves-agent contract. --> <!-- consolidation: integrate; ref: docs/CONVENTIONS.md#validation; reason: Verify rebuilt public outer entrypoint rather than an inner helper process. -->
-6. Re-measure a clean test baseline (§5 numbers are from a dirty tree). <!-- consolidation: exists; ref: docs/CONVENTIONS.md#checks-and-test-ownership; reason: Re-measure rather than reuse historical baseline counts. -->
+   `agentic-workspace workspace` process** — not the inner `workspace-ui`. <!-- consolidation: discard; ref: docs/specs/sessions.md#observe-and-detach-from-a-live-session; reason: Old exit policy choice superseded by detach-preserves-agent contract. --> <!-- consolidation: integrate; ref: docs/CONVENTIONS.md#tooling-and-validation; reason: Verify rebuilt public outer entrypoint rather than an inner helper process. -->
+6. Re-measure a clean test baseline (§5 numbers are from a dirty tree). <!-- consolidation: exists; ref: docs/CONVENTIONS.md#testing; reason: Re-measure rather than reuse historical baseline counts. -->
 7. Decide what to do with `docs/pi-extensions/`. <!-- consolidation: unconfirmed; ref: docs/CONVENTIONS.md#general-principles; reason: Unknown directory ownership and disposition remain open. -->
 8. Run the `.agentic-workspace/` migration — but only with the user's explicit go-ahead. <!-- consolidation: unconfirmed; ref: docs/CONVENTIONS.md#changes-and-refactoring; reason: Legacy live-data conversion remains authorization-gated and is not approved by this annotation. -->
 
@@ -448,7 +451,7 @@ machine for over half an hour. Root cause: an Ink render loop that never exits a
 output capture completes. <!-- consolidation: discard; ref: none; reason: Historical runaway-process incident and root-cause report. -->
 
 **Any subagent that launches a TUI or long-running process must clean it up and prove it.**
-Verify independently; do not trust the report. <!-- consolidation: exists; ref: docs/CONVENTIONS.md#checks-and-test-ownership; reason: Spawned processes require stop and awaited exit on every outcome. --> <!-- consolidation: integrate; ref: docs/CONVENTIONS.md#validation; reason: Independently verify delegated long-running process cleanup claims. -->
+Verify independently; do not trust the report. <!-- consolidation: exists; ref: docs/CONVENTIONS.md#testing; reason: Spawned processes require stop and awaited exit on every outcome. --> <!-- consolidation: integrate; ref: docs/CONVENTIONS.md#tooling-and-validation; reason: Independently verify delegated long-running process cleanup claims. -->
 
 ### 12.2 The default tmux server died, cause unknown
 
@@ -464,7 +467,7 @@ never with `kill-server`. <!-- consolidation: discard; ref: none; reason: Histor
 **The cause was never established.** Prime suspect is the test suite, which creates sockets
 aggressively (`backlog-test-*`, `backlog-integration-*`, `backlog-workspace-*`) and for which
 the `tmux-test-server.ts` guard exists precisely because a bare `kill-server` reaches the
-default socket. **This is worth auditing** — it is a live risk to the user's sessions. <!-- consolidation: unconfirmed; ref: docs/CONVENTIONS.md#checks-and-test-ownership; reason: Default-server death cause and isolation audit completion were never established. -->
+default socket. **This is worth auditing** — it is a live risk to the user's sessions. <!-- consolidation: unconfirmed; ref: docs/CONVENTIONS.md#testing; reason: Default-server death cause and isolation audit completion were never established. -->
 
 ### 12.3 Cleanup that was performed
 
@@ -477,13 +480,13 @@ All three live `pi` agent sessions survived. <!-- consolidation: discard; ref: n
 
 ## 13. Style / engineering constraints
 
-- Use `Object.assign`, not spread, to inject dependencies into class instances. <!-- consolidation: integrate; ref: docs/CONVENTIONS.md#code-and-organization; reason: Preserve class instance identity/prototype when injecting dependencies with Object.assign. -->
+- Use `Object.assign`, not spread, to inject dependencies into class instances. <!-- consolidation: integrate; ref: docs/CONVENTIONS.md#code-structure; reason: Preserve class instance identity/prototype when injecting dependencies with Object.assign. -->
 - Avoid god functions, meaningless names, mutation inside reads, duplicated idioms, and
-  per-call symptom patches. <!-- consolidation: integrate; ref: docs/CONVENTIONS.md#code-and-organization; reason: Meaningful names and cohesive functions must avoid per-call symptom patches. --> <!-- consolidation: exists; ref: docs/BLUEPRINT.md#shared-operation-protocol; reason: Reads have no mutating lifecycle effects. --> <!-- consolidation: exists; ref: docs/CONVENTIONS.md#general-principles; reason: Avoid duplicated behavior. -->
+  per-call symptom patches. <!-- consolidation: integrate; ref: docs/CONVENTIONS.md#code-structure; reason: Meaningful names and cohesive functions must avoid per-call symptom patches. --> <!-- consolidation: exists; ref: docs/BLUEPRINT.md#application-controller-and-stores; reason: Reads have no mutating lifecycle effects. --> <!-- consolidation: exists; ref: docs/CONVENTIONS.md#general-principles; reason: Avoid duplicated behavior. -->
 - Every changed line must trace directly to the request. No drive-by cleanup or refactoring. <!-- consolidation: exists; ref: docs/CONVENTIONS.md#general-principles; reason: Avoid unrelated cleanup. -->
 - Keep it simple — no speculative abstractions, configurability, or future-proofing. <!-- consolidation: exists; ref: docs/CONVENTIONS.md#general-principles; reason: Avoid speculative abstractions. -->
-- Comments explain non-obvious reasons, not obvious code. <!-- consolidation: integrate; ref: docs/CONVENTIONS.md#code-and-organization; reason: Comments should explain non-obvious rationale rather than restate code. -->
+- Comments explain non-obvious reasons, not obvious code. <!-- consolidation: integrate; ref: docs/CONVENTIONS.md#code-structure; reason: Comments should explain non-obvious rationale rather than restate code. -->
 - Workers verify their own work and return **conclusions and evidence, not exploration
   transcripts**. <!-- consolidation: discard; ref: none; reason: Agent delegation reporting procedure rather than durable core contract. -->
 - Never report success without checking the result. Never weaken tests to make them pass.
-  Fix causes, not symptoms. <!-- consolidation: exists; ref: docs/CONVENTIONS.md#checks-and-test-ownership; reason: Success claims require appropriate verification evidence. --> <!-- consolidation: integrate; ref: docs/CONVENTIONS.md#checks-and-test-ownership; reason: Never weaken tests to conceal failures instead of correcting their causes. -->
+  Fix causes, not symptoms. <!-- consolidation: exists; ref: docs/CONVENTIONS.md#testing; reason: Success claims require appropriate verification evidence. --> <!-- consolidation: integrate; ref: docs/CONVENTIONS.md#testing; reason: Never weaken tests to conceal failures instead of correcting their causes. -->

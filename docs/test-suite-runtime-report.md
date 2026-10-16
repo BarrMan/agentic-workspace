@@ -14,6 +14,9 @@ consolidation:
 ---
 # Test suite runtime report
 
+> **Non-authoritative supporting material.** This file is not a contract. Authoritative owner(s): [CONVENTIONS](CONVENTIONS.md), [SPEC](SPEC.md).
+> Historical — discard.
+
 Date: 2026-10-07. Scope: wall-clock runtime of the Bun test suite (345 files, one process per file). <!-- consolidation: discard; ref: none; reason: Historical measurement scope and count. -->
 Machine used for every number below: 10 cores, 16 GB, Apple silicon. <!-- consolidation: discard; ref: none; reason: Historical benchmark hardware. -->
 
@@ -33,8 +36,8 @@ Related: `src/guidelines/agent-guidelines.md` (how to run one suite), `docs/disk
 | Full suite, 4 lanes | 173.1 s | 345 | 2869 | 3 (pre-existing) <!-- consolidation: discard; ref: none; reason: Historical timing and result counts. --> |
 | Full suite, 8 lanes | 179.8 s | 345 | 2853 | 5 files (3 pre-existing + 2 contention flakes) <!-- consolidation: discard; ref: none; reason: Historical timing and result counts. --> |
 
-The target is a full run under three minutes; the default configuration now meets it with margin. <!-- consolidation: unconfirmed; ref: docs/CONVENTIONS.md#checks-and-test-ownership; reason: Approval and continuing applicability of the three-minute target are not established. --> <!-- consolidation: discard; ref: none; reason: Claimed target attainment is historical measurement evidence. -->
-`bun test --parallel --timeout=10000` runs everything through Bun's native per-file-isolated runner. <!-- consolidation: exists; ref: docs/CONVENTIONS.md#checks-and-test-ownership; reason: Bun invocation and timeout procedure is delegated to AGENTS. -->
+The target is a full run under three minutes; the default configuration now meets it with margin. <!-- consolidation: unconfirmed; ref: docs/CONVENTIONS.md#testing; reason: Approval and continuing applicability of the three-minute target are not established. --> <!-- consolidation: discard; ref: none; reason: Claimed target attainment is historical measurement evidence. -->
+`bun test --parallel --timeout=10000` runs everything through Bun's native per-file-isolated runner. <!-- consolidation: exists; ref: docs/CONVENTIONS.md#testing; reason: Bun invocation and timeout procedure is delegated to AGENTS. -->
 
 **Post-removal update (2026-10-07):** after the web interface and its HTTP server were removed
 (`src/web/**`, `src/server/**`, 72 suites, react/tailwind/jsdom dependencies), the suite is 253 files and
@@ -44,12 +47,12 @@ failing files below. The TUI suites are unchanged and green. <!-- consolidation:
 **With the agent-workspace suites added (2026-10-07):** 257 files and 2332 tests, measured at
 **151.4 s** across 5 isolated workers on an otherwise idle machine. <!-- consolidation: discard; ref: none; reason: Dated suite inventory and timing. --> Reading the summary line is not
 enough to judge a run: it reports files *run* and tests *passed*, so the two red files below are
-counted as successes there. Grep the progress lines for `failed in` instead. <!-- consolidation: unconfirmed; ref: docs/CONVENTIONS.md#checks-and-test-ownership; reason: Summary interpretation and progress-line workaround concern the retired runner and need applicability confirmation. -->
+counted as successes there. Grep the progress lines for `failed in` instead. <!-- consolidation: unconfirmed; ref: docs/CONVENTIONS.md#testing; reason: Summary interpretation and progress-line workaround concern the retired runner and need applicability confirmation. -->
 
 ## 2. Method and its limits
 
 - Bun's parallel runner isolates test files in workers; `bun test <file> --timeout=20000` runs one file.
-  Lane counts are relevant only when intentionally measuring the whole suite. <!-- consolidation: exists; ref: docs/CONVENTIONS.md#checks-and-test-ownership; reason: Affected-file invocation is the approved iteration procedure. --> <!-- consolidation: discard; ref: none; reason: Lane-count measurement detail belongs to the historical benchmark. -->
+  Lane counts are relevant only when intentionally measuring the whole suite. <!-- consolidation: exists; ref: docs/CONVENTIONS.md#testing; reason: Affected-file invocation is the approved iteration procedure. --> <!-- consolidation: discard; ref: none; reason: Lane-count measurement detail belongs to the historical benchmark. -->
 - Absolute `after` numbers taken by the optimisation workers were collected while other workers were also
   benchmarking, so several are inflated by roughly 2.2-2.6x (a control suite measured 2.25 s idle versus
   5.0-6.3 s under that load). Those rows are marked *indicative*; the same-window A/B rows and the parent's
@@ -75,13 +78,13 @@ Deliberate sleeps were a smaller factor: most remaining waits are real-clock reg
 
 | Technique | Effect |
 |---|---|
-| `describe.concurrent` / `test.concurrent` with per-case isolated fixtures | overlapping process waits; measured 2-3x on unchanged code (one probe: four 300 ms sleeps finished in 311 ms) <!-- consolidation: integrate; ref: docs/CONVENTIONS.md#checks-and-test-ownership; reason: Permit within-file concurrency only with per-case owned mutable state and resources. --> <!-- consolidation: discard; ref: none; reason: Speedup is historical evidence. --> |
-| One prepared project template per suite, cloned per case (`cp` = APFS clonefile, ~3 ms) instead of rebuilding | removed repeated `git init` + project init + config writes <!-- consolidation: unconfirmed; ref: docs/CONVENTIONS.md#checks-and-test-ownership; reason: Continued applicability of template cloning needs confirmation without shared mutable fixture state. --> <!-- consolidation: discard; ref: none; reason: Historical cost and implementation result. --> |
+| `describe.concurrent` / `test.concurrent` with per-case isolated fixtures | overlapping process waits; measured 2-3x on unchanged code (one probe: four 300 ms sleeps finished in 311 ms) <!-- consolidation: integrate; ref: docs/CONVENTIONS.md#testing; reason: Permit within-file concurrency only with per-case owned mutable state and resources. --> <!-- consolidation: discard; ref: none; reason: Speedup is historical evidence. --> |
+| One prepared project template per suite, cloned per case (`cp` = APFS clonefile, ~3 ms) instead of rebuilding | removed repeated `git init` + project init + config writes <!-- consolidation: unconfirmed; ref: docs/CONVENTIONS.md#testing; reason: Continued applicability of template cloning needs confirmation without shared mutable fixture state. --> <!-- consolidation: discard; ref: none; reason: Historical cost and implementation result. --> |
 | `initGitRepo(dir, branch?)` in `src/test/test-utils.ts`: copies a prepared `.git` template (~1 ms) instead of spawning `git init` (~32 ms) | 40x cheaper repo creation; applied to 25 files <!-- consolidation: discard; ref: none; reason: Historical helper inventory and measured speedup. --> |
-| In-process `Core` calls for setup that no assertion inspected | removed unasserted CLI spawns <!-- consolidation: integrate; ref: docs/CONVENTIONS.md#checks-and-test-ownership; reason: Use in-process setup when process startup is not the behavior under assertion. --> |
-| `Promise.all` for independent CLI invocations | fewer sequential rounds <!-- consolidation: integrate; ref: docs/CONVENTIONS.md#checks-and-test-ownership; reason: Independent invocations may overlap when each owns state and cleanup. --> |
-| `createConcurrencyLimiter(width)` slot pool in `test-utils.ts` | caps how many cases of one process touch the machine at once, for suites where unbounded overlap caused real-time waits to expire under lane load <!-- consolidation: unconfirmed; ref: docs/CONVENTIONS.md#checks-and-test-ownership; reason: Need for this historical limiter under native runner is not established. --> |
-| Merging duplicated cases whose assertions overlapped | 7 duplicate tests removed this round (2 in `cli-guidance`, 4 in `cli-init-create`, 1 in `cli-task-list`), every assertion kept <!-- consolidation: integrate; ref: docs/CONVENTIONS.md#checks-and-test-ownership; reason: Preserve equivalent observable coverage when merging duplicate cases. --> <!-- consolidation: discard; ref: none; reason: Historical removal count and completion claim. --> |
+| In-process `Core` calls for setup that no assertion inspected | removed unasserted CLI spawns <!-- consolidation: integrate; ref: docs/CONVENTIONS.md#testing; reason: Use in-process setup when process startup is not the behavior under assertion. --> |
+| `Promise.all` for independent CLI invocations | fewer sequential rounds <!-- consolidation: integrate; ref: docs/CONVENTIONS.md#testing; reason: Independent invocations may overlap when each owns state and cleanup. --> |
+| `createConcurrencyLimiter(width)` slot pool in `test-utils.ts` | caps how many cases of one process touch the machine at once, for suites where unbounded overlap caused real-time waits to expire under lane load <!-- consolidation: unconfirmed; ref: docs/CONVENTIONS.md#testing; reason: Need for this historical limiter under native runner is not established. --> |
+| Merging duplicated cases whose assertions overlapped | 7 duplicate tests removed this round (2 in `cli-guidance`, 4 in `cli-init-create`, 1 in `cli-task-list`), every assertion kept <!-- consolidation: integrate; ref: docs/CONVENTIONS.md#testing; reason: Preserve equivalent observable coverage when merging duplicate cases. --> <!-- consolidation: discard; ref: none; reason: Historical removal count and completion claim. --> |
 
 ## 5. Per-suite results
 
@@ -165,20 +168,20 @@ case): `board-loading`, `core-task-corpus-regressions`, `no-remote-preflight`, `
 
 ## 6. Native Bun runner
 
-`bun test --parallel --timeout=10000` uses Bun's per-file isolation and a 10-second case timeout. <!-- consolidation: exists; ref: docs/CONVENTIONS.md#checks-and-test-ownership; reason: Delegated AGENTS invocation includes native runner and case timeout. -->
+`bun test --parallel --timeout=10000` uses Bun's per-file isolation and a 10-second case timeout. <!-- consolidation: exists; ref: docs/CONVENTIONS.md#testing; reason: Delegated AGENTS invocation includes native runner and case timeout. -->
 The `src/test/test-preload.ts` hook assigns each worker a disposable OS-temp directory for `TMPDIR`,
 `TMP`, and `TEMP`, clears workspace-pinning variables, assigns a unique test tmux socket, and removes
-the scratch directory after the suite. <!-- consolidation: exists; ref: docs/CONVENTIONS.md#checks-and-test-ownership; reason: Shared preload owns temporary-root environment and socket isolation. --> <!-- consolidation: integrate; ref: docs/CONVENTIONS.md#error-handling-and-cleanup; reason: Explicitly require removal of owned disposable scratch after process settlement even on test failure. --> CI retains the platform-only file list on macOS/Windows and
-uses a 10-minute job timeout instead of the former runner deadline. <!-- consolidation: unconfirmed; ref: docs/CONVENTIONS.md#checks-and-test-ownership; reason: Platform subset policy and exact CI job bound are historical configuration claims requiring confirmation before promotion. -->
+the scratch directory after the suite. <!-- consolidation: exists; ref: docs/CONVENTIONS.md#testing; reason: Shared preload owns temporary-root environment and socket isolation. --> <!-- consolidation: integrate; ref: docs/CONVENTIONS.md#error-handling; reason: Explicitly require removal of owned disposable scratch after process settlement even on test failure. --> CI retains the platform-only file list on macOS/Windows and
+uses a 10-minute job timeout instead of the former runner deadline. <!-- consolidation: unconfirmed; ref: docs/CONVENTIONS.md#testing; reason: Platform subset policy and exact CI job bound are historical configuration claims requiring confirmation before promotion. -->
 
 ## 7. Coverage deliberately kept
 
 Not touched, because the cost is the behaviour under test:
 
 - `cli-pipe-output`: two 6 s output-drain deadlines (the regression the suite exists for). Only their
-  overlap was increased. <!-- consolidation: integrate; ref: docs/CONVENTIONS.md#checks-and-test-ownership; reason: Preserve real deadline behavior when it is the regression under test rather than shortening it for speed. --> <!-- consolidation: discard; ref: none; reason: Exact wait and optimization result are historical. -->
-- `cli-json-watch`: 1300 ms debounce and 1100 ms liveness waits on a real interval. <!-- consolidation: unconfirmed; ref: docs/CONVENTIONS.md#checks-and-test-ownership; reason: Later F7 remediation challenges fixed absence waits so these exact waits are not established requirements. -->
-- `config-watcher`, `task-watcher`, `watch-json`: production settle/read budgets and real-clock waits. <!-- consolidation: unconfirmed; ref: docs/CONVENTIONS.md#checks-and-test-ownership; reason: Necessity of particular real-clock waits must be reconciled with later completion-fence practice. -->
+  overlap was increased. <!-- consolidation: integrate; ref: docs/CONVENTIONS.md#testing; reason: Preserve real deadline behavior when it is the regression under test rather than shortening it for speed. --> <!-- consolidation: discard; ref: none; reason: Exact wait and optimization result are historical. -->
+- `cli-json-watch`: 1300 ms debounce and 1100 ms liveness waits on a real interval. <!-- consolidation: unconfirmed; ref: docs/CONVENTIONS.md#testing; reason: Later F7 remediation challenges fixed absence waits so these exact waits are not established requirements. -->
+- `config-watcher`, `task-watcher`, `watch-json`: production settle/read budgets and real-clock waits. <!-- consolidation: unconfirmed; ref: docs/CONVENTIONS.md#testing; reason: Necessity of particular real-clock waits must be reconciled with later completion-fence practice. -->
 - `server-search-endpoint`: real per-test server startup and per-mutation reconcile. <!-- consolidation: discard; ref: none; reason: Historical coverage of the removed web-server surface. -->
 
 No assertion was weakened or deleted for speed, no test was skipped, no timeout was raised, and no real
@@ -194,8 +197,8 @@ integration (CLI, git, tmux, PTY, filesystem, HTTP) was replaced by a mock. <!--
 These are production defects in task hydration, not test-runtime defects, and were deliberately left alone. <!-- consolidation: discard; ref: none; reason: Historical diagnosis and scope decision. -->
 
 ## 9. How to run
-<!-- consolidation: exists; ref: docs/CONVENTIONS.md#checks-and-test-ownership; reason: Invocation and timeout procedure is delegated to AGENTS. -->
-<!-- consolidation: unconfirmed; ref: docs/CONVENTIONS.md#checks-and-test-ownership; reason: Three-minute expectation and exact job timeout in the example are not established durable budgets. -->
+<!-- consolidation: exists; ref: docs/CONVENTIONS.md#testing; reason: Invocation and timeout procedure is delegated to AGENTS. -->
+<!-- consolidation: unconfirmed; ref: docs/CONVENTIONS.md#testing; reason: Three-minute expectation and exact job timeout in the example are not established durable budgets. -->
 
 ```bash
 # everything, under three minutes
@@ -209,16 +212,16 @@ bun test --parallel src/test/checklist.test.ts --timeout=10000
 
 ## 10. Bounded deadline and live-workspace isolation
 
-CI bounds the test job at 10 minutes. <!-- consolidation: unconfirmed; ref: docs/CONVENTIONS.md#checks-and-test-ownership; reason: Exact historical CI bound is not established as durable policy. --> A full run is ~150 s on an idle 10-core machine and targets
-under three minutes; local runs rely on the caller to bound a busy or stalled process. <!-- consolidation: discard; ref: none; reason: Historical runtime measurement. --> <!-- consolidation: unconfirmed; ref: docs/CONVENTIONS.md#checks-and-test-ownership; reason: Approval of three-minute performance target is unresolved. --> <!-- consolidation: integrate; ref: docs/CONVENTIONS.md#checks-and-test-ownership; reason: Require a caller-owned whole-run bound for local runs in addition to per-test timeouts. -->
+CI bounds the test job at 10 minutes. <!-- consolidation: unconfirmed; ref: docs/CONVENTIONS.md#testing; reason: Exact historical CI bound is not established as durable policy. --> A full run is ~150 s on an idle 10-core machine and targets
+under three minutes; local runs rely on the caller to bound a busy or stalled process. <!-- consolidation: discard; ref: none; reason: Historical runtime measurement. --> <!-- consolidation: unconfirmed; ref: docs/CONVENTIONS.md#testing; reason: Approval of three-minute performance target is unresolved. --> <!-- consolidation: integrate; ref: docs/CONVENTIONS.md#testing; reason: Require a caller-owned whole-run bound for local runs in addition to per-test timeouts. -->
 
 Each test process is isolated from any live workspace:
 
-- A per-worker OS-temp `TMPDIR` (deleted after the suite, including test failures). <!-- consolidation: exists; ref: docs/CONVENTIONS.md#checks-and-test-ownership; reason: Shared preload owns disposable temporary-root isolation. --> <!-- consolidation: integrate; ref: docs/CONVENTIONS.md#error-handling-and-cleanup; reason: Make scratch cleanup on failed suites explicit after owned process settlement. -->
+- A per-worker OS-temp `TMPDIR` (deleted after the suite, including test failures). <!-- consolidation: exists; ref: docs/CONVENTIONS.md#testing; reason: Shared preload owns disposable temporary-root isolation. --> <!-- consolidation: integrate; ref: docs/CONVENTIONS.md#error-handling; reason: Make scratch cleanup on failed suites explicit after owned process settlement. -->
 - Workspace-pinning env cleared in `src/test/test-preload.ts` (`AGENTIC_WORKSPACE_CWD`,
   `AGENTIC_WORKSPACE_WORKSPACE_CONTEXT`, `AGENTIC_WORKSPACE_PROJECT_ROOT`, `AGENTIC_WORKSPACE_TASK_ID`, `AGENTIC_WORKSPACE_SESSION_ID`,
-  `TASK_ID`, `SESSION_ID`). <!-- consolidation: exists; ref: docs/CONVENTIONS.md#checks-and-test-ownership; reason: Shared preload clears workspace-pinning environment. -->
+  `TASK_ID`, `SESSION_ID`). <!-- consolidation: exists; ref: docs/CONVENTIONS.md#testing; reason: Shared preload clears workspace-pinning environment. -->
 - A unique test-owned `AGENTIC_WORKSPACE_TMUX_SOCKET`, so no test or spawned CLI touches the developer's
-  default tmux server. <!-- consolidation: exists; ref: docs/CONVENTIONS.md#checks-and-test-ownership; reason: Unique test socket and prohibition on developer/default sockets are explicit. --> `createSessionServer()` honours it in `src/agent-workspace/session-process.ts`. <!-- consolidation: discard; ref: none; reason: Historical implementation pointer rather than a separate requirement. -->
+  default tmux server. <!-- consolidation: exists; ref: docs/CONVENTIONS.md#testing; reason: Unique test socket and prohibition on developer/default sockets are explicit. --> `createSessionServer()` honours it in `src/agent-workspace/session-process.ts`. <!-- consolidation: discard; ref: none; reason: Historical implementation pointer rather than a separate requirement. -->
 
-A live `agentic-workspace workspace` therefore cannot stall a run, or be affected by one. <!-- consolidation: unconfirmed; ref: docs/CONVENTIONS.md#checks-and-test-ownership; reason: Isolation requirements do not prove the absolute no-stall or no-impact claim under all shared-machine conditions. -->
+A live `agentic-workspace workspace` therefore cannot stall a run, or be affected by one. <!-- consolidation: unconfirmed; ref: docs/CONVENTIONS.md#testing; reason: Isolation requirements do not prove the absolute no-stall or no-impact claim under all shared-machine conditions. -->

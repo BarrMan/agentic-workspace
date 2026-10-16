@@ -2,19 +2,21 @@
 consolidation:
   total: 312
   counts:
-    exists: 11
+    exists: 8
     discard: 249
     integrate: 4
-    unconfirmed: 48
+    unconfirmed: 51
   percentages:
-    exists: 3.53%
+    exists: 2.56%
     discard: 79.81%
     integrate: 1.28%
-    unconfirmed: 15.38%
+    unconfirmed: 16.35%
 ---
 # Agent of Empires — Reference Architecture for `agentic-workspace workspace`
+> **Non-authoritative supporting material.** This file is not a contract. Authoritative owner(s): [SPEC](SPEC.md), [BLUEPRINT](BLUEPRINT.md), [workspace screen](screens/workspace.md).
+> Disposition: Historical — discard.
 
-**Status:** reference notes. Specifies **no** AgenticWorkspace change and authorises **no** implementation. <!-- consolidation: exists; ref: docs/SPEC.md#authority; reason: Reference evidence does not authorize behavior changes. -->
+**Status:** reference notes. Specifies **no** AgenticWorkspace change and authorises **no** implementation. <!-- consolidation: unconfirmed; ref: none; reason: Reference evidence does not authorize behavior changes. -->
 
 **Source:** `agent-of-empires/agent-of-empires`, default branch `main`. Investigated 2026-10-04. <!-- consolidation: discard; ref: none; reason: External investigation provenance belongs in this reference. -->
 **Purpose:** record how a shipped product solves the same two problems BACK-728 has — a multi-agent
@@ -55,16 +57,16 @@ explicit process-exit step on top of it, which §5 alone does not describe. <!--
 ## 0. Why this document exists
 
 `agentic-workspace workspace` currently uses **tmux as its UI substrate**: the outer process hands the terminal
-to tmux via inherited stdio and tmux draws everything. That single choice produces both reported bugs. <!-- consolidation: discard; ref: none; reason: Historical tmux UI implementation snapshot. --> <!-- consolidation: unconfirmed; ref: docs/architecture/application-boundaries.md#ui-controller-and-modules; reason: Attributing both bugs solely to UI substrate is an unverified causal inference. -->
+to tmux via inherited stdio and tmux draws everything. That single choice produces both reported bugs. <!-- consolidation: discard; ref: none; reason: Historical tmux UI implementation snapshot. --> <!-- consolidation: unconfirmed; ref: docs/architecture/application-boundaries.md#ui-controller-feature-modules-renderer-and-terminal-host; reason: Attributing both bugs solely to UI substrate is an unverified causal inference. -->
 
 | Symptom | Measured / observed |
 |---|---|
-| Ctrl+C and `q` do not exit; panes go dead, process stays alive holding the terminal | `quitWorkspace()` kills pane trees then `detach()`s, deliberately keeping the session (`src/agent-workspace/tmux-workspace.ts:969-978`) <!-- consolidation: discard; ref: docs/specs/sessions.md#live-terminal-and-client-lifetime; reason: Historical failure evidence is not target behavior and exit must preserve agents. --> |
+| Ctrl+C and `q` do not exit; panes go dead, process stays alive holding the terminal | `quitWorkspace()` kills pane trees then `detach()`s, deliberately keeping the session (`src/agent-workspace/tmux-workspace.ts:969-978`) <!-- consolidation: discard; ref: docs/specs/sessions.md#observe-and-detach-from-a-live-session; reason: Historical failure evidence is not target behavior and exit must preserve agents. --> |
 | Laggy | ~240 tmux subprocess calls and ~1,836 ms of serialized tmux wait per 30 s **idle** <!-- consolidation: discard; ref: none; reason: Historical measured baseline is not a durable performance requirement. --> |
 
 AoE is a working counter-example. The sections below isolate the mechanisms worth understanding before
 any design decision gets made. **[inference]** The lag and the exit bug share one root cause: making
-tmux the UI substrate rather than a backend. <!-- consolidation: unconfirmed; ref: docs/architecture/application-boundaries.md#ui-controller-and-modules; reason: External counterexample does not prove a shared root cause for both local bugs. -->
+tmux the UI substrate rather than a backend. <!-- consolidation: unconfirmed; ref: docs/architecture/application-boundaries.md#ui-controller-feature-modules-renderer-and-terminal-host; reason: External counterexample does not prove a shared root cause for both local bugs. -->
 
 ---
 
@@ -72,7 +74,7 @@ tmux the UI substrate rather than a backend. <!-- consolidation: unconfirmed; re
 
 **AoE never uses tmux as a UI.** tmux is a backend PTY container that keeps each agent process alive
 across TUI close, SSH drop, and terminal crash. The UI is a native Rust TUI that owns the terminal
-and drives agents out-of-band. **[code]** <!-- consolidation: discard; ref: docs/BLUEPRINT.md#component-ownership; reason: AoE Rust UI and tmux container architecture is external evidence rather than stack approval. --> <!-- consolidation: exists; ref: docs/specs/sessions.md#live-terminal-and-client-lifetime; reason: Agent survival across client close and crash is independently required. --> <!-- consolidation: discard; ref: none; reason: External SSH-drop survival is not a separately specified local remote-client guarantee. -->
+and drives agents out-of-band. **[code]** <!-- consolidation: discard; ref: docs/BLUEPRINT.md#component-ownership; reason: AoE Rust UI and tmux container architecture is external evidence rather than stack approval. --> <!-- consolidation: exists; ref: docs/specs/sessions.md#observe-and-detach-from-a-live-session; reason: Agent survival across client close and crash is independently required. --> <!-- consolidation: discard; ref: none; reason: External SSH-drop survival is not a separately specified local remote-client guarantee. -->
 
 ```
 your terminal  →  AoE's own TUI (Ratatui + crossterm, owns the terminal)
@@ -88,7 +90,7 @@ Terminal ownership is RAII via `TerminalGuard` (`src/tui/mod.rs:142`), entered a
 restored in `Drop` (`mod.rs:183-208`). **[code]** <!-- consolidation: discard; ref: none; reason: Rust RAII terminal guard is external implementation evidence. -->
 
 **Every tmux fork happens on a named background thread, never on the paint path** — `aoe-display-snapshot`
-(`mod.rs:1991`), `aoe-status-poller` (`src/tui/status_poller.rs:314`). **[code]** <!-- consolidation: discard; ref: docs/architecture/application-boundaries.md#ui-controller-and-modules; reason: Named background-thread placement is AoE implementation detail beyond the renderer boundary. -->
+(`mod.rs:1991`), `aoe-status-poller` (`src/tui/status_poller.rs:314`). **[code]** <!-- consolidation: discard; ref: docs/architecture/application-boundaries.md#ui-controller-feature-modules-renderer-and-terminal-host; reason: Named background-thread placement is AoE implementation detail beyond the renderer boundary. -->
 
 ### 1.1 Terminal setup
 
@@ -124,28 +126,28 @@ The field is `Option` specifically for this ("its stdin reader thread would comp
 | `SESSION_CACHE` (`src/tmux/mod.rs:243`) | `session_scan_command()` (`mod.rs:448`) | chains `show-options -gqv` ×3 + one `list-sessions -F` → **all** sessions <!-- consolidation: discard; ref: none; reason: External session snapshot batching implementation. --> |
 | `PANE_META_CACHE` (`mod.rs:276`) | `batch_pane_metadata()` (`mod.rs:1034`) | one `list-panes -a -F`, 10 fields → **every** session's pane <!-- consolidation: discard; ref: none; reason: External pane metadata batching implementation. --> |
 
-- TTL 2 s; refresh-due at half-life, `snapshot_refresh_due` (`mod.rs:1711`) = `CACHE_TTL / 2`. <!-- consolidation: discard; ref: docs/specs/sessions.md#identity-and-observed-state; reason: External cache cadence is not the approved 30-second workspace observation contract. -->
+- TTL 2 s; refresh-due at half-life, `snapshot_refresh_due` (`mod.rs:1711`) = `CACHE_TTL / 2`. <!-- consolidation: discard; ref: docs/specs/sessions.md#sessions; reason: External cache cadence is not the approved 30-second workspace observation contract. -->
 - `PaneMetadata` (`mod.rs:214-227`) carries `pane_dead`, `pane_pid`, `pane_title` (OSC 0/2, "which
   several agents use for their state"), and `window_activity` — "The window's last-output time, used
   to skip unchanged captures." **[code]** <!-- consolidation: discard; ref: none; reason: External metadata schema and capture optimization. -->
-- **`Err` from `batch_pane_metadata` means "don't know", never "absent"** (`mod.rs:1032-1033`). **[comment]** <!-- consolidation: exists; ref: docs/architecture/session-harness.md#runningexecution-interaction-contract; reason: Failed runtime probes remain uncertainty rather than evidence of absence. -->
+- **`Err` from `batch_pane_metadata` means "don't know", never "absent"** (`mod.rs:1032-1033`). **[comment]** <!-- consolidation: exists; ref: docs/architecture/session-harness.md#runningexecution; reason: Failed runtime probes remain uncertainty rather than evidence of absence. -->
 - Concurrency: monotonic `next_refresh_id` (`mod.rs:403`); `publish_session_cache` (`mod.rs:407`)
   drops results with `refresh_id <= cache.refresh_id`; an unexpected failure keeps the last good <!-- consolidation: discard; ref: none; reason: External monotonic refresh publication algorithm. -->
   list (`mod.rs:422`). **[code]** <!-- consolidation: discard; ref: none; reason: External last-good cache retention policy. -->
 - **Stale reads return `None`, never a false answer** — `session_exists_from_cache` (`mod.rs:1567`),
-  `pane_dead_from_cache` (`mod.rs:1663`). **[code]** <!-- consolidation: discard; ref: docs/specs/sessions.md#identity-and-observed-state; reason: External stale-cache None representation is more specific than approved runtime uncertainty. -->
+  `pane_dead_from_cache` (`mod.rs:1663`). **[code]** <!-- consolidation: discard; ref: docs/specs/sessions.md#sessions; reason: External stale-cache None representation is more specific than approved runtime uncertainty. -->
 
 ### 2.2 The render path never forks
 
 `session_exists_for_display` (`mod.rs:1648`) is documented "Render-path liveness from the snapshot
 only, never forking." Same for `pane_dead_for_display` (`mod.rs:1658`). Live `has-session` is a
-fallback for cache misses only (`mod.rs:1634-1640`). **[code]** <!-- consolidation: discard; ref: docs/architecture/application-boundaries.md#ui-controller-and-modules; reason: External snapshot-only display accessors are implementation evidence. --> <!-- consolidation: discard; ref: none; reason: External cache-miss live has-session fallback. -->
+fallback for cache misses only (`mod.rs:1634-1640`). **[code]** <!-- consolidation: discard; ref: docs/architecture/application-boundaries.md#ui-controller-feature-modules-renderer-and-terminal-host; reason: External snapshot-only display accessors are implementation evidence. --> <!-- consolidation: discard; ref: none; reason: External cache-miss live has-session fallback. -->
 
 ### 2.3 Status detection is rule-ranked and activity-gated
 
 `src/tmux/status_detection.rs` is **pure parsing** — it contains no `tmux_command` and no
 `capture_pane`. **[code]** Order: configured `status_rules` → agent manifest (13 embedded at <!-- consolidation: discard; ref: none; reason: External pure-parser separation is reference implementation evidence. -->
-`src/tmux/detect/mod.rs:18-32`) → legacy detector. **[code]** <!-- consolidation: discard; ref: docs/architecture/session-harness.md#harness-construction-and-promises; reason: AoE rule precedence and manifest catalogue do not approve local provider detection policy. -->
+`src/tmux/detect/mod.rs:18-32`) → legacy detector. **[code]** <!-- consolidation: discard; ref: docs/architecture/session-harness.md#harness; reason: AoE rule precedence and manifest catalogue do not approve local provider detection policy. -->
 
 `skip_capture` (`src/session/instance/status_update.rs:7`) refuses a capture when `window_activity`
 is unchanged AND a prior capture exists past that second AND no hook fired AND nothing is pending. **[code]** <!-- consolidation: discard; ref: none; reason: External activity-gated capture predicate. -->
@@ -162,22 +164,22 @@ everything") is wrong for manifest-backed agents. A hook write is one observatio
 enters the same priority-ranked rule engine as pane and title evidence: configured `status_rules`
 are evaluated first, then manifest rules in descending priority, where the shared hook rules carry
 `hook_running_fresh` 600 (max age 30 s), `hook_running_standing` 400 (max age 900 s), `hook_idle`
-300, `hook_error` 300 and `hook_waiting` 240 (`manifest.rs:371-451`, `status_update.rs:286-330`). <!-- consolidation: discard; ref: docs/architecture/session-harness.md#harness-construction-and-promises; reason: Corrected AoE hook and manifest precedence is external detection policy. --> <!-- consolidation: discard; ref: none; reason: External fresh-running hook priority 600 and thirty-second age limit. --> <!-- consolidation: discard; ref: none; reason: External standing-running hook priority 400 and 900-second age limit. --> <!-- consolidation: discard; ref: none; reason: External idle-hook priority 300. --> <!-- consolidation: discard; ref: none; reason: External error-hook priority 300. --> <!-- consolidation: discard; ref: none; reason: External waiting-hook priority 240. -->
+300, `hook_error` 300 and `hook_waiting` 240 (`manifest.rs:371-451`, `status_update.rs:286-330`). <!-- consolidation: discard; ref: docs/architecture/session-harness.md#harness; reason: Corrected AoE hook and manifest precedence is external detection policy. --> <!-- consolidation: discard; ref: none; reason: External fresh-running hook priority 600 and thirty-second age limit. --> <!-- consolidation: discard; ref: none; reason: External standing-running hook priority 400 and 900-second age limit. --> <!-- consolidation: discard; ref: none; reason: External idle-hook priority 300. --> <!-- consolidation: discard; ref: none; reason: External error-hook priority 300. --> <!-- consolidation: discard; ref: none; reason: External waiting-hook priority 240. -->
 A higher-priority screen or title rule can therefore outrank a fresh hook, and a hook write older
 than its `max_age_secs` is not evidence at all. The 900 s stale-`Running` fallback belongs to the <!-- consolidation: discard; ref: none; reason: External screen/title priority over fresh hooks. --> <!-- consolidation: discard; ref: none; reason: External max-age expiration of hook evidence. -->
 **legacy manifest-less** branch, which otherwise applies the hook directly
 (`status_update.rs:22-24,302-330`). Dead pane + hook present ⇒ `Error`, because "a dead pane <!-- consolidation: discard; ref: none; reason: External legacy manifest-less hook fallback is not a local compatibility requirement. -->
 outranks every other signal, and only for a session that reported hooks at all"
-(`status_update.rs:280-284`). **[code]** <!-- consolidation: discard; ref: docs/specs/sessions.md#identity-and-observed-state; reason: AoE dead-pane Error classification is not the approved observed-state model. -->
+(`status_update.rs:280-284`). **[code]** <!-- consolidation: discard; ref: docs/specs/sessions.md#sessions; reason: AoE dead-pane Error classification is not the approved observed-state model. -->
 
 Extra debounce: `Error` re-latches at most every 30 s; within 3 s of start reports `Starting` without <!-- consolidation: discard; ref: none; reason: External error debounce duration. -->
-probing (`status_update.rs:157-171`). **[code]** <!-- consolidation: discard; ref: docs/architecture/session-harness.md#readiness-evidence-and-failure-stages; reason: External time-based Starting shortcut cannot establish approved provider readiness. -->
+probing (`status_update.rs:157-171`). **[code]** <!-- consolidation: discard; ref: docs/architecture/session-harness.md#readiness-and-identity-correlation; reason: External time-based Starting shortcut cannot establish approved provider readiness. -->
 
 ### 2.4 tmux options are leases, never status storage
 
 The only options AoE writes are cross-process ownership leases: `@aoe_size_owner`,
 `@aoe_size_owner_hb`, `@aoe_vt_owner`, `@aoe_vt_owner_hb`, `@aoe_vt_pipe_owner`
-(`src/tmux/session.rs:47-58`). Status is derived in-process from captured bytes. **[code]** <!-- consolidation: discard; ref: none; reason: External tmux lease option inventory. --> <!-- consolidation: discard; ref: docs/architecture/session-harness.md#harness-construction-and-promises; reason: Capture-derived status is an external observation mechanism rather than a required Harness strategy. -->
+(`src/tmux/session.rs:47-58`). Status is derived in-process from captured bytes. **[code]** <!-- consolidation: discard; ref: none; reason: External tmux lease option inventory. --> <!-- consolidation: discard; ref: docs/architecture/session-harness.md#harness; reason: Capture-derived status is an external observation mechanism rather than a required Harness strategy. -->
 
 ---
 
@@ -199,7 +201,7 @@ refresh_interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay
 
 Periodic work is *not* separate timers — it is `Instant::elapsed()` checks inside the post-select
 block: status 500 ms, session feed 1 s, disk 5 s, metrics 1 s, spinner 120 ms, heartbeat 10 s,
-presence 3 s, idle reap 60 s (`app.rs:592-603`). **[code]** <!-- consolidation: discard; ref: none; reason: External elapsed-check scheduling mechanism. --> <!-- consolidation: discard; ref: docs/specs/sessions.md#identity-and-observed-state; reason: External 500 ms status cadence is not local 30-second observation approval. --> <!-- consolidation: discard; ref: none; reason: External one-second session-feed cadence. --> <!-- consolidation: discard; ref: none; reason: External five-second disk cadence. --> <!-- consolidation: discard; ref: none; reason: External one-second metrics cadence. --> <!-- consolidation: discard; ref: none; reason: External 120 ms spinner cadence. --> <!-- consolidation: discard; ref: none; reason: External ten-second heartbeat cadence. --> <!-- consolidation: discard; ref: none; reason: External three-second presence cadence. --> <!-- consolidation: discard; ref: docs/specs/sessions.md#running-session-soft-limit; reason: External sixty-second idle reaping is not the approved evidence-based soft-limit policy. -->
+presence 3 s, idle reap 60 s (`app.rs:592-603`). **[code]** <!-- consolidation: discard; ref: none; reason: External elapsed-check scheduling mechanism. --> <!-- consolidation: discard; ref: docs/specs/sessions.md#sessions; reason: External 500 ms status cadence is not local 30-second observation approval. --> <!-- consolidation: discard; ref: none; reason: External one-second session-feed cadence. --> <!-- consolidation: discard; ref: none; reason: External five-second disk cadence. --> <!-- consolidation: discard; ref: none; reason: External one-second metrics cadence. --> <!-- consolidation: discard; ref: none; reason: External 120 ms spinner cadence. --> <!-- consolidation: discard; ref: none; reason: External ten-second heartbeat cadence. --> <!-- consolidation: discard; ref: none; reason: External three-second presence cadence. --> <!-- consolidation: discard; ref: docs/specs/sessions.md#enforce-the-running-session-soft-limit; reason: External sixty-second idle reaping is not the approved evidence-based soft-limit policy. -->
 
 ### 3.2 Two gates, and idle means no draw at all
 
@@ -272,7 +274,7 @@ A `SendMessageDialog` collects a whole message, then delivers it via `src/tui/ho
 No live-send state is installed, no per-keystroke forwarding, the UI stays in dashboard mode. **[code]** <!-- consolidation: discard; ref: none; reason: External composer focus and delivery mode. -->
 **No debounce, rate-limit, or coalescing exists on this path**; the only sleep is a per-tool
 `enter_delay_ms`. **[code]** Failure sets `InfoDialog::new("Send Failed", ...)` and returns — no retry, <!-- consolidation: discard; ref: none; reason: External composer pacing and absence of coalescing. -->
-no queue. **[code]** <!-- consolidation: discard; ref: docs/architecture/session-harness.md#session-operations; reason: External send-error dialog and retry policy exceed the approved input-delivery failure contract. -->
+no queue. **[code]** <!-- consolidation: discard; ref: docs/architecture/session-harness.md#session; reason: External send-error dialog and retry policy exceed the approved input-delivery failure contract. -->
 
 **Both modes push bytes into the same tmux session. The agent cannot tell them apart.** **[inference]** <!-- consolidation: discard; ref: none; reason: External input-path equivalence inference is reference material. -->
 
@@ -306,7 +308,7 @@ fork. **[code]** <!-- consolidation: discard; ref: none; reason: External same-s
 
 Single-writer invariant (`live_send.rs:6-11`): "a live input channel is a single-writer signal: two
 writers would interleave on one pty input stream, so nothing goes through `send-keys` while it
-exists." **[comment]** <!-- consolidation: discard; ref: docs/architecture/session-harness.md#runningexecution-interaction-contract; reason: External channel-exclusive send-keys prohibition is stricter than the local single terminal-writer boundary. -->
+exists." **[comment]** <!-- consolidation: discard; ref: docs/architecture/session-harness.md#runningexecution; reason: External channel-exclusive send-keys prohibition is stricter than the local single terminal-writer boundary. -->
 
 ### 4.5 `tmux -C` was tried and rejected
 
@@ -316,7 +318,7 @@ exists." **[comment]** <!-- consolidation: discard; ref: docs/architecture/sessi
 > 3.x, so one fork per coalesced batch is the portable model; held keys and pastes coalesce into one fork." <!-- consolidation: discard; ref: none; reason: External historical control-mode failure and chosen workaround are not local technology approval. -->
 
 **[inference]** This is the single most decision-relevant finding in the document: a persistent control
-connection is not a safe default, because the most common dev platform breaks it. <!-- consolidation: unconfirmed; ref: docs/adr/README.md#record-and-approval-process; reason: General rejection of persistent control mode requires local applicability evidence and approval. -->
+connection is not a safe default, because the most common dev platform breaks it. <!-- consolidation: unconfirmed; ref: docs/adr/README.md#active-decisions; reason: General rejection of persistent control mode requires local applicability evidence and approval. -->
 
 ### 4.6 Paste bursts
 
@@ -366,7 +368,7 @@ Bare PageUp is forwarded on purpose, so agents with their own paging UI keep wor
 stolen for local scroll — matching normal terminal-emulator convention. **[inference]** <!-- consolidation: discard; ref: none; reason: External paging-key design rationale. -->
 
 **Guard worth stealing:** list scrolling is suppressed during live-send, because "changing the
-selection mid-live-send would silently aim the next keystroke at another pane" (`input.rs:4486-4490`). **[comment]** <!-- consolidation: unconfirmed; ref: docs/architecture/application-boundaries.md#ui-controller-and-modules; reason: Explicit input targeting is required but adopting this specific list-scroll suppression guard has no approval. -->
+selection mid-live-send would silently aim the next keystroke at another pane" (`input.rs:4486-4490`). **[comment]** <!-- consolidation: unconfirmed; ref: docs/architecture/application-boundaries.md#ui-controller-feature-modules-renderer-and-terminal-host; reason: Explicit input targeting is required but adopting this specific list-scroll suppression guard has no approval. -->
 
 ### 4.8 The exec layer
 
@@ -389,17 +391,17 @@ Single construction point `tmux_command()` (`src/tmux/mod.rs:160`). **[code]** <
 Cargo.toml:31; grep for `control-mode|control_mode|--mode|notify` returns nothing. **[code]** <!-- consolidation: discard; ref: none; reason: External dependency and control-connection source inventory. -->
 
 **[inference]** Every call pays fork + socket connect + tmux parse/format. The only lever is reducing
-fork count. <!-- consolidation: discard; ref: none; reason: External per-call fork and socket/format overhead characterization. --> <!-- consolidation: unconfirmed; ref: docs/adr/README.md#record-and-approval-process; reason: Claim that reducing fork count is the only available optimization is not established by external source absence. -->
+fork count. <!-- consolidation: discard; ref: none; reason: External per-call fork and socket/format overhead characterization. --> <!-- consolidation: unconfirmed; ref: docs/adr/README.md#active-decisions; reason: Claim that reducing fork count is the only available optimization is not established by external source absence. -->
 
 ### 4.9 Socket and session naming
 
 Default tmux socket; `-S <path>` or `-L <name>` per command. Each agent gets its own session, name
 shape `_<id8>`, extra web terminals `_<id8>_t<N>`; prefixes `TERMINAL_PREFIX` /
 `CONTAINER_TERMINAL_PREFIX` / `SESSION_PREFIX`, debug builds use `aoe_dev_`
-(`src/tmux/terminal_session.rs`, name-generation tests ~`:340-372`). **[code]** <!-- consolidation: discard; ref: docs/BLUEPRINT.md#launch-context-and-terminal-transport; reason: External default-socket choice does not override explicit shared-backend selection. --> <!-- consolidation: discard; ref: none; reason: External per-agent and web-terminal naming scheme. -->
+(`src/tmux/terminal_session.rs`, name-generation tests ~`:340-372`). **[code]** <!-- consolidation: discard; ref: docs/BLUEPRINT.md#launch-context-and-shared-terminal-transport; reason: External default-socket choice does not override explicit shared-backend selection. --> <!-- consolidation: discard; ref: none; reason: External per-agent and web-terminal naming scheme. -->
 
 `host_pane_inputs` pins `HOME`/`SHELL`/`PATH` — "the shared tmux server's base env may have been
-poisoned by a sandboxed dev build." **[comment]** <!-- consolidation: discard; ref: docs/specs/sessions.md#inputs-delivered-to-the-agent; reason: External HOME/SHELL/PATH pinning is not the approved explicit launch-environment contract. -->
+poisoned by a sandboxed dev build." **[comment]** <!-- consolidation: discard; ref: docs/specs/sessions.md#starting-a-session; reason: External HOME/SHELL/PATH pinning is not the approved explicit launch-environment contract. -->
 
 ---
 
@@ -429,7 +431,7 @@ Exit chords were picked **empirically** (`live_send.rs:44-52`) — **[comment]**
 Default: `C-q` alone leaves live-send; `C-b` (`DEFAULT_LEADER`) arms the AoE menu. **[code]** <!-- consolidation: exists; ref: docs/screens/workspace.md#focus-and-constrained-terminals; reason: Ctrl+Q returning from agent input to navigation is approved. --> <!-- consolidation: discard; ref: none; reason: External Ctrl+B menu leader is not an approved local shortcut. -->
 
 **[inference]** Because the TUI owns the terminal, the outer process never leaves the foreground
-process group. Our bug is structurally impossible in this design rather than patched. <!-- consolidation: unconfirmed; ref: docs/architecture/application-boundaries.md#ui-controller-and-modules; reason: Terminal ownership alone cannot establish that every process-lifetime exit bug is impossible. -->
+process group. Our bug is structurally impossible in this design rather than patched. <!-- consolidation: unconfirmed; ref: docs/architecture/application-boundaries.md#ui-controller-feature-modules-renderer-and-terminal-host; reason: Terminal ownership alone cannot establish that every process-lifetime exit bug is impossible. -->
 
 ---
 
@@ -441,7 +443,7 @@ process group. Our bug is structurally impossible in this design rather than pat
 
 > "Shared in-process VT channel: a `tmux pipe-pane` stream feeds an in-process `vt100::Parser`, and
 > where tmux allows it the same unix socket carries keystrokes back. tmux still owns the pane. One
-> refcounted `VtChannel` per session, torn down when the last `Arc` drops." <!-- consolidation: discard; ref: none; reason: External pipe-pane to vt100 parser transport. --> <!-- consolidation: discard; ref: none; reason: External bidirectional socket input capability. --> <!-- consolidation: discard; ref: docs/BLUEPRINT.md#launch-context-and-terminal-transport; reason: External refcounted channel lifetime is not authority for shared-execution or server cleanup. -->
+> refcounted `VtChannel` per session, torn down when the last `Arc` drops." <!-- consolidation: discard; ref: none; reason: External pipe-pane to vt100 parser transport. --> <!-- consolidation: discard; ref: none; reason: External bidirectional socket input capability. --> <!-- consolidation: discard; ref: docs/BLUEPRINT.md#launch-context-and-shared-terminal-transport; reason: External refcounted channel lifetime is not authority for shared-execution or server cleanup. -->
 
 Arming (`vt.rs:2099-2108`): target `format!("{name}:^.0")` (`vt.rs:2013`), pipe command
 `format!("{} __vt-pipe {}", sh_quote(exe), sh_quote(sock_path))`, flags `-IO` on tmux 3.8+ else `-O`
@@ -455,7 +457,7 @@ stdio buffer." **[comment]** <!-- consolidation: discard; ref: none; reason: Ext
 **Cross-process exclusive lease** via `@aoe_vt_owner` / `@aoe_vt_owner_hb` / `@aoe_vt_pipe_owner`
 (`session.rs:51-55`): "pipe-pane is exclusive per pane, so only the holder pipes and everyone else
 stays on `capture-pane`" (`session.rs:52`). A second armer logs "vt: pipe owned by another process;
-using capture fallback" (`vt.rs:2024-2030`). **[code]** <!-- consolidation: discard; ref: docs/BLUEPRINT.md#launch-context-and-terminal-transport; reason: External pipe-owner lease and second-client fallback are mechanisms rather than approved local exclusivity policy. -->
+using capture fallback" (`vt.rs:2024-2030`). **[code]** <!-- consolidation: discard; ref: docs/BLUEPRINT.md#launch-context-and-shared-terminal-transport; reason: External pipe-owner lease and second-client fallback are mechanisms rather than approved local exclusivity policy. -->
 
 Every arming failure path logs and returns `None` → capture fallback (`vt.rs:2110-2115`, `:2130-2136`,
 `:2168-2179`, `:2181-2192`). **[code]** Config `[tmux] vt_live`, default on, opt out via `AOE_VT_LIVE=0` <!-- consolidation: discard; ref: none; reason: External arming-failure capture fallback. -->
@@ -465,7 +467,7 @@ Every arming failure path logs and returns `None` → capture fallback (`vt.rs:2
 (`-IO` on tmux 3.8+, else `-O`). Measured on tmux 3.7c: `-I` and `-O` are **independent flags**
 and have been since tmux 1.x; `-IO` works on 3.7c. The correct approach is a **functional probe** — <!-- consolidation: discard; ref: none; reason: External version-gate correction and measured flag availability. -->
 arm and observe — not a version check. A version gate silently downgrades to output-only on any
-tmux older than upstream first tested. <!-- consolidation: unconfirmed; ref: docs/BLUEPRINT.md#launch-context-and-terminal-transport; reason: Functional probing recommendation and applicability to the local transport require verification rather than approval by reference. -->
+tmux older than upstream first tested. <!-- consolidation: unconfirmed; ref: docs/BLUEPRINT.md#launch-context-and-shared-terminal-transport; reason: Functional probing recommendation and applicability to the local transport require verification rather than approval by reference. -->
 
 **Correction — a bare `%` in a `pipe-pane` command is mangled.** `man tmux` notes the string "may
 contain the special character sequences supported by the `status-left` option." Verified:
@@ -474,7 +476,7 @@ is silently rewritten, which can make a working feature look broken. <!-- consol
 
 **Correction — startup order is bind, then arm, then await.** The forwarder is spawned *by*
 `pipe-pane`, so it cannot dial a listener that does not yet exist. **[inference]** from prototype
-work: awaiting the dial-in before arming deadlocks until timeout. <!-- consolidation: unconfirmed; ref: docs/BLUEPRINT.md#launch-context-and-terminal-transport; reason: Bind-arm-await startup ordering is prototype evidence whose current local applicability is not established. -->
+work: awaiting the dial-in before arming deadlocks until timeout. <!-- consolidation: unconfirmed; ref: docs/BLUEPRINT.md#launch-context-and-shared-terminal-transport; reason: Bind-arm-await startup ordering is prototype evidence whose current local applicability is not established. -->
 
 Per-cycle decision (`live_send.rs:1418-1513`): sample the in-process grid by default, arming off-cycle
 via `pending_vt_arm = Some(PendingArm::spawn(...))` (`:1443-1449`) gated by `channel_arm_due`
@@ -507,7 +509,7 @@ Slower, but no seed handoff." (`home/render.rs:2069-2072`). **[code]** <!-- cons
 ## 7. Dashboard can act on agents without focusing them
 
 `a` / `A` → `ActionId::RespondToPermission` (`src/tui/home/bindings.rs:683-687`), `Context::Always`.
-Dispatch `open_permission_response_dialog()` (`home/input.rs:2776`). **[code]** <!-- consolidation: discard; ref: docs/architecture/session-harness.md#session-subscriptions-and-event-ownership; reason: External permission-response shortcut is not implied by approved permission indication. -->
+Dispatch `open_permission_response_dialog()` (`home/input.rs:2776`). **[code]** <!-- consolidation: discard; ref: docs/architecture/session-harness.md#route-runtime-events-and-observe; reason: External permission-response shortcut is not implied by approved permission indication. -->
 
 Choices (`src/tui/dialogs/permission_response.rs:41-45`): `Allow`, `AllowAlways`, `Deny`. Enter
 submits the focused choice, Esc cancels; mouse clicks route too (`input.rs:1619-1623`). **[code]** <!-- consolidation: discard; ref: none; reason: External permission response choices. --> <!-- consolidation: discard; ref: none; reason: External permission dialog keyboard and mouse interactions. -->
@@ -530,10 +532,10 @@ Per-agent tables:
 | unnamed | — | `[Enter]` / none → row hidden | `[Down, Enter]` | `src/agents.rs:846-849` <!-- consolidation: discard; ref: none; reason: External unnamed-provider mapping and unavailable-choice hiding. --> |
 
 The delay is measured, not guessed — **[comment]**: "Claude's 100ms paste completion window swallows an
-earlier Enter"; "Codex's 120ms paste-burst window swallows an earlier Enter." <!-- consolidation: discard; ref: docs/architecture/session-harness.md#readiness-evidence-and-failure-stages; reason: External Claude paste timing measurement is not local startup readiness evidence. --> <!-- consolidation: discard; ref: docs/architecture/session-harness.md#readiness-evidence-and-failure-stages; reason: External Codex paste timing measurement is not local startup readiness evidence. -->
+earlier Enter"; "Codex's 120ms paste-burst window swallows an earlier Enter." <!-- consolidation: discard; ref: docs/architecture/session-harness.md#readiness-and-identity-correlation; reason: External Claude paste timing measurement is not local startup readiness evidence. --> <!-- consolidation: discard; ref: docs/architecture/session-harness.md#readiness-and-identity-correlation; reason: External Codex paste timing measurement is not local startup readiness evidence. -->
 
 **[inference]** If we ever grow a multi-agent surface, `a` → Allow is the highest value-per-line
-dashboard action available, and the per-agent token table is the entire mechanism. <!-- consolidation: unconfirmed; ref: docs/specs/interfaces.md#session-interaction-and-feedback; reason: Proposed dashboard permission action has no recorded approval here. --> <!-- consolidation: unconfirmed; ref: docs/architecture/session-harness.md#runningexecution-interaction-contract; reason: Sufficiency of token tables for safe provider permission responses requires verification. -->
+dashboard action available, and the per-agent token table is the entire mechanism. <!-- consolidation: unconfirmed; ref: docs/specs/interfaces.md#session-interaction-and-feedback; reason: Proposed dashboard permission action has no recorded approval here. --> <!-- consolidation: unconfirmed; ref: docs/architecture/session-harness.md#runningexecution; reason: Sufficiency of token tables for safe provider permission responses requires verification. -->
 
 ---
 
@@ -594,24 +596,24 @@ Recorded so a later reader does not mistake these for settled.
 Restating §0 with the evidence now in hand. **[inference] throughout.**
 
 **The lag and the exit bug share one root cause**, and it is architectural, not a bug in either
-symptom: tmux is the UI substrate. <!-- consolidation: unconfirmed; ref: docs/architecture/application-boundaries.md#ui-controller-and-modules; reason: Repeated architectural root-cause inference is not established by the external comparison. -->
+symptom: tmux is the UI substrate. <!-- consolidation: unconfirmed; ref: docs/architecture/application-boundaries.md#ui-controller-feature-modules-renderer-and-terminal-host; reason: Repeated architectural root-cause inference is not established by the external comparison. -->
 
 Three mechanisms transfer regardless of which UI substrate is eventually chosen:
 
 1. **Background-thread tmux work + server-wide TTL snapshots** (§2). The only lever available is
-   fork count — there is no persistent connection (§4.5, §4.8). This helps under any UI. <!-- consolidation: unconfirmed; ref: docs/BLUEPRINT.md#launch-context-and-terminal-transport; reason: Proposed background TTL snapshot optimization has not been approved for the local runtime. --> <!-- consolidation: unconfirmed; ref: docs/adr/README.md#record-and-approval-process; reason: No-persistent-connection and only-fork-count generalization requires local verification. -->
+   fork count — there is no persistent connection (§4.5, §4.8). This helps under any UI. <!-- consolidation: unconfirmed; ref: docs/BLUEPRINT.md#launch-context-and-shared-terminal-transport; reason: Proposed background TTL snapshot optimization has not been approved for the local runtime. --> <!-- consolidation: unconfirmed; ref: docs/adr/README.md#active-decisions; reason: No-persistent-connection and only-fork-count generalization requires local verification. -->
 2. **Async coalescing worker for input** (§4.3). Replaces per-keystroke blocking forks; typing "hello"
-   must cost one call, not five. <!-- consolidation: unconfirmed; ref: docs/architecture/session-harness.md#runningexecution-interaction-contract; reason: Async input batching and one-call typing target are recommendations rather than approved delivery requirements. -->
+   must cost one call, not five. <!-- consolidation: unconfirmed; ref: docs/architecture/session-harness.md#runningexecution; reason: Async input batching and one-call typing target are recommendations rather than approved delivery requirements. -->
 3. **Exit-chord discipline plus the `pre_exec` signal reset** (§5). Note that AoE's `IgnoreSignalsGuard`
    is scoped to child processes only; the reason their Ctrl+C works is not the guard, it is that the TUI
    never leaves the foreground process group. <!-- consolidation: unconfirmed; ref: docs/screens/workspace.md#focus-and-constrained-terminals; reason: Exit-chord and pre_exec transfer recommendation is not a local signal implementation contract. --> <!-- consolidation: discard; ref: none; reason: External child-scoped signal guard restates reference evidence. --> <!-- consolidation: unconfirmed; ref: none; reason: Foreground process group as the sole reason Ctrl+C works is an unverified causal inference. -->
 
 The VT-channel-over-`pipe-pane` design (§6) is what our Ink spike rediscovered independently. The
 additions the spike lacks and AoE has: the **cross-process exclusive lease**, and **keystrokes
-returning over the same socket** on tmux 3.8+. <!-- consolidation: discard; ref: none; reason: Historical independent spike rediscovery claim. --> <!-- consolidation: unconfirmed; ref: docs/BLUEPRINT.md#launch-context-and-terminal-transport; reason: Adopting an exclusive pipe lease requires distinguishing transport ownership from shared execution ownership. --> <!-- consolidation: unconfirmed; ref: docs/BLUEPRINT.md#launch-context-and-terminal-transport; reason: Bidirectional socket addition is unapproved and its repeated 3.8+ premise conflicts with this document's correction. -->
+returning over the same socket** on tmux 3.8+. <!-- consolidation: discard; ref: none; reason: Historical independent spike rediscovery claim. --> <!-- consolidation: unconfirmed; ref: docs/BLUEPRINT.md#launch-context-and-shared-terminal-transport; reason: Adopting an exclusive pipe lease requires distinguishing transport ownership from shared execution ownership. --> <!-- consolidation: unconfirmed; ref: docs/BLUEPRINT.md#launch-context-and-shared-terminal-transport; reason: Bidirectional socket addition is unapproved and its repeated 3.8+ premise conflicts with this document's correction. -->
 
 **Not recommended:** a persistent `tmux -C` control connection. It was tried and it EOFs within
-milliseconds on macOS tmux 3.x (§4.5). <!-- consolidation: unconfirmed; ref: docs/adr/README.md#record-and-approval-process; reason: External control-mode failure does not approve a local architectural prohibition. -->
+milliseconds on macOS tmux 3.x (§4.5). <!-- consolidation: unconfirmed; ref: docs/adr/README.md#active-decisions; reason: External control-mode failure does not approve a local architectural prohibition. -->
 
 ### 11.1 Prototype results (measured, not inferred)
 
@@ -637,7 +639,7 @@ The remaining 4 are 3 `capture-pane` (the 10 s authoritative floor) and 1 `displ
 | Ctrl+C while idle | §5 item 1 | PASS — process gone, status 0 <!-- consolidation: discard; ref: docs/screens/workspace.md#focus-and-constrained-terminals; reason: Prototype exit result is not verification of current navigation Ctrl+C behavior. --> |
 | Ctrl+Q | §5 item 2 | PASS — correctly does *not* exit <!-- consolidation: discard; ref: docs/screens/workspace.md#focus-and-constrained-terminals; reason: Prototype non-exit result is historical evidence rather than current acceptance verification. --> |
 
-After a clean exit: **0 live tmux servers on the private socket, 0 stray processes.** <!-- consolidation: discard; ref: docs/specs/sessions.md#live-terminal-and-client-lifetime; reason: Private-prototype teardown result must not become shared-agent termination on workspace exit. -->
+After a clean exit: **0 live tmux servers on the private socket, 0 stray processes.** <!-- consolidation: discard; ref: docs/specs/sessions.md#observe-and-detach-from-a-live-session; reason: Private-prototype teardown result must not become shared-agent termination on workspace exit. -->
 
 **Three premises in this document are wrong, corrected by measurement:**
 
@@ -647,7 +649,7 @@ After a clean exit: **0 live tmux servers on the private socket, 0 stray process
    The prototype sets `exitOnCtrlC: false` anyway, because with it true, `useInput`
    swallows Ctrl+C (`use-input.js:110`), making §5 item 1 unreachable. <!-- consolidation: discard; ref: none; reason: Historical prototype Ink flag workaround. -->
 2. The `-IO` "tmux 3.8+" gate is wrong — `-I`/`-O` are independent since tmux 1.x.
-   Capability-probe functionally instead. <!-- consolidation: discard; ref: none; reason: Repeated measured tmux IO version correction. --> <!-- consolidation: unconfirmed; ref: docs/BLUEPRINT.md#launch-context-and-terminal-transport; reason: Functional-probe prescription remains an unapproved transport recommendation. -->
+   Capability-probe functionally instead. <!-- consolidation: discard; ref: none; reason: Repeated measured tmux IO version correction. --> <!-- consolidation: unconfirmed; ref: docs/BLUEPRINT.md#launch-context-and-shared-terminal-transport; reason: Functional-probe prescription remains an unapproved transport recommendation. -->
 3. tmux runs `%` substitution on `pipe-pane` command strings. Unescaped `%` in a path
    is silently expanded. <!-- consolidation: discard; ref: none; reason: Repeated external pipe-command percent expansion finding. -->
 
@@ -656,7 +658,7 @@ After a clean exit: **0 live tmux servers on the private socket, 0 stray process
 ## 12. Cross-references
 
 - `docs/tmux-layer-spec.md` — our own tmux boundary (`TmuxWorkspaceServer`, `TmuxCommandResult`,
-  `SESSION_ABSENT`, `tmux-pane-lookup.ts`). The layer this document's §2 mechanisms would land in. <!-- consolidation: discard; ref: none; reason: Historical boundary symbol navigation. --> <!-- consolidation: unconfirmed; ref: docs/BLUEPRINT.md#launch-context-and-terminal-transport; reason: Proposed landing layer for snapshot mechanisms is not an approved implementation assignment. -->
+  `SESSION_ABSENT`, `tmux-pane-lookup.ts`). The layer this document's §2 mechanisms would land in. <!-- consolidation: discard; ref: none; reason: Historical boundary symbol navigation. --> <!-- consolidation: unconfirmed; ref: docs/BLUEPRINT.md#launch-context-and-shared-terminal-transport; reason: Proposed landing layer for snapshot mechanisms is not an approved implementation assignment. -->
 - `docs/tmux-call-sites.md` — our 56-invocation inventory. <!-- consolidation: discard; ref: none; reason: Historical invocation-count inventory navigation. -->
 - `docs/BACK-728-handoff.md` — our measured baseline and root-cause diagnosis. <!-- consolidation: discard; ref: none; reason: Historical diagnostic source navigation rather than independent approval of its diagnosis. -->
 - `docs/aoe-lifecycle-comparison.md` — stage-by-stage comparison of AOE's lifecycle against ours (S0-S11),
@@ -666,11 +668,11 @@ After a clean exit: **0 live tmux servers on the private socket, 0 stray process
 
 ## 13. OpenTUI cursor comparison (2026-10-05)
 
-This comparison records the pre-native OpenTUI adapter. It is historical: the user subsequently approved `EmbeddedTerminalRenderable` behavior, including native scrolling and controls. <!-- consolidation: discard; ref: none; reason: Pre-native comparison is explicitly historical implementation evidence. --> <!-- consolidation: integrate; ref: docs/architecture/application-boundaries.md#ui-controller-and-modules; reason: Recorded user approval of native embedded-terminal behavior including scrolling and controls is missing from the core contract. -->
+This comparison records the pre-native OpenTUI adapter. It is historical: the user subsequently approved `EmbeddedTerminalRenderable` behavior, including native scrolling and controls. <!-- consolidation: discard; ref: none; reason: Pre-native comparison is explicitly historical implementation evidence. --> <!-- consolidation: integrate; ref: docs/architecture/application-boundaries.md#ui-controller-feature-modules-renderer-and-terminal-host; reason: Recorded user approval of native embedded-terminal behavior including scrolling and controls is missing from the core contract. -->
 
 | Concern | AOE | Pre-native OpenTUI adapter |
 |---|---|---|
-| Passive preview | No hardware cursor; captured output remains active after leaving live-send. | No hardware cursor outside agent focus; the task's host survives navigation. <!-- consolidation: discard; ref: none; reason: External passive-preview cursor hiding. --> <!-- consolidation: discard; ref: none; reason: External capture continuation after live-send. --> <!-- consolidation: discard; ref: none; reason: Historical local passive cursor hiding. --> <!-- consolidation: discard; ref: docs/architecture/application-boundaries.md#ui-controller-and-modules; reason: Historical retained-host implementation is distinct from approved execution survival on navigation. --> |
+| Passive preview | No hardware cursor; captured output remains active after leaving live-send. | No hardware cursor outside agent focus; the task's host survives navigation. <!-- consolidation: discard; ref: none; reason: External passive-preview cursor hiding. --> <!-- consolidation: discard; ref: none; reason: External capture continuation after live-send. --> <!-- consolidation: discard; ref: none; reason: Historical local passive cursor hiding. --> <!-- consolidation: discard; ref: docs/architecture/application-boundaries.md#ui-controller-feature-modules-renderer-and-terminal-host; reason: Historical retained-host implementation is distinct from approved execution survival on navigation. --> |
 | Live-input gate | Cursor requires live-send, zero preview scroll offset, and reliable position. | Cursor requires Tab focus and an in-bounds position. No local history viewport or reliability flag exists. <!-- consolidation: discard; ref: none; reason: External cursor visibility gate. --> <!-- consolidation: discard; ref: docs/screens/workspace.md#focus-and-constrained-terminals; reason: Historical Tab-focus cursor gate predates approved mode cycling. --> <!-- consolidation: discard; ref: none; reason: Historical absence of local history and reliability tracking. --> |
 | Position | Maps pane coordinates through preview origin, captured-line range, clipping, and split-pane geometry. | Adds the output node's origin to xterm coordinates, with OpenTUI's one-based cursor offset. This covers the current single-pane live viewport, not split panes or scrollback. <!-- consolidation: discard; ref: none; reason: External preview cursor coordinate mapping. --> <!-- consolidation: discard; ref: none; reason: Historical local coordinate adapter and single-pane limitation. --> |
 | Visibility | Honors pane DECTCEM (`?25h` / `?25l`), including alternate screen. | Both host cursor routes currently return `visible: true`. The separate snapshot cursor suppresses alternate screen, but the live adapter does not use it. Neither rule matches AOE's pane-visibility semantics. <!-- consolidation: discard; ref: none; reason: External DECTCEM visibility implementation. --> <!-- consolidation: discard; ref: none; reason: Historical local host cursor visibility defect. --> <!-- consolidation: discard; ref: none; reason: Historical unused snapshot alternate-screen suppression differs from external semantics. --> |
@@ -691,18 +693,18 @@ Historical implementation anchors were `mountWorkspaceAgent`, `AgentHost.cursor`
 
 ### Native terminal cutover
 
-`createWorkspaceAgent` creates one `EmbeddedTerminalRenderable` per agent. The controller retains that terminal across task navigation, while tmux streams raw output into it. OpenTUI owns ANSI styling, cursor visibility and shape, scrollback, selection, key encoding, paste, and mouse reporting. <!-- consolidation: discard; ref: none; reason: Factory name and one-renderable-per-agent construction are source inventory. --> <!-- consolidation: unconfirmed; ref: docs/architecture/application-boundaries.md#ui-controller-and-modules; reason: Retaining a particular terminal instance across task navigation exceeds core execution-survival and attachment guarantees. --> <!-- consolidation: discard; ref: docs/BLUEPRINT.md#launch-context-and-terminal-transport; reason: Specific tmux-to-native-renderable wiring is implementation evidence beyond the approved live-stream boundary. --> <!-- consolidation: unconfirmed; ref: docs/architecture/application-boundaries.md#ui-controller-and-modules; reason: OpenTUI ownership of ANSI styling lacks a precise core technology or feature contract. --> <!-- consolidation: unconfirmed; ref: docs/architecture/application-boundaries.md#ui-controller-and-modules; reason: Native cursor visibility and shape ownership lacks a precise core contract. --> <!-- consolidation: integrate; ref: docs/architecture/application-boundaries.md#ui-controller-and-modules; reason: Recorded approval of native terminal scrolling is missing from the core contract. --> <!-- consolidation: integrate; ref: docs/architecture/application-boundaries.md#ui-controller-and-modules; reason: Recorded approval of native terminal controls is missing from the core contract. --> <!-- consolidation: unconfirmed; ref: docs/architecture/session-harness.md#runningexecution-interaction-contract; reason: Delivery ownership is approved but OpenTUI key-encoding ownership is not specified. --> <!-- consolidation: unconfirmed; ref: docs/architecture/application-boundaries.md#ui-controller-and-modules; reason: Native paste handling lacks a precise core contract. --> <!-- consolidation: unconfirmed; ref: docs/architecture/application-boundaries.md#ui-controller-and-modules; reason: Native mouse reporting lacks a precise core contract. -->
+`createWorkspaceAgent` creates one `EmbeddedTerminalRenderable` per agent. The controller retains that terminal across task navigation, while tmux streams raw output into it. OpenTUI owns ANSI styling, cursor visibility and shape, scrollback, selection, key encoding, paste, and mouse reporting. <!-- consolidation: discard; ref: none; reason: Factory name and one-renderable-per-agent construction are source inventory. --> <!-- consolidation: unconfirmed; ref: docs/architecture/application-boundaries.md#ui-controller-feature-modules-renderer-and-terminal-host; reason: Retaining a particular terminal instance across task navigation exceeds core execution-survival and attachment guarantees. --> <!-- consolidation: discard; ref: docs/BLUEPRINT.md#launch-context-and-shared-terminal-transport; reason: Specific tmux-to-native-renderable wiring is implementation evidence beyond the approved live-stream boundary. --> <!-- consolidation: unconfirmed; ref: docs/architecture/application-boundaries.md#ui-controller-feature-modules-renderer-and-terminal-host; reason: OpenTUI ownership of ANSI styling lacks a precise core technology or feature contract. --> <!-- consolidation: unconfirmed; ref: docs/architecture/application-boundaries.md#ui-controller-feature-modules-renderer-and-terminal-host; reason: Native cursor visibility and shape ownership lacks a precise core contract. --> <!-- consolidation: integrate; ref: docs/architecture/application-boundaries.md#ui-controller-feature-modules-renderer-and-terminal-host; reason: Recorded approval of native terminal scrolling is missing from the core contract. --> <!-- consolidation: integrate; ref: docs/architecture/application-boundaries.md#ui-controller-feature-modules-renderer-and-terminal-host; reason: Recorded approval of native terminal controls is missing from the core contract. --> <!-- consolidation: unconfirmed; ref: docs/architecture/session-harness.md#runningexecution; reason: Delivery ownership is approved but OpenTUI key-encoding ownership is not specified. --> <!-- consolidation: unconfirmed; ref: docs/architecture/application-boundaries.md#ui-controller-feature-modules-renderer-and-terminal-host; reason: Native paste handling lacks a precise core contract. --> <!-- consolidation: unconfirmed; ref: docs/architecture/application-boundaries.md#ui-controller-feature-modules-renderer-and-terminal-host; reason: Native mouse reporting lacks a precise core contract. -->
 
-Public CLI smoke checks for the native cutover verified styled output, Unicode, application cursor keys, bracketed paste, pane-local mouse coordinates, hidden cursors away from the live tail, retained drafts in real opencode, resizing, and clean terminal restoration. That baseline forwarded `Ctrl+C` to the focused agent; the subsequent workspace pass changes it to leave agent input, like `Ctrl+Q`. The mirror suppresses its terminal-query responses because tmux already answers them. <!-- consolidation: discard; ref: none; reason: Historical styled-output smoke evidence is not current verification. --> <!-- consolidation: discard; ref: none; reason: Historical Unicode smoke evidence is not current verification. --> <!-- consolidation: discard; ref: none; reason: Historical application-cursor-key smoke evidence. --> <!-- consolidation: discard; ref: none; reason: Historical bracketed-paste smoke evidence. --> <!-- consolidation: discard; ref: none; reason: Historical pane-local mouse-coordinate smoke evidence. --> <!-- consolidation: discard; ref: none; reason: Historical hidden-cursor-away-from-tail smoke evidence. --> <!-- consolidation: discard; ref: none; reason: Historical real-opencode draft-retention smoke evidence. --> <!-- consolidation: discard; ref: none; reason: Historical terminal-resize smoke evidence. --> <!-- consolidation: discard; ref: none; reason: Historical terminal-restoration smoke evidence. --> <!-- consolidation: discard; ref: docs/screens/workspace.md#focus-and-constrained-terminals; reason: Baseline focused Ctrl+C forwarding is superseded. --> <!-- consolidation: exists; ref: docs/screens/workspace.md#focus-and-constrained-terminals; reason: Ctrl+C and Ctrl+Q leave agent input without interrupting execution. --> <!-- consolidation: unconfirmed; ref: docs/BLUEPRINT.md#launch-context-and-terminal-transport; reason: Query-response suppression is a specific claimed transport safeguard not established by the generic single-writer contract. -->
+Public CLI smoke checks for the native cutover verified styled output, Unicode, application cursor keys, bracketed paste, pane-local mouse coordinates, hidden cursors away from the live tail, retained drafts in real opencode, resizing, and clean terminal restoration. That baseline forwarded `Ctrl+C` to the focused agent; the subsequent workspace pass changes it to leave agent input, like `Ctrl+Q`. The mirror suppresses its terminal-query responses because tmux already answers them. <!-- consolidation: discard; ref: none; reason: Historical styled-output smoke evidence is not current verification. --> <!-- consolidation: discard; ref: none; reason: Historical Unicode smoke evidence is not current verification. --> <!-- consolidation: discard; ref: none; reason: Historical application-cursor-key smoke evidence. --> <!-- consolidation: discard; ref: none; reason: Historical bracketed-paste smoke evidence. --> <!-- consolidation: discard; ref: none; reason: Historical pane-local mouse-coordinate smoke evidence. --> <!-- consolidation: discard; ref: none; reason: Historical hidden-cursor-away-from-tail smoke evidence. --> <!-- consolidation: discard; ref: none; reason: Historical real-opencode draft-retention smoke evidence. --> <!-- consolidation: discard; ref: none; reason: Historical terminal-resize smoke evidence. --> <!-- consolidation: discard; ref: none; reason: Historical terminal-restoration smoke evidence. --> <!-- consolidation: discard; ref: docs/screens/workspace.md#focus-and-constrained-terminals; reason: Baseline focused Ctrl+C forwarding is superseded. --> <!-- consolidation: exists; ref: docs/screens/workspace.md#focus-and-constrained-terminals; reason: Ctrl+C and Ctrl+Q leave agent input without interrupting execution. --> <!-- consolidation: unconfirmed; ref: docs/BLUEPRINT.md#launch-context-and-shared-terminal-transport; reason: Query-response suppression is a specific claimed transport safeguard not established by the generic single-writer contract. -->
 
-Native behavior is intentionally not an AOE reimplementation. OpenTUI handles normal-buffer history scrolling and mouse-enabled alternate-screen input. The workspace does not add AOE's alternate-screen PageUp/PageDown fallback or custom Shift+Page history handling. <!-- consolidation: exists; ref: docs/SPEC.md#authority; reason: External behavior does not define approved local requirements. --> <!-- consolidation: integrate; ref: docs/architecture/application-boundaries.md#ui-controller-and-modules; reason: Recorded approval of native terminal scrolling is missing from the core contract. --> <!-- consolidation: unconfirmed; ref: docs/screens/workspace.md#focus-and-constrained-terminals; reason: Native mouse-enabled alternate-screen behavior is absent from the precise workspace contract. --> <!-- consolidation: unconfirmed; ref: docs/screens/workspace.md#focus-and-constrained-terminals; reason: Explicit exclusion of alternate-screen paging fallback needs confirmed disposition rather than inference from core silence. --> <!-- consolidation: unconfirmed; ref: docs/screens/workspace.md#focus-and-constrained-terminals; reason: Explicit exclusion of custom Shift+Page handling needs confirmed disposition rather than inference from core silence. -->
+Native behavior is intentionally not an AOE reimplementation. OpenTUI handles normal-buffer history scrolling and mouse-enabled alternate-screen input. The workspace does not add AOE's alternate-screen PageUp/PageDown fallback or custom Shift+Page history handling. <!-- consolidation: unconfirmed; ref: none; reason: External behavior does not define approved local requirements. --> <!-- consolidation: integrate; ref: docs/architecture/application-boundaries.md#ui-controller-feature-modules-renderer-and-terminal-host; reason: Recorded approval of native terminal scrolling is missing from the core contract. --> <!-- consolidation: unconfirmed; ref: docs/screens/workspace.md#focus-and-constrained-terminals; reason: Native mouse-enabled alternate-screen behavior is absent from the precise workspace contract. --> <!-- consolidation: unconfirmed; ref: docs/screens/workspace.md#focus-and-constrained-terminals; reason: Explicit exclusion of alternate-screen paging fallback needs confirmed disposition rather than inference from core silence. --> <!-- consolidation: unconfirmed; ref: docs/screens/workspace.md#focus-and-constrained-terminals; reason: Explicit exclusion of custom Shift+Page handling needs confirmed disposition rather than inference from core silence. -->
 
 ### Fullscreen reference for the next workspace pass
 
-AOE's full-window attach path is a presentation reference, not a terminal-ownership design to copy. At upstream commit `0a17c859173a8794abfb55ae7e8038c4c4b17e7d`: <!-- consolidation: exists; ref: docs/SPEC.md#authority; reason: External presentation reference does not authorize copying runtime ownership. -->
+AOE's full-window attach path is a presentation reference, not a terminal-ownership design to copy. At upstream commit `0a17c859173a8794abfb55ae7e8038c4c4b17e7d`: <!-- consolidation: unconfirmed; ref: none; reason: External presentation reference does not authorize copying runtime ownership. -->
 
 - [Activation dispatch](https://github.com/agent-of-empires/agent-of-empires/blob/0a17c859173a8794abfb55ae7e8038c4c4b17e7d/src/tui/home/input.rs#L4030-L4100) chooses embedded live-send or session attachment. <!-- consolidation: discard; ref: none; reason: External fullscreen activation dispatch. -->
 - [Attach sizing](https://github.com/agent-of-empires/agent-of-empires/blob/0a17c859173a8794abfb55ae7e8038c4c4b17e7d/src/tui/app.rs#L2680-L2705) gives the pane the client dimensions, attaches, then restores preview sizing. <!-- consolidation: discard; ref: none; reason: External attach sizing and preview restoration. -->
-- [Terminal handoff](https://github.com/agent-of-empires/agent-of-empires/blob/0a17c859173a8794abfb55ae7e8038c4c4b17e7d/src/tui/app.rs#L412-L473) releases raw-mode, alternate-screen, and input ownership around tmux attachment, then restores the TUI. <!-- consolidation: discard; ref: docs/architecture/application-boundaries.md#ui-controller-and-modules; reason: External terminal handoff is not the local retained-preview presentation contract. -->
+- [Terminal handoff](https://github.com/agent-of-empires/agent-of-empires/blob/0a17c859173a8794abfb55ae7e8038c4c4b17e7d/src/tui/app.rs#L412-L473) releases raw-mode, alternate-screen, and input ownership around tmux attachment, then restores the TUI. <!-- consolidation: discard; ref: docs/architecture/application-boundaries.md#ui-controller-feature-modules-renderer-and-terminal-host; reason: External terminal handoff is not the local retained-preview presentation contract. -->
 
-AgenticWorkspace's `f` instead expands the same retained `EmbeddedTerminalRenderable` and hides workspace chrome. It does not run `tmux attach` or install another terminal emulator. OpenTUI keeps input, rendering, cursor, and scrolling ownership in both embedded and fullscreen views. `Ctrl+C` and `Ctrl+Q` return to navigation without interrupting the agent. <!-- consolidation: exists; ref: docs/screens/workspace.md#focus-and-constrained-terminals; reason: f expands the same retained terminal fullscreen. --> <!-- consolidation: unconfirmed; ref: docs/adr/README.md#active-accepted-decisions; reason: Specific EmbeddedTerminalRenderable implementation is not established by the generic retained-terminal contract. --> <!-- consolidation: unconfirmed; ref: docs/screens/workspace.md#focus-and-constrained-terminals; reason: Hiding workspace chrome must preserve the approved visible Ctrl+Q hint row and exact remaining chrome is not specified. --> <!-- consolidation: unconfirmed; ref: docs/architecture/application-boundaries.md#ui-controller-and-modules; reason: Explicit prohibition of tmux attach is more specific than the approved terminal-host attachment boundary. --> <!-- consolidation: exists; ref: docs/screens/workspace.md#focus-and-constrained-terminals; reason: Fullscreen retains the same terminal instead of introducing another emulator. --> <!-- consolidation: unconfirmed; ref: docs/architecture/application-boundaries.md#ui-controller-and-modules; reason: OpenTUI-specific input ownership across both views lacks a precise core technology contract. --> <!-- consolidation: unconfirmed; ref: docs/architecture/application-boundaries.md#ui-controller-and-modules; reason: OpenTUI-specific rendering ownership across both views lacks a precise core technology contract. --> <!-- consolidation: unconfirmed; ref: docs/architecture/application-boundaries.md#ui-controller-and-modules; reason: OpenTUI-specific cursor ownership across both views lacks a precise core contract. --> <!-- consolidation: unconfirmed; ref: docs/architecture/application-boundaries.md#ui-controller-and-modules; reason: OpenTUI-specific scrolling ownership across both views lacks a precise core contract. --> <!-- consolidation: exists; ref: docs/screens/workspace.md#focus-and-constrained-terminals; reason: Both exit chords return to navigation without interrupting the agent. -->
+AgenticWorkspace's `f` instead expands the same retained `EmbeddedTerminalRenderable` and hides workspace chrome. It does not run `tmux attach` or install another terminal emulator. OpenTUI keeps input, rendering, cursor, and scrolling ownership in both embedded and fullscreen views. `Ctrl+C` and `Ctrl+Q` return to navigation without interrupting the agent. <!-- consolidation: exists; ref: docs/screens/workspace.md#focus-and-constrained-terminals; reason: f expands the same retained terminal fullscreen. --> <!-- consolidation: unconfirmed; ref: docs/adr/README.md#active-decisions; reason: Specific EmbeddedTerminalRenderable implementation is not established by the generic retained-terminal contract. --> <!-- consolidation: unconfirmed; ref: docs/screens/workspace.md#focus-and-constrained-terminals; reason: Hiding workspace chrome must preserve the approved visible Ctrl+Q hint row and exact remaining chrome is not specified. --> <!-- consolidation: unconfirmed; ref: docs/architecture/application-boundaries.md#ui-controller-feature-modules-renderer-and-terminal-host; reason: Explicit prohibition of tmux attach is more specific than the approved terminal-host attachment boundary. --> <!-- consolidation: exists; ref: docs/screens/workspace.md#focus-and-constrained-terminals; reason: Fullscreen retains the same terminal instead of introducing another emulator. --> <!-- consolidation: unconfirmed; ref: docs/architecture/application-boundaries.md#ui-controller-feature-modules-renderer-and-terminal-host; reason: OpenTUI-specific input ownership across both views lacks a precise core technology contract. --> <!-- consolidation: unconfirmed; ref: docs/architecture/application-boundaries.md#ui-controller-feature-modules-renderer-and-terminal-host; reason: OpenTUI-specific rendering ownership across both views lacks a precise core technology contract. --> <!-- consolidation: unconfirmed; ref: docs/architecture/application-boundaries.md#ui-controller-feature-modules-renderer-and-terminal-host; reason: OpenTUI-specific cursor ownership across both views lacks a precise core contract. --> <!-- consolidation: unconfirmed; ref: docs/architecture/application-boundaries.md#ui-controller-feature-modules-renderer-and-terminal-host; reason: OpenTUI-specific scrolling ownership across both views lacks a precise core contract. --> <!-- consolidation: exists; ref: docs/screens/workspace.md#focus-and-constrained-terminals; reason: Both exit chords return to navigation without interrupting the agent. -->

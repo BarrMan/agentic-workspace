@@ -2,22 +2,24 @@
 consolidation:
   total: 480
   counts:
-    exists: 4
+    exists: 1
     discard: 472
     integrate: 4
-    unconfirmed: 0
+    unconfirmed: 3
   percentages:
-    exists: 0.83%
+    exists: 0.21%
     discard: 98.33%
     integrate: 0.83%
-    unconfirmed: 0.00%
+    unconfirmed: 0.63%
 ---
 # AoE Functionality Map (canonical)
+> **Non-authoritative supporting material.** This file is not a contract. Authoritative owner(s): [PRODUCT](PRODUCT.md), [SPEC](SPEC.md), [BLUEPRINT](BLUEPRINT.md), [CONVENTIONS](CONVENTIONS.md).
+> Disposition: Historical — discard.
 
 Agent-of-Empires (AoE) functionality reference, assembled from the pinned source audit and six
 domain lane artifacts. This is a **reference for aligning Backlog**, not an implementation plan,
 not artifact approval, and not a green-light to resume Backlog implementation.
-<!-- consolidation: exists; ref: docs/SPEC.md#authority; reason: Reference evidence is not approval or implementation authorization. -->
+<!-- consolidation: unconfirmed; ref: none; reason: Reference evidence is not approval or implementation authorization. -->
 
 ## 1. Purpose, pin, how to use, authority & limits
 
@@ -67,16 +69,16 @@ not artifact approval, and not a green-light to resume Backlog implementation.
 **Critical honesty rules applied here** (mirrors the inventory's evidence limits):
 
 1. A name, file match, screenshot, or doc sentence is **not** flow evidence.
-<!-- consolidation: integrate; ref: docs/CONVENTIONS.md#checks-and-test-ownership; reason: Preserve presence evidence versus inspected execution flow distinction. -->
+<!-- consolidation: integrate; ref: docs/CONVENTIONS.md#testing; reason: Preserve presence evidence versus inspected execution flow distinction. -->
 2. Field names in terse baselines are **names, not verified defaults or semantics** unless a lane
    read the default.
-<!-- consolidation: integrate; ref: docs/CONVENTIONS.md#checks-and-test-ownership; reason: Preserve rule against inferring defaults and semantics from names. -->
+<!-- consolidation: integrate; ref: docs/CONVENTIONS.md#testing; reason: Preserve rule against inferring defaults and semantics from names. -->
 3. `[S]`/`[G]`/`PENDING` are **never** promoted to verified fact. Lane PENDING lists are carried into
    the Gaps lines.
-<!-- consolidation: exists; ref: docs/SPEC.md#evidence-and-decisions; reason: Unverified evidence remains unverified rather than becoming completed alignment. -->
+<!-- consolidation: unconfirmed; ref: none; reason: Unverified evidence remains unverified rather than becoming completed alignment. -->
 4. Absence in one grep is **not** proof of absence; the inventory's own failed AGENTS extractor is
    called out as a non-result.
-<!-- consolidation: integrate; ref: docs/CONVENTIONS.md#checks-and-test-ownership; reason: Preserve incomplete search versus proven absence distinction. -->
+<!-- consolidation: integrate; ref: docs/CONVENTIONS.md#testing; reason: Preserve incomplete search versus proven absence distinction. -->
 
 **Overall feature-level breakdown (97 features).**
 
@@ -191,7 +193,7 @@ file:fn:line (`path:line` per the lane; blob base per §1); **grade** + **gaps**
 
 #### S04 — Stop [F]
 - **WHAT.** Stop a running session without deleting row/conversation/worktree.
-<!-- consolidation: exists; ref: docs/specs/sessions.md#stopping-and-exact-resume; reason: Stopping retains the conversation and is distinct from resource deletion. -->
+<!-- consolidation: exists; ref: docs/specs/sessions.md#stop-and-resume-a-session; reason: Stopping retains the conversation and is distinct from resource deletion. -->
 - **HOW.** `stop_session`: resolve → `bail_if_acp` → probe tmux + container → early-return if neither
   running → `working.stop()` → verify row still exists. No confirmation prompt.
 <!-- consolidation: discard; ref: none; reason: External stop flow and confirmation policy. -->
@@ -203,7 +205,7 @@ file:fn:line (`path:line` per the lane; blob base per §1); **grade** + **gaps**
 
 #### S05 — Restart / change engine / wake prompt [F]
 - **WHAT.** Stop+start with resume policy and post-restart wake message.
-<!-- consolidation: discard; ref: docs/specs/sessions.md#startup-completion; reason: External wake behavior does not authorize synthetic resume input. -->
+<!-- consolidation: discard; ref: docs/specs/sessions.md#starting-a-session; reason: External wake behavior does not authorize synthetic resume input. -->
 - **HOW.** `restart_session_dispatch` (`--all` uses a parallel semaphore, skips the current tmux
   session) → `restart_session`: resolve → `bail_if_acp` → `restart_with_resume_policy(...,
   HonorAutoResumeSetting)` → wake msg from `config.session.restart_wake_message` (default
@@ -212,7 +214,7 @@ file:fn:line (`path:line` per the lane; blob base per §1); **grade** + **gaps**
 <!-- consolidation: discard; ref: none; reason: External restart flow. -->
 - **Outcomes.** `ResumeFailed` bails preserving sid; `FreshAfterFailedResume` prints old conversation
   still reachable; `Resumed`/`Fresh` success.
-<!-- consolidation: discard; ref: docs/specs/sessions.md#stopping-and-exact-resume; reason: Fresh fallback conflicts with explicit new-conversation consent. -->
+<!-- consolidation: discard; ref: docs/specs/sessions.md#stop-and-resume-a-session; reason: Fresh fallback conflicts with explicit new-conversation consent. -->
 - **Source.** `…/src/cli/session.rs::restart_session`; `session/restart.rs`.
 - **Gaps.** `instance/{resume,start,lifecycle}.rs` partial-mutation error paths.
 <!-- consolidation: discard; ref: none; reason: External audit follow-up. -->
@@ -226,7 +228,7 @@ file:fn:line (`path:line` per the lane; blob base per §1); **grade** + **gaps**
 - **list.** `cli/list.rs::run` state filter `SessionScope`, JSON vs nested table `nest_children`,
   `--all` across profiles. <!-- consolidation: discard; ref: none; reason: External list flow. --> **status.** `cli/status.rs::run` refreshes tmux cache, `update_status_once`
   + `self_heal_session_id`, counts (Unknown/Starting→idle; Deleting/Creating not counted).
-<!-- consolidation: discard; ref: docs/specs/sessions.md#identity-and-observed-state; reason: External counting policy does not preserve approved unknown-state distinction. -->
+<!-- consolidation: discard; ref: docs/specs/sessions.md#sessions; reason: External counting policy does not preserve approved unknown-state distinction. -->
 - **show.** id else current-tmux; `refresh_session_cache`; `update_status_once`; `self_heal_session_id`;
   JSON details or plain + `relationship_lines` (parent/children). <!-- consolidation: discard; ref: none; reason: External show flow. --> **current.** scans
   `list_profiles()` × `load_with_groups` for the current tmux session.
@@ -521,7 +523,7 @@ file:fn:line (`path:line` per the lane; blob base per §1); **grade** + **gaps**
   one of `contains`/`regex`; `effective_detect_as` (persisted wins). Precedence: configured rules ≻
   built-in manifest ≻ hook-only Idle; stale hooks bounded by `read_hook_status_age` vs manifest
   `max_age`.
-<!-- consolidation: discard; ref: docs/specs/sessions.md#identity-and-observed-state; reason: AoE idle fallback cannot establish approved unknown-state behavior. -->
+<!-- consolidation: discard; ref: docs/specs/sessions.md#sessions; reason: AoE idle fallback cannot establish approved unknown-state behavior. -->
 - **Config/defaults.** `AgentRuntimeConfig{status_map,status_rules}`, `StatusRule{status,contains,
   regex}`, `SessionConfig.agent_status_hooks`, `merge_hooks_into_selected_agent`.
 <!-- consolidation: discard; ref: none; reason: External detection settings. -->
@@ -684,7 +686,7 @@ file:fn:line (`path:line` per the lane; blob base per §1); **grade** + **gaps**
 
 #### W02 — Worktree/branch creation and templates [F]
 - **WHAT.** Create worktrees/branches from session creation flags.
-<!-- consolidation: discard; ref: docs/specs/tasks.md#work-context-and-completion; reason: AoE creation flags are reference inventory rather than task first-launch policy. -->
+<!-- consolidation: discard; ref: docs/specs/tasks.md#launching-work-and-completing-a-task; reason: AoE creation flags are reference inventory rather than task first-launch policy. -->
 - **HOW.** `create_worktree(branch,path,create_branch,base_branch)`: guard `path.exists()` →
   `WorktreeAlreadyExists`; unlock+prune; `create_branch=true`: `fetch_base` + `create_branch_from_base`
   (explicit base missing = `BranchNotFound`); `=false`: `fetch_with_warning` + `ensure_branch_exists`;
@@ -1018,7 +1020,7 @@ file:fn:line (`path:line` per the lane; blob base per §1); **grade** + **gaps**
   `compact_aliases`, `clear_requires_driven_reset`, `supports_exit_plan_mode`, `supports_wakeup_tools`,
   `emits_heartbeat_keepalives`, `yolo_mode_id`, ...). `option_catalog.rs` caches advertised
   descriptors (0600 atomic, debounced).
-<!-- consolidation: discard; ref: docs/specs/sessions.md#stopping-and-exact-resume; reason: External switching cannot authorize implicit fresh-conversation replacement. -->
+<!-- consolidation: discard; ref: docs/specs/sessions.md#stop-and-resume-a-session; reason: External switching cannot authorize implicit fresh-conversation replacement. -->
 - **Config/defaults.** Profiles: DEFAULT + 11 agent profiles; `AcpAgentDefaults`.
 <!-- consolidation: discard; ref: none; reason: External profile defaults. -->
 - **Source.** `…/src/server/api/acp/worker.rs`; `src/acp/{agent_profiles,option_catalog,agent_policy}.rs`.
@@ -1037,7 +1039,7 @@ file:fn:line (`path:line` per the lane; blob base per §1); **grade** + **gaps**
 <!-- consolidation: discard; ref: none; reason: External provider-switch transaction. -->
 - **Note.** "The conversation survives: provider changes where tokens are served from, not which
   transcript is resumed."
-<!-- consolidation: discard; ref: docs/PRODUCT.md#open-questions; reason: AoE cross-service provider switching is reference evidence rather than an approved provider-support guarantee. -->
+<!-- consolidation: discard; ref: docs/PRODUCT.md#open-product-decisions; reason: AoE cross-service provider switching is reference evidence rather than an approved provider-support guarantee. -->
 - **Source.** `…/src/server/api/acp/worker.rs`; `src/acp/sandbox.rs`; `src/session/environment.rs`.
 - **Gaps.** Exact provider env matrix.
 <!-- consolidation: discard; ref: none; reason: External audit follow-up. -->
@@ -1223,11 +1225,11 @@ file:fn:line (`path:line` per the lane; blob base per §1); **grade** + **gaps**
   `!profile_overridable` fields) → `AOE_CITYHALL_MODE`-gated CityHall overrides → repo fields → launch
   overrides. `REPO_OVERRIDABLE_SECTIONS=["hooks","session","sandbox","worktree","updates"]`;
   `repo_may_override_field = profile_overridable && repo_policy==Allow`.
-<!-- consolidation: discard; ref: docs/specs/configuration.md#configuration-access-and-precedence; reason: External precedence differs from approved task-project-root resolution. -->
+<!-- consolidation: discard; ref: docs/specs/configuration.md#configuration-and-modes; reason: External precedence differs from approved task-project-root resolution. -->
 - **Config/defaults.** 23 top-level fields (all `#[serde(default)]`); `environment` grammar
   `KEY=value`/`KEY=$VAR`/`KEY=$$literal`/bare pass-through; `AOE_`/`AGENT_OF_EMPIRES_` denied in host
   passthrough.
-<!-- consolidation: discard; ref: docs/specs/sessions.md#inputs-delivered-to-the-agent; reason: External ambient environment forwarding differs from explicit launch environment. -->
+<!-- consolidation: discard; ref: docs/specs/sessions.md#starting-a-session; reason: External ambient environment forwarding differs from explicit launch environment. -->
 - **Unsupported.** No `deny_unknown_fields`; no `update_config` rollback.
 <!-- consolidation: discard; ref: none; reason: External configuration limitations. -->
 - **Source.** `…/src/session/config/{mod,profile_config}.rs`; `repo_config/mod.rs`; `session/environment.rs`.
@@ -1709,7 +1711,7 @@ file:fn:line (`path:line` per the lane; blob base per §1); **grade** + **gaps**
 - **HOW.** `reap_idle_sessions` (≤ once/60s; reads tmux attached set; per-profile
   `session.auto_stop_idle_secs`; `idle_reap_candidates` non-structured/unattached/idle-past-threshold;
   `claim_idle_stop` persists Stopped under claim then `perform_stop` ≤4 concurrent; kill failure →
-  `Status::Error`). <!-- consolidation: discard; ref: docs/specs/sessions.md#running-session-soft-limit; reason: External timeout-based reaping differs from approved capacity-triggered idle stopping. --> `update_sleep_inhibit` (≤ once/60s; desired = `prevent_sleep_when_active && any
+  `Status::Error`). <!-- consolidation: discard; ref: docs/specs/sessions.md#enforce-the-running-session-soft-limit; reason: External timeout-based reaping differs from approved capacity-triggered idle stopping. --> `update_sleep_inhibit` (≤ once/60s; desired = `prevent_sleep_when_active && any
   instance.has_recent_activity(...)`; `reconcile_sleep_inhibit` respawns a dead child; snapshot bits).
 <!-- consolidation: discard; ref: none; reason: External OS sleep inhibition flow. -->
 - **Defaults.** auto_stop_idle_secs 0 = disabled; prevent_sleep_when_active off.
@@ -1823,7 +1825,7 @@ file:fn:line (`path:line` per the lane; blob base per §1); **grade** + **gaps**
 ## 4. Cross-domain seams & non-feature/build/test boundaries
 
 These seams are where a feature's behavior spans owners; the feature owner records observable
-behavior, the named seam owner supplies contract. <!-- consolidation: discard; ref: none; reason: External audit-domain ownership convention. --> Behavior must not be inferred across a seam. <!-- consolidation: integrate; ref: docs/CONVENTIONS.md#checks-and-test-ownership; reason: Preserve the need to inspect both sides before claiming cross-boundary behavior. -->
+behavior, the named seam owner supplies contract. <!-- consolidation: discard; ref: none; reason: External audit-domain ownership convention. --> Behavior must not be inferred across a seam. <!-- consolidation: integrate; ref: docs/CONVENTIONS.md#testing; reason: Preserve the need to inspect both sides before claiming cross-boundary behavior. -->
 
 - **Creation transaction and rollback.** S01 owns it; W02/W03/W10/W11 supply git/sandbox prep
   contracts; R02/R03 native launch/identity; A02/A03 structured launch; O02/O06 UI creation/progress;
@@ -1893,7 +1895,7 @@ behavior, the named seam owner supplies contract. <!-- consolidation: discard; r
 
 Pinned-doc claims that the source contradicts, or that lack source support. **Follow the source, not
 the prose.**
-<!-- consolidation: discard; ref: docs/SPEC.md#authority; reason: Source-first rule describes external implementation evidence and cannot override this product approved intent. -->
+<!-- consolidation: discard; ref: none; reason: Source-first rule describes external implementation evidence and cannot override this product approved intent. -->
 
 1. **Structured-view default.** Pinned `docs/structured-view.md:3–5` broadly calls structured
    rendering the default in the native TUI. The same doc (lines 112–116) and `cli/add.rs::AddArgs`
@@ -1938,7 +1940,7 @@ the prose.**
 ## 6. Known remaining depth gaps per domain (for future bounded continuations)
 
 Carry these PENDING lists forward; do not treat any listed gap as verified.
-<!-- consolidation: exists; ref: docs/SPEC.md#evidence-and-decisions; reason: Unverified gaps remain open rather than being closed by documentation mapping. -->
+<!-- consolidation: unconfirmed; ref: none; reason: Unverified gaps remain open rather than being closed by documentation mapping. -->
 
 - **S.** `session/poller.rs` bodies; `session/anchored_fs.rs`; `session/instance/{start,ready,lifecycle,
   resume,kill,launch_command,identity_sidecar}` full bodies; `session/{claude_import,import,fork,claim}.rs`

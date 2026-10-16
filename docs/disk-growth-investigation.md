@@ -7,12 +7,14 @@ consolidation:
     integrate: 0
     unconfirmed: 6
   percentages:
-    exists: 3.12%
-    discard: 78.12%
+    exists: 3.13%
+    discard: 78.13%
     integrate: 0.00%
     unconfirmed: 18.75%
 ---
 # Disk growth investigation
+> **Non-authoritative supporting material.** This file is not a contract. Authoritative owner(s): [docs/CONVENTIONS.md](CONVENTIONS.md), [docs/BLUEPRINT.md](BLUEPRINT.md).
+> Disposition: Mixed — see markers.
 
 Date: 2026-10-07. Symptom: the data volume filled to 100% (under 1 GB free) while working in this repo,
 with growth of roughly 1 GB per 10 seconds at its worst. This document records what actually caused it,
@@ -45,7 +47,7 @@ Evidence gathered:
 
 Why this app amplified it: the CLI is compiled with the OpenTUI addon embedded, and the test suite spawns
 that compiled binary thousands of times per full run. Every spawn that is killed rather than exits cleanly
-drops another copy. long-lived `opencode` sessions do the same on each start or restart. <!-- consolidation: discard; ref: docs/CONVENTIONS.md#checks-and-test-ownership; reason: Historical amplification mechanism, current convention prefers source CLI tests. -->
+drops another copy. long-lived `opencode` sessions do the same on each start or restart. <!-- consolidation: discard; ref: docs/CONVENTIONS.md#testing; reason: Historical amplification mechanism, current convention prefers source CLI tests. -->
 
 ## 3. Secondary causes
 
@@ -58,8 +60,8 @@ drops another copy. long-lived `opencode` sessions do the same on each start or 
 ## 4. Prevention
 
 **In this repo:** `src/test/test-preload.ts` points each Bun test worker at a disposable OS-temp
-directory via `TMPDIR`/`TMP`/`TEMP` and removes it after the suite. <!-- consolidation: exists; ref: docs/CONVENTIONS.md#checks-and-test-ownership; reason: Shared preload owns run-scoped temp isolation and tests own resource cleanup. --> Every extraction a test spawn
-performs now dies with the run instead of accumulating in the real temp directory. <!-- consolidation: unconfirmed; ref: docs/CONVENTIONS.md#checks-and-test-ownership; reason: Absolute cleanup-on-every-exit assurance is not established for killed workers or failed teardown. -->
+directory via `TMPDIR`/`TMP`/`TEMP` and removes it after the suite. <!-- consolidation: exists; ref: docs/CONVENTIONS.md#testing; reason: Shared preload owns run-scoped temp isolation and tests own resource cleanup. --> Every extraction a test spawn
+performs now dies with the run instead of accumulating in the real temp directory. <!-- consolidation: unconfirmed; ref: docs/CONVENTIONS.md#testing; reason: Absolute cleanup-on-every-exit assurance is not established for killed workers or failed teardown. -->
 
 **For other Bun-based tools on this machine** (opencode among them) nothing in this repo can prevent the
 extraction, because the leak is in how a killed process leaves its extraction behind. <!-- consolidation: discard; ref: none; reason: Historical external-tool leak explanation, outside repository ownership. --> Two mitigations:

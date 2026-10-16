@@ -13,6 +13,8 @@ consolidation:
     unconfirmed: 10.64%
 ---
 # Projects storage map
+> **Non-authoritative supporting material.** This file is not a contract. Authoritative owner(s): [docs/PRODUCT.md](PRODUCT.md), [docs/CONVENTIONS.md](CONVENTIONS.md).
+> Disposition: Mixed — see markers.
 
 Scope: `/Users/imribarr/Projects` only. Metadata snapshot: **2026-10-13 11:34:53 IDT**. Read-only scan completed in **20.6 seconds**, within a 210-second traversal deadline. No source, logs, configuration, Git pointers, or other file contents were read. Only this report was written. <!-- consolidation: discard; ref: none; reason: Historical host audit scope and method. -->
 

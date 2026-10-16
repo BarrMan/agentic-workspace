@@ -13,6 +13,8 @@ consolidation:
     unconfirmed: 76.32%
 ---
 # Storage cleanup plan — consolidated
+> **Non-authoritative supporting material.** This file is not a contract. Authoritative owner(s): [docs/PRODUCT.md](PRODUCT.md), [docs/specs/sessions.md](specs/sessions.md), [docs/BLUEPRINT.md](BLUEPRINT.md).
+> Disposition: Mixed — see markers.
 
 Synthesized from the per-area reviews in this directory. Sizes are allocated space (**not** guaranteed reclaimable; APFS clones and sparse files mean actual recovery differs). Ordered by size within each section. <!-- consolidation: discard; ref: none; reason: Historical host accounting convention, not product storage behavior. -->
 

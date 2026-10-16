@@ -13,9 +13,11 @@ consolidation:
     unconfirmed: 13.21%
 ---
 # Decision answer sheet 7 — your follow-ups, answered with the code open
+> **Non-authoritative supporting material.** This file is not a contract. Authoritative owner(s): [SPEC](SPEC.md), [task behavior](specs/tasks.md), [sessions](specs/sessions.md), [BLUEPRINT](BLUEPRINT.md), [CONVENTIONS](CONVENTIONS.md), [screen specifications](screens/README.md).
+> Disposition: Mixed — see markers.
 
 You answered sheet 6 with questions instead of choices, which was fair — sheet 6 explained the problems but not the mechanics you were asking about. This sheet answers each question from the code, then puts the same three choices back now that the mechanics are settled. Sheet 5 (the input-during-close question) is still open and nothing here changes it.
-<!-- consolidation: discard; ref: docs/specs/sessions.md#live-terminal-and-client-lifetime; reason: Interview status is historical and sheet 8 later settles bounded in-flight draining. -->
+<!-- consolidation: discard; ref: docs/specs/sessions.md#observe-and-detach-from-a-live-session; reason: Interview status is historical and sheet 8 later settles bounded in-flight draining. -->
 
 Nothing in this sheet required a command to be run; it is read from the source and from the measurements already recorded.
 <!-- consolidation: discard; ref: none; reason: Historical evidence-acquisition note. -->
@@ -33,7 +35,7 @@ Your machine can tell a program "this file changed". The mechanism the app uses 
 <!-- consolidation: discard; ref: none; reason: Platform-specific watcher mechanics and source location are supporting external facts rather than approved product guarantees. -->
 
 That is why the check in this test is unfair at one point: it demands the notification arrive within **150 ms** (`artifact-view-live-refresh-contract.test.ts:106`), a timespan the system never committed to. A notification that is merely late fails the check.
-<!-- consolidation: discard; ref: docs/CONVENTIONS.md#checks-and-test-ownership; reason: Historical source finding motivates later approved end-result testing without fixing a permanent latency rule. -->
+<!-- consolidation: discard; ref: docs/CONVENTIONS.md#testing; reason: Historical source finding motivates later approved end-result testing without fixing a permanent latency rule. -->
 
 ### Your question: does the file's contents actually change when the test expects a notification?
 
@@ -70,24 +72,24 @@ Two different things, and only one is broken:
 <!-- consolidation: discard; ref: none; reason: Historical low-level notification assertion later rejected in sheet 8. -->
 
 The 150 ms window is the one measuring something nobody promised. The content wait is reasonable in principle — but the suite's per-test limit is 10 s while that wait is 15 s, so a slow delivery can never finish inside the limit; it becomes a timeout instead of a pass. That is the "inert" repair: the bigger internal budget can never take effect because the smaller limit around it fires first.
-<!-- consolidation: discard; ref: docs/CONVENTIONS.md#checks-and-test-ownership; reason: Historical timeout mismatch and flaky-notification diagnosis are execution evidence. -->
+<!-- consolidation: discard; ref: docs/CONVENTIONS.md#testing; reason: Historical timeout mismatch and flaky-notification diagnosis are execution evidence. -->
 
 ### The choice, now that you can see it
 
 - **A** — keep today's behaviour (the app reacts when the OS tells it); fix the check to wait for the *result* (new content on screen) instead of demanding a notification inside 150 ms. No behaviour change; the check stops being flaky.
-<!-- consolidation: integrate; ref: docs/CONVENTIONS.md#checks-and-test-ownership; reason: Sheet 8 accepts visible-result render tests rather than low-level notification timing and core lacks the distinction. -->
+<!-- consolidation: integrate; ref: docs/CONVENTIONS.md#testing; reason: Sheet 8 accepts visible-result render tests rather than low-level notification timing and core lacks the distinction. -->
 - **B** — additionally have the app re-check the file on a timer (every few seconds) so a missed notification cannot leave you staring at old content. The only version where "the app always notices" is actually true. Cost: a small periodic check while a viewer is open.
-<!-- consolidation: discard; ref: docs/specs/tasks.md#task-artifacts; reason: Sheet 8 selects no periodic recheck and does not approve this guarantee. -->
+<!-- consolidation: discard; ref: docs/specs/tasks.md#using-task-artifacts; reason: Sheet 8 selects no periodic recheck and does not approve this guarantee. -->
 - **C** — drop this case; stop testing same-size/same-mtime edits.
-<!-- consolidation: discard; ref: docs/CONVENTIONS.md#checks-and-test-ownership; reason: Sheet 8 retains end-result coverage instead of dropping the case. -->
+<!-- consolidation: discard; ref: docs/CONVENTIONS.md#testing; reason: Sheet 8 retains end-result coverage instead of dropping the case. -->
 
 **Still my recommendation: A, plus B if you want the guarantee to be real rather than assumed.**
-<!-- consolidation: discard; ref: docs/CONVENTIONS.md#checks-and-test-ownership; reason: Conditional recommendation is superseded by sheet 8's explicit re-leveling decision without polling. -->
+<!-- consolidation: discard; ref: docs/CONVENTIONS.md#testing; reason: Conditional recommendation is superseded by sheet 8's explicit re-leveling decision without polling. -->
 
 **Your answer:** First of all, this use-case is pretty absurd. Why would a file edit have the same mtime? What is this testing? A non-existing scenario? Second, I'll say this again since I already said that while anwering the tests and the binary - If this is an e2e test, then it's fine to wait a little longer until screen refreshes but please note that e2e tests are costly and should not test the whole app. They should test really basic flows and leave the detailed testing to the unit / integration / system tests. Third, if this is an e2e test, you can't expect a low level side-affect to occure, it's an e2e test and you need to expect the end result. If this is a unit test, then why are you looking at the screen renders? 
 <!-- consolidation: discard; ref: none; reason: Same-mtime scenario question is answered in sheet 8 and is not a decision to remove coverage. -->
-<!-- consolidation: integrate; ref: docs/CONVENTIONS.md#checks-and-test-ownership; reason: Explicit owner rule limits costly e2e tests to basic flows and puts detailed behavior in lower-level tests. -->
-<!-- consolidation: integrate; ref: docs/CONVENTIONS.md#checks-and-test-ownership; reason: Explicit owner rule requires end-result assertions at e2e level rather than low-level side effects or unit tests through renders. -->
+<!-- consolidation: integrate; ref: docs/CONVENTIONS.md#testing; reason: Explicit owner rule limits costly e2e tests to basic flows and puts detailed behavior in lower-level tests. -->
+<!-- consolidation: integrate; ref: docs/CONVENTIONS.md#testing; reason: Explicit owner rule requires end-result assertions at e2e level rather than low-level side effects or unit tests through renders. -->
 
 ---
 
@@ -96,7 +98,7 @@ The 150 ms window is the one measuring something nobody promised. The content wa
 ### Your question: are you talking about all tests?
 
 No. There are **227 test files**. About **68** of them launch the CLI; the other **~159** are ordinary unit/logic tests that never start a process. Only the 68 are in scope for this question.
-<!-- consolidation: discard; ref: docs/CONVENTIONS.md#checks-and-test-ownership; reason: Historical test counts and conversion inventory must be remeasured. -->
+<!-- consolidation: discard; ref: docs/CONVENTIONS.md#testing; reason: Historical test counts and conversion inventory must be remeasured. -->
 
 ### Your question: are all tests running `backlog init`?
 
@@ -106,7 +108,7 @@ No. Only the `cli-init-*` suites exercise `init` (creating the workspace files).
 ### Your question: why do tests run the entire binary?
 
 Correction first, because it changes the answer: **today, no test runs the compiled binary.** That was true a few commits ago and it is exactly what caused the disk pile. Since `959079a0`, the spawning tests run the **source** entry point in a child process — `src/test/test-cli.ts:4-8` launches `[process.execPath, "src/cli/index.ts"]`. The built copy is gone, including as a CI test input (the "bundle CLI for integration tests" step was removed at the same time). On the compiled-binary question, the suite is already where you wanted it.
-<!-- consolidation: discard; ref: docs/CONVENTIONS.md#checks-and-test-ownership; reason: Commit-specific launch evidence and incident attribution do not establish current verification coverage. -->
+<!-- consolidation: discard; ref: docs/CONVENTIONS.md#testing; reason: Commit-specific launch evidence and incident attribution do not establish current verification coverage. -->
 
 What remains, and what actually costs time, is different: most CLI suites still **start a child process for every single command** and transpile the source at each launch. That is a real process (so the CLI's argument parsing and wiring run end-to-end), but it is slow, and under 5-lane load it is what starves siblings into timeouts (`cli-draft-edit` is a victim of this, not a bug).
 <!-- consolidation: discard; ref: none; reason: Historical performance diagnosis and runner lane count. -->
@@ -119,13 +121,13 @@ It was exposed: `runCli(argv, { cwd, stdout, stderr })` is exported at `src/cli/
 ### Your ruling, and where we stand against it
 
 You said: a few e2e tests executing the compiled binary are fine (they protect against "code works but the CLI or the build is broken"), and everything else should test the source itself.
-<!-- consolidation: exists; ref: docs/CONVENTIONS.md#checks-and-test-ownership; reason: Source behavior tests and packaging or runtime-specific binary checks are the current rule. -->
+<!-- consolidation: exists; ref: docs/CONVENTIONS.md#testing; reason: Source behavior tests and packaging or runtime-specific binary checks are the current rule. -->
 
 - The compiled-binary protection **exists, but only in CI**: the release workflow builds the app and smoke-tests it. Nothing in the *local* suite runs the compiled binary today.
-<!-- consolidation: discard; ref: docs/CONVENTIONS.md#development-and-packaging; reason: Historical CI and local-suite inventory rather than a guarantee of current package coverage. -->
+<!-- consolidation: discard; ref: docs/CONVENTIONS.md#tooling-and-validation; reason: Historical CI and local-suite inventory rather than a guarantee of current package coverage. -->
 - The bulk of CLI suites can move to the in-process entry. The ones that genuinely need a real process boundary and must stay spawning: pipe capacity and SIGKILL (`cli-pipe-output`), stdio/signal→exit-code (`mcp-stdio-exit`), long-lived `--watch` streaming (`cli-json-watch`), closed stdin (`cli-init-input`), the PTY suites (`cli-init-cursor-pty`, `tui-interactive-editor-handoff`, the opentui PTY suites), the TUI startup (`opentui-mode-startup-contract`), `BUN_OPTIONS` (`bun-options`), packaged launcher behaviour (`cli-launcher`), agent host respawn (`agent-sessions`), and the config-watcher child (`config-watcher`).
-<!-- consolidation: integrate; ref: docs/CONVENTIONS.md#checks-and-test-ownership; reason: Accepted ordinary CLI behavior tests use in-process entry while genuine process-boundary cases retain spawning. -->
-<!-- consolidation: discard; ref: docs/CONVENTIONS.md#checks-and-test-ownership; reason: Whole-suite must-spawn inventory and several claimed boundaries are explicitly corrected by sheet 8's case-level review. -->
+<!-- consolidation: integrate; ref: docs/CONVENTIONS.md#testing; reason: Accepted ordinary CLI behavior tests use in-process entry while genuine process-boundary cases retain spawning. -->
+<!-- consolidation: discard; ref: docs/CONVENTIONS.md#testing; reason: Whole-suite must-spawn inventory and several claimed boundaries are explicitly corrected by sheet 8's case-level review. -->
 
 ### The choice, now that you can see it
 
@@ -133,31 +135,31 @@ The real decision is how far to take the split. My proposal, aligned to your rul
 <!-- consolidation: discard; ref: none; reason: Interview framing for the alternatives below. -->
 
 - **A** — convert the app-logic CLI suites to the in-process entry, keep the process-boundary suites spawning, and keep one or two compiled-binary e2e checks (either surface CI's existing smoke test locally or add a small one). Fastest suites, least starvation, and the "build/CLI wiring broke" protection is explicit.
-<!-- consolidation: integrate; ref: docs/CONVENTIONS.md#checks-and-test-ownership; reason: Accepted in-process CLI testing and case-specific real-boundary spawning need an explicit core rule. -->
-<!-- consolidation: unconfirmed; ref: docs/CONVENTIONS.md#checks-and-test-ownership; reason: Owner chose this local binary-check proposal but sheet 8 later asserted CI-only suffices without a clear owner answer to that change. -->
+<!-- consolidation: integrate; ref: docs/CONVENTIONS.md#testing; reason: Accepted in-process CLI testing and case-specific real-boundary spawning need an explicit core rule. -->
+<!-- consolidation: unconfirmed; ref: docs/CONVENTIONS.md#testing; reason: Owner chose this local binary-check proposal but sheet 8 later asserted CI-only suffices without a clear owner answer to that change. -->
 - **B** — same, but leave a couple of named app-logic suites spawning as well (more confidence that the real command line works, for a little more time).
-<!-- consolidation: discard; ref: docs/CONVENTIONS.md#checks-and-test-ownership; reason: Unspecified extra spawned app-logic suites were rejected by the explicit A choice. -->
+<!-- consolidation: discard; ref: docs/CONVENTIONS.md#testing; reason: Unspecified extra spawned app-logic suites were rejected by the explicit A choice. -->
 - **C** — leave it as it is: source-spawning everywhere, compiled-binary protection in CI only. (Sheet 6's item-2 change already stands; nothing reverts.)
-<!-- consolidation: discard; ref: docs/CONVENTIONS.md#checks-and-test-ownership; reason: Owner chose conversion instead of leaving ordinary logic tests source-spawned. -->
+<!-- consolidation: discard; ref: docs/CONVENTIONS.md#testing; reason: Owner chose conversion instead of leaving ordinary logic tests source-spawned. -->
 
 **Still my recommendation: A.** **Your answer:** ____
 <!-- consolidation: discard; ref: none; reason: Recommendation is resolved by the explicit answer on the next line and does not add a separate contract. -->
 I choose A of course. This is what should happen. Also, please send oracle to examine the "process-boundary suites" and see whether they must stay in the spawned process mechanism or we could have sufficient coverage if they also moved to in-process entries. And we might also conclude that those tests or some of them are not even needed.
-<!-- consolidation: integrate; ref: docs/CONVENTIONS.md#checks-and-test-ownership; reason: Accepted ordinary CLI conversion must retain spawning only where an individual assertion genuinely requires a real process boundary. -->
-<!-- consolidation: unconfirmed; ref: docs/CONVENTIONS.md#checks-and-test-ownership; reason: This A choice includes a small local binary check whose later CI-only disposition lacks an explicit resolution. -->
+<!-- consolidation: integrate; ref: docs/CONVENTIONS.md#testing; reason: Accepted ordinary CLI conversion must retain spawning only where an individual assertion genuinely requires a real process boundary. -->
+<!-- consolidation: unconfirmed; ref: docs/CONVENTIONS.md#testing; reason: This A choice includes a small local binary check whose later CI-only disposition lacks an explicit resolution. -->
 <!-- consolidation: discard; ref: none; reason: Oracle review assignment was carried out in sheet 8 and is historical execution work. -->
 ---
 
 ## Item 3 — the one sentence in `AGENTS.md`
 
 Now answerable. The sentence says the suite tests the source tree while the installed `backlog` command is what users run. With item 2 as it now stands, **that sentence is true again** — the built copy was removed. The only gap left is that the local suite does not exercise the packaged app; CI does.
-<!-- consolidation: exists; ref: docs/CONVENTIONS.md#validation; reason: Source tests and installed binary freshness are distinct evidence. -->
+<!-- consolidation: exists; ref: docs/CONVENTIONS.md#tooling-and-validation; reason: Source tests and installed binary freshness are distinct evidence. -->
 <!-- consolidation: discard; ref: none; reason: Historical local and CI packaging coverage inventory requires current evidence. -->
 
 So the question is narrow:
 
 - **A** — add one line stating that packaged behaviour is checked in CI (keeps the claim precise about where the guarantee lives).
-<!-- consolidation: unconfirmed; ref: docs/CONVENTIONS.md#validation; reason: Exact CI coverage statement remains deferred by the owner. -->
+<!-- consolidation: unconfirmed; ref: docs/CONVENTIONS.md#tooling-and-validation; reason: Exact CI coverage statement remains deferred by the owner. -->
 - **B** — leave the file alone.
 <!-- consolidation: unconfirmed; ref: docs/CONVENTIONS.md#documentation-maintenance; reason: No permanent leave-alone decision was selected. -->
 - **C** — you will handle this file.
@@ -169,7 +171,7 @@ I have not touched `AGENTS.md` — it is part of your in-progress work, and I wi
 
 **Your answer:** ____
 After we settle on everything else, remind me about this again and we'll decide on the correct approach.
-<!-- consolidation: unconfirmed; ref: docs/CONVENTIONS.md#validation; reason: Explicit deferral leaves the proposed packaged-coverage sentence undecided. -->
+<!-- consolidation: unconfirmed; ref: docs/CONVENTIONS.md#tooling-and-validation; reason: Explicit deferral leaves the proposed packaged-coverage sentence undecided. -->
 ---
 
 ## What I need from you
@@ -179,6 +181,6 @@ After we settle on everything else, remind me about this again and we'll decide 
 2. Item 2: **A**, **B**, **C**.
 <!-- consolidation: discard; ref: none; reason: Repeated answer request resolved by the explicit A answer above. -->
 3. Item 3: **A**, **B**, **C**.
-<!-- consolidation: unconfirmed; ref: docs/CONVENTIONS.md#validation; reason: Documentation sentence remains explicitly deferred. -->
+<!-- consolidation: unconfirmed; ref: docs/CONVENTIONS.md#tooling-and-validation; reason: Documentation sentence remains explicitly deferred. -->
 4. Sheet 5: still open — A, B, or C on the input-during-close question. <--- Please use the same file for all decisions / questions / answers and do not spread these across files. So next file #8 should include #5 as well if needed
 <!-- consolidation: discard; ref: none; reason: Repeated input question was answered in sheet 8 and same-file instruction governs this historical interview rather than durable product design. -->
