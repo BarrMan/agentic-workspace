@@ -246,6 +246,7 @@ See the unsettled integration scope and syntax decisions in the [Supported Integ
 
 - Intended behavior in this specification and its indexed feature contracts applies across supported product surfaces. Legacy compatibility requires an explicit approved exception.
 - Approved safety and identity constraints remain in force across features. An unresolved policy does not weaken an established guarantee.
+- A failure is reported for the affected operation and does not abort unaffected work; the application continues where it can, and failure of one record or one action never takes down the whole application.
 - Product behavior is distinct from visual composition: screen-specific composition belongs in the [screen specifications](screens/README.md), and colors belong to the [design system](DESIGN-SYSTEM.md). Session-header composition and task-list width are specified by the [workspace screen](screens/workspace.md#ordered-regions).
 - Implementation changes must align supported callers, fixtures, and persisted representations with the current contract. [CONVENTIONS](CONVENTIONS.md#changes-and-refactoring) owns implementation alignment and escalation of unresolved ownership or data policy.
 
@@ -255,8 +256,4 @@ The affected feature contracts retain the detailed constraints and decision cont
 
 | Decision | Affected Features | Status |
 |---|---|---|
-| Task-deletion confirmation and consent; provider-owned file and multi-session scope; partial-failure continuation; interruption recovery; retry; and concurrency. | [Tasks and storage](specs/tasks.md#task-deletion) | Open |
-| Storage-relocation collisions, failure or interruption, configuration-switch timing, recovery, and concurrent access. | [Tasks and storage](specs/tasks.md#changing-the-storage-location) | Open |
-| Provider-owned file scope, default/last-mode handling, cross-task extent, and remaining recovery policy for session and mode deletion. | [Sessions](specs/sessions.md#deleting-a-session); [Configuration and modes](specs/configuration.md#delete-a-mode) | Open |
-| Automatic crash/interruption recovery, retry UX, and repeated or concurrent operations for session creation and handoff. | [Sessions](specs/sessions.md#creation-failure-and-recovery); [Sessions](specs/sessions.md#handoff) | Open |
-| Unsettled command surfaces and syntax, MCP retention, and broad setup/guidance APIs. | [Supported Integration Operations](specs/supported-integration-operations.md#supported-integration-operations) | Open |
+| Default/last-mode handling and cross-task extent for mode deletion. | [Configuration and modes](specs/configuration.md#delete-a-mode) | Open |

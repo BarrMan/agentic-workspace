@@ -56,6 +56,7 @@ Use TypeScript naming patterns established in `src/`.
 ## Changes and Refactoring
 
 - Keep record validation, serialization, callers, and fixtures aligned with an interface change.
+- Pruning stale worktree registrations must not discard worktree contents, branches, or uncommitted data. Prune only registrations proven stale; preserve and report any worktree containing work.
 - Persist information only for an essential product or recovery need; do not persist redundant historical state. Fix application-produced corruption at its source; do not add automatic repair.
 - Follow [SPEC](SPEC.md): remove superseded behavior and its callers/fixtures rather than retaining aliases, legacy readers, fallback paths, or compatibility projections. If stored-data preservation or ownership is unresolved, escalate it; a bounded assignment does not authorize a compatibility route or automatic conversion.
 - For breaking stored-data changes during development, use manual correction only with explicit data-preservation authorization. Do not add permanent migration or legacy-compatibility support.
@@ -71,11 +72,10 @@ Use TypeScript naming patterns established in `src/`.
 | `bun run build` | Build the executable | [package.json](../package.json) |
 | `nix build .#agentic-workspace` | Validate Nix packaging | [package.json](../package.json), [flake.nix](../flake.nix) |
 
-- Use the package scripts as the command inventory for formatting, linting, type checking, tests, build, source CLI, MCP development, and Nix regeneration. Check the script before using it: `format` and `lint` write changes; `check` is a check.
+- Use the package scripts as the command inventory for formatting, linting, type checking, tests, build, source CLI, and Nix regeneration. Check the script before using it: `format` and `lint` write changes; `check` is a check.
 - Use the affected-test procedure for behavior verification; formatting/lint and type checks provide different evidence.
 - The main integrator rebuilds after code integration and verifies source freshness before an installed-CLI handoff, using the [procedure in AGENTS](../AGENTS.md#rebuild-before-a-runnable-handoff). Source tests do not refresh the installed binary. Documentation-only changes need content/link validation, not a build.
 - Check installed executable capabilities using its own help, as required by [AGENTS](../AGENTS.md).
-- For retained stdio integrations, keep protocol stdout free of startup chatter. The development MCP script may need Bun's silent invocation, or use its source entry directly. Integration retention and public API scope remain SPEC decisions.
 - Validate Nix packaging with `nix build .#agentic-workspace` and the resulting CLI's `--version`; packaging-specific smoke checks belong with the package definition.
 
 ## Documentation Maintenance

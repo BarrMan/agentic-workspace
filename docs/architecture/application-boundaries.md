@@ -74,7 +74,7 @@ class ApplicationController {
 **Contract:**
 - **Preconditions:** Operation intent identifies an explicit target and meets the relevant SPEC policy and owner preconditions.
 - **Postconditions:** Success is reported only after required effects and durability complete. Publication applies intended changes to fresh state and preserves unrelated current fields, histories, and newer selection.
-- **Failures:** Owner errors reach the application error surface. Partial effects are reported truthfully; cleanup/publication failures and recoverable evidence are retained. Partial effects do not imply rollback or safe retry.
+- **Failures:** Owner errors reach the application error surface. For task deletion, session creation/handoff, mode deletion, and data-folder relocation, a failed or interrupted step is reported and stops the operation; do not continue with remaining independent steps, automatically recover, retry, or imply rollback. Report completed effects truthfully.
 - **Lifecycle:** Capture target identity before asynchronous waits. Coordinate admission and claims; perform external execution outside store locks. Do not nest non-reentrant admission scopes.
 
 ### Task
@@ -302,5 +302,4 @@ if a critical step fails:
 | Minimal durable startup/recovery representation | Must preserve creation identity, prior selection, and recoverable resource ownership without historical lifecycle fields | Open |
 | Precise Task construction/deletion signatures and collection integration | Preserve Task ownership; exact signatures are not fixed | Open |
 | Final event/capability and unsubscribe representation; execution-handle fields | Keep provider/runtime details owned by Harness/Session; introduce interfaces only for actual production variation | Open |
-| Deletion, relocation, and session recovery outcomes | Follow [SPEC task contracts](../specs/tasks.md#task-deletion) and [session contracts](../specs/sessions.md#deleting-a-session); this document does not decide product policy | Open |
-| Approval invalidation trigger mapping and retained-conversation ask eligibility/retry policy | Follow the approved behavior in [SPEC](../SPEC.md); do not infer unconfirmed eligibility or retry behavior | Open |
+| Approval invalidation trigger mapping | Follow [SPEC](../SPEC.md); passive observation/attachment is not activity | Open |

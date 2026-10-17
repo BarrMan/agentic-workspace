@@ -55,6 +55,7 @@ Define the product's fundamental responsibilities and capabilities.
 - Retain conversations so users can continue them across execution changes.
 - Support optional task content and project documents, including decision records, while preserving direct user access and prescribing no deliverables.
 - Make workspace operations available to people and selectively to agents and external applications.
+- Wrap agent harnesses without managing provider-owned configuration, data, or state.
 
 ## Non-Goals
 
@@ -63,6 +64,7 @@ Define intentional boundaries that clarify what the product is not intended to b
 - Requiring Git, a prescribed development workflow, a mode sequence, or a set of documents; the product supports varied project practices.
 - Enforcing artifact-review gates or treating mode approval as approval of file contents; users direct their own work.
 - Serving as a terminal-transcript or permanent session-lifecycle audit archive; retained conversations support continuity rather than exhaustive lifecycle auditing.
+- Managing provider-owned configuration, data, or state; the application wraps harnesses and leaves provider state untouched.
 - Automatically exposing every setting or user action through integrations; access remains selective to relevant needs.
 
 ## Product Principles
@@ -101,5 +103,4 @@ Define intentional boundaries that clarify what the product is not intended to b
 
 | Decision | Context | Status |
 |---|---|---|
-| Whether MCP integration retains state | Retention affects the relationship between integrations and workspace continuity. | Open |
-| Whether setup and guidance operations should be broadly exposed to integrations | The product supports selective access, but the breadth of setup and guidance operations remains undecided. | Open |
+| Search filter combinations and matching details | See the [filtering and search contract](specs/filtering-and-search.md#filtering-and-search). | Open |

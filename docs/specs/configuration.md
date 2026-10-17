@@ -33,7 +33,7 @@ Allow users to configure workspace behavior and agent settings while keeping mod
 | [CONFIG-009] | Instruction-only permissions MUST remain available and be clearly identified as guidance, distinct from provider-enforced restrictions. The UI MUST describe their actual enforcement level rather than presenting instructions as filesystem isolation. |
 | [CONFIG-010] | If model discovery fails or a configured model is unavailable, retain the selected model and show the problem. Changing the model MUST require a user choice rather than a silent substitution. |
 | [CONFIG-011] | The provider-independent [current-model capture operation](supported-integration-operations.md#supported-integration-operations) MUST set the calling session's mode model in project configuration to the model that session currently uses. |
-| [CONFIG-012] | Before deleting a mode, ask the user to confirm and explain that the mode's sessions will be removed and running agents killed. After confirmation, validate all relevant native cleanup targets before any batch stop effects, following [native cleanup preflight](sessions.md#stop-and-resume-a-session). A rejection MUST happen before effects; a later partial failure MUST NOT imply transactional rollback. Remove the mode and its sessions and kill their running agents. Mode deletion removes those sessions rather than transferring their history to another mode. |
+| [CONFIG-012] | Before deleting a mode, ask the user to confirm and explain that the mode's workspace-owned sessions will be removed and running agents killed. After confirmation, validate all relevant native cleanup targets before any batch stop effects, following [native cleanup preflight](sessions.md#stop-and-resume-a-session). A rejection MUST happen before effects. If any later step fails or is interrupted, report the error and stop without continuing, automatic recovery, retry, or rollback; report completed effects. Remove the mode and its sessions and kill their running agents. Mode deletion removes those sessions rather than transferring their history to another mode. Provider-owned configuration, data, and state are never modified. |
 
 #### Behavioral Flows
 
@@ -89,7 +89,7 @@ Allow users to configure workspace behavior and agent settings while keeping mod
 
 1. Ask for confirmation and explain that the mode's sessions will be removed and its running agents killed.
 2. After confirmation, validate all relevant native cleanup targets before any batch stop effects.
-3. If validation rejects the deletion, stop before effects. Otherwise remove the mode and its sessions and kill its running agents.
+3. If validation rejects the deletion, stop before effects. Otherwise kill the mode's running agents, then remove its workspace-owned records, leaving provider-owned state untouched. If any step fails or is interrupted, report the error and stop without continuing, automatic recovery, retry, or rollback.
 
 **Postconditions:** Deleted mode sessions are removed, not transferred; a later partial failure is not treated as transactional rollback.
 
@@ -103,7 +103,7 @@ Allow users to configure workspace behavior and agent settings while keeping mod
 | Model discovery fails or the configured model is unavailable. | Retain the selected model and show the problem; do not silently substitute a model. |
 | A permission is instruction-only. | Identify it as guidance and describe its actual enforcement level; do not represent it as filesystem isolation. |
 | Native cleanup validation rejects a mode deletion. | No deletion or batch stop effects occur. |
-| Mode deletion partially fails after preflight. | Do not imply transactional rollback. |
+| Mode deletion fails or is interrupted after preflight. | Report the error and completed effects, then stop without continuing, automatic recovery, retry, or rollback. |
 
 #### Behavioral Invariants
 
@@ -127,7 +127,7 @@ Allow users to configure workspace behavior and agent settings while keeping mod
 
 | Question | Constraints | Status |
 |---|---|---|
-| What are the default/last-mode handling, cross-task extent, and failure/recovery policy for mode deletion? | Deletion requires confirmation, cleanup preflight before batch stop effects, removes the mode's sessions rather than transferring history, and a later partial failure does not imply transactional rollback. | Open |
+| What are the default/last-mode handling and cross-task extent for mode deletion? | Deletion requires confirmation and cleanup preflight, removes the mode's sessions rather than transferring history, and failure stops the operation without automatic recovery, retry, or rollback. | Open |
 
 ## Global Behavioral Invariants
 

@@ -20,6 +20,8 @@ Provide agents inside sessions and external applications with a selective public
 
 #### Requirements
 
+The integration API exposes existing operations only: task creation, list, view, edit, status-only Done, and explicit completion/cleanup; session list, stop, attach, handoff, and delete; milestone list, add, rename, remove, and archive; and configuration read/write. It adds no operation or option beyond those that already exist. MCP is not a supported surface. The `instructions` entry point, named guides, and instruction-file editing do not exist.
+
 | ID | Requirement |
 |---|---|
 | IF-API-001 | The CLI must support creating a project-scoped task under the [task model](tasks.md#tasks-and-storage). |
@@ -28,13 +30,13 @@ Provide agents inside sessions and external applications with a selective public
 | IF-API-004 | An agent may set task/mode approval in response to user direction, following [mode approval](configuration.md#configuration-and-modes). |
 | IF-API-005 | The CLI must list, read, and write generic files in a task's [artifacts directory](tasks.md#using-task-artifacts). A write replaces selected contents from a file or standard input. |
 | IF-API-006 | The CLI must provide cross-record search with filters and plain-text or JSON output as defined in [Filtering and search](filtering-and-search.md#filtering-and-search). |
-| IF-API-007 | `agent-session ask` must ask a retained session a question and return its answer using current effective configuration. This is a question/answer interaction, not retrieval of a terminal transcript. |
+| IF-API-007 | `agent-session ask` sends one message to the previous session in the current mode and waits for its response, returned as a question/answer result. Sending a message to a saved session starts the execution bound to that conversation; there is no separate resume step or session-state eligibility policy. |
 | IF-API-008 | `doc create/update/list/search/view` must create, update, list, search, and view project documents. |
 | IF-API-009 | `decision create/list` must create and list decision records. |
 | IF-API-010 | `agent-config model set` must set the calling session's mode model in project configuration to the model that session currently uses, independently of provider. |
 | IF-API-011 | The CLI must not support `agent-session reset`, board export (including Markdown export and README editing), or `--no-git`. The `doctor` command, including report-only variants, is not supported. |
 | IF-API-012 | List/search collection reads must skip malformed records, warn on CLI stderr with the filename and parse error, and return readable results successfully with exit code 0. An operation directly targeting malformed data must fail. This requirement does not define a non-CLI warning representation. |
-| IF-API-013 | TUI capabilities not specified as CLI operations in this contract do not thereby become CLI operations. Session actions, milestone management, and other TUI capabilities remain governed by their feature contracts. |
+| IF-API-013 | CLI setup, removed commands, plural aliases, shell-completion installation, age-based batch cleanup, and interactive screen launching are unsupported. TUI capabilities not specified as CLI operations here do not thereby become CLI operations. |
 
 #### Behavioral Flows
 
@@ -106,14 +108,14 @@ Provide agents inside sessions and external applications with a selective public
 
 **Trigger:** A caller invokes `agent-session ask` for a retained session.
 
-**Preconditions:** A retained session and effective configuration are available; eligibility conditions remain unresolved.
+**Preconditions:** A previous saved session in the current mode and effective configuration are available.
 
 **Flow:**
 
-1. The operation sends a question/answer interaction using current effective configuration.
-2. It returns the answer and does not represent terminal transcript retrieval.
+1. Send one message to the previous session in the current mode, starting its bound execution as needed.
+2. Wait for the response and return it as a question/answer result, not a terminal transcript.
 
-**Postconditions:** The caller receives the session's answer, subject to the unresolved eligibility decision.
+**Postconditions:** The caller receives the response as a question/answer result.
 
 ##### Tolerate malformed records in collection reads
 
@@ -134,16 +136,16 @@ Provide agents inside sessions and external applications with a selective public
 |---|---|
 | A list/search collection read encounters malformed data. | Skip the malformed record, warn on CLI stderr with filename and parse error, and return readable results with exit code 0. |
 | An operation directly targets malformed data. | The operation fails. |
-| `agent-session ask` is requested for a session whose eligibility is unsettled. | No stopped-only restriction or permission to ask a running session is established; behavior remains an open decision. |
+| `agent-session ask` targets the previous saved session in the current mode. | Send one message, start the execution bound to that conversation if needed, wait, and return the response as a question/answer result. |
 | A caller requests reset, board export, `--no-git`, or `doctor` (including report-only variants). | The operation is unsupported. |
-| A caller requests an additional command surface, option, alias, or integration convenience not listed here. | Its support is not established by this contract; see Open Decisions. |
+| A caller requests MCP, `instructions`, a named guide, instruction-file editing, CLI setup, a removed command, plural alias, shell-completion installation, age-based batch cleanup, interactive screen launching, or any operation/option not already existing. | The surface is unsupported. |
 
 #### Behavioral Invariants
 
 - CLI operations are selective and do not automatically duplicate every TUI action or internal setting.
 - Marking the calling session's current task Done is status-only.
 - Session start through CLI follows workspace launch semantics.
-- A question asked of a retained session is not terminal transcript retrieval.
+- `agent-session ask` sends one message to the previous session in the current mode and waits for a question/answer response; saved-session execution is started by sending, with no eligibility policy or separate resume.
 - Malformed collection records do not prevent successful return of other readable results; direct operations targeting malformed data fail.
 - Rejected command surfaces remain unsupported.
 - The product is TUI-first, and the CLI is a selective integration API rather than an automatic duplicate of all UI actions or internal settings.
@@ -161,19 +163,12 @@ Provide agents inside sessions and external applications with a selective public
 
 #### Open Decisions
 
-| Question | Constraints | Status |
-|---|---|---|
-| Should MCP integration be retained, given its integration benefit and maintenance overhead? | No named-client prerequisite is established; MCP is not added to the supported operation list until retention is decided. | Open |
-| Under what session states and consent conditions may `agent-session ask` operate? | It asks a question and returns an answer using current effective configuration; it is not transcript retrieval. Neither a stopped-only restriction nor permission to ask a running session is established. | Open |
-| Which additional command entry points, options, aliases, and integration conveniences belong in the public API, and which exact convenience API removals are required? | The listed operations are the approved baseline; additional surfaces and syntax are not implied. Setup/guidance, instruction-file editing, shell conveniences, broad configuration APIs, and archive alongside completion are not approved by this contract. | Open |
-| Should MCP archive/edit responses report the dependency-cleanup line when dependencies are removed? | No response behavior is established. | Open |
+None recorded in this contract.
 
 ## Global Behavioral Invariants
 
 - The product is TUI-first, and the CLI is a selective integration API rather than an automatic duplicate of all UI actions or internal settings.
 
-## Open Product Decisions
+## Unsupported and Removed Surfaces
 
-| Decision | Affected Features | Status |
-|---|---|---|
-| MCP retention; `agent-session ask` eligibility; and further CLI entry points, options, aliases, conveniences, and exact convenience API removals. | Supported Integration Operations | Open |
+The `instructions` entry point, named guides, instruction-file editing, and MCP are not supported surfaces.

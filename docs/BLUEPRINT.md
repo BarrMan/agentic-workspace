@@ -12,9 +12,9 @@ The detailed contracts are organized as parts of this blueprint: [Task](architec
 |---|---|---|---|
 | Task | Task properties, effective configuration, selected mode, mode-specific session relationships, and task/mode approval | Ordered session histories, membership, active-session IDs, selection, rollback relationships, approval | None of application persistence or process infrastructure |
 | Mode catalogue | Configurable mode definitions | Mode instructions/settings in project configuration | Configuration owner |
-| Session | One retained conversation and its startup, input, current execution, observation, and subscriptions | Application/provider conversation identities, current RunningExecution, listeners | Harness |
+| Session | One retained conversation and its startup, input, current execution, observation, and subscriptions | Application conversation identity/history and current RunningExecution; never provider-owned configuration, data, or state | Harness |
 | RunningExecution | One runtime incarnation and its identity, interaction handles, ownership evidence, observation, and events | Ephemeral execution identity and runtime handles | Provider/terminal runtime, through Harness |
-| Harness | Provider-specific creation, exact resume, identity discovery, initialization/readiness, and execution integration | Provider interaction state for an execution | Provider adapters and terminal runtime |
+| Harness | Provider-specific creation, exact resume, identity discovery, initialization/readiness, and execution integration | Provider interaction state for an execution; no authority over provider-owned configuration, data, or state | Provider adapters and terminal runtime |
 | Application controller | Shared operations, authoritative loading, admission/coordination, persistence sequencing, progress, rollback, and error reporting | In-flight operation coordination and recovery sequencing | Task, Session, stores/repositories, configuration, project paths, Git/process helpers |
 | Stores and repositories | Canonical paths, locked reload, validation, serialization, and atomic durable writes | Durable records owned by each repository | Filesystem and application coordination |
 | UI controller and feature modules | Translate user input into application operations; coordinate focus, navigation, details, and terminal attachment | Client-local focus, navigation, and attachment | Application operations, projections, terminal attachment |
@@ -73,7 +73,7 @@ Ownership is singular: controllers coordinate rather than reimplement Task or Se
 
 **Relationships:** Belongs to one Task and one Mode. Task stores its membership and selection; Session does not own those relationships or persist itself. Harness supplies provider identity and runtime evidence.
 
-**Invariants:** Durable conversation identity/history is distinct from ephemeral runtime state. A saved provider ID, vanished frontend, or historical record does not establish liveness or exact resumability. Turn completion and execution exit are distinct.
+**Invariants:** Durable workspace-owned conversation identity/history is distinct from ephemeral runtime state. Provider-owned configuration, data, and state are never managed or modified. A saved provider ID, vanished frontend, or historical record does not establish liveness or exact resumability. Turn completion and execution exit are distinct.
 
 ### RunningExecution
 
@@ -159,7 +159,7 @@ class Session {
 
 ### Harness and provider adapters
 
-**Responsibility:** Encapsulates provider construction, new conversation, exact resume, identity discovery, readiness, and execution integration.
+**Responsibility:** Encapsulates provider construction, new conversation, exact resume, identity discovery, readiness, and execution integration. It wraps provider harnesses; it never manages provider-owned configuration, data, or state.
 
 **Dependencies:** Provider-specific adapters and execution/terminal runtime.
 
@@ -197,7 +197,7 @@ class ApplicationController {
 **Contract:**
 - **Preconditions:** Capture explicit target identity before asynchronous waits; revalidate current membership and provenance before publication/effects.
 - **Postconditions:** Report success only after required effects and durability complete. Progress, provisional selection, or a resolved Harness promise alone is not creation success.
-- **Failures:** Errors reach the application error surface. Preserve original and secondary cleanup/publication/release failures; partial effects are not transactional rollback. Retry/crash-recovery outcomes remain bounded by [SPEC](SPEC.md).
+- **Failures:** For task deletion, session creation/handoff, mode deletion, and data-folder relocation, any failed or interrupted step is reported and stops the operation: do not continue with remaining independent steps, automatically recover, retry, or imply rollback. Report completed effects truthfully. Other outcomes follow [SPEC](SPEC.md).
 - **Lifecycle:** Store mutation performs locked authoritative reload, validation, hydration, synchronous model behavior, validation, and atomic serialization. Provider work and arbitrary awaited callbacks run outside store-file locks. See [architecture/application-boundaries.md](architecture/application-boundaries.md).
 
 ### UI, renderer, and terminal attachment
@@ -244,7 +244,7 @@ report success only after final publication is durable
 
 **Completion:** Exactly one provisional relationship is reserved; required identity and final publication succeed. Readiness and publication do not wait for an agent answer.
 
-**Failure:** On critical failure, clean up the new execution before Task-owned conditional rollback and durable rollback. Restore prior selection only if the provisional session remains selected; preserve newer selection and a valid survivor pointer. Harness cleans allocations it cannot return. Never erase the last tracking evidence for an execution that could not be stopped. Report the original error and cleanup/publication failures, attempting safe settlement.
+**Failure:** On critical failure, report the error and stop; do not continue with remaining independent steps, automatic recovery, retry, or rollback. Preserve tracking evidence for any execution that may still be running and report completed effects. Harness cleans allocations it cannot return as part of the failed launch attempt; do not imply rollback.
 
 ### Resume, attachment, and hand-off
 
@@ -265,7 +265,7 @@ hand-off: create and publish successor using the creation protocol
 
 **Completion:** Resume retains the exact conversation; attachment remains separate from startup/input; successful successor publication is distinct from predecessor retirement.
 
-**Failure:** Apply [SPEC](SPEC.md) resume and hand-off outcomes. Creation rollback and predecessor-retirement failure are separate paths; a retirement failure does not roll back successful creation. No further cleanup-versus-preparation ordering is prescribed beyond required ownership preflight.
+**Failure:** Apply [SPEC](SPEC.md) outcomes. On handoff failure, stop and report completed effects; do not continue, automatically recover, retry, or imply rollback. A failed successor leaves the predecessor intact; predecessor-retirement failure leaves the published successor running.
 
 ### Observation, stop, and deletion
 
@@ -283,7 +283,7 @@ apply Task relationship/selection changes and required storage effects
 publish against fresh state; preserve unrelated current state
 ```
 
-**Completion:** Observation is non-destructive. Where cleanup is authorized, required execution cleanup precedes relationship/resource removal. The application reports completed and incomplete batch work truthfully.
+**Completion:** Observation is non-destructive. Cleanup affects workspace-owned resources only; provider-owned configuration, data, and state remain untouched. Required execution cleanup precedes relationship/resource removal. The application reports completed and incomplete work truthfully.
 
 **Failure:** Explicit stop, forget-only deletion, purge, task completion, and mode/session deletion remain distinct; [SPEC](SPEC.md) owns their policy. Validate exact project/task/session/provider/resource provenance before signaling or deleting. PID or shared-socket access alone is insufficient. Probe/transport failures are errors, not proof of absence. Do not swallow cleanup failures, claim stop from metadata alone, or let late publication resurrect removed relationships.
 
@@ -348,15 +348,15 @@ for publication:
 reserve once and durably record creation identity and prior selection
 start externally after the reservation checkpoint
 on critical failure:
-  clean the new execution
-  conditionally roll back Task relationship on fresh state
-  retain tracking evidence if cleanup is incomplete
+  report the error and stop; do not continue, recover, retry, or roll back
+  retain tracking evidence if an execution may still be running
 for batch cleanup:
   preflight every relevant ownership target before any stop/delete effect
-  perform cleanup; remove each relationship/resource only after required cleanup
+  perform cleanup and remove resources only after required cleanup
+  on failure, report completed effects and stop
 ```
 
-**Guarantees:** Batch preflight is not atomic rollback; later cleanup may fail after earlier effects. Preserve evidence and report partial completion. A successful successor publication separates creation success from later predecessor-retirement failure.
+**Guarantees:** Batch preflight is not atomic rollback; later cleanup may fail after earlier effects. Stop on failure, preserve tracking evidence, and report partial completion without implying rollback. A successful successor publication separates creation success from later predecessor-retirement failure.
 
 **Implementation freedom:** Exact recovery-record fields and private settlement helpers remain flexible within the required durable identity and ownership evidence.
 
@@ -379,8 +379,5 @@ for batch cleanup:
 | Minimal durable representation of startup/recovery identity and resource paths | Must survive rehydration and interrupted startup/cleanup; must not duplicate launch paths or preserve superseded lifecycle fields | Open |
 | Provider startup/bootstrap artifact mechanism and disposition | Preserve current context and exactly-once initial delivery until an approved replacement; Harness owns submission/readiness | Open |
 | Exact admission/coordination mechanism for task/mode launch exclusivity | Preserve existing exclusivity; distinguish it from same-conversation execution coordination and client attachment | Open |
-| Task deletion, storage-move failure/concurrency, session/mode deletion, repeated-operation recovery, and other unresolved outcomes | Follow the current product contracts and unresolved items in [SPEC](SPEC.md), including [task contracts](specs/tasks.md) and [session contracts](specs/sessions.md); safety and cleanup invariants above continue to apply | Open |
 | Exact activity triggers that clear task/mode approval | Approval remains owned by Task and follows [SPEC](SPEC.md); do not equate passive observation/attachment with activity | Open |
 | Provider event names/capability and unsubscribe representation | Events must distinguish turn completion from execution exit; unsupported/missing events cannot imply idle state | Open |
-| Exact ask eligibility and any stopped-only restriction | Use [SPEC](specs/supported-integration-operations.md); do not infer permission for a running session | Open |
-| Automatic resume consent, interruption recovery, and retry policy | Exact resume identity and safety invariants remain required; policy follows [SPEC](specs/sessions.md) | Open |
