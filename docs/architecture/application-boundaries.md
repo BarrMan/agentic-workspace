@@ -105,7 +105,7 @@ class Task {
 
 **Responsibility:** Session owns one retained conversation, startup, current execution, input, runtime observation, and subscriptions. RunningExecution represents one replaceable runtime incarnation.
 
-**Dependencies:** Harness for provider execution; application for membership coordination and persistence.
+**Dependencies:** Harness for provider execution. The orchestration layer holds references to Session and Task and passes Session the collaborators it needs; Session does not depend on application coordination.
 
 **Interface:**
 

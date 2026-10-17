@@ -68,7 +68,37 @@ Let users narrow the workspace task list and find records across project tasks, 
 
 **Failures:** No additional failure behavior is specified in this contract. Unsupported formats, regex, fuzzy ranking, and pagination are not supported.
 
-## Requirements
+## User Interactions
+
+### Filter tasks and search project records
+
+**Context:** The user is working in a project-scoped workspace or submitting a project-record search.
+
+**Action:** Apply, change, or clear task filters; submit a search query and supported archive/format options.
+
+**Response:** Show matching project tasks with an active-filter summary, or return matching tasks, documents, and decision records.
+
+**Feedback:** The interface provides filter clear/reset actions; searches use literal case-insensitive matching and return plain-text or JSON results.
+
+## Non-Functional Requirements
+
+### Performance
+
+- None.
+
+### Reliability
+
+- None.
+
+### Security
+
+- None.
+
+### Compatibility
+
+- None.
+
+## Functional Requirements
 
 ### IF-FS-001: Task filters
 
@@ -79,9 +109,9 @@ Let users narrow the workspace task list and find records across project tasks, 
 **Outcome:** Workspace shows matching project tasks or the unconstrained project task set.
 **Failures:** None specified.
 **Acceptance Criteria:**
-- [ ] Apply each supported filter dimension (text, status, type, priority, milestone, label) and confirm matching tasks are project-scoped.
-- [ ] Confirm the interface shows a summary of active filters.
-- [ ] Clear/reset filters and confirm active constraints are removed and project tasks are shown.
+- [ ] IF-FS-001-AC-01: Apply each supported filter dimension (text, status, type, priority, milestone, label) and confirm matching tasks are project-scoped.
+- [ ] IF-FS-001-AC-02: Confirm the interface shows a summary of active filters.
+- [ ] IF-FS-001-AC-03: Clear/reset filters and confirm active constraints are removed and project tasks are shown.
 
 ### IF-FS-002: Cross-record search scope and matching
 
@@ -92,10 +122,10 @@ Let users narrow the workspace task list and find records across project tasks, 
 **Outcome:** Matching project records are returned.
 **Failures:** Records outside the project scope are excluded.
 **Acceptance Criteria:**
-- [ ] Search a project containing tasks, documents, and decision records and confirm all three record types are covered.
-- [ ] Confirm matching checks task ids, titles, descriptions, and document/decision-record bodies.
-- [ ] Confirm matching is case-insensitive and literal.
-- [ ] Confirm records outside the project directory are excluded.
+- [ ] IF-FS-002-AC-01: Search a project containing tasks, documents, and decision records and confirm all three record types are covered.
+- [ ] IF-FS-002-AC-02: Confirm matching checks task ids, titles, descriptions, and document/decision-record bodies.
+- [ ] IF-FS-002-AC-03: Confirm matching is case-insensitive and literal.
+- [ ] IF-FS-002-AC-04: Confirm records outside the project directory are excluded.
 
 ### IF-FS-003: Filter combination, archive scope, and output limits
 
@@ -106,10 +136,10 @@ Let users narrow the workspace task list and find records across project tasks, 
 **Outcome:** Results match the requested supported filter and archive scope and are returned in a supported format.
 **Failures:** Unsupported output formats, regex, fuzzy ranking, and pagination are not supported.
 **Acceptance Criteria:**
-- [ ] Confirm values within one filter combine with OR and separate filters combine with AND.
-- [ ] Confirm active and completed records are included by default and archived records only when explicitly requested.
-- [ ] Confirm plain-text and JSON output are available and other formats are unavailable.
-- [ ] Confirm regex, fuzzy ranking, and pagination are unavailable.
+- [ ] IF-FS-003-AC-01: Confirm values within one filter combine with OR and separate filters combine with AND.
+- [ ] IF-FS-003-AC-02: Confirm active and completed records are included by default and archived records only when explicitly requested.
+- [ ] IF-FS-003-AC-03: Confirm plain-text and JSON output are available and other formats are unavailable.
+- [ ] IF-FS-003-AC-04: Confirm regex, fuzzy ranking, and pagination are unavailable.
 
 ## Flows
 

@@ -67,7 +67,39 @@ Let users inspect and organize project tasks in a grouped workspace list or a st
 
 **Failures:** Reject a conflicting shortcut while retaining its working binding. A canceled move leaves the task unchanged. No other failure behavior is specified here.
 
-## Requirements
+## User Interactions
+
+### Browse and organize workspace tasks
+
+**Context:** The user is viewing a project's workspace in grouped-list or board view.
+
+**Action:** Switch views; organize tasks into nested groups; invoke task, group, board-move, help, or shortcut actions.
+
+**Response:** Display the selected view and perform requested actions; show a board-move preview before commit and preserve the task when canceled.
+
+**Feedback:** Display visible action/help listings; reject conflicting shortcut assignments while retaining the working binding.
+
+## Non-Functional Requirements
+
+### Performance
+
+- None.
+
+### Reliability
+
+- Restore saved workspace state when the user reopens the workspace.
+- Deleting a populated group preserves its tasks and child groups; canceling a board move preserves the task's original position.
+- Rejecting a shortcut conflict preserves the working binding.
+
+### Security
+
+- None.
+
+### Compatibility
+
+- None.
+
+## Functional Requirements
 
 ### IF-WB-001: Workspace views
 
@@ -78,8 +110,8 @@ Let users inspect and organize project tasks in a grouped workspace list or a st
 **Outcome:** The selected view displays project tasks.
 **Failures:** None specified.
 **Acceptance Criteria:**
-- [ ] Open workspace and confirm project tasks are shown in grouped-list view.
-- [ ] Switch to board and confirm project tasks are shown in status columns; switch back successfully.
+- [ ] IF-WB-001-AC-01: Open workspace and confirm project tasks are shown in grouped-list view.
+- [ ] IF-WB-001-AC-02: Switch to board and confirm project tasks are shown in status columns; switch back successfully.
 
 ### IF-WB-002: Nested groups
 
@@ -90,7 +122,7 @@ Let users inspect and organize project tasks in a grouped workspace list or a st
 **Outcome:** Nested group structure is represented in the workspace.
 **Failures:** None specified.
 **Acceptance Criteria:**
-- [ ] Place tasks and child groups within a group and confirm the nested structure is shown.
+- [ ] IF-WB-002-AC-01: Place tasks and child groups within a group and confirm the nested structure is shown.
 
 ### IF-WB-003: Delete populated group
 
@@ -101,8 +133,8 @@ Let users inspect and organize project tasks in a grouped workspace list or a st
 **Outcome:** Group is removed and no contents are discarded.
 **Failures:** None specified.
 **Acceptance Criteria:**
-- [ ] Delete a group with tasks and child groups, choose root/ungrouped placement, and confirm all contents remain at root.
-- [ ] Choose a destination group and confirm the tasks and child groups are preserved there.
+- [ ] IF-WB-003-AC-01: Delete a group with tasks and child groups, choose root/ungrouped placement, and confirm all contents remain at root.
+- [ ] IF-WB-003-AC-02: Choose a destination group and confirm the tasks and child groups are preserved there.
 
 ### IF-WB-004: Restore workspace state
 
@@ -113,8 +145,8 @@ Let users inspect and organize project tasks in a grouped workspace list or a st
 **Outcome:** Reopened workspace reflects its saved state.
 **Failures:** None specified.
 **Acceptance Criteria:**
-- [ ] Reopen a workspace and confirm filters, task/mode selection, details visibility, shortcut overrides, group membership, and collapsed groups are restored.
-- [ ] Confirm each task's remembered mode is independent of other tasks.
+- [ ] IF-WB-004-AC-01: Reopen a workspace and confirm filters, task/mode selection, details visibility, shortcut overrides, group membership, and collapsed groups are restored.
+- [ ] IF-WB-004-AC-02: Confirm each task's remembered mode is independent of other tasks.
 
 ### IF-WB-005: Screen specifications
 
@@ -125,8 +157,8 @@ Let users inspect and organize project tasks in a grouped workspace list or a st
 **Outcome:** Each view follows its owning screen contract.
 **Failures:** Screen composition rules are owned by the linked screen specifications.
 **Acceptance Criteria:**
-- [ ] Confirm grouped-list task-list width and composition follow the linked workspace screen specification.
-- [ ] Confirm board behavior follows its linked screen specification.
+- [ ] IF-WB-005-AC-01: Confirm grouped-list task-list width and composition follow the linked workspace screen specification.
+- [ ] IF-WB-005-AC-02: Confirm board behavior follows its linked screen specification.
 
 ### IF-WB-006: Workspace actions
 
@@ -137,13 +169,13 @@ Let users inspect and organize project tasks in a grouped workspace list or a st
 **Outcome:** Requested action is performed; board move remains previewable and cancellable before commit.
 **Failures:** Canceling a previewed move preserves the original position.
 **Acceptance Criteria:**
-- [ ] Preview a board move; cancel it and confirm original position, then commit a move and confirm the destination.
-- [ ] Assign a task to a group and unassign it; confirm membership changes accordingly.
-- [ ] Expand and collapse a group and confirm its contents visibility changes.
-- [ ] Copy a task ID and confirm the copied value is that task's ID.
-- [ ] Choose a retained session and confirm the chosen session is retained.
-- [ ] Show an agent terminal fullscreen and confirm the terminal is displayed fullscreen.
-- [ ] Confirm interactive task surfaces expose task creation, editing, and archival actions.
+- [ ] IF-WB-006-AC-01: Preview a board move; cancel it and confirm original position, then commit a move and confirm the destination.
+- [ ] IF-WB-006-AC-02: Assign a task to a group and unassign it; confirm membership changes accordingly.
+- [ ] IF-WB-006-AC-03: Expand and collapse a group and confirm its contents visibility changes.
+- [ ] IF-WB-006-AC-04: Copy a task ID and confirm the copied value is that task's ID.
+- [ ] IF-WB-006-AC-05: Choose a retained session and confirm the chosen session is retained.
+- [ ] IF-WB-006-AC-06: Show an agent terminal fullscreen and confirm the terminal is displayed fullscreen.
+- [ ] IF-WB-006-AC-07: Confirm interactive task surfaces expose task creation, editing, and archival actions.
 
 ### IF-WB-007: Searchable help and shortcuts
 
@@ -154,9 +186,9 @@ Let users inspect and organize project tasks in a grouped workspace list or a st
 **Outcome:** Help search is usable and valid shortcut overrides take effect.
 **Failures:** Reject conflict and retain the working binding.
 **Acceptance Criteria:**
-- [ ] Search help for an available action and confirm matching help entries can be found.
-- [ ] Customize a non-conflicting shortcut and confirm the new binding works.
-- [ ] Assign a shortcut already bound to a working action; confirm rejection and retention of the previous binding.
+- [ ] IF-WB-007-AC-01: Search help for an available action and confirm matching help entries can be found.
+- [ ] IF-WB-007-AC-02: Customize a non-conflicting shortcut and confirm the new binding works.
+- [ ] IF-WB-007-AC-03: Assign a shortcut already bound to a working action; confirm rejection and retention of the previous binding.
 
 ### IF-WB-008: Complete action listings
 
@@ -167,8 +199,8 @@ Let users inspect and organize project tasks in a grouped workspace list or a st
 **Outcome:** Available actions are discoverable in the appropriate listing.
 **Failures:** None specified.
 **Acceptance Criteria:**
-- [ ] For each focus state, confirm the footer lists every action available for that focus and no available action is omitted.
-- [ ] Confirm help lists all available actions, including actions not shown in the current-focus footer.
+- [ ] IF-WB-008-AC-01: For each focus state, confirm the footer lists every action available for that focus and no available action is omitted.
+- [ ] IF-WB-008-AC-02: Confirm help lists all available actions, including actions not shown in the current-focus footer.
 
 ## Flows
 

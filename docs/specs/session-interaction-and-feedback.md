@@ -72,7 +72,38 @@ Let users inspect the selected task's session, safely attach to or resume it, an
 
 **Failures:** A starting session remains unavailable until provider initialization and identity establishment, plus supported acknowledgment of initial instruction submission (not an answer). Selecting a running session sends no input and changes no control state. Resuming a stopped session follows the exact-conversation contract.
 
-## Requirements
+## User Interactions
+
+### Inspect and interact with a task session
+
+**Context:** The user selects a task and its selected-mode session.
+
+**Action:** Select or attach to a running session, start or resume a session, and inspect session identity, execution context, and activity.
+
+**Response:** Show the selected session or the appropriate no-session/ended-session presentation; attach without sending input or changing control; keep a starting session unavailable until startup completes.
+
+**Feedback:** Identify the start or session-picker shortcut as applicable and show the task-row activity dot only when observed activity exists for an active session in the selected mode.
+
+## Non-Functional Requirements
+
+### Performance
+
+- None.
+
+### Reliability
+
+- A starting session remains unavailable until provider initialization, identity establishment, and supported acknowledgment of initial instruction submission (not an answer).
+- Selecting a running session sends no input and changes no control state.
+
+### Security
+
+- None.
+
+### Compatibility
+
+- None.
+
+## Functional Requirements
 
 ### IF-SI-001: Select and attach to a session
 
@@ -83,7 +114,7 @@ Let users inspect the selected task's session, safely attach to or resume it, an
 **Outcome:** The user is attached to the running session, with its input and control state unchanged by selection.
 **Failures:** None specified.
 **Acceptance Criteria:**
-- [ ] Select a running session and confirm it attaches without sending input or changing control.
+- [ ] IF-SI-001-AC-01: Select a running session and confirm it attaches without sending input or changing control.
 
 ### IF-SI-002: Start or resume a session
 
@@ -94,8 +125,8 @@ Let users inspect the selected task's session, safely attach to or resume it, an
 **Outcome:** A starting session is unavailable until startup completion; a resumed session follows the exact-conversation contract.
 **Failures:** A session that has not met all startup-completion conditions remains unavailable.
 **Acceptance Criteria:**
-- [ ] Start a session and confirm it remains unavailable until all startup-completion conditions are met.
-- [ ] Select a stopped session and confirm resume follows the exact-conversation contract.
+- [ ] IF-SI-002-AC-01: Start a session and confirm it remains unavailable until all startup-completion conditions are met.
+- [ ] IF-SI-002-AC-02: Select a stopped session and confirm resume follows the exact-conversation contract.
 
 ### IF-SI-003: Identify the selected session and execution context
 
@@ -106,7 +137,7 @@ Let users inspect the selected task's session, safely attach to or resume it, an
 **Outcome:** The selected session and actual execution context are identifiable.
 **Failures:** None specified.
 **Acceptance Criteria:**
-- [ ] Confirm the selected-session presentation identifies the session and its actual execution context according to the linked session-header contract.
+- [ ] IF-SI-003-AC-01: Confirm the selected-session presentation identifies the session and its actual execution context according to the linked session-header contract.
 
 ### IF-SI-004: Present the no-session state
 
@@ -117,7 +148,7 @@ Let users inspect the selected task's session, safely attach to or resume it, an
 **Outcome:** The user sees that no session exists and can identify the start shortcut.
 **Failures:** None specified.
 **Acceptance Criteria:**
-- [ ] Launch with no session and confirm the no-session body and start shortcut appear without a keypress.
+- [ ] IF-SI-004-AC-01: Launch with no session and confirm the no-session body and start shortcut appear without a keypress.
 
 ### IF-SI-005: Present the ended-session state
 
@@ -128,7 +159,7 @@ Let users inspect the selected task's session, safely attach to or resume it, an
 **Outcome:** The user sees that the session ended and can identify the resume and picker actions.
 **Failures:** None specified.
 **Acceptance Criteria:**
-- [ ] Launch with an ended session and confirm the resume prompt and session-picker shortcut appear without a keypress.
+- [ ] IF-SI-005-AC-01: Launch with an ended session and confirm the resume prompt and session-picker shortcut appear without a keypress.
 
 ### IF-SI-006: Show initial session states on startup
 
@@ -139,7 +170,7 @@ Let users inspect the selected task's session, safely attach to or resume it, an
 **Outcome:** The initial state is visible without user input.
 **Failures:** None specified.
 **Acceptance Criteria:**
-- [ ] Launch with no session and with an ended session in turn; confirm each correct body/footer state appears without a keypress.
+- [ ] IF-SI-006-AC-01: Launch with no session and with an ended session in turn; confirm each correct body/footer state appears without a keypress.
 
 ### IF-SI-007: Indicate observed session activity
 
@@ -150,7 +181,7 @@ Let users inspect the selected task's session, safely attach to or resume it, an
 **Outcome:** The row's dot represents observed activity for the selected mode.
 **Failures:** When there is no activity evidence or no active session for the selected mode, show no activity dot.
 **Acceptance Criteria:**
-- [ ] Compare active-session activity evidence against absent evidence and historical labels; confirm exactly one dot is shown only for observed active activity in the selected mode.
+- [ ] IF-SI-007-AC-01: Compare active-session activity evidence against absent evidence and historical labels; confirm exactly one dot is shown only for observed active activity in the selected mode.
 
 ## Flows
 

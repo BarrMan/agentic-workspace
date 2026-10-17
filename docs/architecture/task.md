@@ -77,7 +77,7 @@ interface Task {
 
 **Responsibility:** Own execution lifecycle, runtime observations, and its durable record projection.
 
-**Dependencies:** Application coordination and runtime/provider services; Task relationship mutations are coordinated externally.
+**Dependencies:** Runtime/provider services. The orchestration layer holds references to Session and Task and passes Session the collaborators it needs; Session does not depend on application coordination.
 
 **Interface:**
 

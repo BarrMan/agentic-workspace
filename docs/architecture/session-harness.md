@@ -10,13 +10,13 @@ Session is the concrete conversation owner; RunningExecution is its replaceable 
 
 | Component | Responsibility | Owned State | Dependencies |
 |---|---|---|---|
-| Session | Own a conversation across runtime replacement; route current-execution events and expose runtime observation | Application conversation identity, established provider identity, current execution association, ephemeral observed state, startup progress and required publication data, Session-level subscriptions | RunningExecution, Harness, application coordination for targeting and durable checkpoints |
+| Session | Own a conversation across runtime replacement; route current-execution events and expose runtime observation | Application conversation identity, established provider identity, current execution association, ephemeral observed state, startup progress and required publication data, Session-level subscriptions | RunningExecution, Harness |
 | RunningExecution | Represent one execution incarnation and its provider/runtime operations | Provider/runtime handles, captured launch resources and incarnation provenance | Provider transport/runtime; Session for association and event routing |
 | Harness | Encapsulate provider selection, launch, identity discovery, exact resume, initialization/readiness, runtime evidence, and execution integration | Provider-specific receipts and integration state for an operation | Provider implementation, validated launch/resume context, required identity/publication coordination |
-| Task | Own Session membership and relationship projections, including selected-mode active identity | Task membership and selected-mode active Session ID | Session identity; application coordination |
+| Task | Own Session membership and relationship projections, including selected-mode active identity | Task membership and selected-mode active Session ID | Session identity |
 | Application coordination | Orchestrate explicit targeting, configuration, admission/claims, publication, and durability | Operation claims and durable application records/evidence | Task, Session, Harness-facing operations, store |
 
-Dependencies point from orchestration toward owned capabilities: Task and storage do not implement Session runtime transitions, and neither UI nor storage handles provider receipts. Task's `activeSession` is the derived live Session object for its selected mode's active ID; durable record serialization is separate. Identity alone does not establish liveness.
+Dependencies point from orchestration toward owned capabilities: models do not depend on application coordination; the orchestration layer holds references to the models and passes them what they need. Task and storage do not implement Session runtime transitions, and neither UI nor storage handles provider receipts. Task's `activeSession` is the derived live Session object for its selected mode's active ID; durable record serialization is separate. Identity alone does not establish liveness.
 
 ## Models and Relationships
 
@@ -75,7 +75,7 @@ Dependencies point from orchestration toward owned capabilities: Task and storag
 
 **Responsibility:** Own conversation-level state and operations, associate the current execution, and route its events. All operations below are Session-owned; application coordination supplies explicit targeting, configuration, admission/claims, and durability. Session does not own Task membership or a store lock.
 
-**Dependencies:** RunningExecution, Harness, application coordination for required checkpoints and publication.
+**Dependencies:** RunningExecution and Harness. The orchestration layer holds references to Session and Task and passes Session the collaborators it needs; Session does not depend on application coordination.
 
 **Interface:**
 

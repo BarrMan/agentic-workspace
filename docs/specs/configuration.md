@@ -238,17 +238,16 @@ Define configuration access and precedence, configurable modes and task-scoped a
 - [ ] Deleting the default makes the first remaining mode in catalogue order the default; it can subsequently be changed by user selection.
 - [ ] Deleting the last mode is refused and the mode remains in the catalogue.
 
-### CONFIG-014: Catalogue startup and mode identifiers
+### CONFIG-014: Catalogue startup failure
 
-**Description:** If the mode catalogue cannot be loaded at startup, the application fails and reports the error rather than substituting one. Mode ids are names unique within the project catalogue; there is no version scheme.
+**Description:** If the mode catalogue cannot be loaded at startup, the application fails and reports the error rather than substituting one. Mode identifier mechanisms are defined in the [architecture contract](../BLUEPRINT.md).
 **Trigger:** Application startup loads the mode catalogue.
 **Preconditions:** A project catalogue is configured.
-**Behavior:** Load the catalogue and require unique name ids within that catalogue; do not interpret ids as versions.
+**Behavior:** Load the catalogue; require a successfully loaded catalogue before startup proceeds.
 **Outcome:** Startup proceeds only with a successfully loaded catalogue.
 **Failures:** A load failure fails startup and reports the error.
 **Acceptance Criteria:**
 - [ ] Catalogue load failure prevents startup and reports the load error without substituting a catalogue.
-- [ ] Duplicate mode names within a project catalogue are rejected; ids have no version-scheme semantics.
 
 ## Flows
 
@@ -296,8 +295,36 @@ For general error-handling policy, see [error handling](../CONVENTIONS.md#error-
 
 ## Acceptance Criteria
 
-Acceptance criteria are listed under every requirement above: CONFIG-001 (1), CONFIG-002 (2), CONFIG-003 (3), CONFIG-004 (2), CONFIG-005 (1), CONFIG-006 (2), CONFIG-007 (4), CONFIG-008 (2), CONFIG-009 (1), CONFIG-010 (3), CONFIG-011 (1), CONFIG-012 (5), CONFIG-013 (3), CONFIG-014 (2). Total: 32 criteria.
+Acceptance criteria are listed under every requirement above: CONFIG-001 (1), CONFIG-002 (2), CONFIG-003 (3), CONFIG-004 (2), CONFIG-005 (1), CONFIG-006 (2), CONFIG-007 (4), CONFIG-008 (2), CONFIG-009 (1), CONFIG-010 (3), CONFIG-011 (1), CONFIG-012 (5), CONFIG-013 (3), CONFIG-014 (1). Total: 31 criteria.
 
 ## Open Questions
 
-None. Approved mode-deletion behavior is specified in CONFIG-013.
+None. Mode-deletion behavior is specified in CONFIG-013.
+
+## User Interactions
+
+### Configuration and mode management
+
+- Users edit settings in the TUI, save staged edits, or cancel them.
+- Users change the selected task mode with `Tab`; each task remembers its own selection.
+- Users confirm mode deletion after reviewing its effects; deleting the last mode is refused.
+- Agents can set task-and-mode approval in response to user direction; further session activity clears that approval.
+
+## Non-Functional Requirements
+
+### Performance
+
+- None.
+
+### Reliability
+
+- Catalogue load failure prevents startup and reports the error without substituting a catalogue.
+- Model discovery failure or an unavailable configured model retains the selection and displays the problem.
+
+### Security
+
+- Mode deletion does not modify provider-owned configuration, data, or state.
+
+### Compatibility
+
+- Configuration and data remain directly accessible and editable; API access is not exclusive.

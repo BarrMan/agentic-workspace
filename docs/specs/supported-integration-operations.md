@@ -18,6 +18,7 @@ Provide agents inside sessions and external applications with a selective public
 The complete approved operation inventory is:
 
 - Create a project-scoped task (IF-API-001; [task model](tasks.md#tasks-and-storage)).
+- List and view tasks through the CLI, and edit an existing task by replacing its title and description ([task operations](tasks.md#tasks-and-storage)).
 - Mark the calling session's current task Done using the status-only action (IF-API-002; [task completion](tasks.md#launching-work-and-completing-a-task)).
 - Start a session using workspace launch semantics (IF-API-003; [session startup](sessions.md#starting-a-session)).
 - Set task/mode approval in response to user direction (IF-API-004; [mode approval](configuration.md#configuration-and-modes)).
@@ -32,7 +33,7 @@ The complete approved operation inventory is:
 
 - MCP, `init`, named guides, instruction-file editing, export (including Markdown export and README editing), shell-completion installation, reset, doctor (including report-only variants), plural aliases, CLI setup, removed commands, age-based batch cleanup, and interactive screen launching are unsupported.
 - `--no-git` is unsupported.
-- Operations and options not included in the approved inventory are unsupported. TUI capabilities not specified here do not thereby become CLI operations.
+- The inventory above is exhaustive: any operation or option not listed there is unsupported. TUI capabilities not specified here do not thereby become CLI operations.
 
 ## Actors
 
