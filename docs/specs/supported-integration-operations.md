@@ -17,13 +17,15 @@ Provide agents inside sessions and external applications with a selective public
 
 The complete approved operation inventory is:
 
+This inventory governs the integration API. Launching the TUI with `agentic-workspace workspace` is the user entry point, not an integration operation; its presence does not add TUI actions to the integration API.
+
 - Create a project-scoped task (IF-API-001; [task model](tasks.md#tasks-and-storage)).
 - List and view tasks through the CLI, and edit an existing task by replacing its title and description ([task operations](tasks.md#tasks-and-storage)).
 - Mark the calling session's current task Done using the status-only action (IF-API-002; [task completion](tasks.md#launching-work-and-completing-a-task)).
 - Start a session using workspace launch semantics (IF-API-003; [session startup](sessions.md#starting-a-session)).
 - Set task/mode approval in response to user direction (IF-API-004; [mode approval](configuration.md#configuration-and-modes)).
 - List, read, and write generic files in a task's artifacts directory; writes replace selected contents from a file or standard input (IF-API-005; [task artifacts](tasks.md#using-task-artifacts)).
-- Search tasks, documents, and decision records across the project with filters and plain-text or JSON output, subject to [filtering and search](filtering-and-search.md#filtering-and-search) (IF-API-006).
+- Search tasks, documents, and decision records across the project with filters and plain-text or JSON output, subject to [filtering and search](filtering-and-search.md#product-requirements-filtering-and-search) (IF-API-006).
 - Ask the previous saved session in the current mode one message and wait for its response as a question/answer result (IF-API-007; [ask operation](sessions.md#starting-a-session)). Sending to a saved session starts the execution bound to that conversation; there is no separate resume step or session-state eligibility policy.
 - Create, update, list, search, and view project documents (IF-API-008).
 - Create and list decision records (IF-API-009).
@@ -31,7 +33,7 @@ The complete approved operation inventory is:
 
 ### Out of Scope
 
-- MCP, `init`, named guides, instruction-file editing, export (including Markdown export and README editing), shell-completion installation, reset, doctor (including report-only variants), plural aliases, CLI setup, removed commands, age-based batch cleanup, and interactive screen launching are unsupported.
+- MCP, `init`, named guides, instruction-file editing, export (including Markdown export and README editing), shell-completion installation, reset, doctor (including report-only variants), plural aliases, CLI setup, removed commands, age-based batch cleanup, and interactive screen-launch commands other than the user entry point `workspace` are unsupported integration operations.
 - `--no-git` is unsupported.
 - The inventory above is exhaustive: any operation or option not listed there is unsupported. TUI capabilities not specified here do not thereby become CLI operations.
 
@@ -133,7 +135,7 @@ The complete approved operation inventory is:
 
 ### IF-API-006: Search project records
 
-**Description:** The CLI must provide cross-record search with filters and plain-text or JSON output as defined by [Filtering and search](filtering-and-search.md#filtering-and-search).
+**Description:** The CLI must provide cross-record search with filters and plain-text or JSON output as defined by [Filtering and search](filtering-and-search.md#product-requirements-filtering-and-search).
 
 **Trigger:** A caller submits a cross-record search.
 
@@ -161,11 +163,13 @@ The complete approved operation inventory is:
 
 **Outcome:** The caller receives the response as a question/answer result, not a terminal transcript.
 
-**Failures:** Follow the ask and session contracts; do not introduce a separate resume action or session-state eligibility policy.
+**Failures:** Follow [Error Handling](../CONVENTIONS.md#error-handling); do not introduce a separate resume action or session-state eligibility policy. If no previous saved session exists in the current mode, fail and report that; do not start an execution or modify a session, and exit nonzero. If the answer fails or is interrupted, fail and report that no answer was returned; exit nonzero. The sent message and any execution effects already completed are not rolled back.
 
 **Acceptance Criteria:**
 - Asking a retained session sends one message and returns its response as a question/answer result.
 - Sending to a saved session starts execution bound to that conversation when needed.
+- With no previous saved session in the current mode, the call reports failure, starts no execution, makes no session changes, and exits nonzero.
+- If answering fails or is interrupted, the call reports failure without returning an answer and exits nonzero; already completed message/execution effects are not rolled back.
 
 ### IF-API-008: Manage project documents
 
@@ -179,10 +183,12 @@ The complete approved operation inventory is:
 
 **Outcome:** The requested project-document operation is completed.
 
-**Failures:** The operation fails when its requested document action cannot be completed.
+**Failures:** Follow [Error Handling](../CONVENTIONS.md#error-handling). Creating a document that already exists fails and reports that it exists; it does not modify the document and exits nonzero. Updating a document that does not exist fails and reports that it is missing; it does not create or modify a document and exits nonzero. Other failures follow the same convention.
 
 **Acceptance Criteria:**
 - Each specified project-document operation is available and acts on project documents.
+- Creating a document that already exists reports failure, leaves the existing document unchanged, and exits nonzero.
+- Updating a missing document reports failure, creates or modifies nothing, and exits nonzero.
 
 ### IF-API-009: Manage decision records
 
@@ -322,9 +328,13 @@ None. This contract defines an operation surface, not an independent stateful wo
 |---|---|
 | A list/search collection read encounters malformed data. | Skip the malformed record, warn on CLI stderr with filename and parse error, and return readable results with exit code 0. |
 | An operation directly targets malformed data. | The operation fails. |
+| `agent-session ask` has no previous saved session in the current mode. | Fail and report that no previous session exists; start no execution, modify no session, and exit nonzero. |
+| The answer to `agent-session ask` fails or is interrupted. | Fail and report that no answer was returned; exit nonzero. Do not roll back the sent message or execution effects already completed. |
 | `agent-session ask` targets the previous saved session in the current mode. | Send one message, start the execution bound to that conversation if needed, wait, and return the response as a question/answer result. |
+| `doc create` targets a document that already exists. | Fail and report that the document exists; leave it unchanged and exit nonzero. |
+| `doc update` targets a document that does not exist. | Fail and report that the document is missing; create or modify nothing and exit nonzero. |
 | A caller requests reset, board export, `--no-git`, or `doctor` (including report-only variants). | The operation is unsupported. |
-| A caller requests MCP, `init`, named guides, instruction-file editing, export, completion installation, CLI setup, a removed command, a plural alias, age-based batch cleanup, interactive screen launching, or an operation not in the approved inventory. | The surface is unsupported. |
+| A caller requests MCP, `init`, named guides, instruction-file editing, export, completion installation, CLI setup, a removed command, a plural alias, age-based batch cleanup, an interactive screen-launch command other than the user entry point `workspace`, or an operation not in the approved integration inventory. | The integration surface is unsupported. |
 
 ## Open Questions
 

@@ -6,10 +6,6 @@ AgenticWorkspace coordinates tasks, retained agent conversations, provider execu
 
 The detailed contracts are organized as parts of this blueprint: [Task](architecture/task.md), [Session, RunningExecution, and Harness](architecture/session-harness.md), and [Application, storage, and UI](architecture/application-boundaries.md). These parts specify properties, operations, events, completion, and failure contracts without duplicating implementation declarations.
 
-## Technology Stack
-
-The current implementation stack established by the repository is Bun as the runtime, TypeScript as the language, and `@opentui/core` as the TUI framework. Project data is filesystem-backed. These describe the implementation; they are not decisions recorded by an ADR.
-
 ## Component Ownership
 
 | Component | Responsibility | Owned State | Dependencies |
@@ -27,7 +23,7 @@ The current implementation stack established by the repository is Bun as the run
 
 Ownership is singular: controllers coordinate rather than reimplement Task or Session behavior; stores persist rather than interpret domain commands. Models do not depend on persistence. Lower-level storage, Git, process, and provider modules do not depend on CLI or UI. All supported entry points use the same application operations. Behavioral interfaces belong at real interchangeable production implementations, notably Harness providers; Task, Session, and application behavior use concrete owners rather than mirrored interfaces or a central contract package.
 
-Mode ids are unique names within the project catalogue, with no version scheme. Catalogue loading is required during application startup; if it fails, startup aborts and reports the error rather than substituting a catalogue. Artifact path containment is enforced at the task-artifact storage boundary: resolved paths must remain inside that task's `artifacts/` directory, and symlink escapes are rejected. Observable mode and artifact behavior is owned by [configuration](specs/configuration.md) and [tasks](specs/tasks.md).
+Mode ids are unique names within the project catalogue, with no version scheme. The configuration owner loads the catalogue before startup proceeds; see [CONFIG-014](specs/configuration.md#config-014-catalogue-startup-failure). Artifact path containment is enforced at the task-artifact storage boundary: resolved paths must remain inside that task's `artifacts/` directory, and symlink escapes are rejected. Observable mode and artifact behavior is owned by [configuration](specs/configuration.md) and [tasks](specs/tasks.md).
 
 ## Models and Relationships
 
@@ -115,117 +111,9 @@ Mode ids are unique names within the project catalogue, with no version scheme. 
 
 ## Component Contracts
 
-### Task and Mode catalogue
-
-**Responsibility:** Task owns synchronous relationship/property behavior. The configuration owner resolves the mode catalogue and effective inputs; callers do not implement precedence independently.
-
-**Dependencies:** Task has no I/O or application-lock dependency. Configuration is supplied by the configuration owner.
-
-**Interface:**
-
-```ts
-class Task {
-  reserveSession(modeId: ModeId, identity: CreationIdentity): Reservation
-  registerSession(modeId: ModeId, session: SessionRecord): void
-  applySessionRecord(modeId: ModeId, record: SessionRecord): void
-  selectSession(modeId: ModeId, sessionId: SessionId | undefined): void
-  removeSession(modeId: ModeId, sessionId: SessionId): RollbackResult
-}
-```
-
-**Contract:**
-- **Preconditions:** Mutations operate on an authoritative hydrated Task and validate mode, membership, and creation identity.
-- **Postconditions:** Relationship and selection changes are synchronous and model-owned; rollback can be applied to a freshly hydrated Task.
-- **Failures:** Invalid preconditions do not authorize mutation. Exact return/error representations are implementation details.
-- **Lifecycle:** No I/O, persistence, application locks, or process cleanup inside Task. The complete relationship contract is in [architecture/task.md](architecture/task.md).
-
-### Session and RunningExecution
-
-**Responsibility:** Session owns conversation startup, input, runtime observation, current execution, and subscriptions. RunningExecution represents a single replaceable runtime incarnation.
-
-**Dependencies:** Harness for provider behavior. Application coordination supplies persistence sequencing and Task relationship operations; it is not a Session model dependency.
-
-**Interface:**
-
-```ts
-class Session {
-  start(context: LaunchContext): Promise<RunningExecution>
-  resume(providerSessionId: ProviderSessionId, context: LaunchContext): Promise<RunningExecution>
-  sendInput(input: Input): Promise<void>
-  observe(): Promise<RuntimeObservation>
-  stop(): Promise<void>
-}
-```
-
-**Contract:**
-- **Preconditions:** Resume validates current configuration, exact conversation identity, provider, and working paths before replacement activity.
-- **Postconditions:** Launch readiness establishes identity, provider initialization, and supported acknowledgment of initial-instruction submission, but does not wait for an answer. Resume establishes the exact saved conversation and initialization without replaying the initial prompt or a synthetic probe.
-- **Failures:** Provider and observation failures remain visible; unsupported events and missing signals do not imply idle activity. Turn completion is not execution exit.
-- **Lifecycle:** Session reattaches current listeners and removes obsolete ones when execution is replaced. Full properties, operations, events, and promise contracts are in [architecture/session-harness.md](architecture/session-harness.md).
-
-### Harness and provider adapters
-
-**Responsibility:** Encapsulates provider construction, new conversation, exact resume, identity discovery, readiness, and execution integration. It wraps provider harnesses; it never manages provider-owned configuration, data, or state.
-
-**Dependencies:** Provider-specific adapters and execution/terminal runtime.
-
-**Interface:**
-
-```ts
-interface HarnessProvider {
-  launch(context: LaunchContext): Promise<RunningExecution>
-  resume(providerSessionId: ProviderSessionId, context: LaunchContext): Promise<RunningExecution>
-}
-```
-
-**Contract:**
-- **Preconditions:** Provider identity and ownership targets are validated before effects.
-- **Postconditions:** Harness owns exactly-once initial submission and reports what each provider signal establishes. Acknowledgment does not mean turn completion; spawning alone does not mean readiness.
-- **Failures:** Harness cleans allocations it cannot return; failures and incomplete cleanup remain visible with recovery evidence.
-- **Lifecycle:** Provider mechanics stay behind Harness. Persist provider identity (`opencode` for OpenCode) rather than executable-version adapter choice; select the adapter from the currently configured executable. Provider construction names remain illustrative. See [architecture/session-harness.md](architecture/session-harness.md).
-
 ### Application controller and stores
 
-**Responsibility:** Application operations capture intent and target identity, coordinate admission/claims, call model behavior, sequence durability and external effects, and report progress/results/errors. Repositories own durable record operations.
-
-**Dependencies:** Task, Session, configuration, project paths, storage, and relevant Git/process helpers. Orchestration supplies operation coordination; Harness is used through Session.
-
-**Interface:**
-
-```ts
-class ApplicationController {
-  createSession(taskId: TaskId, modeId: ModeId): Promise<SessionId>
-  resumeSession(taskId: TaskId, modeId: ModeId, sessionId: SessionId): Promise<void>
-  stopSession(taskId: TaskId, modeId: ModeId, sessionId: SessionId): Promise<void>
-}
-```
-
-**Contract:**
-- **Preconditions:** Capture explicit target identity before asynchronous waits; revalidate current membership and provenance before publication/effects.
-- **Postconditions:** Report success only after required effects and durability complete. Progress, provisional selection, or a resolved Harness promise alone is not creation success.
-- **Failures:** For task deletion, mode deletion, and data-folder relocation, any failed or interrupted step is reported and stops the operation without automatic recovery, retry, or rollback. Creation startup/instruction failure likewise reports and stops without rollback; only final durable publication failure stops the new execution and rolls back its provisional relationship. Retain tracking for an execution that may still run and report completed effects truthfully. Handoff follows [SPEC](SPEC.md); error reporting follows [CONVENTIONS](CONVENTIONS.md#error-handling).
-- **Lifecycle:** Store mutation performs locked authoritative reload, validation, hydration, synchronous model behavior, validation, and atomic serialization. Provider work and arbitrary awaited callbacks run outside store-file locks. See [architecture/application-boundaries.md](architecture/application-boundaries.md).
-
-### UI, renderer, and terminal attachment
-
-**Responsibility:** UI modules translate interactions into application operations and own client-local presentation/focus/attachment. Renderer displays projections. Terminal runtime provides shared execution transport.
-
-**Dependencies:** Shared application operations, read projections, and terminal attachment interfaces.
-
-**Interface:**
-
-```ts
-interface TerminalAttachment {
-  attach(sessionId: SessionId): Promise<void>
-  detach(): Promise<void>
-}
-```
-
-**Contract:**
-- **Preconditions:** Bind output and input to the selected session identity and verified execution.
-- **Postconditions:** Seed the live channel from a current-screen capture, then stream updates. Multiple clients share execution input and terminal sizing.
-- **Failures:** Transport/probe failures remain errors, not evidence of absence.
-- **Lifecycle:** Detach disposes only the client's transport and never stops the agent or shared server. Renderer does not mutate domain state, persist, discover providers, or control processes. Full boundaries are in [architecture/application-boundaries.md](architecture/application-boundaries.md).
+The application coordinates operations and persistence without reimplementing model behavior. Its operation, storage, UI, and publication contracts are owned by [Application Boundaries](architecture/application-boundaries.md). Task's relationship contract is owned by [Task](architecture/task.md); Session, RunningExecution, and Harness contracts are owned by [Session and Harness](architecture/session-harness.md). These pages are authoritative for component interfaces, guarantees, and failures.
 
 ## Component Interactions
 
@@ -239,13 +127,13 @@ interface TerminalAttachment {
 
 ```text
 capture task and mode; resolve current inputs and execution context
-Task.reserveSession(mode, creationIdentity)       // one synchronous reservation
+coordinate unfinished-task status; fail before reservation/startup if it cannot change
+Task.reserveSession(mode, creationIdentity)       // exactly one provisional relationship
 persist reservation and recovery evidence          // before external execution
-perform required task-status coordination
 Session.start(context) -> Harness.launch(context)  // outside store lock
 establish identity, initialization, initial delivery
 publish into the same reserved record using fresh state
-report success only after final publication is durable
+report ready only after final publication is durable
 ```
 
 **Completion:** Exactly one provisional relationship is reserved; required identity and final publication succeed. Readiness and publication do not wait for an agent answer.
@@ -330,6 +218,7 @@ Creation settlement and cleanup ordering are owned by [Application Boundaries](a
 - Validate current membership, durable incarnation, and execution/resource provenance before publication or destructive effects. A saved ID, PID, socket, or absent signal alone is insufficient.
 - Reservation precedes startup; required durability checkpoints precede dependent effects; final publication precedes creation success. Provider readiness alone is not committed creation.
 - Harness owns exactly-once initial delivery; resume never replays it. Readiness, turn completion, and execution exit have distinct meanings.
+- Further session activity in a task/mode clears its approval; see [CONFIG-007](specs/configuration.md#config-007-task-and-mode-approval).
 - Required owned-resource cleanup precedes relationship removal. Failed cleanup remains recoverable and visible; newer selection and unrelated current state survive publication and rollback.
 - Runtime state is observed, not maintained as a durable historical lifecycle enum/log. Unknown evidence cannot justify stop, resume, or deletion.
 - Models do not depend on persistence; persistence and provider/runtime work do not occur inside short store-file locks.
@@ -342,5 +231,4 @@ Creation settlement and cleanup ordering are owned by [Application Boundaries](a
 | Minimal durable representation of startup/recovery identity and resource paths | Must survive rehydration and interrupted startup/cleanup; must not duplicate launch paths or preserve superseded lifecycle fields | Open |
 | Provider startup/bootstrap artifact mechanism and disposition | Preserve current context and exactly-once initial delivery until an approved replacement; Harness owns submission/readiness | Open |
 | Exact admission/coordination mechanism for task/mode launch exclusivity | Preserve existing exclusivity; distinguish it from same-conversation execution coordination and client attachment | Open |
-| Exact activity triggers that clear task/mode approval | Approval remains owned by Task and follows [SPEC](SPEC.md); do not equate passive observation/attachment with activity | Open |
 | Provider event names/capability and unsubscribe representation | Events must distinguish turn completion from execution exit; unsupported/missing events cannot imply idle state | Open |

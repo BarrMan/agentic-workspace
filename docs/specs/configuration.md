@@ -29,38 +29,36 @@ Define configuration access and precedence, configurable modes and task-scoped a
 | Agent / integration caller | Uses task configuration and may set approval in response to user direction or capture its current model. |
 | Application | Resolves effective settings, applies mode behavior, and reports operation outcomes. |
 
-## States and Transitions
+## State Definitions
 
 ### Configuration, task mode, approval, and mode catalogue
 
-**States:**
-
-| State | Meaning |
-|---|---|
-| Effective configuration | Current field-by-field task, project, and root resolution. |
-| Selected task mode | The task's independently remembered context selection. |
-| Session owning mode | The fixed mode assigned to an existing session. |
-| Approval | Informational approval scoped to a task and mode. |
-| Mode catalogue | Project-defined set of modes and its selected default. |
-| Staged settings | Unsaved agent-setting edits. |
-
-**Transitions:**
-
-| From | Trigger | To | Required Behavior |
-|---|---|---|---|
-| Configuration inputs | Start, resume, or ask | Effective configuration | Resolve each field task > project > root; explicit false overrides inherited true. |
-| Selected task mode | User presses `Tab` | New selected mode | Change only that task's context; existing sessions retain their owning mode. |
-| Unapproved task/mode | Agent sets approval on user direction | Approved task/mode | Record approval only for that task and mode. |
-| Approved task/mode | Further session activity in that mode | Unapproved task/mode | Clear its approval. |
-| Current settings | User edits | Staged settings | Hold edits until Save or cancel. |
-| Staged settings | Save / cancel | Saved / prior settings | Save retains edits; cancel discards them. |
-| Mode catalogue | Delete a non-last mode | Updated catalogue | Remove it and apply the deletion fallback described by CONFIG-013. |
+| Entity | State | Meaning |
+|---|---|---|
+| Configuration | Effective configuration | Current field-by-field task, project, and root resolution. |
+| Task | Selected task mode | The task's independently remembered context selection. |
+| Session | Session owning mode | The fixed mode assigned to an existing session. |
+| Task/mode | Unapproved / approved | Informational approval scoped to a task and mode. |
+| Mode catalogue | Available catalogue | Project-defined set of modes and its selected default. |
+| Agent settings | Current / staged settings | Saved settings / unsaved agent-setting edits. |
 
 **Invariants:**
 - A task's effective configuration is resolved field by field and used by its operations.
 - A session's owning mode remains fixed; task selection does not change session execution.
 - Approval is task-and-mode scoped, informational, and not an artifact-review gate.
 - Modes are user-defined categories without prescribed sequence or required document set.
+
+## Transition Definitions
+
+| Entity | From | Trigger | To | Required Behavior |
+|---|---|---|---|---|
+| Configuration | Configuration inputs | Start, resume, or ask | Effective configuration | Resolve each field task > project > root; explicit false overrides inherited true. |
+| Task mode | Selected task mode | User presses `Tab` | New selected mode | Change only that task's context; existing sessions retain their owning mode. |
+| Approval | Unapproved task/mode | Agent sets approval on user direction | Approved task/mode | Record approval only for that task and mode. |
+| Approval | Approved task/mode | Further session activity in that mode | Unapproved task/mode | Clear its approval. |
+| Agent settings | Current settings | User edits | Staged settings | Hold edits until Save or cancel. |
+| Agent settings | Staged settings | Save / cancel | Saved / prior settings | Save retains edits; cancel discards them. |
+| Mode catalogue | Available catalogue | Delete a non-last mode | Updated catalogue | Remove it and apply the deletion fallback described by CONFIG-013. |
 
 ## External Behavior
 
@@ -299,16 +297,21 @@ Acceptance criteria are listed under every requirement above: CONFIG-001 (1), CO
 
 ## Open Questions
 
-None. Mode-deletion behavior is specified in CONFIG-013.
+| Question | Impact | Status |
+|---|---|---|
+| Which exact session events count as “further session activity” that clears approval? | Determines the precise approval-clearing trigger; the rule remains that further activity in the approved task's mode clears only that task/mode approval. | Open |
 
 ## User Interactions
 
 ### Configuration and mode management
 
-- Users edit settings in the TUI, save staged edits, or cancel them.
-- Users change the selected task mode with `Tab`; each task remembers its own selection.
-- Users confirm mode deletion after reviewing its effects; deleting the last mode is refused.
-- Agents can set task-and-mode approval in response to user direction; further session activity clears that approval.
+**Context:** In the TUI when managing configuration, task modes, or agent settings; mode deletion is requested for a configured mode. An agent may set approval in response to user direction.
+
+**Action:** User edits settings and saves or cancels; changes a selected task mode with `Tab`; or confirms mode deletion after reviewing its effects. Agent sets task-and-mode approval at user direction.
+
+**Response:** Settings are retained on Save and discarded on cancel; each task remembers its own mode selection; deletion removes the mode and its sessions and refuses deletion of the last mode. Approval applies only to the specified task/mode, and further session activity in that mode clears it.
+
+**Feedback:** Deletion effects are explained before confirmation; catalogue load, model discovery, model availability, and deletion failures are reported as specified above. No other interaction feedback is specified.
 
 ## Non-Functional Requirements
 

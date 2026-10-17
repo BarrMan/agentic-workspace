@@ -28,7 +28,7 @@ Define task organization, persistence, work context, artifacts, completion, mile
 
 | ID | Requirement |
 |---|---|
-| TASK-001–TASK-021 | The complete requirements, flows, edge cases, invariants, and acceptance criteria are in the [Tasks and storage contract](specs/tasks.md). |
+| TASK-001–TASK-022 | The complete requirements, flows, edge cases, invariants, and acceptance criteria are in the [Tasks and storage contract](specs/tasks.md). |
 
 #### Behavioral Flows
 

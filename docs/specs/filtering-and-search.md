@@ -6,10 +6,14 @@
 
 Let users narrow the workspace task list and find records across project tasks, documents, and decision records.
 
+
+
 ## Goals
 
 - Filter workspace tasks within the project directory.
 - Search project tasks and other project records using predictable literal matching.
+
+
 
 ## Scope
 
@@ -21,6 +25,8 @@ Let users narrow the workspace task list and find records across project tasks, 
 
 - Regex, fuzzy ranking, pagination, archived records by default, and output formats other than plain-text and JSON.
 
+
+
 ## Actors
 
 | Actor | Description |
@@ -29,74 +35,25 @@ Let users narrow the workspace task list and find records across project tasks, 
 | Integration caller | Submits cross-record searches and requests supported output formats. |
 | Application | Filters project tasks and searches project records. |
 
-## States and Transitions
 
-### Task filters and search request
 
-**States:**
+## Flows
 
-| State | Meaning |
-|---|---|
-| Unfiltered task set | All project-scoped tasks are shown without active filter constraints. |
-| Filtered task set | Tasks matching active filter constraints, with a visible filter summary. |
-| Search request | Query and options for a project-scoped record search. |
-| Search results | Matching records in plain-text or JSON format. |
+### Filter workspace tasks
 
-**Transitions:**
+**Trigger:** User enters or changes a task filter.
+**Preconditions:** Workspace is open in a project directory.
+**Flow:** User selects supported dimensions; application filters project tasks and displays a summary; clear/reset removes constraints.
+**Outcome:** Matching tasks or the unconstrained project task set is displayed.
 
-| From | Trigger | To | Required Behavior |
-|---|---|---|---|
-| Unfiltered or filtered task set | User adds/changes filter | Filtered task set | Apply supported dimensions and show summary. |
-| Filtered task set | User clears/resets | Unfiltered task set | Remove active constraints. |
-| Search request | User/integration submits | Search results | Search project records using literal case-insensitive matching and requested archive scope/format. |
+### Search project records
 
-**Invariants:**
-- Task-filter and search scope is the project directory.
-- Values within one filter combine with OR; separate filters combine with AND.
-- Archived records are excluded unless explicitly requested.
-- Search matching is literal and case-insensitive; no pagination is supported.
+**Trigger:** User or integration submits cross-record search.
+**Preconditions:** Project directory is available.
+**Flow:** Search tasks, documents, and decision records within project scope over the specified fields; match case-insensitively and literally; search active/completed by default and archived only when requested; combine values within a filter using OR and separate filters using AND; return plain-text or JSON without regex, fuzzy ranking, or pagination.
+**Outcome:** Matching records are returned in a supported format.
 
-## External Behavior
 
-### Search interface
-
-**Purpose:** Let users and integrations search project records.
-
-**Inputs:** Search query, project directory, optional archived-record inclusion, and output format.
-
-**Outputs:** Matching tasks, documents, and decision records as plain-text or JSON.
-
-**Failures:** No additional failure behavior is specified in this contract. Unsupported formats, regex, fuzzy ranking, and pagination are not supported.
-
-## User Interactions
-
-### Filter tasks and search project records
-
-**Context:** The user is working in a project-scoped workspace or submitting a project-record search.
-
-**Action:** Apply, change, or clear task filters; submit a search query and supported archive/format options.
-
-**Response:** Show matching project tasks with an active-filter summary, or return matching tasks, documents, and decision records.
-
-**Feedback:** The interface provides filter clear/reset actions; searches use literal case-insensitive matching and return plain-text or JSON results.
-
-## Non-Functional Requirements
-
-### Performance
-
-- None.
-
-### Reliability
-
-- None.
-
-### Security
-
-- None.
-
-### Compatibility
-
-- None.
 
 ## Functional Requirements
 
@@ -141,23 +98,90 @@ Let users narrow the workspace task list and find records across project tasks, 
 - [ ] IF-FS-003-AC-03: Confirm plain-text and JSON output are available and other formats are unavailable.
 - [ ] IF-FS-003-AC-04: Confirm regex, fuzzy ranking, and pagination are unavailable.
 
-## Flows
 
-### Filter workspace tasks
 
-**Trigger:** User enters or changes a task filter.
-**Preconditions:** Workspace is open in a project directory.
-**Flow:** User selects supported dimensions; application filters project tasks and displays a summary; clear/reset removes constraints.
-**Outcome:** Matching tasks or the unconstrained project task set is displayed.
+## Acceptance Criteria
 
-### Search project records
+Acceptance criteria are listed under every requirement above: IF-FS-001 (3), IF-FS-002 (4), IF-FS-003 (4). Total: 11 criteria.
 
-**Trigger:** User or integration submits cross-record search.
-**Preconditions:** Project directory is available.
-**Flow:** Search tasks, documents, and decision records within project scope over the specified fields; match case-insensitively and literally; search active/completed by default and archived only when requested; combine values within a filter using OR and separate filters using AND; return plain-text or JSON without regex, fuzzy ranking, or pagination.
-**Outcome:** Matching records are returned in a supported format.
+## States and Transitions
 
-## Failure/Recovery
+### Task filters and search request
+
+**States:**
+
+| State | Meaning |
+|---|---|
+| Unfiltered task set | All project-scoped tasks are shown without active filter constraints. |
+| Filtered task set | Tasks matching active filter constraints, with a visible filter summary. |
+| Search request | Query and options for a project-scoped record search. |
+| Search results | Matching records in plain-text or JSON format. |
+
+**Transitions:**
+
+| From | Trigger | To | Required Behavior |
+|---|---|---|---|
+| Unfiltered or filtered task set | User adds/changes filter | Filtered task set | Apply supported dimensions and show summary. |
+| Filtered task set | User clears/resets | Unfiltered task set | Remove active constraints. |
+| Search request | User/integration submits | Search results | Search project records using literal case-insensitive matching and requested archive scope/format. |
+
+**Invariants:**
+- Task-filter and search scope is the project directory.
+- Values within one filter combine with OR; separate filters combine with AND.
+- Archived records are excluded unless explicitly requested.
+- Search matching is literal and case-insensitive; no pagination is supported.
+
+
+
+## User Interactions
+
+### Filter tasks and search project records
+
+**Context:** The user is working in a project-scoped workspace or submitting a project-record search.
+
+**Action:** Apply, change, or clear task filters; submit a search query and supported archive/format options.
+
+**Response:** Show matching project tasks with an active-filter summary, or return matching tasks, documents, and decision records.
+
+**Feedback:** The interface provides filter clear/reset actions; searches use literal case-insensitive matching and return plain-text or JSON results.
+
+
+
+## External Behavior
+
+### Search interface
+
+**Purpose:** Let users and integrations search project records.
+
+**Inputs:** Search query, project directory, optional archived-record inclusion, and output format.
+
+**Outputs:** Matching tasks, documents, and decision records as plain-text or JSON.
+
+**Failures:** No additional failure behavior is specified in this contract. Unsupported formats, regex, fuzzy ranking, and pagination are not supported.
+
+
+
+## Non-Functional Requirements
+
+### Performance
+
+- None.
+
+### Reliability
+
+- None.
+
+### Security
+
+- None.
+
+### Compatibility
+
+- None.
+
+
+
+## Edge Cases
 
 | Condition | Required Behavior |
 |---|---|
@@ -167,9 +191,7 @@ Let users narrow the workspace task list and find records across project tasks, 
 | Records are outside selected project directory | Exclude them from search and task-filter scope. |
 | Request asks for regex, fuzzy ranking, pagination, or unsupported format | These capabilities are not supported; only plain-text and JSON output formats are available. |
 
-## Acceptance Criteria
 
-Acceptance criteria are listed under every requirement above: IF-FS-001 (3), IF-FS-002 (4), IF-FS-003 (4). Total: 11 criteria.
 
 ## Open Questions
 

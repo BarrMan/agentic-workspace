@@ -168,6 +168,9 @@ class Harness {
 
 ```ts
 Application.create(operation) {
+  resolveConfigurationAndContext(operation)
+  coordinateUnfinishedTaskStatus(operation)
+  if status coordination fails: fail before reservation or startup
   reservation = store.reserve(operation)
   session = Session.construct(reservation.identity, operation)
   await session.start(operation.withRequiredCheckpoints(application.publish))

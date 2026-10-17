@@ -110,6 +110,7 @@ interface Session {
 ```text
 validate request and prepare work context
 resolve current configuration and construct Harness
+coordinate required unfinished-task status; fail before reservation/startup if it cannot change
 creation = Task.reserveSession(modeId)
 persist reservation before execution
 start the reserved Session outside the store mutation/lock

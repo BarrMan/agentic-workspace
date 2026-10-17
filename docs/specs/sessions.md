@@ -28,15 +28,54 @@ This contract specifies session identity and observed state, session startup and
 
 ## States and Transitions
 
-| State | Meaning or transition |
+### Observed runtime state
+
+**States:**
+
+| State | Meaning |
 |---|---|
 | Running | Current observation establishes that the agent is running. |
 | Idle | Current observation establishes an idle session; eligible for soft-limit stopping. |
 | Stopped | Observation establishes that the agent is no longer running. |
 | Unknown/unavailable | Current liveness or activity cannot be established; this never authorizes a stop or a stopped claim. |
 | Permission request | Reported separately from running/idle/stopped activity and protected from automatic stopping. |
-| Creation | Provisional session/execution becomes ready only after initialization, identity, accepted initial delivery, and durable publication. Only final publication failure rolls back the provisional relationship (SESSION-009/010). |
-| Handoff | A durably published, confirmed-running successor precedes retirement of an eligible workspace-owned predecessor (SESSION-016). |
+
+**Transitions:**
+
+| From | Trigger | To | Required Behavior |
+|---|---|---|---|
+| Any observed state | Runtime refresh or lifecycle operation | Running, idle, stopped, or unknown/unavailable | Report only what current evidence establishes; uncertainty never authorizes a stop or a stopped claim. |
+| Any observed state | Permission request is observed | Permission request indicated separately | Protect the session from automatic stopping. |
+
+### Session creation and handoff
+
+**States:**
+
+| State | Meaning |
+|---|---|
+| Provisional creation | A session relationship is reserved while startup is in progress; it is not ready. |
+| Ready | Initialization, identity, accepted initial delivery, and durable publication are established. |
+| Creation failed | Creation did not succeed; only final durable publication failure rolls back the provisional relationship. |
+| Handoff successor confirmed | The distinct successor is durably published and confirmed running. |
+| Handoff settled | An eligible workspace-owned predecessor is retired only after successor confirmation; an external predecessor is not ended. |
+
+**Transitions:**
+
+| From | Trigger | To | Required Behavior |
+|---|---|---|---|
+| No reserved session | Startup reservation after task-status coordination | Provisional creation | Reserve and persist exactly one provisional relationship in the selected mode. |
+| Provisional creation | Initialization, identity, accepted initial delivery, and durable publication succeed | Ready | Report readiness only after all required evidence and publication are established. |
+| Provisional creation | Startup/readiness or initial-delivery failure | Creation failed | Fail and report creation; retain tracking for any execution that may still be running and do not roll back the relationship. |
+| Provisional creation | Final durable publication fails | Creation failed | Stop the new execution and roll back its provisional relationship; retain tracking if it may still be running. |
+| Successor creation | Successor is durably published and confirmed running | Handoff successor confirmed | Keep the predecessor intact until this confirmation. |
+| Handoff successor confirmed | Handoff retires an eligible workspace-owned predecessor | Handoff settled | Retire only after confirmation; preserve the successor if predecessor retirement fails. |
+
+**Invariants:**
+
+- Session identity is distinct from observed runtime state; unknown/unavailable evidence never authorizes stopping or declaring stopped.
+- Creation readiness requires provider initialization, established identity, accepted initial delivery, and durable publication.
+- Task-status coordination precedes reservation and session startup; handoff confirmation precedes predecessor retirement.
+- Only final durable publication failure rolls back the provisional creation relationship.
 
 ## External Behavior
 
@@ -657,6 +696,10 @@ Failure handling follows [error handling and edge cases](../CONVENTIONS.md#error
 - [ ] **SESSION-018:** Workspace departure and app crash detach without stopping agents; stopped is reported only after observation establishes not running.
 - [ ] **SESSION-019:** Closing or deleting allows dispatched input up to two seconds to land; undispatched text is discarded and reported not sent, uncertain in-flight delivery is distinguished, and automatic resend never occurs.
 - [ ] **SESSION-020:** Deletion of a running session without force is refused; with force, kill precedes removal of workspace-owned records/resources, and provider state remains untouched.
+
+## Open Questions
+
+None recorded.
 
 ## Global Behavioral Invariants
 

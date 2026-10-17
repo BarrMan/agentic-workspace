@@ -202,6 +202,7 @@ class UIController {
 ```text
 capture target and resolve current configuration/paths
 prepare execution context while preserving target identity
+coordinate unfinished-task status; if the required change fails, stop before reservation or startup
 Task reserves and selects one provisional session
 persist reservation and required recovery evidence
 Session starts through Harness outside the store lock
@@ -273,7 +274,9 @@ for later publication, reload and validate again before applying intended change
 **Pseudocode:**
 
 ```text
-reserve once and durably publish recovery identity
+resolve configuration/context and coordinate unfinished-task status first
+if required status change fails, stop before reservation or startup
+reserve exactly once and durably publish recovery identity
 start execution outside store lock
 publish final identity/state against fresh record
 if startup or initial-instruction delivery fails:

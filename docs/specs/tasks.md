@@ -28,12 +28,26 @@ This contract defines task identity and data, project storage, artifacts, work c
 
 ## States and Transitions
 
-| Entity | State or transition |
-|---|---|
-| Task | Configured project status; marking Done changes only status. Explicit completion/cleanup moves the task to completed storage and removes its worktree and branch. |
-| Task | An unfinished task may be archived; terminal-status tasks cannot be archived. |
-| Task data | Resides at the project's single deterministic configured location; relocation makes the selected location the store on success. |
-| Milestone | May be added, renamed, listed, archived, or removed; removal clears or reassigns task references. |
+### State definitions
+
+| Entity | State | Meaning |
+|---|---|---|
+| Task | Configured status | Statuses come from project configuration; marking Done changes only status. |
+| Task | Completed | Explicit completion/cleanup moves the task to completed storage and removes its worktree and branch. |
+| Task | Archived | An unfinished task's container is in archive storage; artifacts, session history, dependencies, worktree, and branch are retained. |
+| Task data | Configured store | Resides at the project's single deterministic configured location. |
+| Milestone | Existing | May be added, renamed, listed, archived, or removed; removal clears or reassigns task references. |
+
+### Transition definitions
+
+| Entity | From | Trigger | To | Required behavior |
+|---|---|---|---|---|
+| Task | Configured status | Mark Done | Configured status | Change only status; retain the worktree. |
+| Task | Unfinished | Explicit completion/cleanup | Completed | Move to completed storage, perform session cleanup, and remove worktree and branch. |
+| Task | Unfinished | Archive, after running sessions are explicitly stopped | Archived | Move the task container to archive storage and clean up vacated-task references; preserve artifacts, session history, dependencies, worktree, and branch. |
+| Task | Terminal status | Archive | Unchanged | Reject the archive. |
+| Task data | Existing configured store | Successful relocation | Selected configured store | The selected location becomes the project's deterministic store. |
+| Milestone | Existing | Removal | Removed | Clear or reassign all matching task references. |
 
 ## External Behavior
 
@@ -495,6 +509,29 @@ Define task identity and data, project storage, artifacts, work context and comp
 **Acceptance Criteria:**
 - Artifact paths outside the task's `artifacts/` directory, including through symlinks, are rejected.
 
+### TASK-022: Archiving an unfinished task
+
+**Description:** Archiving an unfinished task moves its task container to archive storage and invokes vacated-task reference cleanup while preserving artifacts, session history, dependencies, worktree, and branch. Terminal-status tasks cannot be archived. Running sessions must be stopped explicitly before archive; completed work uses completion/cleanup instead.
+
+**Trigger:** The user archives a task.
+
+**Preconditions:** The task is unfinished, and any running sessions have been stopped explicitly.
+
+**Behavior:**
+1. Reject archive for a terminal-status task.
+2. For an unfinished task, move its task container to archive storage and invoke vacated-task reference cleanup.
+3. Preserve artifacts, session history, dependencies, worktree, and branch.
+4. Use explicit completion/cleanup rather than archive for completed work.
+
+**Outcome:** An eligible unfinished task is archived with its retained resources intact and vacated-task references cleaned up.
+
+**Failures:** Follow [error handling and edge cases](../CONVENTIONS.md#error-handling).
+
+**Acceptance Criteria:**
+- An unfinished task with its running sessions stopped is moved to archive storage, vacated-task reference cleanup is invoked, and its artifacts, session history, dependencies, worktree, and branch are retained.
+- A terminal-status task is refused archive; running sessions must be stopped explicitly, and completed work uses completion/cleanup instead.
+- If archive fails or is cancelled, the operation does not report successful archival unless the task container was moved; report according to [error handling and edge cases](../CONVENTIONS.md#error-handling).
+
 ## Flows
 
 ##### Creating and using a task
@@ -660,7 +697,8 @@ Task-specific failure outcomes and recovery obligations are defined in the requi
 - [ ] **TASK-019:** Deletion teardown respects in-flight input lifetime and validates all native cleanup targets before stop effects.
 - [ ] **TASK-020:** CLI users can list and view tasks and replace an existing task's title and description.
 - [ ] **TASK-021:** Artifact paths resolving outside the task's `artifacts/` directory, including through symlinks, are rejected.
+- [ ] **TASK-022:** Only unfinished tasks with running sessions explicitly stopped can be archived; archive moves the task container and cleans up vacated-task references while preserving artifacts, session history, dependencies, worktree, and branch; terminal tasks are refused and completed work uses completion/cleanup.
 
-#### Open Decisions
+#### Open Questions
 
-None recorded in this contract.
+None recorded.
