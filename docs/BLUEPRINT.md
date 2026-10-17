@@ -6,6 +6,10 @@ AgenticWorkspace coordinates tasks, retained agent conversations, provider execu
 
 The detailed contracts are organized as parts of this blueprint: [Task](architecture/task.md), [Session, RunningExecution, and Harness](architecture/session-harness.md), and [Application, storage, and UI](architecture/application-boundaries.md). These parts specify properties, operations, events, completion, and failure contracts without duplicating implementation declarations.
 
+## Technology Stack
+
+The current implementation stack established by the repository is Bun as the runtime, TypeScript as the language, and `@opentui/core` as the TUI framework. Project data is filesystem-backed. These describe the implementation; they are not decisions recorded by an ADR.
+
 ## Component Ownership
 
 | Component | Responsibility | Owned State | Dependencies |

@@ -47,6 +47,39 @@ This contract defines task identity and data, project storage, artifacts, work c
 
 **Failures:** Follow [error handling and edge cases](../CONVENTIONS.md#error-handling), with task-specific consequences defined in the requirements and flows below.
 
+## User Interactions
+
+### Manage tasks, work context, and artifacts
+
+**Context:** The user is working in a project and managing its tasks or artifacts.
+
+**Action:** Create, view, edit, launch, complete, archive, or delete tasks; manage milestones; or list, read, display, and write task artifacts.
+
+**Response:** Apply the requested operation using configured task status and storage; show task listings, views, operation results, warnings, and actionable errors.
+
+**Feedback:** Show a visible warning when worktree creation fails, require confirmation naming the task ID and title for destructive deletion, and distinguish status-only Done from explicit completion/cleanup.
+
+## Non-Functional Requirements
+
+### Performance
+
+- None.
+
+### Reliability
+
+- Preserve readable task records when collection reads encounter malformed records.
+- Preserve the task when worktree creation fails; preserve execution ownership/tracking evidence when required cleanup fails.
+- Report completed effects truthfully after failed or interrupted deletion and relocation; do not imply rollback.
+
+### Security
+
+- Keep artifact operations within the task's `artifacts/` directory, rejecting paths that escape it, including through symlinks.
+- Do not manage or modify provider-owned configuration, data, or state.
+
+### Compatibility
+
+- None.
+
 ## Features
 
 | Feature | Description | Contract |
@@ -207,7 +240,7 @@ Define task identity and data, project storage, artifacts, work context and comp
 
 ### TASK-008: Relocating task storage
 
-**Description:** When the user changes the configured task-data location, the application moves the entire workspace-owned data folder, including existing task data, rather than requiring manual relocation. Provider-owned configuration, data, and state are never moved or otherwise managed. On success, the full workspace-owned folder is at the selected location, which becomes the project's deterministic store, including for linked worktrees. If relocation fails or is interrupted, report the error and stop. Generic handling follows [error handling and edge cases](../CONVENTIONS.md#error-handling).
+**Description:** When the user changes the configured task-data location, the application moves the entire workspace-owned data folder, including existing task data, rather than requiring manual relocation. Provider-owned configuration, data, and state are never moved or otherwise managed. On success, the full workspace-owned folder is at the selected location, which becomes the project's deterministic store, including for linked worktrees. Relocation failures follow [error handling and edge cases](../CONVENTIONS.md#error-handling).
 
 **Trigger:** The user changes the configured task-data location.
 
@@ -219,7 +252,7 @@ Define task identity and data, project storage, artifacts, work context and comp
 
 **Outcome:** The full workspace-owned folder is at the selected location on success; provider-owned state remains untouched.
 
-**Failures:** If relocation fails or is interrupted, report the error and stop. Generic handling follows [error handling and edge cases](../CONVENTIONS.md#error-handling).
+**Failures:** Relocation failures follow [error handling and edge cases](../CONVENTIONS.md#error-handling).
 
 **Acceptance Criteria:**
 - Relocation moves all workspace-owned data; success selects the new store and provider-owned state is untouched.
@@ -396,13 +429,13 @@ Define task identity and data, project storage, artifacts, work context and comp
 
 ### TASK-018: Failed or interrupted operations
 
-**Description:** If any task deletion or relocation step fails or is interrupted, report the error. Report completed effects truthfully; do not imply rollback. If workspace or group cleanup fails after task deletion succeeds, display an incomplete-cleanup message. Generic failure handling follows [error handling and edge cases](../CONVENTIONS.md#error-handling).
+**Description:** If any task deletion or relocation step fails or is interrupted, report completed effects truthfully; do not imply rollback. If workspace or group cleanup fails after task deletion succeeds, display an incomplete-cleanup message. Generic failure handling follows [error handling and edge cases](../CONVENTIONS.md#error-handling).
 
 **Trigger:** A deletion or relocation step fails/is interrupted, or workspace/group cleanup fails after successful task deletion.
 
 **Preconditions:** A deletion, relocation, or related cleanup operation is underway.
 
-**Behavior:** Report the error and completed effects truthfully; display an incomplete-cleanup message if workspace/group cleanup fails after task deletion.
+**Behavior:** Report completed effects truthfully; display an incomplete-cleanup message if workspace/group cleanup fails after task deletion.
 
 **Outcome:** The user sees truthful completed effects and any incomplete-cleanup message.
 
@@ -503,7 +536,7 @@ Define task identity and data, project storage, artifacts, work context and comp
 **Flow:**
 
 1. Move the entire workspace-owned data folder, including existing task data, to the selected location; do not move provider-owned state.
-2. On success, use that location as the project's deterministic store, including from linked worktrees. If a step fails or is interrupted, report the error and stop; generic handling follows [error handling and edge cases](../CONVENTIONS.md#error-handling).
+2. On success, use that location as the project's deterministic store, including from linked worktrees. If a step fails or is interrupted, follow [error handling and edge cases](../CONVENTIONS.md#error-handling).
 
 **Postconditions:** On success, the full workspace-owned data folder is at the selected location. Provider-owned state remains untouched.
 
@@ -568,7 +601,7 @@ Define task identity and data, project storage, artifacts, work context and comp
 
 1. Kill the task's agent, then remove its worktree and branch; do not remove tracking relationships/resources before required cleanup succeeds.
 2. Leave provider-owned configuration, data, and state untouched. Do not add a force-discard or uncommitted-work option.
-3. On any failed or interrupted step, report the error and completed effects truthfully. Generic handling follows [error handling and edge cases](../CONVENTIONS.md#error-handling).
+3. On any failed or interrupted step, report completed effects truthfully. Generic handling follows [error handling and edge cases](../CONVENTIONS.md#error-handling).
 
 **Postconditions:** Destructive deletion removes the task's agent, worktree, and branch after confirmation and preflight. Workspace-owned records/resources are deleted; provider-owned state is untouched.
 
@@ -590,7 +623,7 @@ Task-specific failure outcomes and recovery obligations are defined in the requi
 | A task is marked Done rather than completed/cleaned up | Change only its status; retain its worktree. |
 | Agent liveness cannot be established during deletion | Report unknown/unavailable and leave the agent untouched; uncertainty does not authorize a kill or stopped status. |
 | Multiple native cleanup targets are involved | Apply native cleanup preflight before any stop effects. |
-| A task deletion or relocation step fails or is interrupted | Report the error and completed effects truthfully; generic handling follows [error handling and edge cases](../CONVENTIONS.md#error-handling). |
+| A task deletion or relocation step fails or is interrupted | Report completed effects truthfully; follow [error handling and edge cases](../CONVENTIONS.md#error-handling). |
 | An unfinished task is archived | Preserve its artifacts, session history, dependencies, worktree, and branch; require running sessions to be stopped explicitly first. |
 
 ### Behavioral Invariants
@@ -598,7 +631,6 @@ Task-specific failure outcomes and recovery obligations are defined in the requi
 - Task IDs are complete literal identities; numeric suffixes are not compared, duplicate records are not repaired, and archived IDs remain reserved.
 - Dependencies remain informational and survive completion; they do not automatically gate launch or completion.
 - A project's task collection comes from one deterministic store, shared by its linked worktrees, not from branch discovery.
-- Forgetting does not signal an agent. Uncertain liveness never authorizes killing an agent or reporting it stopped.
 - Status-only Done retains the worktree; explicit completion/cleanup removes the worktree and branch.
 - Provider-owned configuration, data, and state are never managed or modified.
 - When confirmed destructive execution cleanup is required, cleanup precedes tracking/resource removal; failure evidence and truthful reporting are preserved.
@@ -614,7 +646,7 @@ Task-specific failure outcomes and recovery obligations are defined in the requi
 - [ ] **TASK-005:** Project task loading uses its one deterministic store, including from linked worktrees, and does not discover records across branches.
 - [ ] **TASK-006:** Each supported configuration choice selects the store; task data remains outside `.git`, task containers contain `task.md` and `artifacts/`, and records use Markdown frontmatter.
 - [ ] **TASK-007:** Collection reads skip malformed records with filename and parse error while retaining readable records; direct malformed-target actions fail helpfully, with bulk reads exiting 0 and explicit single-record loads strict.
-- [ ] **TASK-008:** Relocation moves the complete workspace-owned data folder and never manages provider-owned state; success selects the new deterministic store and failure is reported without continuing.
+- [ ] **TASK-008:** Relocation moves the complete workspace-owned data folder and never manages provider-owned state; success selects the new deterministic store.
 - [ ] **TASK-009:** Artifact listing, display, read, and write behave as specified, with writes replacing the selected artifact in the task's artifacts directory.
 - [ ] **TASK-010:** External artifact edits update an open viewer only through notifications; no periodic recheck or missed-notification recovery is promised.
 - [ ] **TASK-011:** Arbitrary artifact names and contents are user-managed; mode rules apply as specified, independently of mode-specific document schemas and approvals.
@@ -624,7 +656,7 @@ Task-specific failure outcomes and recovery obligations are defined in the requi
 - [ ] **TASK-015:** Confirmed destructive deletion names ID/title and irreversibility, kills the task agent, removes worktree and branch, has no force-discard option, and leaves provider state untouched.
 - [ ] **TASK-016:** Unknown agent liveness is reported unknown/unavailable and never authorizes killing or declaring stopped.
 - [ ] **TASK-017:** Required execution cleanup precedes tracking/resource removal; cleanup failure preserves ownership/tracking evidence and direct record deletion or UI teardown cannot substitute for cleanup.
-- [ ] **TASK-018:** Failed or interrupted deletion/relocation reports completed effects truthfully and stops; cleanup failure after successful deletion is shown as incomplete cleanup.
+- [ ] **TASK-018:** Failed or interrupted deletion/relocation reports completed effects truthfully; cleanup failure after successful deletion is shown as incomplete cleanup.
 - [ ] **TASK-019:** Deletion teardown respects in-flight input lifetime and validates all native cleanup targets before stop effects.
 - [ ] **TASK-020:** CLI users can list and view tasks and replace an existing task's title and description.
 - [ ] **TASK-021:** Artifact paths resolving outside the task's `artifacts/` directory, including through symlinks, are rejected.

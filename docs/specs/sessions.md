@@ -50,6 +50,39 @@ This contract specifies session identity and observed state, session startup and
 
 **Failures:** Follow [error handling and edge cases](../CONVENTIONS.md#error-handling); creation-publication rollback and handoff settlement are limited by SESSION-009/010/016.
 
+## User Interactions
+
+### Start and manage a session
+
+**Context:** The user works with a task and selected mode through the CLI or workspace.
+
+**Action:** Start, observe, stop, resume, hand off, attach to, detach from, or delete a session; provide terminal input where supported.
+
+**Response:** Create one session for the selected mode, coordinate unfinished task status before startup, and show readiness only after required initialization, identity, accepted initial delivery, and durable publication. Report observed runtime and terminal state, preserve exact conversation identity on resume, and apply the specified lifecycle outcomes.
+
+**Feedback:** Report operation errors and completed effects truthfully; show unknown/unavailable when liveness cannot be established, and explain when exact resume is impossible.
+
+## Non-Functional Requirements
+
+### Performance
+
+- Refresh observed runtime state for every task every 30 seconds.
+
+### Reliability
+
+- Do not infer running or stopped state from stale records or uncertain evidence; uncertainty never authorizes stopping an agent.
+- Keep session identity and any potentially running execution durably trackable; only final durable publication failure rolls back the provisional relationship (SESSION-009/010).
+- Confirm a durably published, running successor before retiring an eligible predecessor; handoff settlement follows SESSION-016.
+- Do not automatically resend terminal input or substitute a new conversation for exact resume.
+
+### Security
+
+- Never modify provider-owned configuration, data, or state.
+
+### Compatibility
+
+- CLI and workspace session starts have identical semantics.
+
 ## Features
 
 | Feature | Description | Contract |
@@ -473,13 +506,12 @@ Sessions let users launch and continue agent conversations attached to tasks, ob
 **Flow:**
 
 1. Resolve effective configuration, establish the required work context, and prepare the launch environment and initial instruction/artifact context.
-2. Create the session in the selected mode and make it the task's active session for that mode.
-3. Move an unfinished task to its configured in-progress status; leave a finished task's status unchanged. If the required status change fails, fail the start before session startup.
-4. Create the session in the selected mode and make it the task's active session for that mode.
-5. Initialize the provider, establish identity, and deliver the initial instruction exactly once.
-6. After supported acceptance of initial delivery and successful durable publication, report creation ready without waiting for an answer.
+2. Move an unfinished task to its configured in-progress status; leave a finished task's status unchanged. If the required status change fails, fail the start before session reservation or startup.
+3. Reserve and persist exactly one provisional session relationship in the selected mode, making it the task's active session for that mode.
+4. Start the reserved session outside the store lock; initialize the provider, establish identity, and deliver the initial instruction exactly once.
+5. After supported acceptance of initial delivery and successful durable publication into the same reserved record, report creation ready without waiting for an answer.
 
-**Postconditions:** The selected task/mode has the new active session and the session is ready only after task-status coordination, initialization, identity, accepted delivery, and durable publication; an unfinished task has its configured in-progress status.
+**Postconditions:** The selected task/mode has one new active session, reserved only after task-status coordination; the session is ready only after startup, initialization, identity, accepted delivery, and durable publication. An unfinished task has its configured in-progress status.
 
 ##### Creation failure
 

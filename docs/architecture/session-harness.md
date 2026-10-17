@@ -232,8 +232,13 @@ Application.stop(session) {
 Session.route(event, origin) {
   if (!isCurrentExecution(origin)) return
   observation = updateEphemeralObservation(event)
-  application.validateBeforeDurableEffect(event, observation)
+  publishRoutedEvent(event, observation)
 }
+
+application.onRoutedEvent(({ event, observation }) => {
+  validateBeforeDurableEffect(event, observation)
+  applyDurableEffect(event, observation)
+})
 ```
 
 **Completion:** Current-execution evidence updates ephemeral observation; any durable application effect follows publication validation. Terminal attachment is separately authorized for the client's selected session identity.
