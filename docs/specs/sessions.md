@@ -1,4 +1,4 @@
-# Product Requirements: AgenticWorkspace Sessions
+# Product Requirements: Sessions
 
 ## Overview
 
