@@ -25,15 +25,17 @@ Allow users to configure workspace behavior and agent settings while keeping mod
 | [CONFIG-001] | Setup and all settings/configuration MUST be available inside the TUI; setup MUST NOT be performed by an `init` command. A future wizard remains deferred. |
 | [CONFIG-002] | The project's configuration, including agent presets and the mode catalogue, MUST live in one user-editable configuration file. Configuration and data files MUST remain openly accessible and editable; the public API is an integration convenience, not an exclusive access boundary. |
 | [CONFIG-003] | Resolve configuration consistently field by field: explicitly supplied task settings override project settings, which override root settings. Unspecified fields inherit, and an explicit `false` overrides an inherited `true`. Starting, resuming, and asking an agent MUST use the task's current effective configuration. |
-| [CONFIG-004] | The mode catalogue MUST be present for the workspace to start. Modes MUST be dynamic and configurable; users choose modes and their instructions, including whether a mode produces any documents. Mode contents and outputs are user-defined. |
+| [CONFIG-004] | The mode catalogue MUST be present for the workspace to start. Modes MUST be dynamic and configurable; users choose modes and their instructions, including whether a mode produces any documents. Users can add modes, rename their labels, reorder them, and select a default. Mode contents and outputs are user-defined. |
 | [CONFIG-005] | Modes MUST be categories, not a prescribed sequence. The application MUST NOT require Plan, particular documents, or a specific workflow. |
 | [CONFIG-006] | Each task session MUST belong to one fixed mode. Changing the selected mode for a task MUST change the task's context without changing session execution; sessions retain their owning mode. Pressing `Tab` changes the selected mode for the selected task, and each task remembers its own selection. |
 | [CONFIG-007] | Approval MUST be scoped to a particular task and mode, independent of shared mode definitions and artifact contents or hashes. A CLI command MUST allow an agent to set approval in response to the user's direction. Finishing work alone MUST NOT grant approval. Further session activity in that task's mode MUST clear its approval. Approval is informational; the user controls the workflow without an application-imposed artifact-review gate. |
 | [CONFIG-008] | Agent settings MUST retain named presets, editable mode prompts, default or explicit model selection, model discovery, and repository/task/artifact/subagent permission controls. Edits MUST be staged until **Save**; canceling MUST discard staged changes. The [settings screen](../screens/settings.md) owns composition and focus behavior. |
 | [CONFIG-009] | Instruction-only permissions MUST remain available and be clearly identified as guidance, distinct from provider-enforced restrictions. The UI MUST describe their actual enforcement level rather than presenting instructions as filesystem isolation. |
-| [CONFIG-010] | If model discovery fails or a configured model is unavailable, retain the selected model and show the problem. Changing the model MUST require a user choice rather than a silent substitution. |
+| [CONFIG-010] | If model discovery fails or a configured model is unavailable, retain the selected model and show the problem. A missing provider adapter produces an unsupported-preset error; an adapter without model discovery returns an empty model list. See [error handling](../CONVENTIONS.md#error-handling). Changing the model MUST require a user choice rather than a silent substitution. |
 | [CONFIG-011] | The provider-independent [current-model capture operation](supported-integration-operations.md#supported-integration-operations) MUST set the calling session's mode model in project configuration to the model that session currently uses. |
 | [CONFIG-012] | Before deleting a mode, ask the user to confirm and explain that the mode's workspace-owned sessions will be removed and running agents killed. After confirmation, validate all relevant native cleanup targets before any batch stop effects, following [native cleanup preflight](sessions.md#stop-and-resume-a-session). A rejection MUST happen before effects. If any later step fails or is interrupted, report the error and stop without continuing, automatic recovery, retry, or rollback; report completed effects. Remove the mode and its sessions and kill their running agents. Mode deletion removes those sessions rather than transferring their history to another mode. Provider-owned configuration, data, and state are never modified. |
+| [CONFIG-013] | Deleting a mode removes it from the project catalogue. Tasks that selected it fall back to the catalogue default; deleting the last mode is refused. |
+| [CONFIG-014] | If the mode catalogue cannot be loaded at startup, the application fails and reports the error rather than substituting one. Mode ids are names unique within the project catalogue; the catalogue is project configuration without a version scheme. |
 
 #### Behavioral Flows
 
@@ -125,11 +127,7 @@ Allow users to configure workspace behavior and agent settings while keeping mod
 
 #### Open Decisions
 
-| Question | Constraints | Status |
-|---|---|---|
-| What are the default/last-mode handling and cross-task extent for mode deletion? | Deletion requires confirmation and cleanup preflight, removes the mode's sessions rather than transferring history, and failure stops the operation without automatic recovery, retry, or rollback. | Open |
-| What is the startup failure ordering when the mode catalog cannot be loaded? | Startup requires a mode catalog; no fallback or default catalog is approved. | Open |
-| How is the mode catalog seeded and identified, and are mode IDs versioned or syntactically constrained? | Setup happens in the TUI; there is no `init` command. | Open |
+None recorded in this contract.
 
 ## Global Behavioral Invariants
 

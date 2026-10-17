@@ -22,6 +22,8 @@ Provide agents inside sessions and external applications with a selective public
 
 The integration API exposes existing operations only: task creation, list, view, edit, status-only Done, and explicit completion/cleanup; session list, stop, attach, handoff, and delete; milestone list, add, rename, remove, and archive; and configuration read/write. It adds no operation or option beyond those that already exist. MCP is not a supported surface. The `instructions` entry point, named guides, and instruction-file editing do not exist.
 
+The existing task CLI exposes `task create`, `task list`, `task view`, and `task edit`; the task entry point also accepts `--plain` and `--json`. Listing groups tasks by status. Editing accepts replacement title and description values. Task creation, listing, and viewing are available as ordinary CLI commands without an agent-session argument. The session CLI exposes `agent-session list <taskId> [--mode]`, `start <taskId> [--mode] [--preset] [--json]`, `stop <taskId> [--session]`, `attach <taskId> [--session]`, `handoff <taskId> [--mode]`, and `delete <taskId> [--session] [--force]`. Search also exposes paging, count, versioned JSON, and additional filters. Configuration exposes `config get`, `config set`, and `config list`, plus `agent-config show` and `agent-config set` for scoped configuration. The CLI provides general and command-specific help. These existing entry points do not expand the supported operation set above; their behavior remains governed by the linked feature contracts.
+
 | ID | Requirement |
 |---|---|
 | IF-API-001 | The CLI must support creating a project-scoped task under the [task model](tasks.md#tasks-and-storage). |

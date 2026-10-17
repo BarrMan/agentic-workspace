@@ -27,7 +27,7 @@ Let users inspect and organize project tasks in a grouped workspace list or a st
 | IF-WB-003 | When a populated group is deleted, its tasks and child groups must be preserved, and the user must be able to choose their destination, including ungrouped/root placement. |
 | IF-WB-004 | Reopening the workspace must restore filters, task and mode selection, details visibility, shortcut overrides, group membership, and collapsed groups. Mode selection must be remembered separately for each task, as defined by [configuration](configuration.md#configuration-and-modes). |
 | IF-WB-005 | The grouped list must follow the [workspace screen's task-list width and composition](../screens/workspace.md#ordered-regions). The board must follow its [screen specification](../screens/board.md). |
-| IF-WB-006 | Users must be able to preview, cancel, and commit board moves; assign and unassign groups; expand and collapse groups; copy a task ID; choose retained sessions; and show an agent terminal fullscreen. |
+| IF-WB-006 | Users must be able to preview, cancel, and commit board moves; assign and unassign groups; expand and collapse groups; copy a task ID; choose retained sessions; and show an agent terminal fullscreen. Interactive task surfaces expose task creation, editing, and archival actions. |
 | IF-WB-007 | Help must be searchable and keyboard shortcuts customizable. A conflicting shortcut assignment must be rejected while the working binding is retained. |
 | IF-WB-008 | The footer must show every action available for the current focus. Help must show all available actions. |
 

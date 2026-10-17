@@ -252,10 +252,4 @@ See the unsettled integration scope and syntax decisions in the [Supported Integ
 
 ## Open Product Decisions
 
-The affected feature contracts retain the detailed constraints and decision context. The following product policies remain unresolved:
-
-| Decision | Affected Features | Status |
-|---|---|---|
-| Default/last-mode handling and cross-task extent for mode deletion. | [Configuration and modes](specs/configuration.md#delete-a-mode) | Open |
-| Mode-catalog startup failure ordering, and how the catalog is seeded and identified. | [Configuration and modes](specs/configuration.md#delete-a-mode) | Open |
-| Path containment for task artifact paths. | [Tasks and storage](specs/tasks.md#open-decisions) | Open |
+None recorded. Each feature contract records its own constraints and resolved behavior.

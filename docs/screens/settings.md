@@ -8,7 +8,7 @@ The Project agent settings surface is a fullscreen shell with a three-row header
 
 ## States and focus
 
-Show model-discovery failures or unavailable configured models without silently changing the selection. Show validation/save errors while retaining the staged values. Clearly identify the active field and whether it is being edited; keyboard input stays in the editor.
+Show model-discovery failures or unavailable configured models without silently changing the selection. If no provider adapter is registered for a selected preset, model discovery reports that the preset is unsupported; if an adapter has no model discovery, the choices list is empty. Show validation/save errors while retaining the staged values. Clearly identify the active field and whether it is being edited; keyboard input stays in the editor.
 
 Right enters category fields; Left returns to categories without changing values. Tab/Shift+Tab, Up/Down, or mouse clicks select fields. Enter begins editing; preset arrows change a staged choice and text fields reveal native input. Enter commits the field edit to the settings draft; Escape cancels that edit and stays in Settings. At the preset selector, Space marks the choice as default and `n` copies its provider adapter into a new named preset. Ctrl+S saves committed draft values only, never an uncommitted editor buffer. Multiline environment paste works; Shift+Enter inserts a newline when supported by the terminal. The horizontal scrollbar stays hidden; the vertical scrollbar appears only on overflow. Keep controls reachable at constrained sizes.
 

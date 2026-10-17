@@ -29,6 +29,12 @@ Use TypeScript naming patterns established in `src/`.
 
 ## Error Handling
 
+- **Unrecoverable; application unusable:** Terminate the application.
+- **Unrecoverable; error can be displayed:** Do not continue; display the error.
+- **Completed side effects must be undone:** Roll back those actions, then display the error.
+- **Soft failure; no important step affected:** Continue remaining steps and surface a warning.
+- Every failure path maps to one of these four outcomes; do not invent feature-specific error handling.
+- Feature contracts state only feature-specific consequences (what is rolled back or what the user must do) and refer here for generic error behavior.
 - **Expected failures:** Follow [SPEC](SPEC.md) for failure and recovery outcomes; report committed and incomplete effects accurately, and do not report a committed operation as rolled back.
 - **Unexpected failures:** Catch errors where cleanup or useful context is required; avoid catch-and-rethrow that adds neither.
 - **Propagation:** Preserve the primary failure and expose cleanup/release failures. Follow [BLUEPRINT](BLUEPRINT.md) for operation completion and concurrency contracts.
