@@ -59,6 +59,7 @@ Use TypeScript naming patterns established in `src/`.
 - Persist information only for an essential product or recovery need; do not persist redundant historical state. Fix application-produced corruption at its source; do not add automatic repair.
 - Follow [SPEC](SPEC.md): remove superseded behavior and its callers/fixtures rather than retaining aliases, legacy readers, fallback paths, or compatibility projections. If stored-data preservation or ownership is unresolved, escalate it; a bounded assignment does not authorize a compatibility route or automatic conversion.
 - For breaking stored-data changes during development, use manual correction only with explicit data-preservation authorization. Do not add permanent migration or legacy-compatibility support.
+- The application ships no migration tooling; refusal messages for incompatible stored data give manual conversion guidance.
 
 ## Tooling and Validation
 

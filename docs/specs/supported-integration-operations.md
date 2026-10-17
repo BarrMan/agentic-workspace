@@ -166,6 +166,7 @@ Provide agents inside sessions and external applications with a selective public
 | Should MCP integration be retained, given its integration benefit and maintenance overhead? | No named-client prerequisite is established; MCP is not added to the supported operation list until retention is decided. | Open |
 | Under what session states and consent conditions may `agent-session ask` operate? | It asks a question and returns an answer using current effective configuration; it is not transcript retrieval. Neither a stopped-only restriction nor permission to ask a running session is established. | Open |
 | Which additional command entry points, options, aliases, and integration conveniences belong in the public API, and which exact convenience API removals are required? | The listed operations are the approved baseline; additional surfaces and syntax are not implied. Setup/guidance, instruction-file editing, shell conveniences, broad configuration APIs, and archive alongside completion are not approved by this contract. | Open |
+| Should MCP archive/edit responses report the dependency-cleanup line when dependencies are removed? | No response behavior is established. | Open |
 
 ## Global Behavioral Invariants
 

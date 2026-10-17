@@ -11,7 +11,6 @@ Project documentation lives under `docs/`; the root `README.md` is the user entr
 - **A screen, dialog, focus or key interaction:** read its [screen specification](docs/screens/README.md) and [DESIGN-SYSTEM](docs/DESIGN-SYSTEM.md).
 - **Implementation or tests:** read [CONVENTIONS](docs/CONVENTIONS.md).
 - **Scope or product purpose:** read [PRODUCT](docs/PRODUCT.md).
-- **Alignment, shared-runtime, session-service or test-remediation work:** also read the relevant section of the [alignment plan](docs/alignment-plan.md), including its scoped execution/safety references. The plan owns work sequencing, not product behavior.
 
 ### Authority and decisions
 
@@ -19,13 +18,13 @@ Project documentation lives under `docs/`; the root `README.md` is the user entr
 - Code, installed help, tests and screenshots establish implementation evidence; a discrepancy is an alignment issue, not permission to redefine the contract. Do not weaken runtime or execution-safety gates.
 - Each claim has one owning document. Link to that owner rather than copying its rules into other documents. ADRs preserve accepted technology and significant architecture decisions with their rationale; new significant decisions require approval, and accepted records remain preserved with explicit supersession.
 - Before asking about behavior, read the relevant contract and its failure/recovery scenarios. Ask only about an identified omission, contradiction or requested change. Investigate discoverable facts instead of asking the owner to research them.
-- Record accepted decisions in the owning contract, and track unfinished implementation and verification work in the [alignment plan](docs/alignment-plan.md). Unresolved policy is labeled in its owning contract rather than deferred to a non-contract document.
+- Record accepted decisions in the owning contract. Unresolved policy is labeled in its owning contract rather than deferred to a non-contract document.
 - Apply the current approved contract in assignments and worker briefs. Scope limits do not justify keeping compatibility behavior; unresolved ownership or data-policy decisions must be escalated explicitly. Retain execution-safety gates until their requirements are folded and satisfied.
-- Non-contract material (questionnaires, research, handoffs, implementation plans, source audits) is supporting evidence, not authority. Before retiring any of it, account for its unique requirements, update inbound references, and fold any unresolved material into the owning contract or the alignment plan.
+- Non-contract material (questionnaires, research, handoffs, implementation plans, source audits) is supporting evidence, not authority. Before retiring any of it, account for its unique requirements, update inbound references, and fold any unresolved material into the owning contract or the task tracker.
 
 ## Dog-fooding: inspect the installed CLI for current behavior
 
-This repo builds AgenticWorkspace and also uses it to manage tasks. The globally installed command can differ from the working source. To establish what the installed binary currently exposes, run `agentic-workspace <command> --help`; do not infer installed behavior from branches or source alone. Compare that evidence with SPEC's supported API contract. During alignment, track work in `docs/alignment-plan.md` rather than creating application tasks.
+This repo builds AgenticWorkspace and also uses it to manage tasks. The globally installed command can differ from the working source. To establish what the installed binary currently exposes, run `agentic-workspace <command> --help`; do not infer installed behavior from branches or source alone. Compare that evidence with SPEC's supported API contract.
 
 ## Rebuild before a runnable handoff
 
@@ -89,4 +88,4 @@ deadline env knobs; the whole-run bound is the CI job timeout.
 The test preload owns isolation: it sets a run-scoped `TMPDIR`, clears workspace-pinning env
 (`AGENTIC_WORKSPACE_CWD`, `AGENTIC_WORKSPACE_WORKSPACE_CONTEXT`, `AGENTIC_WORKSPACE_TASK_ID`, …), and assigns a unique
 `AGENTIC_WORKSPACE_TMUX_SOCKET`. Tests that spawn processes own teardown (kill and await); there is no global
-process supervisor. See `docs/test-suite-runtime-report.md`.
+process supervisor.

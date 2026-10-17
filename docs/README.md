@@ -22,18 +22,11 @@ SPEC is the entry point for product behavior. Its linked files under `specs/` ar
 
 Screen documents link to product rules instead of restating them. The design system owns reusable patterns; screens own their application and documented exceptions. Architecture names the components and communication needed to implement behavior without redefining its outcomes.
 
-## Work and evidence
-
-- [Alignment plan](alignment-plan.md): the temporary file-based execution queue until the project is usable for task tracking. It tracks implementation gaps and verification work, not desired behavior owned by a contract.
-- Research reports, older specifications, handoffs and implementation plans: non-contract supporting material. Consult them only when relevant to current work; the owning contract defines intended behavior.
-
-Before retiring non-contract material, account for any useful requirements and update inbound links. Keep unclassified material intact until that check is complete.
-
 ## Changing the contract
 
 1. Find the existing owner and read its normal, failure and recovery rules before asking the owner a question.
 2. Identify the exact unanswered policy or requested change; discoverable implementation facts are research work.
 3. Record an accepted decision in the owning contract. Obtain approval for significant new technology or architecture decisions and preserve accepted decisions in ADRs with rationale; supersede them with a new accepted record rather than rewriting history.
-4. Track unfinished implementation and verification in the alignment plan. Code, tests, screenshots and installed help demonstrate conformance or a gap; update the owning contract when an approved behavior changes.
+4. Code, tests, screenshots and installed help demonstrate conformance or a gap; update the owning contract when an approved behavior changes.
 
 Use descriptive headings and links. Split a growing feature or screen by responsibility rather than maintaining abbreviated duplicate copies.
