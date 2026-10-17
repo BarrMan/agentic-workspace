@@ -14,12 +14,14 @@ The application boundary coordinates supported entry points with Task, Session, 
 | Task | Task properties and task/mode/session relationships, selection, approval, and relationship mutations | Task model and its retained-session relationships | Application invokes it; no persistence, application locks, or process cleanup |
 | Session and RunningExecution | Retained conversation behavior and its current replaceable execution | Conversation identity, execution incarnation, interaction handles, observation, subscriptions | Harness; application coordinates persistence and membership |
 | Harness | Provider-specific creation, exact resume, identity/readiness, runtime observation, and execution integration | Provider execution resources | Provider and terminal runtime; no task relationships, persistence, or UI policy |
-| Stores and repositories | Canonical paths, reload, validation, serialization, and durable writes | Persisted records and storage resources | Domain projections, filesystem and configuration/path owners; no independent Task/Session rules |
+| Stores and repositories | Canonical paths, reload, validation, serialization, and durable writes; enforce artifact path containment | Persisted records and storage resources | Domain projections, filesystem and configuration/path owners; no independent Task/Session rules |
 | UI controller and feature modules | Connect user intent to application operations; coordinate focus, navigation, details, and terminal attachment | Presentation, focus, and client attachment state | Application operations, models/read projections, terminal-host interfaces |
 | Renderer | Display model/read projections and observations | None | Controller/model hierarchy and read-only projections |
 | Terminal runtime | Shared execution backend and live screen transport | Shared backend resources and live transport | Verified execution endpoint; clients own attachment, not execution lifetime |
 
 Dependencies flow from supported entry points through the application controller to domain owners and persistence; Session uses Harness, which integrates with provider/terminal runtime. UI presentation consumes read projections and terminal attachment interfaces. Lower-level storage, Git, process, and provider modules do not depend on CLI/UI; models do not depend on persistence. Composition connects concrete Task, Session, and application classes. Behavioral interfaces belong only at actual interchangeable production implementations, such as Harness providers; tests alone do not require parallel interfaces.
+
+The task-artifact storage boundary resolves artifact paths and rejects any resolved path outside the task's `artifacts/` directory, including symlink escapes, as required by [TASK-021](../specs/tasks.md). Product-visible artifact and mode behavior remains owned by [SPEC](../SPEC.md), [tasks](../specs/tasks.md), and [configuration](../specs/configuration.md).
 
 ## Models and Relationships
 
@@ -74,14 +76,14 @@ class ApplicationController {
 **Contract:**
 - **Preconditions:** Operation intent identifies an explicit target and meets the relevant SPEC policy and owner preconditions.
 - **Postconditions:** Success is reported only after required effects and durability complete. Publication applies intended changes to fresh state and preserves unrelated current fields, histories, and newer selection.
-- **Failures:** Owner errors reach the application error surface. For task deletion, session creation/handoff, mode deletion, and data-folder relocation, a failed or interrupted step is reported and stops the operation; do not continue with remaining independent steps, automatically recover, retry, or imply rollback. Report completed effects truthfully.
+- **Failures:** Owner errors reach the application error surface. For task deletion, mode deletion, and data-folder relocation, a failed or interrupted step is reported and stops the operation without automatic recovery, retry, or rollback. Session creation/handoff follows the [creation-publication rollback limit](../specs/sessions.md#requirements): only final durable publication failure rolls back the provisional relationship. Report completed effects truthfully.
 - **Lifecycle:** Capture target identity before asynchronous waits. Coordinate admission and claims; perform external execution outside store locks. Do not nest non-reentrant admission scopes.
 
 ### Task
 
 **Responsibility:** Owns task properties and task/mode/session relationships, including insertion, ordering, selection, removal, rollback, and task-and-mode approval.
 
-**Dependencies:** Application invocation; no persistence, application locks, or process cleanup.
+**Dependencies:** None on application coordination, persistence, application locks, or process cleanup. Orchestration supplies fresh hydrated state and handles serialization/publication.
 
 **Interface:**
 
@@ -209,7 +211,7 @@ report success after required final publication
 
 **Completion:** Reservation, required checkpoints, startup, and final publication are complete. Provider readiness and final publication do not wait for an agent answer.
 
-**Failure:** On critical failure, clean up the new execution, then invoke Task-owned conditional rollback against current membership and persist safe settlement. Preserve newer selection. Retain tracking evidence if cleanup or rollback publication fails, and report the original and secondary failures.
+**Failure:** Startup or initial-instruction failure is reported and stops without rollback; retain tracking evidence for any execution that may still run. Only final durable publication failure after startup stops the new execution and rolls back its provisional relationship through Task. Preserve tracking if execution may still run and report completed effects and errors truthfully.
 
 ### Publication and rollback
 
@@ -274,19 +276,22 @@ for later publication, reload and validate again before applying intended change
 reserve once and durably publish recovery identity
 start execution outside store lock
 publish final identity/state against fresh record
-if a critical step fails:
+if startup or initial-instruction delivery fails:
+  report error and stop without rollback
+  retain tracking evidence if execution may still be running
+if final durable publication fails:
   clean up the new execution
-  conditionally roll back the reservation through Task
-  durably settle what is safe; retain evidence for unresolved cleanup
+  roll back only the provisional relationship through Task
+  retain tracking evidence if execution may still be running
 ```
 
-**Guarantees:** No success before final publication; rollback on a freshly hydrated Task is authorized by durable identity; newer selection/status and unrelated current data are preserved; failed cleanup never erases the last tracking evidence.
+**Guarantees:** No success before final publication; startup/instruction failure never rolls back the provisional relationship; rollback occurs only after final publication failure and is authorized by durable identity on a freshly hydrated Task. Newer selection/status and unrelated current data are preserved; failed cleanup never erases the last tracking evidence.
 
 **Implementation freedom:** Exact checkpoint fields and recovery representation are not fixed. Private in-memory state alone is insufficient rollback authority.
 
 ## Architectural Invariants
 
-- Task owns task/mode/session relationships and selection; Session owns conversation execution; Harness owns provider integration; controllers coordinate and stores persist without duplicating those rules.
+- Task owns task/mode/session relationships and selection; Session owns conversation execution; Harness owns provider integration; controllers coordinate and stores persist without duplicating those rules. Models do not depend on application coordination.
 - Every supported entry point uses the same application coordination and domain owners; renderer and attachment lifetimes never control agent lifetime.
 - Identity, membership, durable incarnation, and resource provenance are validated before publication or destructive effects.
 - Reservation and required checkpoints are durable before dependent execution effects; final publication precedes creation success.

@@ -8,7 +8,7 @@ Show retained sessions for the selected task and mode, with enough identity to c
 
 ## Artifact files
 
-List generic files in the selected task's `artifacts/` directory. File viewing may show text/Markdown or binary metadata; reading and writing operate on the selected file. There are no required names, mode-specific artifact expectations, or file-level approval indicators. Approval belongs to a task and mode, is set through the agent-capable CLI, and further session activity in that mode clears it; this page does not define a separate approval screen.
+List generic files in the selected task's `artifacts/` directory. File viewing may show text/Markdown or binary metadata; reading and writing operate on the selected file. There are no required names, mode-specific artifact expectations, or file-level approval indicators. Approval behavior follows the [configuration contract](../specs/configuration.md#configuration-task-mode-approval-and-mode-catalogue); this page does not define a separate approval screen.
 
 ## Focus and constrained terminals
 

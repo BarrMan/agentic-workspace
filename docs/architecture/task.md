@@ -10,11 +10,11 @@ Task owns task-local model state and behavior, including mode selection, task-an
 
 | Component | Responsibility | Owned State | Dependencies |
 |---|---|---|---|
-| Task | Own task-local model behavior and session relationships | Task state, selected mode, mode-scoped session membership/order/active IDs, task-and-mode approval | Application coordination, configuration resolver, Harness factory, Session |
+| Task | Own task-local model behavior and session relationships | Task state, selected mode, mode-scoped session membership/order/active IDs, task-and-mode approval | Configuration resolver; Session model/record data supplied by orchestration |
 | Application coordination | Orchestrate I/O, fresh-state mutation, runtime operations, and durable publication | No Task-owned model state | Task, repositories/store, Session, configuration and Harness services |
-| Session | Own runtime execution and runtime observations | Session runtime state and its durable record projection | Runtime/provider services and application coordination |
+| Session | Own runtime execution and runtime observations | Session runtime state and its durable record projection | Runtime/provider services |
 
-Dependencies point from application coordination to model and runtime operations; Task does not perform repository I/O or provider execution. Product task behavior and data fields are owned by [SPEC.md](../SPEC.md) and its specifications. This contract defines architectural ownership and relationships only.
+Dependencies point from application coordination to model and runtime operations; Task does not depend on application coordination, perform repository I/O, or execute providers. Orchestration supplies loaded state, invokes model behavior, and handles durable publication; these supplied collaborators are not Task dependencies. Product task behavior and data fields are owned by [SPEC.md](../SPEC.md) and its specifications. This contract defines architectural ownership and relationships only.
 
 ## Models and Relationships
 
@@ -44,7 +44,7 @@ Dependencies point from application coordination to model and runtime operations
 
 **Responsibility:** Own synchronous task-model mutations and task-local session relationship rules. It does not persist, perform I/O, start execution, or own runtime lifecycle.
 
-**Dependencies:** Application coordination for fresh-state loading and durable publication; configuration resolver for effective inputs; Harness factory for provider construction; Session for runtime state and records.
+**Dependencies:** Configuration resolver for effective inputs. Application coordination supplies fresh state and durable publication, and supplies Harness and Session values where needed; these are orchestration collaborators, not model dependencies.
 
 **Interface:**
 
@@ -68,7 +68,7 @@ interface Task {
 ```
 
 **Contract:**
-- **Preconditions:** Mutations operate on freshly loaded Task state and validate the exact task, mode, member, and creation incarnation. Required external cleanup must finish before removal or rollback. Session startup and durable writes are application responsibilities.
+- **Preconditions:** Mutations operate on freshly loaded Task state and validate the exact task, mode, member, and creation incarnation. Creation rollback is invoked only after final durable publication failure; required external cleanup must finish before removal or rollback. Session startup and durable writes are application responsibilities.
 - **Postconditions:** Model mutations are synchronous. Mode selection and session relationship changes preserve valid membership and active selection. Serialization returns projections without I/O; `serialize()` covers task metadata, while `serializeSessions()` covers all retained mode histories and active IDs.
 - **Failures:** Invalid, missing, wrong-mode, stale, or replaced targets are rejected and cannot mutate unrelated state. Store, validation, runtime, and cleanup failures are reported by application coordination; a failed cleanup does not justify forgetting tracking state.
 - **Lifecycle:** Task is constructed from application-loaded data. No provider launch or hidden load occurs during construction or serialization. A reserved session is published once; startup happens outside the store mutation/lock. Runtime cleanup precedes relationship removal where required.
@@ -119,7 +119,7 @@ publish final state and return that same Session without reinsertion
 
 **Completion:** The reservation is durable, the Session is ready with initial delivery complete, and final publication succeeds. Existing launch exclusivity is preserved.
 
-**Failure:** Critical startup failure triggers runtime cleanup followed by `Task.rollbackSession(creation)` on fresh state. Persist rollback and report the original failure together with cleanup or write failures. A committed reservation whose write release is uncertain is inspected by its exact creation identity rather than blindly reserved again.
+**Failure:** Startup or initial-instruction failure is reported and stops without rollback; retain tracking evidence for any execution that may still run. Only final durable publication failure after startup stops the new execution and rolls back its provisional relationship on fresh state. Preserve tracking if execution may still run and report completed effects and errors. A committed reservation whose write release is uncertain is inspected by its exact creation identity rather than blindly reserved again.
 
 ### Publish a session change or stop a session
 

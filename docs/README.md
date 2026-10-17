@@ -16,6 +16,8 @@ The project contracts are authoritative and are the single source of truth for t
 
 The root [README](../README.md) introduces installation and usage. Root [AGENTS.md](../AGENTS.md) defines the reading/execution workflow, not product behavior.
 
+For product work, read PRODUCT for scope, then SPEC and the relevant linked feature contract. For screen work, also read the owning screen specification and DESIGN-SYSTEM. For structural changes, read BLUEPRINT and relevant architecture pages and ADRs; for code and tests, read CONVENTIONS.
+
 ## Feature contracts and scenarios
 
 SPEC is the entry point for product behavior. Its linked files under `specs/` are parts of that same specification, not competing documents. A feature's normal behavior, preconditions, failure outcomes, interruption/recovery, repeated/concurrent operations and acceptance scenarios belong together in its owning contract. An unresolved policy is labeled in the owning contract.

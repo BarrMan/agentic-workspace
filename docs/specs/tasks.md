@@ -4,6 +4,49 @@
 
 This contract defines task identity and data, project storage, artifacts, work context and completion, milestones, and task deletion behavior.
 
+## Goals
+
+- Specify observable task identity, storage, artifact, work-context, milestone, completion, archive, and deletion behavior.
+
+## Scope
+
+### In Scope
+
+- Task records and identity, project task storage, artifacts, task worktrees, completion, milestones, archive, and deletion.
+
+### Out of Scope
+
+- Provider-owned configuration, data, or state management; duplicate-record repair; draft promotion; and automatic gating of launch or completion by dependencies.
+
+## Actors
+
+| Actor | Description |
+|---|---|
+| User | Creates, views, edits, launches, completes, archives, deletes, and manages tasks and artifacts. |
+| Workspace | Stores and presents tasks, performs task lifecycle operations, and reports their outcomes. |
+| Provider | Supplies provider-owned configuration, data, and state, which the workspace does not manage. |
+
+## States and Transitions
+
+| Entity | State or transition |
+|---|---|
+| Task | Configured project status; marking Done changes only status. Explicit completion/cleanup moves the task to completed storage and removes its worktree and branch. |
+| Task | An unfinished task may be archived; terminal-status tasks cannot be archived. |
+| Task data | Resides at the project's single deterministic configured location; relocation makes the selected location the store on success. |
+| Milestone | May be added, renamed, listed, archived, or removed; removal clears or reassigns task references. |
+
+## External Behavior
+
+### CLI and workspace operations
+
+**Purpose:** Let users manage tasks, work context, and task artifacts.
+
+**Inputs:** User task actions and artifact paths/content; task status values from project configuration.
+
+**Outputs:** Task listings and views, operation results, warnings, and actionable errors as specified below.
+
+**Failures:** Follow [error handling and edge cases](../CONVENTIONS.md#error-handling), with task-specific consequences defined in the requirements and flows below.
+
 ## Features
 
 | Feature | Description | Contract |
@@ -20,7 +63,7 @@ This contract defines task identity and data, project storage, artifacts, work c
 
 Define task identity and data, project storage, artifacts, work context and completion, milestones, and task deletion behavior.
 
-#### Requirements
+## Requirements
 
 <a id="task-model"></a>
 
@@ -43,12 +86,12 @@ Define task identity and data, project storage, artifacts, work context and comp
 | TASK-015 | Explicit destructive task deletion requires confirmation naming the task ID and title and stating that deletion cannot be undone. The confirmation does not mention uncommitted work. Deletion kills the task's agent and removes its worktree and branch. It is distinct from Done, completion/cleanup, and task archive; it does not add a force-discard or uncommitted-work option. Provider-owned configuration, data, and state are never modified. |
 | TASK-016 | Uncertainty about agent liveness authorizes neither killing an agent nor declaring it stopped. If liveness cannot be established, report unknown/unavailable and leave the agent untouched. |
 | TASK-017 | When a confirmed destructive operation includes execution cleanup, cleanup precedes removal of its tracking relationships and resources. If cleanup fails, preserve the ownership/tracking evidence needed to locate the execution; direct record deletion or UI teardown cannot substitute for successful cleanup. |
-| TASK-018 | If any task deletion or relocation step fails or is interrupted, report the error and stop without continuing with remaining steps, automatic recovery, retry, or rollback. Report completed effects truthfully; do not imply rollback. If workspace or group cleanup fails after task deletion succeeds, display an incomplete-cleanup message; see [error handling and edge cases](../CONVENTIONS.md#error-handling). |
+| TASK-018 | If any task deletion or relocation step fails or is interrupted, report the error. Report completed effects truthfully; do not imply rollback. If workspace or group cleanup fails after task deletion succeeds, display an incomplete-cleanup message. Generic failure handling follows [error handling and edge cases](../CONVENTIONS.md#error-handling). |
 | TASK-019 | Task-deletion teardown follows the [session input lifetime](sessions.md#observe-and-detach-from-a-live-session) rule for already in-flight input. For multiple native cleanup targets, apply [native cleanup preflight](sessions.md#stop-and-resume-a-session) before any stop effects. |
 | TASK-020 | Tasks can be listed and viewed through the CLI. The CLI supports editing an existing task by replacing its title and description. |
 | TASK-021 | Artifact paths resolve inside the task's `artifacts/` directory; paths that escape it, including through symlinks, are rejected. |
 
-#### Behavioral Flows
+## Flows
 
 ##### Creating and using a task
 
@@ -162,7 +205,9 @@ Define task identity and data, project storage, artifacts, work context and comp
 
 Archiving a terminal-status task is rejected. Archiving an unfinished task moves its task container to archive storage and invokes vacated-task reference cleanup; it preserves artifacts, session history, dependencies, worktree, and branch. Running sessions must be stopped explicitly before archive. Completed work uses completion/cleanup instead of archive.
 
-#### Edge Cases and Failures
+## Failure/Recovery
+
+Task-specific failure outcomes and recovery obligations are defined in the requirements and flows below. Generic stop, retry, recovery, and rollback handling follows [error handling and edge cases](../CONVENTIONS.md#error-handling).
 
 | Condition | Expected Behavior |
 |---|---|
@@ -177,7 +222,7 @@ Archiving a terminal-status task is rejected. Archiving an unfinished task moves
 | A task deletion or relocation step fails or is interrupted | Report the error and stop; do not continue with remaining steps, automatically recover, retry, or roll back. Report completed effects truthfully. |
 | An unfinished task is archived | Preserve its artifacts, session history, dependencies, worktree, and branch; require running sessions to be stopped explicitly first. |
 
-#### Behavioral Invariants
+### Behavioral Invariants
 
 - Task IDs are complete literal identities; numeric suffixes are not compared, duplicate records are not repaired, and archived IDs remain reserved.
 - Dependencies remain informational and survive completion; they do not automatically gate launch or completion.
@@ -187,7 +232,7 @@ Archiving a terminal-status task is rejected. Archiving an unfinished task moves
 - Provider-owned configuration, data, and state are never managed or modified.
 - When confirmed destructive execution cleanup is required, cleanup precedes tracking/resource removal; failure evidence and truthful reporting are preserved.
 
-#### Acceptance Criteria
+## Acceptance Criteria
 
 <a id="acceptance-scenarios"></a>
 
@@ -201,6 +246,31 @@ Archiving a terminal-status task is rejected. Archiving an unfinished task moves
 - [ ] Forget-only deletion does not signal or purge the agent; if liveness is unknown, report unknown/unavailable and leave it untouched.
 - [ ] When destructive execution cleanup is confirmed and required, cleanup failure preserves actionable ownership/tracking evidence and does not remove tracking relationships/resources as if cleanup succeeded.
 - [ ] Partial deletion reports completed and incomplete effects and relevant errors truthfully, preserves actionable recovery evidence, and claims neither complete success nor transactional rollback.
+- [ ] **TASK-001:** A task is scoped to a project directory with or without Git; each listed editable business field may be absent.
+- [ ] **TASK-002:** Configured statuses are used and users are directed to the configuration file; creation directly creates and saves an identity under a creation lock, with no draft promotion or demotion.
+- [ ] **TASK-003:** Literal prefixed IDs remain distinct, collisions fail closed with both record paths, ambiguous IDs fail, and archived IDs cannot be reused or repaired/merged.
+- [ ] **TASK-004:** Dependencies and blocker/readiness displays persist through completion and never automatically gate user-directed launch or completion.
+- [ ] **TASK-005:** Project task loading uses its one deterministic store, including from linked worktrees, and does not discover records across branches.
+- [ ] **TASK-006:** Each supported configuration choice selects the store; task data remains outside `.git`, task containers contain `task.md` and `artifacts/`, and records use Markdown frontmatter.
+- [ ] **TASK-007:** Collection reads skip malformed records with filename and parse error while retaining readable records; direct malformed-target actions fail helpfully, with bulk reads exiting 0 and explicit single-record loads strict.
+- [ ] **TASK-008:** Relocation moves the complete workspace-owned data folder and never manages provider-owned state; success selects the new deterministic store and failure is reported without continuing.
+- [ ] **TASK-009:** Artifact listing, display, read, and write behave as specified, with writes replacing the selected artifact in the task's artifacts directory.
+- [ ] **TASK-010:** External artifact edits update an open viewer only through notifications; no periodic recheck or missed-notification recovery is promised.
+- [ ] **TASK-011:** Arbitrary artifact names and contents are user-managed; mode rules apply as specified, independently of mode-specific document schemas and approvals.
+- [ ] **TASK-012:** With task worktrees enabled, creation does not allocate one, first launch does; allocation failure retains the task, warns, and does not redirect execution, while a missing recorded resume directory fails with a path-specific error.
+- [ ] **TASK-013:** Done changes status only and retains the worktree; explicit completion/cleanup moves to completed storage, performs session cleanup, and removes worktree and branch through a distinct TUI keybinding.
+- [ ] **TASK-014:** Milestone operations and counts/percentages are available; rename preserves assignments and removal clears or reassigns every matching reference.
+- [ ] **TASK-015:** Confirmed destructive deletion names ID/title and irreversibility, kills the task agent, removes worktree and branch, has no force-discard option, and leaves provider state untouched.
+- [ ] **TASK-016:** Unknown agent liveness is reported unknown/unavailable and never authorizes killing or declaring stopped.
+- [ ] **TASK-017:** Required execution cleanup precedes tracking/resource removal; cleanup failure preserves ownership/tracking evidence and direct record deletion or UI teardown cannot substitute for cleanup.
+- [ ] **TASK-018:** Failed or interrupted deletion/relocation reports completed effects truthfully and stops; cleanup failure after successful deletion is shown as incomplete cleanup.
+- [ ] **TASK-019:** Deletion teardown respects in-flight input lifetime and validates all native cleanup targets before stop effects.
+- [ ] **TASK-020:** CLI users can list and view tasks and replace an existing task's title and description.
+- [ ] **TASK-021:** Artifact paths resolving outside the task's `artifacts/` directory, including through symlinks, are rejected.
+
+## Requirement Fields
+
+Each TASK requirement's table entry is its **Description** and required **Behavior**. The corresponding flow supplies its trigger, preconditions, and observable outcome where applicable; the Failure/Recovery section and linked error-handling contract define failures. Criteria above are keyed to every requirement ID. A field is `None` only when that requirement has no applicable trigger, precondition, outcome, or failure behavior.
 
 #### Open Decisions
 

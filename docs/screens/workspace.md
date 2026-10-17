@@ -7,7 +7,7 @@ Purpose: navigate the project's grouped tasks and inspect or use the selected ta
 1. Workspace header: workspace identity and active filter state/control.
 2. Task region: nested task groups and tasks. In normal layout, target roughly 30% of workspace width, subject to a maximum of 35 terminal display cells and shrinking below that cap when space is constrained. Status tabs sit inside Tasks: active tab is a three-row cap with reversed bottom seams opening to the task viewport; inactive labels share its baseline at natural label width plus one space on each side. No per-tab count, fixed cell, underline, or separator; Tasks title carries the count. To Do is blue, In Progress yellow, Done bright green, custom statuses neutral. Selection is bold with raised chrome, not a text-background highlight. Labels use `#1f1f1f` and borders `#555555`.
 3. Selected-task region: details and selected-mode session presentation. Details use roughly 30% of right-region height above live preview. `Space` shows/hides details in normal flow; the same retained terminal gains the released rows. The details border has a right-aligned collapse hint. When a session is active, its session header shows, in order, agent, runtime status, selected mode, and actual working-directory path on one line. Hide it when that mode has no active session; do not substitute an assumed path.
-4. Footer: essential actions for current focus and concise operation status/error.
+4. Footer: follows the [essential-actions requirement, IF-WB-008](../specs/workspace-and-board.md#requirements), and shows concise operation status/error.
 
 The task-list width and details/preview proportions above are approved qualitative layout rules. No minimum terminal dimensions are established.
 

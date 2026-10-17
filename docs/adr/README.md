@@ -8,6 +8,14 @@ This directory records the project's approved technology choices and significant
 |---|---|---|
 | Domain ownership and persistence coordination | Model-owned domain behavior | [ADR-0001](0001-model-owned-domain-behavior.md) |
 
+## Recorded Stack
+
+| Area | Approved choice | ADR |
+|---|---|---|
+| Domain behavior and persistence coordination | Concrete Task, Session, and application-controller models own domain behavior and coordination; persistence owns locked reload, validation, serialization, and atomic writes. | [ADR-0001](0001-model-owned-domain-behavior.md) |
+
+Technology stack remains under-recorded: the ADRs present specify no language, framework, library, storage engine, or infrastructure choices.
+
 ## Decision History
 
 | ADR | Decision | Status | Replaced By |

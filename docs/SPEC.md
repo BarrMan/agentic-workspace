@@ -28,7 +28,7 @@ Define task organization, persistence, work context, artifacts, completion, mile
 
 | ID | Requirement |
 |---|---|
-| TASK-001–TASK-019 | The complete requirements, flows, edge cases, invariants, acceptance criteria, and open decisions are in the [Tasks and storage contract](specs/tasks.md). |
+| TASK-001–TASK-021 | The complete requirements, flows, edge cases, invariants, and acceptance criteria are in the [Tasks and storage contract](specs/tasks.md). |
 
 #### Behavioral Flows
 
@@ -48,7 +48,7 @@ See the verifiable criteria in the [Tasks and storage contract](specs/tasks.md).
 
 #### Open Decisions
 
-See the unresolved task and storage decisions in the [Tasks and storage contract](specs/tasks.md).
+None recorded in the [Tasks and storage contract](specs/tasks.md).
 
 ### Sessions
 
@@ -80,7 +80,7 @@ See the verifiable criteria in the [Sessions contract](specs/sessions.md).
 
 #### Open Decisions
 
-See the unresolved session creation, recovery, handoff, and deletion decisions in the [Sessions contract](specs/sessions.md).
+None recorded in the [Sessions contract](specs/sessions.md).
 
 ### Configuration and modes
 
@@ -92,7 +92,7 @@ Define workspace settings and the configuration, approval, and lifecycle of agen
 
 | ID | Requirement |
 |---|---|
-| CONFIG-001–CONFIG-012 | The complete requirements, flows, edge cases, invariants, acceptance criteria, and open decisions are in the [Configuration and modes contract](specs/configuration.md). |
+| CONFIG-001–CONFIG-014 | The complete requirements, flows, edge cases, invariants, and acceptance criteria are in the [Configuration and modes contract](specs/configuration.md). |
 
 #### Behavioral Flows
 
@@ -112,7 +112,7 @@ See the verifiable criteria in the [Configuration and modes contract](specs/conf
 
 #### Open Decisions
 
-See the unresolved mode-deletion decisions in the [Configuration and modes contract](specs/configuration.md).
+None recorded in the [Configuration and modes contract](specs/configuration.md).
 
 ### Workspace and board
 
@@ -144,7 +144,7 @@ See the verifiable criteria in the [Workspace and board contract](specs/workspac
 
 #### Open Decisions
 
-No workspace and board open product decisions are currently listed in the [Workspace and board contract](specs/workspace-and-board.md).
+None recorded in the [Workspace and board contract](specs/workspace-and-board.md).
 
 ### Filtering and search
 
@@ -176,7 +176,7 @@ See the verifiable criteria in the [Filtering and search contract](specs/filteri
 
 #### Open Decisions
 
-See the unresolved search support decisions in the [Filtering and search contract](specs/filtering-and-search.md).
+None recorded in the [Filtering and search contract](specs/filtering-and-search.md).
 
 ### Session interaction and feedback
 
@@ -208,7 +208,7 @@ See the verifiable criteria in the [Session interaction and feedback contract](s
 
 #### Open Decisions
 
-No session interaction and feedback open product decisions are currently listed in the [Session interaction and feedback contract](specs/session-interaction-and-feedback.md).
+None recorded in the [Session interaction and feedback contract](specs/session-interaction-and-feedback.md).
 
 ### Supported Integration Operations
 
@@ -240,13 +240,13 @@ See the verifiable criteria in the [Supported Integration Operations contract](s
 
 #### Open Decisions
 
-See the unsettled integration scope and syntax decisions in the [Supported Integration Operations contract](specs/supported-integration-operations.md).
+None recorded in the [Supported Integration Operations contract](specs/supported-integration-operations.md).
 
 ## Global Behavioral Invariants
 
 - Intended behavior in this specification and its indexed feature contracts applies across supported product surfaces. Legacy compatibility requires an explicit approved exception.
 - Approved safety and identity constraints remain in force across features. An unresolved policy does not weaken an established guarantee.
-- A failure is reported for the affected operation and does not abort unaffected work; the application continues where it can, and failure of one record or one action never takes down the whole application.
+- Failure handling follows [CONVENTIONS](CONVENTIONS.md#error-handling); a failure of one record or action affects only that operation.
 - Product behavior is distinct from visual composition: screen-specific composition belongs in the [screen specifications](screens/README.md), and colors belong to the [design system](DESIGN-SYSTEM.md). Session-header composition and task-list width are specified by the [workspace screen](screens/workspace.md#ordered-regions).
 - Implementation changes must align supported callers, fixtures, and persisted representations with the current contract. [CONVENTIONS](CONVENTIONS.md#changes-and-refactoring) owns implementation alignment and escalation of unresolved ownership or data policy.
 

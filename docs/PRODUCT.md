@@ -1,43 +1,45 @@
 # Product Definition: AgenticWorkspace
 
-## Overview
-
-AgenticWorkspace is a TUI-first task and agent-session workspace for a project directory, whether or not the project uses Git. It brings work organization, configurable agent-assisted work, retained conversations, and live interaction together in one workspace.
-
-It serves people organizing project work and interacting with agents, as well as agents and external applications that need selective access to workspace operations. It helps them coordinate work and continue conversations while retaining control over how the work proceeds.
-
-Detailed behavior is defined in [SPEC](SPEC.md).
-
 ## Vision
 
 Users can organize agent-assisted work and continue its conversations in one project workspace while retaining control over how the work proceeds.
+
+## Problem
+
+Work organization, agent configuration, and conversations can otherwise be separated across tools or lose continuity. Integration needs vary, and exposing every setting or user action is neither necessary nor appropriate.
+
+AgenticWorkspace brings project work, configurable agent-assisted work, and retained conversations together while allowing selective access to workspace operations. Detailed behavior is defined in [SPEC](SPEC.md).
 
 ## Target Users
 
 ### People organizing project work
 
-**Description:** People who organize project work and interact with agents through a terminal workspace.
+**Who:** People who organize project work and interact with agents through a terminal workspace.
 
 **Needs:**
 - Keep project work and agent interaction organized together.
 - Configure agent work without being forced into a development methodology or required deliverables.
 - Retain access to conversations across changes in execution.
 
+**Value:** Organize project work, configure agent work, and continue conversations together while retaining control over how work proceeds.
+
 **Challenges:**
 - Work organization, agent configuration, and conversations can otherwise be separated across tools or lose continuity.
 
 ### Agents and external applications
 
-**Description:** Agents working within sessions and external applications interacting with a project workspace.
+**Who:** Agents working within sessions and external applications interacting with a project workspace.
 
 **Needs:**
 - Access selected workspace operations relevant to their work.
 - Work with the same project-scoped organization users rely on.
 
+**Value:** Work with project-scoped organization through selective access to relevant workspace operations.
+
 **Challenges:**
 - Integration needs vary, and exposing every setting or user action is neither necessary nor appropriate.
 
-## Goals
+## Product Goals
 
 | Goal | Intended Outcome |
 |---|---|
@@ -46,9 +48,43 @@ Users can organize agent-assisted work and continue its conversations in one pro
 | Support user-directed agent work | Users can configure agent work without an imposed methodology or required deliverables. |
 | Make the workspace usable by people and integrations | Users can manage the workspace directly, while agents and applications receive selective access to needed operations. |
 
-## Scope
+## Core Capabilities
 
-Define the product's fundamental responsibilities and capabilities.
+### Project-scoped work organization
+
+**Purpose:** Organize work in a project directory, whether or not it uses Git.
+
+**Value:** People and integrations use the same project-scoped organization without requiring a particular development workflow.
+
+The workspace supports tasks, optional task content, and project documents, including decision records, without prescribing deliverables.
+
+### Configurable agent-assisted work
+
+**Purpose:** Support agent work and live interaction within the user's chosen workflow.
+
+**Value:** Users can direct agent work without being forced into a methodology or required deliverables.
+
+### Retained conversations
+
+**Purpose:** Retain conversations across execution changes.
+
+**Value:** Users can continue conversations while preserving continuity.
+
+### Selective workspace access
+
+**Purpose:** Make workspace operations available to people and selectively to agents and external applications.
+
+**Value:** Integrations can access relevant operations without exposing every setting or user action.
+
+### Agent harness integration
+
+**Purpose:** Wrap agent harnesses.
+
+**Value:** Agent-assisted work is available without taking ownership of provider-owned configuration, data, or state.
+
+## Product Boundaries
+
+### In Scope
 
 - Organize project-scoped work in a project directory, with or without Git.
 - Support configurable agent-assisted work and live interaction within the user's chosen workflow.
@@ -57,9 +93,7 @@ Define the product's fundamental responsibilities and capabilities.
 - Make workspace operations available to people and selectively to agents and external applications.
 - Wrap agent harnesses without managing provider-owned configuration, data, or state.
 
-## Non-Goals
-
-Define intentional boundaries that clarify what the product is not intended to become.
+### Out of Scope
 
 - Requiring Git, a prescribed development workflow, a mode sequence, or a set of documents; the product supports varied project practices.
 - Enforcing artifact-review gates or treating mode approval as approval of file contents; users direct their own work.
@@ -67,7 +101,7 @@ Define intentional boundaries that clarify what the product is not intended to b
 - Managing provider-owned configuration, data, or state; the application wraps harnesses and leaves provider state untouched.
 - Automatically exposing every setting or user action through integrations; access remains selective to relevant needs.
 
-## Product Principles
+## Guiding Principles
 
 ### User-directed work
 
@@ -99,8 +133,9 @@ Define intentional boundaries that clarify what the product is not intended to b
 
 **Implication:** Preserve user access to project data and expose integrations selectively, without making them the only way to manage the workspace.
 
-## Open Product Decisions
+## Success Criteria
 
-| Decision | Context | Status |
-|---|---|---|
-| Search filter combinations and matching details | See the [filtering and search contract](specs/filtering-and-search.md#filtering-and-search). | Open |
+- Users can manage project work and engage with agents in the same workspace.
+- Conversations remain available across execution changes.
+- Users can configure agent work without an imposed methodology or required deliverables.
+- Users can manage the workspace directly, while agents and applications receive selective access to needed operations.

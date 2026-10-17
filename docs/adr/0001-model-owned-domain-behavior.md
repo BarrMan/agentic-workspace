@@ -4,6 +4,16 @@
 **Date:** 2026-10-16  
 **Supersedes:** None
 
+## Purpose
+
+Establish a clear owner for domain behavior while application coordination sequences effects and durability.
+
+## Blueprint Mapping
+
+**Components:** Task, Session, application controller, and persistence.
+
+**Contracts:** Component ownership and dependency direction; authoritative mutation and publication.
+
 ## Context
 
 Domain behavior needs a clear owner while application coordination continues to sequence effects and durability. Merely moving service orchestration behind forwarding methods does not establish meaningful model ownership. A central package mirroring concrete model methods or a phase-driven persistence adapter would create competing definitions or implementations of domain rules.

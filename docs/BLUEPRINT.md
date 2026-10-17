@@ -11,17 +11,19 @@ The detailed contracts are organized as parts of this blueprint: [Task](architec
 | Component | Responsibility | Owned State | Dependencies |
 |---|---|---|---|
 | Task | Task properties, effective configuration, selected mode, mode-specific session relationships, and task/mode approval | Ordered session histories, membership, active-session IDs, selection, rollback relationships, approval | None of application persistence or process infrastructure |
-| Mode catalogue | Configurable mode definitions | Mode instructions/settings in project configuration | Configuration owner |
+| Mode catalogue | Configurable mode definitions and startup resolution | Mode instructions/settings in project configuration | Configuration owner |
 | Session | One retained conversation and its startup, input, current execution, observation, and subscriptions | Application conversation identity/history and current RunningExecution; never provider-owned configuration, data, or state | Harness |
 | RunningExecution | One runtime incarnation and its identity, interaction handles, ownership evidence, observation, and events | Ephemeral execution identity and runtime handles | Provider/terminal runtime, through Harness |
 | Harness | Provider-specific creation, exact resume, identity discovery, initialization/readiness, and execution integration | Provider interaction state for an execution; no authority over provider-owned configuration, data, or state | Provider adapters and terminal runtime |
 | Application controller | Shared operations, authoritative loading, admission/coordination, persistence sequencing, progress, rollback, and error reporting | In-flight operation coordination and recovery sequencing | Task, Session, stores/repositories, configuration, project paths, Git/process helpers |
-| Stores and repositories | Canonical paths, locked reload, validation, serialization, and atomic durable writes | Durable records owned by each repository | Filesystem and application coordination |
+| Stores and repositories | Canonical paths, locked reload, validation, serialization, and atomic durable writes; enforce task artifact path containment | Durable records owned by each repository | Filesystem and application coordination |
 | UI controller and feature modules | Translate user input into application operations; coordinate focus, navigation, details, and terminal attachment | Client-local focus, navigation, and attachment | Application operations, projections, terminal attachment |
 | Renderer | Display read models and projections | No domain state | Read projections |
 | Terminal runtime | Shared execution backend and live screen transport | Shared runtime and live channel | Harness/execution host |
 
 Ownership is singular: controllers coordinate rather than reimplement Task or Session behavior; stores persist rather than interpret domain commands. Models do not depend on persistence. Lower-level storage, Git, process, and provider modules do not depend on CLI or UI. All supported entry points use the same application operations. Behavioral interfaces belong at real interchangeable production implementations, notably Harness providers; Task, Session, and application behavior use concrete owners rather than mirrored interfaces or a central contract package.
+
+Mode ids are unique names within the project catalogue, with no version scheme. Catalogue loading is required during application startup; if it fails, startup aborts and reports the error rather than substituting a catalogue. Artifact path containment is enforced at the task-artifact storage boundary: resolved paths must remain inside that task's `artifacts/` directory, and symlink escapes are rejected. Observable mode and artifact behavior is owned by [configuration](specs/configuration.md) and [tasks](specs/tasks.md).
 
 ## Models and Relationships
 
@@ -101,7 +103,7 @@ Ownership is singular: controllers coordinate rather than reimplement Task or Se
 |---|---|---|
 | conversation records | SessionRecord[] | Identity, task/mode membership, ordered history, and selection |
 | unfinished-operation evidence | RecoveryEvidence | Creation identity, prior selection, and recoverable resource ownership |
-| configuration reference | PresetName / ModeId | References current configuration rather than snapshots |
+| configuration reference | PresetName / ModeId | References current configuration rather than snapshots; ModeId is a unique catalogue name without versioning |
 
 **Relationships:** Task metadata serialization is distinct from session-history serialization. Workspace preferences and group state have separate persistence owners; read projections may combine these with observed sessions but are not writable lifecycle models.
 
@@ -137,7 +139,7 @@ class Task {
 
 **Responsibility:** Session owns conversation startup, input, runtime observation, current execution, and subscriptions. RunningExecution represents a single replaceable runtime incarnation.
 
-**Dependencies:** Harness for provider behavior; application coordination for persistence and Task relationships.
+**Dependencies:** Harness for provider behavior. Application coordination supplies persistence sequencing and Task relationship operations; it is not a Session model dependency.
 
 **Interface:**
 
@@ -182,7 +184,7 @@ interface HarnessProvider {
 
 **Responsibility:** Application operations capture intent and target identity, coordinate admission/claims, call model behavior, sequence durability and external effects, and report progress/results/errors. Repositories own durable record operations.
 
-**Dependencies:** Task, Session, Harness through Session, configuration, project paths, storage, and relevant Git/process helpers.
+**Dependencies:** Task, Session, configuration, project paths, storage, and relevant Git/process helpers. Orchestration supplies operation coordination; Harness is used through Session.
 
 **Interface:**
 
@@ -197,7 +199,7 @@ class ApplicationController {
 **Contract:**
 - **Preconditions:** Capture explicit target identity before asynchronous waits; revalidate current membership and provenance before publication/effects.
 - **Postconditions:** Report success only after required effects and durability complete. Progress, provisional selection, or a resolved Harness promise alone is not creation success.
-- **Failures:** For task deletion, session creation/handoff, mode deletion, and data-folder relocation, any failed or interrupted step is reported and stops the operation: do not continue with remaining independent steps, automatically recover, retry, or imply rollback. Report completed effects truthfully. Other outcomes follow [SPEC](SPEC.md).
+- **Failures:** For task deletion, mode deletion, and data-folder relocation, any failed or interrupted step is reported and stops the operation without automatic recovery, retry, or rollback. Creation startup/instruction failure likewise reports and stops without rollback; only final durable publication failure stops the new execution and rolls back its provisional relationship. Retain tracking for an execution that may still run and report completed effects truthfully. Handoff follows [SPEC](SPEC.md); error reporting follows [CONVENTIONS](CONVENTIONS.md#error-handling).
 - **Lifecycle:** Store mutation performs locked authoritative reload, validation, hydration, synchronous model behavior, validation, and atomic serialization. Provider work and arbitrary awaited callbacks run outside store-file locks. See [architecture/application-boundaries.md](architecture/application-boundaries.md).
 
 ### UI, renderer, and terminal attachment
@@ -244,7 +246,7 @@ report success only after final publication is durable
 
 **Completion:** Exactly one provisional relationship is reserved; required identity and final publication succeed. Readiness and publication do not wait for an agent answer.
 
-**Failure:** On critical failure, report the error and stop; do not continue with remaining independent steps, automatic recovery, retry, or rollback. Preserve tracking evidence for any execution that may still be running and report completed effects. Harness cleans allocations it cannot return as part of the failed launch attempt; do not imply rollback.
+**Failure:** On startup or initial-instruction failure, report the error and stop without continuing, automatic recovery, retry, or rollback; retain tracking evidence if an execution may still be running. If final durable publication fails after startup, stop the new execution and roll back only its provisional relationship; retain tracking if the execution may still run. Report completed effects truthfully. Harness cleans allocations it cannot return as part of the failed launch attempt. See the [creation settlement contract](architecture/application-boundaries.md#creation-settlement).
 
 ### Resume, attachment, and hand-off
 
@@ -311,54 +313,11 @@ seed current screen and stream live updates to attached clients
 
 ### Authoritative mutation and publication
 
-**Purpose:** Prevent stale state, obsolete callbacks, or concurrent operations from overwriting newer relationships or authorizing effects against the wrong execution.
-
-**Pseudocode:**
-
-```text
-capture intended task/mode/session before asynchronous waits
-obtain required admission and execution coordination
-under a short store lock:
-  reload authoritative state
-  validate membership and provenance
-  hydrate owner model; invoke synchronous model behavior
-  validate and atomically serialize
-outside the store lock:
-  await external execution and other asynchronous effects
-before dependent effects:
-  await required durability checkpoints
-for publication:
-  reload authoritative state
-  reject removed/replaced records and obsolete execution incarnations
-  apply only intended owner-model changes
-  preserve unrelated fields, histories, and newer selection
-```
-
-**Guarantees:** Stale UI/pre-launch snapshots never replace current storage. Rollback identity survives rehydration; an in-memory map is insufficient. Process-local execution identity rejects stale callbacks but is not conversation identity or durable resource provenance. Do not nest non-reentrant locks or add a generic unit-of-work, command-bus, phase-interpreter, or change-tracking framework. Distinguish a failed write from a committed write whose lock release failed; inspect the exact reservation before recovery rather than blindly repeating creation.
-
-**Implementation freedom:** Private helpers, callback signatures, and storage representation are flexible if they preserve these ordering, identity, and completion guarantees.
+The authoritative mutation and publication algorithm is owned by [Application Boundaries](architecture/application-boundaries.md#authoritative-mutation-and-publication). That contract specifies fresh-state loading, model-owned mutation, bounded store locking, and publication guarantees.
 
 ### Creation settlement and cleanup ordering
 
-**Purpose:** Preserve recoverability and avoid forgetting executions or relationships before required cleanup and publication settle.
-
-**Pseudocode:**
-
-```text
-reserve once and durably record creation identity and prior selection
-start externally after the reservation checkpoint
-on critical failure:
-  report the error and stop; do not continue, recover, retry, or roll back
-  retain tracking evidence if an execution may still be running
-for batch cleanup:
-  preflight every relevant ownership target before any stop/delete effect
-  perform cleanup and remove resources only after required cleanup
-  on failure, report completed effects and stop
-```
-
-**Guarantees:** Batch preflight is not atomic rollback; later cleanup may fail after earlier effects. Stop on failure, preserve tracking evidence, and report partial completion without implying rollback. A successful successor publication separates creation success from later predecessor-retirement failure.
-
-**Implementation freedom:** Exact recovery-record fields and private settlement helpers remain flexible within the required durable identity and ownership evidence.
+Creation settlement and cleanup ordering are owned by [Application Boundaries](architecture/application-boundaries.md#creation-settlement). Creation rollback is limited to the provisional relationship after final durable publication failure; startup and instruction failures stop without rollback, and possible live executions remain tracked.
 
 ## Architectural Invariants
 

@@ -1,124 +1,217 @@
-# Product Specification: Workspace and board
+# Product Requirements: Workspace and board
 
 ## Overview
 
 Let users inspect and organize project tasks in a grouped workspace list or a status-column board.
 
-## Features
+## Goals
 
-| Feature | Description | Contract |
-|---|---|---|
-| Workspace and board | Browse and organize project tasks through grouped-list and status-column views. | [Workspace and board](#workspace-and-board) |
+- Provide grouped-list and status-column views for browsing and organizing project tasks.
+- Preserve task organization and workspace state while users act on tasks and groups.
 
-## Feature Contracts
+## Scope
 
-### Workspace and board
+### In Scope
 
-#### Purpose
+- Workspace views, nested groups, safe populated-group deletion, persisted workspace state, task/group actions, board moves, searchable help, customizable shortcuts, and complete footer/help action lists.
 
-Let users inspect and organize project tasks in a grouped workspace list or a status-column board.
+### Out of Scope
 
-#### Requirements
+- Screen composition and shared visual rules, owned by the [screen specifications](../screens/README.md) and [design system](../DESIGN-SYSTEM.md).
 
-| ID | Requirement |
+## Actors
+
+| Actor | Description |
 |---|---|
-| IF-WB-001 | The workspace must show project tasks in one grouped list and provide a separate status-column board. Users must be able to switch between these views. |
-| IF-WB-002 | Groups must be able to contain tasks and nested groups. |
-| IF-WB-003 | When a populated group is deleted, its tasks and child groups must be preserved, and the user must be able to choose their destination, including ungrouped/root placement. |
-| IF-WB-004 | Reopening the workspace must restore filters, task and mode selection, details visibility, shortcut overrides, group membership, and collapsed groups. Mode selection must be remembered separately for each task, as defined by [configuration](configuration.md#configuration-and-modes). |
-| IF-WB-005 | The grouped list must follow the [workspace screen's task-list width and composition](../screens/workspace.md#ordered-regions). The board must follow its [screen specification](../screens/board.md). |
-| IF-WB-006 | Users must be able to preview, cancel, and commit board moves; assign and unassign groups; expand and collapse groups; copy a task ID; choose retained sessions; and show an agent terminal fullscreen. Interactive task surfaces expose task creation, editing, and archival actions. |
-| IF-WB-007 | Help must be searchable and keyboard shortcuts customizable. A conflicting shortcut assignment must be rejected while the working binding is retained. |
-| IF-WB-008 | The footer must show every action available for the current focus. Help must show all available actions. |
+| User | Views and organizes tasks, configures shortcuts, and invokes workspace actions. |
+| Application | Displays workspace views, persists/restores workspace state, and performs requested actions. |
 
-#### Behavioral Flows
+## States and Transitions
 
-##### Switch workspace views
+### Workspace, board, groups, and shortcuts
 
-**Trigger:** The user selects the grouped-list or board view.
+**States:**
 
-**Preconditions:** The workspace is open.
+| State | Meaning |
+|---|---|
+| Grouped-list view | Project tasks displayed in one grouped list. |
+| Board view | Project tasks displayed in status columns. |
+| Board move preview | Proposed task destination is shown without committing it. |
+| Workspace state | Filters, task/mode selection, details visibility, shortcut overrides, group membership, and collapsed groups. |
+| Shortcut bindings | Current working key bindings, including user overrides. |
 
-**Flow:**
+**Transitions:**
 
-1. The application displays project tasks in the selected view.
-2. The user can switch to the other view without losing the task organization represented by the workspace.
+| From | Trigger | To | Required Behavior |
+|---|---|---|---|
+| Either workspace view | User switches view | Other view | Display tasks in selected view without losing organization. |
+| Board | User initiates move | Move preview | Preview proposed move. |
+| Move preview | Cancel / commit | Original / destination position | Cancel leaves task unchanged; commit moves it. |
+| Saved workspace | User reopens workspace | Restored workspace | Restore each required state value. |
+| Working shortcut | User assigns conflicting shortcut | Prior binding retained | Reject conflict. |
 
-**Postconditions:** The selected view is displayed.
+**Invariants:**
+- Deleting a populated group preserves its tasks and child groups.
+- A canceled board move leaves the task in its original position.
+- A rejected shortcut conflict leaves the working binding intact.
 
-##### Move a board task
+## External Behavior
 
-**Trigger:** The user initiates a board move.
+### Workspace interaction
 
-**Preconditions:** The board is open and a task can be moved.
+**Purpose:** Expose task browsing and organization actions to the user.
 
-**Flow:**
+**Inputs:** View selection, task/group actions, board move choices, workspace preferences, and shortcut assignments.
 
-1. The application previews the proposed move.
-2. The user either cancels or commits the move.
-3. On cancellation, the task remains in its original position; on commit, the task appears in the destination position.
+**Outputs:** Selected workspace view, task/group changes, previews, restored workspace state, and visible action/help listings.
 
-**Postconditions:** The task is unchanged after cancellation or is in the chosen destination after commit.
+**Failures:** Reject a conflicting shortcut while retaining its working binding. A canceled move leaves the task unchanged. No other failure behavior is specified here.
 
-##### Delete a populated group
+## Requirements
 
-**Trigger:** The user requests deletion of a populated group.
+### IF-WB-001: Workspace views
 
-**Preconditions:** The group contains tasks or child groups.
+**Description:** The workspace shows project tasks in one grouped list and provides a separate status-column board; users can switch views.
+**Trigger:** User opens workspace or switches view.
+**Preconditions:** Project tasks are available.
+**Behavior:** Display tasks in the selected grouped-list or board view and allow switching between them.
+**Outcome:** The selected view displays project tasks.
+**Failures:** None specified.
+**Acceptance Criteria:**
+- [ ] Open workspace and confirm project tasks are shown in grouped-list view.
+- [ ] Switch to board and confirm project tasks are shown in status columns; switch back successfully.
 
-**Flow:**
+### IF-WB-002: Nested groups
 
-1. The application lets the user select a destination for the group's tasks and child groups, including ungrouped/root placement.
-2. The application removes the group and places its contents at the selected destination.
+**Description:** Groups can contain tasks and nested groups.
+**Trigger:** User organizes tasks into groups.
+**Preconditions:** Workspace is open.
+**Behavior:** Permit groups to contain tasks and child groups.
+**Outcome:** Nested group structure is represented in the workspace.
+**Failures:** None specified.
+**Acceptance Criteria:**
+- [ ] Place tasks and child groups within a group and confirm the nested structure is shown.
 
-**Postconditions:** The group is deleted and its tasks and child groups remain available at the chosen destination.
+### IF-WB-003: Delete populated group
 
-##### Restore workspace state
+**Description:** Deleting a populated group preserves its tasks and child groups and lets the user choose their destination, including ungrouped/root placement.
+**Trigger:** User requests deletion of a populated group.
+**Preconditions:** Group contains tasks or child groups.
+**Behavior:** Let the user choose a destination for all contents, then delete the group and place contents at that destination.
+**Outcome:** Group is removed and no contents are discarded.
+**Failures:** None specified.
+**Acceptance Criteria:**
+- [ ] Delete a group with tasks and child groups, choose root/ungrouped placement, and confirm all contents remain at root.
+- [ ] Choose a destination group and confirm the tasks and child groups are preserved there.
 
-**Trigger:** The user reopens the workspace.
+### IF-WB-004: Restore workspace state
 
+**Description:** Reopening restores filters, task and mode selection, details visibility, shortcut overrides, group membership, and collapsed groups. Mode selection is remembered separately for each task as defined by [configuration](configuration.md#configuration-and-modes).
+**Trigger:** User reopens workspace.
 **Preconditions:** Workspace state was previously saved.
+**Behavior:** Restore all listed state, including independent per-task mode selection.
+**Outcome:** Reopened workspace reflects its saved state.
+**Failures:** None specified.
+**Acceptance Criteria:**
+- [ ] Reopen a workspace and confirm filters, task/mode selection, details visibility, shortcut overrides, group membership, and collapsed groups are restored.
+- [ ] Confirm each task's remembered mode is independent of other tasks.
 
-**Flow:**
+### IF-WB-005: Screen specifications
 
-1. The application restores the saved filters, task and mode selection, details visibility, shortcut overrides, group membership, and collapsed groups.
-2. The application restores the selected mode for the selected task independently of other tasks.
+**Description:** Grouped list follows the [workspace screen's task-list width and composition](../screens/workspace.md#ordered-regions); board follows its [screen specification](../screens/board.md).
+**Trigger:** User displays either workspace view.
+**Preconditions:** Workspace is open.
+**Behavior:** Conform to the corresponding screen specification.
+**Outcome:** Each view follows its owning screen contract.
+**Failures:** Screen composition rules are owned by the linked screen specifications.
+**Acceptance Criteria:**
+- [ ] Confirm grouped-list task-list width and composition follow the linked workspace screen specification.
+- [ ] Confirm board behavior follows its linked screen specification.
 
-**Postconditions:** The reopened workspace reflects its saved state.
+### IF-WB-006: Workspace actions
 
-#### Edge Cases and Failures
+**Description:** Users can preview, cancel, and commit board moves; assign/unassign groups; expand/collapse groups; copy a task ID; choose retained sessions; and show an agent terminal fullscreen. Interactive task surfaces expose task creation, editing, and archival actions.
+**Trigger:** User invokes an action on a board, group, task, or agent terminal.
+**Preconditions:** Corresponding interactive surface and target are available.
+**Behavior:** Expose and perform each listed action, including task create/edit/archive on interactive task surfaces.
+**Outcome:** Requested action is performed; board move remains previewable and cancellable before commit.
+**Failures:** Canceling a previewed move preserves the original position.
+**Acceptance Criteria:**
+- [ ] Preview a board move; cancel it and confirm original position, then commit a move and confirm the destination.
+- [ ] Assign a task to a group and unassign it; confirm membership changes accordingly.
+- [ ] Expand and collapse a group and confirm its contents visibility changes.
+- [ ] Copy a task ID and confirm the copied value is that task's ID.
+- [ ] Choose a retained session and confirm the chosen session is retained.
+- [ ] Show an agent terminal fullscreen and confirm the terminal is displayed fullscreen.
+- [ ] Confirm interactive task surfaces expose task creation, editing, and archival actions.
 
-| Condition | Expected Behavior |
+### IF-WB-007: Searchable help and shortcuts
+
+**Description:** Help is searchable and keyboard shortcuts are customizable. A conflicting assignment is rejected while the working binding is retained.
+**Trigger:** User searches help or customizes a shortcut.
+**Preconditions:** Help or shortcut settings are available.
+**Behavior:** Search help entries; allow shortcut customization; reject a binding that conflicts with a working binding.
+**Outcome:** Help search is usable and valid shortcut overrides take effect.
+**Failures:** Reject conflict and retain the working binding.
+**Acceptance Criteria:**
+- [ ] Search help for an available action and confirm matching help entries can be found.
+- [ ] Customize a non-conflicting shortcut and confirm the new binding works.
+- [ ] Assign a shortcut already bound to a working action; confirm rejection and retention of the previous binding.
+
+### IF-WB-008: Complete action listings
+
+**Description:** Footer shows every action available for the current focus; help shows all available actions.
+**Trigger:** User changes focus or opens help.
+**Preconditions:** Workspace has actions available for the current focus.
+**Behavior:** Keep footer actions complete for current focus and help actions complete for the workspace.
+**Outcome:** Available actions are discoverable in the appropriate listing.
+**Failures:** None specified.
+**Acceptance Criteria:**
+- [ ] For each focus state, confirm the footer lists every action available for that focus and no available action is omitted.
+- [ ] Confirm help lists all available actions, including actions not shown in the current-focus footer.
+
+## Flows
+
+### Switch workspace views
+
+**Trigger:** User selects grouped-list or board view.
+**Preconditions:** Workspace is open.
+**Flow:** Display tasks in selected view; allow switching without losing task organization.
+**Outcome:** Selected view is displayed with organization preserved.
+
+### Move a board task
+
+**Trigger:** User initiates a board move.
+**Preconditions:** Board is open and task can be moved.
+**Flow:** Preview proposed move; user cancels or commits; cancellation leaves task in place and commit places it at destination.
+**Outcome:** Task is unchanged after cancellation or in chosen destination after commit.
+
+### Delete a populated group
+
+**Trigger:** User requests deletion of a populated group.
+**Preconditions:** Group contains tasks or child groups.
+**Flow:** User selects destination, including root/ungrouped placement; application removes group and places contents there.
+**Outcome:** Group is deleted and contents remain at chosen destination.
+
+### Restore workspace state
+
+**Trigger:** User reopens workspace.
+**Preconditions:** Workspace state was saved.
+**Flow:** Restore filters, task/mode selection, details visibility, shortcut overrides, group membership, collapsed groups, and independent per-task mode selection.
+**Outcome:** Workspace reflects saved state.
+
+## Failure/Recovery
+
+| Condition | Required Behavior |
 |---|---|
-| The user cancels a previewed board move. | The task remains in its original position. |
-| A group being deleted contains tasks or nested groups. | No contents are discarded; the user selects their destination, including root/ungrouped placement. |
-| A shortcut assignment conflicts with a working binding. | Reject the conflicting assignment and retain the working binding. |
+| User cancels a previewed board move | Leave task in its original position. |
+| Deleted group contains tasks or nested groups | Preserve all contents and let user select destination, including root/ungrouped. |
+| Shortcut assignment conflicts with a working binding | Reject assignment and retain working binding. |
 
-#### Behavioral Invariants
+## Acceptance Criteria
 
-- Switching views does not turn deletion of a populated group into deletion of its contents.
-- A canceled board move does not change the task's position.
-- A rejected shortcut conflict does not replace the working binding.
-- [Screen specifications](../screens/README.md) own screen composition; the [design system](../DESIGN-SYSTEM.md) owns shared visual rules. Interface behavior remains defined by this contract and its linked feature contracts.
+Acceptance criteria are listed under every requirement above: IF-WB-001 (2), IF-WB-002 (1), IF-WB-003 (2), IF-WB-004 (2), IF-WB-005 (2), IF-WB-006 (7), IF-WB-007 (3), IF-WB-008 (2). Total: 21 criteria.
 
-#### Acceptance Criteria
+## Open Questions
 
-- [ ] Open the workspace, switch between grouped-list and board views, and confirm both display project tasks.
-- [ ] Preview then cancel a board move and confirm the task remains in its original position; commit another move and confirm it appears in the destination.
-- [ ] Delete a group containing tasks and child groups, choose root placement, and confirm all contents remain at root.
-- [ ] Reopen a workspace with saved state and confirm each listed state value, including per-task mode selection, is restored.
-- [ ] Assign a shortcut already bound to a working action and confirm the conflict is rejected and the prior binding remains active.
-
-#### Open Decisions
-
-| Question | Constraints | Status |
-|---|---|---|
-
-## Global Behavioral Invariants
-
-- [Screen specifications](../screens/README.md) own screen composition; the [design system](../DESIGN-SYSTEM.md) owns shared visual rules. Interface behavior remains defined by this contract and its linked feature contracts.
-
-## Open Product Decisions
-
-| Decision | Affected Features | Status |
-|---|---|---|
+None recorded.
