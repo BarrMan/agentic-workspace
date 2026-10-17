@@ -257,3 +257,5 @@ The affected feature contracts retain the detailed constraints and decision cont
 | Decision | Affected Features | Status |
 |---|---|---|
 | Default/last-mode handling and cross-task extent for mode deletion. | [Configuration and modes](specs/configuration.md#delete-a-mode) | Open |
+| Mode-catalog startup failure ordering, and how the catalog is seeded and identified. | [Configuration and modes](specs/configuration.md#delete-a-mode) | Open |
+| Path containment for task artifact paths. | [Tasks and storage](specs/tasks.md#open-decisions) | Open |

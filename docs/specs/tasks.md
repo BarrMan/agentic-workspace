@@ -202,4 +202,6 @@ Archiving an unfinished task preserves its artifacts, session history, dependenc
 
 #### Open Decisions
 
-None recorded in this contract.
+| Question | Constraints | Status |
+|---|---|---|
+| What path containment applies to task artifact paths? | Artifacts live in the task's `artifacts/` directory; rejection of symlinks or paths escaping that directory is not yet defined. | Open |

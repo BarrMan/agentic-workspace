@@ -128,6 +128,8 @@ Allow users to configure workspace behavior and agent settings while keeping mod
 | Question | Constraints | Status |
 |---|---|---|
 | What are the default/last-mode handling and cross-task extent for mode deletion? | Deletion requires confirmation and cleanup preflight, removes the mode's sessions rather than transferring history, and failure stops the operation without automatic recovery, retry, or rollback. | Open |
+| What is the startup failure ordering when the mode catalog cannot be loaded? | Startup requires a mode catalog; no fallback or default catalog is approved. | Open |
+| How is the mode catalog seeded and identified, and are mode IDs versioned or syntactically constrained? | Setup happens in the TUI; there is no `init` command. | Open |
 
 ## Global Behavioral Invariants
 
