@@ -43,7 +43,7 @@ agentic-workspace workspace
 
 Use the workspace's settings and help surfaces for configuration and available keybindings. The workspace and board are alternate views of the same project's work.
 
-**Implementation alignment:** the approved product contract and the current binary are not yet fully aligned. Existing builds can expose old setup commands, behavior, or settings limitations. [The alignment plan](docs/alignment-plan.md) records those differences, including setup work; this README does not claim that fresh-project onboarding is already complete. Check installed `--help` when diagnosing current availability, while using SPEC to determine intended behavior.
+**Implementation alignment:** the approved product contract and the current binary are not yet fully aligned. Existing builds can expose old setup commands, behavior, or settings limitations.  Check installed `--help` when diagnosing current availability, while using SPEC to determine intended behavior.
 
 ## Agent and application integration
 
@@ -57,7 +57,7 @@ agentic-workspace task view "$TASK_ID"
 
 Use the returned task ID. Consult the [supported product contracts](docs/SPEC.md) for intended behavior and `agentic-workspace <command> --help` for the syntax exposed by the installed binary. Availability in an older build does not establish that an operation belongs in the approved API.
 
-Configuration and data remain ordinary editable files. API operations provide a convenient integration contract; they are not an exclusive access mechanism. Optional integrations still awaiting a product decision are identified in the alignment plan rather than promised here.
+Configuration and data remain ordinary editable files. API operations provide a convenient integration contract; they are not an exclusive access mechanism. Unsupported integration surfaces are recorded in [SPEC](docs/SPEC.md) rather than promised here.
 
 ## Documentation
 
@@ -72,7 +72,6 @@ Start with the [documentation map](docs/README.md). Each concern has one authori
 | [DESIGN-SYSTEM](docs/DESIGN-SYSTEM.md) | Shared visual rules and reusable interaction patterns. |
 | [CONVENTIONS](docs/CONVENTIONS.md) | Coding, testing and organization practices. |
 | [ADRs](docs/adr/README.md) | Accepted technology and significant architecture decisions, with rationale and supersession history. |
-| [Alignment plan](docs/alignment-plan.md) | Implementation gaps, removals, open decisions and verification work. |
 | [AGENTS.md](AGENTS.md) | Agent reading and execution instructions. |
 
 ## Development
@@ -86,7 +85,7 @@ Rebuild before trying source changes through the installed binary. The repositor
 - Check `agentic-workspace --help` for the installed binary's current commands.
 - Check the configured project data path and any `AGENTIC_WORKSPACE_CWD` override if records appear to be missing.
 - When source tests and the installed command disagree, verify that the binary was rebuilt.
-- Record contract discrepancies in the alignment plan rather than silently changing requirements to match the implementation.
+- Record contract discrepancies rather than silently changing requirements to match the implementation.
 
 ## Talks & community
 
