@@ -6,7 +6,7 @@
 
 ## Purpose
 
-Establish a clear owner for domain behavior while application coordination sequences effects and durability.
+Establish a clear owner for domain behavior while application coordination sequences effects and durability. Domain behavior must not be reduced to forwarding service methods; a central package mirroring concrete model methods or a phase-driven persistence adapter would create competing definitions or implementations of domain rules.
 
 ## Blueprint Mapping
 
@@ -14,13 +14,9 @@ Establish a clear owner for domain behavior while application coordination seque
 
 **Contracts:** Component ownership and dependency direction; authoritative mutation and publication.
 
-## Context
-
-Domain behavior needs a clear owner while application coordination continues to sequence effects and durability. Merely moving service orchestration behind forwarding methods does not establish meaningful model ownership. A central package mirroring concrete model methods or a phase-driven persistence adapter would create competing definitions or implementations of domain rules.
-
 ## Decision
 
-**Selected Technology/Strategy:** Concrete Task, Session, and application-controller models.
+**Selected Technology:** Concrete Task, Session, and application-controller models.
 
 **Role:** Task owns task/session relationship rules; Session owns individual conversation/execution behavior; application coordination invokes those owners and sequences admission, external effects, and durability; persistence owns locked reload, validation, serialization, and atomic writes without interpreting domain commands.
 
@@ -28,13 +24,7 @@ Domain behavior needs a clear owner while application coordination continues to 
 - Keep behavioral interfaces at actual interchangeable production boundaries; do not mirror concrete models in a central behavioral contract package or introduce parallel dependency hierarchies solely for tests.
 - Hydrate models from current locked state before durable mutations, invoke synchronous model behavior, and serialize the result; keep external startup and arbitrary awaited callbacks outside the store lock, and await required application-composed checkpoints.
 
-Use concrete Task, Session, and application-controller models. Task is the sole implementation of task/session relationship rules; Session owns individual conversation/execution behavior. Application coordination invokes those owners and sequences admission, external effects, and durability. Persistence owns locked reload, validation, serialization, and atomic writes, not a second interpretation of domain commands.
-
-Keep behavioral interfaces at actual interchangeable production boundaries, notably Harness providers. Do not mirror concrete models in a central behavioral contract package or introduce parallel dependency hierarchies solely for tests. Record, launch, event, and rollback-identity data stay with their owning modules.
-
-Durable mutations hydrate the model from current locked state, invoke its synchronous behavior, and serialize the result. External startup and arbitrary awaited callbacks remain outside the store lock; required application-composed checkpoints are awaited. Effective contracts and ordering are owned by [BLUEPRINT](../BLUEPRINT.md).
-
-## Alternatives Considered
+## Alternatives
 
 ### Keep plain records with service/store/process/adapter boundaries
 

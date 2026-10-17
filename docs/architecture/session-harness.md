@@ -4,7 +4,7 @@ This document is part of [BLUEPRINT.md](../BLUEPRINT.md).
 
 ## Overview
 
-Session is the concrete conversation owner; RunningExecution is its replaceable runtime incarnation; Harness is the provider-variation boundary. Task owns membership and relationship projections, while application coordination supplies explicit targeting, current configuration, admission/claims, and durability under the [application operation contract](../BLUEPRINT.md#application-controller-and-stores). Provider receipts remain inside Harness. Exact event types, constructors, and return signatures are owned by their implementation modules unless specified here.
+Session is the concrete conversation owner; RunningExecution is its replaceable runtime incarnation; Harness is the provider-variation boundary. Task owns membership and relationship projections, while application coordination supplies explicit targeting, current configuration, admission/claims, and durability under the [application operation contract](../BLUEPRINT.md#application-controller). Provider receipts remain inside Harness. Exact event types, constructors, and return signatures are owned by their implementation modules unless specified here.
 
 ## Component Ownership
 
@@ -154,7 +154,7 @@ class Harness {
 - **Postconditions:** `from` selects/configures the concrete Harness without allocating a conversation. `new` allocates execution, establishes identity, initializes, and delivers initial instructions exactly once; its promise resolves only after established conversation identity, provider initialization, and provider-supported acknowledgment of initial submission—not an answer. `resume` initializes an execution for the same conversation and resolves after exact identity and initialization evidence, without replaying initial instructions or sending a synthetic probe. Identity/runtime inspection encapsulates provider-specific discovery and exact-resume evidence. Current `HarnessProvider.launch` naming is source navigation only; `Harness.from`, `new`, and `resume` are illustrative design names.
 - Established identity may be client-established at launch or confirmed later by the provider; adapters own proposed IDs and their launch command assembly.
 - **Failures:** Configuration/construction errors reject. If resources were allocated without a returnable execution, Harness attempts cleanup and retains ownership evidence plus cleanup failure before rejecting. Impossible/mismatched resume rejects and never silently launches a fresh conversation. Partial startup cleanup obligations also apply to resume. Errors remain explicit; provider receipt handling stays internal.
-- **Lifecycle:** Start with a factory, not a builder or retained object carrying mutable operation authority. Preserve existing provider startup/bootstrap artifact context and exactly-once delivery. The launch context carries necessary inputs, not unrestricted application state. Agent inputs use explicit trusted workspace identities and allowed preset values; validate reserved references and exclude ambient launcher state as specified by the [session input contract](../specs/sessions.md#starting-a-session). Required identity/resource evidence is made durable through application publication.
+- **Lifecycle:** Start with a factory, not a builder or retained object carrying mutable operation authority. Preserve existing provider startup/bootstrap artifact context and exactly-once delivery. The launch context carries necessary inputs, not unrestricted application state. Agent inputs use explicit trusted workspace identities and allowed preset values; validate reserved references and exclude ambient launcher state as specified by the [session input contract](../specs/sessions.md#session-004-start-consistently-across-surfaces). Required identity/resource evidence is made durable through application publication.
 
 ## Component Interactions
 
@@ -287,7 +287,7 @@ launch(context):
 - Observation is non-destructive and ephemeral; unsupported evidence, unknown state, errors, and stopped/idle are not conflated.
 - Provider-supported turn completion is distinct from readiness/submission acknowledgment and execution exit. An ambiguous stop signal cannot mean both turn completion and process exit; completed answers do not authorize cleanup or conversation removal.
 - Session subscriptions survive execution replacement, execution listeners are detached/replaced, and provider-specific unsupported events are not implied to exist universally.
-- Inputs to the agent are bounded by the [SPEC session input contract](../specs/sessions.md#starting-a-session); ambient launcher state is excluded.
+- Inputs to the agent are bounded by the [SPEC session input contract](../specs/sessions.md#session-004-start-consistently-across-surfaces); ambient launcher state is excluded.
 
 ## Open Design Decisions
 

@@ -48,6 +48,7 @@ This document owns repeatable coding, organization, and verification practices. 
 
 ## Dependencies
 
+- **Implementation facts, not technology decisions:** The current toolchain uses Bun 1.4+, TypeScript, and `@opentui/core`; project data is filesystem-backed. These are repository implementation facts, not approved technology decisions.
 - Reuse existing project utilities and dependencies before adding another package. Add runtime packages to `dependencies` and development-only tooling to `devDependencies` in [package.json](../package.json).
 - Keep [bun.lock](../bun.lock) and, when changed, generated `bun.nix` aligned. When `bun.lock` changes, regenerate `bun.nix` with the pinned `update-nix` package script. Technology decisions belong in [ADRs](adr/README.md).
 - Install dependencies with `bun install`; use the source entry through package scripts during development.

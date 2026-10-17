@@ -30,11 +30,11 @@ Define task organization, persistence, work context, artifacts, completion, mile
 |---|---|
 | TASK-001–TASK-022 | The complete requirements, flows, edge cases, invariants, and acceptance criteria are in the [Tasks and storage contract](specs/tasks.md). |
 
-#### Behavioral Flows
+#### States and Behavior
 
 See the flows in the [Tasks and storage contract](specs/tasks.md).
 
-#### Edge Cases and Failures
+#### Edge Cases
 
 See the conditions and required outcomes in the [Tasks and storage contract](specs/tasks.md).
 
@@ -62,11 +62,11 @@ Define creation, observation, continuation, handoff, live terminal interaction, 
 |---|---|
 | SESSION-001–SESSION-020 | The complete requirements, flows, edge cases, invariants, acceptance criteria, and open decisions are in the [Sessions contract](specs/sessions.md). |
 
-#### Behavioral Flows
+#### States and Behavior
 
 See the flows in the [Sessions contract](specs/sessions.md).
 
-#### Edge Cases and Failures
+#### Edge Cases
 
 See the conditions and required outcomes in the [Sessions contract](specs/sessions.md).
 
@@ -94,11 +94,11 @@ Define workspace settings and the configuration, approval, and lifecycle of agen
 |---|---|
 | CONFIG-001–CONFIG-014 | The complete requirements, flows, edge cases, invariants, and acceptance criteria are in the [Configuration and modes contract](specs/configuration.md). |
 
-#### Behavioral Flows
+#### States and Behavior
 
 See the flows in the [Configuration and modes contract](specs/configuration.md).
 
-#### Edge Cases and Failures
+#### Edge Cases
 
 See the conditions and required outcomes in the [Configuration and modes contract](specs/configuration.md).
 
@@ -126,11 +126,11 @@ Let users inspect and organize project tasks in a grouped workspace list or a st
 |---|---|
 | IF-WB-001–IF-WB-008 | The complete requirements, flows, edge cases, invariants, and acceptance criteria are in the [Workspace and board contract](specs/workspace-and-board.md). |
 
-#### Behavioral Flows
+#### States and Behavior
 
 See the flows in the [Workspace and board contract](specs/workspace-and-board.md).
 
-#### Edge Cases and Failures
+#### Edge Cases
 
 See the conditions and required outcomes in the [Workspace and board contract](specs/workspace-and-board.md).
 
@@ -158,11 +158,11 @@ Let users narrow the workspace task list and find records across project tasks, 
 |---|---|
 | IF-FS-001–IF-FS-003 | The complete requirements, flows, edge cases, invariants, acceptance criteria, and open decisions are in the [Filtering and search contract](specs/filtering-and-search.md). |
 
-#### Behavioral Flows
+#### States and Behavior
 
 See the flows in the [Filtering and search contract](specs/filtering-and-search.md).
 
-#### Edge Cases and Failures
+#### Edge Cases
 
 See the conditions and required outcomes in the [Filtering and search contract](specs/filtering-and-search.md).
 
@@ -190,11 +190,11 @@ Let users inspect the selected task's session, safely attach to or resume it, an
 |---|---|
 | IF-SI-001–IF-SI-007 | The complete requirements, flows, edge cases, invariants, and acceptance criteria are in the [Session interaction and feedback contract](specs/session-interaction-and-feedback.md). |
 
-#### Behavioral Flows
+#### States and Behavior
 
 See the flows in the [Session interaction and feedback contract](specs/session-interaction-and-feedback.md).
 
-#### Edge Cases and Failures
+#### Edge Cases
 
 See the conditions and required outcomes in the [Session interaction and feedback contract](specs/session-interaction-and-feedback.md).
 
@@ -222,11 +222,11 @@ Provide agents inside sessions and external applications with a selective public
 |---|---|
 | IF-API-001–IF-API-013 | The complete requirements, flows, edge cases, invariants, acceptance criteria, and open decisions are in the [Supported Integration Operations contract](specs/supported-integration-operations.md). |
 
-#### Behavioral Flows
+#### States and Behavior
 
 See the flows in the [Supported Integration Operations contract](specs/supported-integration-operations.md).
 
-#### Edge Cases and Failures
+#### Edge Cases
 
 See the conditions and required outcomes in the [Supported Integration Operations contract](specs/supported-integration-operations.md).
 

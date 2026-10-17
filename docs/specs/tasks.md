@@ -1,4 +1,4 @@
-# Product Specification: Tasks and Storage
+# Product Requirements: Tasks and Storage
 
 ## Overview
 
@@ -26,93 +26,7 @@ This contract defines task identity and data, project storage, artifacts, work c
 | Workspace | Stores and presents tasks, performs task lifecycle operations, and reports their outcomes. |
 | Provider | Supplies provider-owned configuration, data, and state, which the workspace does not manage. |
 
-## States and Transitions
-
-### State definitions
-
-| Entity | State | Meaning |
-|---|---|---|
-| Task | Configured status | Statuses come from project configuration; marking Done changes only status. |
-| Task | Completed | Explicit completion/cleanup moves the task to completed storage and removes its worktree and branch. |
-| Task | Archived | An unfinished task's container is in archive storage; artifacts, session history, dependencies, worktree, and branch are retained. |
-| Task data | Configured store | Resides at the project's single deterministic configured location. |
-| Milestone | Existing | May be added, renamed, listed, archived, or removed; removal clears or reassigns task references. |
-
-### Transition definitions
-
-| Entity | From | Trigger | To | Required behavior |
-|---|---|---|---|---|
-| Task | Configured status | Mark Done | Configured status | Change only status; retain the worktree. |
-| Task | Unfinished | Explicit completion/cleanup | Completed | Move to completed storage, perform session cleanup, and remove worktree and branch. |
-| Task | Unfinished | Archive, after running sessions are explicitly stopped | Archived | Move the task container to archive storage and clean up vacated-task references; preserve artifacts, session history, dependencies, worktree, and branch. |
-| Task | Terminal status | Archive | Unchanged | Reject the archive. |
-| Task data | Existing configured store | Successful relocation | Selected configured store | The selected location becomes the project's deterministic store. |
-| Milestone | Existing | Removal | Removed | Clear or reassign all matching task references. |
-
-## External Behavior
-
-### CLI and workspace operations
-
-**Purpose:** Let users manage tasks, work context, and task artifacts.
-
-**Inputs:** User task actions and artifact paths/content; task status values from project configuration.
-
-**Outputs:** Task listings and views, operation results, warnings, and actionable errors as specified below.
-
-**Failures:** Follow [error handling and edge cases](../CONVENTIONS.md#error-handling), with task-specific consequences defined in the requirements and flows below.
-
-## User Interactions
-
-### Manage tasks, work context, and artifacts
-
-**Context:** The user is working in a project and managing its tasks or artifacts.
-
-**Action:** Create, view, edit, launch, complete, archive, or delete tasks; manage milestones; or list, read, display, and write task artifacts.
-
-**Response:** Apply the requested operation using configured task status and storage; show task listings, views, operation results, warnings, and actionable errors.
-
-**Feedback:** Show a visible warning when worktree creation fails, require confirmation naming the task ID and title for destructive deletion, and distinguish status-only Done from explicit completion/cleanup.
-
-## Non-Functional Requirements
-
-### Performance
-
-- None.
-
-### Reliability
-
-- Preserve readable task records when collection reads encounter malformed records.
-- Preserve the task when worktree creation fails; preserve execution ownership/tracking evidence when required cleanup fails.
-- Report completed effects truthfully after failed or interrupted deletion and relocation; do not imply rollback.
-
-### Security
-
-- Keep artifact operations within the task's `artifacts/` directory, rejecting paths that escape it, including through symlinks.
-- Do not manage or modify provider-owned configuration, data, or state.
-
-### Compatibility
-
-- None.
-
-## Features
-
-| Feature | Description | Contract |
-|---|---|---|
-| Tasks and storage | Define task identity, storage, artifacts, work context, completion, milestones, and deletion. | Tasks and storage feature contract below |
-
-## Feature Contracts
-
-### Tasks and storage
-
-[Product contract](../SPEC.md) · Related: [sessions](sessions.md), [configuration](configuration.md), [supported integration operations](supported-integration-operations.md)
-
-#### Purpose
-
-Define task identity and data, project storage, artifacts, work context and completion, milestones, and task deletion behavior.
-
-## Requirements
-
-<a id="task-model"></a>
+## Functional Requirements
 
 ### TASK-001: Task scope and fields
 
@@ -128,7 +42,7 @@ Define task identity and data, project storage, artifacts, work context and comp
 
 **Outcome:** No listed field is made mandatory.
 
-**Failures:** Follow [error handling and edge cases](../CONVENTIONS.md#error-handling).
+**Failures:** None.
 
 **Acceptance Criteria:**
 - A task is scoped to a project directory with or without Git; each listed field may be absent.
@@ -148,7 +62,7 @@ Define task identity and data, project storage, artifacts, work context and comp
 
 **Outcome:** The task is saved directly with an allocated identity.
 
-**Failures:** Follow [error handling and edge cases](../CONVENTIONS.md#error-handling).
+**Failures:** None.
 
 **Acceptance Criteria:**
 - Configured statuses, direct creation under a creation lock, and no draft promotion or demotion are observed.
@@ -188,7 +102,7 @@ Define task identity and data, project storage, artifacts, work context and comp
 
 **Outcome:** Dependencies remain informational and survive completion.
 
-**Failures:** Follow [error handling and edge cases](../CONVENTIONS.md#error-handling).
+**Failures:** None.
 
 **Acceptance Criteria:**
 - Dependencies persist through completion and do not automatically gate launch or completion.
@@ -207,7 +121,7 @@ Define task identity and data, project storage, artifacts, work context and comp
 
 **Outcome:** The task collection is loaded from the configured store.
 
-**Failures:** Follow [error handling and edge cases](../CONVENTIONS.md#error-handling).
+**Failures:** None.
 
 **Acceptance Criteria:**
 - Project loading uses its deterministic store, including from linked worktrees, without branch discovery.
@@ -227,7 +141,7 @@ Define task identity and data, project storage, artifacts, work context and comp
 
 **Outcome:** Task data follows the configured storage structure.
 
-**Failures:** Follow [error handling and edge cases](../CONVENTIONS.md#error-handling).
+**Failures:** None.
 
 **Acceptance Criteria:**
 - Supported locations, outside-`.git` storage, task `artifacts/` directories, and Markdown-frontmatter `task.md` records are present.
@@ -247,14 +161,14 @@ Define task identity and data, project storage, artifacts, work context and comp
 
 **Outcome:** Direct actions on malformed targets fail with a helpful error.
 
-**Failures:** Fail direct malformed-target actions helpfully.
+**Failures:** Direct actions on malformed targets fail with a helpful error.
 
 **Acceptance Criteria:**
 - Collection reads preserve readable results with warnings; direct malformed-target actions fail helpfully, bulk reads exit 0, and single-record loads remain strict.
 
 ### TASK-008: Relocating task storage
 
-**Description:** When the user changes the configured task-data location, the application moves the entire workspace-owned data folder, including existing task data, rather than requiring manual relocation. Provider-owned configuration, data, and state are never moved or otherwise managed. On success, the full workspace-owned folder is at the selected location, which becomes the project's deterministic store, including for linked worktrees. Relocation failures follow [error handling and edge cases](../CONVENTIONS.md#error-handling).
+**Description:** When the user changes the configured task-data location, the application moves the entire workspace-owned data folder, including existing task data, rather than requiring manual relocation. Provider-owned configuration, data, and state are never moved or otherwise managed. On success, the full workspace-owned folder is at the selected location, which becomes the project's deterministic store, including for linked worktrees.
 
 **Trigger:** The user changes the configured task-data location.
 
@@ -266,7 +180,7 @@ Define task identity and data, project storage, artifacts, work context and comp
 
 **Outcome:** The full workspace-owned folder is at the selected location on success; provider-owned state remains untouched.
 
-**Failures:** Relocation failures follow [error handling and edge cases](../CONVENTIONS.md#error-handling).
+**Failures:** Report completed effects truthfully if a step fails or is interrupted; do not imply rollback.
 
 **Acceptance Criteria:**
 - Relocation moves all workspace-owned data; success selects the new store and provider-owned state is untouched.
@@ -286,7 +200,7 @@ Define task identity and data, project storage, artifacts, work context and comp
 
 **Outcome:** Artifact operations apply to files within the task's artifacts directory.
 
-**Failures:** Follow [error handling and edge cases](../CONVENTIONS.md#error-handling).
+**Failures:** None.
 
 **Acceptance Criteria:**
 - Artifact listing, display, reading, and writing work as specified; writes replace the selected file.
@@ -299,7 +213,9 @@ Define task identity and data, project storage, artifacts, work context and comp
 
 **Preconditions:** An artifact viewer is open.
 
-**Behavior:** Reflect external edits through change notifications; do not periodically recheck content.
+**Behavior:**
+1. Reflect external edits through change notifications.
+2. Do not periodically recheck content.
 
 **Outcome:** Recovery of a missed notification is not guaranteed.
 
@@ -310,24 +226,26 @@ Define task identity and data, project storage, artifacts, work context and comp
 
 ### TASK-011: Artifact ownership and modes
 
-**Description:** Artifacts are user-managed files with arbitrary names and contents. Modes and approval follow the [mode contract](configuration.md#configuration-and-modes); artifact file tools operate independently of mode-specific document schemas and approval checks.
+**Description:** Artifacts are user-managed files with arbitrary names and contents. Modes and approval follow the [mode contract](configuration.md#functional-requirements); artifact file tools operate independently of mode-specific document schemas and approval checks.
 
 **Trigger:** The user operates on an artifact.
 
 **Preconditions:** An artifact exists or is supplied by the user.
 
-**Behavior:** Treat artifacts as user-managed arbitrary-name/content files; follow the mode contract independently of mode-specific document schemas and approval checks.
+**Behavior:**
+1. Treat artifacts as user-managed arbitrary-name/content files.
+2. Follow the mode contract independently of mode-specific document schemas and approval checks.
 
 **Outcome:** Artifact tools operate independently of those schemas and checks.
 
-**Failures:** Follow [error handling and edge cases](../CONVENTIONS.md#error-handling).
+**Failures:** None.
 
 **Acceptance Criteria:**
 - Arbitrary artifact names and contents are user-managed; mode behavior is independent of document schemas and approvals.
 
 ### TASK-012: Task worktrees
 
-**Description:** A worktree-per-task setting controls task worktree use. When enabled, a worktree is created on the first session launch. Task creation creates the task record without allocating the worktree. If worktree creation fails, retain the task and show a visible warning; a requested worktree failure must not silently redirect execution into the project checkout. Resume preparation with a missing recorded working directory fails with a path-specific error; see [error handling and edge cases](../CONVENTIONS.md#error-handling).
+**Description:** A worktree-per-task setting controls task worktree use. When enabled, a worktree is created on the first session launch. Task creation creates the task record without allocating the worktree. If worktree creation fails, retain the task and show a visible warning; a requested worktree failure must not silently redirect execution into the project checkout. Resume preparation with a missing recorded working directory fails with a path-specific error.
 
 **Trigger:** A task is created, a session is launched, or a session is resumed.
 
@@ -340,7 +258,7 @@ Define task identity and data, project storage, artifacts, work context and comp
 
 **Outcome:** Task creation, launch, and resume use the configured worktree behavior.
 
-**Failures:** Worktree failure retains the task and visibly warns; a missing resume directory produces a path-specific error. Generic handling follows [error handling and edge cases](../CONVENTIONS.md#error-handling).
+**Failures:** Worktree failure retains the task and visibly warns without redirecting execution; a missing resume directory produces a path-specific error.
 
 **Acceptance Criteria:**
 - Creation does not allocate a worktree, first launch does; failure retains and warns without redirecting, and missing resume paths fail specifically.
@@ -360,7 +278,7 @@ Define task identity and data, project storage, artifacts, work context and comp
 
 **Outcome:** Status-only Done and explicit completion/cleanup are separate operations.
 
-**Failures:** Follow [error handling and edge cases](../CONVENTIONS.md#error-handling).
+**Failures:** None.
 
 **Acceptance Criteria:**
 - Done retains the worktree and changes only status; explicit cleanup moves to completed storage, cleans sessions, and removes worktree and branch via a distinct keybinding.
@@ -374,12 +292,12 @@ Define task identity and data, project storage, artifacts, work context and comp
 **Preconditions:** The project may have tasks assigned to milestones.
 
 **Behavior:**
-1. Support adding, renaming, listing, and archiving, with task-status counts and completion percentages.
+1. Support adding, renaming, listing, and archiving milestones, with task-status counts and completion percentages.
 2. Preserve assignments on rename; clear or reassign all matching references on removal.
 
 **Outcome:** Retained tasks refer only to an existing milestone or have no assignment.
 
-**Failures:** Follow [error handling and edge cases](../CONVENTIONS.md#error-handling).
+**Failures:** None.
 
 **Acceptance Criteria:**
 - Milestone operations and counts/percentages are available; rename preserves assignments and removal clears or reassigns references.
@@ -396,11 +314,11 @@ Define task identity and data, project storage, artifacts, work context and comp
 1. Confirm using task ID, title, and irreversible-deletion wording; do not mention uncommitted work.
 2. Kill the task agent and remove its worktree and branch.
 3. Keep deletion distinct from Done, completion/cleanup, and archive; add no force-discard or uncommitted-work option.
-4. Leave provider-owned state untouched.
+4. Remove workspace-owned task records and resources; leave provider-owned state untouched.
 
-**Outcome:** Confirmed deletion removes the task's agent, worktree, and branch.
+**Outcome:** Confirmed deletion removes the task's agent, worktree, branch, and workspace-owned task records/resources.
 
-**Failures:** Follow [error handling and edge cases](../CONVENTIONS.md#error-handling); report completed effects as specified by TASK-018.
+**Failures:** Report completed effects truthfully after failed or interrupted deletion.
 
 **Acceptance Criteria:**
 - Confirmed deletion names ID/title and irreversibility, kills the task agent, removes worktree and branch, adds no force-discard option, and leaves provider state untouched.
@@ -413,7 +331,9 @@ Define task identity and data, project storage, artifacts, work context and comp
 
 **Preconditions:** Liveness cannot be established.
 
-**Behavior:** Do not kill the agent or declare it stopped; report unknown/unavailable and leave it untouched.
+**Behavior:**
+1. Do not kill the agent or declare it stopped.
+2. Report unknown/unavailable and leave the agent untouched.
 
 **Outcome:** The agent remains untouched and its liveness is reported unknown/unavailable.
 
@@ -443,34 +363,37 @@ Define task identity and data, project storage, artifacts, work context and comp
 
 ### TASK-018: Failed or interrupted operations
 
-**Description:** If any task deletion or relocation step fails or is interrupted, report completed effects truthfully; do not imply rollback. If workspace or group cleanup fails after task deletion succeeds, display an incomplete-cleanup message. Generic failure handling follows [error handling and edge cases](../CONVENTIONS.md#error-handling).
+**Description:** If any task deletion or relocation step fails or is interrupted, report completed effects truthfully; do not imply rollback. If workspace or group cleanup fails after task deletion succeeds, display an incomplete-cleanup message.
 
 **Trigger:** A deletion or relocation step fails/is interrupted, or workspace/group cleanup fails after successful task deletion.
 
 **Preconditions:** A deletion, relocation, or related cleanup operation is underway.
 
-**Behavior:** Report completed effects truthfully; display an incomplete-cleanup message if workspace/group cleanup fails after task deletion.
+**Behavior:**
+1. Report completed effects truthfully; do not imply rollback.
+2. Display an incomplete-cleanup message if workspace/group cleanup fails after task deletion.
 
 **Outcome:** The user sees truthful completed effects and any incomplete-cleanup message.
 
-**Failures:** Generic handling follows [error handling and edge cases](../CONVENTIONS.md#error-handling).
+**Failures:** Report completed effects truthfully; display an incomplete-cleanup message if workspace/group cleanup fails after task deletion succeeds.
 
 **Acceptance Criteria:**
 - Failed/interrupted operations report completed effects truthfully; cleanup failure after deletion is shown as incomplete cleanup.
 
 ### TASK-019: Deletion teardown
 
-**Description:** Task-deletion teardown follows the [session input lifetime](sessions.md#observe-and-detach-from-a-live-session) rule for already in-flight input. For multiple native cleanup targets, apply [native cleanup preflight](sessions.md#stop-and-resume-a-session) before any stop effects.
+**Description:** Task-deletion teardown follows the [session input lifetime](sessions.md#session-017-display-the-live-terminal) rule for already in-flight input. For multiple native cleanup targets, apply [native cleanup preflight](sessions.md#session-013-stop-while-retaining-identity) before any stop effects.
 
 **Trigger:** Task-deletion teardown begins.
 
 **Preconditions:** In-flight session input or multiple native cleanup targets may exist.
 
-**Behavior:** Follow the session input lifetime rule; preflight multiple native cleanup targets before any stop effects.
+**Behavior:**
+1. Follow the session input lifetime rule; preflight multiple native cleanup targets before any stop effects.
 
 **Outcome:** Teardown respects in-flight input and native cleanup preflight.
 
-**Failures:** Follow [error handling and edge cases](../CONVENTIONS.md#error-handling).
+**Failures:** None.
 
 **Acceptance Criteria:**
 - Deletion teardown respects in-flight input lifetime and preflights all native cleanup targets before stop effects.
@@ -483,11 +406,13 @@ Define task identity and data, project storage, artifacts, work context and comp
 
 **Preconditions:** Tasks are available to the CLI.
 
-**Behavior:** List and view tasks; edit an existing task by replacing its title and description.
+**Behavior:**
+1. List and view tasks.
+2. Edit an existing task by replacing its title and description.
 
 **Outcome:** The CLI presents task listings and views and supports title/description replacement.
 
-**Failures:** Follow [error handling and edge cases](../CONVENTIONS.md#error-handling).
+**Failures:** None.
 
 **Acceptance Criteria:**
 - CLI users can list and view tasks and replace an existing task's title and description.
@@ -500,7 +425,8 @@ Define task identity and data, project storage, artifacts, work context and comp
 
 **Preconditions:** The task has an `artifacts/` directory.
 
-**Behavior:** Resolve paths inside the task's `artifacts/` directory and reject paths that escape it, including through symlinks.
+**Behavior:**
+1. Resolve paths inside the task's `artifacts/` directory and reject paths that escape it, including through symlinks.
 
 **Outcome:** Artifact operations remain within that directory.
 
@@ -525,180 +451,148 @@ Define task identity and data, project storage, artifacts, work context and comp
 
 **Outcome:** An eligible unfinished task is archived with its retained resources intact and vacated-task references cleaned up.
 
-**Failures:** Follow [error handling and edge cases](../CONVENTIONS.md#error-handling).
+**Failures:** Do not report successful archival unless the task container was moved; report failed or cancelled archival using the generic error-handling contract in External Behavior.
 
 **Acceptance Criteria:**
 - An unfinished task with its running sessions stopped is moved to archive storage, vacated-task reference cleanup is invoked, and its artifacts, session history, dependencies, worktree, and branch are retained.
 - A terminal-status task is refused archive; running sessions must be stopped explicitly, and completed work uses completion/cleanup instead.
-- If archive fails or is cancelled, the operation does not report successful archival unless the task container was moved; report according to [error handling and edge cases](../CONVENTIONS.md#error-handling).
+- If archive fails or is cancelled, the operation does not report successful archival unless the task container was moved.
 
-## Flows
+## States and Transitions
 
-##### Creating and using a task
+### Task lifecycle
 
-**Trigger:** The user creates a task and later acts on it.
+**States:**
 
-**Preconditions:** A project directory is selected.
-
-**Flow:**
-
-1. Create a task record directly, using an identity not already in use.
-2. Apply subsequent task actions to that task identity; do not create or promote a draft.
-3. Resolve status from project configuration and treat any dependency blockers/readiness as informational.
-
-**Postconditions:** The task exists as a task, and task identity and dependency links remain distinct from status or readiness.
-
-##### Loading project tasks
-
-<a id="project-data-store"></a>
-
-**Trigger:** The application loads a project's task collection.
-
-**Preconditions:** The project has a configured task-data location.
-
-**Flow:**
-
-1. Read the one deterministic store for the project; a linked worktree reads the main project's store.
-2. Skip malformed records, warn with each affected filename and parse error, and retain readable results.
-3. Do not discover records across branches or repair duplicates/corrupted records.
-
-**Postconditions:** The collection reflects readable records from the configured store.
-
-##### Changing the storage location
-
-**Trigger:** The user changes the configured task-data location.
-
-**Preconditions:** A project has an existing task-data folder and a selected new location.
-
-**Flow:**
-
-1. Move the entire workspace-owned data folder, including existing task data, to the selected location; do not move provider-owned state.
-2. On success, use that location as the project's deterministic store, including from linked worktrees. If a step fails or is interrupted, follow [error handling and edge cases](../CONVENTIONS.md#error-handling).
-
-**Postconditions:** On success, the full workspace-owned data folder is at the selected location. Provider-owned state remains untouched.
-
-##### Using task artifacts
-
-<a id="task-artifacts"></a>
-
-**Trigger:** The user lists, reads, displays, writes, or views an artifact.
-
-**Preconditions:** The task has an `artifacts/` directory; writes receive content from another file or standard input.
-
-**Flow:**
-
-1. List files in the task's `artifacts/` directory.
-2. Display text/Markdown or binary metadata, read contents, or replace a selected file with supplied contents.
-3. Reflect external edits in an open viewer through change notifications only.
-
-**Postconditions:** Artifact operations apply to user-managed files in that task's artifacts directory and are independent of mode-specific schemas and approval checks.
-
-##### Launching work and completing a task
-
-<a id="work-context-and-completion"></a>
-
-**Trigger:** The user creates a task, launches a session, marks the task Done, or explicitly invokes completion/cleanup.
-
-**Preconditions:** For worktree behavior, task worktrees are enabled.
-
-**Flow:**
-
-1. Create the task record without allocating its worktree.
-2. Create the worktree on first session launch.
-3. If worktree creation fails, retain the task, show a visible warning, and do not silently redirect execution to the project checkout.
-4. Marking Done changes only status and retains the worktree. Explicit completion/cleanup instead moves the task to completed storage, performs session cleanup, and removes the worktree and branch.
-
-**Postconditions:** Status-only Done and explicit completion/cleanup remain separate operations.
-
-##### Managing milestones
-
-<a id="milestones"></a>
-
-**Trigger:** The user adds, renames, lists, archives, or removes a milestone.
-
-**Preconditions:** The project may have tasks assigned to milestones.
-
-**Flow:**
-
-1. Support adding, renaming, listing, and archiving milestones, and report task-status counts and completion percentages.
-2. Preserve task assignments on rename.
-3. On removal, clear or reassign all matching task references.
-
-**Postconditions:** Retained tasks refer only to an existing milestone or have no milestone assignment.
-
-##### Task deletion
-
-<a id="triggers-and-preconditions"></a><a id="scope"></a><a id="success-and-failure"></a>
-
-**Trigger:** The user explicitly requests deletion of a task.
-
-**Preconditions:** The target task is identified and the user confirms destructive deletion. Native cleanup targets pass preflight before effects.
-
-**Flow:**
-
-1. Kill the task's agent, then remove its worktree and branch; do not remove tracking relationships/resources before required cleanup succeeds.
-2. Leave provider-owned configuration, data, and state untouched. Do not add a force-discard or uncommitted-work option.
-3. On any failed or interrupted step, report completed effects truthfully. Generic handling follows [error handling and edge cases](../CONVENTIONS.md#error-handling).
-
-**Postconditions:** Destructive deletion removes the task's agent, worktree, and branch after confirmation and preflight. Workspace-owned records/resources are deleted; provider-owned state is untouched.
-
-##### Archiving an unfinished task
-
-Archiving a terminal-status task is rejected. Archiving an unfinished task moves its task container to archive storage and invokes vacated-task reference cleanup; it preserves artifacts, session history, dependencies, worktree, and branch. Running sessions must be stopped explicitly before archive. Completed work uses completion/cleanup instead of archive.
-
-## Failure/Recovery
-
-Task-specific failure outcomes and recovery obligations are defined in the requirements and flows below. Generic handling follows [error handling and edge cases](../CONVENTIONS.md#error-handling).
-
-| Condition | Expected Behavior |
+| State | Meaning |
 |---|---|
-| A task identity is already in use, or an archived identity is requested again | Do not allocate or reuse that identity. Do not merge or repair duplicate records. |
-| A collection contains malformed records | Skip each malformed record, warn with its filename and parse error, and preserve readable results. |
-| A direct action targets a malformed record | Fail with a helpful error. |
-| A requested worktree cannot be created | Retain the task, show a visible warning, and do not redirect execution into the project checkout. |
-| An artifact change notification is missed | No periodic recheck or recovery of the missed notification is guaranteed. |
-| A task is marked Done rather than completed/cleaned up | Change only its status; retain its worktree. |
-| Agent liveness cannot be established during deletion | Report unknown/unavailable and leave the agent untouched; uncertainty does not authorize a kill or stopped status. |
-| Multiple native cleanup targets are involved | Apply native cleanup preflight before any stop effects. |
-| A task deletion or relocation step fails or is interrupted | Report completed effects truthfully; follow [error handling and edge cases](../CONVENTIONS.md#error-handling). |
-| An unfinished task is archived | Preserve its artifacts, session history, dependencies, worktree, and branch; require running sessions to be stopped explicitly first. |
+| Configured status | Statuses come from project configuration; marking Done changes only status. |
+| Unfinished | A task has not undergone explicit completion/cleanup; eligible tasks may be archived. |
+| Completed | Explicit completion/cleanup moves the task to completed storage, performs session cleanup, and removes its worktree and branch. |
+| Archived | An unfinished task's container is in archive storage; artifacts, session history, dependencies, worktree, and branch are retained. |
+| Deleted | Confirmed destructive deletion removes the task's agent, worktree, and branch. |
 
-### Behavioral Invariants
+**Transitions:**
 
-- Task IDs are complete literal identities; numeric suffixes are not compared, duplicate records are not repaired, and archived IDs remain reserved.
-- Dependencies remain informational and survive completion; they do not automatically gate launch or completion.
-- A project's task collection comes from one deterministic store, shared by its linked worktrees, not from branch discovery.
+| From | Trigger | To | Required Behavior |
+|---|---|---|---|
+| Configured status | Mark Done | Configured status | Change only status; retain the worktree. |
+| Unfinished | Explicit completion/cleanup | Completed | Move to completed storage, perform session cleanup, and remove worktree and branch. |
+| Unfinished | Archive after running sessions are explicitly stopped | Archived | Move the task container to archive storage and clean up vacated-task references; preserve artifacts, session history, dependencies, worktree, and branch. |
+| Terminal status | Archive | Unchanged | Reject the archive. |
+| Existing task | Confirmed destructive deletion | Deleted | Kill the task's agent and remove its worktree and branch after required cleanup. |
+
+**Invariants:**
 - Status-only Done retains the worktree; explicit completion/cleanup removes the worktree and branch.
+- Dependencies remain informational and survive completion; they do not automatically gate launch or completion.
+- Archived task IDs remain reserved and are not reused.
 - Provider-owned configuration, data, and state are never managed or modified.
 - When confirmed destructive execution cleanup is required, cleanup precedes tracking/resource removal; failure evidence and truthful reporting are preserved.
 
-## Acceptance Criteria
+### Task data
 
-<a id="acceptance-scenarios"></a>
+**States:**
 
-- [ ] **TASK-001:** A task is scoped to a project directory with or without Git; each listed editable business field may be absent.
-- [ ] **TASK-002:** Configured statuses are used and users are directed to the configuration file; creation directly creates and saves an identity under a creation lock, with no draft promotion or demotion.
-- [ ] **TASK-003:** Literal prefixed IDs remain distinct, collisions fail closed with both record paths, ambiguous IDs fail, and archived IDs cannot be reused or repaired/merged.
-- [ ] **TASK-004:** Dependencies and blocker/readiness displays persist through completion and never automatically gate user-directed launch or completion.
-- [ ] **TASK-005:** Project task loading uses its one deterministic store, including from linked worktrees, and does not discover records across branches.
-- [ ] **TASK-006:** Each supported configuration choice selects the store; task data remains outside `.git`, task containers contain `task.md` and `artifacts/`, and records use Markdown frontmatter.
-- [ ] **TASK-007:** Collection reads skip malformed records with filename and parse error while retaining readable records; direct malformed-target actions fail helpfully, with bulk reads exiting 0 and explicit single-record loads strict.
-- [ ] **TASK-008:** Relocation moves the complete workspace-owned data folder and never manages provider-owned state; success selects the new deterministic store.
-- [ ] **TASK-009:** Artifact listing, display, read, and write behave as specified, with writes replacing the selected artifact in the task's artifacts directory.
-- [ ] **TASK-010:** External artifact edits update an open viewer only through notifications; no periodic recheck or missed-notification recovery is promised.
-- [ ] **TASK-011:** Arbitrary artifact names and contents are user-managed; mode rules apply as specified, independently of mode-specific document schemas and approvals.
-- [ ] **TASK-012:** With task worktrees enabled, creation does not allocate one, first launch does; allocation failure retains the task, warns, and does not redirect execution, while a missing recorded resume directory fails with a path-specific error.
-- [ ] **TASK-013:** Done changes status only and retains the worktree; explicit completion/cleanup moves to completed storage, performs session cleanup, and removes worktree and branch through a distinct TUI keybinding.
-- [ ] **TASK-014:** Milestone operations and counts/percentages are available; rename preserves assignments and removal clears or reassigns every matching reference.
-- [ ] **TASK-015:** Confirmed destructive deletion names ID/title and irreversibility, kills the task agent, removes worktree and branch, has no force-discard option, and leaves provider state untouched.
-- [ ] **TASK-016:** Unknown agent liveness is reported unknown/unavailable and never authorizes killing or declaring stopped.
-- [ ] **TASK-017:** Required execution cleanup precedes tracking/resource removal; cleanup failure preserves ownership/tracking evidence and direct record deletion or UI teardown cannot substitute for cleanup.
-- [ ] **TASK-018:** Failed or interrupted deletion/relocation reports completed effects truthfully; cleanup failure after successful deletion is shown as incomplete cleanup.
-- [ ] **TASK-019:** Deletion teardown respects in-flight input lifetime and validates all native cleanup targets before stop effects.
-- [ ] **TASK-020:** CLI users can list and view tasks and replace an existing task's title and description.
-- [ ] **TASK-021:** Artifact paths resolving outside the task's `artifacts/` directory, including through symlinks, are rejected.
-- [ ] **TASK-022:** Only unfinished tasks with running sessions explicitly stopped can be archived; archive moves the task container and cleans up vacated-task references while preserving artifacts, session history, dependencies, worktree, and branch; terminal tasks are refused and completed work uses completion/cleanup.
+| State | Meaning |
+|---|---|
+| Configured store | Task data resides at the project's single deterministic configured location. |
+| Relocating | The complete workspace-owned data folder is being moved to a selected location. |
 
-#### Open Questions
+**Transitions:**
 
-None recorded.
+| From | Trigger | To | Required Behavior |
+|---|---|---|---|
+| Existing configured store | Successful relocation | Selected configured store | The selected location becomes the project's deterministic store. |
+
+**Invariants:**
+- A project's task collection comes from one deterministic store, shared by its linked worktrees, not from branch discovery.
+- Task data is outside `.git`; provider-owned configuration, data, and state remain untouched.
+
+### Milestone
+
+**States:**
+
+| State | Meaning |
+|---|---|
+| Existing | A milestone may be added, renamed, listed, archived, or removed. |
+| Removed | All matching task references have been cleared or reassigned. |
+
+**Transitions:**
+
+| From | Trigger | To | Required Behavior |
+|---|---|---|---|
+| Existing | Removal | Removed | Clear or reassign all matching task references. |
+
+**Invariants:**
+- Retained tasks refer only to existing milestones or have no assignment.
+
+## User Interactions
+
+### Manage tasks, work context, and artifacts
+
+**Context:** The user is working in a project and managing its tasks or artifacts.
+
+**Action:** Create, view, edit, launch, complete, archive, or delete tasks; manage milestones; or list, read, display, and write task artifacts.
+
+**Response:** Apply the requested operation using configured task status and storage; show task listings, views, operation results, warnings, and actionable errors.
+
+**Feedback:** Show a visible warning when worktree creation fails, require confirmation naming the task ID and title and stating that deletion cannot be undone for destructive deletion, and distinguish status-only Done from explicit completion/cleanup.
+
+## External Behavior
+
+### CLI and workspace operations
+
+**Purpose:** Let users manage tasks, work context, and task artifacts.
+
+**Inputs:** User task actions and artifact paths/content; task status values from project configuration.
+
+**Outputs:** Task listings and views, operation results, warnings, and actionable errors as specified in this contract.
+
+**Failures:** Generic error handling follows [the error-handling contract](../CONVENTIONS.md#error-handling); each requirement states only its feature-specific failure consequence.
+
+## Non-Functional Requirements
+
+### Performance
+
+- None.
+
+### Reliability
+
+- Preserve readable task records when collection reads encounter malformed records.
+- Preserve the task when worktree creation fails; preserve execution ownership/tracking evidence when required cleanup fails.
+- Report completed effects truthfully after failed or interrupted deletion and relocation; do not imply rollback.
+
+### Security
+
+- Keep artifact operations within the task's `artifacts/` directory, rejecting paths that escape it, including through symlinks.
+- Do not manage or modify provider-owned configuration, data, or state.
+
+### Compatibility
+
+- None.
+
+## Edge Cases
+
+| Condition | Required Behavior |
+|---|---|
+| A task identity is already in use, or an archived identity is requested again | Do not allocate or reuse that identity. Do not merge or repair duplicate records. |
+| A task ID collision or ambiguous ID is encountered | Fail closed, report both record paths for a collision, and reject ambiguity rather than guessing. |
+| A collection contains malformed records | Skip each malformed record, warn with its filename and parse error, and preserve readable results. |
+| A direct action targets a malformed record | Fail with a helpful error; bulk collection reads that skip malformed records may exit 0, while explicit single-record loads remain strict. |
+| A requested worktree cannot be created | Retain the task, show a visible warning, and do not redirect execution into the project checkout. |
+| A recorded resume working directory is missing | Fail resume preparation with a path-specific error. |
+| An artifact path escapes the task's `artifacts/` directory, including through a symlink | Reject the path. |
+| An artifact change notification is missed | No periodic recheck or recovery of the missed notification is guaranteed. |
+| A task is marked Done rather than completed/cleaned up | Change only its status; retain its worktree. |
+| Agent liveness cannot be established during deletion | Report unknown/unavailable and leave the agent untouched; uncertainty does not authorize a kill or stopped status. |
+| Required execution cleanup fails before tracking/resource removal | Preserve ownership/tracking evidence; direct record deletion or UI teardown cannot substitute for successful cleanup. |
+| Multiple native cleanup targets are involved | Apply native cleanup preflight before any stop effects. |
+| A task deletion or relocation step fails or is interrupted | Report completed effects truthfully; do not imply rollback. |
+| Workspace/group cleanup fails after task deletion succeeds | Display an incomplete-cleanup message. |
+| An unfinished task is archived | Preserve its artifacts, session history, dependencies, worktree, and branch; require running sessions to be stopped explicitly first. |
+| A terminal-status task is archived | Reject archive. |
+| Archiving fails or is cancelled | Do not report successful archival unless the task container was moved. |
+
+## Open Questions
+
+None.

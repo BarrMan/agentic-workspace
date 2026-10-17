@@ -111,9 +111,213 @@ Mode ids are unique names within the project catalogue, with no version scheme. 
 
 ## Component Contracts
 
-### Application controller and stores
+### Task
 
-The application coordinates operations and persistence without reimplementing model behavior. Its operation, storage, UI, and publication contracts are owned by [Application Boundaries](architecture/application-boundaries.md). Task's relationship contract is owned by [Task](architecture/task.md); Session, RunningExecution, and Harness contracts are owned by [Session and Harness](architecture/session-harness.md). These pages are authoritative for component interfaces, guarantees, and failures.
+**Responsibility:** Own task-local mode selection, approval, and session membership, ordering, selection, removal, and rollback.
+
+**Dependencies:** None; application coordination supplies loaded state and collaborators.
+
+**Interface:** Detailed operation semantics: [Task contract](architecture/task.md#task).
+
+```text
+reserveSession(mode) -> creation identity: provision one member
+registerSession(mode, session) -> unit: add or update a retained member
+updateSessionRecord(mode, session, change) -> unit: apply a validated record change
+selectSession(mode, session) -> unit: select a retained member
+removeSession(mode, session) -> unit: remove a member after required cleanup
+rollbackSession(creation) -> unit: remove only the exact provisional member
+removeMode(mode) -> unit: remove a mode only when its history permits
+serialize() -> task record: return task metadata projection
+serializeSessions() -> session relationships: return retained histories and selection
+```
+
+**Contract:**
+- **Preconditions:** Mutations use fresh state and validate exact task, mode, member, and creation identity; required external cleanup precedes removal or rollback.
+- **Postconditions:** Synchronous mutations preserve valid membership and selection; serialization returns projections without I/O.
+- **Failures:** Invalid, missing, wrong-mode, or stale targets are rejected without changing unrelated state; application coordination reports persistence, runtime, and cleanup failures.
+- **Lifecycle:** Construct from loaded data; no hidden loading, persistence, provider launch, or runtime cleanup occurs in the model.
+
+### Mode catalogue
+
+**Responsibility:** Own configured mode definitions and resolve the selected mode's current instructions and settings.
+
+**Dependencies:** Project configuration owner.
+
+**Interface:**
+
+```text
+loadCatalogue(project) -> mode catalogue: load configured mode definitions
+resolveMode(modeId) -> current mode configuration: resolve current instructions and settings
+```
+
+**Contract:**
+- **Preconditions:** Resolution uses the current project catalogue and a requested mode identity.
+- **Postconditions:** Returns current configuration; mode IDs are unique catalogue names without versioning, and configuration is not copied into conversation snapshots.
+- **Failures:** Missing or invalid catalogue/configuration is reported before dependent startup; see [CONFIG-014](specs/configuration.md#config-014-catalogue-startup-failure).
+- **Lifecycle:** The catalogue is loaded before startup proceeds; it does not own task histories or provider execution.
+
+### Session
+
+**Responsibility:** Own one retained conversation, startup, current execution, input, observation, subscriptions, and its durable record projection.
+
+**Dependencies:** RunningExecution and Harness; application coordination supplies targeting, current configuration, admission, and durability.
+
+**Interface:** Detailed operation semantics: [Session contract](architecture/session-harness.md#session).
+
+```text
+start(operation) -> ready session: start the reserved conversation and complete required checkpoints
+resume(context) -> running execution: resume the exact retained provider conversation
+stop() -> settlement: stop the current owned execution while retaining conversation identity
+inject(input) -> delivery result: deliver explicit subsequent input to the current execution
+observe() -> runtime evidence: report evidence or explicit uncertainty without lifecycle mutation
+applyAndPublish(change) -> unit: apply a model change and coordinate required publication
+subscribe(event, handler) -> subscription: observe supported session events
+```
+
+**Contract:**
+- **Preconditions:** Startup follows durable reservation; resume requires exact identity and validated context; destructive effects require verified ownership; input targets a usable current execution.
+- **Postconditions:** Startup returns the same conversation after readiness; resume preserves conversation identity; stop retains history; observation is non-destructive and input does not imply an answer.
+- **Failures:** Startup/instruction failure stops without rollback or automatic retry; only final durable publication failure rolls back the provisional relationship. Runtime, delivery, observation, cleanup, and publication failures remain visible.
+- **Lifecycle:** Session subscriptions survive execution replacement; obsolete execution listeners are disconnected. See [Session contract](architecture/session-harness.md#session) for detailed guarantees.
+
+### RunningExecution
+
+**Responsibility:** Encapsulate operations and resources for exactly one runtime incarnation.
+
+**Dependencies:** Provider transport/runtime through Harness; Session for current-incarnation association and event routing.
+
+**Interface:** Detailed operation semantics: [RunningExecution contract](architecture/session-harness.md#runningexecution).
+
+```text
+deliver(input) -> delivery result: send input through the captured endpoint
+deliverKey(key) -> delivery result: send a key through the captured endpoint
+stop() -> unit: release or stop this verified execution
+observe() -> runtime evidence: inspect this execution without lifecycle mutation
+subscribe(event, handler) -> subscription: listen for a supported signal
+```
+
+**Contract:**
+- **Preconditions:** Every operation targets this incarnation and its captured resources; destructive actions revalidate ownership.
+- **Postconditions:** Delivery confirms transport/provider delivery only; observation reports evidence or uncertainty; subscription disposal does not stop execution.
+- **Failures:** Delivery, cleanup, observation, and subscription errors remain distinguishable; failed probes do not prove resource absence, and foreign or replacement executions are never targeted.
+- **Lifecycle:** Handles and listeners remain bound to captured resources; replacement detaches obsolete listeners. Client attachment has a separate lifecycle.
+
+### Harness
+
+**Responsibility:** Encapsulate provider-specific creation, exact resume, identity discovery, initialization/readiness, runtime evidence, and execution integration.
+
+**Dependencies:** Provider implementation, validated bounded context, and terminal runtime as needed.
+
+**Interface:** Detailed operation semantics: [Harness contract](architecture/session-harness.md#harness).
+
+```text
+create(context) -> running execution: allocate, identify, initialize, and submit initial instructions once
+resume(identity, context) -> running execution: initialize the exact saved conversation
+inspect(context) -> runtime evidence: obtain provider-specific identity or runtime evidence
+```
+
+**Contract:**
+- **Preconditions:** Creation and resume receive current resolved inputs and validated bounded paths/context; resume also receives the exact retained identity.
+- **Postconditions:** Creation establishes correlated identity, initialization, and provider-supported acknowledgment of initial submission; resume establishes the exact conversation without replaying initial instructions.
+- **Failures:** Allocation/identity/readiness errors remain explicit; unreturnable allocations are cleaned up while retaining ownership evidence and cleanup failures. No resume fallback to a new conversation.
+- **Lifecycle:** Provider receipts stay internal; provider-owned configuration, data, and state are never managed or modified. See [Harness contract](architecture/session-harness.md#harness).
+
+### Application controller
+
+**Responsibility:** Coordinate shared operations, authoritative loading, admission, publication sequencing, progress, rollback, and error reporting.
+
+**Dependencies:** Task, Session, Harness, stores/repositories, configuration, project paths, Git/process helpers, and supported entry-point adapters.
+
+**Interface:** Detailed operation semantics: [Application controller contract](architecture/application-boundaries.md#application-controller).
+
+```text
+load(project) -> read projection: load authoritative state for presentation
+execute(intent) -> committed result: coordinate a targeted operation and its durable effects
+```
+
+**Contract:**
+- **Preconditions:** Operation intent captures an explicit target and satisfies applicable owner and product preconditions.
+- **Postconditions:** Success follows required effects and durability; publication uses fresh state and preserves unrelated current data and newer selection.
+- **Failures:** Owner errors reach the application error surface; partial effects are reported truthfully and operations stop according to their contract without implicit retry or rollback.
+- **Lifecycle:** Coordinate unfinished-task status before reservation or startup; perform external execution outside store locks and avoid nested non-reentrant admission scopes.
+
+### Stores and repositories
+
+**Responsibility:** Own canonical paths, authoritative reload, validation, serialization, atomic durable writes, and task-artifact path containment.
+
+**Dependencies:** Filesystem and path/configuration owners; application supplies operation context and invokes domain behavior.
+
+**Interface:** Detailed operation semantics: [Stores and repositories contract](architecture/application-boundaries.md#stores-and-repositories).
+
+```text
+load(target) -> authoritative records: reload validated durable state
+mutate(target, synchronous change) -> mutation result: reload, apply bounded model mutation, and durably serialize
+```
+
+**Contract:**
+- **Preconditions:** Target paths and records are validated; required membership/provenance accompanies mutations.
+- **Postconditions:** Successful mutation durably serializes authoritative state; task metadata and session history remain distinct responsibilities.
+- **Failures:** Read, validation, write, and lock-release failures remain distinguishable; uncertain commit is checked by exact identity rather than blindly repeated.
+- **Lifecycle:** Reload under bounded mutation coordination; no provider work or arbitrary awaited callback occurs under the store lock. Artifact paths remain inside the task artifact directory, including symlink resolution.
+
+### UI controller and feature modules
+
+**Responsibility:** Translate user intent into application operations and coordinate client-local focus, navigation, details, and terminal attachment.
+
+**Dependencies:** Shared application operations, read projections, and terminal attachment interfaces.
+
+**Interface:** Detailed operation semantics: [UI controller contract](architecture/application-boundaries.md#ui-controller-feature-modules-renderer-and-terminal-host).
+
+```text
+dispatch(intent) -> committed result: invoke the shared application boundary
+attach(session) -> unit: attach to the verified selected execution
+detach() -> unit: close only this client's attachment
+```
+
+**Contract:**
+- **Preconditions:** Dispatch carries a captured target; attachment targets the verified selected session and execution endpoint.
+- **Postconditions:** UI reflects committed results without overwriting later navigation; terminal attachment seeds a current screen and streams live updates.
+- **Failures:** Operation and transport errors are reported against their captured target; obsolete output cannot update a replacement view.
+- **Lifecycle:** Presentation focus and attachment do not own domain selection or agent lifetime; detaching never stops execution or shared server resources.
+
+### Renderer
+
+**Responsibility:** Display read models and projections without owning domain state.
+
+**Dependencies:** Read-only projections supplied by controllers and models.
+
+**Interface:**
+
+```text
+render(projection) -> displayed view: present the supplied read-only state
+```
+
+**Contract:**
+- **Preconditions:** Receives a projection for display.
+- **Postconditions:** Displays supplied state without changing its authority.
+- **Failures:** Rendering failures remain presentation failures and do not mutate domain or durable state.
+- **Lifecycle:** Performs no mutation, I/O, provider discovery, process control, or second terminal write.
+
+### Terminal runtime
+
+**Responsibility:** Provide the shared execution backend and live screen transport.
+
+**Dependencies:** A verified execution endpoint and authorized client attachments.
+
+**Interface:**
+
+```text
+attach(session, endpoint) -> attachment: connect a client to the selected live screen
+resize(attachment, dimensions) -> unit: update shared terminal dimensions
+sendInput(attachment, input) -> delivery result: route explicit input to the attached execution
+detach(attachment) -> unit: close only the client's transport
+```
+
+**Contract:**
+- **Preconditions:** Attachment is bound to the selected session identity and verified execution endpoint.
+- **Postconditions:** Attachment seeds the current screen and streams live updates; transport is not persistence.
+- **Failures:** Setup and delivery errors are surfaced against the captured session; detach or transport failure does not authorize execution cleanup.
+- **Lifecycle:** Clients may share input and terminal sizing; detaching a client cannot terminate shared execution or server resources.
 
 ## Component Interactions
 
@@ -205,11 +409,46 @@ seed current screen and stream live updates to attached clients
 
 ### Authoritative mutation and publication
 
-The authoritative mutation and publication algorithm is owned by [Application Boundaries](architecture/application-boundaries.md#authoritative-mutation-and-publication). That contract specifies fresh-state loading, model-owned mutation, bounded store locking, and publication guarantees.
+**Purpose:** Preserve domain ownership and durable consistency while rejecting stale callbacks.
+
+**Pseudocode:**
+
+```text
+capture operation identity before asynchronous waits
+reload authoritative state within a bounded mutation boundary
+validate membership and resource provenance
+invoke synchronous behavior through the owning model
+validate and durably serialize the intended state
+before later publication, reload and validate current state again
+```
+
+**Guarantees:** External execution stays outside store locks; stale callbacks cannot overwrite newer state or resurrect removed records; required durability precedes dependent effects and cleanup precedes relationship removal when required. Detailed contract: [authoritative mutation and publication](architecture/application-boundaries.md#authoritative-mutation-and-publication).
+
+**Implementation Freedom:** Lock/admission mechanism, identity representation, and storage layout may vary if these guarantees hold.
 
 ### Creation settlement and cleanup ordering
 
-Creation settlement and cleanup ordering are owned by [Application Boundaries](architecture/application-boundaries.md#creation-settlement). Creation rollback is limited to the provisional relationship after final durable publication failure; startup and instruction failures stop without rollback, and possible live executions remain tracked.
+**Purpose:** Ensure status coordination, one durable reservation, safe startup, and recoverable settlement.
+
+**Pseudocode:**
+
+```text
+resolve current configuration and execution context
+coordinate required unfinished-task status; on failure stop before reservation/startup
+reserve exactly once and durably publish recovery identity
+start execution outside the store lock
+publish final identity/state against fresh authoritative state
+if startup or initial-instruction delivery fails:
+  report error and stop without rollback
+  retain tracking evidence if execution may still run
+if final durable publication fails:
+  stop the new execution and roll back only its provisional relationship
+  retain tracking evidence if execution may still run
+```
+
+**Guarantees:** No success before final publication; startup/instruction failure never rolls back the provisional relationship; rollback occurs only after final publication failure against fresh state, and failed cleanup never erases tracking evidence. Detailed contract: [creation settlement](architecture/application-boundaries.md#creation-settlement).
+
+**Implementation Freedom:** Exact recovery fields and representation remain open; private in-memory state alone is insufficient rollback authority.
 
 ## Architectural Invariants
 

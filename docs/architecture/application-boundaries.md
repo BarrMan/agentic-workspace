@@ -76,7 +76,7 @@ class ApplicationController {
 **Contract:**
 - **Preconditions:** Operation intent identifies an explicit target and meets the relevant SPEC policy and owner preconditions.
 - **Postconditions:** Success is reported only after required effects and durability complete. Publication applies intended changes to fresh state and preserves unrelated current fields, histories, and newer selection.
-- **Failures:** Owner errors reach the application error surface. For task deletion, mode deletion, and data-folder relocation, a failed or interrupted step is reported and stops the operation without automatic recovery, retry, or rollback. Session creation/handoff follows the [creation-publication rollback limit](../specs/sessions.md#requirements): only final durable publication failure rolls back the provisional relationship. Report completed effects truthfully.
+- **Failures:** Owner errors reach the application error surface. For task deletion, mode deletion, and data-folder relocation, a failed or interrupted step is reported and stops the operation without automatic recovery, retry, or rollback. Session creation/handoff follows the [creation-publication rollback limit](../specs/sessions.md#functional-requirements): only final durable publication failure rolls back the provisional relationship. Report completed effects truthfully.
 - **Lifecycle:** Capture target identity before asynchronous waits. Coordinate admission and claims; perform external execution outside store locks. Do not nest non-reentrant admission scopes.
 
 ### Task

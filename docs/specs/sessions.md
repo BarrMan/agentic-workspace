@@ -1,8 +1,8 @@
-# Product Specification: AgenticWorkspace Sessions
+# Product Requirements: AgenticWorkspace Sessions
 
 ## Overview
 
-This contract specifies session identity and observed state, session startup and recovery, running-session limits, stopping and exact resume, handoff, live terminal behavior, and session deletion. The product-wide contract is indexed by [SPEC](../SPEC.md).
+Sessions let users launch and continue agent conversations attached to tasks, observe runtime state and live terminals, and manage lifecycle without losing identity or misrepresenting uncertain runtime evidence. This contract is indexed by [SPEC](../SPEC.md).
 
 ## Goals
 
@@ -26,117 +26,7 @@ This contract specifies session identity and observed state, session startup and
 | Workspace | Creates and observes sessions, displays terminal state, and manages session lifecycle. |
 | Agent/provider | Runs the conversation and supplies initialization, identity, and delivery acknowledgments. |
 
-## States and Transitions
-
-### Observed runtime state
-
-**States:**
-
-| State | Meaning |
-|---|---|
-| Running | Current observation establishes that the agent is running. |
-| Idle | Current observation establishes an idle session; eligible for soft-limit stopping. |
-| Stopped | Observation establishes that the agent is no longer running. |
-| Unknown/unavailable | Current liveness or activity cannot be established; this never authorizes a stop or a stopped claim. |
-| Permission request | Reported separately from running/idle/stopped activity and protected from automatic stopping. |
-
-**Transitions:**
-
-| From | Trigger | To | Required Behavior |
-|---|---|---|---|
-| Any observed state | Runtime refresh or lifecycle operation | Running, idle, stopped, or unknown/unavailable | Report only what current evidence establishes; uncertainty never authorizes a stop or a stopped claim. |
-| Any observed state | Permission request is observed | Permission request indicated separately | Protect the session from automatic stopping. |
-
-### Session creation and handoff
-
-**States:**
-
-| State | Meaning |
-|---|---|
-| Provisional creation | A session relationship is reserved while startup is in progress; it is not ready. |
-| Ready | Initialization, identity, accepted initial delivery, and durable publication are established. |
-| Creation failed | Creation did not succeed; only final durable publication failure rolls back the provisional relationship. |
-| Handoff successor confirmed | The distinct successor is durably published and confirmed running. |
-| Handoff settled | An eligible workspace-owned predecessor is retired only after successor confirmation; an external predecessor is not ended. |
-
-**Transitions:**
-
-| From | Trigger | To | Required Behavior |
-|---|---|---|---|
-| No reserved session | Startup reservation after task-status coordination | Provisional creation | Reserve and persist exactly one provisional relationship in the selected mode. |
-| Provisional creation | Initialization, identity, accepted initial delivery, and durable publication succeed | Ready | Report readiness only after all required evidence and publication are established. |
-| Provisional creation | Startup/readiness or initial-delivery failure | Creation failed | Fail and report creation; retain tracking for any execution that may still be running and do not roll back the relationship. |
-| Provisional creation | Final durable publication fails | Creation failed | Stop the new execution and roll back its provisional relationship; retain tracking if it may still be running. |
-| Successor creation | Successor is durably published and confirmed running | Handoff successor confirmed | Keep the predecessor intact until this confirmation. |
-| Handoff successor confirmed | Handoff retires an eligible workspace-owned predecessor | Handoff settled | Retire only after confirmation; preserve the successor if predecessor retirement fails. |
-
-**Invariants:**
-
-- Session identity is distinct from observed runtime state; unknown/unavailable evidence never authorizes stopping or declaring stopped.
-- Creation readiness requires provider initialization, established identity, accepted initial delivery, and durable publication.
-- Task-status coordination precedes reservation and session startup; handoff confirmation precedes predecessor retirement.
-- Only final durable publication failure rolls back the provisional creation relationship.
-
-## External Behavior
-
-### CLI, workspace, and agent integration
-
-**Purpose:** Create, observe, and manage agent conversations consistently across supported launch surfaces.
-
-**Inputs:** User lifecycle actions, task/mode configuration, provider runtime observations, and terminal input.
-
-**Outputs:** Session readiness and identity, runtime and terminal state, and operation results/errors.
-
-**Failures:** Follow [error handling and edge cases](../CONVENTIONS.md#error-handling); creation-publication rollback and handoff settlement are limited by SESSION-009/010/016.
-
-## User Interactions
-
-### Start and manage a session
-
-**Context:** The user works with a task and selected mode through the CLI or workspace.
-
-**Action:** Start, observe, stop, resume, hand off, attach to, detach from, or delete a session; provide terminal input where supported.
-
-**Response:** Create one session for the selected mode, coordinate unfinished task status before startup, and show readiness only after required initialization, identity, accepted initial delivery, and durable publication. Report observed runtime and terminal state, preserve exact conversation identity on resume, and apply the specified lifecycle outcomes.
-
-**Feedback:** Report operation errors and completed effects truthfully; show unknown/unavailable when liveness cannot be established, and explain when exact resume is impossible.
-
-## Non-Functional Requirements
-
-### Performance
-
-- Refresh observed runtime state for every task every 30 seconds.
-
-### Reliability
-
-- Do not infer running or stopped state from stale records or uncertain evidence; uncertainty never authorizes stopping an agent.
-- Keep session identity and any potentially running execution durably trackable; only final durable publication failure rolls back the provisional relationship (SESSION-009/010).
-- Confirm a durably published, running successor before retiring an eligible predecessor; handoff settlement follows SESSION-016.
-- Do not automatically resend terminal input or substitute a new conversation for exact resume.
-
-### Security
-
-- Never modify provider-owned configuration, data, or state.
-
-### Compatibility
-
-- CLI and workspace session starts have identical semantics.
-
-## Features
-
-| Feature | Description | Contract |
-|---|---|---|
-| Sessions | Create, observe, continue, hand off, and delete retained agent conversations. | Sessions feature contract below |
-
-## Feature Contracts
-
-### Sessions
-
-#### Purpose
-
-Sessions let users launch and continue agent conversations attached to tasks, observe their runtime state and live terminal, and manage the conversation lifecycle without losing identity or misrepresenting uncertain runtime evidence.
-
-## Requirements
+## Functional Requirements
 
 ### SESSION-001: Retain session identity and history
 
@@ -153,7 +43,7 @@ Sessions let users launch and continue agent conversations attached to tasks, ob
 
 **Outcome:** The conversation remains identifiable and relevant launch progress/errors are reported.
 
-**Failures:** Follow [error handling and edge cases](../CONVENTIONS.md#error-handling).
+**Failures:** None.
 
 **Acceptance Criteria:**
 - [ ] Session identity and conversation history persist; runtime is observed rather than inferred from historical labels, and relevant launch progress/errors are reported when they occur.
@@ -173,7 +63,7 @@ Sessions let users launch and continue agent conversations attached to tasks, ob
 
 **Outcome:** The reported state reflects current evidence without treating uncertainty as proof.
 
-**Failures:** If current liveness cannot be established, report unknown or unavailable.
+**Failures:** If current liveness cannot be established, report unknown or unavailable; do not stop the agent or declare it stopped.
 
 **Acceptance Criteria:**
 - [ ] Running, idle, stopped, and separate permission-request states are distinguished; uncertain current liveness reports unknown/unavailable and never causes a stop or stopped claim.
@@ -191,7 +81,7 @@ Sessions let users launch and continue agent conversations attached to tasks, ob
 
 **Outcome:** Runtime observations are refreshed for every task at the specified interval.
 
-**Failures:** Follow [error handling and edge cases](../CONVENTIONS.md#error-handling).
+**Failures:** None.
 
 **Acceptance Criteria:**
 - [ ] The workspace refreshes observed runtime state for every task every 30 seconds.
@@ -205,16 +95,20 @@ Sessions let users launch and continue agent conversations attached to tasks, ob
 **Preconditions:** A task and mode are selected; task configuration and the first-launch worktree contract can be resolved.
 
 **Behavior:**
-1. Create a session only in the selected mode and make it that task's active session for the mode.
-2. Resolve the task's [current effective configuration](configuration.md#configuration-and-modes) and apply the [first-launch worktree contract](tasks.md#launching-work-and-completing-a-task).
-3. Store tasks, artifacts, and saved agent configuration on disk, not only in workspace memory.
+1. Resolve the task's [current effective configuration](configuration.md#functional-requirements), establish the required work context under the [first-launch worktree contract](tasks.md#task-013-done-and-completion), and prepare the launch environment and initial instruction/artifact context.
+2. Coordinate unfinished-task status before any reservation or startup: move an unfinished task to its configured in-progress status and leave a finished task unchanged. If this change cannot complete, fail with an error before reservation or startup.
+3. Reserve and persist exactly one provisional session relationship in the selected mode, making it the task's active session for that mode.
+4. Start the reserved session outside the store lock; initialize the provider, establish identity, and deliver the initial instruction exactly once.
+5. After supported acceptance of initial delivery and successful durable publication into the same reserved record, report creation ready without waiting for an answer.
+6. Create a session only in the selected mode and store tasks, artifacts, and saved agent configuration on disk, not only in workspace memory.
 
-**Outcome:** CLI and workspace starts behave identically using resolved configuration and disk-backed data.
+**Outcome:** CLI and workspace starts behave identically using resolved configuration and disk-backed data; the selected task/mode has one new active session, ready only after startup, initialization, identity, accepted delivery, and durable publication.
 
-**Failures:** Follow [error handling and edge cases](../CONVENTIONS.md#error-handling).
+**Failures:** A required status change fails the start before reservation/startup. Other startup and publication failures settle as specified in SESSION-009 and SESSION-010.
 
 **Acceptance Criteria:**
 - [ ] CLI and workspace starts have identical semantics, create only in the selected mode, select the task/mode active session, resolve effective configuration and worktree behavior, and use disk-backed task/artifact/agent configuration data.
+- [ ] Creation order is configuration/context resolution, task-status coordination, one persisted provisional relationship, startup outside the lock, publication, then readiness reporting.
 
 ### SESSION-005: Coordinate task status before starting
 
@@ -225,12 +119,12 @@ Sessions let users launch and continue agent conversations attached to tasks, ob
 **Preconditions:** The task's finished/unfinished state and configured in-progress status are available.
 
 **Behavior:**
-1. Before session startup, move an unfinished task to its configured in-progress status.
+1. Before session startup or reservation, move an unfinished task to its configured in-progress status.
 2. Leave a finished task's status unchanged.
 
 **Outcome:** Status coordination succeeds before session startup proceeds; a finished task retains its status.
 
-**Failures:** If the required status change cannot be completed, fail the start with an error before session startup.
+**Failures:** If the required status change cannot be completed, fail the start with an error before session reservation or startup.
 
 **Acceptance Criteria:**
 - [ ] Starting moves an unfinished task to its configured in-progress status before session startup and fails with an error if that change cannot complete; a finished task's status is unchanged.
@@ -269,7 +163,7 @@ Sessions let users launch and continue agent conversations attached to tasks, ob
 
 **Outcome:** The agent receives the specified explicit workspace identity and selected-preset variables only.
 
-**Failures:** Follow [error handling and edge cases](../CONVENTIONS.md#error-handling).
+**Failures:** None.
 
 **Acceptance Criteria:**
 - [ ] The launch environment contains explicit workspace identity and selected-preset user variables, with no inherited process variables and the specified identity names/prefix.
@@ -288,7 +182,7 @@ Sessions let users launch and continue agent conversations attached to tasks, ob
 
 **Outcome:** Preset variables reference only permitted paths and cannot replace them.
 
-**Failures:** Follow [error handling and edge cases](../CONVENTIONS.md#error-handling).
+**Failures:** Reject preset references outside the permitted paths and overrides of reserved paths.
 
 **Acceptance Criteria:**
 - [ ] Preset variable references are limited to the three permitted workspace paths, and reserved paths cannot be overridden.
@@ -305,7 +199,7 @@ Sessions let users launch and continue agent conversations attached to tasks, ob
 1. Fail creation and report the error.
 2. Only after final publication failure, stop the new execution and roll back its provisional relationship.
 3. Keep durable tracking of any execution that may still be running.
-4. Apply generic failure handling from [error handling and edge cases](../CONVENTIONS.md#error-handling).
+4. Startup/readiness failures may require cleanup; the harness cleans allocations it cannot return as part of a failed launch attempt.
 
 **Outcome:** Creation is not reported as successful; the provisional relationship is rolled back only after final publication failure.
 
@@ -329,7 +223,7 @@ Sessions let users launch and continue agent conversations attached to tasks, ob
 
 **Outcome:** Reports reflect actual effects and preserve tracking information for an unstopped execution.
 
-**Failures:** Follow [error handling and edge cases](../CONVENTIONS.md#error-handling); report cleanup/publication errors with the original error.
+**Failures:** Report cleanup/publication errors with the original error; retain tracking for an execution that may still be running.
 
 **Acceptance Criteria:**
 - [ ] Completed effects, original errors, and cleanup/publication errors are reported truthfully; no broader rollback is implied and last tracking information for an unstopped execution is retained.
@@ -389,7 +283,7 @@ Sessions let users launch and continue agent conversations attached to tasks, ob
 
 **Outcome:** The agent is stopped, identity remains, and an available retained session becomes active as applicable.
 
-**Failures:** If stopping fails, report completed effects and the error under [error handling and edge cases](../CONVENTIONS.md#error-handling).
+**Failures:** Report completed effects and the error.
 
 **Acceptance Criteria:**
 - [ ] Stopping ends the agent but retains identity; if it was active, another retained session becomes active when available.
@@ -403,7 +297,7 @@ Sessions let users launch and continue agent conversations attached to tasks, ob
 **Preconditions:** The selected session has an exact conversation identity.
 
 **Behavior:**
-1. Continue the same conversation using current effective configuration.
+1. Validate relevant native cleanup targets before any batch stop effects, then continue the same conversation using current effective configuration.
 2. If exact resume is impossible, explain why and ask the user what to do.
 3. Starting a new conversation requires explicit user agreement and is never an automatic resume fallback.
 
@@ -425,8 +319,7 @@ Sessions let users launch and continue agent conversations attached to tasks, ob
 **Behavior:**
 1. Validate every relevant target before cleanup effects; a preflight rejection occurs before effects.
 2. If cleanup fails, report completed effects and the error.
-3. Cleanup precedes removal of relationships and tracking evidence as required by [task deletion](tasks.md#task-deletion) or [mode deletion](configuration.md#delete-a-mode).
-4. Apply generic failure handling from [error handling and edge cases](../CONVENTIONS.md#error-handling).
+3. Cleanup precedes removal of relationships and tracking evidence as required by [task deletion](tasks.md#task-015-destructive-task-deletion) or [mode deletion](configuration.md#config-013-catalogue-deletion-and-task-fallback).
 
 **Outcome:** Cleanup occurs only after successful validation and precedes required relationship/tracking removal.
 
@@ -444,10 +337,10 @@ Sessions let users launch and continue agent conversations attached to tasks, ob
 **Preconditions:** A predecessor is eligible for retirement only when it belongs to the workspace.
 
 **Behavior:**
-1. Confirm the successor is running, including successful durable publication, before ending an eligible predecessor.
+1. Start and durably publish the successor, establishing that it is running, before ending an eligible predecessor.
 2. If a step fails or is interrupted, report the error and completed effects.
 3. Keep the predecessor intact if successor creation fails; keep a successfully published successor if predecessor retirement fails.
-4. Apply generic failure handling; the only rollback is creation-publication rollback defined in SESSION-009/010.
+4. The only rollback is creation-publication rollback defined in SESSION-009/010.
 
 **Outcome:** The successor is confirmed before retiring an eligible workspace-owned predecessor; an external predecessor is not ended.
 
@@ -470,7 +363,7 @@ Sessions let users launch and continue agent conversations attached to tasks, ob
 
 **Outcome:** The terminal reflects its current screen and subsequent updates without conflating history or ask operation with capture.
 
-**Failures:** Follow [error handling and edge cases](../CONVENTIONS.md#error-handling).
+**Failures:** None.
 
 **Acceptance Criteria:**
 - [ ] The live terminal is seeded from the current screen and updated while running; conversation history and ask operation remain separate from terminal capture.
@@ -534,122 +427,110 @@ Sessions let users launch and continue agent conversations attached to tasks, ob
 **Acceptance Criteria:**
 - [ ] Deletion of a running session without force is refused; with force, kill precedes removal of workspace-owned records/resources, and provider state remains untouched.
 
-## Flows
+## States and Transitions
 
-##### Starting a session
+### Observed runtime state
 
-**Trigger:** The user starts a session from the CLI or workspace.
+**States:**
 
-**Preconditions:** A task and mode are selected; task configuration and the first-launch worktree contract can be resolved.
+| State | Meaning |
+|---|---|
+| Running | Current observation establishes that the agent is running. |
+| Idle | Current observation establishes an idle session; eligible for soft-limit stopping. |
+| Stopped | Observation establishes that the agent is no longer running. |
+| Unknown/unavailable | Current liveness or activity cannot be established; this never authorizes a stop or a stopped claim. |
+| Permission request | Reported separately from running/idle/stopped activity and protected from automatic stopping. |
 
-**Flow:**
+**Transitions:**
 
-1. Resolve effective configuration, establish the required work context, and prepare the launch environment and initial instruction/artifact context.
-2. Move an unfinished task to its configured in-progress status; leave a finished task's status unchanged. If the required status change fails, fail the start before session reservation or startup.
-3. Reserve and persist exactly one provisional session relationship in the selected mode, making it the task's active session for that mode.
-4. Start the reserved session outside the store lock; initialize the provider, establish identity, and deliver the initial instruction exactly once.
-5. After supported acceptance of initial delivery and successful durable publication into the same reserved record, report creation ready without waiting for an answer.
+| From | Trigger | To | Required Behavior |
+|---|---|---|---|
+| Any observed state | Runtime refresh or lifecycle operation | Running, idle, stopped, or unknown/unavailable | Report only what current evidence establishes; uncertainty never authorizes a stop or a stopped claim. |
+| Any observed state | Permission request is observed | Permission request indicated separately | Protect the session from automatic stopping. |
 
-**Postconditions:** The selected task/mode has one new active session, reserved only after task-status coordination; the session is ready only after startup, initialization, identity, accepted delivery, and durable publication. An unfinished task has its configured in-progress status.
+**Invariants:**
+- Session identity is distinct from observed runtime state; unknown/unavailable evidence never authorizes stopping or declaring stopped.
 
-##### Creation failure
+### Session creation and handoff
 
-**Trigger:** Task-status coordination, startup/readiness, initial delivery, or final publication fails.
+**States:**
 
-**Preconditions:** A new execution may have been started and must remain trackable.
+| State | Meaning |
+|---|---|
+| Provisional creation | A session relationship is reserved while startup is in progress; it is not ready. |
+| Ready | Initialization, identity, accepted initial delivery, and durable publication are established. |
+| Creation failed | Creation did not succeed; only final durable publication failure rolls back the provisional relationship. |
+| Handoff successor confirmed | The distinct successor is durably published and confirmed running. |
+| Handoff settled | An eligible workspace-owned predecessor is retired only after successor confirmation; an external predecessor is not ended. |
 
-**Flow:**
+**Transitions:**
 
-1. Fail the start if required task-status coordination fails; otherwise, on startup/readiness or initial-delivery failure, fail creation and report the error. Generic failure handling follows [error handling and edge cases](../CONVENTIONS.md#error-handling).
-2. Startup/readiness failures may require cleanup; the harness cleans allocations it cannot return as part of a failed launch attempt.
-3. If final durable publication fails after startup, stop the new execution and roll back its provisional relationship. No other creation failure rolls back that relationship.
-4. Retain durable tracking of any new execution that may still be running and report completed effects.
+| From | Trigger | To | Required Behavior |
+|---|---|---|---|
+| No reserved session | Startup reservation after task-status coordination | Provisional creation | Reserve and persist exactly one provisional relationship in the selected mode. |
+| Provisional creation | Initialization, identity, accepted initial delivery, and durable publication succeed | Ready | Report readiness only after all required evidence and publication are established. |
+| Provisional creation | Startup/readiness or initial-delivery failure | Creation failed | Fail and report creation; retain tracking for any execution that may still be running and do not roll back the relationship. |
+| Provisional creation | Final durable publication fails | Creation failed | Stop the new execution and roll back its provisional relationship; retain tracking if it may still be running. |
+| Successor creation | Successor is durably published and confirmed running | Handoff successor confirmed | Keep the predecessor intact until this confirmation. |
+| Handoff successor confirmed | Handoff retires an eligible workspace-owned predecessor | Handoff settled | Retire only after confirmation; preserve the successor if predecessor retirement fails. |
 
-**Postconditions:** The failed operation is not reported as successful; startup/readiness failures may require cleanup, while only final publication failure rolls back the provisional relationship. Any execution that may still be running remains durably trackable.
+**Invariants:**
+- Creation readiness requires provider initialization, established identity, accepted initial delivery, and durable publication.
+- Task-status coordination precedes reservation and session startup; handoff confirmation precedes predecessor retirement.
+- Only final durable publication failure rolls back the provisional creation relationship.
 
-##### Enforce the running-session soft limit
+## User Interactions
 
-**Trigger:** A session is started while the project-wide limit is exceeded.
+### Start and manage a session
 
-**Preconditions:** Runtime observations are available for eligible sessions.
+**Context:** The user works with a task and selected mode through the CLI or workspace.
 
-**Flow:**
+**Action:** Start, observe, stop, resume, hand off, attach to, detach from, or delete a session; provide terminal input where supported.
 
-1. Allow the new session to start.
-2. If the limit is exceeded, stop eligible positively observed idle sessions, longest continuous idle duration first, only as needed.
-3. Do not automatically stop working, permission-requesting, or unknown-activity sessions.
-4. If no positively idle session is available, leave the limit exceeded.
+**Response:** Create one session for the selected mode, coordinate unfinished task status before startup, and show readiness only after required initialization, identity, accepted initial delivery, and durable publication. Report observed runtime and terminal state, preserve exact conversation identity on resume, and apply the specified lifecycle outcomes.
 
-**Postconditions:** The start succeeds; the limit is satisfied when eligible idle sessions suffice, otherwise the count may remain above the limit.
+**Feedback:** Report operation errors and completed effects truthfully; show unknown/unavailable when liveness cannot be established, and explain when exact resume is impossible.
 
-##### Stop and resume a session
+## External Behavior
 
-**Trigger:** The user stops or resumes a retained session.
+### CLI, workspace, and agent integration
 
-**Preconditions:** The selected operation targets a retained session; resumption requires its exact conversation identity.
+**Purpose:** Create, observe, and manage agent conversations consistently across supported launch surfaces.
 
-**Flow:**
+**Inputs:** User lifecycle actions, task/mode configuration, provider runtime observations, and terminal input.
 
-1. On stop, end the agent and retain the conversation identity.
-2. If the stopped session was active, activate another retained session when one exists.
-3. On resume, validate relevant native cleanup targets before any batch stop effects, then continue the exact conversation with current effective configuration.
-4. If exact resumption is impossible, explain why and ask the user what to do; do not start a new conversation without explicit agreement.
-5. If a stop fails after successful preflight, report effects already completed and those incomplete, with actionable errors/evidence; follow [error handling and edge cases](../CONVENTIONS.md#error-handling).
+**Outputs:** Session readiness and identity, runtime and terminal state, and operation results/errors.
 
-**Postconditions:** Stop retains identity; successful resume continues that identity without replaying initial instructions or sending a synthetic probe.
+**Failures:** Generic failure behavior follows [error handling](../CONVENTIONS.md#error-handling); session-specific consequences are defined in SESSION-009/010/016.
 
-##### Handoff
+## Non-Functional Requirements
 
-**Trigger:** The user requests handoff to a distinct successor session.
+### Performance
 
-**Preconditions:** The predecessor is eligible for retirement only if it belongs to the workspace.
+- Refresh observed runtime state for every task every 30 seconds.
 
-**Flow:**
+### Reliability
 
-1. Start and durably publish the successor, establishing that it is running.
-2. Only after successor confirmation, end an eligible workspace-owned predecessor.
-3. If any step fails or is interrupted, report the error and completed effects. Successor startup failure leaves the predecessor intact; predecessor retirement failure leaves the confirmed successor running. Generic failure handling and the sole creation-publication rollback follow SESSION-009/010 and [error handling and edge cases](../CONVENTIONS.md#error-handling).
+- Do not infer running or stopped state from stale records or uncertain evidence; uncertainty never authorizes stopping an agent.
+- Keep session identity and any potentially running execution durably trackable; only final durable publication failure rolls back the provisional relationship (SESSION-009/010).
+- Confirm a durably published, running successor before retiring an eligible predecessor; handoff settlement follows SESSION-016.
+- Do not automatically resend terminal input or substitute a new conversation for exact resume.
 
-**Postconditions:** The successor is running after successful handoff; an external predecessor is not ended by this operation.
+### Security
 
-##### Observe and detach from a live session
+- Never modify provider-owned configuration, data, or state.
 
-**Trigger:** The workspace attaches to, detaches from, or crashes while connected to a session.
+### Compatibility
 
-**Preconditions:** A session may be running independently of the workspace client.
+- CLI and workspace session starts have identical semantics.
 
-**Flow:**
+## Edge Cases
 
-1. On attachment, seed the terminal display from the current screen and show subsequent updates.
-2. On workspace departure or app crash, detach the client without stopping the agent.
-3. Report stopped only when observation establishes the agent is no longer running; otherwise report unknown/unavailable when liveness cannot be established.
-4. On workspace close or task deletion, allow terminal input already in flight up to two seconds to land. Discard and report text never dispatched as not sent; do not automatically resend, and distinguish this from uncertain in-flight delivery.
-
-**Postconditions:** Client lifetime does not determine agent lifetime; terminal display reflects the current screen when attached.
-
-##### Deleting a session
-
-**Trigger:** The user requests session deletion, optionally with force.
-
-**Preconditions:** Runtime evidence is sufficient to determine whether the agent is running.
-
-**Flow:**
-
-1. Refuse deletion if the agent is running and force was not requested.
-2. With force, kill the agent first.
-3. Remove workspace-owned session records/resources only after the required stop/kill operation succeeds. Never touch provider-owned state.
-
-**Postconditions:** A running agent is not orphaned by session removal; deletion follows the runtime-evidence constraint.
-
-## Failure/Recovery
-
-Failure handling follows [error handling and edge cases](../CONVENTIONS.md#error-handling). Session-specific settlement is limited to retaining actionable tracking evidence, preserving handoff participants as stated, and rolling back the provisional relationship only after final publication failure (SESSION-009/010/016).
-
-| Condition | Expected Behavior |
+| Condition | Required Behavior |
 |---|---|
 | Current liveness cannot be established | Report unknown/unavailable; do not infer running or stopped from an old record, and do not stop the agent. |
-| Task cannot be moved to its configured in-progress status | Fail the start and show an error. |
-| Startup or initial instruction delivery fails | Fail creation, report the error and completed effects, and preserve tracking for any execution that may remain active. |
+| Task cannot be moved to its configured in-progress status | Fail the start and show an error before reservation or startup. |
+| Startup or initial instruction delivery fails | Fail creation, report the error and completed effects, and preserve tracking for any execution that may remain active; startup/readiness failures may require cleanup. |
 | Final durable publication fails after startup | Fail creation, stop the new execution, and roll back its provisional relationship; report errors and completed effects, and preserve tracking for any execution that may remain active. |
 | A handoff or cleanup step fails or is interrupted | Report the error and completed effects; preserve tracking for any execution that may remain active and preserve the predecessor/successor outcomes defined in SESSION-016. |
 | A start exceeds the soft limit but no session is positively idle | Allow the start; leave working, permission-requesting, and unknown-activity sessions running, and allow the limit to remain exceeded. |
@@ -662,45 +543,6 @@ Failure handling follows [error handling and edge cases](../CONVENTIONS.md#error
 | Terminal input is queued but not dispatched when the workspace closes or a task is deleted | Discard the text and report that it was not sent; never automatically resend it. |
 | In-flight terminal input does not land within the two-second close/delete allowance | Report that delivery is uncertain; never automatically resend it. |
 
-### Behavioral Invariants
-
-- Session identity and retained conversation identity are not confused with observed runtime state.
-- Uncertain liveness evidence never authorizes stopping an agent or declaring it stopped.
-- Provider-owned configuration, data, and state remain untouched by session lifecycle operations.
-- A newer active selection is never overwritten by the provisional-relationship rollback permitted only after final publication failure.
-- Exact resume never silently becomes a new conversation.
-- A handoff predecessor is not retired before durable confirmation that its successor is running.
-- A workspace client detaching or crashing does not itself stop the agent.
-- Native cleanup validation precedes batch stop effects; feature-specific settlement follows SESSION-009/010/016.
-- Final durable publication failure during creation is the only creation failure that rolls back: it stops the new execution and removes its provisional relationship.
-
-## Acceptance Criteria
-
-- [ ] **SESSION-001:** Session identity and conversation history persist; runtime is observed rather than inferred from historical labels, and relevant launch progress/errors are reported when they occur.
-- [ ] **SESSION-002:** Running, idle, stopped, and separate permission-request states are distinguished; uncertain current liveness reports unknown/unavailable and never causes a stop or stopped claim.
-- [ ] **SESSION-003:** The workspace refreshes observed runtime state for every task every 30 seconds.
-- [ ] **SESSION-004:** CLI and workspace starts have identical semantics, create only in the selected mode, select the task/mode active session, resolve effective configuration and worktree behavior, and use disk-backed task/artifact/agent configuration data.
-- [ ] **SESSION-005:** Starting moves an unfinished task to its configured in-progress status before session startup and fails with an error if that change cannot complete; a finished task's status is unchanged.
-- [ ] **SESSION-006:** Startup/bootstrap delivery and artifact context are each delivered exactly once; readiness waits for initial delivery but not an answer.
-- [ ] **SESSION-007:** The launch environment contains explicit workspace identity and selected-preset user variables, with no inherited process variables and the specified identity names/prefix.
-- [ ] **SESSION-008:** Preset variable references are limited to the three permitted workspace paths, and reserved paths cannot be overridden.
-- [ ] **SESSION-009:** Startup, initial-delivery, and final-publication failures fail creation and report errors; startup/readiness failures may require cleanup, while only final-publication failure rolls back the provisional relationship, retaining durable tracking for any execution that may remain running.
-- [ ] **SESSION-010:** Completed effects, original errors, and cleanup/publication errors are reported truthfully; no broader rollback is implied and last tracking information for an unstopped execution is retained.
-- [ ] **SESSION-011:** Readiness requires provider initialization, established identity, accepted initial instruction submission, and durable publication; initial instructions are sent once without waiting for an answer. Resume initializes the exact identity without replay or synthetic probe.
-- [ ] **SESSION-012:** The soft limit is project-wide and never blocks a start; only positively observed idle sessions are stopped as needed, longest continuously idle first, while protected/unknown sessions remain and the limit may stay exceeded.
-- [ ] **SESSION-013:** Stopping ends the agent but retains identity; if it was active, another retained session becomes active when available.
-- [ ] **SESSION-014:** Resume continues the same conversation under current effective configuration; impossible exact resume explains and asks, and a new conversation requires explicit agreement.
-- [ ] **SESSION-015:** Batch cleanup validates every relevant native target before effects; failed preflight has no effects, and cleanup precedes relationship/tracking removal where required.
-- [ ] **SESSION-016:** Handoff creates a distinct successor, retires only workspace-owned predecessors after durable running confirmation, preserves predecessor on successor failure and successor on predecessor-retirement failure, with no rollback beyond SESSION-009/010.
-- [ ] **SESSION-017:** The live terminal is seeded from the current screen and updated while running; conversation history and ask operation remain separate from terminal capture.
-- [ ] **SESSION-018:** Workspace departure and app crash detach without stopping agents; stopped is reported only after observation establishes not running.
-- [ ] **SESSION-019:** Closing or deleting allows dispatched input up to two seconds to land; undispatched text is discarded and reported not sent, uncertain in-flight delivery is distinguished, and automatic resend never occurs.
-- [ ] **SESSION-020:** Deletion of a running session without force is refused; with force, kill precedes removal of workspace-owned records/resources, and provider state remains untouched.
-
 ## Open Questions
 
-None recorded.
-
-## Global Behavioral Invariants
-
-- Across supported launch surfaces, session behavior is consistent and the project-wide running-session soft limit is not a prohibition on starting a session.
+None.
