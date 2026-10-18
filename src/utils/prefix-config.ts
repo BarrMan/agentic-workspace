@@ -1,5 +1,5 @@
 import { type AgenticWorkspaceConfig, EntityType, type PrefixConfig } from "../types/index.ts";
-import { isNumericTaskIdSegment, parseTaskId, taskIdBody, taskIdRegex, taskIdsEqual } from "./task-id.ts";
+import { isNumericTaskIdSegment, parseTaskId, taskIdBody, taskIdKey, taskIdRegex } from "./task-id.ts";
 
 /**
  * Default prefix configuration for tasks.
@@ -76,30 +76,6 @@ export function mergePrefixConfig(config?: Partial<PrefixConfig>): PrefixConfig 
 	return {
 		task: config?.task ?? DEFAULT_PREFIX_CONFIG.task,
 	};
-}
-
-/**
- * Normalizes an ID to ensure it has the correct prefix (uppercase).
- * If the ID already has the prefix (case-insensitive), it normalizes to uppercase.
- * If the ID is numeric only, it adds the uppercase prefix.
- *
- * @param id - The ID to normalize (e.g., "123", "task-123", "TASK-123")
- * @param prefix - The prefix to use (e.g., "task", "draft", "JIRA")
- * @returns Normalized ID with uppercase prefix (e.g., "TASK-123")
- *
- * @example
- * normalizeId("123", "task") // => "TASK-123"
- * normalizeId("task-123", "task") // => "TASK-123"
- * normalizeId("TASK-123", "task") // => "TASK-123"
- * normalizeId("jira-456", "JIRA") // => "JIRA-456"
- */
-export function normalizeId(id: string, prefix: string): string {
-	const trimmed = id.trim();
-	const upperPrefix = prefix.toUpperCase();
-	const prefixPattern = new RegExp(`^${escapeRegex(prefix)}-(.+)$`, "i");
-	const match = trimmed.match(prefixPattern);
-	const body = match?.[1] ?? trimmed;
-	return `${upperPrefix}-${body.toUpperCase()}`;
 }
 
 /**
@@ -242,22 +218,6 @@ export function extractAnyPrefix(id: string): string | null {
 }
 
 /**
- * Compares two IDs for equality, ignoring case in the prefix.
- *
- * @param id1 - First ID
- * @param id2 - Second ID
- * @param prefix - The prefix both IDs should have
- * @returns true if the IDs are equivalent
- *
- * @example
- * idsEqual("task-123", "TASK-123", "task") // => true
- * idsEqual("task-1", "task-01", "task") // => false (different body)
- */
-export function idsEqual(id1: string, id2: string, prefix: string): boolean {
-	return taskIdsEqual(normalizeId(id1, prefix), normalizeId(id2, prefix));
-}
-
-/**
  * Generates the next ID in sequence given a list of existing IDs.
  *
  * @param existingIds - Array of existing IDs
@@ -314,7 +274,8 @@ export function generateNextSubtaskId(
 	prefix: string,
 	zeroPadding?: number,
 ): string {
-	const normalizedParent = normalizeId(parentId, prefix);
+	const parentKey = taskIdKey(parentId);
+	const normalizedParent = hasPrefix(parentKey, prefix) ? parentKey : `${prefix.toUpperCase()}-${parentKey}`;
 	const parentBody = extractIdBody(normalizedParent, prefix);
 	const parentSegments = parentBody.split(".");
 	const canonicalParentSegments = canonicalizeNumericSegments(parentSegments);

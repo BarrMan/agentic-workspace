@@ -10,7 +10,9 @@ import {
 	type LaunchOrigin,
 	type NativeIdentity,
 	type PreparationResources,
+	quotedAskArguments,
 	type ResumeCommandRequest,
+	readinessReceipts,
 	type SessionIntent,
 	type StatusHookInstallOptions,
 	shellQuote,
@@ -105,10 +107,7 @@ export class OpencodeV1Agent implements Agent {
 	}
 
 	askCommand({ preset, nativeSessionId, question }: AskCommandRequest): string {
-		if (!nativeSessionId.trim()) {
-			throw new Error("Cannot ask this agent without its exact native session ID; start a new session instead.");
-		}
-		return appendArguments(preset.command, `run --session ${shellQuote(nativeSessionId)} ${shellQuote(question)}`);
+		return appendArguments(preset.command, `run --session ${quotedAskArguments(nativeSessionId, question)}`);
 	}
 
 	async prepare(request: PreparationResources & { intent: SessionIntent }): Promise<AgentPreparation> {
@@ -138,13 +137,7 @@ export class OpencodeV1Agent implements Agent {
 	}
 
 	readiness(intent: SessionIntent, launchDirectory: string, identity?: NativeIdentity) {
-		const id = identity?.id ?? (intent.kind === "resume" ? intent.nativeSessionId : undefined);
-		return {
-			initialized: { path: join(launchDirectory, "initialized"), ...(id ? { expected: id } : {}) },
-			...(intent.kind === "new"
-				? { promptAccepted: { path: join(launchDirectory, "prompt-accepted"), ...(id ? { expected: id } : {}) } }
-				: {}),
-		};
+		return readinessReceipts(intent, launchDirectory, identity);
 	}
 
 	async reconcileIdentity(origin: LaunchOrigin, publish: (identity: NativeIdentity) => Promise<void>): Promise<void> {

@@ -1,3 +1,4 @@
+import { join } from "node:path";
 import type { PreparedLaunchResources } from "../completion-supervisor-resources.ts";
 import type { InstalledStatusHook } from "../status-hooks.ts";
 import type { AgentActivity, AgentPreset, AgentSession, ModeId, ModeProfile, NativeAgentNamespace } from "../types.ts";
@@ -153,4 +154,30 @@ export interface Agent {
 
 export function shellQuote(value: string): string {
 	return `'${value.replaceAll("'", "'\"'\"'")}'`;
+}
+
+/** Shared readiness receipt paths for adapters whose expected value is the native session ID. */
+export function readinessReceipts(
+	intent: SessionIntent,
+	launchDirectory: string,
+	identity?: NativeIdentity,
+): {
+	initialized: { path: string; expected?: ReadinessExpectation };
+	promptAccepted?: { path: string; expected?: ReadinessExpectation };
+} {
+	const id = identity?.id ?? (intent.kind === "resume" ? intent.nativeSessionId : undefined);
+	return {
+		initialized: { path: join(launchDirectory, "initialized"), ...(id ? { expected: id } : {}) },
+		...(intent.kind === "new"
+			? { promptAccepted: { path: join(launchDirectory, "prompt-accepted"), ...(id ? { expected: id } : {}) } }
+			: {}),
+	};
+}
+
+/** Validate and quote the exact session ID and question shared by the simple ask commands. */
+export function quotedAskArguments(nativeSessionId: string, question: string): string {
+	if (!nativeSessionId.trim()) {
+		throw new Error("Cannot ask this agent without its exact native session ID; start a new session instead.");
+	}
+	return `${shellQuote(nativeSessionId)} ${shellQuote(question)}`;
 }

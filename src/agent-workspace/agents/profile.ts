@@ -8,11 +8,6 @@ const MODEL_CACHE_LIMIT = 32;
 const MODEL_DISCOVERY_TIMEOUT_LIMIT_MS = 10_000;
 const MODEL_ID = /^[\p{L}\p{N}][\p{L}\p{N}._:/+@-]{0,255}$/u;
 
-/** Called by a model-picker refresh or after preset/environment configuration changes. */
-export function clearModelDiscoveryCache(): void {
-	modelCache.clear();
-}
-
 /** Tokenize the simple executable/arguments form supported by AgentPreset, never shell syntax. */
 export function commandArguments(command: string): string[] {
 	if (/[|;&`$<>\n\r]/.test(command)) {
@@ -70,51 +65,6 @@ export function withExplicitModel(preset: AgentPreset, modelId: string): AgentPr
 		filtered.push(arg);
 	}
 	return { ...preset, command: [executable, ...filtered, "--model", modelId].map(quoteArg).join(" ") };
-}
-
-/** Pi has no path-scoped write switch; this verified allowlist is safe only for fully read-only modes. */
-export function withPiReadOnlyTools(preset: AgentPreset): AgentPreset {
-	const args = commandArguments(preset.command);
-	const executable = args.shift();
-	if (!executable) throw new Error("Harness command is empty.");
-	const filtered: string[] = [];
-	for (let index = 0; index < args.length; index++) {
-		const arg = args[index];
-		if (!arg) continue;
-		if (arg === "--tools" || arg === "-t") {
-			if (index + 1 >= args.length) throw new Error("Preset tools option is missing its tool list.");
-			index++;
-			continue;
-		}
-		if (arg.startsWith("--tools=")) continue;
-		filtered.push(arg);
-	}
-	return {
-		...preset,
-		command: [executable, ...filtered, "--tools", "read,grep,find,ls"].map(quoteArg).join(" "),
-	};
-}
-
-/** Claude's verified tool allowlist gives fully read-only profiles a useful native baseline. */
-export function withClaudeReadOnlyTools(preset: AgentPreset): AgentPreset {
-	const args = commandArguments(preset.command);
-	const executable = args.shift();
-	if (!executable) throw new Error("Harness command is empty.");
-	const filtered: string[] = [];
-	for (let index = 0; index < args.length; index++) {
-		const arg = args[index];
-		if (!arg) continue;
-		if (arg === "--tools") {
-			if (index + 1 >= args.length) throw new Error("Preset tools option is missing its tool list.");
-			index++;
-			continue;
-		}
-		filtered.push(arg);
-	}
-	return {
-		...preset,
-		command: [executable, ...filtered, "--tools", "Read,Glob,Grep,LS,AskUserQuestion"].map(quoteArg).join(" "),
-	};
 }
 
 function quoteArg(value: string): string {

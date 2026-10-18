@@ -88,12 +88,7 @@ export class TaskRepository {
 		return structuredClone(task);
 	}
 
-	async readFiles(
-		directory: string,
-		files: string[],
-		_options: { normalizeIdentity: boolean; debugLabel: string },
-		epoch = this.cacheEpoch,
-	): Promise<Task[]> {
+	async readFiles(directory: string, files: string[], epoch = this.cacheEpoch): Promise<Task[]> {
 		const directoryPath = resolve(directory);
 		const livePaths = new Set(files.map((file) => resolve(directory, file)));
 		if (epoch === this.cacheEpoch) {

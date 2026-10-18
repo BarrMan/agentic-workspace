@@ -7,8 +7,6 @@ import { formatAssignee } from "./utils/assignee-filter.ts";
 import { statusComparisonKey } from "./utils/status.ts";
 import { compareTaskIds } from "./utils/task-sorting.ts";
 
-export type BoardLayout = "horizontal" | "vertical";
-
 function normalizeConfiguredStatuses(statuses: string[]): { ordered: string[]; canonicalByKey: Map<string, string> } {
 	const canonicalByKey = new Map<string, string>();
 	const ordered: string[] = [];

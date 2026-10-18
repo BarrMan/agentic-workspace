@@ -33,7 +33,7 @@ import {
 	detectContentIdentityIssues,
 } from "../utils/duplicate-detection.ts";
 import { findAgenticWorkspaceRoot } from "../utils/find-agentic-workspace-root.ts";
-import { buildIdRegex, normalizeId } from "../utils/prefix-config.ts";
+import { buildIdRegex } from "../utils/prefix-config.ts";
 import { formatValidPriorityValues, resolvePriorityValue } from "../utils/priority-config.ts";
 import { resolveRuntimeCwd } from "../utils/runtime-cwd.ts";
 import { formatValidStatuses, getCanonicalStatuses } from "../utils/status.ts";
@@ -539,7 +539,7 @@ export class Core {
 				const filePath = join(path, file);
 				const stats = await stat(filePath).catch(() => null);
 				entries.push({
-					id: normalizeId(match[1], taskPrefix),
+					id: `${taskPrefix.toUpperCase()}-${match[1].toUpperCase()}`,
 					type,
 					branch: `worktree:${worktreeRoot}`,
 					path: filePath,

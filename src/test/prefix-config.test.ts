@@ -14,10 +14,8 @@ import {
 	getPrefixForType,
 	getTaskPrefixError,
 	hasPrefix,
-	idsEqual,
 	isReservedTaskPrefix,
 	mergePrefixConfig,
-	normalizeId,
 } from "../utils/prefix-config.ts";
 
 describe("prefix-config", () => {
@@ -54,40 +52,6 @@ describe("prefix-config", () => {
 		test("uses custom task value when provided", () => {
 			const config = mergePrefixConfig({ task: "issue" });
 			expect(config.task).toBe("issue");
-		});
-	});
-
-	describe("normalizeId", () => {
-		test("adds uppercase prefix to numeric ID", () => {
-			expect(normalizeId("123", "task")).toBe("TASK-123");
-			expect(normalizeId("456", "draft")).toBe("DRAFT-456");
-		});
-
-		test("normalizes existing prefix to uppercase", () => {
-			expect(normalizeId("task-123", "task")).toBe("TASK-123");
-			expect(normalizeId("draft-456", "draft")).toBe("DRAFT-456");
-		});
-
-		test("normalizes mixed case to uppercase", () => {
-			expect(normalizeId("TASK-123", "task")).toBe("TASK-123");
-			expect(normalizeId("Task-456", "task")).toBe("TASK-456");
-		});
-
-		test("works with custom prefixes (uppercase output)", () => {
-			expect(normalizeId("789", "JIRA")).toBe("JIRA-789");
-			expect(normalizeId("JIRA-789", "JIRA")).toBe("JIRA-789");
-			expect(normalizeId("jira-789", "JIRA")).toBe("JIRA-789");
-			expect(normalizeId("789", "jira")).toBe("JIRA-789");
-		});
-
-		test("handles hierarchical IDs", () => {
-			expect(normalizeId("5.2.1", "task")).toBe("TASK-5.2.1");
-			expect(normalizeId("task-5.2.1", "task")).toBe("TASK-5.2.1");
-		});
-
-		test("trims whitespace", () => {
-			expect(normalizeId("  123  ", "task")).toBe("TASK-123");
-			expect(normalizeId("  task-123  ", "task")).toBe("TASK-123");
 		});
 	});
 
@@ -216,30 +180,6 @@ describe("prefix-config", () => {
 
 		test("trims whitespace", () => {
 			expect(hasPrefix("  task-123  ", "task")).toBe(true);
-		});
-	});
-
-	describe("idsEqual", () => {
-		test("returns true for identical IDs", () => {
-			expect(idsEqual("task-123", "task-123", "task")).toBe(true);
-		});
-
-		test("is case-insensitive for prefix", () => {
-			expect(idsEqual("task-123", "TASK-123", "task")).toBe(true);
-			expect(idsEqual("TASK-123", "task-123", "task")).toBe(true);
-		});
-
-		test("returns false for different IDs", () => {
-			expect(idsEqual("task-123", "task-456", "task")).toBe(false);
-		});
-
-		test("handles IDs without prefix", () => {
-			expect(idsEqual("123", "task-123", "task")).toBe(true);
-		});
-
-		test("compares case-insensitively without collapsing numeric segments", () => {
-			expect(idsEqual(" task-01 ", "TASK-01", "task")).toBe(true);
-			expect(idsEqual(" task-01 ", "TASK-1", "task")).toBe(false);
 		});
 	});
 

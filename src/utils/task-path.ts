@@ -1,7 +1,7 @@
 import { access } from "node:fs/promises";
 import { join } from "node:path";
 import { AmbiguousIdError } from "./entity-id.ts";
-import { buildFilenameIdRegex, DRAFT_PREFIX, escapeRegex, normalizeId } from "./prefix-config.ts";
+import { buildFilenameIdRegex, DRAFT_PREFIX, escapeRegex } from "./prefix-config.ts";
 import { isValidTaskId, taskIdKey } from "./task-id.ts";
 
 export { taskIdsEqual } from "./task-id.ts";
@@ -54,8 +54,10 @@ export async function getTaskPath(taskId: string, context: TaskPathContext): Pro
 /**
  * Normalize a draft ID by ensuring the draft prefix is present (uppercase).
  */
-function normalizeDraftId(draftId: string): string {
-	return normalizeId(draftId, DRAFT_PREFIX);
+export function normalizeDraftId(draftId: string): string {
+	const key = taskIdKey(draftId);
+	const prefix = `${DRAFT_PREFIX.toUpperCase()}-`;
+	return key.startsWith(prefix) ? key : `${prefix}${key}`;
 }
 
 /**

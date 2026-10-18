@@ -22,7 +22,7 @@ import {
 } from "../utils/agentic-workspace-directory.ts";
 import type { DraftIdentityFindings } from "../utils/duplicate-detection.ts";
 import { AmbiguousIdError, isAmbiguousIdError } from "../utils/entity-id.ts";
-import { DEFAULT_TASK_PREFIX, DRAFT_PREFIX, escapeRegex, generateNextId, normalizeId } from "../utils/prefix-config.ts";
+import { DEFAULT_TASK_PREFIX, DRAFT_PREFIX, escapeRegex, generateNextId } from "../utils/prefix-config.ts";
 import { isValidDraftId, isValidTaskId, taskIdKey, taskIdsEqual } from "../utils/task-id.ts";
 import { withoutVacatedTaskLinks } from "../utils/task-links.ts";
 import {
@@ -31,6 +31,7 @@ import {
 	extractDraftIdFromFilename,
 	findDuplicateDraftFilenameGroups,
 	isAmbiguousTaskIdError,
+	normalizeDraftId,
 } from "../utils/task-path.ts";
 import { applyTaskFilters } from "../utils/task-search.ts";
 import { sortByTaskId } from "../utils/task-sorting.ts";
@@ -688,7 +689,7 @@ export class FileSystem {
 		task: Task,
 		isDraft = false,
 	): Promise<{ id: string; filename: string; filePath: string }> {
-		const id = isDraft ? normalizeId(task.id, DRAFT_PREFIX) : taskIdKey(task.id);
+		const id = isDraft ? normalizeDraftId(task.id) : taskIdKey(task.id);
 		if (!isDraft && !isValidTaskId(id)) throw new Error(`Invalid task ID: ${task.id}`);
 		if (isDraft && !isValidDraftId(id)) throw new Error(`Invalid draft ID: ${task.id}`);
 		const directory = isDraft ? await this.getDraftsDir() : await this.getTasksDir();
@@ -862,13 +863,8 @@ export class FileSystem {
 		return await this.taskRepository.readParsedFile(filepath, cacheEpoch);
 	}
 
-	async readTaskFiles(
-		directory: string,
-		files: string[],
-		options: { normalizeIdentity: boolean; debugLabel: string },
-		cacheEpoch = this.taskParseCacheEpoch,
-	): Promise<Task[]> {
-		return await this.taskRepository.readFiles(directory, files, options, cacheEpoch);
+	async readTaskFiles(directory: string, files: string[], cacheEpoch = this.taskParseCacheEpoch): Promise<Task[]> {
+		return await this.taskRepository.readFiles(directory, files, cacheEpoch);
 	}
 
 	private async listConfiguredTaskFiles(directory: string): Promise<string[]> {
@@ -880,15 +876,7 @@ export class FileSystem {
 		const tasksDir = await this.getTasksDir();
 		const taskFiles = await this.listConfiguredTaskFiles(tasksDir);
 
-		let tasks = await this.readTaskFiles(
-			tasksDir,
-			taskFiles,
-			{
-				normalizeIdentity: true,
-				debugLabel: "task file",
-			},
-			cacheEpoch,
-		);
+		let tasks = await this.readTaskFiles(tasksDir, taskFiles, cacheEpoch);
 
 		if (filter) tasks = applyTaskFilters(tasks, filter);
 
@@ -900,15 +888,7 @@ export class FileSystem {
 		const completedDir = await this.getCompletedDir();
 		const taskFiles = await this.listConfiguredTaskFiles(completedDir);
 
-		const tasks = await this.readTaskFiles(
-			completedDir,
-			taskFiles,
-			{
-				normalizeIdentity: false,
-				debugLabel: "completed task file",
-			},
-			cacheEpoch,
-		);
+		const tasks = await this.readTaskFiles(completedDir, taskFiles, cacheEpoch);
 
 		return sortByTaskId(tasks);
 	}
@@ -917,10 +897,7 @@ export class FileSystem {
 		const archiveTasksDir = await this.getArchiveTasksDir();
 		const taskFiles = await this.listConfiguredTaskFiles(archiveTasksDir);
 
-		const tasks = await this.readTaskFiles(archiveTasksDir, taskFiles, {
-			normalizeIdentity: false,
-			debugLabel: "archived task file",
-		});
+		const tasks = await this.readTaskFiles(archiveTasksDir, taskFiles);
 
 		return sortByTaskId(tasks);
 	}
@@ -1183,8 +1160,7 @@ export class FileSystem {
 	}
 
 	async saveDraft(task: Task): Promise<string> {
-		const { id: draftId } = await this.resolveTaskWriteTarget(task, true);
-		const canonicalId = normalizeId(draftId, DRAFT_PREFIX);
+		const { id: canonicalId } = await this.resolveTaskWriteTarget(task, true);
 		if (!isValidDraftId(canonicalId)) throw new Error(`Invalid draft ID: ${task.id}`);
 		const containerId = canonicalId.toLowerCase();
 		const container = await this.taskArtifacts.containerPath(containerId, "drafts");
@@ -1312,7 +1288,7 @@ export class FileSystem {
 		if (
 			!canonicalId ||
 			!draftIdsMatchLoosely(task.id, identityFilename) ||
-			(isCanonicalContainer && normalizeId(task.id, DRAFT_PREFIX).toLowerCase() !== containerId)
+			(isCanonicalContainer && !taskIdsEqual(normalizeDraftId(task.id), containerId))
 		) {
 			throw new DraftIdentityError(identityFilename, task.id, canonicalId);
 		}
@@ -1325,7 +1301,7 @@ export class FileSystem {
 	 * closed; only the matched file is parsed.
 	 */
 	async resolveDraftReference(draftId: string): Promise<(DraftFileReference & { task: Task }) | null> {
-		const normalizedId = normalizeId(draftId, DRAFT_PREFIX);
+		const normalizedId = normalizeDraftId(draftId);
 		const draftsDir = await this.getDraftsDir();
 		let files: string[];
 		try {
@@ -1363,7 +1339,7 @@ export class FileSystem {
 		} catch {
 			return null;
 		}
-		const normalizedId = normalizeId(draftId, DRAFT_PREFIX);
+		const normalizedId = normalizeDraftId(draftId);
 		const candidates = files.filter((file) => {
 			const parts = file.split(sep);
 			const identityName = parts.length === 2 && parts[1] === "task.md" ? parts[0] : "";

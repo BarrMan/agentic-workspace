@@ -12,6 +12,7 @@ import {
 	type LaunchOrigin,
 	type NativeIdentity,
 	type PreparationResources,
+	quotedAskArguments,
 	type ResumeCommandRequest,
 	type SessionIntent,
 	type StatusHookInstallOptions,
@@ -128,10 +129,7 @@ export class ClaudeAgent implements Agent {
 	}
 
 	askCommand({ preset, nativeSessionId, question }: AskCommandRequest): string {
-		if (!nativeSessionId.trim()) {
-			throw new Error("Cannot ask this agent without its exact native session ID; start a new session instead.");
-		}
-		return appendArguments(preset.command, `-p --resume ${shellQuote(nativeSessionId)} ${shellQuote(question)}`);
+		return appendArguments(preset.command, `-p --resume ${quotedAskArguments(nativeSessionId, question)}`);
 	}
 
 	async prepare(request: PreparationResources & { intent: SessionIntent }): Promise<AgentPreparation> {

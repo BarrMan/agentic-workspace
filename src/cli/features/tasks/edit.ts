@@ -7,8 +7,8 @@ import { formatTaskPlainText } from "../../../formatters/task-plain-text.ts";
 import type { Core } from "../../../index.ts";
 import type { Task, TaskUpdateInput } from "../../../types/index.ts";
 import { AmbiguousIdError } from "../../../utils/entity-id.ts";
-import { DRAFT_PREFIX, normalizeId } from "../../../utils/prefix-config.ts";
 import { getValidStatuses } from "../../../utils/status.ts";
+import { taskIdKey } from "../../../utils/task-id.ts";
 import { LOCAL_TASK_LOOKUP_HINT } from "../../../utils/task-path.ts";
 import { addEditFieldOptions, hasEditFieldFlags } from "../task/edit-fields.ts";
 import { parseTaskEditOptions } from "./edit-options.ts";
@@ -72,7 +72,7 @@ const draftEditTarget: EditCommandTarget = {
 			if (!resolved || resolved.filePath !== idOrSelectedPath)
 				throw new AmbiguousIdError(
 					"Draft",
-					normalizeId(direct.canonicalId, DRAFT_PREFIX),
+					taskIdKey(direct.canonicalId),
 					[idOrSelectedPath],
 					"Rename one file to a distinct numeric id, then make its frontmatter agree.",
 				);

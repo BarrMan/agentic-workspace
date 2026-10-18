@@ -3,9 +3,6 @@ import { type Core, createRuntimeCore } from "../core/agentic-workspace.ts";
 import type { AgenticWorkspaceConfig } from "../types/index.ts";
 import { assigneeComparisonKey } from "../utils/assignee-filter.ts";
 import { labelComparisonKey } from "../utils/label-filter.ts";
-import { getPriorityValues } from "../utils/priority-config.ts";
-import { getProjectValues } from "../utils/project-config.ts";
-import { getTaskTypeValues } from "../utils/task-type-config.ts";
 
 type CoreCallback<T> = (core: Core) => Promise<T>;
 
@@ -50,36 +47,6 @@ export async function getStatuses(): Promise<string[]> {
 }
 
 /**
- * Get priority values
- */
-export async function getPriorities(): Promise<string[]> {
-	return await withCore(async (core) => {
-		const config: AgenticWorkspaceConfig | null = await core.filesystem.loadConfig();
-		return getPriorityValues(config);
-	}, getPriorityValues());
-}
-
-/**
- * Get configured task type values.
- */
-export async function getTaskTypes(): Promise<string[]> {
-	return await withCore(async (core) => {
-		const config: AgenticWorkspaceConfig | null = await core.filesystem.loadConfig();
-		return getTaskTypeValues(config);
-	}, getTaskTypeValues());
-}
-
-/**
- * Get configured project values.
- */
-export async function getProjects(): Promise<string[]> {
-	return await withCore(async (core) => {
-		const config: AgenticWorkspaceConfig | null = await core.filesystem.loadConfig();
-		return getProjectValues(config);
-	}, []);
-}
-
-/**
  * Get unique labels from all tasks
  */
 export async function getLabels(): Promise<string[]> {
@@ -110,15 +77,5 @@ export async function getAssignees(): Promise<string[]> {
 			}
 		}
 		return Array.from(assignees.values()).sort();
-	}, []);
-}
-
-/**
- * Get all document IDs from the agentic-workspace
- */
-export async function getDocumentIds(): Promise<string[]> {
-	return await withCore(async (core) => {
-		const docs = await core.filesystem.listDocuments();
-		return docs.map((doc) => doc.id).sort();
 	}, []);
 }

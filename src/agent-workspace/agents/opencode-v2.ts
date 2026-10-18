@@ -14,7 +14,7 @@ import type {
 	SessionIntent,
 	StatusHookInstallOptions,
 } from "./agent.ts";
-import { shellQuote } from "./agent.ts";
+import { readinessReceipts, shellQuote } from "./agent.ts";
 import { OPENCODE_CHROME_RULES } from "./chrome-rules.ts";
 import { createOpencodeV2CliPlugin } from "./opencode-v2-cli-plugin.ts";
 import { openCodeBootstrapForVersion } from "./opencode-version.ts";
@@ -251,14 +251,7 @@ export class OpencodeV2Agent implements Agent {
 	}
 
 	readiness(intent: SessionIntent, launchDirectory: string, identity?: NativeIdentity) {
-		const id = identity?.id ?? (intent.kind === "resume" ? intent.nativeSessionId : undefined);
-		return {
-			initialized: { path: join(launchDirectory, "initialized"), ...(id ? { expected: id } : {}) },
-			confirmationRequired: intent.kind === "new",
-			...(intent.kind === "new"
-				? { promptAccepted: { path: join(launchDirectory, "prompt-accepted"), ...(id ? { expected: id } : {}) } }
-				: {}),
-		};
+		return { ...readinessReceipts(intent, launchDirectory, identity), confirmationRequired: intent.kind === "new" };
 	}
 
 	async reconcileIdentity(

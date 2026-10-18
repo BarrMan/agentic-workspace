@@ -1,13 +1,12 @@
 import { randomUUID } from "node:crypto";
-import { constants, type FSWatcher, watch } from "node:fs";
+import { constants } from "node:fs";
 import { access, lstat, mkdir, realpath, stat } from "node:fs/promises";
-import { basename, dirname, join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { LockOwner } from "../file-system/lock-owner.ts";
 import { type ProjectStateRootOptions, resolveProjectStateRoot, writeFileAtomic } from "./session-store.ts";
+import { type StateStoreWatcher, startStateStoreWatcher } from "./state-store-watcher.ts";
 
 const VIEW_STATE_FILE = "view-state.json";
-/** Bursts of renames land within one tick; collapse them into a single read + notify. */
-const WATCH_COALESCE_MS = 10;
 /** Reclaim abandoned view-state locks without holding a lock during rendering. */
 const LOCK_STALE_MS = 2_000;
 const LOCK_RETRIES = 200;
@@ -110,8 +109,7 @@ class ViewStateStoreImpl<T extends object> implements ViewStateStore<T> {
 	private rev = 0;
 	private path = "";
 	private externalStateRoot?: string;
-	private watcher: FSWatcher | undefined;
-	private coalesce: ReturnType<typeof setTimeout> | undefined;
+	private stateWatcher?: StateStoreWatcher;
 	private closed = false;
 
 	constructor(
@@ -136,7 +134,11 @@ class ViewStateStoreImpl<T extends object> implements ViewStateStore<T> {
 		this.externalStateRoot =
 			physicalStateRoot === join(physicalProjectRoot, ".agentic-workspace") ? undefined : physicalStateRoot;
 		await this.seed();
-		this.startWatching();
+		this.stateWatcher = startStateStoreWatcher(
+			this.path,
+			() => void this.recheck(),
+			() => this.closed,
+		);
 	}
 
 	subscribe(listener: ViewStateListener<T>): () => void {
@@ -176,16 +178,8 @@ class ViewStateStoreImpl<T extends object> implements ViewStateStore<T> {
 	close(): void {
 		if (this.closed) return;
 		this.closed = true;
-		if (this.coalesce) {
-			clearTimeout(this.coalesce);
-			this.coalesce = undefined;
-		}
-		try {
-			this.watcher?.close();
-		} catch {
-			// A watcher that refuses to close must not break teardown.
-		}
-		this.watcher = undefined;
+		this.stateWatcher?.close();
+		this.stateWatcher = undefined;
 		this.listeners.clear();
 	}
 
@@ -227,34 +221,6 @@ class ViewStateStoreImpl<T extends object> implements ViewStateStore<T> {
 
 	private async writeEnvelope(envelope: ViewStateEnvelope<T>): Promise<void> {
 		await writeFileAtomic(this.path, `${JSON.stringify(envelope, null, "\t")}\n`);
-	}
-
-	/**
-	 * Watch the DIRECTORY, not the file: writes are rename-based, so a file watcher would be
-	 * replaced out from under itself and go deaf after the first write.
-	 */
-	private startWatching(): void {
-		const name = basename(this.path);
-		try {
-			const watcher = watch(dirname(this.path), (_event, filename) => {
-				if (filename && filename.toString() !== name) return;
-				this.scheduleRefresh();
-			});
-			// A watcher error is a degradation, not a failure: recheck() still recovers.
-			watcher.on("error", () => undefined);
-			watcher.unref?.();
-			this.watcher = watcher;
-		} catch {
-			this.watcher = undefined;
-		}
-	}
-
-	private scheduleRefresh(): void {
-		if (this.closed || this.coalesce) return;
-		this.coalesce = setTimeout(() => {
-			this.coalesce = undefined;
-			void this.recheck();
-		}, WATCH_COALESCE_MS);
 	}
 
 	private async withLock<R>(operation: () => Promise<R>): Promise<R> {

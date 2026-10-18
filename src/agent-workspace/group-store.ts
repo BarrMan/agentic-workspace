@@ -1,12 +1,10 @@
-import { type FSWatcher, watch } from "node:fs";
 import { mkdir } from "node:fs/promises";
-import { basename, dirname, join } from "node:path";
+import { join } from "node:path";
 import { LockOwner } from "../file-system/lock-owner.ts";
 import { writeFileAtomic } from "./session-store.ts";
+import { type StateStoreWatcher, startStateStoreWatcher } from "./state-store-watcher.ts";
 
 const GROUPS_FILE = "groups.json";
-/** Bursts of renames land within one tick; collapse them into a single read + notify. */
-const WATCH_COALESCE_MS = 10;
 /** Reclaim abandoned group locks without holding a lock during rendering. */
 const LOCK_STALE_MS = 2_000;
 const LOCK_RETRIES = 200;
@@ -88,8 +86,7 @@ class GroupStoreImpl implements GroupStore {
 	private readonly listeners = new Set<(state: GroupState) => void>();
 	private state: GroupState = emptyGroupState();
 	private path = "";
-	private watcher: FSWatcher | undefined;
-	private coalesce: ReturnType<typeof setTimeout> | undefined;
+	private stateWatcher?: StateStoreWatcher;
 	private closed = false;
 	/** Serialises recheck against update so a stale watcher read cannot regress `current`. */
 	private tail: Promise<void> = Promise.resolve();
@@ -108,7 +105,11 @@ class GroupStoreImpl implements GroupStore {
 		// The directory has to exist before fs.watch can attach to it.
 		await mkdir(this.agenticWorkspaceDir, { recursive: true });
 		await this.seed();
-		this.startWatching();
+		this.stateWatcher = startStateStoreWatcher(
+			this.path,
+			() => void this.recheck(),
+			() => this.closed,
+		);
 	}
 
 	subscribe(listener: (state: GroupState) => void): () => void {
@@ -147,16 +148,8 @@ class GroupStoreImpl implements GroupStore {
 	close(): void {
 		if (this.closed) return;
 		this.closed = true;
-		if (this.coalesce) {
-			clearTimeout(this.coalesce);
-			this.coalesce = undefined;
-		}
-		try {
-			this.watcher?.close();
-		} catch {
-			// A watcher that refuses to close must not break teardown.
-		}
-		this.watcher = undefined;
+		this.stateWatcher?.close();
+		this.stateWatcher = undefined;
 		this.listeners.clear();
 	}
 
@@ -202,34 +195,6 @@ class GroupStoreImpl implements GroupStore {
 	private async writeState(state: GroupState): Promise<void> {
 		const payload = { groups: state.groups, membership: state.membership };
 		await writeFileAtomic(this.path, `${JSON.stringify(payload, null, "\t")}\n`);
-	}
-
-	/**
-	 * Watch the DIRECTORY, not the file: writes are rename-based, so a file watcher would be
-	 * replaced out from under itself and go deaf after the first write.
-	 */
-	private startWatching(): void {
-		const name = basename(this.path);
-		try {
-			const watcher = watch(dirname(this.path), (_event, filename) => {
-				if (filename && filename.toString() !== name) return;
-				this.scheduleRefresh();
-			});
-			// A watcher error is a degradation, not a failure: recheck() still recovers.
-			watcher.on("error", () => undefined);
-			watcher.unref?.();
-			this.watcher = watcher;
-		} catch {
-			this.watcher = undefined;
-		}
-	}
-
-	private scheduleRefresh(): void {
-		if (this.closed || this.coalesce) return;
-		this.coalesce = setTimeout(() => {
-			this.coalesce = undefined;
-			void this.recheck();
-		}, WATCH_COALESCE_MS);
 	}
 
 	private serialize<R>(operation: () => Promise<R>): Promise<R> {
