@@ -19,6 +19,7 @@ import lockfile from "proper-lockfile";
 import { findGitWorktreeRoot } from "../git/main-worktree.ts";
 import { GitOperations } from "../git/operations.ts";
 import { count, debug, isEnabled } from "../utils/debug-log.ts";
+import { taskIdKey, taskIdsEqual } from "../utils/task-id.ts";
 import type { ProcessRunner } from "./session-process.ts";
 import { slug } from "./session-utils.ts";
 import {
@@ -276,10 +277,6 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 	return typeof value === "object" && value !== null;
 }
 
-function canonicalTaskId(taskId: string): string {
-	return /^draft-/i.test(taskId) ? taskId.toUpperCase() : taskId;
-}
-
 function hasOnlyKeys(value: Record<string, unknown>, keys: readonly string[]): boolean {
 	return Object.keys(value).every((key) => keys.includes(key));
 }
@@ -309,7 +306,11 @@ const SESSION_KEYS = new Set([
 function isSession(value: unknown, taskId: string): value is AgentSession {
 	if (!isRecord(value)) return false;
 	if (!Object.keys(value).every((key) => SESSION_KEYS.has(key))) return false;
-	if (value.taskId !== taskId || !Object.values(AGENT_SESSION_STATUS).includes(value.status as AgentSession["status"]))
+	if (
+		typeof value.taskId !== "string" ||
+		!taskIdsEqual(value.taskId, taskId) ||
+		!Object.values(AGENT_SESSION_STATUS).includes(value.status as AgentSession["status"])
+	)
 		return false;
 	for (const key of ["id", "preset", "tmuxName", "cwd", "createdAt", "outputPath", "bootstrapPath"]) {
 		if (typeof value[key] !== "string") return false;
@@ -375,7 +376,7 @@ export class SessionStore {
 		const state = await this.readPersisted(taskId);
 		const session = Object.values(state.modes ?? {})
 			.flatMap((history) => history.sessions)
-			.find((candidate) => candidate.taskId === taskId && candidate.id === sessionId);
+			.find((candidate) => taskIdsEqual(candidate.taskId, taskId) && candidate.id === sessionId);
 		if (!session) throw new Error(`Agent session not found: ${sessionId}`);
 		const candidate = await this.readNativeSessionReceipt(session);
 		if (candidate !== undefined && session.nativeSessionId !== undefined && candidate !== session.nativeSessionId)
@@ -403,7 +404,7 @@ export class SessionStore {
 			);
 		}
 		try {
-			return this.validate(parsed, canonicalTaskId(taskId));
+			return this.validate(parsed, taskId);
 		} catch {
 			const version = isRecord(parsed) ? parsed.version : undefined;
 			if (typeof version === "number" && version > 2) {
@@ -528,7 +529,7 @@ export class SessionStore {
 	}
 
 	async paths(taskId: string): Promise<SessionPaths> {
-		const taskDir = join(await this.projectStateRoot(), slug(canonicalTaskId(taskId)));
+		const taskDir = join(await this.projectStateRoot(), slug(taskIdKey(taskId)));
 		return { taskDir, statePath: join(taskDir, "state.json") };
 	}
 
@@ -616,7 +617,7 @@ export class SessionStore {
 
 	/** Move the entire durable task-session container after a promote/demote ID change. */
 	async remapTaskIdentity(oldTaskId: string, newTaskId: string): Promise<void> {
-		if (oldTaskId === newTaskId) return;
+		if (taskIdsEqual(oldTaskId, newTaskId)) return;
 		const [oldPaths, newPaths] = await Promise.all([this.paths(oldTaskId), this.paths(newTaskId)]);
 
 		let oldStateExists = true;
@@ -631,7 +632,12 @@ export class SessionStore {
 		// Refuse unsupported state before creating directories or taking destination locks.
 		const raw = await Bun.file(oldPaths.statePath).text();
 		const parsed: unknown = JSON.parse(raw);
-		if (!isRecord(parsed) || parsed.version !== 2 || parsed.taskId !== oldTaskId)
+		if (
+			!isRecord(parsed) ||
+			parsed.version !== 2 ||
+			typeof parsed.taskId !== "string" ||
+			!taskIdsEqual(parsed.taskId, oldTaskId)
+		)
 			throw new Error(`Cannot remap session state for ${oldTaskId}; a valid version 2 state is required.`);
 		this.validate(parsed, oldTaskId);
 
@@ -648,22 +654,26 @@ export class SessionStore {
 			// Re-read under lock so concurrent source updates are not lost.
 			const lockedRaw = await Bun.file(oldPaths.statePath).text();
 			const lockedParsed: unknown = JSON.parse(lockedRaw);
-			if (!isRecord(lockedParsed) || lockedParsed.version !== 2 || lockedParsed.taskId !== oldTaskId)
+			if (
+				!isRecord(lockedParsed) ||
+				lockedParsed.version !== 2 ||
+				typeof lockedParsed.taskId !== "string" ||
+				!taskIdsEqual(lockedParsed.taskId, oldTaskId)
+			)
 				throw new Error(`Cannot remap session state for ${oldTaskId}; a valid version 2 state is required.`);
 			this.validate(lockedParsed, oldTaskId);
 
-			const normalizedNewTaskId = canonicalTaskId(newTaskId);
 			const sourceState = this.validate(lockedParsed, oldTaskId);
 			const modes: SessionState["modes"] = {};
 			for (const [modeId, history] of Object.entries(sourceState.modes)) {
 				modes[modeId] = {
 					...history,
-					sessions: history.sessions.map((session) => ({ ...session, taskId: normalizedNewTaskId })),
+					sessions: history.sessions.map((session) => ({ ...session, taskId: newTaskId })),
 				};
 			}
 			const strictState = this.toVersioned({
 				version: 2,
-				taskId: normalizedNewTaskId,
+				taskId: newTaskId,
 				modes,
 				...(sourceState.worktreePath !== undefined ? { worktreePath: sourceState.worktreePath } : {}),
 				...(sourceState.hasSuccessfulSession !== undefined
@@ -680,9 +690,8 @@ export class SessionStore {
 			} catch (error) {
 				if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
 			}
-			if (!destinationExists)
-				await this.installAndVerifyRemappedState(newPaths.statePath, remapped, normalizedNewTaskId);
-			else await this.verifyRemappedState(newPaths.statePath, remapped, normalizedNewTaskId);
+			if (!destinationExists) await this.installAndVerifyRemappedState(newPaths.statePath, remapped, newTaskId);
+			else await this.verifyRemappedState(newPaths.statePath, remapped, newTaskId);
 
 			await this.unlinkRemappedSource(oldPaths.statePath);
 			// Runtime directories may contain native session logs and bootstrap files at absolute
@@ -865,20 +874,27 @@ export class SessionStore {
 	}
 
 	private validate(value: unknown, taskId: string): SessionState {
-		if (!isRecord(value) || value.version !== 2 || value.taskId !== taskId || !isRecord(value.modes))
+		if (
+			!isRecord(value) ||
+			value.version !== 2 ||
+			typeof value.taskId !== "string" ||
+			!taskIdsEqual(value.taskId, taskId) ||
+			!isRecord(value.modes)
+		)
 			throw new Error("invalid state");
 		if (
 			(value.worktreePath !== undefined && typeof value.worktreePath !== "string") ||
 			(value.hasSuccessfulSession !== undefined && typeof value.hasSuccessfulSession !== "boolean")
 		)
 			throw new Error("invalid state");
+		const stateTaskId: string = value.taskId;
 		const modes: SessionState["modes"] = {};
 		const seen = new Set<string>();
 		for (const [modeId, history] of Object.entries(value.modes as Record<string, unknown>)) {
 			if (
 				!isRecord(history) ||
 				!Array.isArray(history.sessions) ||
-				!history.sessions.every((session) => isSession(session, taskId)) ||
+				!history.sessions.every((session) => isSession(session, stateTaskId)) ||
 				(history.sessions.length > 0 && typeof history.activeSessionId !== "string") ||
 				(history.activeSessionId !== undefined && typeof history.activeSessionId !== "string") ||
 				(history.activeSessionId !== undefined &&
@@ -896,7 +912,7 @@ export class SessionStore {
 		}
 		return {
 			version: 2,
-			taskId,
+			taskId: value.taskId,
 			modes,
 			...(typeof value.worktreePath === "string" ? { worktreePath: value.worktreePath } : {}),
 			...(typeof value.hasSuccessfulSession === "boolean" ? { hasSuccessfulSession: value.hasSuccessfulSession } : {}),

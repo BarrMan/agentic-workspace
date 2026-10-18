@@ -3,9 +3,10 @@ import { dirname, join } from "node:path";
 import { FrontmatterSchemaError, parseDecision, parseDocument, parseMarkdown } from "../markdown/parser.ts";
 import { serializeDecision, serializeDocument } from "../markdown/serializer.ts";
 import type { Decision, Document } from "../types/index.ts";
-import { findDecisionById } from "../utils/decision-id.ts";
-import { documentIdsEqual, findDocumentById, normalizeDocumentId } from "../utils/document-id.ts";
+import { decisionIdKey, findDecisionById } from "../utils/decision-id.ts";
+import { documentIdKey, findDocumentById, normalizeDocumentId } from "../utils/document-id.ts";
 import { normalizeDocumentRelativePath, normalizeDocumentSubPath } from "../utils/document-path.ts";
+import { AmbiguousIdError, normalizeEntityId } from "../utils/entity-id.ts";
 import { sortByTaskId } from "../utils/task-sorting.ts";
 
 export interface ContentRepositoryContext {
@@ -23,17 +24,22 @@ export class ContentRepository {
 		retainedFrontmatter?: Record<string, unknown>,
 	): Promise<{ filepath: string; removedFilepaths: string[] }> {
 		const save = async () => {
-			const normalizedId = decision.id.replace(/^decision-/, "");
+			const id = normalizeEntityId("decision", decision.id);
+			validateIdToken(id, "decision");
+			decision.id = id;
+			const normalizedId = id.slice("decision-".length);
 			const filename = `decision-${normalizedId} - ${sanitizeFilename(decision.title)}.md`;
 			const directory = await this.context.decisionsDirectory();
 			const filepath = join(directory, filename);
 			await this.context.ensureDirectory(dirname(filepath));
 			const removedFilepaths: string[] = [];
 			let storedFrontmatter: Record<string, unknown> = {};
-			for (const match of await Array.fromAsync(
-				new Bun.Glob("decision-*.md").scan({ cwd: directory, followSymlinks: true }),
-			)) {
-				if (!match.startsWith(`decision-${normalizedId} -`)) continue;
+			const matches = (
+				await Array.fromAsync(new Bun.Glob("decision-*.md").scan({ cwd: directory, followSymlinks: true }))
+			).filter((match) => decisionIdKey(match.split(" - ")[0] ?? "") === decisionIdKey(id));
+			if (matches.length > 1)
+				throw new AmbiguousIdError("Decision", id, matches, "Remove the conflicting files, then retry.");
+			for (const match of matches) {
 				try {
 					const path = join(directory, match);
 					storedFrontmatter = parseMarkdown(await Bun.file(path).text()).frontmatter;
@@ -78,6 +84,7 @@ export class ContentRepository {
 	async saveDocument(document: Document, subPath = ""): Promise<{ relativePath: string; removedFilepaths: string[] }> {
 		const directory = await this.context.documentsDirectory();
 		const id = normalizeDocumentId(document.id);
+		validateIdToken(id, "doc");
 		document.id = id;
 		const filename = `${id} - ${sanitizeFilename(document.title)}.md`;
 		const subdirectory = normalizeDocumentSubPath(subPath);
@@ -86,7 +93,9 @@ export class ContentRepository {
 		await this.context.ensureDirectory(dirname(filepath));
 		const matches = (await Array.fromAsync(new Bun.Glob("**/doc-*.md").scan({ cwd: directory, followSymlinks: true })))
 			.map(normalizeDocumentRelativePath)
-			.filter((path) => documentIdsEqual(id, path.split("/").pop()?.split(" - ")[0] ?? ""));
+			.filter((path) => documentIdKey(path.split("/").pop()?.split(" - ")[0] ?? "") === documentIdKey(id));
+		if (matches.length > 1)
+			throw new AmbiguousIdError("Document", id, matches, "Remove the conflicting files, then retry.");
 		const source = document.path ? normalizeDocumentRelativePath(document.path) : matches[0];
 		const removedFilepaths: string[] = [];
 		if (source && source !== relativePath) {
@@ -138,6 +147,11 @@ export class ContentRepository {
 		if (!document) throw new Error(`Document not found: ${id}`);
 		return document;
 	}
+}
+
+function validateIdToken(id: string, prefix: "decision" | "doc"): void {
+	const body = id.slice(prefix.length + 1);
+	if (!body.trim() || /[\\/]/.test(body)) throw new Error(`Invalid ${prefix} ID: ${id}`);
 }
 
 function sanitizeFilename(title: string): string {

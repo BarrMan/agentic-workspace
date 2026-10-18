@@ -24,6 +24,7 @@ import { SessionMutationError, SessionStore } from "../agent-workspace/session-s
 import { ExactResumeUnavailableError } from "../agent-workspace/sessions.ts";
 import { type SessionCreationIdentity, Task } from "../agent-workspace/task.ts";
 import { type AgentSession, type ModeId, type ModeProfile, resolveSessionSettings } from "../agent-workspace/types.ts";
+import { taskIdKey, taskIdsEqual } from "../utils/task-id.ts";
 import type { Core } from "./agentic-workspace.ts";
 
 type SessionApplicationOptions = {
@@ -268,7 +269,7 @@ export class SessionApplication {
 				const current = Object.values(durable.modes)
 					.flatMap(({ sessions }) => sessions)
 					.find(({ id }) => id === sessionId);
-				if (!current || current.taskId !== taskId || current.createdAt !== session.record.createdAt)
+				if (!current || !taskIdsEqual(current.taskId, taskId) || current.createdAt !== session.record.createdAt)
 					throw new Error(`Session ${sessionId} was removed or replaced before stop.`);
 				if (current.ownerPid !== session.record.ownerPid)
 					throw new Error(`Session ${sessionId} execution authority changed before stop.`);
@@ -313,7 +314,7 @@ export class SessionApplication {
 			if (
 				!history ||
 				!current ||
-				current.taskId !== checkpoint.origin.taskId ||
+				!taskIdsEqual(current.taskId, checkpoint.origin.taskId) ||
 				current.createdAt !== checkpoint.record.createdAt ||
 				current.ownerPid !== (checkpoint.phase === "update" ? checkpoint.previous.ownerPid : checkpoint.record.ownerPid)
 			)
@@ -443,7 +444,7 @@ export class SessionApplication {
 	}
 
 	private key(taskId: string, sessionId: string): string {
-		return `${taskId}:${sessionId}`;
+		return `${taskIdKey(taskId)}:${sessionId}`;
 	}
 }
 

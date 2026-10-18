@@ -8,6 +8,7 @@ import {
 	TmuxTransportError,
 } from "libtmux";
 import { captureProcessOutput } from "../process/capture.ts";
+import { taskIdsEqual } from "../utils/task-id.ts";
 import type { SessionIntent } from "./agents/agent.ts";
 import { cleanupPreparedLaunchResources, type PreparedLaunchResources } from "./completion-supervisor-resources.ts";
 import { createTmuxExec } from "./live/tmux/exec.ts";
@@ -459,7 +460,7 @@ export class SessionProcess {
 		if (
 			name !== session.tmuxName ||
 			root !== this.rootDir ||
-			taskId !== session.taskId ||
+			!taskIdsEqual(taskId ?? "", session.taskId) ||
 			sessionId !== session.id ||
 			!roles.includes(role ?? "") ||
 			!paneId ||

@@ -30,7 +30,7 @@ This contract defines task identity and data, project storage, artifacts, work c
 
 ### TASK-001: Task scope and fields
 
-**Description:** A task is a unit of work scoped to a project directory, whether or not that directory uses Git. Its editable business fields are title, description, type, priority, milestone, and labels; each may be optional, and none is made mandatory by this list.
+**Description:** A task is a unit of work scoped to a project directory, whether or not that directory uses Git. Its editable business fields are title, description, type, priority, milestone, labels, and assignee; each may be optional, and none is made mandatory by this list. Assignee identity is case-insensitive and accepts an optional leading `@`; display spelling is preserved, and identity comparison does not automatically rewrite stored data. See [identity and reference resolution](../CONVENTIONS.md#identity-and-reference-resolution).
 
 **Trigger:** A task is created or edited.
 
@@ -38,14 +38,14 @@ This contract defines task identity and data, project storage, artifacts, work c
 
 **Behavior:**
 1. Scope each task to its project directory, whether or not it uses Git.
-2. Allow each listed editable business field to be optional.
+2. Allow each listed editable business field, including assignee, to be optional.
 
 **Outcome:** No listed field is made mandatory.
 
 **Failures:** None.
 
 **Acceptance Criteria:**
-- A task is scoped to a project directory with or without Git; each listed field may be absent.
+- A task is scoped to a project directory with or without Git; each listed field may be absent. Assignee matching follows the shared identity-key convention without changing stored display spelling.
 
 ### TASK-002: Creation and status configuration
 

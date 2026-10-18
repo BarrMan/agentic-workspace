@@ -1,6 +1,7 @@
 /* Status icon and color mappings for consistent UI display */
 
 import type { AgentActivity, AgentIndication } from "../agent-workspace/types.ts";
+import { statusComparisonKey } from "../utils/status.ts";
 
 export interface StatusStyle {
 	icon: string;
@@ -23,7 +24,7 @@ export function getStatusStyle(status: string): StatusStyle {
 	};
 
 	// Return the mapped style or default for unknown statuses
-	return statusMap[status.trim().toLowerCase()] || { icon: "○", color: "default" };
+	return statusMap[statusComparisonKey(status)] || { icon: "○", color: "default" };
 }
 
 /**

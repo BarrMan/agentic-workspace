@@ -20,6 +20,8 @@ import type { AgentHost } from "../../agent-workspace/live/agent-host.ts";
 import type { AgentIndication } from "../../agent-workspace/types.ts";
 import type { TaskDetail } from "../../core/task-detail.ts";
 import { getIndicationColor, getSelectedIndicationColor } from "../../formatters/status-icon.ts";
+import { formatAssignee } from "../../utils/assignee-filter.ts";
+import { statusComparisonKey } from "../../utils/status.ts";
 import { isTerminalStatus } from "../../utils/terminal-status.ts";
 import { buildGroupRows, findGroup, type GroupRow } from "./groups.ts";
 import {
@@ -224,10 +226,11 @@ function visibleStart(selectedIndex: number, firstVisible: number, visibleRows: 
 
 function taskDetails(task: OpenTuiWorkspaceTaskEntry | undefined): string {
 	if (!task) return "No task selected.";
+	const assignees = task.assignees?.map(formatAssignee).filter((assignee) => assignee !== null) ?? [];
 	const fields = [
 		`Status: ${task.status}`,
 		task.priority ? `Priority: ${task.priority}` : undefined,
-		task.assignees?.length ? `Assignees: ${task.assignees.join(", ")}` : undefined,
+		assignees.length ? `Assignees: ${assignees.join(", ")}` : undefined,
 		task.labels?.length ? `Labels: ${task.labels.join(", ")}` : undefined,
 		"",
 		task.description?.trim() || "No description.",
@@ -290,7 +293,8 @@ export function mountOpenTuiWorkspace(
 		statusBuckets = new Map<string, number[]>((opts.statuses ?? []).map((status) => [status, []]));
 		for (const [index, task] of opts.tasks.entries()) {
 			const status =
-				[...statusBuckets.keys()].find((value) => value.toLowerCase() === task.status.toLowerCase()) ?? task.status;
+				[...statusBuckets.keys()].find((value) => statusComparisonKey(value) === statusComparisonKey(task.status)) ??
+				task.status;
 			const bucket = statusBuckets.get(status) ?? [];
 			bucket.push(index);
 			statusBuckets.set(status, bucket);

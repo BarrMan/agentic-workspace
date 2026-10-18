@@ -69,6 +69,17 @@ describe("buildDependencyGraph", () => {
 		]);
 	});
 
+	it("trims padded case-variant dependency IDs without merging numeric variants", () => {
+		const graph = graphFor("TASK-1", [task("TASK-1", [" TASK-01 "]), task("TASK-01"), task("TASK-2", [" task-1 "])]);
+
+		expect(nodeIds(graph, "dependents")).toEqual(["TASK-2"]);
+		expect(graph.nodes.find((node) => node.id === "TASK-01")?.state).toBe("resolved");
+		expect(graph.edges).toEqual([
+			{ from: "TASK-1", to: "TASK-01" },
+			{ from: "TASK-2", to: "TASK-1" },
+		]);
+	});
+
 	it("represents a diamond node once and expands its subtree once", () => {
 		const graph = graphFor("task-1", [
 			task("task-1", ["task-2", "task-3"]),

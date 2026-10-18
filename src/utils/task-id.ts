@@ -36,6 +36,15 @@ export function isValidDraftId(value: string): boolean {
 	return /^DRAFT-[A-Z0-9]+$/i.test(value);
 }
 
+/**
+ * The one comparison key for task identity: surrounding whitespace is ignored and case is
+ * folded. Numeric segments keep their exact spelling, so TASK-01 and TASK-1 stay distinct.
+ * Stored and displayed IDs are left untouched.
+ */
+export function taskIdKey(value: string): string {
+	return value.trim().toUpperCase();
+}
+
 export function taskIdsEqual(left: string, right: string): boolean {
-	return left.toUpperCase() === right.toUpperCase();
+	return taskIdKey(left) === taskIdKey(right);
 }

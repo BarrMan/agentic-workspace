@@ -109,6 +109,20 @@ describe("Core shared task corpus regressions", () => {
 		).toBe("After ref move");
 	});
 
+	it("does not duplicate cross-branch tasks with case-different IDs", async () => {
+		await writeTask(core.filesystem.tasksDir, "task-1 - Local.md", task("task-1", "Local task"));
+		await commit("Add local task", recentCommitDate(3));
+		await $`git switch -c feature-case-different-id`.cwd(testDir).quiet();
+		await writeTask(core.filesystem.tasksDir, "TASK-1 - Branch.md", task("TASK-1", "Branch task"));
+		await commit("Add branch task with case-different ID", recentCommitDate(2));
+		await $`git switch main`.cwd(testDir).quiet();
+
+		const corpus = await loadTaskCorpus(core, { includeCrossBranch: true });
+		expect(corpus.tasks).toHaveLength(1);
+		expect(corpus.tasks[0]?.id).toBe("task-1");
+		expect(corpus.tasks[0]?.title).toBe("Local task");
+	});
+
 	it("resolves a dependency completed only on another branch as completed in the cross-branch corpus", async () => {
 		await writeTask(core.filesystem.tasksDir, "task-2 - Root.md", {
 			...task("TASK-2", "Root task"),

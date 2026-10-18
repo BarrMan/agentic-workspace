@@ -17,7 +17,7 @@ const tasks: Task[] = [
 		id: "task-2",
 		title: "Fix button",
 		status: "To Do",
-		labels: ["ui"],
+		labels: [" UI "],
 		assignee: [],
 		createdDate: "2025-01-01",
 		dependencies: [],
@@ -38,7 +38,7 @@ const tasks: Task[] = [
 describe("createTaskSearchIndex label filtering", () => {
 	test("filters tasks by single label", () => {
 		const index = createTaskSearchIndex(tasks);
-		const results = index.search({ labels: ["ui"] });
+		const results = index.search({ labels: [" Ui "] });
 		expect(results.map((t) => t.id)).toEqual(["task-2", "task-3"]);
 	});
 

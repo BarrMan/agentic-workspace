@@ -1,4 +1,5 @@
 import type { TaskDetail } from "../core/task-detail.ts";
+import { formatAssignee } from "../utils/assignee-filter.ts";
 import { formatPriorityLabel } from "../utils/priority-config.ts";
 import { sortByTaskId } from "../utils/task-sorting.ts";
 import { formatUtcDateForDisplay, type UtcDateDisplayOptions } from "../utils/utc-date-display.ts";
@@ -24,8 +25,8 @@ function formatPriority(priority?: string): string | null {
 }
 
 function formatAssignees(assignee?: string[]): string | null {
-	if (!assignee || assignee.length === 0) return null;
-	return assignee.map((a) => (a.startsWith("@") ? a : `@${a}`)).join(", ");
+	const names = assignee?.map(formatAssignee).filter((name) => name !== null) ?? [];
+	return names.length ? names.join(", ") : null;
 }
 
 function formatSubtaskLines(subtasks: Array<{ id: string; title: string }>): string[] {

@@ -1,4 +1,6 @@
 import type { Task, TaskUpdateInput } from "../../types/index.ts";
+import { assigneeComparisonKey, normalizeAssignees } from "../../utils/assignee-filter.ts";
+import { labelComparisonKey } from "../../utils/label-filter.ts";
 import { normalizeStringList, parseDelimitedStringList, stringArraysEqual } from "../../utils/task-builders.ts";
 
 export interface CollectionUpdateContext {
@@ -14,16 +16,19 @@ export async function applyCollectionTaskUpdates(
 ): Promise<boolean> {
 	let mutated = false;
 	if (input.assignee !== undefined) {
-		const assignee = normalizeStringList(input.assignee) ?? [];
-		if (!stringArraysEqual(assignee, task.assignee ?? [])) {
+		const assignee = normalizeAssignees(normalizeStringList(input.assignee));
+		if (
+			assignee.length !== (task.assignee ?? []).length ||
+			assignee.some(
+				(value, index) => assigneeComparisonKey(value) !== assigneeComparisonKey(task.assignee?.[index] ?? ""),
+			)
+		) {
 			task.assignee = assignee;
 			mutated = true;
 		}
 	}
 
-	mutated =
-		applyList(task, "labels", input.labels, input.addLabels, input.removeLabels, (value) => value.toLowerCase()) ||
-		mutated;
+	mutated = applyList(task, "labels", input.labels, input.addLabels, input.removeLabels, labelComparisonKey) || mutated;
 	mutated = (await applyDependencies(task, input, context)) || mutated;
 	mutated = applyList(task, "references", input.references, input.addReferences, input.removeReferences) || mutated;
 	mutated =

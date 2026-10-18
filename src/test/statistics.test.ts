@@ -49,6 +49,64 @@ describe("getTaskStatistics", () => {
 		expect(stats.statusCounts.get("Done")).toBe(2);
 	});
 
+	test("counts case and whitespace status variants in configured buckets", () => {
+		const tasks: Task[] = [
+			createTask({ id: "task-1", status: " to do " }),
+			createTask({ id: "task-2", status: "in progress" }),
+			createTask({ id: "task-3", status: " done " }),
+			createTask({ id: "task-4", status: "DONE" }),
+			createTask({ id: "task-5", status: "Archived" }),
+		];
+
+		const stats = getTaskStatistics(tasks, [], statuses);
+
+		expect(stats.totalTasks).toBe(5);
+		expect(stats.completedTasks).toBe(2);
+		expect(stats.completionPercentage).toBe(40);
+		expect(stats.statusCounts.get("To Do")).toBe(1);
+		expect(stats.statusCounts.get("In Progress")).toBe(1);
+		expect(stats.statusCounts.get("Done")).toBe(2);
+		expect(stats.statusCounts.get("Archived")).toBe(1);
+		expect(stats.statusCounts.has(" done ")).toBe(false);
+	});
+
+	test("treats case and whitespace done variants as terminal for stale and blocked checks", () => {
+		const now = new Date();
+		const twoMonthsAgo = new Date(now.getTime() - 60 * 24 * 60 * 60 * 1000);
+
+		const tasks: Task[] = [
+			createTask({
+				id: "task-1",
+				status: " DONE ",
+				createdDate: twoMonthsAgo.toISOString().split("T")[0] as string,
+			}),
+			createTask({ id: "task-2", status: "done " }),
+			createTask({
+				id: "task-3",
+				status: "To Do",
+				dependencies: ["task-2"],
+				createdDate: now.toISOString().split("T")[0] as string,
+			}),
+		];
+
+		const stats = getTaskStatistics(tasks, [], statuses);
+
+		expect(stats.projectHealth.staleTasks).toHaveLength(0);
+		expect(stats.projectHealth.blockedTasks).toHaveLength(0);
+	});
+
+	test("merges unknown status variants under the first-seen raw label", () => {
+		const tasks: Task[] = [
+			createTask({ id: "task-1", status: "Archived" }),
+			createTask({ id: "task-2", status: " archived " }),
+		];
+
+		const stats = getTaskStatistics(tasks, [], statuses);
+
+		expect(stats.statusCounts.get("Archived")).toBe(2);
+		expect(stats.statusCounts.has(" archived ")).toBe(false);
+	});
+
 	test("counts tasks by priority correctly", () => {
 		const tasks: Task[] = [
 			createTask({ id: "task-1", title: "Task 1", status: "To Do", priority: "high" }),
@@ -196,6 +254,19 @@ describe("getTaskStatistics", () => {
 
 		expect(stats.projectHealth.blockedTasks.length).toBe(1);
 		expect(stats.projectHealth.blockedTasks[0]?.id).toBe("task-2");
+	});
+
+	test("matches dependency identities case-insensitively without collapsing padding", () => {
+		const tasks: Task[] = [
+			createTask({ id: "task-01", title: "Padded", status: "In Progress" }),
+			createTask({ id: "task-1", title: "Unpadded", status: "Done" }),
+			createTask({ id: "task-2", title: "Blocked by padded", status: "To Do", dependencies: [" TASK-01 "] }),
+			createTask({ id: "task-3", title: "Unblocked by unpadded", status: "To Do", dependencies: [" task-1 "] }),
+		];
+
+		const stats = getTaskStatistics(tasks, [], statuses);
+
+		expect(stats.projectHealth.blockedTasks.map((task) => task.id)).toEqual(["task-2"]);
 	});
 
 	test("calculates average task age correctly", () => {

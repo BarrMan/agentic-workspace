@@ -6,7 +6,7 @@ import { getBuiltInAgentConfiguration, upsertAgentConfiguration } from "../agent
 import { sessionCwdFor } from "../agent-workspace/session-service-mechanics.ts";
 import { resolveSessionSettings } from "../agent-workspace/types.ts";
 import { Core } from "../core/agentic-workspace.ts";
-import { taskWorktreeExists, taskWorktreePath } from "../git/task-worktree.ts";
+import { ensureTaskWorktree, taskWorktreeExists, taskWorktreePath } from "../git/task-worktree.ts";
 import type { Task } from "../types/index.ts";
 import { createUniqueTestDir, initGitRepo, initializeTestProject, safeCleanup } from "./test-utils.ts";
 
@@ -25,6 +25,31 @@ function newTask(id: string, title: string, status = "To Do"): Task {
 		labels: [],
 		dependencies: [],
 	};
+}
+
+async function git(...args: string[]): Promise<void> {
+	const child = Bun.spawn(["git", ...args], { stdout: "pipe", stderr: "pipe" });
+	const [, stderr, exitCode] = await Promise.all([
+		new Response(child.stdout).text(),
+		new Response(child.stderr).text(),
+		child.exited,
+	]);
+	if (exitCode !== 0) throw new Error(stderr);
+}
+
+async function commitFixture(): Promise<void> {
+	await git(
+		"-C",
+		TEST_DIR,
+		"-c",
+		"user.name=Fixture",
+		"-c",
+		"user.email=fixture@example.test",
+		"commit",
+		"--allow-empty",
+		"-m",
+		"fixture",
+	);
 }
 
 /**
@@ -211,5 +236,36 @@ describe("task worktree lifecycle", () => {
 		expect(await taskWorktreeExists(TEST_DIR, task)).toBe(true);
 		expect(taskWorktreePath(TEST_DIR, task)).toBe(firstPath);
 		expect(existsSync(firstPath)).toBe(true);
+	});
+
+	it("resolves lowercase and whitespace task IDs by identity", async () => {
+		const task = newTask("TASK-1", "Readable title slug");
+		const path = await ensureTaskWorktree(TEST_DIR, task);
+		const alternateId = { ...task, id: " task-1 " };
+
+		expect(path).toBe(taskWorktreePath(TEST_DIR, alternateId));
+		expect(path).toContain("readable-title-slug-TASK-1");
+		expect(await taskWorktreeExists(TEST_DIR, alternateId)).toBe(true);
+	});
+
+	it("finds a detached worktree moved to another ID-suffixed directory", async () => {
+		const task = newTask("TASK-1", "Original title");
+		await commitFixture();
+		const originalPath = (await ensureTaskWorktree(TEST_DIR, task)) as string;
+		const renamedPath = join(WORKTREE_HOME, "renamed-directory-TASK-1");
+		await git("-C", TEST_DIR, "worktree", "move", originalPath, renamedPath);
+		await git("-C", renamedPath, "checkout", "--detach");
+
+		expect(await taskWorktreeExists(TEST_DIR, task)).toBe(true);
+	});
+
+	it("fails closed when multiple worktrees match the task identity", async () => {
+		const task = newTask("TASK-1", "Original title");
+		await commitFixture();
+		await ensureTaskWorktree(TEST_DIR, task);
+		const duplicatePath = join(WORKTREE_HOME, "second-directory-task-1");
+		await git("-C", TEST_DIR, "worktree", "add", "--detach", duplicatePath);
+
+		expect(await taskWorktreeExists(TEST_DIR, task)).toBe(false);
 	});
 });

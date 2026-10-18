@@ -22,15 +22,8 @@ import {
 } from "../utils/agentic-workspace-directory.ts";
 import type { DraftIdentityFindings } from "../utils/duplicate-detection.ts";
 import { AmbiguousIdError, isAmbiguousIdError } from "../utils/entity-id.ts";
-import {
-	DEFAULT_TASK_PREFIX,
-	DRAFT_PREFIX,
-	escapeRegex,
-	generateNextId,
-	idForFilename,
-	normalizeId,
-} from "../utils/prefix-config.ts";
-import { isValidDraftId, isValidTaskId, taskIdsEqual } from "../utils/task-id.ts";
+import { DEFAULT_TASK_PREFIX, DRAFT_PREFIX, escapeRegex, generateNextId, normalizeId } from "../utils/prefix-config.ts";
+import { isValidDraftId, isValidTaskId, taskIdKey, taskIdsEqual } from "../utils/task-id.ts";
 import { withoutVacatedTaskLinks } from "../utils/task-links.ts";
 import {
 	AmbiguousTaskIdError,
@@ -602,7 +595,7 @@ export class FileSystem {
 			const prefixPattern = new RegExp(`^${escapeRegex(canonicalPrefix)}-(\\d+)$`);
 			let max = 0;
 			for (const id of await existingIds()) {
-				const match = id.toUpperCase().match(prefixPattern);
+				const match = taskIdKey(id).match(prefixPattern);
 				if (match?.[1]) max = Math.max(max, Number(match[1]));
 			}
 			next = max + 1;
@@ -647,8 +640,7 @@ export class FileSystem {
 		filePath: string,
 		fn: () => Promise<T>,
 	): Promise<T> {
-		const lockKey = entityId
-			.trim()
+		const lockKey = taskIdKey(entityId)
 			.toLowerCase()
 			.replace(/[^a-z0-9._-]+/g, "-")
 			.replace(/^\.+/, "");
@@ -668,8 +660,8 @@ export class FileSystem {
 	 * orders and deadlocking each other.
 	 */
 	async withTaskLocks<T>(tasks: Array<Pick<Task, "id" | "filePath">>, fn: () => Promise<T>): Promise<T> {
-		const uniqueTasks = Array.from(new Map(tasks.map((task) => [task.id.trim().toLowerCase(), task])).values()).sort(
-			(left, right) => left.id.localeCompare(right.id),
+		const uniqueTasks = Array.from(new Map(tasks.map((task) => [taskIdKey(task.id), task])).values()).sort(
+			(left, right) => taskIdKey(left.id).localeCompare(taskIdKey(right.id)),
 		);
 
 		const acquire = async (index: number): Promise<T> => {
@@ -696,17 +688,13 @@ export class FileSystem {
 		task: Task,
 		isDraft = false,
 	): Promise<{ id: string; filename: string; filePath: string }> {
-		const id = isDraft ? normalizeId(task.id, DRAFT_PREFIX) : task.id.toUpperCase();
+		const id = isDraft ? normalizeId(task.id, DRAFT_PREFIX) : taskIdKey(task.id);
 		if (!isDraft && !isValidTaskId(id)) throw new Error(`Invalid task ID: ${task.id}`);
 		if (isDraft && !isValidDraftId(id)) throw new Error(`Invalid draft ID: ${task.id}`);
-		const filename = `${idForFilename(id)} - ${this.sanitizeFilename(task.title)}.md`;
 		const directory = isDraft ? await this.getDraftsDir() : await this.getTasksDir();
-		const preservesPath = !isDraft && typeof task.filePath === "string" && task.filePath.trim().length > 0;
-		return { id, filename, filePath: preservesPath ? (task.filePath as string) : join(directory, filename) };
-	}
-
-	async getTaskWritePath(task: Task, isDraft = false): Promise<string> {
-		return (await this.resolveTaskWriteTarget(task, isDraft)).filePath;
+		const filename = isDraft ? `${id} - ${this.sanitizeFilename(task.title)}.md` : "task.md";
+		const filePath = isDraft ? join(directory, filename) : join(directory, id.toLowerCase(), filename);
+		return { id, filename, filePath };
 	}
 
 	private async existingTaskAtWritePath(filepath: string, preservesPath: boolean): Promise<Task | null> {
@@ -729,7 +717,7 @@ export class FileSystem {
 		const roots = await Promise.all([this.getTasksDir(), this.getCompletedDir(), this.getArchiveTasksDir()]);
 		const root = roots.find((candidate) => resolve(dirname(container)) === resolve(candidate));
 		if (!root) throw new Error(`Task ${task.id} has a non-canonical storage path; refusing operation.`);
-		if (basename(container) !== task.id.toLowerCase())
+		if (basename(container) !== taskIdKey(task.id).toLowerCase())
 			throw new Error(`Task ${task.id} record/container identity mismatch; refusing operation.`);
 		const record = await this.existingTaskAtWritePath(path, true);
 		if (!record || !taskIdsEqual(record.id, task.id))
@@ -750,7 +738,7 @@ export class FileSystem {
 	}
 
 	async saveTask(task: Task, options: { approvalMutation?: boolean; create?: boolean } = {}): Promise<string> {
-		if (task.parentTaskId && !isValidTaskId(task.parentTaskId.toUpperCase())) {
+		if (task.parentTaskId && !isValidTaskId(taskIdKey(task.parentTaskId))) {
 			throw new Error(`Invalid parent task ID: ${task.parentTaskId}`);
 		}
 		const { id: requestedId } = await this.resolveTaskWriteTarget(task);
@@ -807,7 +795,9 @@ export class FileSystem {
 			parentTaskId:
 				existingTask?.parentTaskId && task.parentTaskId && taskIdsEqual(existingTask.parentTaskId, task.parentTaskId)
 					? existingTask.parentTaskId
-					: exactParentTaskId?.toUpperCase(),
+					: exactParentTaskId
+						? taskIdKey(exactParentTaskId)
+						: undefined,
 		};
 		const content = serializeTask(normalizedTask, await this.retainedTaskFrontmatter(filepath));
 		const container = dirname(filepath);
@@ -840,7 +830,7 @@ export class FileSystem {
 	}
 
 	async loadTask(taskId: string, options: { includeArchived?: boolean } = {}): Promise<Task | null> {
-		const canonicalId = taskId.toUpperCase();
+		const canonicalId = taskIdKey(taskId);
 		if (!isValidTaskId(canonicalId)) return null;
 		const idDirectory = canonicalId.toLowerCase();
 		const directories = await Promise.all([
@@ -1129,7 +1119,7 @@ export class FileSystem {
 			if (!task?.filePath) return false;
 			const sourcePath = resolve(task.filePath);
 			const sourceContainer = dirname(sourcePath);
-			if (basename(sourceContainer).toLowerCase() !== task.id.toLowerCase())
+			if (basename(sourceContainer).toLowerCase() !== taskIdKey(task.id).toLowerCase())
 				throw new Error(`Task ${task.id} container identity mismatch; refusing to demote it.`);
 			const existingDrafts = await this.listDrafts();
 			const occupiedFileIds = await this.listOccupiedDraftFileIds();

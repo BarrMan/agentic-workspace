@@ -8,7 +8,8 @@
  */
 
 import type { LabelMatchMode, Task } from "../types/index.ts";
-import { labelsToLower } from "./label-filter.ts";
+import { assigneeComparisonKey } from "./assignee-filter.ts";
+import { labelComparisonKey } from "./label-filter.ts";
 import {
 	createMilestoneFilterMatcher,
 	createMilestoneFilterValueResolver,
@@ -104,10 +105,6 @@ function toList(value: string | string[] | undefined): string[] {
 	return values.map((item) => item.trim()).filter((item) => item.length > 0);
 }
 
-function toLowerList(value: string | string[] | undefined): string[] {
-	return toList(value).map((item) => item.toLowerCase());
-}
-
 function addSetCheck(
 	checks: Array<(task: Task) => boolean>,
 	values: Set<string>,
@@ -175,20 +172,22 @@ export function createTaskFilterMatcher(options: TaskFilterOptions, corpus: Task
 		return Boolean(priority) && priorities.has(priority as string);
 	});
 
-	const assignees = new Set(toLowerList(options.assignee));
+	const assignees = new Set(toList(options.assignee).map(assigneeComparisonKey).filter(Boolean));
 	addSetCheck(checks, assignees, (task) =>
-		(task.assignee ?? []).some((value) => assignees.has(value.trim().toLowerCase())),
+		(task.assignee ?? []).some((value) => assignees.has(assigneeComparisonKey(value))),
 	);
 
 	if (options.unassigned) {
-		checks.push((task) => !(task.assignee ?? []).some((value) => value.trim().length > 0));
+		checks.push((task) => !(task.assignee ?? []).some((value) => assigneeComparisonKey(value).length > 0));
 	}
 
-	const requiredLabels = labelsToLower(toList(options.labels));
+	const requiredLabels = toList(options.labels)
+		.map(labelComparisonKey)
+		.filter((label) => label.length > 0);
 	if (requiredLabels.length > 0) {
 		const matchAll = options.labelMatch === "all";
 		checks.push((task) => {
-			const taskLabels = new Set(labelsToLower(task.labels ?? []));
+			const taskLabels = new Set((task.labels ?? []).map(labelComparisonKey).filter((label) => label.length > 0));
 			if (taskLabels.size === 0) return false;
 			return matchAll
 				? requiredLabels.every((label) => taskLabels.has(label))

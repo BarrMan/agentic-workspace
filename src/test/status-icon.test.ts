@@ -51,6 +51,11 @@ describe("Status Icon Component", () => {
 			expect(style.icon).toBe("○");
 			expect(style.color).toBe("default");
 		});
+
+		test("trims and lowercases but preserves internal whitespace", () => {
+			expect(getStatusStyle(" in progress ").icon).toBe("◒");
+			expect(getStatusStyle("InProgress").icon).toBe("○");
+		});
 	});
 
 	describe("getSelectedActivityColor", () => {

@@ -1,6 +1,8 @@
 import { homedir } from "node:os";
 import { basename, join } from "node:path";
 import { spawn } from "bun";
+import { slug } from "../utils/slug.ts";
+import { taskIdKey, taskIdsEqual } from "../utils/task-id.ts";
 
 /** Minimal task identity needed to name a task-owned worktree. */
 export interface WorktreeTaskRef {
@@ -12,13 +14,6 @@ interface GitResult {
 	exitCode: number;
 	stdout: string;
 	stderr: string;
-}
-
-function slug(value: string): string {
-	return value
-		.toLowerCase()
-		.replaceAll(/[^a-z0-9]+/g, "-")
-		.replaceAll(/^-|-$/g, "");
 }
 
 /**
@@ -37,11 +32,11 @@ export function taskWorktreeRoot(): string {
 export function taskWorktreePath(projectRoot: string, task: WorktreeTaskRef): string {
 	const project = basename(projectRoot).replaceAll(/[^A-Za-z0-9._-]+/g, "-") || "project";
 	const title = slug(task.title) || "task";
-	return join(taskWorktreeRoot(), project, `${title}-${task.id}`);
+	return join(taskWorktreeRoot(), project, `${title}-${taskIdKey(task.id)}`);
 }
 
 export function taskWorktreeBranch(taskId: string): string {
-	return `agentic-workspace/task/${taskId}`;
+	return `agentic-workspace/task/${taskIdKey(taskId)}`;
 }
 
 async function runGit(args: string[], cwd: string): Promise<GitResult> {
@@ -89,24 +84,20 @@ async function worktreeEntries(projectRoot: string): Promise<WorktreeEntry[]> {
  * is authoritative: a task renamed after its worktree was created still resolves to the same path.
  * Falls back to the id-suffixed directory name for a detached or otherwise branch-less worktree.
  */
-function findTaskWorktree(
-	entries: WorktreeEntry[],
-	projectRoot: string,
-	task: WorktreeTaskRef,
-): WorktreeEntry | undefined {
-	const branchRef = `refs/heads/${taskWorktreeBranch(task.id)}`;
-	const byBranch = entries.find((entry) => entry.branch === branchRef);
-	if (byBranch) return byBranch;
-	const computed = taskWorktreePath(projectRoot, task);
-	return (
-		entries.find((entry) => entry.path === computed) ??
-		entries.find((entry) => basename(entry.path) === basename(computed))
+function findTaskWorktree(entries: WorktreeEntry[], task: WorktreeTaskRef): WorktreeEntry | undefined {
+	const branchPrefix = "refs/heads/agentic-workspace/task/";
+	const idSuffix = `-${taskIdKey(task.id)}`;
+	const matches = entries.filter(
+		(entry) =>
+			(entry.branch?.startsWith(branchPrefix) && taskIdsEqual(entry.branch.slice(branchPrefix.length), task.id)) ||
+			basename(entry.path).toLowerCase().endsWith(idSuffix.toLowerCase()),
 	);
+	return matches.length === 1 ? matches[0] : undefined;
 }
 
 export async function taskWorktreeExists(projectRoot: string, task: WorktreeTaskRef): Promise<boolean> {
 	if (!(await isGitWorkTree(projectRoot))) return false;
-	return findTaskWorktree(await worktreeEntries(projectRoot), projectRoot, task) !== undefined;
+	return findTaskWorktree(await worktreeEntries(projectRoot), task) !== undefined;
 }
 
 /**
@@ -116,7 +107,7 @@ export async function taskWorktreeExists(projectRoot: string, task: WorktreeTask
  */
 export async function ensureTaskWorktree(projectRoot: string, task: WorktreeTaskRef): Promise<string | undefined> {
 	if (!(await isGitWorkTree(projectRoot))) return undefined;
-	const existing = findTaskWorktree(await worktreeEntries(projectRoot), projectRoot, task);
+	const existing = findTaskWorktree(await worktreeEntries(projectRoot), task);
 	if (existing) return existing.path;
 	const path = taskWorktreePath(projectRoot, task);
 	const branch = taskWorktreeBranch(task.id);
@@ -136,7 +127,7 @@ export async function ensureTaskWorktree(projectRoot: string, task: WorktreeTask
  */
 export async function removeTaskWorktree(projectRoot: string, task: WorktreeTaskRef): Promise<void> {
 	if (!(await isGitWorkTree(projectRoot))) return;
-	const existing = findTaskWorktree(await worktreeEntries(projectRoot), projectRoot, task);
+	const existing = findTaskWorktree(await worktreeEntries(projectRoot), task);
 	if (!existing) return;
 	const removed = await runGit(["worktree", "remove", existing.path], projectRoot);
 	if (removed.exitCode !== 0)

@@ -120,6 +120,40 @@ describe("ambiguous content identity", () => {
 		expect((error as AmbiguousIdError).message).toContain("Remove the conflicting files, then retry.");
 	});
 
+	it("does not delete ambiguous files when saving normalized identities", async () => {
+		await writeDocument("doc-1 - Alpha.md", makeDocument("doc-1", "Alpha"));
+		await writeDocument("nested/doc-01 - Beta.md", makeDocument("doc-01", "Beta"));
+		await writeDecision("decision-1 - Alpha.md", makeDecision("decision-1", "Alpha"));
+		await writeDecision("decision-01 - Beta.md", makeDecision("decision-01", "Beta"));
+
+		await expect(core.filesystem.saveDocument(makeDocument(" DOC-001 ", "Replacement"))).rejects.toBeInstanceOf(
+			AmbiguousIdError,
+		);
+		await expect(core.filesystem.saveDecision(makeDecision(" DECISION-001 ", "Replacement"))).rejects.toBeInstanceOf(
+			AmbiguousIdError,
+		);
+		expect(await Bun.file(join(core.filesystem.docsDir, "doc-1 - Alpha.md")).exists()).toBe(true);
+		expect(await Bun.file(join(core.filesystem.decisionsDir, "decision-1 - Alpha.md")).exists()).toBe(true);
+	});
+
+	it("normalizes IDs while preserving zero spelling in saved filenames", async () => {
+		const document = makeDocument(" DOC-01 ", "Padded");
+		const decision = makeDecision(" DECISION-01 ", "Padded");
+		await core.filesystem.saveDocument(document);
+		await core.filesystem.saveDecision(decision);
+		expect(document.id).toBe("doc-01");
+		expect(decision.id).toBe("decision-01");
+		expect(await Bun.file(join(core.filesystem.docsDir, "doc-01 - Padded.md")).exists()).toBe(true);
+		expect(await Bun.file(join(core.filesystem.decisionsDir, "decision-01 - Padded.md")).exists()).toBe(true);
+	});
+
+	it("rejects path separators and empty ID bodies before writing", async () => {
+		for (const id of ["doc-", "doc-a/b", "doc-a\\b"])
+			await expect(core.filesystem.saveDocument(makeDocument(id, "Invalid"))).rejects.toThrow(/Invalid doc ID/);
+		for (const id of ["decision-", "decision-a/b", "decision-a\\b"])
+			await expect(core.filesystem.saveDecision(makeDecision(id, "Invalid"))).rejects.toThrow(/Invalid decision ID/);
+	});
+
 	it("fails closed when a decision ID matches several files", async () => {
 		await writeDecision("decision-1 - Alpha.md", makeDecision("decision-1", "Alpha"));
 		await writeDecision("decision-01 - Beta.md", makeDecision("decision-01", "Beta"));

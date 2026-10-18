@@ -8,6 +8,7 @@ import { resolveAgenticWorkspaceDirectory } from "../utils/agentic-workspace-dir
 import { getPriorityLabels } from "../utils/priority-config.ts";
 import { getProjectValues } from "../utils/project-config.ts";
 import { AGENTIC_WORKSPACE_CWD_ENV } from "../utils/runtime-cwd.ts";
+import { statusComparisonKey } from "../utils/status.ts";
 import { getTaskTypeValues } from "../utils/task-type-config.ts";
 
 export interface HelpField {
@@ -109,7 +110,9 @@ function getRuntimeConfigStartDir(): string {
 
 function includeDraftStatus(statuses: string[]): string[] {
 	const normalizedStatuses = normalizeStatusValues(statuses);
-	const hasDraft = normalizedStatuses.some((status) => status.toLowerCase() === DRAFT_STATUS.toLowerCase());
+	const hasDraft = normalizedStatuses.some(
+		(status) => statusComparisonKey(status) === statusComparisonKey(DRAFT_STATUS),
+	);
 	return hasDraft ? normalizedStatuses : [DRAFT_STATUS, ...normalizedStatuses];
 }
 

@@ -1,24 +1,31 @@
 import { DEFAULT_DONE_STATUS } from "../constants/index.ts";
 import type { Task } from "../types/index.ts";
 import { getPriorityValues, normalizePriorityValue } from "../utils/priority-config.ts";
+import { statusComparisonKey } from "../utils/status.ts";
+import { taskIdKey } from "../utils/task-id.ts";
 import { MILLISECONDS_PER_DAY } from "../utils/time.ts";
 
 const RECENT_ACTIVITY_DAYS = 7;
 const STALE_TASK_DAYS = 30;
 const HEALTH_TASK_LIMIT = 5;
+const DONE_STATUS_KEY = statusComparisonKey(DEFAULT_DONE_STATUS);
+
+function isDoneStatus(status: string | null | undefined): boolean {
+	return statusComparisonKey(status) === DONE_STATUS_KEY;
+}
 
 function taskAgeInDays(task: Task, now: Date): number | null {
 	if (!task.createdDate) return null;
 	const created = new Date(task.createdDate);
-	const end = task.status === DEFAULT_DONE_STATUS && task.updatedDate ? new Date(task.updatedDate) : now;
+	const end = isDoneStatus(task.status) && task.updatedDate ? new Date(task.updatedDate) : now;
 	return Math.floor((end.getTime() - created.getTime()) / MILLISECONDS_PER_DAY);
 }
 
 function hasBlockingDependency(task: Task, tasksById: Map<string, Task>): boolean {
 	return Boolean(
 		task.dependencies?.some((dependencyId) => {
-			const dependency = tasksById.get(dependencyId);
-			return dependency?.status !== DEFAULT_DONE_STATUS;
+			const dependency = tasksById.get(taskIdKey(dependencyId));
+			return !isDoneStatus(dependency?.status);
 		}),
 	);
 }
@@ -50,11 +57,19 @@ function createStatisticsAccumulator(): StatisticsAccumulator {
 function countTask(
 	task: Task,
 	statusCounts: Map<string, number>,
+	statusLabelByKey: Map<string, string>,
 	priorityCounts: Map<string, number>,
 	state: StatisticsAccumulator,
 ): void {
-	statusCounts.set(task.status ?? "", (statusCounts.get(task.status ?? "") ?? 0) + 1);
-	if (task.status === DEFAULT_DONE_STATUS) state.completedTasks++;
+	const raw = task.status ?? "";
+	const key = statusComparisonKey(raw);
+	let label = statusLabelByKey.get(key);
+	if (!label) {
+		label = raw;
+		statusLabelByKey.set(key, label);
+	}
+	statusCounts.set(label, (statusCounts.get(label) ?? 0) + 1);
+	if (isDoneStatus(task.status)) state.completedTasks++;
 	const priority = normalizePriorityValue(task.priority);
 	if (priority) priorityCounts.set(priority, (priorityCounts.get(priority) ?? 0) + 1);
 	else state.noPriorityCount++;
@@ -74,11 +89,11 @@ function collectRecentTaskActivity(task: Task, cutoff: Date, state: StatisticsAc
 
 function collectStaleTask(task: Task, cutoff: Date, state: StatisticsAccumulator): void {
 	const lastDate = task.updatedDate || task.createdDate;
-	if (task.status !== DEFAULT_DONE_STATUS && lastDate && new Date(lastDate) < cutoff) state.staleTasks.push(task);
+	if (!isDoneStatus(task.status) && lastDate && new Date(lastDate) < cutoff) state.staleTasks.push(task);
 }
 
 function collectBlockedTask(task: Task, tasksById: Map<string, Task>, state: StatisticsAccumulator): void {
-	if (task.status !== DEFAULT_DONE_STATUS && task.dependencies?.length && hasBlockingDependency(task, tasksById)) {
+	if (!isDoneStatus(task.status) && task.dependencies?.length && hasBlockingDependency(task, tasksById)) {
 		state.blockedTasks.push(task);
 	}
 }
@@ -116,10 +131,14 @@ export function getTaskStatistics(
 	priorityOrder?: readonly string[],
 ): TaskStatistics {
 	const statusCounts = new Map<string, number>();
+	const statusLabelByKey = new Map<string, string>();
 	const priorityCounts = new Map<string, number>();
 
-	// Initialize status counts
+	// Initialize status counts, keeping the first configured spelling per comparison key
 	for (const status of statuses) {
+		const key = statusComparisonKey(status);
+		if (statusLabelByKey.has(key)) continue;
+		statusLabelByKey.set(key, status);
 		statusCounts.set(status, 0);
 	}
 
@@ -133,7 +152,7 @@ export function getTaskStatistics(
 	const staleTaskCutoff = new Date(now.getTime() - STALE_TASK_DAYS * MILLISECONDS_PER_DAY);
 
 	const state = createStatisticsAccumulator();
-	const tasksById = new Map(tasks.map((task) => [task.id, task]));
+	const tasksById = new Map(tasks.map((task) => [taskIdKey(task.id), task]));
 
 	// Process each task
 	for (const task of tasks) {
@@ -142,7 +161,7 @@ export function getTaskStatistics(
 			continue;
 		}
 
-		countTask(task, statusCounts, priorityCounts, state);
+		countTask(task, statusCounts, statusLabelByKey, priorityCounts, state);
 		collectTaskAge(task, now, state);
 		collectRecentTaskActivity(task, recentActivityCutoff, state);
 		collectStaleTask(task, staleTaskCutoff, state);

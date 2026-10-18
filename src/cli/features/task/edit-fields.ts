@@ -86,7 +86,7 @@ export function addEditFieldOptions(cmd: Command) {
 		.option("--desc <text>", "alias for --description")
 		.option(
 			"-a, --assignee <assignees>",
-			'replace all task assignees with one or more @names (comma-separated or repeatable); pass "" to clear them',
+			'replace all task assignees with one or more names (optional @; comma-separated or repeatable); pass "" to clear them',
 			createMultiValueAccumulator(),
 		)
 		.option("-s, --status <status>")

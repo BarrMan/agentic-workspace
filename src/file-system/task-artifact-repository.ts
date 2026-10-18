@@ -6,7 +6,7 @@ import { basename, dirname, isAbsolute, relative, resolve, sep } from "node:path
 import type { ArtifactApprovalSidecar, ArtifactStatus } from "../agent-workspace/types.ts";
 import { resolveMainWorktreeRoot } from "../git/main-worktree.ts";
 import { parseTask } from "../markdown/parser.ts";
-import { isValidDraftId, isValidTaskId, taskIdsEqual } from "../utils/task-id.ts";
+import { isValidDraftId, isValidTaskId, taskIdKey, taskIdsEqual } from "../utils/task-id.ts";
 
 const SIDECAR = ".artifacts.json";
 const SIDECAR_LOCK = ".artifacts.json.lock";
@@ -109,7 +109,7 @@ export class TaskArtifactRepository {
 	}
 
 	private canonicalId(taskId: string): string {
-		const canonical = taskId.toUpperCase();
+		const canonical = taskIdKey(taskId);
 		if (!isValidTaskId(canonical) && !isValidDraftId(canonical)) throw new Error(`Invalid task ID: ${taskId}`);
 		return canonical;
 	}
@@ -137,7 +137,7 @@ export class TaskArtifactRepository {
 
 	async containerPath(taskId: string, location?: TaskContainerLocation): Promise<string> {
 		const root = await this.root();
-		const canonicalTaskId = taskId.toUpperCase();
+		const canonicalTaskId = taskIdKey(taskId);
 		const id = this.canonicalId(canonicalTaskId).toLowerCase();
 		const locationPath = (base: TaskContainerLocation): string => {
 			const configured = this.filesystemRoots[base];

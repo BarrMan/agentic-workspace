@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { isValidTaskId, taskIdsEqual } from "../utils/task-id.ts";
+import { isValidTaskId, taskIdKey, taskIdsEqual } from "../utils/task-id.ts";
 
 describe("exact task IDs", () => {
 	it("accepts only prefixed numeric IDs with optional dotted segments", () => {
@@ -14,5 +14,11 @@ describe("exact task IDs", () => {
 		expect(taskIdsEqual("TASK-01", "TASK-1")).toBe(false);
 		expect(taskIdsEqual("TASK-1.2", "TASK-01.2")).toBe(false);
 		expect(taskIdsEqual("BACK-7", "JIRA-7")).toBe(false);
+	});
+
+	it("uses one comparison key that trims but does not normalize numeric segments", () => {
+		expect(taskIdKey("  task-01.02 ")).toBe("TASK-01.02");
+		expect(taskIdsEqual(" TASK-01.02 ", "task-01.02")).toBe(true);
+		expect(taskIdsEqual(" TASK-01 ", "TASK-1")).toBe(false);
 	});
 });

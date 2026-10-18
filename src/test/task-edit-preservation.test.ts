@@ -72,6 +72,18 @@ async function setupPreservation(): Promise<{ dir: string; core: Core }> {
 }
 
 describe("Task edit section preservation", () => {
+	it("treats assignee casing and @ variants as a no-op", async () => {
+		const { dir, core } = await setupPreservation();
+		try {
+			await core.createTaskFromInput({ title: "Assignee identity", assignee: ["@Alice"] });
+			const updated = await core.updateTaskFromInput("TASK-1", { assignee: [" alice "] });
+			expect(updated.assignee).toEqual(["@Alice"]);
+			expect((await core.filesystem.loadTask("TASK-1"))?.assignee).toEqual(["@Alice"]);
+		} finally {
+			await safeCleanup(dir);
+		}
+	});
+
 	it("preserves a generic working artifact and description during edits", async () => {
 		const { dir, core } = await setupPreservation();
 		try {

@@ -2,7 +2,7 @@ import { basename, dirname, relative, sep } from "node:path";
 import { parseTask } from "../markdown/parser.ts";
 import type { Task } from "../types/index.ts";
 import { type DuplicateGroup, detectDuplicateTaskIds } from "../utils/duplicate-detection.ts";
-import { taskIdsEqual } from "../utils/task-id.ts";
+import { taskIdKey, taskIdsEqual } from "../utils/task-id.ts";
 import type { Core } from "./agentic-workspace.ts";
 import type { BranchTaskStateEntry, TaskCorpusSnapshot } from "./task-loader.ts";
 
@@ -103,12 +103,19 @@ function appendCurrentBranchEntries(
 	}
 }
 
-function groupBranchEntries(entries: BranchTaskStateEntry[]): Map<string, BranchTaskStateEntry[]> {
-	const byId = new Map<string, BranchTaskStateEntry[]>();
+interface BranchEntryGroup {
+	id: string;
+	entries: BranchTaskStateEntry[];
+}
+
+function groupBranchEntries(entries: BranchTaskStateEntry[]): Map<string, BranchEntryGroup> {
+	const byId = new Map<string, BranchEntryGroup>();
 	for (const entry of entries) {
 		if (entry.type !== "task" && entry.type !== "completed") continue;
-		const id = entry.id;
-		byId.set(id, [...(byId.get(id) ?? []), entry]);
+		const key = taskIdKey(entry.id);
+		const group = byId.get(key);
+		if (group) group.entries.push(entry);
+		else byId.set(key, { id: entry.id, entries: [entry] });
 	}
 	return byId;
 }
@@ -140,8 +147,8 @@ export async function findCrossBranchDuplicateTaskIds(
 	const current = (await core.git.getCurrentBranch()) ?? "current";
 	appendCurrentBranchEntries(stateEntries, corpus.activeTasks, "task", current, core.filesystem.rootDir);
 	appendCurrentBranchEntries(stateEntries, corpus.completedTasks, "completed", current, core.filesystem.rootDir);
-	return [...groupBranchEntries(stateEntries)]
-		.flatMap(([id, entries]) => {
+	return [...groupBranchEntries(stateEntries).values()]
+		.flatMap(({ id, entries }) => {
 			const finding = classifyCrossBranchDuplicate(id, entries);
 			return finding ? [finding] : [];
 		})

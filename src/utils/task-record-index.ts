@@ -1,5 +1,6 @@
 import { DEFAULT_STATUSES } from "../constants/index.ts";
 import type { Task } from "../types/index.ts";
+import { taskIdKey } from "./task-id.ts";
 import { isTerminalStatus } from "./terminal-status.ts";
 
 /** A record found in the corpus a read is allowed to see, with the evidence that it is finished. */
@@ -49,10 +50,10 @@ export function createTaskRecordIndex(options: {
 	// A corpus can be handed collisions it cannot show: a loader that resolves each identity to one
 	// record leaves a contested ID looking singly claimed here. Seeding those keys keeps the read
 	// failing closed on the collision its source saw rather than on the records that reached us.
-	for (const id of options.ambiguousIds ?? []) byIdentity.set(id.toUpperCase(), "ambiguous");
+	for (const id of options.ambiguousIds ?? []) byIdentity.set(taskIdKey(id), "ambiguous");
 
 	const add = (task: Task, completedRecord: boolean) => {
-		const key = task.id.toUpperCase();
+		const key = taskIdKey(task.id);
 		const existing = byIdentity.get(key);
 
 		// One file can arrive twice: `task view <completed-id>` hands the viewer the record to display
@@ -84,7 +85,7 @@ export function createTaskRecordIndex(options: {
 		records,
 		statuses,
 		lookup(taskId) {
-			return byIdentity.get(taskId.toUpperCase());
+			return byIdentity.get(taskIdKey(taskId));
 		},
 		isFinished(record) {
 			return record.completedRecord || isTerminalStatus(record.task.status, statuses);

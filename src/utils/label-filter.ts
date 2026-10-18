@@ -1,6 +1,6 @@
 import type { Task } from "../types/index.ts";
 
-function normalizeLabel(label: string): string {
+export function labelComparisonKey(label: string): string {
 	return label.trim().toLowerCase();
 }
 
@@ -20,7 +20,7 @@ export function collectAvailableLabels(tasks: Task[], configured: string[] = [])
 
 	const addLabel = (label: string | undefined) => {
 		if (!label) return;
-		const normalized = normalizeLabel(label);
+		const normalized = labelComparisonKey(label);
 		if (normalized.length === 0) return;
 		if (seen.has(normalized)) return;
 		seen.add(normalized);
@@ -38,8 +38,8 @@ export function collectAvailableLabels(tasks: Task[], configured: string[] = [])
 	}
 
 	return ordered.sort((left, right) => {
-		const leftKey = normalizeLabel(left).normalize("NFD");
-		const rightKey = normalizeLabel(right).normalize("NFD");
+		const leftKey = labelComparisonKey(left).normalize("NFD");
+		const rightKey = labelComparisonKey(right).normalize("NFD");
 		const result = compareCodeUnits(leftKey, rightKey);
 		return result !== 0 ? result : compareCodeUnits(left, right);
 	});
@@ -68,7 +68,7 @@ export function formatLabelSummary(selected: string[]): string {
 }
 
 export function labelsToLower(labels: string[]): string[] {
-	return labels.map(normalizeLabel).filter((label) => label.length > 0);
+	return labels.map(labelComparisonKey).filter((label) => label.length > 0);
 }
 
 export function areLabelSelectionsEqual(left: string[], right: string[]): boolean {

@@ -50,6 +50,11 @@ describe("Task path utilities", () => {
 		expect(await getTaskPath("TASK-3.01", core)).toBe(join(core.filesystem.tasksDir, "task-3.01", "task.md"));
 	});
 
+	it("resolves case and surrounding-whitespace variants to the canonical container", async () => {
+		expect(await getTaskPath(" task-123 ", core)).toBe(join(core.filesystem.tasksDir, "task-123", "task.md"));
+		expect(await getTaskPath(" Task-3.01 ", core)).toBe(join(core.filesystem.tasksDir, "task-3.01", "task.md"));
+	});
+
 	it("does not infer a prefix or discard padding", async () => {
 		expect(await getTaskPath("123", core)).toBeNull();
 		expect(await getTaskPath("TASK-1", core)).toBeNull();

@@ -1,5 +1,6 @@
 import type { TaskUpdateInput } from "../types/index.ts";
 import type { TaskEditArgs } from "../types/task-edit-args.ts";
+import { normalizeAssignees } from "./assignee-filter.ts";
 import { normalizeStringList } from "./task-builders.ts";
 
 function sanitizeStringArray(values: string[] | undefined): string[] | undefined {
@@ -61,7 +62,10 @@ function assignTaskLists(updateInput: TaskUpdateInput, args: TaskEditArgs): void
 	else if (args.labels?.length === 0) updateInput.labels = [];
 	assignSanitizedList(updateInput, "addLabels", args.addLabels);
 	assignSanitizedList(updateInput, "removeLabels", args.removeLabels);
-	assignSanitizedList(updateInput, "assignee", args.assignee, true);
+	if (args.assignee !== undefined) {
+		const assignee = normalizeAssignees(args.assignee);
+		updateInput.assignee = assignee.length > 0 || args.assignee.length === 0 ? assignee : undefined;
+	}
 	assignSanitizedList(updateInput, "dependencies", args.dependencies, true);
 	assignSanitizedList(updateInput, "references", args.references, true);
 	assignSanitizedList(updateInput, "addReferences", args.addReferences);

@@ -36,6 +36,30 @@ function session(taskId: string, _modeId: string, id: string, outputPath: string
 }
 
 describe("MAIN task runtime identity remap contract", () => {
+	it("treats key-equal remaps as no-ops and preserves the requested target spelling", async () => {
+		const root = await mkdtemp(join(tmpdir(), "task-runtime-identity-key-remap-"));
+		roots.push(root);
+		const store = new SessionStore(root, new NoProcess());
+		const sourceId = "draft-lowercase";
+		await store.mutateMode(sourceId, "plan", async (history) => {
+			const record = session(sourceId, "plan", "draft-session", join(root, "draft.log"), root);
+			history.sessions.push(record);
+			history.activeSessionId = record.id;
+		});
+		const sourcePaths = await store.paths(sourceId);
+		const before = await readFile(sourcePaths.statePath, "utf8");
+
+		await store.remapTaskIdentity(sourceId, " DRAFT-LOWERCASE ");
+		expect(await readFile(sourcePaths.statePath, "utf8")).toBe(before);
+		expect((await store.read("DRAFT-LOWERCASE")).taskId).toBe(sourceId);
+
+		await store.remapTaskIdentity(sourceId, "TASK-UPPERCASE");
+		const remapped = await store.read("TASK-UPPERCASE");
+		expect(remapped.taskId).toBe("TASK-UPPERCASE");
+		expect(remapped.modes.plan?.sessions[0]?.taskId).toBe("TASK-UPPERCASE");
+		expect(await Bun.file(sourcePaths.statePath).exists()).toBe(false);
+	});
+
 	it("preserves mode histories and their runtime references through draft promotion and demotion", async () => {
 		const root = await mkdtemp(join(tmpdir(), "task-runtime-identity-remap-"));
 		roots.push(root);
@@ -95,8 +119,8 @@ describe("MAIN task runtime identity remap contract", () => {
 		const demotedBuild = demotedModes.build;
 		if (!demotedPlan?.sessions[0] || !demotedBuild?.sessions[0])
 			throw new Error("Demoted mode histories are incomplete");
-		expect(demotedPlan.sessions).toEqual([{ ...originalPlan, taskId: demoted.id }]);
-		expect(demotedBuild.sessions).toEqual([{ ...originalBuild, taskId: demoted.id }]);
+		expect(demotedPlan.sessions).toEqual([{ ...originalPlan, taskId: migrated.taskId }]);
+		expect(demotedBuild.sessions).toEqual([{ ...originalBuild, taskId: migrated.taskId }]);
 		expect(demotedPlan.activeSessionId).toBe(plan.id);
 		expect(demotedBuild.activeSessionId).toBe(build.id);
 		expect(demotedPlan.sessions[0]).toMatchObject({ cwd: runtimeDir, outputPath, bootstrapPath });

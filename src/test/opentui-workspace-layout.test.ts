@@ -259,6 +259,30 @@ describe("native workspace layout", () => {
 		}
 	});
 
+	test("groups padded and case-variant task statuses into one configured bucket", async () => {
+		const setup = await createTestRenderer({ width: 120, height: 40, exitOnCtrlC: false });
+		renderers.push(setup);
+		const mount = mountOpenTuiWorkspace(setup.renderer, attachParent(setup), {
+			tasks: [
+				{ id: "BACK-1", title: "Padded todo", status: " To Do " },
+				{ id: "BACK-2", title: "Lowercase todo", status: "to do" },
+			],
+			statuses: ["To Do"],
+			detailsVisible: false,
+		});
+		try {
+			await setup.flush();
+			const rows = setup.captureCharFrame().split("\n");
+			const positions = ["Padded todo", "Lowercase todo"].map((title) =>
+				rows.findIndex((line) => line.slice(0, 36).includes(title)),
+			);
+			expect(positions.every((position) => position >= 0)).toBe(true);
+			expect(positions[0]).toBeLessThan(positions[1] ?? -1);
+		} finally {
+			mount.dispose();
+		}
+	});
+
 	test("strikes through terminal-status rows while keeping non-terminal rows plain", async () => {
 		const setup = await createTestRenderer({ width: 120, height: 40, exitOnCtrlC: false });
 		renderers.push(setup);

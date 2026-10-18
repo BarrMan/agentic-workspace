@@ -73,6 +73,20 @@ describe("Permanent task deletion", () => {
 		expect(await core.filesystem.loadTask(task.id)).toBeNull();
 	});
 
+	it("purges uppercase stored session state through a lowercase padded task ID", async () => {
+		core = new Core(testDir);
+		const store = new SessionStore(testDir, new BunRunner());
+		await store.mutate("TASK-404", async (state) => {
+			state.modes.build ??= { sessions: [] };
+		});
+		expect((await store.read(" task-404 ")).taskId).toBe("TASK-404");
+
+		await core.sessions.purge(" task-404 ");
+
+		const { taskDir } = await store.paths("TASK-404");
+		expect(existsSync(taskDir)).toBe(false);
+	});
+
 	it("retains the task when native-session liveness cannot be established", async () => {
 		core = new Core(testDir);
 		await initializeFilesystemTestProject(core, "Delete task");

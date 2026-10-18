@@ -5,6 +5,7 @@ import { join, resolve, sep } from "node:path";
 import type { Core } from "../core/agentic-workspace.ts";
 import { ensureTaskWorktree, taskWorktreePath } from "../git/task-worktree.ts";
 import { TASK_SOURCE, type Task } from "../types/index.ts";
+import { taskIdsEqual } from "../utils/task-id.ts";
 import type { Agent, LaunchOrigin, NativeIdentity, SessionIntent } from "./agents/agent.ts";
 import { agentFor } from "./agents/agents.ts";
 import { resolveLaunchPreset } from "./agents/opencode-resolution.ts";
@@ -80,7 +81,7 @@ export async function tagNativeSessionPane(
 		panes.length === 1 ? (panes[0]?.split("\t") ?? []) : [];
 	if (
 		!sameRoot(rootDir ?? "", core.filesystem.rootDir) ||
-		taskId !== session.taskId ||
+		!taskIdsEqual(taskId ?? "", session.taskId) ||
 		sessionId !== session.id ||
 		observedPaneId !== paneId
 	)
@@ -174,7 +175,7 @@ export async function prepareSessionLaunch(
 
 export function assertSameSessionMembership(current: AgentSession, expected: AgentSession): void {
 	if (
-		current.taskId !== expected.taskId ||
+		!taskIdsEqual(current.taskId, expected.taskId) ||
 		current.id !== expected.id ||
 		current.tmuxName !== expected.tmuxName ||
 		current.createdAt !== expected.createdAt ||
@@ -205,7 +206,7 @@ export async function clearNativeSessionPaneTag(
 		const [observedRoot, taskId, sessionId, paneId, nativeSessionId] = line.split("\t");
 		if (
 			!sameRoot(observedRoot ?? "", rootDir) ||
-			taskId !== session.taskId ||
+			!taskIdsEqual(taskId ?? "", session.taskId) ||
 			sessionId !== session.id ||
 			paneId === undefined ||
 			nativeSessionId !== session.nativeSessionId
@@ -252,7 +253,7 @@ export async function withVerifiedNativeOrigin(
 	requireLive = false,
 ): Promise<boolean> {
 	return await withTaskSessionAdmission(core, taskId, async (task) => {
-		if (origin.record.taskId !== task.id || origin.record.id !== sessionId) return false;
+		if (!taskIdsEqual(origin.record.taskId, task.id) || origin.record.id !== sessionId) return false;
 		const release = await store.claimSession(task.id, sessionId);
 		try {
 			const currentState = await store.read(task.id);
@@ -309,7 +310,7 @@ export async function resolveModeId(
 	}
 	const identity = context?.conversation;
 	if (identity) {
-		if (identity.taskId !== taskId) throw new Error("Calling session context belongs to a different task.");
+		if (!taskIdsEqual(identity.taskId, taskId)) throw new Error("Calling session context belongs to a different task.");
 		const owner = findSessionMode((await store.read(taskId)).modes, identity.sessionId);
 		if (owner) return owner;
 		throw new Error(`Calling session ${identity.sessionId} is not present in current task history.`);

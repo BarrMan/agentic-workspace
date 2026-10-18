@@ -185,6 +185,23 @@ describe("cross-surface search parity", () => {
 		expect(serviceMatches).toEqual(["TASK-1"]);
 	});
 
+	it("matches assignee identities with OR semantics and treats blank names as unassigned", async () => {
+		const unassigned: Task = { ...otherTask, id: "task-3", title: "Unassigned", assignee: ["", "  "] };
+		await filesystem.saveTask(unassigned);
+		const corpus = [...tasks, unassigned];
+		expect(taskIds(applyTaskFilters(corpus, { assignee: [" Morgan ", "riley"] }))).toEqual(["task-1", "task-2"]);
+		expect(taskIds(applyTaskFilters(corpus, { unassigned: true }))).toEqual(["task-3"]);
+		const assigned = (await core.searchPersistently({ types: ["task"], filters: { assignee: ["morgan", "@RILEY"] } }))
+			.filter((result): result is TaskSearchResult => result.type === "task")
+			.map((result) => result.task.id)
+			.sort();
+		const noAssignee = (await core.searchPersistently({ types: ["task"], filters: { unassigned: true } }))
+			.filter((result): result is TaskSearchResult => result.type === "task")
+			.map((result) => result.task.id);
+		expect(assigned).toEqual(["TASK-1", "TASK-2"]);
+		expect(noAssignee).toEqual(["TASK-3"]);
+	});
+
 	it("applies the same labelMatch semantics with and without a query", () => {
 		const bothLabels = ["backend", "infrastructure"];
 

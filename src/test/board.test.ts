@@ -330,7 +330,7 @@ describe("exportKanbanBoardToFile", () => {
 				id: "task-100",
 				title: "Test @ Handling",
 				status: "To Do",
-				assignee: ["@claude", "alice", "@bob"],
+				assignee: [" @claude ", "alice", "@bob", "  "],
 				createdDate: "2025-01-01",
 				labels: [],
 				dependencies: [],
@@ -344,6 +344,7 @@ describe("exportKanbanBoardToFile", () => {
 		expect(content).toContain("[@claude, @alice, @bob]");
 		expect(content).not.toContain("@@claude");
 		expect(content).not.toContain("@@bob");
+		expect(content).not.toContain("@, ");
 
 		await rm(dir, { recursive: true, force: true });
 	});
@@ -385,6 +386,59 @@ describe("buildKanbanStatusGroups", () => {
 		expect(groupedTasks.get("To Do")?.map((t) => t.id)).toEqual(["task-2"]);
 		expect(groupedTasks.get("Blocked")?.map((t) => t.id)).toEqual(["task-1"]);
 	});
+
+	it("canonicalizes case and whitespace variants without duplicating columns", () => {
+		const tasks: Task[] = [
+			{
+				id: "task-1",
+				title: "Padded todo",
+				status: " to do ",
+				assignee: [],
+				createdDate: "2025-01-02",
+				labels: [],
+				dependencies: [],
+			},
+			{
+				id: "task-2",
+				title: "Lowercase progress",
+				status: "in progress",
+				assignee: [],
+				createdDate: "2025-01-03",
+				labels: [],
+				dependencies: [],
+			},
+			{
+				id: "task-3",
+				title: "Unknown blocked",
+				status: "Blocked",
+				assignee: [],
+				createdDate: "2025-01-04",
+				labels: [],
+				dependencies: [],
+			},
+			{
+				id: "task-4",
+				title: "Unknown blocked variant",
+				status: " blocked ",
+				assignee: [],
+				createdDate: "2025-01-05",
+				labels: [],
+				dependencies: [],
+			},
+		];
+
+		const { orderedStatuses, groupedTasks } = buildKanbanStatusGroups(tasks, [
+			"To Do",
+			" to do ",
+			"In Progress",
+			"Done",
+		]);
+
+		expect(orderedStatuses).toEqual(["To Do", "In Progress", "Done", "Blocked"]);
+		expect(groupedTasks.get("To Do")?.map((t) => t.id)).toEqual(["task-1"]);
+		expect(groupedTasks.get("In Progress")?.map((t) => t.id)).toEqual(["task-2"]);
+		expect(groupedTasks.get("Blocked")?.map((t) => t.id)).toEqual(["task-3", "task-4"]);
+	});
 });
 
 describe("generateMilestoneGroupedBoard", () => {
@@ -424,6 +478,23 @@ describe("generateMilestoneGroupedBoard", () => {
 		expect(board.match(/## Release 1\.0 \(\d+ tasks\)/g)?.length).toBe(1);
 		expect(board).toContain("**TASK-1** - By ID");
 		expect(board).toContain("**TASK-2** - By title");
+	});
+
+	it("formats milestone grouped board assignees without blank handles or duplicate prefixes", () => {
+		const task: Task = {
+			id: "task-3",
+			title: "Assigned",
+			status: "To Do",
+			assignee: [" @alice ", "Bob", "  "],
+			createdDate: "2026-01-01",
+			labels: [],
+			dependencies: [],
+		};
+
+		const board = generateMilestoneGroupedBoard([task], ["To Do"], [], "Test Project");
+		expect(board).toContain("**TASK-3** - Assigned [@alice, @Bob]");
+		expect(board).not.toContain("@@alice");
+		expect(board).not.toContain("@, ");
 	});
 
 	it("keeps ambiguous reused milestone titles as separate sections", () => {

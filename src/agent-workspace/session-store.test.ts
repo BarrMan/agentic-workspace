@@ -45,6 +45,46 @@ describe("SessionStore", () => {
 		);
 	});
 
+	it("uses task identity keys for paths, reads, and mutations without recasing stored IDs", async () => {
+		const root = await mkdtemp(join(tmpdir(), "agentic-workspace-session-id-key-"));
+		directories.push(root);
+		const store = new SessionStore(root, new FakeRunner());
+		const firstPaths = await store.paths("TASK-01");
+		const variantPaths = await store.paths(" task-01 ");
+		const distinctPaths = await store.paths("TASK-1");
+		expect(variantPaths.taskDir).toBe(firstPaths.taskDir);
+		expect(distinctPaths.taskDir).not.toBe(firstPaths.taskDir);
+
+		await store.mutate("TASK-01", async (state) => {
+			const record = { ...session("keyed"), taskId: "TASK-01" };
+			const history = buildHistory(state);
+			history.sessions.push(record);
+			history.activeSessionId = record.id;
+		});
+		expect((await store.read(" task-01 ")).taskId).toBe("TASK-01");
+		await store.mutateMode(" task-01 ", "build", async (history) => {
+			const record = history.sessions[0];
+			if (!record) throw new Error("Expected keyed session fixture.");
+			record.status = "parked";
+		});
+		await store.mutateSession("TASK-01 ", "keyed", async (record) => {
+			record.error = "updated";
+		});
+		const persisted = JSON.parse(await Bun.file(firstPaths.statePath).text());
+		expect(persisted.taskId).toBe("TASK-01");
+		expect(persisted.modes.build.sessions[0]).toMatchObject({ taskId: "TASK-01", status: "parked", error: "updated" });
+	});
+
+	it("preserves lowercase draft spelling for empty state and subsequent mutations", async () => {
+		const root = await mkdtemp(join(tmpdir(), "agentic-workspace-session-lowercase-draft-"));
+		directories.push(root);
+		const store = new SessionStore(root, new FakeRunner());
+		await store.mutate("draft-abc", async () => undefined);
+		expect((await store.read("DRAFT-ABC")).taskId).toBe("draft-abc");
+		await store.mutate(" DRAFT-ABC ", async () => undefined);
+		expect(JSON.parse(await Bun.file((await store.paths("draft-abc")).statePath).text()).taskId).toBe("draft-abc");
+	});
+
 	it("serializes task mutations and rejects malformed durable state", async () => {
 		const root = await mkdtemp(join(tmpdir(), "agentic-workspace-session-store-"));
 		directories.push(root);
@@ -451,7 +491,10 @@ describe("SessionStore", () => {
 		await writeFile(join(taskDir, "other-preset.native-session-id"), "ses_other", { mode: 0o600 });
 		await writeFile(join(taskDir, "stale.native-session-id"), "stale-id", { mode: 0o600 });
 
-		expect(sessionsOf((await store.readAll())[0]!).map((item) => item.nativeSessionId)).toEqual([
+		const allStates = await store.readAll();
+		const allState = allStates[0];
+		if (!allState) throw new Error("Missing state from readAll.");
+		expect(sessionsOf(allState).map((item) => item.nativeSessionId)).toEqual([
 			"ses_old_v1",
 			"ses_old_v2",
 			undefined,

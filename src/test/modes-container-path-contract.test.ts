@@ -39,8 +39,20 @@ describe("BACK-23 canonical task container and artifact path contract", () => {
 		await writeFile(record, serializeTask(task("BACK-23", "Before rename")));
 		const repository = new TaskArtifactRepository({ agenticWorkspaceDirectory });
 		expect(await repository.containerPath("bAcK-23")).toBe(container);
+		expect(await repository.containerPath(" back-23 ")).toBe(container);
+		expect(await repository.containerPath(" BaCk-23 ")).toBe(container);
 		await writeFile(record, serializeTask(task("BACK-23", "After rename")));
 		expect(await repository.containerPath("BACK-23")).toBe(container);
+	});
+
+	it("keeps zero-padded task numbers distinct", async () => {
+		const agenticWorkspaceDirectory = join(await fixture("mode-container-zero-identity"), ".agentic-workspace");
+		const padded = join(agenticWorkspaceDirectory, "tasks", "task-01");
+		await mkdir(padded, { recursive: true });
+		await writeFile(join(padded, "task.md"), serializeTask(task("TASK-01", "Padded")));
+		const repository = new TaskArtifactRepository({ agenticWorkspaceDirectory });
+		expect(await repository.containerPath(" task-01 ")).toBe(padded);
+		expect(await repository.containerPath("TASK-1")).toBe(join(agenticWorkspaceDirectory, "tasks", "task-1"));
 	});
 
 	it("resolves artifact paths from a linked worktree to canonical main storage", async () => {

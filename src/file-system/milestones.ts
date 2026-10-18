@@ -1,6 +1,6 @@
 import { mkdir, rename } from "node:fs/promises";
 import { dirname, join } from "node:path";
-import { collectMilestoneAliasKeys, isMilestoneId, parseMilestoneId } from "../core/milestones.ts";
+import { createMilestoneIdentityResolver, parseMilestoneId } from "../core/milestone-identity.ts";
 import { FrontmatterSchemaError, parseMarkdown, parseMilestone } from "../markdown/parser.ts";
 import { serializeMilestone } from "../markdown/serializer.ts";
 import type { Milestone } from "../types/index.ts";
@@ -8,20 +8,12 @@ import { normalizeDueDate } from "../utils/due-date.ts";
 
 type Scope = "active" | "archived";
 type MilestoneFile = { file: string; filepath: string; content: string; milestone: Milestone };
-type MilestoneMatches = Record<
-	"rawId" | "canonicalId" | "aliasId" | "title" | "variantId" | "variantTitle",
-	MilestoneFile[]
->;
 
 export interface MilestoneStoreContext {
 	activeDirectory(): Promise<string>;
 	archiveDirectory(): Promise<string>;
 	ensureDirectory(directory: string): Promise<void>;
 	withCreateLock<T>(operation: () => Promise<T>): Promise<T>;
-}
-
-function identifierKeys(identifier: string): Set<string> {
-	return collectMilestoneAliasKeys(identifier);
 }
 
 function filename(id: string, title: string): string {
@@ -32,34 +24,6 @@ function filename(id: string, title: string): string {
 		.slice(0, 50)}.md`;
 }
 
-function canonicalIdentifier(input: string): string | null {
-	const numericPart = parseMilestoneId(input);
-	return numericPart ? `m-${String(Number.parseInt(numericPart, 10))}` : null;
-}
-
-function emptyMatches(): MilestoneMatches {
-	return { rawId: [], canonicalId: [], aliasId: [], title: [], variantId: [], variantTitle: [] };
-}
-
-function chooseMatch(input: string, matches: MilestoneMatches): MilestoneFile | null {
-	const one = (items: MilestoneFile[]) => (items.length === 1 ? items[0] : null);
-	const numeric = isMilestoneId(input);
-	return numeric
-		? (matches.rawId[0] ??
-				matches.canonicalId[0] ??
-				one(matches.aliasId) ??
-				one(matches.variantId) ??
-				one(matches.title) ??
-				one(matches.variantTitle) ??
-				null)
-		: (matches.rawId[0] ??
-				one(matches.title) ??
-				matches.canonicalId[0] ??
-				one(matches.variantId) ??
-				one(matches.variantTitle) ??
-				null);
-}
-
 export class MilestoneStore {
 	constructor(private readonly context: MilestoneStoreContext) {}
 
@@ -68,15 +32,10 @@ export class MilestoneStore {
 	}
 
 	private async find(identifier: string, scope: Scope = "active"): Promise<MilestoneFile | null> {
-		const input = identifier.trim().toLowerCase();
-		const keys = identifierKeys(identifier);
-		if (!keys.size) return null;
-		const variants = new Set(keys);
-		variants.delete(input);
-		const canonical = canonicalIdentifier(input);
-		const matches = emptyMatches();
+		if (!identifier.trim()) return null;
 		const milestonesDir = await this.directory(scope);
 		const files = await Array.fromAsync(new Bun.Glob("m-*.md").scan({ cwd: milestonesDir, followSymlinks: true }));
+		const entries: MilestoneFile[] = [];
 		for (const file of files) {
 			if (file.toLowerCase() === "readme.md") continue;
 			const filepath = join(milestonesDir, file);
@@ -89,17 +48,12 @@ export class MilestoneStore {
 				if (error instanceof FrontmatterSchemaError) throw error;
 				continue;
 			}
-			const match = { file, filepath, content, milestone };
-			const id = milestone.id.trim().toLowerCase();
-			const title = milestone.title.trim().toLowerCase();
-			if (id === input) matches.rawId.push(match);
-			else if (canonical && id === canonical) matches.canonicalId.push(match);
-			else if (identifierKeys(milestone.id).has(input)) matches.aliasId.push(match);
-			else if (title === input) matches.title.push(match);
-			else if ([...identifierKeys(milestone.id)].some((key) => variants.has(key))) matches.variantId.push(match);
-			else if (variants.has(title)) matches.variantTitle.push(match);
+			entries.push({ file, filepath, content, milestone });
 		}
-		return chooseMatch(input, matches);
+		const found = createMilestoneIdentityResolver(entries.map((entry) => entry.milestone)).resolveStoredIdentifier(
+			identifier,
+		);
+		return entries.find((entry) => entry.milestone === found) ?? null;
 	}
 
 	private async restoreRename(

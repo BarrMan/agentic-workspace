@@ -44,4 +44,9 @@ describe("filesystem config parsing", () => {
 		const config = parseConfig('statuses: ["To Do"]\ndefault_assignee: "@alex"\n', "/tmp/agentic-workspace/config.yml");
 		expect(config.defaultAssignee).toEqual(["@alex"]);
 	});
+
+	it("deduplicates default assignee identities while preserving first spelling", () => {
+		const config = parseConfig('default_assignee: ["@Alice", "alice", " Bob "]\n', "/tmp/agentic-workspace/config.yml");
+		expect(config.defaultAssignee).toEqual(["@Alice", "Bob"]);
+	});
 });

@@ -1,5 +1,6 @@
 import type { Task as TaskRecord } from "../types/index.ts";
 import { isLocalEditableTask } from "../types/index.ts";
+import { taskIdsEqual } from "../utils/task-id.ts";
 import type { Session } from "./session.ts";
 import type { AgentSession, ModeId, ModeProfile, ModeSessionHistory, ResolvedAgentConfiguration } from "./types.ts";
 
@@ -96,7 +97,8 @@ export class Task {
 	}
 
 	rollbackSession(creation: SessionCreationIdentity): void {
-		if (creation.taskId !== this.id) throw new Error(`Creation belongs to another task: ${creation.taskId}`);
+		if (!taskIdsEqual(creation.taskId, this.id))
+			throw new Error(`Creation belongs to another task: ${creation.taskId}`);
 		const history = this.#requireMode(creation.modeId);
 		const matches = history.sessions.filter(({ id }) => id === creation.provisionalSessionId);
 		if (matches.length !== 1) throw new Error(`Expected one provisional session: ${creation.provisionalSessionId}`);
@@ -113,7 +115,7 @@ export class Task {
 	}
 
 	updateSessionRecord(modeId: ModeId, record: Readonly<AgentSession>): void {
-		if (record.taskId !== this.id) throw new Error(`Session belongs to another task: ${record.taskId}`);
+		if (!taskIdsEqual(record.taskId, this.id)) throw new Error(`Session belongs to another task: ${record.taskId}`);
 		const history = this.#requireMode(modeId);
 		const indexes = history.sessions.flatMap((session, index) => (session.id === record.id ? [index] : []));
 		if (indexes.length !== 1) throw new Error(`Expected one session membership: ${record.id}`);
@@ -140,7 +142,7 @@ export class Task {
 	}
 
 	registerSession(modeId: ModeId, record: Readonly<AgentSession>): void {
-		if (record.taskId !== this.id) throw new Error(`Session belongs to another task: ${record.taskId}`);
+		if (!taskIdsEqual(record.taskId, this.id)) throw new Error(`Session belongs to another task: ${record.taskId}`);
 		const history = this.#requireMode(modeId);
 		if (history.sessions.some(({ id }) => id === record.id))
 			throw new Error(`Session already registered: ${record.id}`);
@@ -202,7 +204,7 @@ export class Task {
 
 /** Incarnation key: only fields fixed at reservation. Native/tmux provenance is mutable progress, not identity. */
 function sameIncarnation(left: AgentSession, right: Readonly<AgentSession>): boolean {
-	return left.id === right.id && left.taskId === right.taskId && left.createdAt === right.createdAt;
+	return left.id === right.id && taskIdsEqual(left.taskId, right.taskId) && left.createdAt === right.createdAt;
 }
 
 export function createTask(input: {

@@ -1,13 +1,16 @@
 import { mkdir } from "node:fs/promises";
 import { dirname } from "node:path";
-import { buildMilestoneAliasMap, canonicalizeMilestone, getMilestoneLabel, milestoneKey } from "./core/milestones.ts";
+import { createMilestoneIdentityResolver, milestoneKey } from "./core/milestone-identity.ts";
+import { getMilestoneLabel } from "./core/milestones.ts";
 import type { Milestone, Task } from "./types/index.ts";
+import { formatAssignee } from "./utils/assignee-filter.ts";
+import { statusComparisonKey } from "./utils/status.ts";
 import { compareTaskIds } from "./utils/task-sorting.ts";
 
 export type BoardLayout = "horizontal" | "vertical";
 
-function normalizeConfiguredStatuses(statuses: string[]): { ordered: string[]; canonicalByLower: Map<string, string> } {
-	const canonicalByLower = new Map<string, string>();
+function normalizeConfiguredStatuses(statuses: string[]): { ordered: string[]; canonicalByKey: Map<string, string> } {
+	const canonicalByKey = new Map<string, string>();
 	const ordered: string[] = [];
 	const seen = new Set<string>();
 
@@ -15,21 +18,21 @@ function normalizeConfiguredStatuses(statuses: string[]): { ordered: string[]; c
 		if (typeof status !== "string") continue;
 		const trimmed = status.trim();
 		if (!trimmed) continue;
-		const lower = trimmed.toLowerCase();
-		if (!canonicalByLower.has(lower)) canonicalByLower.set(lower, trimmed);
-		if (seen.has(trimmed)) continue;
+		const key = statusComparisonKey(trimmed);
+		if (!canonicalByKey.has(key)) canonicalByKey.set(key, trimmed);
+		if (seen.has(key)) continue;
 		ordered.push(trimmed);
-		seen.add(trimmed);
+		seen.add(key);
 	}
 
-	return { ordered, canonicalByLower };
+	return { ordered, canonicalByKey };
 }
 
 export function buildKanbanStatusGroups(
 	tasks: Task[],
 	statuses: string[],
 ): { orderedStatuses: string[]; groupedTasks: Map<string, Task[]> } {
-	const { ordered: orderedConfiguredStatuses, canonicalByLower } = normalizeConfiguredStatuses(statuses);
+	const { ordered: orderedConfiguredStatuses, canonicalByKey } = normalizeConfiguredStatuses(statuses);
 
 	const groupedTasks = new Map<string, Task[]>();
 	for (const status of orderedConfiguredStatuses) {
@@ -39,7 +42,9 @@ export function buildKanbanStatusGroups(
 	for (const task of tasks) {
 		const raw = (task.status ?? "").trim();
 		if (!raw) continue;
-		const canonical = canonicalByLower.get(raw.toLowerCase()) ?? raw;
+		const key = statusComparisonKey(raw);
+		const canonical = canonicalByKey.get(key) ?? raw;
+		if (!canonicalByKey.has(key)) canonicalByKey.set(key, canonical);
 		if (!groupedTasks.has(canonical)) {
 			groupedTasks.set(canonical, []);
 		}
@@ -47,12 +52,13 @@ export function buildKanbanStatusGroups(
 	}
 
 	const orderedStatuses = [...orderedConfiguredStatuses];
-	const seen = new Set(orderedStatuses);
+	const seen = new Set(orderedStatuses.map(statusComparisonKey));
 
 	for (const status of groupedTasks.keys()) {
-		if (seen.has(status)) continue;
+		const key = statusComparisonKey(status);
+		if (seen.has(key)) continue;
 		orderedStatuses.push(status);
-		seen.add(status);
+		seen.add(key);
 	}
 
 	return { orderedStatuses, groupedTasks };
@@ -146,12 +152,8 @@ Project: ${projectName}
 			const taskIdPrefix = isSubtask ? "└─ " : "";
 			const taskIdUpper = task.id.toUpperCase();
 
-			// Format assignees in brackets or empty string if none
-			// Add @ prefix only if not already present
-			const assigneesText =
-				task.assignee && task.assignee.length > 0
-					? ` [${task.assignee.map((a) => (a.startsWith("@") ? a : `@${a}`)).join(", ")}]`
-					: "";
+			const assignees = task.assignee?.map(formatAssignee).filter((assignee) => assignee !== null) ?? [];
+			const assigneesText = assignees.length ? ` [${assignees.join(", ")}]` : "";
 
 			// Format labels with # prefix and italic or empty string if none
 			const labelsText =
@@ -183,7 +185,7 @@ export function generateMilestoneGroupedBoard(
 	// Task values can be either IDs or titles, so normalize aliases to one key.
 	const milestoneSeen = new Set<string>();
 	const allMilestones: string[] = [];
-	const aliases = buildMilestoneAliasMap(milestoneEntities);
+	const identity = createMilestoneIdentityResolver(milestoneEntities);
 
 	for (const milestone of milestoneEntities) {
 		const normalizedId = milestone.id.trim();
@@ -195,7 +197,7 @@ export function generateMilestoneGroupedBoard(
 	}
 
 	for (const task of tasks) {
-		const canonicalMilestone = canonicalizeMilestone(task.milestone, aliases);
+		const canonicalMilestone = identity.canonicalize(task.milestone);
 		if (canonicalMilestone && !milestoneSeen.has(milestoneKey(canonicalMilestone))) {
 			milestoneSeen.add(milestoneKey(canonicalMilestone));
 			allMilestones.push(canonicalMilestone);
@@ -219,7 +221,7 @@ Project: ${projectName}
 	// Each milestone section
 	for (const milestone of allMilestones) {
 		const milestoneTasks = tasks.filter(
-			(task) => milestoneKey(canonicalizeMilestone(task.milestone, aliases)) === milestoneKey(milestone),
+			(task) => milestoneKey(identity.canonicalize(task.milestone)) === milestoneKey(milestone),
 		);
 		if (milestoneTasks.length > 0) {
 			const milestoneLabel = getMilestoneLabel(milestone, milestoneEntities);
@@ -247,7 +249,8 @@ function generateMilestoneSection(milestone: string, tasks: Task[], statuses: st
 		const statusTasks = groupedTasks.get(status) || [];
 		const taskLines = statusTasks.map((t) => {
 			const id = t.id.toUpperCase();
-			const assignees = t.assignee?.length ? ` [@${t.assignee.join(", @")}]` : "";
+			const assigneeNames = t.assignee?.map(formatAssignee).filter((assignee) => assignee !== null) ?? [];
+			const assignees = assigneeNames.length ? ` [${assigneeNames.join(", ")}]` : "";
 			return `  - **${id}** - ${t.title}${assignees}`;
 		});
 		return `### ${status} (${statusTasks.length})\n${taskLines.length > 0 ? taskLines.join("\n") : "  (empty)"}`;

@@ -1,7 +1,7 @@
 import { isAbsolute, relative } from "node:path";
 import { DEFAULT_DIRECTORIES } from "../constants/index.ts";
 import { TASK_SOURCE, type Task, type TaskDirectoryType } from "../types/index.ts";
-import { taskIdsEqual } from "../utils/task-path.ts";
+import { taskIdKey, taskIdsEqual } from "../utils/task-id.ts";
 import { compareTaskIds } from "../utils/task-sorting.ts";
 
 export interface TaskIdentityRecord {
@@ -178,7 +178,7 @@ export class TaskIdentityIndex {
 	) {
 		this.records = records.slice();
 		for (const record of this.records) {
-			const canonicalId = record.id.toUpperCase();
+			const canonicalId = taskIdKey(record.id);
 			const path = normalizeRecordPath(record, context);
 			const group = this.groups.get(canonicalId) ?? { id: canonicalId, identities: new Map() };
 			const identity = group.identities.get(path) ?? { path, records: [] };

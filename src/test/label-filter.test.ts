@@ -1,6 +1,11 @@
 import { describe, expect, test } from "bun:test";
 import type { Task } from "../types/index.ts";
-import { collectAvailableLabels, formatLabelSummary, labelsToLower } from "../utils/label-filter.ts";
+import {
+	collectAvailableLabels,
+	formatLabelSummary,
+	labelComparisonKey,
+	labelsToLower,
+} from "../utils/label-filter.ts";
 
 describe("label filter utilities", () => {
 	test("collectAvailableLabels merges configured labels and task labels without duplicates sorted alphabetically", () => {
@@ -55,5 +60,10 @@ describe("label filter utilities", () => {
 
 	test("labelsToLower normalizes labels for filtering", () => {
 		expect(labelsToLower([" Bug ", "UI"])).toEqual(["bug", "ui"]);
+	});
+
+	test("labelComparisonKey trims and lowercases without changing display values", () => {
+		expect(labelComparisonKey("  UI ")).toBe("ui");
+		expect(collectAvailableLabels([], [" UI ", "ui"])).toEqual([" UI "]);
 	});
 });

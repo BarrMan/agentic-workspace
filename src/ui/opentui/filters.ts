@@ -9,6 +9,7 @@ import {
 	TextRenderable,
 } from "@opentui/core";
 import type { LabelMatchMode, TaskListFilter } from "../../types/index.ts";
+import { labelComparisonKey } from "../../utils/label-filter.ts";
 import {
 	createKeybindings,
 	findShortcutConflict,
@@ -131,6 +132,19 @@ function normalizeValues(values: readonly string[] | undefined): string[] {
 	return result;
 }
 
+function normalizeLabelValues(values: readonly string[] | undefined): string[] {
+	const seen = new Set<string>();
+	const result: string[] = [];
+	for (const value of values ?? []) {
+		const trimmed = value.trim();
+		const key = labelComparisonKey(trimmed);
+		if (!key || seen.has(key)) continue;
+		seen.add(key);
+		result.push(trimmed);
+	}
+	return result;
+}
+
 function normalizeFilters(filters: Partial<OpenTuiFilterState>): OpenTuiFilterState {
 	return {
 		search: filters.search?.trim() ?? "",
@@ -138,7 +152,7 @@ function normalizeFilters(filters: Partial<OpenTuiFilterState>): OpenTuiFilterSt
 		type: normalizeValues(filters.type),
 		project: normalizeValues(filters.project),
 		priority: filters.priority?.trim() ?? "",
-		labels: normalizeValues(filters.labels),
+		labels: normalizeLabelValues(filters.labels),
 		milestone: filters.milestone?.trim() ?? "",
 	};
 }
@@ -242,7 +256,7 @@ export function mountOpenTuiFilterEditor(
 	surface.add(help);
 
 	const choicesFor = (field: Exclude<OpenTuiFilterField, "search">): string[] =>
-		normalizeValues(options.choices?.[field]);
+		field === "labels" ? normalizeLabelValues(options.choices?.labels) : normalizeValues(options.choices?.[field]);
 	const currentChoice = (): string[] => (selecting && selecting !== "search" ? choicesFor(selecting) : []);
 	const updateSearch = (): void => {
 		filters = { ...filters, search: search.plainText.trim() };
@@ -257,7 +271,11 @@ export function mountOpenTuiFilterEditor(
 				? choices
 						.map((choice, index) => {
 							const selected = MULTI_VALUE_FIELDS[selectingField]
-								? (filters[selectingField] as string[]).includes(choice)
+								? (filters[selectingField] as string[]).some((value) =>
+										selectingField === "labels"
+											? labelComparisonKey(value) === labelComparisonKey(choice)
+											: value === choice,
+									)
 								: filters[selectingField] === choice;
 							return `${index === choiceIndex ? ">" : " "} ${selected ? "[x]" : "[ ]"} ${choice}`;
 						})
@@ -315,9 +333,11 @@ export function mountOpenTuiFilterEditor(
 		if (!choice) return;
 		if (MULTI_VALUE_FIELDS[selecting]) {
 			const values = filters[selecting] as string[];
+			const isSelected = (value: string): boolean =>
+				selecting === "labels" ? labelComparisonKey(value) === labelComparisonKey(choice) : value === choice;
 			filters = {
 				...filters,
-				[selecting]: values.includes(choice) ? values.filter((value) => value !== choice) : [...values, choice],
+				[selecting]: values.some(isSelected) ? values.filter((value) => !isSelected(value)) : [...values, choice],
 			};
 		} else {
 			filters = { ...filters, [selecting]: choice };

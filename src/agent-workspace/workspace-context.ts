@@ -3,6 +3,7 @@
 import { realpathSync } from "node:fs";
 import { readdir, rm, rmdir } from "node:fs/promises";
 import { isAbsolute, join } from "node:path";
+import { taskIdsEqual } from "../utils/task-id.ts";
 import { createSessionTransport } from "./session-process.ts";
 import { writeFileAtomic } from "./session-store.ts";
 import type { AgentConversationContext } from "./types.ts";
@@ -83,7 +84,7 @@ const defaultPaneMatches = async (paneId: string, context: WorkspaceContext): Pr
 		actualPaneId === paneId &&
 		realpathOrUndefined(rootDir ?? "") === realpathOrUndefined(context.rootDir) &&
 		(context.conversation === undefined ||
-			(taskId === context.conversation.taskId && sessionId === context.conversation.sessionId))
+			(taskIdsEqual(taskId ?? "", context.conversation.taskId) && sessionId === context.conversation.sessionId))
 	);
 };
 

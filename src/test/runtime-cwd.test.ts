@@ -169,11 +169,21 @@ describe("resolveRuntimeCwd", () => {
 			await initializeFilesystemTestProject(core, "Completion Project");
 			await mkdir(nestedDir, { recursive: true });
 			await core.createTaskFromInput({ title: "Completion task", labels: ["ui"], assignee: ["@alex"] });
+			await core.createTask({
+				id: "TASK-2",
+				title: "Completion variant",
+				status: "To Do",
+				assignee: [" Alex ", "@ALEX", "Bob"],
+				createdDate: "2026-01-01",
+				labels: [],
+				dependencies: [],
+				rawContent: "",
+			});
 			process.env[AGENTIC_WORKSPACE_CWD_ENV] = nestedDir;
 
-			expect(await getTaskIds()).toEqual(["TASK-1"]);
+			expect(await getTaskIds()).toEqual(["TASK-1", "TASK-2"]);
 			expect(await getLabels()).toEqual(["ui"]);
-			expect(await getAssignees()).toEqual(["@alex"]);
+			expect(await getAssignees()).toEqual(["@alex", "Bob"]);
 		});
 
 		it("degrades to static fallbacks when no project is found", async () => {

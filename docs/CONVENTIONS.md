@@ -20,6 +20,13 @@ This document owns repeatable coding, organization, and verification practices. 
 - Put changes with the owning feature/module and reuse its existing types and helpers. Keep code in the owning feature or domain directory under `src/`; keep focused tests beside the implementation and shared test helpers under `src/test/`.
 - Follow [BLUEPRINT](BLUEPRINT.md) for provider isolation, rendering and orchestration boundaries, dependency direction, boundary ownership, module boundaries, and public contracts.
 
+### Identity and Reference Resolution
+
+- Normalize an identity at the boundary that writes it. Do not add read-time alias layers or per-caller normalization for a value that has a canonical form.
+- Use each identity family's shared comparison key for equality, lookup, and mutation: `taskIdKey` for task IDs, `statusComparisonKey` for stored/configured status comparison, `statusLookupKey` only to resolve user/config input, `labelComparisonKey` for labels, and `assigneeComparisonKey` for assignees; do not hand-roll `toLowerCase`/`trim`. For assignees, optional leading `@` and case are formatting, and internal whitespace collapse is comparison-only; preserve stored display spelling.
+- Where existing stored data requires aliases, one resolver owns their precedence; callers consume its result instead of reimplementing matching. Keep identity resolution separate from presentation and aggregation.
+- Do not fabricate records or clone entities with blank fields to reuse a helper; make the helper's scope explicit. Aggregate a collection once instead of filtering it again for each bucket or output row.
+
 ## Error Handling
 
 - **Unrecoverable; application unusable:** Terminate the application.

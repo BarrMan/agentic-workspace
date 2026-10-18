@@ -1,6 +1,8 @@
 import { DEFAULT_STATUSES } from "../constants/index.ts";
 import { type Core, createRuntimeCore } from "../core/agentic-workspace.ts";
 import type { AgenticWorkspaceConfig } from "../types/index.ts";
+import { assigneeComparisonKey } from "../utils/assignee-filter.ts";
+import { labelComparisonKey } from "../utils/label-filter.ts";
 import { getPriorityValues } from "../utils/priority-config.ts";
 import { getProjectValues } from "../utils/project-config.ts";
 import { getTaskTypeValues } from "../utils/task-type-config.ts";
@@ -83,13 +85,14 @@ export async function getProjects(): Promise<string[]> {
 export async function getLabels(): Promise<string[]> {
 	return await withCore(async (core) => {
 		const tasks = await core.filesystem.listTasks();
-		const labels = new Set<string>();
+		const labels = new Map<string, string>();
 		for (const task of tasks) {
 			for (const label of task.labels) {
-				labels.add(label);
+				const key = labelComparisonKey(label);
+				if (key && !labels.has(key)) labels.set(key, label);
 			}
 		}
-		return Array.from(labels).sort();
+		return Array.from(labels.values()).sort();
 	}, []);
 }
 
@@ -99,13 +102,14 @@ export async function getLabels(): Promise<string[]> {
 export async function getAssignees(): Promise<string[]> {
 	return await withCore(async (core) => {
 		const tasks = await core.filesystem.listTasks();
-		const assignees = new Set<string>();
+		const assignees = new Map<string, string>();
 		for (const task of tasks) {
 			for (const assignee of task.assignee) {
-				assignees.add(assignee);
+				const key = assigneeComparisonKey(assignee);
+				if (key && !assignees.has(key)) assignees.set(key, assignee);
 			}
 		}
-		return Array.from(assignees).sort();
+		return Array.from(assignees.values()).sort();
 	}, []);
 }
 

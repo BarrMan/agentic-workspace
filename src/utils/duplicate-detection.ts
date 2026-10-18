@@ -1,4 +1,5 @@
 import type { Task } from "../types/index.ts";
+import { taskIdKey } from "./task-id.ts";
 
 export type DuplicateGroup = {
 	id: string;
@@ -65,7 +66,7 @@ export function hasContentIdentityIssues(report: ContentIdentityReport): boolean
 export function detectDuplicateTaskIds(tasks: Task[]): DuplicateGroup[] {
 	const byId = new Map<string, Task[]>();
 	for (const task of tasks) {
-		const key = task.id.toUpperCase();
+		const key = taskIdKey(task.id);
 		const group = byId.get(key) ?? [];
 		group.push(task);
 		byId.set(key, group);

@@ -6,6 +6,7 @@ import {
 	TaskWizardCancelledError,
 	type TaskWizardPromptRunner,
 } from "../cli/features/tasks/wizard.ts";
+import { prepareTaskCreationInput } from "../core/task-creation-input.ts";
 import type { Task } from "../types/index.ts";
 
 type PromptResponses = Record<string, string | string[]>;
@@ -69,6 +70,26 @@ describe("task wizard", () => {
 		// Dependency IDs stay exactly as typed; Core resolves them against real task IDs, which is the
 		// only place the configured ID prefix is known.
 		expect(input?.dependencies).toEqual(["task-1", "2"]);
+	});
+
+	it("deduplicates assignee identities at the create boundary", async () => {
+		const input = await runTaskCreateWizard({
+			statuses: ["To Do"],
+			promptImpl: createPromptRunner({ title: "Assignee dedupe", assignee: "@Alice, alice, Bob, @bob" }),
+		});
+		if (!input) throw new Error("Expected task wizard input");
+		expect(prepareTaskCreationInput(input).assignees).toEqual(["@Alice", "Bob"]);
+	});
+
+	it("canonicalizes a whitespace-collapsed status name to the configured label", async () => {
+		const prompt = createPromptRunner({ title: "Status identity", status: "inprogress" });
+
+		const input = await runTaskCreateWizard({
+			statuses: ["To Do", "In Progress", "Done"],
+			promptImpl: prompt,
+		});
+
+		expect(input?.status).toBe("In Progress");
 	});
 
 	it("builds prefilled edit update input", async () => {

@@ -54,13 +54,13 @@ import type { SessionHandoff, WorkspaceRequest } from "../../agent-workspace/wor
 import { readWorkspaceRequests } from "../../agent-workspace/workspace-context.ts";
 import { WorkspaceStateService } from "../../agent-workspace/workspace-state.ts";
 import type { Core } from "../../core/agentic-workspace.ts";
-import { collectArchivedMilestoneKeys, milestoneKey } from "../../core/milestones.ts";
+import { createMilestoneIdentityResolver, milestoneKey } from "../../core/milestone-identity.ts";
 import { loadTaskDetail, type TaskDetail } from "../../core/task-detail.ts";
 import type { AgenticWorkspaceConfig, Milestone, Task, TaskCreateInput, TaskUpdateInput } from "../../types/index.ts";
+import { formatAssignee } from "../../utils/assignee-filter.ts";
 import { copyToClipboard } from "../../utils/clipboard.ts";
 import { watchConfig } from "../../utils/config-watcher.ts";
 import { createMilestoneFilterValueResolver } from "../../utils/milestone-filter.ts";
-import { resolveMilestoneInputForStorage } from "../../utils/milestone-storage.ts";
 import { getPriorityOptions, getPriorityValues } from "../../utils/priority-config.ts";
 import { applyTaskFilters } from "../../utils/task-search.ts";
 import { sortByNewestFirst } from "../../utils/task-sorting.ts";
@@ -249,7 +249,7 @@ function taskEntry(task: Task): OpenTuiWorkspaceTaskEntry {
 		title: task.title,
 		status: task.status,
 		description: task.description,
-		assignees: task.assignee,
+		assignees: task.assignee.map(formatAssignee).filter((assignee) => assignee !== null),
 		labels: task.labels,
 		priority: task.priority,
 	};
@@ -1178,10 +1178,11 @@ export class OpenTuiWorkspaceController {
 		this.#milestones = milestones;
 		this.#archivedMilestones = archivedMilestones;
 		this.#resolveMilestoneLabel = createMilestoneFilterValueResolver([...milestones, ...archivedMilestones]);
+		const identity = createMilestoneIdentityResolver(milestones, archivedMilestones);
 		const visibleTasks = applyTaskFilters(tasks, taskFilterOptions(state.filters, "any", this.#resolveMilestoneLabel));
-		const archivedKeys = new Set(collectArchivedMilestoneKeys(archivedMilestones, milestones));
+		const archivedKeys = new Set(identity.collectArchivedKeys());
 		const boardTasks = tasks.map((task) => {
-			const milestone = resolveMilestoneInputForStorage(task.milestone ?? "", milestones, archivedMilestones);
+			const milestone = identity.resolveStorageInput(task.milestone ?? "");
 			return milestone && archivedKeys.has(milestoneKey(milestone)) ? { ...task, milestone: undefined } : task;
 		});
 		// While a locally chosen selection is still being persisted, the in-memory selection outranks the

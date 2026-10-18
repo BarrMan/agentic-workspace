@@ -39,4 +39,10 @@ describe("statusMatchesSet", () => {
 		const wanted = normalizeStatusSet([]);
 		expect(statusMatchesSet(wanted, "Done")).toBe(false);
 	});
+
+	it("preserves internal whitespace so distinct status names do not match", () => {
+		const wanted = normalizeStatusSet(["In Progress"]);
+		expect(statusMatchesSet(wanted, " in progress ")).toBe(true);
+		expect(statusMatchesSet(wanted, "InProgress")).toBe(false);
+	});
 });

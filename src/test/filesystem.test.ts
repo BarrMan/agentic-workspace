@@ -272,6 +272,8 @@ describe("FileSystem", () => {
 
 			expect(await filesystem.loadTask("TASK-1")).toMatchObject({ id: "TASK-1", title: "Canonical" });
 			expect(await filesystem.loadTask("TASK-001")).toMatchObject({ id: "TASK-001", title: "Twin" });
+			expect(await filesystem.loadTask(" task-1 ")).toMatchObject({ id: "TASK-1", title: "Canonical" });
+			expect(await filesystem.loadTask(" task-001 ")).toMatchObject({ id: "TASK-001", title: "Twin" });
 			expect(await Promise.all([canonicalPath, twinPath].map(async (path) => await Bun.file(path).text()))).toEqual(
 				before,
 			);
@@ -1119,11 +1121,11 @@ title: Broken Task
 				description: "Punctuation-only title",
 			};
 
-			await filesystem.saveTask(task);
+			const filePath = await filesystem.saveTask(task);
 
 			const files = await readdir(filesystem.tasksDir);
 			expect(files).toContain("task-994");
-			expect(await filesystem.getTaskWritePath(task)).toBe(join(filesystem.tasksDir, "task-994 - untitled.md"));
+			expect(filePath).toBe(join(filesystem.tasksDir, "task-994", "task.md"));
 			// The title itself is preserved in the file; only the filename uses the placeholder
 			expect((await filesystem.loadTask("task-994"))?.title).toBe(punctuationOnlyTitle);
 		});

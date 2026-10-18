@@ -236,6 +236,11 @@ describe("prefix-config", () => {
 		test("handles IDs without prefix", () => {
 			expect(idsEqual("123", "task-123", "task")).toBe(true);
 		});
+
+		test("compares case-insensitively without collapsing numeric segments", () => {
+			expect(idsEqual(" task-01 ", "TASK-01", "task")).toBe(true);
+			expect(idsEqual(" task-01 ", "TASK-1", "task")).toBe(false);
+		});
 	});
 
 	describe("generateNextId", () => {

@@ -41,7 +41,7 @@ async function parseTaskListFilters(
 		))
 	)
 		return null;
-	if (options.assignee) filters.assignee = options.assignee;
+	if (options.assignee) filters.assignee = parseDelimitedStringList(options.assignee) ?? [];
 	if (options.unassigned) filters.unassigned = true;
 	if (options.milestone) filters.milestone = options.milestone;
 	if (options.priority) {

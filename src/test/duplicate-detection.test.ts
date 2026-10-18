@@ -65,6 +65,14 @@ describe("detectDuplicateTaskIds", () => {
 		expect(groups[0]?.tasks).toHaveLength(2);
 	});
 
+	it("treats surrounding whitespace as the same identity and keeps the first-seen display ID", () => {
+		const tasks = [makeTask(" TASK-7 ", "Spaced"), makeTask("task-7", "Plain")];
+		const groups = detectDuplicateTaskIds(tasks);
+		expect(groups).toHaveLength(1);
+		expect(groups[0]?.id).toBe(" TASK-7 ");
+		expect(groups[0]?.tasks.map((task) => task.title)).toEqual(["Plain", "Spaced"]);
+	});
+
 	it("treats zero-padded numeric IDs as distinct identities", () => {
 		const tasks = [makeTask("TASK-1", "Plain"), makeTask("TASK-01", "Padded")];
 		const groups = detectDuplicateTaskIds(tasks);

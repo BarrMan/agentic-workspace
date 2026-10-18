@@ -4,7 +4,7 @@ import type { Core } from "../core/agentic-workspace.ts";
 import type { OwnedNativeSessionStops } from "../git/task-worktree-cleanup.ts";
 import { TASK_SOURCE, type Task } from "../types/index.ts";
 import { debug, isEnabled } from "../utils/debug-log.ts";
-import { isValidTaskId } from "../utils/task-id.ts";
+import { isValidTaskId, taskIdsEqual } from "../utils/task-id.ts";
 import type { Agent, LaunchOrigin, NativeIdentity, SessionIntent } from "./agents/agent.ts";
 import { agentFor } from "./agents/agents.ts";
 import { resolveLaunchPreset } from "./agents/opencode-resolution.ts";
@@ -393,11 +393,11 @@ export class AgentSessionService {
 	private async purgeTaskSessions(taskId: string, task?: Task): Promise<void> {
 		if (task && (task.source === TASK_SOURCE.REMOTE || task.source === TASK_SOURCE.LOCAL_BRANCH))
 			throw new Error(`Locally editable task not found: ${taskId}`);
-		if (!task && !isValidTaskId(taskId)) throw new Error(`Locally editable task not found: ${taskId}`);
+		if (!task && !isValidTaskId(taskId.trim())) throw new Error(`Locally editable task not found: ${taskId}`);
 		const paths = await this.store.paths(taskId);
 		if (!task && !(await Bun.file(paths.statePath).exists())) return;
 		const state = await this.store.read(task?.id ?? taskId);
-		if (!task && state.taskId !== taskId) throw new Error(`Locally editable task not found: ${taskId}`);
+		if (!task && !taskIdsEqual(state.taskId, taskId)) throw new Error(`Locally editable task not found: ${taskId}`);
 		const sessions = allModeSessions(state);
 		this.assertNoLiveSessions(task?.id ?? taskId, state);
 		const taskDir = resolve(paths.taskDir);
@@ -468,7 +468,7 @@ export class AgentSessionService {
 					matches.length === 0 ||
 					matches.some(
 						(current) =>
-							current.taskId !== session.taskId ||
+							!taskIdsEqual(current.taskId, session.taskId) ||
 							current.createdAt !== session.createdAt ||
 							current.tmuxName !== session.tmuxName ||
 							(current.nativeSessionId !== undefined &&
@@ -638,7 +638,7 @@ export class AgentSessionService {
 					throw new Error(`Agent session not found in its owning mode: ${selectedId}`);
 				record = { ...this.modeSession(claimed.modes[modeId]!, selectedId) };
 				request = (await readWorkspaceRequests(this.core.filesystem.rootDir)).find(
-					(candidate) => candidate.taskId === task.id && candidate.sessionId === record.id,
+					(candidate) => taskIdsEqual(candidate.taskId, task.id) && candidate.sessionId === record.id,
 				);
 				if (request?.handoff) {
 					if (request.createdAt !== record.createdAt || request.handoff.modeId !== modeId)
@@ -1373,7 +1373,7 @@ export class AgentSessionService {
 			if (!current) return;
 			// Provider identity can be discovered during the failed launch; reservation identity cannot change.
 			if (
-				current.taskId !== successor.taskId ||
+				!taskIdsEqual(current.taskId, successor.taskId) ||
 				current.createdAt !== successor.createdAt ||
 				current.tmuxName !== successor.tmuxName
 			)
@@ -1587,7 +1587,8 @@ export class AgentSessionService {
 					cwd: roots.cwd,
 				});
 				if (
-					context?.conversation?.taskId === target.taskId &&
+					context?.conversation !== undefined &&
+					taskIdsEqual(context.conversation.taskId, target.taskId) &&
 					context.conversation.modeId === modeId &&
 					context.conversation.sessionId === target.id &&
 					context.nativeSessionId === target.nativeSessionId
@@ -1687,7 +1688,7 @@ export class AgentSessionService {
 	private async hasQueuedWorkspaceRequest(session: AgentSession): Promise<boolean> {
 		if (session.status !== AGENT_SESSION_STATUS.STARTING) return false;
 		return (await readWorkspaceRequests(this.core.filesystem.rootDir)).some(
-			(request) => request.taskId === session.taskId && request.sessionId === session.id,
+			(request) => taskIdsEqual(request.taskId, session.taskId) && request.sessionId === session.id,
 		);
 	}
 
@@ -1732,7 +1733,7 @@ export class AgentSessionService {
 			debug("session", "enforceRunningLimit.done", { live: live.length, ms: Date.now() - startedAt });
 		if (live.length <= max) return;
 		const candidates = live
-			.filter((session) => session.id !== current.id && session.taskId !== current.taskId)
+			.filter((session) => session.id !== current.id && !taskIdsEqual(session.taskId, current.taskId))
 			.sort((left, right) => {
 				const use = (left.useCount ?? 0) - (right.useCount ?? 0);
 				if (use !== 0) return use;

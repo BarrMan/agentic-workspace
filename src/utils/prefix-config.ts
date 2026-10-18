@@ -1,5 +1,5 @@
 import { type AgenticWorkspaceConfig, EntityType, type PrefixConfig } from "../types/index.ts";
-import { isNumericTaskIdSegment, parseTaskId, taskIdBody, taskIdRegex } from "./task-id.ts";
+import { isNumericTaskIdSegment, parseTaskId, taskIdBody, taskIdRegex, taskIdsEqual } from "./task-id.ts";
 
 /**
  * Default prefix configuration for tasks.
@@ -254,7 +254,7 @@ export function extractAnyPrefix(id: string): string | null {
  * idsEqual("task-1", "task-01", "task") // => false (different body)
  */
 export function idsEqual(id1: string, id2: string, prefix: string): boolean {
-	return normalizeId(id1, prefix).toLowerCase() === normalizeId(id2, prefix).toLowerCase();
+	return taskIdsEqual(normalizeId(id1, prefix), normalizeId(id2, prefix));
 }
 
 /**
@@ -372,36 +372,6 @@ function subtaskParentMatches(
 	if (canonicalParent && canonicalCandidate)
 		return canonicalParent.every((segment, index) => segment === canonicalCandidate[index]);
 	return candidateSegments.join(".").toLowerCase() === parentBody.toLowerCase();
-}
-
-/**
- * Converts an ID to lowercase format for use in filenames.
- * IDs are uppercase (TASK-123) but filenames use lowercase (task-123 - Title.md).
- *
- * @param id - The ID to convert (e.g., "TASK-123", "DRAFT-5")
- * @returns Lowercase version for filenames (e.g., "task-123", "draft-5")
- *
- * @example
- * idForFilename("TASK-123") // => "task-123"
- * idForFilename("DRAFT-5") // => "draft-5"
- */
-export function idForFilename(id: string): string {
-	return id.toLowerCase();
-}
-
-/**
- * Whether a filename belongs to the given filename-cased ID, accepting both
- * the "id - Title.md" and "id-suffix.md" spellings used by entity files.
- *
- * @param filename - The file name to test (e.g., "draft-5 - Title.md")
- * @param filenameId - Lowercase ID from {@link idForFilename} (e.g., "draft-5")
- *
- * @example
- * filenameMatchesId("draft-5 - Title.md", "draft-5") // => true
- * filenameMatchesId("draft-50 - Other.md", "draft-5") // => false
- */
-export function filenameMatchesId(filename: string, filenameId: string): boolean {
-	return filename.startsWith(`${filenameId} -`) || filename.startsWith(`${filenameId}-`);
 }
 
 /**

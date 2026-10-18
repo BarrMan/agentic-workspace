@@ -7,6 +7,7 @@ import {
 	TextRenderable,
 } from "@opentui/core";
 import type { Task } from "../../types/index.ts";
+import { formatAssignee } from "../../utils/assignee-filter.ts";
 import { createKeybindings, formatShortcut, keybindingPropagation, shortcutsConfig } from "./keybindings.ts";
 
 const OPEN_TUI_TASK_ACTIONS = ["edit", "copy", "complete", "archive", "cancel"] as const;
@@ -48,13 +49,14 @@ const ACTION_OPTIONS: readonly ActionOption[] = [
 ];
 
 function metadata(task: Task): string {
+	const assignees = task.assignee.map(formatAssignee).filter((assignee) => assignee !== null);
 	const fields = [
 		`ID: ${task.id}`,
 		`Status: ${task.status}`,
 		task.type ? `Type: ${task.type}` : undefined,
 		task.priority ? `Priority: ${task.priority}` : undefined,
 		task.project ? `Project: ${task.project}` : undefined,
-		task.assignee.length ? `Assignees: ${task.assignee.join(", ")}` : undefined,
+		assignees.length ? `Assignees: ${assignees.join(", ")}` : undefined,
 		task.labels.length ? `Labels: ${task.labels.join(", ")}` : undefined,
 		task.milestone ? `Milestone: ${task.milestone}` : undefined,
 		task.parentTaskId ? `Parent: ${task.parentTaskId}` : undefined,

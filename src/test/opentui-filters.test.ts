@@ -132,6 +132,34 @@ describe("native workspace filters", () => {
 			modal.dispose();
 		}
 	});
+
+	test("deduplicates label choices and toggles labels case-insensitively while preserving casing", async () => {
+		const setup = await createTestRenderer({ width: 120, height: 40, kittyKeyboard: true });
+		renderers.push(setup);
+		const parent = new BoxRenderable(setup.renderer, { width: "100%", height: "100%" });
+		setup.renderer.root.add(parent);
+		const applied: OpenTuiFilterState[] = [];
+		const modal = mountOpenTuiFilterEditor(setup.renderer, parent, {
+			initial: { labels: ["UI", " ui "] },
+			choices: { labels: ["ui", "UI", "docs"] },
+			onApply: (filters) => applied.push(filters),
+		});
+		try {
+			expect(modal.values().labels).toEqual(["UI"]);
+			modal.focus("labels");
+			setup.mockInput.pressEnter();
+			await setup.flush();
+			expect(setup.captureCharFrame()).toContain("[x] ui");
+			expect(setup.captureCharFrame().match(/\[ \] UI/g)).toBeNull();
+			setup.mockInput.pressKey(" ");
+			setup.mockInput.pressEnter();
+			setup.mockInput.pressKey("s", { ctrl: true });
+			await setup.flush();
+			expect(applied[0]?.labels).toEqual([]);
+		} finally {
+			modal.dispose();
+		}
+	});
 });
 
 describe("native shortcut help", () => {

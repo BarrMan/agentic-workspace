@@ -6,6 +6,7 @@ import { formatStatusWithIcon, getStatusColor } from "../../formatters/status-ic
 import { TASK_FIELD_LABELS } from "../../formatters/task-labels.ts";
 import { formatDateForDisplay } from "../../formatters/task-plain-text.ts";
 import type { Task } from "../../types/index.ts";
+import { formatAssignee } from "../../utils/assignee-filter.ts";
 import { formatPriorityLabel, normalizePriorityValue } from "../../utils/priority-config.ts";
 import { formatReadinessBlockers } from "../../utils/readiness.ts";
 
@@ -38,10 +39,6 @@ const heading = (text: string, level: StyledHeadingLevel): DetailChunk => {
 /** A status colour may be the terminal default, which OpenTUI expresses by leaving the colour unset. */
 function statusChunk(text: string, color: string): DetailChunk {
 	return color && color !== "default" ? fg(color)(text) : literal(text);
-}
-
-function atHandle(value: string): string {
-	return value.startsWith("@") ? value : `@${value}`;
 }
 
 function priorityDot(priority?: string): DetailChunk | undefined {
@@ -142,12 +139,9 @@ function metadataLines(task: Task | TaskDetail, options: TaskDetailStyledOptions
 		]);
 	}
 	if (task.type) lines.push([bold("Type:"), literal(" "), taskTypeBadge(task.type)]);
-	if (task.assignee?.length) {
-		lines.push([
-			bold(`${TASK_FIELD_LABELS.ASSIGNEE}:`),
-			literal(" "),
-			fg("cyan")(task.assignee.map(atHandle).join(", ")),
-		]);
+	const assignees = task.assignee?.map(formatAssignee).filter((assignee) => assignee !== null) ?? [];
+	if (assignees.length) {
+		lines.push([bold(`${TASK_FIELD_LABELS.ASSIGNEE}:`), literal(" "), fg("cyan")(assignees.join(", "))]);
 	}
 	if (task.labels?.length) {
 		const labelChunks: DetailChunk[] = [bold("Labels:"), literal(" ")];
@@ -158,7 +152,11 @@ function metadataLines(task: Task | TaskDetail, options: TaskDetailStyledOptions
 		lines.push(labelChunks);
 	}
 	if (task.reporter) {
-		lines.push([bold(`${TASK_FIELD_LABELS.REPORTER}:`), literal(" "), fg("cyan")(atHandle(task.reporter))]);
+		lines.push([
+			bold(`${TASK_FIELD_LABELS.REPORTER}:`),
+			literal(" "),
+			fg("cyan")(task.reporter.startsWith("@") ? task.reporter : `@${task.reporter}`),
+		]);
 	}
 	if (task.project && options.configuredProjects?.length) {
 		lines.push([bold("Project:"), literal(" "), projectBadge(task.project)]);

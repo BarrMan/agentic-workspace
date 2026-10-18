@@ -823,6 +823,16 @@ describe("Core", () => {
 			expect(loaded?.assignee).toEqual(["@dave"]);
 		});
 
+		it("matches labels by trimmed case-insensitive identity when adding and removing", async () => {
+			await core.createTask({ ...sampleTask, labels: [" UI "] });
+
+			await core.updateTaskFromInput("task-1", { addLabels: ["ui"] });
+			expect((await core.filesystem.loadTask("task-1"))?.labels).toEqual([" UI "]);
+
+			await core.updateTaskFromInput("task-1", { removeLabels: ["  Ui  "] });
+			expect((await core.filesystem.loadTask("task-1"))?.labels).toEqual([]);
+		});
+
 		it("should create sub-tasks with proper hierarchical IDs", async () => {
 			await initializeTestProject(core, "Subtask Project", true);
 

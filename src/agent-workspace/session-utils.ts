@@ -1,4 +1,7 @@
+import { slug } from "../utils/slug.ts";
 import type { AgentSession, ModeId, ModeSessionHistory, TaskSessions } from "./types.ts";
+
+export { slug } from "../utils/slug.ts";
 
 export function findSessionById(sessions: AgentSession[], sessionId: string | undefined): AgentSession | undefined {
 	if (sessionId === undefined) return undefined;
@@ -50,13 +53,6 @@ export interface SessionCommandResult {
 export function fail(prefix: string, result: Pick<SessionCommandResult, "stdout" | "stderr">): Error {
 	const detail = (result.stderr || result.stdout).trim();
 	return new Error(detail ? `${prefix}: ${detail}` : prefix);
-}
-
-export function slug(value: string): string {
-	return value
-		.toLowerCase()
-		.replaceAll(/[^a-z0-9]+/g, "-")
-		.replaceAll(/^-|-$/g, "");
 }
 
 /**

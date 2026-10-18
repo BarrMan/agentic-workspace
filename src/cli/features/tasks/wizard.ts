@@ -7,6 +7,7 @@ import type { Task, TaskCreateInput, TaskUpdateInput } from "../../../types/inde
 import { normalizeDueDate } from "../../../utils/due-date.ts";
 import { getPriorityOptions, normalizePriorityValue } from "../../../utils/priority-config.ts";
 import { getProjectValues, resolveProjectValue } from "../../../utils/project-config.ts";
+import { statusComparisonKey, statusLookupKey } from "../../../utils/status.ts";
 import { normalizeStringList } from "../../../utils/task-builders.ts";
 import { getTaskTypeValues, resolveTaskTypeValue } from "../../../utils/task-type-config.ts";
 
@@ -73,15 +74,11 @@ const WIZARD_NAVIGATION_KEY = "__wizardNavigation";
 const WIZARD_NAVIGATION_PREVIOUS = "previous";
 const WIZARD_BACKSPACE_NAVIGATION = Symbol("task-wizard-backspace-navigation");
 
-function normalizeStatusKey(status: string): string {
-	return status.trim().toLowerCase().replace(/\s+/g, "");
-}
-
 function findCanonicalStatus(input: string, statuses: string[]): string | null {
-	const normalizedInput = normalizeStatusKey(input);
+	const normalizedInput = statusLookupKey(input);
 	if (!normalizedInput) return null;
 	for (const status of statuses) {
-		if (normalizeStatusKey(status) === normalizedInput) {
+		if (statusLookupKey(status) === normalizedInput) {
 			return status;
 		}
 	}
@@ -111,7 +108,9 @@ function buildStatusPromptValues(params: { statuses: string[]; mode: "create" | 
 } {
 	const configuredStatuses = normalizeStringList(params.statuses.map((status) => status.trim())) ?? [];
 	const baseStatuses = configuredStatuses.length > 0 ? configuredStatuses : [...DEFAULT_STATUSES];
-	const hasDraftStatus = baseStatuses.some((status) => normalizeStatusKey(status) === normalizeStatusKey(DRAFT_STATUS));
+	const hasDraftStatus = baseStatuses.some(
+		(status) => statusComparisonKey(status) === statusComparisonKey(DRAFT_STATUS),
+	);
 	const selectableStatuses = hasDraftStatus ? baseStatuses : [DRAFT_STATUS, ...baseStatuses];
 	const options: PromptChoice[] = selectableStatuses.map((status) => ({
 		label: status,

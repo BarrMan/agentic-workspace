@@ -2,7 +2,7 @@ import { access } from "node:fs/promises";
 import { join } from "node:path";
 import { AmbiguousIdError } from "./entity-id.ts";
 import { buildFilenameIdRegex, DRAFT_PREFIX, escapeRegex, normalizeId } from "./prefix-config.ts";
-import { isValidTaskId } from "./task-id.ts";
+import { isValidTaskId, taskIdKey } from "./task-id.ts";
 
 export { taskIdsEqual } from "./task-id.ts";
 
@@ -39,7 +39,7 @@ export function isAmbiguousTaskIdError(error: unknown): error is AmbiguousTaskId
 
 /** Resolve the canonical active record path for an exact task ID. */
 export async function getTaskPath(taskId: string, context: TaskPathContext): Promise<string | null> {
-	const canonicalId = taskId.toUpperCase();
+	const canonicalId = taskIdKey(taskId);
 	if (!isValidTaskId(canonicalId)) return null;
 	const filepath = join(context.filesystem.tasksDir, canonicalId.toLowerCase(), "task.md");
 	try {

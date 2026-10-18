@@ -137,7 +137,7 @@ describe("duplicate task diagnosis", () => {
 		await $`git commit -m "main task"`.cwd(testDir).quiet();
 		await $`git switch -c feature`.cwd(testDir).quiet();
 		await unlink(alphaPath);
-		await writeTask(core.filesystem.completedDir, makeTask("TASK-1", "Beta"));
+		await writeTask(core.filesystem.completedDir, makeTask("task-1", "Beta"));
 		await $`git add -A`.cwd(testDir).quiet();
 		await $`git commit -m "feature task"`.cwd(testDir).quiet();
 		await $`git switch main`.cwd(testDir).quiet();

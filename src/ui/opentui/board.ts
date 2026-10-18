@@ -9,8 +9,10 @@ import {
 	TextAttributes,
 	TextRenderable,
 } from "@opentui/core";
-import { buildMilestoneAliasMap, canonicalizeMilestone, getMilestoneLabel } from "../../core/milestones.ts";
+import { createMilestoneIdentityResolver } from "../../core/milestone-identity.ts";
+import { getMilestoneLabel } from "../../core/milestones.ts";
 import type { Milestone, Task } from "../../types/index.ts";
+import { formatAssignee } from "../../utils/assignee-filter.ts";
 import type { Board, BoardMoveCommit } from "./board/models/board.ts";
 import { mountOpenTuiHelpOverlay, type OpenTuiHelpOverlayMount } from "./filters.ts";
 import {
@@ -114,11 +116,11 @@ function boardRows(board: Board, props: OpenTuiBoardProps): BoardRow[] {
 		return rows;
 	}
 	const milestones = [...(props.milestones ?? [])];
-	const aliases = buildMilestoneAliasMap(milestones);
+	const identity = createMilestoneIdentityResolver(milestones);
 	const groups = new Map<string, { label: string; columns: Task[][] }>();
 	for (const [column, lane] of lanes.entries()) {
 		for (const task of lane.tasks) {
-			const milestone = canonicalizeMilestone(task.milestone, aliases);
+			const milestone = identity.canonicalize(task.milestone);
 			const key = milestone.toLowerCase();
 			let group = groups.get(key);
 			if (!group) {
@@ -143,7 +145,8 @@ function boardRows(board: Board, props: OpenTuiBoardProps): BoardRow[] {
 
 function selectedTaskContent(task: Task | undefined): string {
 	if (!task) return "No task selected";
-	const metadata = [task.priority, task.type, task.assignee.length ? task.assignee.join(", ") : undefined]
+	const assignees = task.assignee.map(formatAssignee).filter((assignee) => assignee !== null);
+	const metadata = [task.priority, task.type, assignees.length ? assignees.join(", ") : undefined]
 		.filter((value): value is string => Boolean(value))
 		.join(" · ");
 	return metadata ? `${task.id}: ${task.title} · ${metadata}` : `${task.id}: ${task.title}`;

@@ -26,7 +26,7 @@ const richTask: Task = {
 	id: "BACK-1",
 	title: "Rich task",
 	status: "In Progress",
-	assignee: ["alice"],
+	assignee: [" @alice ", "Bob", "  "],
 	reporter: "bob",
 	createdDate: "2026-01-01",
 	updatedDate: "2026-02-02",
@@ -80,6 +80,8 @@ describe("native workspace rich detail", () => {
 			// Metadata block.
 			expect(frame).toContain("Created:");
 			expect(frame).toContain("Priority:");
+			expect(frame).toContain("@alice, @Bob");
+			expect(frame).not.toContain("@@alice");
 			expect(frame).not.toContain("Due:");
 			expect(frame).toContain("Milestone:");
 			expect(frame).toContain("Milestone m1");

@@ -1,8 +1,13 @@
 import type { Milestone, Task } from "../types/index.ts";
 import { normalizeDueDate } from "../utils/due-date.ts";
 import type { Core } from "./agentic-workspace.ts";
-import { buildMilestoneMatchKeys, findActiveMilestoneByAlias, keySetsIntersect } from "./milestone-resolution.ts";
-import { milestoneKey, normalizeMilestoneName } from "./milestones.ts";
+import {
+	buildMilestoneMatchKeys,
+	findActiveMilestoneByAlias,
+	keySetsIntersect,
+	milestoneKey,
+	normalizeMilestoneName,
+} from "./milestone-identity.ts";
 
 export type MilestoneRenameInput = { from: string; to: string; updateTasks?: boolean; dueDate?: string | null };
 export type MilestoneRemoveInput = { name: string; taskHandling?: "clear" | "reassign"; reassignTo?: string };

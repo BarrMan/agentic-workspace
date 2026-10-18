@@ -110,6 +110,22 @@ describe("TaskIdentityIndex", () => {
 		expect(ordered.map((entry) => entry.id)).toEqual(ids);
 	});
 
+	it("folds case and surrounding whitespace when resolving an identity", () => {
+		const identityIndex = index([
+			{
+				id: "back-1",
+				type: "task",
+				branch: "local",
+				path: "agentic-workspace/tasks/back-1 - Shared.md",
+				lastModified: new Date("2026-08-01T10:00:00Z"),
+				task: task("Shared"),
+			},
+		]);
+
+		expect(identityIndex.resolveForRead(" BACK-1 ")?.status).toBe("found");
+		expect(identityIndex.resolveForRead(" BACK-01 ")?.status).toBe("not-found");
+	});
+
 	it("hides and frees an identity when every record is archived", () => {
 		const identityIndex = index([
 			{

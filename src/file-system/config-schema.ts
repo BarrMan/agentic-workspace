@@ -2,6 +2,7 @@ import { z } from "zod";
 import { AgentConfigurationSchema } from "../agent-workspace/agent-config-schema.ts";
 import { DEFAULT_FRESH_INIT_POLICY, DEFAULT_STATUSES } from "../constants/index.ts";
 import type { AgenticWorkspaceConfig } from "../types/index.ts";
+import { normalizeAssignees } from "../utils/assignee-filter.ts";
 
 const MAX_SAFE_INTEGER = Number.MAX_SAFE_INTEGER;
 
@@ -99,10 +100,9 @@ function normalizeAliases(value: unknown): unknown {
 function defaultAssignees(value: string[] | string | null | undefined): string[] | undefined {
 	if (value === null) return [];
 	if (typeof value === "string") {
-		const name = value.trim();
-		return name ? [name] : [];
+		return normalizeAssignees([value]);
 	}
-	return value;
+	return normalizeAssignees(value);
 }
 
 export const AgenticWorkspaceConfigSchema = z.preprocess(normalizeAliases, rawConfigSchema).transform(

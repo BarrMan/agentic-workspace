@@ -188,7 +188,7 @@ export interface TaskListFilter {
 	status?: string | string[];
 	excludeStatus?: string | string[];
 	type?: string | string[];
-	assignee?: string;
+	assignee?: string | string[];
 	unassigned?: boolean;
 	priority?: string;
 	project?: string | string[];
@@ -271,6 +271,7 @@ export interface SearchFilters {
 	priority?: SearchPriorityFilter | SearchPriorityFilter[];
 	project?: string | string[];
 	assignee?: string | string[];
+	unassigned?: boolean;
 	labels?: string | string[];
 	/** Defaults to "any"; callers passing an explicitly typed label list use "all". */
 	labelMatch?: LabelMatchMode;
