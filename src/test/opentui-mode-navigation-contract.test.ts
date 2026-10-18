@@ -38,14 +38,14 @@ function setup() {
 	modes.profiles.review.name = "Review";
 	mkdirSync(join(directory, ".agentic-workspace"), { recursive: true });
 	writeFileSync(
-		join(directory, ".agentic-workspace", "agents.json"),
-		JSON.stringify({
+		join(directory, ".agentic-workspace", "agentic-workspace.config.yml"),
+		`agent_configuration: ${JSON.stringify({
 			selectedPreset: "opencode",
 			presets: {
 				opencode: { command: "opencode", env: {}, prepare: "", bootstrap: "opencode", resumeFlag: "--session" },
 			},
 			modes,
-		}),
+		})}\n`,
 	);
 	const core = {
 		loadTasks: async () => [task],
@@ -58,7 +58,22 @@ function setup() {
 		filesystem: {
 			agenticWorkspaceDir: join(directory, ".agentic-workspace"),
 			projectRoot: directory,
-			loadConfig: async () => ({ projectName: "Test" }),
+			loadConfig: async () => ({
+				projectName: "Test",
+				agentConfiguration: {
+					selectedPreset: "opencode",
+					presets: {
+						opencode: {
+							command: "opencode",
+							env: {},
+							prepare: "",
+							bootstrap: "opencode",
+							resumeFlag: "--session",
+						},
+					},
+					modes,
+				},
+			}),
 			listMilestones: async () => [],
 			listArchivedMilestones: async () => [],
 		},

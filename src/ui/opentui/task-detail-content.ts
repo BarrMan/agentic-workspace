@@ -133,7 +133,6 @@ function metadataLines(task: Task | TaskDetail, options: TaskDetailStyledOptions
 	if (task.updatedDate && task.updatedDate !== task.createdDate) {
 		lines.push(dateMetadataLine("Updated", task.updatedDate, options.dateFormat));
 	}
-	if (task.dueDate) lines.push(dateMetadataLine("Due", task.dueDate, options.dateFormat));
 	if (task.priority) {
 		const dot = priorityDot(task.priority);
 		lines.push([

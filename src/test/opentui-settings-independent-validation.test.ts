@@ -55,7 +55,7 @@ describe("independent MAIN settings persistence through public input", () => {
 			modes,
 		};
 		await upsertAgentConfiguration(core, "project", configuration);
-		const path = join(core.filesystem.agenticWorkspaceDir, "agents.json");
+		const path = core.filesystem.configFilePath;
 		const setup = await createTestRenderer({ width: 140, height: 42, kittyKeyboard: true, exitOnCtrlC: false });
 		cleanup.push(() => setup.renderer.destroy());
 		const root = new BoxRenderable(setup.renderer, { width: "100%", height: "100%", flexDirection: "column" });
@@ -283,7 +283,10 @@ describe("independent MAIN settings persistence through public input", () => {
 		f.setup.mockInput.pressKey("s", { ctrl: true });
 		await settle(f.setup, () => !f.setup.captureCharFrame().includes("Categories"));
 		expectCombined(await loadAgentConfiguration(f.core, "project"));
-		expectCombined(JSON.parse(await readFile(f.path, "utf8")));
+		expectCombined(
+			(Bun.YAML.parse(await readFile(f.path, "utf8")) as { agent_configuration: AgentConfiguration })
+				.agent_configuration,
+		);
 		await open();
 		await category(f.setup, "Modes");
 		await field(f.setup, "Model");
@@ -361,8 +364,11 @@ describe("independent MAIN settings persistence through public input", () => {
 			await settle(f.setup, () => !f.setup.captureCharFrame().includes("Categories"));
 			const saved = await loadAgentConfiguration(f.core, "project");
 			expect(saved?.modes?.profiles.review?.textColor).toBe(color === "Default" ? undefined : color);
-			const raw = JSON.parse(await readFile(f.path, "utf8"));
-			expect(Object.hasOwn(raw.modes.profiles.review, "textColor")).toBe(color !== "Default");
+			const raw = (Bun.YAML.parse(await readFile(f.path, "utf8")) as { agent_configuration: AgentConfiguration })
+				.agent_configuration;
+			const profile = raw.modes?.profiles.review;
+			expect(profile).toBeDefined();
+			expect(Object.hasOwn(profile!, "textColor")).toBe(color !== "Default");
 		});
 	}
 

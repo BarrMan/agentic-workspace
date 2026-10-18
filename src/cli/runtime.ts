@@ -30,7 +30,7 @@ export class CliRuntime {
 	async projectRoot(): Promise<string> {
 		const root = await this.findProjectRoot();
 		if (root) return root;
-		console.error("No AgenticWorkspace project found. Run `agentic-workspace init` to initialize.");
+		console.error("No AgenticWorkspace project found in this directory.");
 		throw Object.assign(new Error("CLI requested exit"), { exitCode: 1 });
 	}
 }

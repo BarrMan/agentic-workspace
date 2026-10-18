@@ -80,6 +80,7 @@ describe("native workspace rich detail", () => {
 			// Metadata block.
 			expect(frame).toContain("Created:");
 			expect(frame).toContain("Priority:");
+			expect(frame).not.toContain("Due:");
 			expect(frame).toContain("Milestone:");
 			expect(frame).toContain("Milestone m1");
 			expect(frame).toContain("Readiness:");

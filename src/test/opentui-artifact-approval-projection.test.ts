@@ -36,7 +36,9 @@ async function setup() {
 		join(container, "task.md"),
 		"---\ntask_schema_version: 3\nid: BACK-23\ntitle: Approval projection\nstatus: To Do\nassignee: []\ncreated_date: 2026-10-10\nlabels: []\ndependencies: []\n---\n\ntask record\n",
 	);
-	const planPath = join(container, "plan.md");
+	const artifactsDir = join(container, "artifacts");
+	await mkdir(artifactsDir, { recursive: true });
+	const planPath = join(artifactsDir, "plan.md");
 	await writeFile(planPath, "plan v1\n");
 	const repository = new TaskArtifactRepository({ agenticWorkspaceDirectory: agenticWorkspaceDir });
 	const modes = {
@@ -97,18 +99,18 @@ async function setup() {
 			},
 		},
 	};
-	await mkdir(join(container, "design"), { recursive: true });
-	await writeFile(join(container, "design", "review.md"), "custom review\n");
-	await writeFile(join(container, "spec.md"), "spec\n");
+	await mkdir(join(artifactsDir, "design"), { recursive: true });
+	await writeFile(join(artifactsDir, "design", "review.md"), "custom review\n");
+	await writeFile(join(artifactsDir, "spec.md"), "spec\n");
 	await writeFile(
-		join(agenticWorkspaceDir, "agents.json"),
-		JSON.stringify({
+		join(agenticWorkspaceDir, "agentic-workspace.config.yml"),
+		`agent_configuration: ${JSON.stringify({
 			selectedPreset: "opencode",
 			presets: {
 				opencode: { command: "opencode", env: {}, prepare: "", bootstrap: "opencode", resumeFlag: "--session" },
 			},
 			modes,
-		}),
+		})}\n`,
 	);
 	let options: OpenTuiWorkspaceOptions | undefined;
 	const renderer = Object.assign(new EventEmitter(), { width: 120, height: 40 });
@@ -132,7 +134,22 @@ async function setup() {
 				agenticWorkspaceDir,
 				tasksDir: join(agenticWorkspaceDir, "tasks"),
 				taskArtifacts: repository,
-				loadConfig: async () => ({ projectName: "Test" }),
+				loadConfig: async () => ({
+					projectName: "Test",
+					agentConfiguration: {
+						selectedPreset: "opencode",
+						presets: {
+							opencode: {
+								command: "opencode",
+								env: {},
+								prepare: "",
+								bootstrap: "opencode",
+								resumeFlag: "--session",
+							},
+						},
+						modes,
+					},
+				}),
 				listMilestones: async () => [],
 				listArchivedMilestones: async () => [],
 			},
@@ -320,8 +337,8 @@ describe("controller artifact approval projection", () => {
 		const harness = await setup();
 		try {
 			expect(await projection(harness)).toMatchObject({ modeLabel: "PLAN", approved: false });
-			expect(await Bun.file(join(harness.container, "plan.md")).exists()).toBe(true);
-			expect(await Bun.file(join(harness.container, ".artifacts.json")).exists()).toBe(false);
+			expect(await Bun.file(join(harness.container, "artifacts", "plan.md")).exists()).toBe(true);
+			expect(await Bun.file(join(harness.container, "artifacts", ".artifacts.json")).exists()).toBe(false);
 			expect((await harness.repository.status(task.id, "plan.md")).state).toBe("draft");
 		} finally {
 			harness.controller.destroy();

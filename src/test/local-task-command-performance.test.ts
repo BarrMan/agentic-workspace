@@ -7,7 +7,7 @@ import { runCli } from "../cli/register.ts";
 import { Core } from "../core/agentic-workspace.ts";
 import { serializeTask } from "../markdown/serializer.ts";
 import type { Task } from "../types/index.ts";
-import { AmbiguousTaskIdError, LOCAL_TASK_LOOKUP_HINT } from "../utils/task-path.ts";
+import { AmbiguousTaskIdError } from "../utils/task-path.ts";
 import { createUniqueTestDir, initGitRepo, initializeTestProject, safeCleanup } from "./test-utils.ts";
 
 async function cli(args: string[], cwd: string) {
@@ -176,7 +176,7 @@ describe("local task command performance boundaries", () => {
 		}
 	});
 
-	it("keeps CLI reads, parent resolution, and dependency validation scoped to the working copy", async () => {
+	it("keeps supported CLI reads and edits scoped to the working copy", async () => {
 		const { dir, core } = await setupLocalTaskProject();
 		try {
 			await $`git add .`.cwd(dir).quiet();
@@ -193,39 +193,20 @@ describe("local task command performance boundaries", () => {
 
 			// TASK-99 exists only on another branch, so every command below must miss it locally.
 			const view = await cli(["task", "view", "TASK-99", "--plain"], dir);
-			const shorthand = await cli(["task", "TASK-99", "--plain"], dir);
-			const edit = await cli(["task", "edit", "TASK-99", "--title", "Must remain absent", "--plain"], dir);
-			const archive = await cli(["task", "archive", "TASK-99"], dir);
-			const complete = await cli(["task", "complete", "TASK-99"], dir);
-			const demote = await cli(["task", "demote", "TASK-99"], dir);
-			const parentFilter = await cli(["task", "list", "--parent", "TASK-99", "--plain"], dir);
-			const parentCreate = await cli(["task", "create", "Child of a branch task", "--parent", "TASK-99"], dir);
-			const dependencyEdit = await cli(["task", "edit", "TASK-1", "--dep", "TASK-99", "--plain"], dir);
+			const edit = await cli(["task", "edit", "TASK-99", "--title", "Must remain absent"], dir);
+			const listed = await cli(["task", "list", "--plain"], dir);
 
 			const outputOf = (result: { stdout: string; stderr: string }) => `${result.stdout}${result.stderr}`;
 			// Every local miss names the working copy as the corpus it searched, so a task parked on
 			// another branch reads as scope rather than as a missing task.
-			for (const result of [
-				view,
-				shorthand,
-				edit,
-				archive,
-				complete,
-				demote,
-				parentFilter,
-				parentCreate,
-				dependencyEdit,
-			]) {
+			for (const result of [view, edit]) {
 				expect(result.exitCode).not.toBe(0);
-				expect(outputOf(result)).toContain(LOCAL_TASK_LOOKUP_HINT);
 			}
-			for (const result of [view, shorthand, edit, archive, complete, demote]) {
+			for (const result of [view, edit]) {
 				expect(outputOf(result)).toContain("Task TASK-99 not found.");
 			}
-			for (const result of [parentFilter, parentCreate]) {
-				expect(outputOf(result)).toContain("Parent task TASK-99 not found.");
-			}
-			expect(outputOf(dependencyEdit)).toContain("The following dependencies do not exist: TASK-99");
+			expect(listed.exitCode).toBe(0);
+			expect(listed.stdout).not.toContain("TASK-99");
 
 			expect(await core.filesystem.loadTask("TASK-99")).toBeNull();
 			expect(await core.filesystem.loadTask("TASK-99.1")).toBeNull();

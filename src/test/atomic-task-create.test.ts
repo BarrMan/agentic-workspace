@@ -38,7 +38,7 @@ describe("atomic task creation", () => {
 	beforeEach(async () => {
 		originalGlobalLockEnv = process.env.USE_GLOBAL_TASK_ID_LOCK;
 		delete process.env.USE_GLOBAL_TASK_ID_LOCK;
-		// A user-scope agents.json must not leak into the project's parent lookup; pin it to an empty
+		// User-level configuration must not leak into the project's parent lookup; pin it to an empty
 		// directory (mirrors `config.test.ts`).
 		originalXdgConfigHome = process.env.XDG_CONFIG_HOME;
 		configHome = await mkdtemp(join(tmpdir(), "agentic-workspace-atomic-config-"));

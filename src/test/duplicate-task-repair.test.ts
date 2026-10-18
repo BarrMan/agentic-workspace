@@ -101,7 +101,7 @@ describe("duplicate task diagnosis", () => {
 			const message = String(error).replaceAll("\\", "/");
 			expect(message).toContain("agentic-workspace/tasks/task-7/task.md");
 			expect(message).toContain("agentic-workspace/completed/task-7/task.md");
-			expect(message).toContain("agentic-workspace doctor");
+			expect(message).toContain("Remove the conflicting files, then retry.");
 		}
 	});
 

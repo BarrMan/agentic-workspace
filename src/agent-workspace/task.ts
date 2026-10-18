@@ -161,6 +161,19 @@ export class Task {
 		if (this.#selectedModeId === modeId) this.#selectedModeId = Object.keys(this.modes)[0] ?? "";
 	}
 
+	setModeApproval(modeId: ModeId): void {
+		if (typeof modeId !== "string" || modeId.trim() === "") throw new Error("Mode ID must not be empty.");
+		this.task.modeApprovals = { ...this.task.modeApprovals, [modeId]: true };
+	}
+
+	clearModeApproval(modeId: ModeId): void {
+		if (typeof modeId !== "string" || modeId.trim() === "") throw new Error("Mode ID must not be empty.");
+		if (!this.task.modeApprovals?.[modeId]) return;
+		const approvals = { ...this.task.modeApprovals };
+		delete approvals[modeId];
+		this.task.modeApprovals = Object.keys(approvals).length ? approvals : undefined;
+	}
+
 	edit(changes: Partial<TaskRecord>): void {
 		if (!this.editable) throw new Error(`Task is not editable: ${this.id}`);
 		Object.assign(this.task, changes);

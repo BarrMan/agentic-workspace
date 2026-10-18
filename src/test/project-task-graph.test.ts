@@ -138,7 +138,7 @@ describe("ProjectTaskGraph", () => {
 				"Task ID TASK-1 is ambiguous; 2 files match:",
 				"  - agentic-workspace/tasks/task-1-copy.md",
 				"  - agentic-workspace/tasks/task-1.md",
-				"Run 'agentic-workspace doctor' to review the duplicate task IDs.",
+				"Remove the conflicting files, then retry.",
 			].join("\n"),
 		);
 	});

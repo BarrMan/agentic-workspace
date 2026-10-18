@@ -37,15 +37,15 @@ describe("CLI description newlines", () => {
 	afterEach(async () => safeCleanup(testDir));
 
 	it("stores literal newlines in description frontmatter on create and edit", async () => {
-		await cli(["task", "create", "Multi-line", "--desc", description], testDir);
+		await cli(["task", "create", "Multi-line", "--description", description], testDir);
 		const core = new Core(testDir);
 		expect((await core.filesystem.loadTask("task-1"))?.description).toBe(description);
-		await cli(["task", "edit", "1", "--desc", "Replacement\ntext"], testDir);
+		await cli(["task", "edit", "1", "--description", "Replacement\ntext"], testDir);
 		expect((await core.filesystem.loadTask("task-1"))?.description).toBe("Replacement\ntext");
 	});
 
 	it("does not interpret escaped newline text", async () => {
-		await cli(["task", "create", "Literal", "--desc", "First line\\nSecond line"], testDir);
+		await cli(["task", "create", "Literal", "--description", "First line\\nSecond line"], testDir);
 		expect((await new Core(testDir).filesystem.loadTask("task-1"))?.description).toBe("First line\\nSecond line");
 	});
 });

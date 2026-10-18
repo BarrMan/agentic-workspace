@@ -5,8 +5,6 @@ import { runCli } from "../cli/register.ts";
 import { Core } from "../core/agentic-workspace.ts";
 import { withReadiness } from "../core/task-detail.ts";
 import type { FileSystem } from "../file-system/operations.ts";
-import { McpServer } from "../mcp/server.ts";
-import { registerTaskTools } from "../mcp/tools/tasks/index.ts";
 import type { Task, TaskSearchResult } from "../types/index.ts";
 import { NO_MILESTONE_FILTER_VALUE } from "../utils/milestone-filter.ts";
 import {
@@ -72,7 +70,7 @@ function $(parts: TemplateStringsArray, ...values: unknown[]) {
 }
 
 /**
- * The local one-shot index (`task list --search`, the TUI views, the MCP adapter) and the
+ * The local one-shot index (`task list --search`, the TUI views) and the
  * persistent search (`agentic-workspace search`, the web API) must agree on what a query matches
  * and on what a filter means. These tests pin that agreement.
  */
@@ -154,6 +152,15 @@ describe("cross-surface search parity", () => {
 
 		expect(localMatches).toEqual(["task-1"]);
 		expect(await persistentTaskIds("morgan")).toEqual(["TASK-1"]);
+	});
+
+	it("uses case-insensitive literal matching with stable corpus order", async () => {
+		const localMatches = createTaskSearchIndex(tasks).search({ query: "REWORK" });
+		const persistentMatches = await persistentTaskIds("REWORK");
+
+		expect(localMatches.map((task) => task.id)).toEqual(["task-1"]);
+		expect(persistentMatches).toEqual(["TASK-1"]);
+		expect(createTaskSearchIndex(tasks).search({ query: "rewrok" })).toEqual([]);
 	});
 
 	it("agrees on a label filter applied without a query", async () => {
@@ -285,7 +292,6 @@ describe("labelMatch semantics", () => {
 describe("filter wiring across surfaces", () => {
 	let testDir: string;
 	let core: Core;
-	let mcpServer: McpServer;
 
 	beforeEach(async () => {
 		testDir = createUniqueTestDir("task-search-wiring");
@@ -304,54 +310,19 @@ describe("filter wiring across surfaces", () => {
 		});
 		await core.createTaskFromInput({ title: "Wiring one label", project: "api", status: "To Do", labels: ["backend"] });
 		await core.createTaskFromInput({ title: "Wiring no labels", status: "To Do" });
-
-		mcpServer = new McpServer(testDir, "Test instructions");
-		const mcpConfig = await mcpServer.application.filesystem.loadConfig();
-		if (!mcpConfig) throw new Error("Expected MCP test config");
-		registerTaskTools(mcpServer, mcpConfig);
 	});
 
 	afterEach(async () => {
-		await mcpServer.stop();
 		await safeCleanup(testDir);
 	});
 
-	const mcpTaskList = async (args: Record<string, unknown>): Promise<string> => {
-		const result = await mcpServer.testInterface.callTool({ params: { name: "task_list", arguments: args } });
-		const content = result.content as Array<{ text?: string }> | undefined;
-		return content?.[0]?.text ?? "";
-	};
-
-	it("requires every label through the MCP task_list labels argument", async () => {
-		const bothLabels = await mcpTaskList({ labels: ["backend", "infrastructure"] });
-		expect(bothLabels).toContain("Wiring both labels");
-		expect(bothLabels).not.toContain("Wiring one label");
-		expect(bothLabels).not.toContain("Wiring no labels");
-
-		const oneLabel = await mcpTaskList({ labels: ["backend"] });
-		expect(oneLabel).toContain("Wiring both labels");
-		expect(oneLabel).toContain("Wiring one label");
+	it("does not expose unlisted task-list filters", async () => {
+		const result = await $`${cliCommand} task list --labels backend --plain`.cwd(testDir).nothrow().quiet();
+		expect(result.exitCode).not.toBe(0);
+		expect(result.stderr.toString()).toContain("unknown option '--labels'");
 	});
 
-	it("matches MCP labels case-insensitively like every other surface", async () => {
-		const upper = await mcpTaskList({ labels: ["BACKEND", "INFRASTRUCTURE"] });
-		expect(upper).toContain("Wiring both labels");
-		expect(upper).not.toContain("Wiring one label");
-	});
-
-	it("requires every label through the CLI task list --labels flag", async () => {
-		const both = await $`${cliCommand} task list --labels backend,infrastructure --plain`.cwd(testDir).quiet();
-		expect(both.exitCode).toBe(0);
-		expect(both.stdout.toString()).toContain("Wiring both labels");
-		expect(both.stdout.toString()).not.toContain("Wiring one label");
-
-		const single = await $`${cliCommand} task list --labels backend --plain`.cwd(testDir).quiet();
-		expect(single.exitCode).toBe(0);
-		expect(single.stdout.toString()).toContain("Wiring both labels");
-		expect(single.stdout.toString()).toContain("Wiring one label");
-	});
-
-	it("filters by project identically through Core, MCP, and both CLI entry points", async () => {
+	it("filters project records through Core and the supported cross-record search", async () => {
 		const expected = ["Wiring both labels"];
 
 		// Core.queryTasks backs `task list` and `GET /api/tasks`.
@@ -362,16 +333,6 @@ describe("filter wiring across surfaces", () => {
 			.filter((result): result is TaskSearchResult => result.type === "task")
 			.map((result) => result.task.title);
 		expect(searchTitles).toEqual(expected);
-
-		const mcpOutput = await mcpTaskList({ project: ["web"] });
-		expect(mcpOutput).toContain("Wiring both labels");
-		expect(mcpOutput).not.toContain("Wiring one label");
-		expect(mcpOutput).not.toContain("Wiring no labels");
-
-		const list = await $`${cliCommand} task list --project web --plain`.cwd(testDir).quiet();
-		expect(list.exitCode).toBe(0);
-		expect(list.stdout.toString()).toContain("Wiring both labels");
-		expect(list.stdout.toString()).not.toContain("Wiring one label");
 
 		const search = await $`${cliCommand} search "Wiring" --project web --plain`.cwd(testDir).quiet();
 		expect(search.exitCode).toBe(0);

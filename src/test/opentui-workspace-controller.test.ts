@@ -195,8 +195,8 @@ function groupSeed(): GroupState {
 function composerCore(agenticWorkspaceDir: string, created: Task): Core {
 	mkdirSync(agenticWorkspaceDir, { recursive: true });
 	writeFileSync(
-		join(agenticWorkspaceDir, "agents.json"),
-		JSON.stringify({ ...getBuiltInAgentConfiguration(), modes: getDefaultModeCatalog() }),
+		join(agenticWorkspaceDir, "agentic-workspace.config.yml"),
+		`agent_configuration: ${JSON.stringify({ ...getBuiltInAgentConfiguration(), modes: getDefaultModeCatalog() })}\n`,
 	);
 	return {
 		loadTasks: async () => [],
@@ -205,7 +205,12 @@ function composerCore(agenticWorkspaceDir: string, created: Task): Core {
 			rootDir: agenticWorkspaceDir,
 			agenticWorkspaceDir,
 			loadTask: async (id: string) => task(id),
-			loadConfig: async () => ({ projectName: "Roadmap", statuses: ["To Do"], autoCommit: false }),
+			loadConfig: async () => ({
+				projectName: "Roadmap",
+				statuses: ["To Do"],
+				autoCommit: false,
+				agentConfiguration: projectConfiguration(),
+			}),
 			listMilestones: async () => [],
 			listArchivedMilestones: async () => [],
 		},
@@ -444,7 +449,10 @@ function core(projectName = "Roadmap", tasks: Task[] = []): Core {
 	const projectRoot = mkdtempSync(join(tmpdir(), "workspace-controller-project-"));
 	const agenticWorkspaceDir = join(projectRoot, ".agentic-workspace");
 	mkdirSync(agenticWorkspaceDir, { recursive: true });
-	writeFileSync(join(agenticWorkspaceDir, "agents.json"), JSON.stringify(projectConfiguration()));
+	writeFileSync(
+		join(agenticWorkspaceDir, "agentic-workspace.config.yml"),
+		`agent_configuration: ${JSON.stringify(projectConfiguration())}\n`,
+	);
 	return {
 		loadTasks: async () => tasks,
 		loadTaskSnapshot: async () => corpusSnapshot(tasks),
@@ -452,7 +460,7 @@ function core(projectName = "Roadmap", tasks: Task[] = []): Core {
 			projectRoot,
 			agenticWorkspaceDir,
 			loadTask: async (id: string) => task(id),
-			loadConfig: async () => ({ projectName }),
+			loadConfig: async () => ({ projectName, agentConfiguration: projectConfiguration() }),
 			listMilestones: async () => [],
 			listArchivedMilestones: async () => [],
 		},
@@ -463,7 +471,10 @@ function core(projectName = "Roadmap", tasks: Task[] = []): Core {
 function coreWithRoot(rootDir: string, projectName = "Roadmap", tasks: Task[] = []): Core {
 	const agenticWorkspaceDir = join(rootDir, ".agentic-workspace");
 	mkdirSync(agenticWorkspaceDir, { recursive: true });
-	writeFileSync(join(agenticWorkspaceDir, "agents.json"), JSON.stringify(projectConfiguration()));
+	writeFileSync(
+		join(agenticWorkspaceDir, "agentic-workspace.config.yml"),
+		`agent_configuration: ${JSON.stringify(projectConfiguration())}\n`,
+	);
 	return {
 		loadTasks: async () => tasks,
 		loadTaskSnapshot: async () => corpusSnapshot(tasks),
@@ -472,7 +483,7 @@ function coreWithRoot(rootDir: string, projectName = "Roadmap", tasks: Task[] = 
 			projectRoot: rootDir,
 			agenticWorkspaceDir,
 			loadTask: async (id: string) => task(id),
-			loadConfig: async () => ({ projectName }),
+			loadConfig: async () => ({ projectName, agentConfiguration: projectConfiguration() }),
 			listMilestones: async () => [],
 			listArchivedMilestones: async () => [],
 		},
@@ -564,8 +575,8 @@ function actionCore(
 	const agenticWorkspaceDir = join(projectRoot, ".agentic-workspace");
 	mkdirSync(agenticWorkspaceDir, { recursive: true });
 	writeFileSync(
-		join(agenticWorkspaceDir, "agents.json"),
-		JSON.stringify({ ...getBuiltInAgentConfiguration(), modes: getDefaultModeCatalog() }),
+		join(agenticWorkspaceDir, "agentic-workspace.config.yml"),
+		`agent_configuration: ${JSON.stringify({ ...getBuiltInAgentConfiguration(), modes: getDefaultModeCatalog() })}\n`,
 	);
 	return {
 		getTask: async (id: string) => tasks.find((task) => task.id === id),
@@ -586,6 +597,7 @@ function actionCore(
 			loadConfig: async () => ({
 				projectName: "Roadmap",
 				statuses: ["To Do", "In Progress", "Done"],
+				agentConfiguration: projectConfiguration(),
 			}),
 			listMilestones: async () => [],
 			listArchivedMilestones: async () => [],
@@ -1410,7 +1422,7 @@ describe("OpenTuiWorkspaceController", () => {
 				...core().filesystem,
 				tasksDir: "/tmp/agentic-workspace-tasks",
 				configFilePath: "/tmp/agentic-workspace-config.yml",
-				loadConfig: async () => ({ projectName: "Roadmap" }),
+				loadConfig: async () => ({ projectName: "Roadmap", agentConfiguration: projectConfiguration() }),
 				listMilestones: async () => [],
 				listArchivedMilestones: async () => [],
 			},
@@ -1481,7 +1493,7 @@ describe("OpenTuiWorkspaceController", () => {
 		try {
 			await recorder.next(0);
 			await waitUntil(() => created === 2);
-			rmSync(fixture.taskPath, { recursive: true, force: true });
+			await fixture.core.deleteTask(fixture.task.id);
 			expect(await fixture.state.listTasks()).toHaveLength(0);
 			await expect(removed?.(fixture.task.id)).resolves.toBeUndefined();
 			await waitUntil(() => recorder.options.at(-1)?.tasks.length === 0);
@@ -3401,6 +3413,10 @@ describe("OpenTuiWorkspaceController", () => {
 			if (!entry) throw new Error("Expected task entry.");
 			mounted.onAgentStart?.(entry, 80, 24);
 			await waitUntil(() => fake.calls.length > 0);
+			await waitUntil(() => Boolean(recorder.options.at(-1)?.liveAgent?.terminal));
+			const activated = counters.activate;
+			const terminal = recorder.options.at(-1)?.liveAgent?.terminal;
+			if (!terminal) throw new Error("Expected a retained terminal.");
 			fake.setEvidence(
 				new Map([
 					[
@@ -3413,6 +3429,12 @@ describe("OpenTuiWorkspaceController", () => {
 			// The durable session parks. A later overlay of running must not turn the row green.
 			durableStatus = "parked";
 			await controller.refresh();
+			for (let i = 0; i < 4; i++) await controller.refresh();
+			const probes = fake.calls.length;
+			await waitUntil(() => fake.calls.length >= probes + 3);
+			expect(counters.activate).toBe(activated);
+			expect(counters.prepare).toBe(1);
+			expect(recorder.options.at(-1)?.liveAgent?.terminal).toBe(terminal);
 			expect(recorder.options.at(-1)?.indicationByTask?.get("TASK-1")).toBe("working");
 			// A fresh overlay change renders its waiting event rather than durable lifecycle.
 			fake.setEvidence(
@@ -3424,6 +3446,43 @@ describe("OpenTuiWorkspaceController", () => {
 				]),
 			);
 			await waitUntil(() => recorder.indication.at(-1)?.get("TASK-1") === "waiting");
+		} finally {
+			controller.destroy();
+			await running;
+		}
+	});
+
+	it("settles a failed automatic parked-session resume until explicitly retried", async () => {
+		const tasks = [task("TASK-1")];
+		const parked = { ...session("TASK-1"), id: "rejecting-resume", status: "parked" as const };
+		const counters: AdoptionCounters = { prepares: [], activated: [], finished: [] };
+		const recorder = new MountRecorder();
+		const service = adoptionWorkspaceState(
+			tasks,
+			() => ({ taskId: "TASK-1", activeSessionId: parked.id, sessions: [parked] }),
+			counters,
+		);
+		service.prepareSession = async (_taskId, id) => {
+			counters.prepares.push(id ?? "fresh");
+			throw new Error("resume rejected");
+		};
+		const controller = createController(core(), {
+			viewStateStore: new MemoryViewStateStore(state({ selectedTaskId: "TASK-1" })),
+			workspaceState: service,
+			runtime: adoptionRuntime(recorder),
+		});
+		const running = controller.run();
+		try {
+			const mounted = await recorder.next(0);
+			const entry = mounted.tasks.find((candidate) => candidate.id === "TASK-1");
+			if (!entry) throw new Error("Expected selected task entry.");
+			await waitUntil(() => counters.prepares.length === 1);
+			for (let i = 0; i < 4; i++) await controller.refresh();
+			await drainTurns(20);
+			expect(counters.prepares).toEqual([parked.id]);
+			mounted.onAgentStart?.(entry, 80, 24);
+			await waitUntil(() => counters.prepares.length === 2);
+			expect(counters.prepares).toEqual([parked.id, parked.id]);
 		} finally {
 			controller.destroy();
 			await running;
@@ -3991,7 +4050,10 @@ describe("OpenTuiWorkspaceController", () => {
 		const previousConfigHome = process.env.XDG_CONFIG_HOME;
 		const configHome = mkdtempSync(join(tmpdir(), "handoff-config-"));
 		const agenticWorkspaceDir = mkdtempSync(join(tmpdir(), "handoff-"));
-		writeFileSync(join(agenticWorkspaceDir, "agents.json"), JSON.stringify(projectConfiguration()));
+		writeFileSync(
+			join(agenticWorkspaceDir, "agentic-workspace.config.yml"),
+			`agent_configuration: ${JSON.stringify(projectConfiguration())}\n`,
+		);
 		process.env.XDG_CONFIG_HOME = configHome;
 		const tasks = [task("TASK-1")];
 		const predecessor: AgentSession = {
@@ -4082,7 +4144,7 @@ describe("OpenTuiWorkspaceController", () => {
 			filesystem: {
 				rootDir: agenticWorkspaceDir,
 				agenticWorkspaceDir,
-				loadConfig: async () => ({ projectName: "Roadmap" }),
+				loadConfig: async () => ({ projectName: "Roadmap", agentConfiguration: projectConfiguration() }),
 				listMilestones: async () => [],
 				listArchivedMilestones: async () => [],
 				loadTask: async (id: string) => tasks.find((candidate) => candidate.id === id),
@@ -4326,7 +4388,10 @@ describe("OpenTuiWorkspaceController", () => {
 		const previousConfigHome = process.env.XDG_CONFIG_HOME;
 		const configHome = mkdtempSync(join(tmpdir(), "handoff-drift-config-"));
 		const agenticWorkspaceDir = mkdtempSync(join(tmpdir(), "handoff-drift-"));
-		writeFileSync(join(agenticWorkspaceDir, "agents.json"), JSON.stringify(projectConfiguration()));
+		writeFileSync(
+			join(agenticWorkspaceDir, "agentic-workspace.config.yml"),
+			`agent_configuration: ${JSON.stringify(projectConfiguration())}\n`,
+		);
 		process.env.XDG_CONFIG_HOME = configHome;
 		const tasks = [task("TASK-1")];
 		const predecessor: AgentSession = {
@@ -4395,7 +4460,7 @@ describe("OpenTuiWorkspaceController", () => {
 			filesystem: {
 				rootDir: agenticWorkspaceDir,
 				agenticWorkspaceDir,
-				loadConfig: async () => ({ projectName: "Roadmap" }),
+				loadConfig: async () => ({ projectName: "Roadmap", agentConfiguration: projectConfiguration() }),
 				listMilestones: async () => [],
 				listArchivedMilestones: async () => [],
 				loadTask: async (id: string) => tasks.find((candidate) => candidate.id === id),

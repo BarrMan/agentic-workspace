@@ -21,19 +21,6 @@ function stateLabel(state: "draft" | "approved" | "missing"): string {
 /** Register generic task artifact list, read, and write commands on the task command. */
 export function registerTaskArtifactCommands(taskCommand: Command, runtime: TaskArtifactCommandRuntime): void {
 	const artifact = taskCommand.command("artifact").description("manage task artifacts");
-	const statusCommand = artifact
-		.command("status <taskId> <path>")
-		.option("--json", "output JSON")
-		.action(async (taskId: string, path: string) => {
-			try {
-				const status = await (await runtime.createCore()).filesystem.taskArtifacts.status(taskId, path);
-				if (wantsJson(statusCommand)) return printJson({ ...status, state: stateLabel(status.state) });
-				console.log(`${stateLabel(status.state)}\t${status.path}`);
-			} catch (error) {
-				console.error(error instanceof Error ? error.message : String(error));
-				process.exitCode = 1;
-			}
-		});
 	const listCommand = artifact
 		.command("list <taskId>")
 		.option("--json", "output JSON")

@@ -162,6 +162,8 @@ export class TaskLifecycleService {
 			if (!current.filePath) return { success: false, cleanedTaskIds: [] };
 			if (current.filePath !== task.filePath)
 				throw new Error(`Task ${task.id} record path changed before deletion; retry the operation.`);
+			await this.cleanupTaskSessions?.(current.id);
+			await removeTaskWorktree(this.filesystem.rootDir, current);
 			await this.forgetTaskSessions?.(current.id);
 			try {
 				await this.filesystem.deleteTaskContainer(current, true);
@@ -234,13 +236,8 @@ export class TaskLifecycleService {
 			if (current.filePath !== task.filePath)
 				throw new Error(`Task ${task.id} record path changed before completion; retry the operation.`);
 			await this.cleanupTaskSessions?.(current.id);
+			await removeTaskWorktree(this.filesystem.rootDir, current);
 			if (!(await this.filesystem.completeTask(current.id, true))) return false;
-			try {
-				await removeTaskWorktree(this.filesystem.rootDir, current);
-			} catch (error) {
-				const message = error instanceof Error ? error.message : String(error);
-				console.error(`Could not remove worktree for ${current.id}: ${message}`);
-			}
 			return true;
 		});
 	}

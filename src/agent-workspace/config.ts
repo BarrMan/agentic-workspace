@@ -3,6 +3,8 @@ import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import lockfile from "proper-lockfile";
 import type { Core } from "../core/agentic-workspace.ts";
+import { parseConfig, serializeConfig } from "../file-system/config.ts";
+import type { AgenticWorkspaceConfig } from "../types/index.ts";
 import { isModeTextColor } from "./mode-colors.ts";
 import {
 	AGENT_BOOTSTRAP_TYPES,
@@ -20,7 +22,7 @@ import {
 const BOOTSTRAP_TYPES = new Set<AgentBootstrap>(AGENT_BOOTSTRAP_TYPES);
 const SAFE_PRESET_NAME = /^(?!__proto__$|prototype$|constructor$)[A-Za-z_][A-Za-z0-9_-]*$/;
 const POSIX_ENV_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/;
-const AGENT_CONFIGURATION_FILE_NAME = "agents.json";
+const ROOT_CONFIGURATION_FILE_NAME = "agentic-workspace.config.yml";
 const SAFE_MODE_ID = /^(?!__proto__$|prototype$|constructor$)[a-z][a-z0-9-]*$/;
 
 /** Task-container relative names only; internal files and task records are not artifacts. */
@@ -125,13 +127,9 @@ export function getBuiltInAgentConfiguration(): AgentConfiguration {
 	return clone(BUILT_IN_CONFIGURATION);
 }
 
-function rootConfigurationPath(): string {
+function rootConfigFilePath(): string {
 	const configHome = process.env.XDG_CONFIG_HOME || join(process.env.HOME || homedir(), ".config");
-	return join(configHome, "agentic-workspace", AGENT_CONFIGURATION_FILE_NAME);
-}
-
-function projectConfigurationPath(core: Core): string {
-	return join(core.filesystem.agenticWorkspaceDir, AGENT_CONFIGURATION_FILE_NAME);
+	return join(configHome, "agentic-workspace", ROOT_CONFIGURATION_FILE_NAME);
 }
 
 function requireTaskId(scope: AgentConfigScope, taskId: string | undefined): string {
@@ -269,7 +267,7 @@ function assertSessionSettings(value: unknown, label: string): void {
 	}
 }
 
-async function readConfiguration(path: string): Promise<AgentConfiguration | null> {
+async function readRootConfiguration(path: string): Promise<AgentConfiguration | null> {
 	let content: string;
 	try {
 		content = await readFile(path, "utf8");
@@ -280,10 +278,11 @@ async function readConfiguration(path: string): Promise<AgentConfiguration | nul
 
 	let parsed: unknown;
 	try {
-		parsed = JSON.parse(content);
+		parsed = parseConfig(content, path).agentConfiguration;
 	} catch (error) {
 		throw new Error(`Invalid agent configuration at ${path}: ${(error as Error).message}`);
 	}
+	if (parsed === undefined) return null;
 	assertAgentConfiguration(parsed, `Invalid agent configuration at ${path}`);
 	return clone(parsed);
 }
@@ -301,11 +300,14 @@ async function withConfigurationLock<T>(path: string, operation: () => Promise<T
 	}
 }
 
-async function writeConfiguration(path: string, config: AgentConfiguration): Promise<void> {
+async function writeRootConfiguration(path: string, config: AgentConfiguration): Promise<void> {
 	let temporaryPath: string | undefined;
 	try {
 		temporaryPath = `${path}.${process.pid}.${Date.now()}.tmp`;
-		await writeFile(temporaryPath, `${JSON.stringify(config, null, 2)}\n`, "utf8");
+		const existing = await readFile(path, "utf8").catch(() => "");
+		const workspaceConfig = parseConfig(existing, path);
+		workspaceConfig.agentConfiguration = config;
+		await writeFile(temporaryPath, serializeConfig(workspaceConfig), "utf8");
 		await rename(temporaryPath, path);
 	} finally {
 		if (temporaryPath) await unlink(temporaryPath).catch(() => undefined);
@@ -327,8 +329,13 @@ export async function loadAgentConfiguration(
 	scope: AgentConfigScope,
 	taskId?: string,
 ): Promise<AgentConfiguration | null> {
-	if (scope === "root") return await readConfiguration(rootConfigurationPath());
-	if (scope === "project") return await readConfiguration(projectConfigurationPath(core));
+	if (scope === "root") return await readRootConfiguration(rootConfigFilePath());
+	if (scope === "project") {
+		const configuration = await core.filesystem.loadConfig();
+		if (!configuration?.agentConfiguration) return null;
+		assertAgentConfiguration(configuration.agentConfiguration, "Invalid project agent configuration");
+		return clone(configuration.agentConfiguration);
+	}
 
 	const task = await core.filesystem.loadTask(requireTaskId(scope, taskId));
 	if (!task) throw new Error(`Task not found: ${taskId}`);
@@ -341,7 +348,7 @@ export async function loadAgentConfiguration(
 export function requireProjectModeCatalog(configuration: AgentConfiguration | null): ModeCatalog {
 	if (!configuration?.modes) {
 		throw new Error(
-			"Project modes are not initialized. Run `agentic-workspace agent-config init project` to initialize the project mode catalog.",
+			"Project modes are not initialized. Run `agentic-workspace workspace` and configure project modes in the TUI.",
 		);
 	}
 	assertModeCatalog(configuration.modes, "Project mode catalog");
@@ -354,11 +361,21 @@ export async function loadProjectModeCatalog(core: Core): Promise<ModeCatalog> {
 }
 
 export async function resolveAgentConfiguration(core: Core, taskId?: string): Promise<ResolvedAgentConfiguration> {
-	if (taskId) {
-		const card = await loadAgentConfiguration(core, "card", taskId);
-		if (card) return { scope: "card", config: card };
-	}
-	return await projectOrParent(core);
+	const parent = await projectOrParent(core);
+	if (!taskId) return parent;
+	const card = await loadAgentConfiguration(core, "card", taskId);
+	if (!card) return parent;
+	return {
+		scope: "card",
+		config: {
+			...parent.config,
+			...card,
+			presets: { ...parent.config.presets, ...card.presets },
+			sessions: card.sessions ? { ...parent.config.sessions, ...card.sessions } : parent.config.sessions,
+			// Modes are project-owned; task/root configuration cannot replace the catalogue.
+			modes: parent.config.modes,
+		},
+	};
 }
 
 /** Resolve a saved preset name using current task, project, then user configuration. */
@@ -412,20 +429,29 @@ async function updateAgentConfigurationInternal(
 	onlyIfAbsent: boolean,
 ): Promise<AgentConfiguration> {
 	if (scope !== "card") {
-		const path = scope === "root" ? rootConfigurationPath() : projectConfigurationPath(core);
+		const path = scope === "root" ? rootConfigFilePath() : core.filesystem.configFilePath;
 		return await withConfigurationLock(path, async () => {
-			const existing = await readConfiguration(path);
+			const existing =
+				scope === "root"
+					? await readRootConfiguration(path)
+					: ((await core.filesystem.loadConfig())?.agentConfiguration ?? null);
+			if (existing) assertAgentConfiguration(existing, `Invalid ${scope} agent configuration`);
 			if (existing && onlyIfAbsent) {
 				if (scope !== "project" || existing.modes !== undefined) return existing;
 				const initialized = clone(updater(clone(existing)));
 				assertAgentConfiguration(initialized);
-				await writeConfiguration(path, initialized);
+				const workspaceConfig = (await core.filesystem.loadConfig()) ?? parseConfig("", path);
+				await core.filesystem.saveConfig({ ...workspaceConfig, agentConfiguration: initialized });
 				return initialized;
 			}
 			const base = existing ?? (await getEditableAgentConfiguration(core, scope, taskId));
 			const next = clone(updater(clone(base)));
 			assertAgentConfiguration(next);
-			await writeConfiguration(path, next);
+			if (scope === "root") await writeRootConfiguration(path, next);
+			else {
+				const workspaceConfig = (await core.filesystem.loadConfig()) ?? parseConfig("", path);
+				await core.filesystem.saveConfig({ ...workspaceConfig, agentConfiguration: next } as AgenticWorkspaceConfig);
+			}
 			return next;
 		});
 	}

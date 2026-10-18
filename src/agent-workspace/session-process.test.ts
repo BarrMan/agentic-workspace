@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { TmuxCommandError } from "libtmux";
+import { TmuxCommandError, TmuxTransportError } from "libtmux";
 import { BunRunner, type ProcessRunner, SessionProcess, type TmuxServer } from "./session-process.ts";
 import type { AgentSession } from "./types.ts";
 
@@ -7,7 +7,7 @@ describe("BunRunner timeouts", () => {
 	it("returns the captured output and a timeout marker instead of throwing", async () => {
 		const runner = new BunRunner();
 
-		const result = await runner.run(["/bin/sh", "-c", "printf 'partial answer'; sleep 5"], { timeoutMs: 200 });
+		const result = await runner.run(["/bin/sh", "-c", "printf 'partial answer'; exec sleep 10"], { timeoutMs: 2_000 });
 
 		expect(result.timedOut).toBe(true);
 		expect(result.stdout).toContain("partial answer");
@@ -114,6 +114,25 @@ describe("native runtime ownership probes", () => {
 		const runner: ProcessRunner = {
 			run: async () => {
 				throw new Error("Missing targets must not probe a process");
+			},
+		};
+		expect(await new SessionProcess(runner, process.cwd(), server).nativeRuntimeClassification(record)).toEqual({
+			status: "missing",
+		});
+	});
+
+	it("classifies an unreachable tmux socket as conclusive absence", async () => {
+		const server = {
+			cmd: async () => {
+				throw new TmuxTransportError("error connecting to /private/tmp/tmux-501/default", {
+					kind: "transport",
+					delivery: "not-sent",
+				});
+			},
+		} as unknown as TmuxServer;
+		const runner: ProcessRunner = {
+			run: async () => {
+				throw new Error("An unavailable server must not probe the OS");
 			},
 		};
 		expect(await new SessionProcess(runner, process.cwd(), server).nativeRuntimeClassification(record)).toEqual({

@@ -45,8 +45,8 @@ function setup(groups: Groups, runtimeOverrides: Record<string, unknown> = {}) {
 	const agenticWorkspaceDir = mkdtempSync(join(tmpdir(), "agentic-workspace-workspace-controller-groups-"));
 	roots.push(agenticWorkspaceDir);
 	writeFileSync(
-		join(agenticWorkspaceDir, "agents.json"),
-		JSON.stringify({ ...getBuiltInAgentConfiguration(), modes: getDefaultModeCatalog() }),
+		join(agenticWorkspaceDir, "agentic-workspace.config.yml"),
+		`agent_configuration: ${JSON.stringify({ ...getBuiltInAgentConfiguration(), modes: getDefaultModeCatalog() })}\n`,
 	);
 	let mounted!: OpenTuiWorkspaceOptions;
 	const renderer = new EventEmitter();
@@ -81,7 +81,10 @@ function setup(groups: Groups, runtimeOverrides: Record<string, unknown> = {}) {
 		}),
 		filesystem: {
 			agenticWorkspaceDir,
-			loadConfig: async () => ({ projectName: "Test" }),
+			loadConfig: async () => ({
+				projectName: "Test",
+				agentConfiguration: { ...getBuiltInAgentConfiguration(), modes: getDefaultModeCatalog() },
+			}),
 			listMilestones: async () => [],
 			listArchivedMilestones: async () => [],
 		},

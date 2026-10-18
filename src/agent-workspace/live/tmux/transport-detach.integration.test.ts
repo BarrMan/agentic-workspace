@@ -46,11 +46,11 @@ it("detaches a default live-session transport before saturated slots admit cance
 		await writeFile(logPath, "");
 		await mkdir(join(root, ".agentic-workspace"), { recursive: true });
 		await writeFile(
-			join(root, ".agentic-workspace", "agents.json"),
-			JSON.stringify({
+			join(root, ".agentic-workspace", "agentic-workspace.config.yml"),
+			`agent_configuration: ${JSON.stringify({
 				selectedPreset: "fixture",
 				presets: { fixture: { command: "pi", env: {}, prepare: "", bootstrap: "pi" } },
-			}),
+			})}\n`,
 		);
 		await writeFile(
 			join(root, "tmux"),
@@ -94,6 +94,12 @@ esac
 			filesystem: {
 				rootDir: root,
 				agenticWorkspaceDir: join(root, ".agentic-workspace"),
+				loadConfig: async () => ({
+					agentConfiguration: {
+						selectedPreset: "fixture",
+						presets: { fixture: { command: "pi", env: {}, prepare: "", bootstrap: "pi" } },
+					},
+				}),
 				loadTask: async (taskId: string) => ({ id: taskId, agentConfiguration: undefined }),
 				taskArtifacts: { containerPath: async (taskId: string) => join(root, "artifacts", taskId) },
 				withTaskLock: async (_task: unknown, operation: () => Promise<unknown>) => await operation(),

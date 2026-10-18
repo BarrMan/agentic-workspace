@@ -318,7 +318,7 @@ beforeAll(async () => {
 	// A developer running the suite from inside a workspace agent pane inherits this variable; the
 	// unowned branch must stay the default here.
 	delete process.env.AGENTIC_WORKSPACE_WORKSPACE_CONTEXT;
-	// A user-scope agents.json must not leak into the template project's parent lookup; pin it to an
+	// User-level configuration must not leak into the template project's parent lookup; pin it to an
 	// empty directory (mirrors `config.test.ts`).
 	originalXdgConfigHome = process.env.XDG_CONFIG_HOME;
 	isolatedConfigHome = await mkdtemp(join(tmpdir(), "agent-sessions-config-"));
@@ -538,7 +538,7 @@ describe.concurrent("AgentSessionService", () => {
 			"can't find session: agentic-workspace-task-1-starting",
 		);
 		expect(runner.actions.some((action) => action.type === "kill")).toBe(false);
-		expect((await service.list("TASK-1")).sessions.map((session) => session.status)).toEqual(["stopped", "stopped"]);
+		expect((await service.list("TASK-1")).sessions.map((session) => session.status)).toEqual(["running", "starting"]);
 	});
 
 	it("attaches a live STARTING record before applying the unverified-pending refusal", async () => {

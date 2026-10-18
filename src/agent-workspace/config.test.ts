@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { Core } from "../core/agentic-workspace.ts";
 import { parseTask } from "../markdown/parser.ts";
@@ -24,6 +24,14 @@ import { type AgentConfiguration, resolveSessionSettings } from "./types.ts";
 let testDir: string;
 let originalXdgConfigHome: string | undefined;
 let core: Core;
+
+async function saveProjectConfiguration(value: AgentConfiguration): Promise<void> {
+	const workspaceConfig = await core.filesystem.loadConfig();
+	await core.filesystem.saveConfig({
+		...(workspaceConfig ?? (await core.filesystem.parseConfig(""))),
+		agentConfiguration: value,
+	});
+}
 
 function configuration(selectedPreset = "custom"): AgentConfiguration {
 	return {
@@ -94,7 +102,11 @@ describe("agent workspace configuration", () => {
 		const task = await core.filesystem.loadTask(saved.taskId);
 		if (!task) throw new Error("Missing configuration test task");
 		await core.updateTask({ ...task, agentConfiguration: undefined });
-		await rm(join(core.filesystem.agenticWorkspaceDir, "agents.json"));
+		const savedConfig = await core.filesystem.loadConfig();
+		if (savedConfig) {
+			delete savedConfig.agentConfiguration;
+			await core.filesystem.saveConfig(savedConfig);
+		}
 		expect((await resolveSessionPreset(core, saved)).command).toBe("custom-agent --run");
 	});
 	it("round-trips raw legacy color omissions without filling colors on load, save, or repeated initialization", async () => {
@@ -104,19 +116,18 @@ describe("agent workspace configuration", () => {
 		if (!plan) throw new Error("Missing PLAN profile");
 		modes.order.push("custom");
 		modes.profiles.custom = { ...structuredClone(plan), name: "CUSTOM" };
-		const path = join(core.filesystem.agenticWorkspaceDir, "agents.json");
-		const raw = `${JSON.stringify({ ...configuration(), modes }, null, 2)}\n`;
-		await writeFile(path, raw);
+		await saveProjectConfiguration({ ...configuration(), modes });
+		const savedConfig = await core.filesystem.loadConfig();
 		const loaded = await loadAgentConfiguration(core, "project");
 		if (!loaded?.modes) throw new Error("Missing loaded catalog");
-		expect(await readFile(path, "utf8")).toBe(raw);
+		expect(savedConfig?.agentConfiguration).toEqual({ ...configuration(), modes });
 		for (const profile of Object.values(loaded.modes.profiles)) expect(Object.hasOwn(profile, "textColor")).toBe(false);
 		expect(effectiveModeTextColor(loaded.modes.profiles.plan, "plan")).toBe("green");
 		expect(effectiveModeTextColor(loaded.modes.profiles.build, "build")).toBe("blue");
 		expect(effectiveModeTextColor(loaded.modes.profiles.custom, "custom")).toBeUndefined();
 		await upsertAgentConfiguration(core, "project", loaded);
 		await initializeAgentConfiguration(core, "project");
-		expect(await readFile(path, "utf8")).toBe(raw);
+		expect((await core.filesystem.loadConfig())?.agentConfiguration).toEqual({ ...configuration(), modes });
 	});
 
 	it("round-trips every supported named color and leaves custom Default omitted", async () => {
@@ -132,12 +143,12 @@ describe("agent workspace configuration", () => {
 		}
 		delete modes.profiles.custom.textColor;
 		await upsertAgentConfiguration(core, "project", { ...configuration(), modes });
-		const saved = JSON.parse(await readFile(join(core.filesystem.agenticWorkspaceDir, "agents.json"), "utf8"));
-		expect(Object.hasOwn(saved.modes.profiles.custom, "textColor")).toBe(false);
+		expect(
+			Object.hasOwn((await loadAgentConfiguration(core, "project"))?.modes?.profiles.custom ?? {}, "textColor"),
+		).toBe(false);
 	});
 
 	it("rejects unsupported colors in both raw loads and saves", async () => {
-		const path = join(core.filesystem.agenticWorkspaceDir, "agents.json");
 		for (const color of ["lightgreen", "Green", " green", "#00ff00", "Default", "", null, 1]) {
 			const modes = getDefaultModeCatalog();
 			const plan = modes.profiles.plan;
@@ -145,7 +156,7 @@ describe("agent workspace configuration", () => {
 			plan.textColor = color as ModeTextColor;
 			const invalid = { ...configuration(), modes };
 			await expect(upsertAgentConfiguration(core, "project", invalid)).rejects.toThrow(/textColor/);
-			await writeFile(path, JSON.stringify(invalid));
+			await saveProjectConfiguration(invalid);
 			await expect(loadAgentConfiguration(core, "project")).rejects.toThrow(/textColor/);
 		}
 	});
@@ -179,10 +190,9 @@ describe("agent workspace configuration", () => {
 	});
 
 	it("rejects the retired per-preset worktree key without rewriting the configuration", async () => {
-		const path = join(process.env.XDG_CONFIG_HOME as string, "agentic-workspace", "agents.json");
+		const path = join(process.env.XDG_CONFIG_HOME as string, "agentic-workspace", "agentic-workspace.config.yml");
 		await mkdir(dirname(path), { recursive: true });
-		const raw =
-			'{\n  "selectedPreset": "legacy",\n  "presets": {\n    "legacy": { "command": "legacy {prompt}", "env": {}, "prepare": "", "worktree": true, "bootstrap": "opencode" }\n  }\n}\n';
+		const raw = `agent_configuration: ${JSON.stringify({ selectedPreset: "legacy", presets: { legacy: { command: "legacy {prompt}", env: {}, prepare: "", worktree: true, bootstrap: "opencode" } } })}\n`;
 		await writeFile(path, raw, "utf8");
 
 		await expect(loadAgentConfiguration(core, "root")).rejects.toThrow(
@@ -193,10 +203,9 @@ describe("agent workspace configuration", () => {
 	});
 
 	it("rejects retired bootstrap identifiers without dropping presets or repairing selection", async () => {
-		const path = join(process.env.XDG_CONFIG_HOME as string, "agentic-workspace", "agents.json");
+		const path = join(process.env.XDG_CONFIG_HOME as string, "agentic-workspace", "agentic-workspace.config.yml");
 		await mkdir(dirname(path), { recursive: true });
-		const raw =
-			'{\n  "selectedPreset": "codex",\n  "presets": {\n    "codex": { "command": "codex", "env": {}, "prepare": "", "bootstrap": "codex" },\n    "opencode": { "command": "opencode", "env": {}, "prepare": "", "bootstrap": "opencode" }\n  }\n}\n';
+		const raw = `agent_configuration: ${JSON.stringify({ selectedPreset: "codex", presets: { codex: { command: "codex", env: {}, prepare: "", bootstrap: "codex" }, opencode: { command: "opencode", env: {}, prepare: "", bootstrap: "opencode" } } })}\n`;
 		await writeFile(path, raw, "utf8");
 
 		await expect(loadAgentConfiguration(core, "root")).rejects.toThrow(
@@ -234,7 +243,7 @@ describe("agent workspace configuration", () => {
 		expect(saved?.presets.second?.command).toBe("second");
 	});
 
-	it("falls back by complete scope without merging fields", async () => {
+	it("inherits configuration fields from project while task fields override them", async () => {
 		await upsertAgentConfiguration(core, "root", configuration());
 		await upsertAgentConfiguration(core, "project", {
 			selectedPreset: "project",
@@ -246,16 +255,81 @@ describe("agent workspace configuration", () => {
 					bootstrap: "opencode",
 				},
 			},
+			sessions: { worktreePerTask: true, yoloMode: true },
+		});
+		const { task } = await core.createTaskFromInput({ title: "Field inheritance" });
+		await upsertAgentConfiguration(
+			core,
+			"card",
+			{
+				selectedPreset: "custom",
+				presets: {
+					custom: { command: "task-agent", env: {}, prepare: "", bootstrap: "claude" },
+				},
+				sessions: { worktreePerTask: false, yoloMode: false },
+			},
+			task.id,
+		);
+
+		const resolved = await resolveAgentConfiguration(core, task.id);
+		expect(resolved.scope).toBe("card");
+		expect(resolved.config).toMatchObject({
+			selectedPreset: "custom",
+			presets: {
+				project: { command: "project-agent" },
+				custom: { command: "task-agent" },
+			},
+			sessions: { worktreePerTask: false, yoloMode: false },
+		});
+	});
+
+	it("preserves an explicit task false and resolves current preset values for retained sessions", async () => {
+		const { task } = await core.createTaskFromInput({ title: "Current task settings" });
+		await upsertAgentConfiguration(core, "root", {
+			...configuration(),
+			sessions: { worktreePerTask: false, yoloMode: true },
+		});
+		await upsertAgentConfiguration(core, "project", {
+			...configuration(),
+			sessions: { worktreePerTask: false, yoloMode: true },
+		});
+		await upsertAgentConfiguration(
+			core,
+			"card",
+			{
+				...configuration(),
+				sessions: { worktreePerTask: false, yoloMode: false },
+			},
+			task.id,
+		);
+		expect((await resolveAgentConfiguration(core, task.id)).config.sessions).toEqual({
+			worktreePerTask: false,
+			yoloMode: false,
 		});
 
-		const resolved = await resolveAgentConfiguration(core);
-		expect(resolved.scope).toBe("project");
-		expect(resolved.config).toEqual({
-			selectedPreset: "project",
+		const session = { taskId: task.id, preset: "custom" };
+		expect((await resolveSessionPreset(core, session)).command).toBe("custom-agent --run");
+		await updateAgentConfiguration(core, "project", (current) => ({
+			...current,
 			presets: {
-				project: { command: "project-agent", env: {}, prepare: "", bootstrap: "opencode" },
+				...current.presets,
+				custom: { command: "current-project-agent", env: {}, prepare: "", bootstrap: "pi" },
 			},
-		});
+		}));
+		expect((await resolveSessionPreset(core, session)).command).toBe("custom-agent --run");
+		await updateAgentConfiguration(
+			core,
+			"card",
+			(current) => ({
+				...current,
+				presets: {
+					...current.presets,
+					custom: { command: "current-task-agent", env: {}, prepare: "", bootstrap: "claude" },
+				},
+			}),
+			task.id,
+		);
+		expect((await resolveSessionPreset(core, session)).command).toBe("current-task-agent");
 	});
 
 	it("defaults auto-resume on for legacy config and validates explicit values", async () => {
@@ -412,9 +486,9 @@ describe("agent workspace configuration", () => {
 			"resumeFlag must be a non-empty string without NUL bytes",
 		);
 
-		const rootPath = join(process.env.XDG_CONFIG_HOME as string, "agentic-workspace", "agents.json");
+		const rootPath = join(process.env.XDG_CONFIG_HOME as string, "agentic-workspace", "agentic-workspace.config.yml");
 		await mkdir(dirname(rootPath), { recursive: true });
-		await writeFile(rootPath, "{ invalid json", "utf8");
+		await writeFile(rootPath, "agent_configuration: [broken\n", "utf8");
 		await expect(loadAgentConfiguration(core, "root")).rejects.toThrow("Invalid agent configuration");
 	});
 
@@ -442,11 +516,9 @@ describe("agent workspace configuration", () => {
 	it("seeds modes on explicit initialization of existing project config and preserves custom catalog on repeat", async () => {
 		const existing = configuration();
 		existing.sessions = { worktreePerTask: true, yoloMode: false };
-		const path = join(core.filesystem.agenticWorkspaceDir, "agents.json");
-		const raw = `${JSON.stringify(existing, null, 2)}\n`;
-		await writeFile(path, raw);
+		await saveProjectConfiguration(existing);
 		expect((await loadAgentConfiguration(core, "project"))?.modes).toBeUndefined();
-		expect(await readFile(path, "utf8")).toBe(raw);
+		expect((await core.filesystem.loadConfig())?.agentConfiguration).toEqual(existing);
 
 		const initialized = await initializeAgentConfiguration(core, "project");
 		expect(initialized.modes?.order).toEqual(["plan", "build"]);

@@ -38,6 +38,7 @@
   },
   "scripts": {
     "test": "bun test --parallel --timeout=10000",
+    "test:local": "bun test --parallel --max-concurrency=4 --timeout=10000",
     "benchmark:task-loading": "bun scripts/benchmark-task-loading.ts",
     "format": "biome format --write .",
     "lint": "biome lint --write .",

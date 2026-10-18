@@ -197,6 +197,7 @@ function configScalars(content: string): Partial<AgenticWorkspaceConfig> {
 function completeConfig(config: Partial<AgenticWorkspaceConfig>): AgenticWorkspaceConfig {
 	return {
 		projectName: config.projectName || "",
+		agentConfiguration: config.agentConfiguration,
 		defaultAssignee: config.defaultAssignee,
 		defaultReporter: config.defaultReporter,
 		statuses: config.statuses || [...DEFAULT_STATUSES],
@@ -225,6 +226,10 @@ function completeConfig(config: Partial<AgenticWorkspaceConfig>): AgenticWorkspa
 
 export function parseConfig(content: string, configPath: string): AgenticWorkspaceConfig {
 	const config = configScalars(content);
+	const agentConfiguration = decodeConfigYaml(content, "agent_configuration");
+	if (!("value" in agentConfiguration))
+		throw configSyntaxError(configPath, "agent_configuration", agentConfiguration.error);
+	config.agentConfiguration = agentConfiguration.value as AgenticWorkspaceConfig["agentConfiguration"];
 	for (const key of CONFIG_LIST_KEYS) {
 		const value = parseConfigListValue(content, key, configPath);
 		if (key === "default_assignee") config.defaultAssignee = value;
@@ -252,7 +257,9 @@ function serializeOptional(key: string, value: string | number | boolean | undef
 }
 
 export function serializeConfig(config: AgenticWorkspaceConfig): string {
+	// shortcut: JSON flow values are valid YAML; move to block YAML if human diffing matters.
 	const lines = [
+		...(config.agentConfiguration ? [`agent_configuration: ${JSON.stringify(config.agentConfiguration)}`] : []),
 		...serializeOptional("project_name", config.projectName, true),
 		...serializeList("default_assignee", config.defaultAssignee),
 		...serializeOptional("default_reporter", config.defaultReporter, true),

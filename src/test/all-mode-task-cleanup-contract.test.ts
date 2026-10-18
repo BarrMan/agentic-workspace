@@ -73,6 +73,7 @@ describe("all-mode task cleanup contract", () => {
 				mutateSession: async () => {},
 			},
 			process: {
+				nativeRuntimeClassification: async () => ({ status: "live" as const, paneId: "%mock" }),
 				kill: async (record: AgentSession) => {
 					cleaned.push(record.id);
 					if (cleanupFails) throw cleanupError;

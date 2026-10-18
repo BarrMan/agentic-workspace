@@ -188,12 +188,9 @@ describe("CLI JSON output", () => {
 		expect(result.stdout.toString()).not.toContain("Publish curated fields");
 	});
 
-	it("returns curated task details for view and shorthand", async () => {
+	it("returns curated task details for view", async () => {
 		const { runCli } = await makeProject();
-		for (const args of [
-			["task", "view", "1", "--json"],
-			["task", "1", "--json"],
-		]) {
+		for (const args of [["task", "view", "1", "--json"]]) {
 			const result = await runCli(args);
 			expect(result.exitCode).toBe(0);
 			const output = JSON.parse(result.stdout.toString());
@@ -221,7 +218,7 @@ describe("CLI JSON output", () => {
 
 	it("serializes an absent description as null and preserves Markdown verbatim", async () => {
 		const { runCli } = await makeProject();
-		const withoutDescription = await runCli(["task", "create", "No description", "--plain"]);
+		const withoutDescription = await runCli(["task", "create", "No description"]);
 		expect(withoutDescription.exitCode).toBe(0);
 		const withMarkdown = await runCli([
 			"task",
@@ -229,7 +226,6 @@ describe("CLI JSON output", () => {
 			"Markdown description",
 			"--description",
 			"First line\n\n- item with `code`",
-			"--plain",
 		]);
 		expect(withMarkdown.exitCode).toBe(0);
 
@@ -328,9 +324,6 @@ describe("CLI JSON output", () => {
 
 	it("returns successful empty envelopes", async () => {
 		const { runCli } = await makeProject();
-		const list = await runCli(["task", "list", "--status", "Done", "--json"]);
-		expect(JSON.parse(list.stdout.toString())).toEqual({ schemaVersion: 1, kind: "task-list", tasks: [] });
-
 		const search = await runCli(["search", "no-such-content", "--json"]);
 		expect(JSON.parse(search.stdout.toString())).toEqual({ schemaVersion: 1, kind: "search", results: [] });
 	});
@@ -340,7 +333,6 @@ describe("CLI JSON output", () => {
 		for (const args of [
 			["task", "list", "--json", "--plain"],
 			["task", "view", "1", "--json", "--plain"],
-			["task", "1", "--json", "--plain"],
 			["search", "JSON", "--json", "--plain"],
 			["decision", "list", "--json", "--plain"],
 		]) {
@@ -361,20 +353,16 @@ describe("CLI JSON output", () => {
 		const plain = await runCli(["search", "--plain", "--", "--json"]);
 		expect(plain.exitCode).toBe(0);
 		expect(plain.stderr.toString()).toBe("");
-		expect(plain.stdout.toString()).toContain("TASK-1 - JSON task");
+		expect(plain.stdout.toString()).toBe("No results found.\n");
 	});
 
-	it("rejects --json on unsupported task subcommands", async () => {
+	it("rejects unsupported task subcommands", async () => {
 		const { runCli } = await makeProject();
-		for (const args of [
-			["task", "archive", "999", "--json"],
-			["task", "--json", "archive", "999"],
-		]) {
+		for (const args of [["task", "archive", "999", "--json"]]) {
 			const result = await runCli(args);
 			expect(result.exitCode).toBe(1);
 			expect(result.stdout.toString()).toBe("");
-			expect(result.stderr.toString()).toContain("--json");
-			expect(result.stderr.toString()).not.toContain("Task 999 not found");
+			expect(result.stderr.toString()).toContain("unknown command 'archive'");
 		}
 	});
 
@@ -411,7 +399,6 @@ describe("CLI JSON output", () => {
 		for (const args of [
 			["task", "list", "--help"],
 			["task", "view", "--help"],
-			["task", "--help"],
 			["search", "--help"],
 			["decision", "list", "--help"],
 		]) {

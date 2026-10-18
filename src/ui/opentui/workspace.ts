@@ -116,6 +116,8 @@ export type OpenTuiWorkspaceAgentSession = {
 	readonly id: string;
 	readonly status: string;
 	readonly preset: string;
+	/** Actual execution directory captured on the session, never the application cwd. */
+	readonly cwd: string;
 	readonly taskId?: string;
 	readonly summary?: string;
 };
@@ -673,8 +675,8 @@ export function mountOpenTuiWorkspace(
 		const headerModeColor = modeDisplayColor(selectedMode?.modeColor);
 		const headerStatus = session?.status ?? "stopped";
 		agentHeader.content = headerModeColor
-			? t`Agent session · ${fg(headerModeColor)(bold(modeLabel))} · ${headerStatus}`
-			: `Agent session · ${modeLabel} · ${headerStatus}`;
+			? t`Agent session · ${headerStatus} · ${fg(headerModeColor)(bold(modeLabel))} · ${session?.cwd ?? ""}`
+			: `Agent session · ${headerStatus} · ${modeLabel} · ${session?.cwd ?? ""}`;
 		agentPlaceholder.visible = !agentMount && (!session || session.status === "stopped");
 		if (agentFocused && !agentMount) {
 			agentFocused = false;

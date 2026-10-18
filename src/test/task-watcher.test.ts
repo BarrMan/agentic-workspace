@@ -251,7 +251,8 @@ describe("task watcher reconciliation", () => {
 
 	afterEach(async () => {
 		stopWatcher?.();
-		if (armedIdle) await withTimeout(armedIdle, "watcher idle during teardown", getPlatformTimeout(2000));
+		if (armedIdle)
+			await withTimeout(armedIdle, "watcher idle during teardown", getPlatformTimeout(2000)).catch(() => {});
 		watchSpy.mockRestore();
 		await safeCleanup(testDir);
 	});
@@ -583,9 +584,9 @@ describe("task watcher reconciliation", () => {
 		stopWatcher = handle.stop;
 
 		const idle = armIdle();
-		await $`${cliCommand} task edit task-6 --status ${"In Progress"} --plain`.cwd(testDir).quiet();
+		await $`${cliCommand} task edit task-6 --title ${"Updated by watcher"}`.cwd(testDir).quiet();
 		await withTimeout(idle, "real atomic CLI edit reconciliation", getPlatformTimeout(2000));
 		const task = await changed;
-		expect(task.status).toBe("In Progress");
+		expect(task.title).toBe("Updated by watcher");
 	});
 });

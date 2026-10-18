@@ -57,6 +57,7 @@ const taskFrontmatterFields: readonly TaskFrontmatterField[] = [
 		property: "agentConfiguration",
 		mode: TASK_FRONTMATTER_FIELD_MODE.TRUTHY,
 	},
+	{ key: TASK_FRONTMATTER_FIELDS.MODE_APPROVALS, property: "modeApprovals", mode: TASK_FRONTMATTER_FIELD_MODE.TRUTHY },
 ];
 
 function taskFrontmatter(task: Task, retained: Record<string, unknown> = {}): Record<string, unknown> {
@@ -72,6 +73,9 @@ function taskFrontmatter(task: Task, retained: Record<string, unknown> = {}): Re
 		if (field.mode === TASK_FRONTMATTER_FIELD_MODE.DEFINED && value === undefined) continue;
 		frontmatter[field.key] = value;
 	}
+	delete frontmatter[TASK_FRONTMATTER_FIELDS.MODE_APPROVALS];
+	if (task.modeApprovals && Object.keys(task.modeApprovals).length > 0)
+		frontmatter[TASK_FRONTMATTER_FIELDS.MODE_APPROVALS] = task.modeApprovals;
 	for (const key of [TASK_FRONTMATTER_FIELDS.DESCRIPTION, "agent_summary"]) {
 		delete frontmatter[key];
 	}

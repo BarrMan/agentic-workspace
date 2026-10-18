@@ -21,10 +21,8 @@ Provide agents inside sessions and external applications with a selective public
 - MCP.
 - `agent-config init` and CLI setup.
 - Named guides and instruction-file editing.
-- Shell-completion installation.
 - Board export, including Markdown export and README editing.
 - `agent-session reset`.
-- `doctor`, including report-only variants.
 - Plural aliases, removed commands, age-based batch cleanup, and interactive screen-launch commands other than the user entry point `workspace`.
 - `--no-git`.
 - Any operation or option not listed in the exhaustive inventory under [Supported Integration Operations](#supported-integration-operations). TUI capabilities not specified there do not thereby become CLI operations.
@@ -235,7 +233,7 @@ Provide agents inside sessions and external applications with a selective public
 
 ### IF-API-011: Exclude unsupported operations
 
-**Description:** The CLI must not support `agent-session reset`, board export (including Markdown export and README editing), or `--no-git`. The `doctor` command, including report-only variants, is not supported.
+**Description:** The CLI must not support `agent-session reset`, board export (including Markdown export and README editing), or `--no-git`.
 
 **Trigger:** A caller requests one of these unsupported surfaces.
 
@@ -244,7 +242,7 @@ Provide agents inside sessions and external applications with a selective public
 **Behavior:**
 1. Do not expose the requested operation or option as supported.
 
-**Outcome:** Reset, board export, `--no-git`, and doctor remain unsupported.
+**Outcome:** Reset, board export, and `--no-git` remain unsupported.
 
 **Failures:** None.
 
@@ -275,7 +273,7 @@ Provide agents inside sessions and external applications with a selective public
 
 ### IF-API-013: Exclude additional CLI surfaces
 
-**Description:** CLI setup, removed commands, plural aliases, shell-completion installation, age-based batch cleanup, and interactive screen launching are unsupported. TUI capabilities not specified as CLI operations here do not thereby become CLI operations.
+**Description:** CLI setup, removed commands, plural aliases, age-based batch cleanup, and interactive screen launching are unsupported. TUI capabilities not specified as CLI operations here do not thereby become CLI operations.
 
 **Trigger:** A caller requests an excluded CLI surface or an operation not in the approved inventory.
 
@@ -290,7 +288,7 @@ Provide agents inside sessions and external applications with a selective public
 **Failures:** None.
 
 **Acceptance Criteria:**
-- CLI setup, removed commands, plural aliases, shell-completion installation, age-based batch cleanup, interactive screen launching, and unspecified TUI capabilities are not supported CLI operations.
+- CLI setup, removed commands, plural aliases, age-based batch cleanup, interactive screen launching, and unspecified TUI capabilities are not supported CLI operations.
 
 ## States and Transitions
 
@@ -333,7 +331,7 @@ Provide agents inside sessions and external applications with a selective public
 - Create and list decision records (IF-API-009).
 - Set the calling session's current model for its mode in project configuration, independently of provider (IF-API-010).
 
-The inventory is exhaustive. Unsupported inputs include MCP; `agent-config init` and CLI setup; named guides and instruction-file editing; shell-completion installation; board export, including Markdown export and README editing; `agent-session reset`; `doctor`, including report-only variants; plural aliases; removed commands; age-based batch cleanup; interactive screen-launch commands other than the user entry point `workspace`; and `--no-git`. Any operation or option not listed as supported is unsupported. TUI capabilities not specified here do not thereby become CLI operations.
+The inventory is exhaustive. Unsupported inputs include MCP; `agent-config init` and CLI setup; named guides and instruction-file editing; board export, including Markdown export and README editing; `agent-session reset`; plural aliases; removed commands; age-based batch cleanup; interactive screen-launch commands other than the user entry point `workspace`; and `--no-git`. Any operation or option not listed as supported is unsupported. TUI capabilities not specified here do not thereby become CLI operations.
 
 **Outputs:** Operation results as defined here and in linked feature contracts. Search output is plain text or JSON only.
 
@@ -368,8 +366,8 @@ The inventory is exhaustive. Unsupported inputs include MCP; `agent-config init`
 | `agent-session ask` targets the previous saved session in the current mode. | Send one message, start the execution bound to that conversation if needed, wait, and return the response as a question/answer result. |
 | `doc create` targets a document that already exists. | Fail and report that the document exists; leave it unchanged and exit nonzero. |
 | `doc update` targets a document that does not exist. | Fail and report that the document is missing; create or modify nothing and exit nonzero. |
-| A caller requests `agent-session reset`, board export, `--no-git`, or `doctor` (including report-only variants). | The operation is unsupported. |
-| A caller requests MCP, `agent-config init`, named guides, instruction-file editing, shell-completion installation, CLI setup, a removed command, a plural alias, age-based batch cleanup, an interactive screen-launch command other than the user entry point `workspace`, or an operation not in the approved integration inventory. | The integration surface is unsupported. |
+| A caller requests `agent-session reset`, board export, or `--no-git`. | The operation is unsupported. |
+| A caller requests MCP, `agent-config init`, named guides, instruction-file editing, CLI setup, a removed command, a plural alias, age-based batch cleanup, an interactive screen-launch command other than the user entry point `workspace`, or an operation not in the approved integration inventory. | The integration surface is unsupported. |
 
 ## Open Questions
 

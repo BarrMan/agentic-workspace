@@ -79,7 +79,10 @@ export interface Task {
 	/** Optional per-task callback command to run on status change (overrides global config) */
 	onStatusChange?: string;
 	agentConfiguration?: AgentConfiguration;
+	modeApprovals?: Record<string, Approval>;
 }
+
+export type Approval = true;
 
 /** The task data retained by browser collection views; task bodies are detail-only. */
 export interface TaskSummary {
@@ -314,6 +317,7 @@ export interface PrefixConfig {
 }
 
 export interface AgenticWorkspaceConfig {
+	agentConfiguration?: AgentConfiguration;
 	projectName: string;
 	/** Assignees applied to new tasks when none are provided. Empty or unset means no default. */
 	defaultAssignee?: string[];

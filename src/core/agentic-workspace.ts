@@ -667,6 +667,11 @@ export class Core {
 		return await this.taskMutations.saveTask(task);
 	}
 
+	async setTaskModeApproval(taskId: string, modeId: string): Promise<Task> {
+		const { config, scope } = await resolveAgentConfiguration(this, taskId);
+		return await this.taskMutations.setModeApproval(taskId, modeId, { config, scope });
+	}
+
 	async applyTaskUpdateInput(
 		task: Task,
 		input: TaskUpdateInput,

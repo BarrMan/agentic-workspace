@@ -15,7 +15,7 @@ import { AmbiguousTaskIdError, canonicalTaskId, taskIdsEqual } from "./task-path
  *
  * Several canonical identities mean the input is underspecified, because bare numbers span the
  * separate task and draft counters. Several spellings of one identity (BACK-1 and BACK-01) are the
- * duplicate-ID defect `agentic-workspace doctor` repairs.
+ * duplicate IDs.
  */
 function resolveUniqueDependency(dependency: string, matches: Task[]): string | null {
 	const [first, ...rest] = matches;
@@ -104,7 +104,7 @@ export async function validateDependencies(
 		const ambiguous = graph.nodes.find((node) => node.state === "ambiguous" && node.dependencyDepth !== null);
 		if (ambiguous) {
 			throw new Error(
-				`Cannot verify the dependencies stay acyclic: more than one record claims ${ambiguous.id}. Run 'agentic-workspace doctor' to repair duplicate IDs first.`,
+				`Cannot verify the dependencies stay acyclic: more than one record claims ${ambiguous.id}. Remove the conflicting files, then retry.`,
 			);
 		}
 	}
@@ -137,7 +137,7 @@ function throwSelfDependency(target: Task, dependency: string): never {
 	throw new Error(`Task ${target.id} cannot depend on itself ("${dependency.trim()}" names this task).`);
 }
 
-/** The records dependency validation and `agentic-workspace doctor` resolve dependencies against. */
+/** The records dependency validation resolves dependencies against. */
 interface DependencyCorpus {
 	tasks: Task[];
 	drafts: Task[];
@@ -168,8 +168,8 @@ export interface DependencyDefects {
 }
 
 /**
- * Report the self-dependencies and dependency cycles already stored in the project, for
- * `agentic-workspace doctor`. Validation refuses to create these, so any found here predate it; the report
+ * Report the self-dependencies and dependency cycles already stored in the project. Validation refuses
+ * to create these, so any found here predate it; the report
  * names them for human repair and changes nothing.
  *
  * Every record that can carry dependencies is checked as a root against the same corpus

@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it } from "bun:test";
 import { Core } from "../core/agentic-workspace.ts";
+import { searchSnapshot } from "../core/search-service.ts";
 import type { Decision, Task, TaskSearchResult } from "../types/index.ts";
 import { createUniqueTestDir, safeCleanup } from "./test-utils.ts";
 
@@ -94,5 +95,25 @@ describe("snapshot search", () => {
 			expect(results).toHaveLength(1);
 			expect(results[0]).toMatchObject({ type: "decision", decision: { id: decision.id } });
 		}
+	});
+
+	it("matches literal substrings case-insensitively without fuzzy ranking", async () => {
+		const core = await createProject();
+		await core.filesystem.saveTask(task("TASK-1", "Needle", "ordinary text"));
+		await core.filesystem.saveTask(task("TASK-2", "Needful", "ordinary text"));
+
+		expect(titles(await core.searchPersistently({ query: "NEEDLE", types: ["task"] }))).toEqual(["Needle"]);
+		expect(titles(await core.searchPersistently({ query: "needel", types: ["task"] }))).toEqual([]);
+	});
+
+	it("keeps matching and empty-query results in supplied corpus order", () => {
+		const first = task("TASK-2", "needle first", "");
+		const second = task("TASK-1", "needle second", "");
+		const matches = searchSnapshot([first, second], [], [], { query: "NEEDLE", types: ["task"] });
+		const unfiltered = searchSnapshot([first, second], [], [], { query: "  ", types: ["task"] });
+
+		expect(matches.map((result) => result.type === "task" && result.task.id)).toEqual(["TASK-2", "TASK-1"]);
+		expect(unfiltered.map((result) => result.type === "task" && result.task.id)).toEqual(["TASK-2", "TASK-1"]);
+		expect(searchSnapshot([], [], [], { query: "missing" })).toEqual([]);
 	});
 });

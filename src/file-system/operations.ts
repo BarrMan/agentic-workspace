@@ -1,5 +1,5 @@
 import { realpathSync } from "node:fs";
-import { mkdir, readdir, rename, rm, stat } from "node:fs/promises";
+import { mkdir, readdir, rename, rm, stat, unlink, writeFile } from "node:fs/promises";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { DEFAULT_DIRECTORIES, DEFAULT_FILES, DRAFT_STATUS, FALLBACK_STATUS } from "../constants/index.ts";
 import { resolveMainWorktreeRootSync } from "../git/main-worktree.ts";
@@ -715,7 +715,7 @@ export class FileSystem {
 		return {};
 	}
 
-	async saveTask(task: Task): Promise<string> {
+	async saveTask(task: Task, options: { approvalMutation?: boolean } = {}): Promise<string> {
 		const { id: requestedId } = await this.resolveTaskWriteTarget(task);
 		const prefix = extractAnyPrefix(requestedId) ?? DEFAULT_TASK_PREFIX;
 		const normalizedId = normalizeId(requestedId, prefix).toLowerCase();
@@ -770,6 +770,7 @@ export class FileSystem {
 			: undefined;
 		const normalizedTask = {
 			...task,
+			...(!options.approvalMutation && existingTask ? { modeApprovals: existingTask.modeApprovals } : {}),
 			id: existingTask?.id ?? requestedId,
 			filePath: filepath,
 			parentTaskId:
@@ -783,7 +784,21 @@ export class FileSystem {
 			await this.ensureDirectoryExists(dirname(container));
 			await mkdir(container);
 		}
-		await Bun.write(filepath, content);
+		const temporaryPath = `${filepath}.${process.pid}.${Date.now()}.tmp`;
+		try {
+			await writeFile(temporaryPath, content, { flag: "wx" });
+			await rename(temporaryPath, filepath);
+		} catch (error) {
+			try {
+				await unlink(temporaryPath);
+			} catch (cleanupError) {
+				if ((cleanupError as NodeJS.ErrnoException).code !== "ENOENT")
+					throw new Error(`Task write failed and temporary-file cleanup failed for ${temporaryPath}.`, {
+						cause: new AggregateError([error, cleanupError]),
+					});
+			}
+			throw error;
+		}
 		await this.publishContentMutation({
 			type: TASK_DIRECTORY,
 			root: resolve(this.agenticWorkspaceDir),
@@ -1398,14 +1413,14 @@ export class FileSystem {
 				.sort();
 		} catch {
 			// A directory that cannot be scanned is a finding, not an empty store: surface it so
-			// doctor never reports draft identities as healthy without having checked them.
+			// Draft identities are never reported as healthy without having been checked.
 			unreadable?.push(draftsDir);
 			return [];
 		}
 	}
 
 	/**
-	 * Draft identity findings for doctor: duplicate numeric identities (filename-derived, so
+	 * Draft identity findings: duplicate numeric identities (filename-derived, so
 	 * unparsable files count), drifted frontmatter-vs-filename records, and unreadable files.
 	 */
 	async diagnoseDraftIdentity(): Promise<DraftIdentityFindings> {

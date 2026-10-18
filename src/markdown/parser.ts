@@ -97,6 +97,19 @@ function taskAssignees(value: unknown, taskId: string): string[] {
 	return value.map(String);
 }
 
+function taskModeApprovals(value: unknown, taskId: string): Record<string, true> | undefined {
+	if (value === undefined) return undefined;
+	if (value === null || typeof value !== "object" || Array.isArray(value))
+		throw new TaskFrontmatterSchemaError(taskId, "mode_approvals must be a mode-keyed mapping");
+	const approvals: Record<string, true> = {};
+	for (const [modeId, approval] of Object.entries(value)) {
+		if (!modeId || approval !== true)
+			throw new TaskFrontmatterSchemaError(taskId, "mode_approvals entries must map nonempty mode IDs to true");
+		approvals[modeId] = true;
+	}
+	return approvals;
+}
+
 const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}(?: \d{2}:\d{2})?$/;
 
 function dateString(value: unknown, field: string, taskId?: string): string | undefined {
@@ -144,6 +157,7 @@ function taskFrontmatterFields(frontmatter: Record<string, unknown>) {
 				: undefined,
 		onStatusChange: optionalTaskValue(frontmatter[TASK_FRONTMATTER_FIELDS.ON_STATUS_CHANGE]),
 		agentConfiguration: frontmatter[TASK_FRONTMATTER_FIELDS.AGENT_CONFIGURATION] as Task["agentConfiguration"],
+		modeApprovals: taskModeApprovals(frontmatter[TASK_FRONTMATTER_FIELDS.MODE_APPROVALS], id),
 	};
 }
 

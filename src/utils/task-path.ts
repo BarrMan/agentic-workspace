@@ -48,12 +48,7 @@ export class AmbiguousTaskIdError extends AmbiguousIdError {
 	readonly taskId: string;
 
 	constructor(taskId: string, candidates: string[]) {
-		super(
-			"Task",
-			canonicalTaskId(taskId),
-			candidates,
-			"Run 'agentic-workspace doctor' to review the duplicate task IDs.",
-		);
+		super("Task", canonicalTaskId(taskId), candidates, "Remove the conflicting files, then retry.");
 		this.name = "AmbiguousTaskIdError";
 		this.taskId = taskId;
 	}

@@ -7,7 +7,6 @@
  * Callers still decide which corpus to search: the local working copy or the cross-branch store.
  */
 
-import Fuse, { type IFuseOptions } from "fuse.js";
 import type { LabelMatchMode, Task } from "../types/index.ts";
 import { labelsToLower } from "./label-filter.ts";
 import {
@@ -86,21 +85,18 @@ export function buildTaskSearchFields(task: Task): TaskSearchFields {
 	};
 }
 
-/** The shared fuzzy-match configuration. Consumers add `includeMatches` when they need highlights. */
-export const TASK_SEARCH_FUSE_OPTIONS: IFuseOptions<TaskSearchFields> = {
-	includeScore: true,
-	threshold: 0.35,
-	ignoreLocation: true,
-	minMatchCharLength: 2,
-	keys: [
-		{ name: "title", weight: 0.35 },
-		{ name: "bodyText", weight: 0.3 },
-		{ name: "id", weight: 0.2 },
-		{ name: "idVariants", weight: 0.1 },
-		{ name: "dependencyIds", weight: 0.05 },
-		{ name: "modifiedFiles", weight: 0.15 },
-	],
-};
+/** Search is a case-insensitive literal substring match; keep every task search path in parity. */
+export function matchesTaskSearchFields(fields: TaskSearchFields, query: string): boolean {
+	const needle = query.toLowerCase();
+	return [
+		fields.title,
+		fields.bodyText,
+		fields.id,
+		...fields.idVariants,
+		...fields.dependencyIds,
+		...fields.modifiedFiles,
+	].some((value) => value.toLowerCase().includes(needle));
+}
 
 function toList(value: string | string[] | undefined): string[] {
 	if (!value) return [];
@@ -221,17 +217,12 @@ export function createTaskFilterMatcher(options: TaskFilterOptions, corpus: Task
  */
 export function createTaskSearchIndex(tasks: Task[]): TaskSearchIndex {
 	const entries = tasks.map((task) => ({ task, fields: buildTaskSearchFields(task) }));
-	const fuse = new Fuse(
-		entries.map((entry) => entry.fields),
-		TASK_SEARCH_FUSE_OPTIONS,
-	);
-	const taskByFields = new Map(entries.map((entry) => [entry.fields, entry.task]));
 
 	return {
 		search(options: TaskFilterOptions): Task[] {
 			const query = options.query?.trim() ?? "";
 			const matched = query
-				? fuse.search(query).map((result) => taskByFields.get(result.item) as Task)
+				? entries.filter((entry) => matchesTaskSearchFields(entry.fields, query)).map((entry) => entry.task)
 				: entries.map((entry) => entry.task);
 
 			const matches = createTaskFilterMatcher(options, tasks);

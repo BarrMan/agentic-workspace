@@ -86,7 +86,10 @@ function project(configuration?: AgentConfiguration) {
 		'{"version":1,"taskId":"BACK-1","sessions":[]}\n',
 	);
 	if (configuration)
-		writeFileSync(join(agenticWorkspaceDir, "agents.json"), `${JSON.stringify(configuration, null, 2)}\n`);
+		writeFileSync(
+			join(agenticWorkspaceDir, "agentic-workspace.config.yml"),
+			`agent_configuration: ${JSON.stringify(configuration)}\n`,
+		);
 	const core = {
 		loadTasks: async () => [task],
 		loadTaskSnapshot: async () => ({
@@ -99,7 +102,11 @@ function project(configuration?: AgentConfiguration) {
 			rootDir,
 			projectRoot: rootDir,
 			agenticWorkspaceDir,
-			loadConfig: async () => ({ projectName: "Startup contract", statuses: ["To Do"] }),
+			loadConfig: async () => ({
+				projectName: "Startup contract",
+				statuses: ["To Do"],
+				agentConfiguration: configuration,
+			}),
 			listMilestones: async () => [],
 			listArchivedMilestones: async () => [],
 		},
@@ -177,7 +184,7 @@ describe("public controller.run project mode startup contract", () => {
 						const message = (error as Error).message;
 						expect(message).toMatch(/project.*modes|modes.*project/i);
 						expect(message).toMatch(/setup|initializ/i);
-						expect(message).toMatch(/agentic-workspace\s+agent-config\s+init\s+project/i);
+						expect(message).toMatch(/agentic-workspace\s+workspace.*configure project modes in the TUI/i);
 						expect(createHost).toHaveBeenCalledTimes(0);
 						expect(viewOpen).toHaveBeenCalledTimes(0);
 						expect(groupOpen).toHaveBeenCalledTimes(0);
@@ -278,7 +285,7 @@ describe("source entrypoint mode startup contract", () => {
 				const exitCode = await runCli(["workspace"], { cwd: fixture.rootDir, stdout, stderr });
 				expect(exitCode).not.toBe(0);
 				expect(output).toMatch(/project.*modes|modes.*project/i);
-				expect(output).toMatch(/agentic-workspace\s+agent-config\s+init\s+project/i);
+				expect(output).toMatch(/agentic-workspace\s+workspace.*configure project modes in the TUI/i);
 				expect(snapshot(fixture.rootDir)).toEqual(before);
 			} finally {
 				rmSync(fixture.rootDir, { recursive: true, force: true });

@@ -2,6 +2,7 @@ import { describe, expect, it } from "bun:test";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { getDefaultModeCatalog, updateAgentConfiguration } from "../agent-workspace/config.ts";
 import { Core } from "../core/agentic-workspace.ts";
 import { ContentRepository } from "../file-system/content-repository.ts";
 import {
@@ -48,6 +49,46 @@ describe("task frontmatter storage", () => {
 	it("retains opaque body whitespace and frontmatter-looking body text", () => {
 		const rawContent = "\n---\ncustom: body text\n---\n  Free-form body.  \n\n";
 		expect(parseTask(serializeTask({ ...task, rawContent })).rawContent).toBe(rawContent);
+	});
+
+	it("round-trips approvals, preserves unrelated metadata, and removes cleared entries", () => {
+		const serialized = serializeTask({ ...task, modeApprovals: { build: true, unknown: true } }, { custom: "kept" });
+		expect(parseTask(serialized).modeApprovals).toEqual({ build: true, unknown: true });
+		const cleared = serializeTask(
+			{ ...task, modeApprovals: { unknown: true } },
+			{ mode_approvals: { build: true, unknown: true }, custom: "kept" },
+		);
+		expect(parseTask(cleared).modeApprovals).toEqual({ unknown: true });
+		expect(cleared).toContain("custom: kept");
+		expect(cleared).toContain("This checkbox is free-form body text.");
+		expect(parseTask(serializeTask(task)).modeApprovals).toBeUndefined();
+	});
+
+	it("rejects malformed approval maps but accepts unknown durable mode IDs", () => {
+		const base = serializeTask(task);
+		expect(() =>
+			parseTask(base.replace("task_schema_version: 3", "task_schema_version: 3\nmode_approvals: []")),
+		).toThrow(FrontmatterSchemaError);
+		expect(() =>
+			parseTask(base.replace("task_schema_version: 3", "task_schema_version: 3\nmode_approvals:\n  build: false")),
+		).toThrow(FrontmatterSchemaError);
+	});
+
+	it("publishes concurrent different-mode approvals from fresh locked task state", async () => {
+		const root = await mkdtemp(join(tmpdir(), "agentic-workspace-task-approval-"));
+		const core = new Core(root);
+		try {
+			await core.filesystem.ensureAgenticWorkspaceStructure();
+			await updateAgentConfiguration(core, "project", (configuration) => ({
+				...configuration,
+				modes: getDefaultModeCatalog(),
+			}));
+			await core.filesystem.saveTask(task);
+			await Promise.all([core.setTaskModeApproval(task.id, "build"), core.setTaskModeApproval(task.id, "plan")]);
+			expect((await core.filesystem.loadTask(task.id))?.modeApprovals).toEqual({ build: true, plan: true });
+		} finally {
+			await rm(root, { recursive: true, force: true });
+		}
 	});
 
 	it("rejects unsupported schema versions without treating records as legacy", () => {

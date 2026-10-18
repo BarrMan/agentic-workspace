@@ -130,18 +130,4 @@ describe("CLI Zero Padded IDs Feature", () => {
 		expect(files.length).toBe(2);
 		expect(files.some((file) => file.startsWith("task-002"))).toBe(true);
 	});
-
-	test("should create a sub-task with a zero-padded ID", async () => {
-		// Create parent task first
-		await $`${CLI_COMMAND} task create "Parent Task"`.cwd(TEST_DIR).quiet();
-
-		// Create sub-task
-		const result = await $`${CLI_COMMAND} task create "Padded Sub-task" -p task-001`.cwd(TEST_DIR).quiet();
-		expect(result.exitCode).toBe(0);
-
-		const tasksDir = join(TEST_DIR, "agentic-workspace", "tasks");
-		const files = await readdir(tasksDir);
-		expect(files.length).toBe(2);
-		expect(files.some((file) => file.startsWith("task-001.01"))).toBe(true);
-	});
 });

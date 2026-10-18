@@ -131,14 +131,24 @@ export async function ensureTaskWorktree(projectRoot: string, task: WorktreeTask
 }
 
 /**
- * Remove the task's worktree and its branch. Best-effort: a missing worktree, a non-git project,
- * or a failed `git` invocation never throws, so a status transition to Done can always finish.
+ * Remove the task's worktree and its branch. Git failures remain visible so destructive callers
+ * can retain task tracking and report partial completion.
  */
 export async function removeTaskWorktree(projectRoot: string, task: WorktreeTaskRef): Promise<void> {
 	if (!(await isGitWorkTree(projectRoot))) return;
 	const existing = findTaskWorktree(await worktreeEntries(projectRoot), projectRoot, task);
 	if (!existing) return;
-	await runGit(["worktree", "remove", "--force", existing.path], projectRoot);
-	await runGit(["worktree", "prune"], projectRoot);
-	await runGit(["branch", "-D", taskWorktreeBranch(task.id)], projectRoot);
+	const removed = await runGit(["worktree", "remove", existing.path], projectRoot);
+	if (removed.exitCode !== 0)
+		throw new Error(`Could not remove worktree for ${task.id}: ${(removed.stderr || removed.stdout).trim()}`);
+	const pruned = await runGit(["worktree", "prune"], projectRoot);
+	if (pruned.exitCode !== 0)
+		throw new Error(
+			`Worktree for ${task.id} was removed, but registration cleanup failed: ${(pruned.stderr || pruned.stdout).trim()}`,
+		);
+	const branch = await runGit(["branch", "-D", taskWorktreeBranch(task.id)], projectRoot);
+	if (branch.exitCode !== 0)
+		throw new Error(
+			`Worktree for ${task.id} was removed, but its branch was not: ${(branch.stderr || branch.stdout).trim()}`,
+		);
 }

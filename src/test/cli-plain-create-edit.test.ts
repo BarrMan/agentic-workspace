@@ -60,7 +60,7 @@ function $(parts: TemplateStringsArray, ...values: unknown[]) {
 	return chain;
 }
 
-describe("CLI --plain for task create/edit", () => {
+describe("CLI task create/edit descriptions", () => {
 	beforeEach(async () => {
 		TEST_DIR = createUniqueTestDir("test-plain-create-edit");
 		await mkdir(TEST_DIR, { recursive: true });
@@ -76,78 +76,12 @@ describe("CLI --plain for task create/edit", () => {
 		await safeCleanup(TEST_DIR);
 	});
 
-	it("prints plain details after task create --plain", async () => {
-		const result = await $`${cliCommand} task create "Example" --desc "Hello" --plain`.cwd(TEST_DIR).quiet();
+	it("creates and edits a task description", async () => {
+		await $`${cliCommand} task create "Example" --description "Hello"`.cwd(TEST_DIR).quiet();
+		const core = new Core(TEST_DIR);
+		expect((await core.filesystem.loadTask("task-1"))?.description).toBe("Hello");
 
-		if (result.exitCode !== 0) {
-			console.error("STDOUT:", result.stdout.toString());
-			console.error("STDERR:", result.stderr.toString());
-		}
-
-		const out = result.stdout.toString();
-		expect(result.exitCode).toBe(0);
-		// Begins with File: line and contains key sections
-		expect(out).toContain("File: ");
-		expect(out).toContain("Task TASK-1 - Example");
-		expect(out).toContain("Status:");
-		expect(out).toContain("Created:");
-		expect(out).toContain("Description:");
-		expect(out).toContain("Hello");
-		expect(out).not.toContain("Agent Summary:");
-		// Should not contain TUI escape codes
-		expect(out).not.toContain("[?1049h");
-		expect(out).not.toContain("\x1b");
-	});
-
-	it("assigns default tail ordinals and preserves explicit ordinals on CLI create", async () => {
-		const first = await $`${cliCommand} task create "First ordinal CLI task" --plain`.cwd(TEST_DIR).quiet();
-		expect(first.exitCode).toBe(0);
-		expect(first.stdout.toString()).toContain("Ordinal: 1000");
-
-		const second = await $`${cliCommand} task create "Second ordinal CLI task" --plain`.cwd(TEST_DIR).quiet();
-		expect(second.exitCode).toBe(0);
-		expect(second.stdout.toString()).toContain("Ordinal: 2000");
-
-		const explicit = await $`${cliCommand} task create "Explicit ordinal CLI task" --ordinal 7500 --plain`
-			.cwd(TEST_DIR)
-			.quiet();
-		expect(explicit.exitCode).toBe(0);
-		expect(explicit.stdout.toString()).toContain("Ordinal: 7500");
-	});
-
-	it("rejects non-finite ordinals on CLI create", async () => {
-		const result = await $`${cliCommand} task create "Invalid ordinal CLI task" --ordinal Infinity`
-			.cwd(TEST_DIR)
-			.nothrow()
-			.quiet();
-
-		expect(result.exitCode).toBe(1);
-		expect(result.stderr.toString()).toContain("Invalid ordinal: Infinity. Must be a non-negative number.");
-	});
-
-	it("prints plain details after task edit --plain", async () => {
-		// Create base task first (without plain)
-		await $`${cliCommand} task create "Edit Me" --desc "First"`.cwd(TEST_DIR).quiet();
-
-		const result = await $`${cliCommand} task edit 1 -s "In Progress" --plain`.cwd(TEST_DIR).quiet();
-
-		if (result.exitCode !== 0) {
-			console.error("STDOUT:", result.stdout.toString());
-			console.error("STDERR:", result.stderr.toString());
-		}
-
-		const out = result.stdout.toString();
-		expect(result.exitCode).toBe(0);
-		// Begins with File: line and contains updated details
-		expect(out).toContain("File: ");
-		expect(out).toContain("Task TASK-1 - Edit Me");
-		expect(out).toContain("Status: ◒ In Progress");
-		expect(out).toContain("Created:");
-		expect(out).toContain("Updated:");
-		expect(out).toContain("Description:");
-		expect(out).not.toContain("Agent Summary:");
-		// Should not contain TUI escape codes
-		expect(out).not.toContain("[?1049h");
-		expect(out).not.toContain("\x1b");
+		await $`${cliCommand} task edit 1 --description "Updated description"`.cwd(TEST_DIR).quiet();
+		expect((await core.filesystem.loadTask("task-1"))?.description).toBe("Updated description");
 	});
 });

@@ -823,13 +823,19 @@ describe("native workspace layout", () => {
 		}
 	});
 
-	test("renders one exact mode/status header line", async () => {
+	test("renders agent, status, selected mode, and actual session directory in order", async () => {
 		const setup = await createTestRenderer({ width: 120, height: 40, exitOnCtrlC: false });
 		renderers.push(setup);
 		const { agent } = liveAgent(setup);
 		const mount = mountOpenTuiWorkspace(setup.renderer, attachParent(setup), {
 			tasks,
-			activeAgentSession: { id: "running", taskId: "BACK-1", status: "running", preset: "test" },
+			activeAgentSession: {
+				id: "running",
+				taskId: "BACK-1",
+				status: "running",
+				preset: "test",
+				cwd: "/actual/task/worktree",
+			},
 			liveAgent: agent,
 			indicationByTask: new Map<string, AgentIndication>([["BACK-1", "waiting"]]),
 		});
@@ -840,7 +846,9 @@ describe("native workspace layout", () => {
 					.captureCharFrame()
 					.split("\n")
 					.find((value) => value.includes("Agent session ·")) ?? "";
-			expect(line.slice(line.indexOf("Agent session ·")).trim()).toBe("Agent session · mode · running");
+			expect(line.slice(line.indexOf("Agent session ·")).trim()).toBe(
+				"Agent session · running · mode · /actual/task/worktree",
+			);
 		} finally {
 			mount.dispose();
 			agent.terminal.destroy();
@@ -874,7 +882,7 @@ describe("native workspace layout", () => {
 		const mount = mountOpenTuiWorkspace(setup.renderer, attachParent(setup), {
 			tasks: [{ id: "BACK-1", title: "First task", status: "Todo" }],
 			selectedTaskIndex: 0,
-			activeAgentSession: { id: "ended", status: "stopped", preset: "test", taskId: "BACK-1" },
+			activeAgentSession: { id: "ended", status: "stopped", preset: "test", taskId: "BACK-1", cwd: "/project" },
 			sessionTaskIds: ["BACK-1"],
 			keyboardOverrides: { "workspace.sessions": { sequence: [{ key: "r" }] } },
 		});
@@ -891,7 +899,7 @@ describe("native workspace layout", () => {
 		renderers.push(setup);
 		const mount = mountOpenTuiWorkspace(setup.renderer, attachParent(setup), {
 			tasks,
-			activeAgentSession: { id: "sess-1", status: "running", preset: "claude", taskId: "BACK-1" },
+			activeAgentSession: { id: "sess-1", status: "running", preset: "claude", taskId: "BACK-1", cwd: "/project" },
 			indicationByTask: new Map<string, AgentIndication>([["BACK-1", "waiting"]]),
 		});
 		try {
@@ -909,7 +917,13 @@ describe("native workspace layout", () => {
 		const { agent } = liveAgent(setup, "starting");
 		const mount = mountOpenTuiWorkspace(setup.renderer, attachParent(setup), {
 			tasks,
-			activeAgentSession: { id: "starting", taskId: "BACK-1", status: "starting", preset: "test" },
+			activeAgentSession: {
+				id: "starting",
+				taskId: "BACK-1",
+				status: "starting",
+				preset: "test",
+				cwd: "/actual/project",
+			},
 			sessionTaskIds: ["BACK-1"],
 			liveAgent: agent,
 			indicationByTask: new Map<string, AgentIndication>([["BACK-1", "waiting"]]),
@@ -918,7 +932,9 @@ describe("native workspace layout", () => {
 			await setup.flush();
 			const frame = setup.captureCharFrame();
 			const line = frame.split("\n").find((value) => value.includes("Agent session ·")) ?? "";
-			expect(line.slice(line.indexOf("Agent session ·")).trim()).toBe("Agent session · mode · starting");
+			expect(line.slice(line.indexOf("Agent session ·")).trim()).toBe(
+				"Agent session · starting · mode · /actual/project",
+			);
 			expect(frame).not.toContain("Agent is warming up...");
 		} finally {
 			mount.dispose();

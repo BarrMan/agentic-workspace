@@ -7,10 +7,7 @@ import { createUniqueTestDir, initializeFilesystemTestProject, safeCleanup, with
 
 const CLI_COMMAND = getTestCliCommand();
 const directory = createUniqueTestDir("cli-pipe-output");
-const cases = [
-	{ name: "grouped plain with its window footer", args: ["--plain", "--max-count", "20"] },
-	{ name: "priority-sorted plain", args: ["--plain", "--sort", "priority"] },
-];
+const cases = [{ name: "plain", args: ["--plain"] }];
 
 describe("finite CLI output to a delayed pipe reader", () => {
 	beforeAll(async () => {
@@ -60,8 +57,6 @@ describe("finite CLI output to a delayed pipe reader", () => {
 			}
 			const expected = await readFile(outputPath);
 			expect(expected.toString()).toContain("TASK-24");
-			if (args.includes("--max-count")) expect(expected.toString()).toContain("Showing 1-20 of 24 items.");
-
 			const child = Bun.spawn([...CLI_COMMAND, "task", "list", ...args], {
 				cwd: directory,
 				stdin: "ignore",

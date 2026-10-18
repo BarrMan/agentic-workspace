@@ -41,7 +41,13 @@ describe("mode name color projection", () => {
 			];
 			const mount = mountOpenTuiWorkspace(setup.renderer, parent, {
 				tasks,
-				activeAgentSession: { id: "color-session", taskId: "TASK-1", status: "running", preset: "test" },
+				activeAgentSession: {
+					id: "color-session",
+					taskId: "TASK-1",
+					status: "running",
+					preset: "test",
+					cwd: "/project",
+				},
 				statuses: ["To Do", "Done"],
 				selectedTaskIndex: 0,
 				modeProjectionByTask: (id) =>
@@ -124,7 +130,7 @@ describe("mode name color projection", () => {
 		]);
 		const options = {
 			tasks,
-			activeAgentSession: { id: "plan-session", taskId: "TASK-1", status: "running", preset: "test" },
+			activeAgentSession: { id: "plan-session", taskId: "TASK-1", status: "running", preset: "test", cwd: "/project" },
 			statuses: ["To Do"],
 			modeProjectionByTask: (id: string) => modes.get(id),
 			indicationByTask: new Map([["TASK-1", "working" as const]]),
@@ -169,12 +175,12 @@ describe("mode name color projection", () => {
 			setup.mockInput.pressArrow("up");
 			await setup.flush();
 			lines = setup.captureCharFrame().split("\n");
-			expect(lines.some((row) => row.includes("Agent session · Plan"))).toBe(true);
+			expect(lines.some((row) => row.includes("Agent session · running · Plan · /project"))).toBe(true);
 			modes.set("TASK-1", { modeLabel: "Custom theme", approved: false, modeColor: "brightmagenta" });
 			mount.update(options);
 			await setup.flush();
 			lines = setup.captureCharFrame().split("\n");
-			const headerY = lines.findIndex((row) => row.includes("Agent session · Custom theme"));
+			const headerY = lines.findIndex((row) => row.includes("Agent session · running · Custom theme · /project"));
 			expect(headerY).toBeGreaterThanOrEqual(0);
 			const headerMode = spanAt(
 				setup,
@@ -282,7 +288,7 @@ describe("mode name color projection", () => {
 		let projection: OpenTuiWorkspaceModeProjection = { modeLabel: "Plan", approved: false, modeColor: "green" };
 		const options = {
 			tasks: [{ id: "TASK-1", title: "Retained task", status: "To Do" }],
-			activeAgentSession: { id: "retained", taskId: "TASK-1", status: "running", preset: "test" },
+			activeAgentSession: { id: "retained", taskId: "TASK-1", status: "running", preset: "test", cwd: "/project" },
 			modeProjectionByTask: () => projection,
 			liveAgent: { taskId: "TASK-1", label: "Retained", status: "running" as const, host, terminal },
 		};
@@ -292,9 +298,9 @@ describe("mode name color projection", () => {
 			const terminalParent = terminal.parent;
 			const headerColor = () => {
 				const lines = setup.captureCharFrame().split("\n");
-				const y = lines.findIndex((line) => line.includes("Agent session · Plan · running"));
+				const y = lines.findIndex((line) => line.includes("Agent session · running · Plan · /project"));
 				const line = lines[y] ?? "";
-				expect(line.slice(line.indexOf("Agent session ·")).trim()).toBe("Agent session · Plan · running");
+				expect(line.slice(line.indexOf("Agent session ·")).trim()).toBe("Agent session · running · Plan · /project");
 				return spanAt(setup, (lines[y] ?? "").lastIndexOf("Plan"), y).fg.toInts();
 			};
 			const originalColor = headerColor();
@@ -304,7 +310,7 @@ describe("mode name color projection", () => {
 			projection = { modeLabel: "Build", approved: false, modeColor: "blue" };
 			mount.update({ ...options, agentFocused: true });
 			await setup.flush();
-			expect(setup.captureCharFrame()).toContain("Agent session · Build · running");
+			expect(setup.captureCharFrame()).toContain("Agent session · running · Build · /project");
 			expect(terminal.parent).toBe(terminalParent);
 			expect(terminal.isDestroyed).toBe(false);
 		} finally {

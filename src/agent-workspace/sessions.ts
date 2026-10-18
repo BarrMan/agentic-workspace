@@ -1475,27 +1475,29 @@ export class AgentSessionService {
 						`Cannot stop owned native session ${sessionId}: it is not present in task ${taskId} history.`,
 					);
 
+			// Persisted status and process identifiers are not evidence of liveness or ownership.
+			const observations: Array<{
+				session: AgentSession;
+				runtime: Awaited<ReturnType<SessionProcess["nativeRuntimeClassification"]>>;
+			}> = [];
 			const targets = entries.filter(
 				({ session }) =>
 					session.status !== AGENT_SESSION_STATUS.STOPPED && session.status !== AGENT_SESSION_STATUS.FAILED,
 			);
-			// Verify every native target before stopping or publishing any records.
 			for (const { session } of targets) {
-				if (!session.nativeWorkspace) continue;
 				const runtime = await this.process.nativeRuntimeClassification(session);
 				if (runtime.status === "uncertain")
-					throw new Error(`Cannot safely inspect native session ${session.id}: ${runtime.reason}`);
+					throw new Error(`Cannot safely inspect session ${session.id}: ${runtime.reason}`);
+				if (session.status === AGENT_SESSION_STATUS.STARTING && runtime.status === "missing")
+					throw new Error(`can't find session: ${session.tmuxName}`);
+				observations.push({ session, runtime });
 			}
-			for (const { session } of targets) {
-				await stopClaimedSession(
-					this.core,
-					this.store,
-					this.process,
-					this.server,
-					taskId,
-					session,
-					session.nativeWorkspace,
-				);
+			for (const { session, runtime } of observations) {
+				if (runtime.status === "live") {
+					await stopClaimedSession(this.core, this.store, this.process, this.server, taskId, session, true);
+				} else {
+					await this.settleObservedSession(taskId, session, false);
+				}
 			}
 		} catch (error) {
 			failures.push(error);

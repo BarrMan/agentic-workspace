@@ -1,5 +1,4 @@
 import { renderConfiguredTaskIds } from "../commands/help-schema.ts";
-import { INSTRUCTION_GUIDES } from "../mcp/workflow-guides.ts";
 
 type RootEntryOptions = {
 	version: string;
@@ -40,12 +39,7 @@ export function formatRootEntry({ version, initialized, color = false }: RootEnt
 	const lines: string[] = [...logoLines, "", `${colorize("AgenticWorkspace", ANSI.title, color)} v${version}`, ""];
 
 	if (!initialized) {
-		lines.push("This directory is not initialized for AgenticWorkspace.", "");
-		lines.push(sectionTitle("Project setup:", color));
-		lines.push(commandLine("agentic-workspace init", "Initialize AgenticWorkspace interactively"));
-		lines.push(commandLine("agentic-workspace init --defaults", "Initialize with default settings"));
-		lines.push(commandLine("agentic-workspace init --no-git", "Initialize without Git integration"));
-		lines.push("");
+		lines.push("No AgenticWorkspace project is available in this directory.", "");
 	} else {
 		lines.push(sectionTitle("Common workflow:", color));
 		lines.push(commandLine('agentic-workspace search "query" --plain', "Search tasks, docs, and decisions"));
@@ -53,17 +47,10 @@ export function formatRootEntry({ version, initialized, color = false }: RootEnt
 		lines.push(
 			commandLine(renderConfiguredTaskIds("agentic-workspace task view {{TASK_ID:123}} --plain"), "Read task context"),
 		);
-		lines.push(commandLine('agentic-workspace task create "Title" -d "Description"', "Create a task"));
-		lines.push(commandLine("agentic-workspace board", "Open the TUI Kanban board"));
+		lines.push(commandLine('agentic-workspace task create "Title" --description "Description"', "Create a task"));
+		lines.push(commandLine("agentic-workspace workspace", "Open the task workspace"));
 		lines.push("");
 	}
-
-	lines.push(sectionTitle("Local instructions:", color));
-	lines.push(commandLine("agentic-workspace instructions", "List workflow guides"));
-	for (const guide of INSTRUCTION_GUIDES) {
-		lines.push(commandLine(`agentic-workspace instructions ${guide.key}`, guide.description));
-	}
-	lines.push("");
 
 	lines.push(sectionTitle("Command help:", color));
 	lines.push(commandLine("agentic-workspace <command> --help", "Show options, fields, and examples"));

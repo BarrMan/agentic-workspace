@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { existsSync } from "node:fs";
 import { mkdir } from "node:fs/promises";
+import { join } from "node:path";
 import { getBuiltInAgentConfiguration, upsertAgentConfiguration } from "../agent-workspace/config.ts";
 import { Core } from "../core/agentic-workspace.ts";
 import { taskWorktreeExists, taskWorktreePath } from "../git/task-worktree.ts";
@@ -110,7 +111,7 @@ describe("task worktree lifecycle", () => {
 		expect(existsSync(taskWorktreePath(TEST_DIR, task))).toBe(false);
 	});
 
-	it("removes the worktree when the task status becomes Done", async () => {
+	it("retains the worktree when task status becomes Done", async () => {
 		const current = await setupCore({ worktreePerTask: true });
 		const task = newTask("TASK-1", "Finish the worktree lifecycle");
 		await current.createTask(task);
@@ -118,11 +119,11 @@ describe("task worktree lifecycle", () => {
 
 		await current.updateTaskFromInput(task.id, { status: "Done" });
 
-		expect(await taskWorktreeExists(TEST_DIR, task)).toBe(false);
-		expect(existsSync(taskWorktreePath(TEST_DIR, task))).toBe(false);
+		expect(await taskWorktreeExists(TEST_DIR, task)).toBe(true);
+		expect(existsSync(taskWorktreePath(TEST_DIR, task))).toBe(true);
 	});
 
-	it("still removes the worktree after the task title changes", async () => {
+	it("keeps the renamed task worktree until explicit destructive deletion", async () => {
 		const current = await setupCore({ worktreePerTask: true });
 		const task = newTask("TASK-1", "Original title");
 		await current.createTask(task);
@@ -136,8 +137,26 @@ describe("task worktree lifecycle", () => {
 
 		await current.updateTaskFromInput(task.id, { status: "Done" });
 
+		expect(await taskWorktreeExists(TEST_DIR, renamed)).toBe(true);
+		expect(existsSync(originalPath)).toBe(true);
+		await current.deleteTask(task.id);
 		expect(await taskWorktreeExists(TEST_DIR, renamed)).toBe(false);
 		expect(existsSync(originalPath)).toBe(false);
+	});
+
+	it("preserves uncommitted work and task tracking when worktree removal is refused", async () => {
+		const current = await setupCore({ worktreePerTask: true });
+		const task = newTask("TASK-1", "Keep uncommitted work");
+		await current.createTask(task);
+		const worktree = taskWorktreePath(TEST_DIR, task);
+		const userFile = join(worktree, "uncommitted.txt");
+		await Bun.write(userFile, "preserve this data\n");
+
+		await expect(current.deleteTask(task.id)).rejects.toThrow("Could not remove worktree");
+
+		expect(await current.filesystem.loadTask(task.id)).not.toBeNull();
+		expect(await Bun.file(userFile).text()).toBe("preserve this data\n");
+		expect(await taskWorktreeExists(TEST_DIR, task)).toBe(true);
 	});
 
 	it("is idempotent when the worktree already exists", async () => {

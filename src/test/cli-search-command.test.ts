@@ -157,21 +157,16 @@ describe("CLI search command", () => {
 		expect(priorityStdout).toContain("TASK-2 - High priority follow-up");
 	});
 
-	it("applies result limit", async () => {
-		const result = await $`${cliCommand} search search --plain --limit 1`.cwd(TEST_DIR).quiet();
-		expect(result.exitCode).toBe(0);
-		const stdout = result.stdout.toString();
-		const taskMatches = stdout.match(/TASK-\d+ -/g) || [];
-		expect(taskMatches.length).toBeLessThanOrEqual(1);
-	});
-
-	it("rejects invalid result limits with a help hint", async () => {
-		const result = await $`${cliCommand} search search --plain --limit 0`.cwd(TEST_DIR).nothrow().quiet();
+	it("rejects pagination and result-limit options", async () => {
+		const result = await $`${cliCommand} search search --plain --limit 1`.cwd(TEST_DIR).nothrow().quiet();
 		const output = result.stdout.toString() + result.stderr.toString();
 
 		expect(result.exitCode).toBe(1);
-		expect(output).toContain("--limit must be a positive integer (1 or greater).");
-		expect(output).toContain("Try 'agentic-workspace search --help' for options.");
+		expect(output).toContain("unknown option '--limit'");
+		const help = await $`${cliCommand} search --help`.cwd(TEST_DIR).text();
+		expect(help).not.toContain("--max-count");
+		expect(help).not.toContain("--skip");
+		expect(help).not.toContain("--limit");
 	});
 
 	it("finds tasks by modified file path", async () => {

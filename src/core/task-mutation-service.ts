@@ -1,5 +1,6 @@
+import { Task as TaskModel } from "../agent-workspace/task.ts";
+import type { ResolvedAgentConfiguration } from "../agent-workspace/types.ts";
 import type { FileSystem } from "../file-system/operations.ts";
-import { removeTaskWorktree } from "../git/task-worktree.ts";
 import { EntityType, TASK_SOURCE, type Task, type TaskUpdateInput } from "../types/index.ts";
 import { formatStoredDate } from "../utils/date.ts";
 import { generateNextId, generateNextSubtaskId, getPrefixForType } from "../utils/prefix-config.ts";
@@ -15,7 +16,6 @@ import { executeStatusCallback } from "../utils/status-callback.ts";
 import { validateDependencies } from "../utils/task-builders.ts";
 import { AmbiguousTaskIdError, LOCAL_TASK_LOOKUP_HINT, normalizeTaskId, taskIdsEqual } from "../utils/task-path.ts";
 import { formatValidTaskTypeValues, resolveTaskTypeValue } from "../utils/task-type-config.ts";
-import { isDoneStatus } from "./milestones.ts";
 import { completedTaskIdentityRecord, TaskIdentityIndex, type TaskIdentityResolution } from "./task-identity-index.ts";
 import type { TaskReadOptions } from "./task-query-workflow.ts";
 import { applyTaskUpdate } from "./task-update/index.ts";
@@ -56,6 +56,7 @@ function hasUpdatedDateRelevantChanges(originalTask: Task | null, nextTask: Task
 
 /** Owns the locked read-apply-write transaction for active task edits. */
 export class ProjectTaskMutations {
+	private readonly approvalTails = new Map<string, Promise<void>>();
 	constructor(
 		private readonly filesystem: FileSystem,
 		private readonly loadTask: (id: string, forMutation: boolean) => Promise<Task | null>,
@@ -130,6 +131,43 @@ export class ProjectTaskMutations {
 			await this.saveTask(current);
 			return current;
 		});
+	}
+
+	async setModeApproval(taskId: string, modeId: string, configuration: ResolvedAgentConfiguration): Promise<Task> {
+		const previous = this.approvalTails.get(taskId) ?? Promise.resolve();
+		let release!: () => void;
+		const currentTail = new Promise<void>((resolve) => {
+			release = resolve;
+		});
+		this.approvalTails.set(taskId, currentTail);
+		await previous;
+		try {
+			const task = await this.loadTaskForMutation(taskId);
+			if (!task) throw new Error(`Task not found: ${taskId}`);
+			return await this.filesystem.withTaskLock(task, async () => {
+				const current = await this.filesystem.loadTask(taskId, { includeArchived: true });
+				if (!current) throw new Error(`Task not found: ${taskId}`);
+				const profiles = configuration.config.modes?.profiles ?? {};
+				if (!profiles[modeId]) throw new Error(`Unknown mode: ${modeId}`);
+				const model = new TaskModel({
+					task: current,
+					modes: profiles,
+					configuration,
+					sessionRecords: {},
+					selectedModeId: modeId,
+					createSession: () => {
+						throw new Error("Session creation is unavailable during approval mutation.");
+					},
+				});
+				model.setModeApproval(modeId);
+				const updated = model.serialize();
+				await this.filesystem.saveTask({ ...updated, filePath: current.filePath }, { approvalMutation: true });
+				return updated;
+			});
+		} finally {
+			release();
+			if (this.approvalTails.get(taskId) === currentTail) this.approvalTails.delete(taskId);
+		}
 	}
 
 	async normalizePriority(value: string | undefined): Promise<string | undefined> {
@@ -224,14 +262,6 @@ export class ProjectTaskMutations {
 		else delete task.updatedDate;
 		const filepath = await this.filesystem.saveTask(task);
 		if (statusChanged) await this.executeStatusChangeCallback(task, previousStatus, task.status ?? "");
-		if (statusChanged && isDoneStatus(task.status)) {
-			try {
-				await removeTaskWorktree(this.filesystem.rootDir, task);
-			} catch (error) {
-				const message = error instanceof Error ? error.message : String(error);
-				console.error(`Could not remove worktree for ${task.id}: ${message}`);
-			}
-		}
 		return filepath;
 	}
 

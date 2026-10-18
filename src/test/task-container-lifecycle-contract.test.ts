@@ -66,12 +66,14 @@ describe("MAIN task-container lifecycle contract", () => {
 
 		expect((await core.archiveTask("task-1")).success).toBe(true);
 		await expectArtifacts("task-1", "archive/tasks");
-		expect(await Bun.file(join(source, "design", "plan.md")).exists()).toBe(false);
+		expect(await Bun.file(join(source, "artifacts", "design", "plan.md")).exists()).toBe(false);
 
 		await core.updateTaskFromInput("task-1", { status: "Done" });
 		expect(await core.completeTask("task-1")).toBe(true);
 		await expectArtifacts("task-1", "completed");
-		expect(await Bun.file(join(container("archive/tasks", "task-1"), "design", "plan.md")).exists()).toBe(false);
+		expect(await Bun.file(join(container("archive/tasks", "task-1"), "artifacts", "design", "plan.md")).exists()).toBe(
+			false,
+		);
 	});
 
 	it("promotes and demotes by moving the whole container while preserving artifact-relative paths and approvals", async () => {
@@ -87,7 +89,7 @@ describe("MAIN task-container lifecycle contract", () => {
 		expect(promoted).toBeDefined();
 		if (!promoted) return;
 		await expectArtifacts(promoted.id, "tasks");
-		expect(await Bun.file(join(draftContainer, "design", "plan.md")).exists()).toBe(false);
+		expect(await Bun.file(join(draftContainer, "artifacts", "design", "plan.md")).exists()).toBe(false);
 
 		expect((await core.demoteTask(promoted.id)).success).toBe(true);
 		const demoted = (await core.filesystem.listDrafts()).find((item) => item.title === "Draft container");
@@ -108,7 +110,7 @@ describe("MAIN task-container lifecycle contract", () => {
 		await writeFile(join(target, "task.md"), serializeTask(task("TASK-1", "Existing archive target")));
 		await writeFile(join(target, "collision", "target-only.txt"), "keep target");
 		await expect(core.archiveTask("task-1")).rejects.toThrow();
-		expect(await readFile(join(original, "design", "plan.md"), "utf8")).toBe("the plan\n");
+		expect(await readFile(join(original, "artifacts", "design", "plan.md"), "utf8")).toBe("the plan\n");
 		expect(await readFile(join(target, "collision", "target-only.txt"), "utf8")).toBe("keep target");
 	});
 

@@ -67,7 +67,7 @@ export function findUniqueEntityById<T extends { id: string }>(
 			entityLabel,
 			normalizeEntityId(prefix, id),
 			matches.map(describe),
-			"Run 'agentic-workspace doctor' to review the conflicting files.",
+			"Remove the conflicting files, then retry.",
 		);
 	}
 	return matches[0] ?? null;

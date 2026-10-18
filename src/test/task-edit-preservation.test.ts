@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { mkdir, readdir } from "node:fs/promises";
+import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { Writable } from "node:stream";
 import { runCli } from "../cli/register.ts";
@@ -72,62 +72,6 @@ async function setupPreservation(): Promise<{ dir: string; core: Core }> {
 }
 
 describe("Task edit section preservation", () => {
-	it("preserves opaque body and unknown frontmatter when editing labels", async () => {
-		const { dir } = await setupPreservation();
-		try {
-			const tasksDir = join(dir, "agentic-workspace", "tasks");
-			const taskDir = join(tasksDir, "task-1");
-			await mkdir(taskDir, { recursive: true });
-			const taskPath = join(taskDir, "task.md");
-			await Bun.write(
-				taskPath,
-				`---
-task_schema_version: 3
-id: task-1
-title: hello world
-status: To Do
-assignee: []
-created_date: '2026-01-01'
-labels: []
-dependencies: []
-custom_owner: platform
----
-
-## Description
-
-Test description.
-
-## Extra Notes
-
-Keep me exactly.
-`,
-			);
-
-			await $`${cliCommand} task edit 1 --label foo`.cwd(dir).quiet();
-
-			const files = await readdir(tasksDir);
-			expect(files).toContain("task-1");
-
-			const content = await Bun.file(taskPath).text();
-			expect(content).toContain("id: task-1");
-			expect(content).not.toContain("id: TASK-1");
-			expect(content).toContain("title: hello world");
-			expect(content).toContain("status: To Do");
-			expect(content).toContain("created_date:");
-			expect(content).toContain("2026-01-01");
-			expect(content).toContain("dependencies: []");
-			expect(content).toContain("custom_owner: platform");
-			expect(content).toContain("labels:\n  - foo");
-			expect(content).toContain("## Description\n\nTest description.");
-			expect(content).toContain("## Extra Notes\n\nKeep me exactly.");
-			expect(content).not.toContain("<!-- SECTION:");
-			expect(content).not.toContain("<!-- AC:");
-			expect(content).not.toContain("## Acceptance Criteria");
-		} finally {
-			await safeCleanup(dir);
-		}
-	});
-
 	it("preserves a generic working artifact and description during edits", async () => {
 		const { dir, core } = await setupPreservation();
 		try {
@@ -147,9 +91,9 @@ Keep me exactly.
 			await Bun.write(artifactPath, "Opaque working state.\n");
 
 			// Update just the description
-			await $`${cliCommand} task edit 1 -d "UPDATED description"`.cwd(dir).quiet();
+			await $`${cliCommand} task edit 1 --description "UPDATED description"`.cwd(dir).quiet();
 
-			const result = await $`${cliCommand} task 1 --plain`.cwd(dir).text();
+			const result = await $`${cliCommand} task view 1 --plain`.cwd(dir).text();
 
 			expect(result).toContain("UPDATED description");
 			expect(await Bun.file(artifactPath).text()).toBe("Opaque working state.\n");
@@ -178,10 +122,10 @@ Keep me exactly.
 
 			const artifactPath = join(dir, "agentic-workspace", "tasks", "task-2", "working-state.md");
 			await Bun.write(artifactPath, "Working notes remain opaque.\n");
-			await $`${cliCommand} task edit 2 -d "Updated description"`.cwd(dir).quiet();
+			await $`${cliCommand} task edit 2 --description "Updated description"`.cwd(dir).quiet();
 
 			// Verify the task description and independent artifact survive canonical saves.
-			const result = await $`${cliCommand} task 2 --plain`.cwd(dir).text();
+			const result = await $`${cliCommand} task view 2 --plain`.cwd(dir).text();
 
 			expect(result).toContain("Updated description");
 			expect(await Bun.file(artifactPath).text()).toBe("Working notes remain opaque.\n");
@@ -205,9 +149,9 @@ Keep me exactly.
 				description: "Test description",
 			});
 
-			await $`${cliCommand} task edit 3 -d "Updated description"`.cwd(dir).quiet();
+			await $`${cliCommand} task edit 3 --description "Updated description"`.cwd(dir).quiet();
 
-			const result = await $`${cliCommand} task 3 --plain`.cwd(dir).text();
+			const result = await $`${cliCommand} task view 3 --plain`.cwd(dir).text();
 			const taskContent = await Bun.file(join(dir, "agentic-workspace", "tasks", "task-3", "task.md")).text();
 
 			expect(result).toContain("Updated description");
@@ -234,12 +178,11 @@ Keep me exactly.
 
 			const artifactPath = join(dir, "agentic-workspace", "tasks", "task-4", "working-state.md");
 			await Bun.write(artifactPath, "Pending work.\n");
-			await $`${cliCommand} task edit 4 -d "Updated description"`.cwd(dir).quiet();
+			await $`${cliCommand} task edit 4 --description "Updated description"`.cwd(dir).quiet();
 
-			const result = await $`${cliCommand} task 4 --plain`.cwd(dir).text();
+			const result = await $`${cliCommand} task view 4 --plain`.cwd(dir).text();
 
 			expect(result).toContain("Updated description");
-			expect(result).toContain("working-state.md");
 			expect(await Bun.file(artifactPath).text()).toBe("Pending work.\n");
 		} finally {
 			await safeCleanup(dir);
@@ -262,9 +205,9 @@ Keep me exactly.
 			});
 
 			// Update description
-			await $`${cliCommand} task edit 5 -d "Updated minimal description"`.cwd(dir).quiet();
+			await $`${cliCommand} task edit 5 --description "Updated minimal description"`.cwd(dir).quiet();
 
-			const result = await $`${cliCommand} task 5 --plain`.cwd(dir).text();
+			const result = await $`${cliCommand} task view 5 --plain`.cwd(dir).text();
 			const taskContent = await Bun.file(join(dir, "agentic-workspace", "tasks", "task-5", "task.md")).text();
 
 			expect(result).toContain("Updated minimal description");

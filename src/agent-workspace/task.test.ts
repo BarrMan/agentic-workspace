@@ -70,6 +70,18 @@ describe("Task", () => {
 	const roots: string[] = [];
 	afterEach(async () => await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true }))));
 
+	it("sets and clears approval on its held task record", () => {
+		const { task } = fixture();
+		task.setModeApproval("a");
+		task.setModeApproval("b");
+		expect(task.serialize().modeApprovals).toEqual({ a: true, b: true });
+		task.clearModeApproval("a");
+		expect(task.serialize().modeApprovals).toEqual({ b: true });
+		task.clearModeApproval("b");
+		expect(task.serialize().modeApprovals).toBeUndefined();
+		expect(() => task.setModeApproval(" ")).toThrow("Mode ID must not be empty");
+	});
+
 	it("persists one Task reservation before real Session startup and readiness", async () => {
 		const root = await mkdtemp(join(tmpdir(), "task-session-store-"));
 		roots.push(root);

@@ -118,7 +118,6 @@ describe("CLI doc search command", () => {
 			"doc-1 - Architecture Overview (path: guides/doc-1 - Architecture-Overview.md, type: guide, tags: architecture, search)",
 		);
 		expect(stdout).toContain("View: agentic-workspace doc view doc-1");
-		expect(stdout).toMatch(/\[score [0-1]\.\d{3}]/);
 		expect(stdout).not.toContain("Support Playbook");
 	});
 

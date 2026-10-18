@@ -167,6 +167,20 @@ describe("FileSystem", () => {
 			expect((await filesystem.loadTask("task-1"))?.rawContent).toBe("## Free-form\n\nThis body stays literal.");
 		});
 
+		it("preserves fresh approvals through stale metadata saves and container moves", async () => {
+			await filesystem.saveTask({ ...sampleTask, modeApprovals: { build: true } });
+			const stale = await filesystem.loadTask("task-1");
+			if (!stale) throw new Error("Saved task was not found");
+			await filesystem.saveTask({ ...stale, title: "Metadata edit", modeApprovals: undefined });
+			expect((await filesystem.loadTask("task-1"))?.modeApprovals).toEqual({ build: true });
+			const current = await filesystem.loadTask("task-1");
+			if (!current) throw new Error("Saved task was not found");
+			await filesystem.moveTaskContainer(current, filesystem.completedDir);
+			expect((await filesystem.listCompletedTasks()).find(({ id }) => id === "TASK-1")?.modeApprovals).toEqual({
+				build: true,
+			});
+		});
+
 		it("uses the same immediate-child identity rule for path saves and lifecycle operations", async () => {
 			const cases = [
 				{ name: "direct child", path: join(filesystem.tasksDir, "task-1", "task.md"), accepted: true },

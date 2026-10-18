@@ -2,7 +2,7 @@
 
 ## Documentation
 
-Project documentation lives under `docs/`; the root `README.md` is the user entry point and this file is the agent workflow entry point. Start with the [documentation map](docs/README.md).
+Project documentation lives under `docs/`; the root `README.md` is the user entry point and this file is the agent workflow entry point.
 
 ### Read by the work being changed
 

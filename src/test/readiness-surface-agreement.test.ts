@@ -5,8 +5,6 @@ import { runCli } from "../cli/register.ts";
 import { Core } from "../core/agentic-workspace.ts";
 import { type TaskCorpus, toTaskDetail, withReadiness } from "../core/task-detail.ts";
 import { searchJson } from "../formatters/json-output.ts";
-import { McpServer } from "../mcp/server.ts";
-import { registerTaskTools } from "../mcp/tools/tasks/index.ts";
 import { generateTaskDetailStyled } from "../ui/opentui/task-detail-content.ts";
 import { createUniqueTestDir, initializeFilesystemTestProject, safeCleanup } from "./test-utils.ts";
 
@@ -19,7 +17,6 @@ import { createUniqueTestDir, initializeFilesystemTestProject, safeCleanup } fro
 describe("readiness agreement across surfaces", () => {
 	let testDir: string;
 	let core: Core;
-	let mcpServer: McpServer;
 
 	/** The verdict every surface has to reach for this project, by task ID. */
 	const expectedReadiness: Record<string, boolean> = {
@@ -34,13 +31,6 @@ describe("readiness agreement across surfaces", () => {
 		// Already finished, so it is neither ready to start nor blocked.
 		"TASK-6": false,
 	};
-
-	const readyIds = Object.entries(expectedReadiness)
-		.filter(([, isReady]) => isReady)
-		.map(([id]) => id);
-	const notReadyIds = Object.entries(expectedReadiness)
-		.filter(([, isReady]) => !isReady)
-		.map(([id]) => id);
 
 	beforeEach(async () => {
 		testDir = createUniqueTestDir("readiness-surface-agreement");
@@ -64,15 +54,9 @@ describe("readiness agreement across surfaces", () => {
 		// The dependency leaves the active corpus: only its location in agentic-workspace/completed still says
 		// the work is finished.
 		expect(await core.completeTask("task-1")).toBe(true);
-
-		mcpServer = new McpServer(testDir, "Test instructions");
-		const mcpConfig = await mcpServer.application.filesystem.loadConfig();
-		if (!mcpConfig) throw new Error("Expected MCP test config");
-		registerTaskTools(mcpServer, mcpConfig);
 	});
 
 	afterEach(async () => {
-		await mcpServer.stop();
 		await safeCleanup(testDir);
 	});
 
@@ -103,18 +87,10 @@ describe("readiness agreement across surfaces", () => {
 		statuses: (await core.filesystem.loadConfig())?.statuses,
 	});
 
-	it("carries the same isReady on the task list JSON contract as --ready filters on", async () => {
-		const listResult = await runCliCommand(["task", "list", "--json"]);
-		expect(listResult.exitCode).toBe(0);
-		const rows = JSON.parse(listResult.stdout).tasks as Array<{ id: string; isReady: boolean }>;
-		const listVerdicts = Object.fromEntries(rows.map((row) => [row.id, row.isReady]));
-		expect(listVerdicts).toMatchObject(expectedReadiness);
-
-		const readyResult = await runCliCommand(["task", "list", "--plain", "--ready"]);
-		expect(readyResult.exitCode).toBe(0);
-		const readyOutput = readyResult.stdout;
-		for (const id of readyIds) expect(readyOutput).toContain(id);
-		for (const id of notReadyIds) expect(readyOutput).not.toContain(id);
+	it("derives readiness for the interactive task corpus", async () => {
+		const corpus = await tuiCorpus();
+		const verdicts = Object.fromEntries(withReadiness(corpus.tasks, corpus).map((row) => [row.id, row.isReady]));
+		expect(verdicts).toMatchObject(expectedReadiness);
 	});
 
 	it("explains the same verdict in task view JSON, with unresolved dependencies failing closed", async () => {
@@ -156,15 +132,7 @@ describe("readiness agreement across surfaces", () => {
 		expect(finishedDetail.readiness.isBlocked).toBe(false);
 	});
 
-	it("returns the same verdicts through MCP and the interactive corpus", async () => {
-		const mcpResult = await mcpServer.testInterface.callTool({
-			params: { name: "task_list", arguments: { ready: true } },
-		});
-		// One content item per status group, so the whole result is the list.
-		const mcpOutput = (mcpResult.content as Array<{ text?: string }>).map((item) => item.text ?? "").join("\n");
-		for (const id of readyIds) expect(mcpOutput).toContain(id);
-		for (const id of notReadyIds) expect(mcpOutput).not.toContain(id);
-
+	it("returns the same verdicts through the interactive corpus", async () => {
 		const corpus = await tuiCorpus();
 		const interactiveVerdicts = Object.fromEntries(
 			withReadiness(corpus.tasks, corpus).map((row) => [row.id, row.isReady]),

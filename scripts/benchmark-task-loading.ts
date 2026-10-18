@@ -5,8 +5,6 @@ import { basename, join } from "node:path";
 import { Core } from "../src/core/agentic-workspace.ts";
 import { initializeProject } from "../src/core/init.ts";
 import { serializeTask } from "../src/markdown/serializer.ts";
-import { McpServer } from "../src/mcp/server.ts";
-import { TaskHandlers } from "../src/mcp/tools/tasks/handlers.ts";
 import type { Task } from "../src/types/index.ts";
 
 const DEFAULTS = {
@@ -35,7 +33,7 @@ const SEMANTIC_OPERATIONS = [
 type SemanticOperation = (typeof SEMANTIC_OPERATIONS)[number];
 type CounterMap = Record<SemanticOperation, number>;
 type OutputFormat = "table" | "json";
-type SurfaceName = "core.loadTasks" | "mcp.taskSearch";
+type SurfaceName = "core.loadTasks";
 
 interface Options {
 	iterations: number;
@@ -215,12 +213,9 @@ function benchmarkTask(id: number, title: string, status = "To Do"): Task {
 	};
 }
 
-function taskFilename(task: Task): string {
-	return `${task.id.toLowerCase()} - ${task.title.replaceAll(" ", "-")}.md`;
-}
-
 async function writeTask(directory: string, task: Task): Promise<string> {
-	const path = join(directory, taskFilename(task));
+	const path = join(directory, task.id.toLowerCase(), "task.md");
+	await mkdir(join(directory, task.id.toLowerCase()), { recursive: true });
 	await writeFile(path, serializeTask(task));
 	return path;
 }
@@ -326,11 +321,6 @@ async function populateCorpus(root: string, options: Options): Promise<Corpus> {
 				requiredTaskIds: [localSentinel, completedSentinel, branchSentinel],
 				forbiddenTaskIds: [],
 			},
-			"mcp.taskSearch": {
-				taskIds: [...activeTaskIds, ...completedTaskIds],
-				requiredTaskIds: [localSentinel, completedSentinel],
-				forbiddenTaskIds: [branchSentinel],
-			},
 		},
 	};
 }
@@ -406,19 +396,6 @@ function taskOperationResult(tasks: Task[]): OperationResult {
 	};
 }
 
-function textOperationResult(text: string): OperationResult {
-	const normalized = text.replaceAll("\r\n", "\n").trim();
-	const taskIds = normalized
-		.split("\n")
-		.flatMap((line) => line.match(/^\s+(TASK-\d+)\b/)?.[1] ?? [])
-		.sort((left, right) => left.localeCompare(right));
-	return {
-		count: taskIds.length,
-		digest: createHash("sha256").update(normalized).digest("hex").slice(0, 16),
-		taskIds,
-	};
-}
-
 function validateOperationResult(surface: SurfaceName, result: OperationResult, expected: ExpectedResult): void {
 	const actualIds = new Set(result.taskIds);
 	const expectedIds = new Set(expected.taskIds);
@@ -456,26 +433,6 @@ function coreSurface(projectRoot: string): BenchmarkSurface {
 	return {
 		async operation() {
 			return taskOperationResult(await core.loadTasks(undefined, undefined, { includeCompleted: true }));
-		},
-		instrumentation,
-		async dispose() {
-			instrumentation.restore();
-		},
-	};
-}
-
-function mcpSurface(projectRoot: string): BenchmarkSurface {
-	const server = new McpServer(projectRoot, "Task loading benchmark");
-	const handlers = new TaskHandlers(server.application);
-	const instrumentation = instrumentCore(server.application);
-	return {
-		async operation() {
-			const result = await handlers.searchTasks({ query: "benchmark-task-loading" });
-			const text = result.content
-				.filter((item): item is Extract<(typeof result.content)[number], { type: "text" }> => item.type === "text")
-				.map((item) => item.text)
-				.join("\n");
-			return textOperationResult(text);
 		},
 		instrumentation,
 		async dispose() {
@@ -675,7 +632,6 @@ async function main(): Promise<void> {
 		corpus = await createCorpus(options);
 		const definitions: SurfaceDefinition[] = [
 			{ name: "core.loadTasks", create: async (projectRoot) => coreSurface(projectRoot) },
-			{ name: "mcp.taskSearch", create: async (projectRoot) => mcpSurface(projectRoot) },
 		];
 		const results: BenchmarkResult[] = [];
 		for (const definition of definitions) {
@@ -700,7 +656,7 @@ async function main(): Promise<void> {
 			methodology: {
 				cold: "fresh in-process surface instance; operating-system caches may already be warm",
 				warm: "repeated read on one long-lived surface after one unmeasured initialization",
-				surfaces: "Core loader, MCP task handler, and Web task handler; transport and rendering excluded",
+				surfaces: "Core loader; transport and rendering excluded",
 				gitProcesses: "top-level Git commands launched through Bun.spawn, including repository detection",
 				correctness:
 					"every invocation must match the fixture's exact task count and ID set plus required/forbidden sentinels",

@@ -59,7 +59,7 @@ describe("BACK-23 canonical task container and artifact path contract", () => {
 			agenticWorkspaceDirectory: join(linked, ".agentic-workspace"),
 		});
 		const artifact = await repository.resolve("BACK-23", "notes/plan.md");
-		expect(artifact).toBe(join(canonicalContainer, "notes", "plan.md"));
+		expect(artifact).toBe(join(canonicalContainer, "artifacts", "notes", "plan.md"));
 		await repository.write("BACK-23", "notes/plan.md", new TextEncoder().encode("canonical"));
 		expect(await readFile(artifact, "utf8")).toBe("canonical");
 		expect(await Bun.file(join(linked, ".agentic-workspace", "tasks", "back-23", "notes", "plan.md")).exists()).toBe(
@@ -77,10 +77,17 @@ describe("BACK-23 canonical task container and artifact path contract", () => {
 		await mkdir(container, { recursive: true });
 		await mkdir(outside);
 		await writeFile(join(container, "task.md"), serializeTask(task("BACK-23", "Contained")));
-		await symlink(outside, join(container, "escape"));
+		const artifacts = join(container, "artifacts");
+		await mkdir(artifacts);
+		await symlink(outside, join(artifacts, "escape"));
 		const repository = new TaskArtifactRepository({ agenticWorkspaceDirectory });
 		await expect(repository.write("BACK-23", "escape/file.md", new Uint8Array([1]))).rejects.toThrow(/outside/);
 		expect(await Bun.file(join(outside, "file.md")).exists()).toBe(false);
+
+		const outsideFile = join(outside, "existing.md");
+		await writeFile(outsideFile, "outside");
+		await symlink(outsideFile, join(artifacts, "linked.md"));
+		await expect(repository.resolve("BACK-23", "linked.md")).rejects.toThrow(/outside/);
 	});
 
 	it("does not create files or directories when reading a missing artifact", async () => {

@@ -1,6 +1,6 @@
 import type { ModeTextColor } from "./mode-colors.ts";
 
-/** Public harness choices accepted in `agents.json` and shown by the TUI. */
+/** Public harness choices shown by the TUI. */
 export const AGENT_BOOTSTRAP_TYPES = ["opencode", "claude", "pi"] as const;
 export type AgentBootstrap = (typeof AGENT_BOOTSTRAP_TYPES)[number];
 

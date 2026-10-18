@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "bun:test";
-import { mkdir, readFile, utimes, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rm, symlink, utimes, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { createUniqueTestDir, safeCleanup } from "../test/test-utils.ts";
 import { TaskArtifactRepository, validateTaskArtifactPath } from "./task-artifact-repository.ts";
@@ -17,6 +17,7 @@ async function repository() {
 		"---\ntask_schema_version: 3\nid: BACK-23\ntitle: Artifacts\nstatus: To Do\nassignee: []\ncreated_date: 2025-01-01\nlabels: []\ndependencies: []\n---\n";
 	await mkdir(join(agenticWorkspaceDirectory, "tasks", "back-23"), { recursive: true });
 	await writeFile(join(agenticWorkspaceDirectory, "tasks", "back-23", "task.md"), taskContent);
+	await mkdir(join(agenticWorkspaceDirectory, "tasks", "back-23", "artifacts"));
 	return {
 		root,
 		agenticWorkspaceDirectory,
@@ -35,7 +36,9 @@ describe("TaskArtifactRepository", () => {
 	it("stores lazy artifacts and content-bound approval without changing task.md", async () => {
 		const { service, agenticWorkspaceDirectory, taskContent } = await repository();
 		expect(await service.status("BACK-23", "plan.md")).toEqual({ path: "plan.md", state: "missing" });
-		expect(await Bun.file(join(agenticWorkspaceDirectory, "tasks", "back-23", ".artifacts.json")).exists()).toBe(false);
+		expect(
+			await Bun.file(join(agenticWorkspaceDirectory, "tasks", "back-23", "artifacts", ".artifacts.json")).exists(),
+		).toBe(false);
 		const bytes = new TextEncoder().encode("Plan\n");
 		const draft = await service.write("BACK-23", "nested/plan.md", bytes);
 		expect(draft.state).toBe("draft");
@@ -57,7 +60,7 @@ describe("TaskArtifactRepository", () => {
 		const reviewedHash = reviewed.sha256;
 		if (!reviewedHash) throw new Error("Expected content hash");
 		await expect(service.approveCurrentVersion("back-23", "plan.md", reviewedHash)).rejects.toThrow(/changed since/);
-		const path = join(agenticWorkspaceDirectory, "tasks", "back-23", "plan.md");
+		const path = join(agenticWorkspaceDirectory, "tasks", "back-23", "artifacts", "plan.md");
 		const before = await (await import("node:fs/promises")).stat(path);
 		await writeFile(path, "six");
 		await utimes(path, before.atime, before.mtime);
@@ -76,5 +79,39 @@ describe("TaskArtifactRepository", () => {
 		expect((await service.status("back-23", "a.md")).state).toBe("draft");
 		expect((await service.status("back-23", "b.md")).state).toBe("approved");
 		expect((await service.list("back-23")).map(({ path }) => path)).toEqual(["a.md", "b.md"]);
+	});
+
+	it("contains artifacts in the artifacts directory and rejects symlink escapes", async () => {
+		const { service, agenticWorkspaceDirectory } = await repository();
+		const container = join(agenticWorkspaceDirectory, "tasks", "back-23");
+		const outside = join(container, "outside.md");
+		await writeFile(outside, "preserved outside artifact");
+		expect(await service.list("back-23")).toEqual([]);
+		await symlink(outside, join(container, "artifacts", "escape.md"));
+		await expect(service.read("back-23", "escape.md")).rejects.toThrow();
+		await expect(service.write("back-23", "escape.md", new TextEncoder().encode("bad"))).rejects.toThrow();
+		expect(await readFile(outside, "utf8")).toBe("preserved outside artifact");
+	});
+
+	it("rejects a symlinked artifacts directory", async () => {
+		const { service, agenticWorkspaceDirectory } = await repository();
+		const container = join(agenticWorkspaceDirectory, "tasks", "back-23");
+		const outside = join(agenticWorkspaceDirectory, "outside");
+		await mkdir(outside);
+		await rm(join(container, "artifacts"), { recursive: true });
+		await symlink(outside, join(container, "artifacts"));
+		await expect(service.resolve("back-23", "notes.md")).rejects.toThrow(/real directory/);
+		await expect(service.list("back-23")).rejects.toThrow(/real directory/);
+	});
+
+	it("handles a missing artifacts directory without reading container-root files", async () => {
+		const { service, agenticWorkspaceDirectory } = await repository();
+		const container = join(agenticWorkspaceDirectory, "tasks", "back-23");
+		await writeFile(join(container, "legacy.md"), "preserved");
+		await rm(join(container, "artifacts"), { recursive: true });
+		expect(await service.list("back-23")).toEqual([]);
+		expect(await service.status("back-23", "legacy.md")).toEqual({ path: "legacy.md", state: "missing" });
+		expect(await service.resolve("back-23", "notes.md")).toBe(join(container, "artifacts", "notes.md"));
+		expect(await readFile(join(container, "legacy.md"), "utf8")).toBe("preserved");
 	});
 });

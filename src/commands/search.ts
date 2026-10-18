@@ -9,16 +9,7 @@ import {
 	type SearchResultType,
 	type TaskSearchResult,
 } from "../types/index.ts";
-import {
-	addListWindowOptions,
-	LIST_WINDOW_HELP_FIELDS,
-	LIST_WINDOW_OUTPUT_HELP,
-	type ListWindow,
-	type ListWindowOptions,
-	parsePositiveIntegerOption,
-	printListWindow,
-	selectListWindow,
-} from "../utils/list-window.ts";
+import { type ListWindow, type ListWindowOptions, printListWindow, selectListWindow } from "../utils/list-window.ts";
 import type { ReadOutputMode, ReadOutputOptions } from "../utils/read-output-mode.ts";
 import { parseDelimitedStringList } from "../utils/task-builders.ts";
 import {
@@ -57,7 +48,6 @@ type ParsedSearchOptions = {
 	modifiedFileFilters?: string[];
 	types: SearchResultType[];
 	filters: SearchFilters;
-	limit?: number;
 };
 
 const TASK_TYPE_EXAMPLE = JSON.stringify(getCliTaskTypeValues()[0] ?? "<configured-type>");
@@ -73,7 +63,7 @@ export function registerSearchCommand(program: Command, dependencies: SearchComm
 		reads: "Tasks, documents, and decisions from the configured agentic-workspace directory",
 		required: [],
 		optional: [
-			{ name: "query", type: "String", description: "Fuzzy search text" },
+			{ name: "query", type: "String", description: "Literal search text" },
 			{
 				name: "type",
 				type: choiceType(["task", "document", "decision"], { multiple: true }),
@@ -105,21 +95,18 @@ export function registerSearchCommand(program: Command, dependencies: SearchComm
 				type: "Project-root-relative path",
 				description: "Filter by modified file path substring",
 			},
-			{ name: "limit", type: "Integer", description: "Maximum number of results" },
-			...LIST_WINDOW_HELP_FIELDS,
 			{ name: "plain", type: "Boolean", description: "Use plain text output" },
 			{ name: "json", type: "Boolean", description: "Use versioned machine-readable JSON output" },
 		],
-		output: `Plain text by default, or versioned JSON with --json. ${LIST_WINDOW_OUTPUT_HELP}; JSON adds total and nextSkip`,
+		output: "All matching results in plain text by default, or versioned JSON with --json.",
 		examples: [
 			'agentic-workspace search "auth" --plain',
 			'agentic-workspace search "auth" --json',
 			'agentic-workspace search "api" --type task --status "<active status>"',
 			`agentic-workspace search "crash" --task-type ${TASK_TYPE_EXAMPLE} --plain`,
-			'agentic-workspace search "auth" --max-count 20 --skip 20 --plain',
 		],
 	})
-		.description("search tasks, documents, and decisions using the shared index")
+		.description("search tasks, documents, and decisions using literal text matching")
 		.option("--type <type>", "limit results to type (task, document, decision)", createMultiValueAccumulator())
 		.option(
 			"--task-type <type>",
@@ -147,8 +134,6 @@ export function registerSearchCommand(program: Command, dependencies: SearchComm
 			"filter task results by modified file path substring",
 			createMultiValueAccumulator(),
 		)
-		.option("--limit <number>", "limit total results returned");
-	addListWindowOptions(searchCommand)
 		.option("--plain", "print plain text output")
 		.option("--json", "print versioned machine-readable JSON output")
 		.action((query: string | undefined, options: OptionValues) =>
@@ -196,12 +181,7 @@ async function parseSearchOptions(
 		modifiedFileFilters,
 	);
 	if (!filters) return null;
-	const limit =
-		options.limit === undefined
-			? undefined
-			: parsePositiveIntegerOption(options.limit, "--limit", "agentic-workspace search --help");
-	if (limit === null) return null;
-	return { modifiedFileFilters, types, filters, limit };
+	return { modifiedFileFilters, types, filters };
 }
 
 function toSearchTypeValues(value: unknown): string[] | undefined {

@@ -148,7 +148,7 @@ This contract defines task identity and data, project storage, artifacts, work c
 
 ### TASK-007: Malformed records
 
-**Description:** The application does not automatically repair corrupted records. Collection reads skip malformed records and warn with the affected filename and parse error while preserving readable results. A direct action on a malformed target fails with a helpful error. The application does not provide duplicate repair or a `doctor` command. Bulk collection reads that skip malformed records allow the command to exit 0; explicit single-record loads remain strict.
+**Description:** The application does not automatically repair corrupted records. Collection reads skip malformed records and warn with the affected filename and parse error while preserving readable results. A direct action on a malformed target fails with a helpful error. Bulk collection reads that skip malformed records allow the command to exit 0; explicit single-record loads remain strict.
 
 **Trigger:** A task collection is read or a task record is targeted directly.
 
@@ -156,7 +156,7 @@ This contract defines task identity and data, project storage, artifacts, work c
 
 **Behavior:**
 1. Skip malformed records in collection reads and warn with filename and parse error while retaining readable results.
-2. Do not automatically repair corrupted or duplicate records; do not provide a `doctor` command.
+2. Do not automatically repair corrupted or duplicate records.
 3. Let bulk collection reads exit 0 when skipping malformed records; keep explicit single-record loads strict.
 
 **Outcome:** Direct actions on malformed targets fail with a helpful error.

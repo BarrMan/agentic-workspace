@@ -234,21 +234,21 @@ Define configuration access and precedence, configurable modes and task-scoped a
 
 ### CONFIG-011: Capture current model
 
-**Description:** The provider-independent [current-model capture operation](supported-integration-operations.md#supported-integration-operations) sets the calling session's mode model in project configuration to the model that session currently uses.
+**Description:** The provider-independent [current-model capture operation](supported-integration-operations.md#supported-integration-operations) sets the specified mode model in project configuration to a caller-supplied model ID.
 
 **Trigger:** Calling session invokes model capture.
 
 **Preconditions:** The calling session has a current model and mode.
 
 **Behavior:**
-1. Store that session's current model as its mode model in project configuration.
+1. Store the supplied model ID as the specified mode's model in project configuration.
 
-**Outcome:** Project configuration reflects the calling session's current model for its mode.
+**Outcome:** Project configuration reflects the caller-supplied model ID for the specified mode.
 
 **Failures:** See [error handling](../CONVENTIONS.md#error-handling).
 
 **Acceptance Criteria:**
-- [ ] Invoking capture records the calling session's current model for its mode in project configuration.
+- [ ] Invoking capture records the supplied model ID for the specified mode in project configuration.
 
 ### CONFIG-012: Confirmed mode deletion cleanup
 

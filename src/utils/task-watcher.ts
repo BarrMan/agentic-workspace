@@ -47,9 +47,10 @@ function classifyTaskWatchEvent(eventType: string, filename: string | Buffer | n
 	if (!fileName) return { kind: "directory" };
 	const segments = fileName.split(/[\\/]/);
 	if (segments.length > 1) {
-		const [taskId, ...artifactSegments] = segments;
+		const [taskId, ...containerSegments] = segments;
+		if (containerSegments.join("/") === "task.md" && taskId && hasAnyPrefix(taskId)) return { kind: "record", taskId };
+		const artifactSegments = containerSegments[0] === "artifacts" ? containerSegments.slice(1) : containerSegments;
 		const path = artifactSegments.join("/");
-		if (path === "task.md" && taskId && hasAnyPrefix(taskId)) return { kind: "record", taskId };
 		if (
 			!taskId ||
 			!path ||

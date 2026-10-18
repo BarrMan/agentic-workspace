@@ -40,9 +40,10 @@ function fixture(
 	const root = mkdtempSync(join(tmpdir(), "controller-shared-attachment-"));
 	roots.push(root);
 	writeFileSync(
-		join(root, "agents.json"),
-		JSON.stringify({ ...getBuiltInAgentConfiguration(), modes: getDefaultModeCatalog() }),
+		join(root, "agentic-workspace.config.yml"),
+		`agent_configuration: ${JSON.stringify({ ...getBuiltInAgentConfiguration(), modes: getDefaultModeCatalog() })}\n`,
 	);
+	const agentConfiguration = { ...getBuiltInAgentConfiguration(), modes: getDefaultModeCatalog() };
 	const core = {
 		loadTasks: async () => [task],
 		loadTaskSnapshot: async () => ({
@@ -55,7 +56,7 @@ function fixture(
 			rootDir: root,
 			agenticWorkspaceDir: root,
 			loadTask: async () => task,
-			loadConfig: async () => ({ projectName: "Test" }),
+			loadConfig: async () => ({ projectName: "Test", agentConfiguration }),
 			listMilestones: async () => [],
 			listArchivedMilestones: async () => [],
 		},

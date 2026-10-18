@@ -26,7 +26,7 @@ async function fixture() {
 	return {
 		container,
 		taskRecord,
-		sidecar: join(container, ".artifacts.json"),
+		sidecar: join(container, "artifacts", ".artifacts.json"),
 		service: new TaskArtifactRepository({ agenticWorkspaceDirectory }),
 	};
 }
@@ -40,13 +40,14 @@ async function approve(service: TaskArtifactRepository, path: string) {
 describe("artifact approval behavior contract", () => {
 	it("reports Draft and Missing while keeping sidecar and artifact storage lazy", async () => {
 		const { container, sidecar, service } = await fixture();
-		await writeFile(join(container, "existing.md"), "existing bytes");
+		await mkdir(join(container, "artifacts"));
+		await writeFile(join(container, "artifacts", "existing.md"), "existing bytes");
 		expect(await service.status("BACK-23", "existing.md")).toMatchObject({ path: "existing.md", state: "draft" });
 		expect(await service.status("BACK-23", "not-created.md")).toEqual({ path: "not-created.md", state: "missing" });
 		expect(await service.read("BACK-23", "existing.md")).toMatchObject({ status: { state: "draft" } });
 		expect(await service.list("BACK-23")).toHaveLength(1);
 		expect(await Bun.file(sidecar).exists()).toBe(false);
-		expect(await Bun.file(join(container, "not-created.md")).exists()).toBe(false);
+		expect(await Bun.file(join(container, "artifacts", "not-created.md")).exists()).toBe(false);
 	});
 
 	it("approves only the reviewed exact-byte hash and refuses a changed unseen version", async () => {
@@ -71,7 +72,7 @@ describe("artifact approval behavior contract", () => {
 		const { container, service } = await fixture();
 		await service.write("BACK-23", "plan.md", encoder.encode("draft A"));
 		await approve(service, "plan.md");
-		const path = join(container, "plan.md");
+		const path = join(container, "artifacts", "plan.md");
 		const previous = await stat(path);
 		await writeFile(path, "draft B");
 		await utimes(path, previous.atime, previous.mtime);
@@ -96,11 +97,14 @@ describe("artifact approval behavior contract", () => {
 		await Promise.all([approve(service, "one.md"), approve(service, "two.md")]);
 		expect((await service.status("BACK-23", "one.md")).state).toBe("approved");
 		expect((await service.status("BACK-23", "two.md")).state).toBe("approved");
-		const before = await Promise.all([readFile(join(container, "one.md")), readFile(join(container, "two.md"))]);
+		const before = await Promise.all([
+			readFile(join(container, "artifacts", "one.md")),
+			readFile(join(container, "artifacts", "two.md")),
+		]);
 		expect((await service.revokeApproval("BACK-23", "one.md")).state).toBe("draft");
 		expect((await service.status("BACK-23", "two.md")).state).toBe("approved");
-		expect(await readFile(join(container, "one.md"))).toEqual(before[0]);
-		expect(await readFile(join(container, "two.md"))).toEqual(before[1]);
+		expect(await readFile(join(container, "artifacts", "one.md"))).toEqual(before[0]);
+		expect(await readFile(join(container, "artifacts", "two.md"))).toEqual(before[1]);
 	});
 
 	it("surfaces malformed metadata without replacing or erasing it", async () => {
@@ -121,7 +125,7 @@ describe("artifact approval behavior contract", () => {
 		const { container, service } = await fixture();
 		await service.write("BACK-23", "original.md", encoder.encode("content"));
 		await approve(service, "original.md");
-		await rename(join(container, "original.md"), join(container, "renamed.md"));
+		await rename(join(container, "artifacts", "original.md"), join(container, "artifacts", "renamed.md"));
 		expect((await service.status("BACK-23", "original.md")).state).toBe("missing");
 		expect((await service.status("BACK-23", "renamed.md")).state).toBe("draft");
 		await service.write("BACK-23", "original.md", encoder.encode("content"));
@@ -139,7 +143,7 @@ describe("artifact approval behavior contract", () => {
 		const entries = await service.list("BACK-23");
 		expect(entries).toEqual([expect.objectContaining({ path: "image.bin", type: "binary", state: "approved" })]);
 		expect(entries.some(({ path }) => path === ".artifacts.json")).toBe(false);
-		expect(await Bun.file(join(container, ".artifacts.json")).exists()).toBe(true);
+		expect(await Bun.file(join(container, "artifacts", ".artifacts.json")).exists()).toBe(true);
 	});
 
 	it("leaves task record bytes and timestamp unchanged during artifact operations", async () => {

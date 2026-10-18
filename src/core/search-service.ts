@@ -1,17 +1,8 @@
-import Fuse, { type FuseResult } from "fuse.js";
-import type {
-	Decision,
-	Document,
-	SearchMatch,
-	SearchOptions,
-	SearchResult,
-	SearchResultType,
-	Task,
-} from "../types/index.ts";
+import type { Decision, Document, SearchOptions, SearchResult, SearchResultType, Task } from "../types/index.ts";
 import {
 	buildTaskSearchFields,
 	createTaskFilterMatcher,
-	TASK_SEARCH_FUSE_OPTIONS,
+	matchesTaskSearchFields,
 	type TaskSearchFields,
 } from "../utils/task-search.ts";
 
@@ -42,18 +33,14 @@ interface DecisionSearchEntity extends BaseSearchEntity {
 
 type SearchEntity = TaskSearchEntity | DocumentSearchEntity | DecisionSearchEntity;
 
-function mapResult(entity: SearchEntity, result?: FuseResult<SearchEntity>): SearchResult {
-	const matches = result?.matches?.map(
-		(match): SearchMatch => ({
-			key: match.key,
-			indices: match.indices.map(([start, end]) => [start, end] as [number, number]),
-			value: match.value,
-		}),
-	);
-	const score = result?.score ?? null;
-	if (entity.type === "task") return { type: "task", score, task: entity.task, matches };
-	if (entity.type === "document") return { type: "document", score, document: entity.document, matches };
-	return { type: "decision", score, decision: entity.decision, matches };
+function mapResult(entity: SearchEntity): SearchResult {
+	if (entity.type === "task") return { type: "task", score: null, task: entity.task };
+	if (entity.type === "document") return { type: "document", score: null, document: entity.document };
+	return { type: "decision", score: null, decision: entity.decision };
+}
+
+function matchesQuery(entity: SearchEntity, query: string): boolean {
+	return matchesTaskSearchFields(entity, query);
 }
 
 /** Searches one supplied corpus without retaining or subscribing to it. */
@@ -102,11 +89,10 @@ export function searchSnapshot(
 		}
 		return results;
 	}
-	const fuse = new Fuse(collection, { ...TASK_SEARCH_FUSE_OPTIONS, includeMatches: true });
 	const results: SearchResult[] = [];
-	for (const result of fuse.search(trimmedQuery)) {
-		if (!allowed(result.item)) continue;
-		results.push(mapResult(result.item, result));
+	for (const entity of collection) {
+		if (!allowed(entity) || !matchesQuery(entity, trimmedQuery)) continue;
+		results.push(mapResult(entity));
 		if (limit && results.length >= limit) break;
 	}
 	return results;

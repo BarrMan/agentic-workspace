@@ -1,12 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { mkdir } from "node:fs/promises";
-import { Writable } from "node:stream";
 import { $ } from "bun";
-import { runCli } from "../cli/register.ts";
 import { Core } from "../core/agentic-workspace.ts";
 import { isTaskLockError, taskLockErrorMessage } from "../file-system/operations.ts";
-import { McpServer } from "../mcp/server.ts";
-import { TaskHandlers } from "../mcp/tools/tasks/handlers.ts";
 import type { Task } from "../types/index.ts";
 import { getTestCliCommand } from "./test-cli.ts";
 import { createUniqueTestDir, initializeFilesystemTestProject, safeCleanup, withTimeout } from "./test-utils.ts";
@@ -14,25 +10,6 @@ import { createUniqueTestDir, initializeFilesystemTestProject, safeCleanup, with
 const CLI_COMMAND = getTestCliCommand();
 const CONTENDED_ID = "TASK-1";
 const CONTENTION_MESSAGE = taskLockErrorMessage(CONTENDED_ID);
-
-async function invokeCli(cwd: string, args: string[]) {
-	const stdout: string[] = [];
-	const stderr: string[] = [];
-	const out = new Writable({
-		write: (chunk, _encoding, done) => {
-			stdout.push(chunk.toString());
-			done();
-		},
-	});
-	const err = new Writable({
-		write: (chunk, _encoding, done) => {
-			stderr.push(chunk.toString());
-			done();
-		},
-	});
-	const exitCode = await runCli(args, { cwd, stdout: out, stderr: err });
-	return { exitCode, stdout: { toString: () => stdout.join("") }, stderr: { toString: () => stderr.join("") } };
-}
 
 type Deferred<T> = {
 	promise: Promise<T>;
@@ -240,11 +217,11 @@ describe("atomic task editing", () => {
 		let blockedOperation: ReturnType<typeof $> | undefined;
 		try {
 			await withTimeout(lockEntered.promise, "the lock to be held", 5_000);
-			blockedOperation = $`${CLI_COMMAND} task edit ${CONTENDED_ID} --add-label blocked`.cwd(testDir).quiet().nothrow();
+			blockedOperation = $`${CLI_COMMAND} task edit ${CONTENDED_ID} --title blocked`.cwd(testDir).quiet().nothrow();
 			const blocked = await blockedOperation;
 			expect(blocked.exitCode).not.toBe(0);
 			expect(`${blocked.stderr.toString()}${blocked.stdout.toString()}`).toContain(CONTENTION_MESSAGE);
-			expect(await finalLabels()).toEqual([]);
+			expect((await setup.filesystem.loadTask(CONTENDED_ID))?.title).toBe("Shared Task");
 		} finally {
 			releaseLock.resolve();
 			await heldLock;
@@ -252,12 +229,9 @@ describe("atomic task editing", () => {
 		}
 
 		// Once the holder is done the same command succeeds, so nothing is left wedged.
-		const retried = await $`${CLI_COMMAND} task edit ${CONTENDED_ID} --add-label retried`
-			.cwd(testDir)
-			.quiet()
-			.nothrow();
+		const retried = await $`${CLI_COMMAND} task edit ${CONTENDED_ID} --title retried`.cwd(testDir).quiet().nothrow();
 		expect(retried.exitCode).toBe(0);
-		expect(await finalLabels()).toEqual(["retried"]);
+		expect((await setup.filesystem.loadTask(CONTENDED_ID))?.title).toBe("retried");
 	});
 
 	it("survives parallel CLI processes editing the same task", async () => {
@@ -265,14 +239,12 @@ describe("atomic task editing", () => {
 		await createContendedTask();
 
 		const jobCount = 6;
-		const labels = Array.from({ length: jobCount }, (_, index) => `cli-${index + 1}`);
+		const titles = Array.from({ length: jobCount }, (_, index) => `cli-${index + 1}`);
 		const results = await Promise.all(
-			labels.map((label) =>
-				$`${CLI_COMMAND} task edit ${sharedId} --add-label ${label}`.cwd(testDir).quiet().nothrow(),
-			),
+			titles.map((title) => $`${CLI_COMMAND} task edit ${sharedId} --title ${title}`.cwd(testDir).quiet().nothrow()),
 		);
 
-		const succeeded = labels.filter((_, index) => results[index]?.exitCode === 0);
+		const succeeded = titles.filter((_, index) => results[index]?.exitCode === 0);
 		expect(succeeded.length).toBeGreaterThanOrEqual(1);
 
 		for (const result of results) {
@@ -281,34 +253,9 @@ describe("atomic task editing", () => {
 		}
 
 		const shared = await setup.filesystem.loadTask(sharedId);
-		expect([...(shared?.labels ?? [])].sort()).toEqual([...succeeded].sort());
+		expect(shared).toBeDefined();
+		expect(succeeded).toContain(shared?.title ?? "");
 	}, 60_000);
-
-	it("reports an MCP operation error on contention", async () => {
-		const task = await createContendedTask();
-		const mcpServer = new McpServer(testDir, "Test instructions");
-		const handlers = new TaskHandlers(mcpServer.application);
-
-		const lockEntered = createDeferred<void>();
-		const releaseLock = createDeferred<void>();
-		const heldLock = setup.filesystem.withTaskLock(task, async () => {
-			lockEntered.resolve();
-			await releaseLock.promise;
-		});
-		await withTimeout(lockEntered.promise, "the lock to be held", 5_000);
-
-		try {
-			await handlers.editTask({ id: CONTENDED_ID, addLabels: ["from-mcp"] });
-			throw new Error("editTask should have failed while the task lock was held");
-		} catch (error) {
-			expect((error as Error).message).toBe(CONTENTION_MESSAGE);
-			expect((error as { code?: string }).code).toBe("OPERATION_FAILED");
-		} finally {
-			releaseLock.resolve();
-			await heldLock;
-			await mcpServer.stop();
-		}
-	});
 
 	it("bypasses the task lock when the legacy escape hatch is set", async () => {
 		const task = await createContendedTask();

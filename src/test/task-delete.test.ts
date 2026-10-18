@@ -39,6 +39,25 @@ describe("Permanent task deletion", () => {
 		};
 	}
 
+	async function observeSessionsDead(taskId: string): Promise<void> {
+		const store = new SessionStore(testDir, new BunRunner());
+		const state = await store.read(taskId);
+		const sessions = [...state.sessions, ...Object.values(state.modes).flatMap(({ sessions }) => sessions)];
+		const server: TmuxServer = {
+			newSession: async () => ({}),
+			panes: async () => [],
+			cmd: async (_command, args) => {
+				const target = args?.find((argument) => argument.startsWith("="));
+				const session = sessions.find(({ tmuxName }) => target === `=${tmuxName}:`);
+				return session ? [`${session.tmuxName}\t${testDir}\t${taskId}\t${session.id}\tlive-preview\t%1\t1`] : [];
+			},
+		};
+		(core as unknown as { agentSessions: AgentSessionService }).agentSessions = new AgentSessionService(core, {
+			runner: { run: async () => ({ exitCode: 0, stdout: "", stderr: "" }) },
+			tmuxServer: server,
+		});
+	}
+
 	it("removes the task markdown file", async () => {
 		core = new Core(testDir);
 		await initializeFilesystemTestProject(core, "Delete task");
@@ -54,7 +73,7 @@ describe("Permanent task deletion", () => {
 		expect(await core.filesystem.loadTask(task.id)).toBeNull();
 	});
 
-	it("forgets a running foreign native session without stopping it", async () => {
+	it("retains the task when native-session liveness cannot be established", async () => {
 		core = new Core(testDir);
 		await initializeFilesystemTestProject(core, "Delete task");
 		const { task } = await core.createTaskFromInput({ title: "Keep me" });
@@ -77,12 +96,14 @@ describe("Permanent task deletion", () => {
 			state.activeSessionId = "native-running";
 		});
 
-		await core.deleteTask(task.id);
-		expect(await core.filesystem.loadTask(task.id)).toBeNull();
-		expect((await store.read(task.id)).sessions).toEqual([]);
+		await expect(core.deleteTask(task.id)).rejects.toThrow(
+			"Could not inspect tmux instance for session native-running",
+		);
+		expect(await core.filesystem.loadTask(task.id)).not.toBeNull();
+		expect((await store.read(task.id)).sessions.map(({ id }) => id)).toEqual(["native-running"]);
 	});
 
-	it("forgets mixed-mode session lifecycles without probing runtimes or touching unrelated data", async () => {
+	it("refuses mixed-mode deletion when runtime ownership cannot be established", async () => {
 		core = new Core(testDir);
 		await initializeFilesystemTestProject(core, "Mixed session forget");
 		const { task } = await core.createTaskFromInput({ title: "Forget mixed sessions" });
@@ -176,19 +197,24 @@ describe("Permanent task deletion", () => {
 		const taskPath = task.filePath ?? (await getTaskPath(task.id, { filesystem: core.filesystem }));
 		if (!taskPath) throw new Error("Expected deleted task path.");
 
-		await core.deleteTask(task.id);
+		await expect(core.deleteTask(task.id)).rejects.toThrow("expected exactly one pane");
 
-		expect(await core.filesystem.loadTask(task.id)).toBeNull();
-		expect(existsSync(taskPath)).toBe(false);
-		expect((await store.read(task.id)).sessions).toEqual([]);
+		expect(await core.filesystem.loadTask(task.id)).not.toBeNull();
+		expect(existsSync(taskPath)).toBe(true);
+		const retained = await store.read(task.id);
+		expect(
+			Object.values(retained.modes)
+				.flatMap(({ sessions }) => sessions.map(({ id }) => id))
+				.sort(),
+		).toEqual(fixtures.map(({ id }) => id).sort());
 		for (const fixture of fixtures) {
-			expect(existsSync(join(taskDir, `${fixture.id}.log`))).toBe(false);
-			expect(existsSync(join(taskDir, `${fixture.id}.md`))).toBe(false);
-			expect(existsSync(join(workspaceRequestDir(testDir), `${fixture.id}.json`))).toBe(false);
+			expect(existsSync(join(taskDir, `${fixture.id}.log`))).toBe(true);
+			expect(existsSync(join(taskDir, `${fixture.id}.md`))).toBe(true);
 		}
+		expect(existsSync(join(workspaceRequestDir(testDir), "queued-starting.json"))).toBe(true);
 		expect((await store.read(otherTask.id)).sessions).toEqual([unrelatedRecord]);
 		expect(await Bun.file(providerData).text()).toBe("preserve provider data\n");
-		expect(externalCalls).toBe(0);
+		expect(externalCalls).toBeGreaterThan(0);
 	});
 
 	it("distinguishes failure before forget from failure after the task container is removed", async () => {
@@ -213,6 +239,7 @@ describe("Permanent task deletion", () => {
 			state.activeSessionId = record.id;
 		});
 		await Bun.write(record.outputPath, "retained until task removal\n");
+		await observeSessionsDead(task.id);
 		const originalForget = core.sessions.forgetTaskSessions.bind(core.sessions);
 		core.sessions.forgetTaskSessions = async () => {
 			throw new Error("forget preflight failed");
@@ -223,6 +250,7 @@ describe("Permanent task deletion", () => {
 		expect(await Bun.file(record.outputPath).text()).toBe("retained until task removal\n");
 
 		core.sessions.forgetTaskSessions = originalForget;
+		await observeSessionsDead(task.id);
 		const deleteContainer = core.filesystem.deleteTaskContainer.bind(core.filesystem);
 		core.filesystem.deleteTaskContainer = async (...args: Parameters<typeof core.filesystem.deleteTaskContainer>) => {
 			await deleteContainer(...args);
@@ -277,6 +305,7 @@ describe("Permanent task deletion", () => {
 		});
 		await Bun.write(join(taskDir, "stopped-session.log"), "output\n");
 		expect(existsSync(taskDir)).toBe(true);
+		await observeSessionsDead(task.id);
 
 		await core.deleteTask(task.id);
 		expect(await core.filesystem.loadTask(task.id)).toBeNull();
@@ -347,6 +376,7 @@ describe("Permanent task deletion", () => {
 				});
 				state.activeSessionId = sessionId;
 			});
+			await observeSessionsDead(task.id);
 			const enteredDelete = Promise.withResolvers<void>();
 			const deleteContainer = core.filesystem.deleteTaskContainer.bind(core.filesystem);
 			core.filesystem.deleteTaskContainer = async (...args: Parameters<typeof core.filesystem.deleteTaskContainer>) => {
@@ -428,14 +458,13 @@ describe("Permanent task deletion", () => {
 		if (failed) throw testError;
 	});
 
-	it("deletion does not invoke task runtime cleanup", async () => {
+	it("does not delete a task when its native runtime ownership is uncertain", async () => {
 		const previousLockMode = process.env.USE_GLOBAL_TASK_ID_LOCK;
 		delete process.env.USE_GLOBAL_TASK_ID_LOCK;
 		try {
 			core = new Core(testDir);
 			await initializeFilesystemTestProject(core, "Owned native deletion lock");
 			const { task } = await core.createTaskFromInput({ title: "Owned host delete" });
-			const service = core.sessions;
 			const store = new SessionStore(testDir, new BunRunner());
 			const sessionId = "owned-running";
 			const { taskDir } = await store.paths(task.id);
@@ -456,22 +485,16 @@ describe("Permanent task deletion", () => {
 				});
 				state.activeSessionId = sessionId;
 			});
-			let cleanupCalls = 0;
-			service.cleanupTaskWorktreeSessions = async () => {
-				cleanupCalls += 1;
-			};
-			const result = await core.deleteTask(task.id);
-			expect(result.success).toBe(true);
-			expect(cleanupCalls).toBe(0);
-			expect(await core.filesystem.loadTask(task.id)).toBeNull();
-			expect((await store.read(task.id)).sessions).toEqual([]);
+			await expect(core.deleteTask(task.id)).rejects.toThrow("Could not inspect tmux instance");
+			expect(await core.filesystem.loadTask(task.id)).not.toBeNull();
+			expect((await store.read(task.id)).sessions.map(({ id }) => id)).toEqual([sessionId]);
 		} finally {
 			if (previousLockMode === undefined) delete process.env.USE_GLOBAL_TASK_ID_LOCK;
 			else process.env.USE_GLOBAL_TASK_ID_LOCK = previousLockMode;
 		}
 	});
 
-	it("deletes through Core's locked forget when session admission locking is disabled", async () => {
+	it("refuses destructive deletion when task-session locking is disabled", async () => {
 		const previousLockMode = process.env.USE_GLOBAL_TASK_ID_LOCK;
 		process.env.USE_GLOBAL_TASK_ID_LOCK = "false";
 		try {
@@ -494,9 +517,9 @@ describe("Permanent task deletion", () => {
 				state.activeSessionId = "stopped-lock-check";
 			});
 
-			await core.deleteTask(task.id);
-			expect(await core.filesystem.loadTask(task.id)).toBeNull();
-			expect((await store.read(task.id)).sessions).toEqual([]);
+			await expect(core.deleteTask(task.id)).rejects.toThrow("Task session locking is disabled");
+			expect(await core.filesystem.loadTask(task.id)).not.toBeNull();
+			expect((await store.read(task.id)).sessions.map(({ id }) => id)).toEqual(["stopped-lock-check"]);
 		} finally {
 			if (previousLockMode === undefined) delete process.env.USE_GLOBAL_TASK_ID_LOCK;
 			else process.env.USE_GLOBAL_TASK_ID_LOCK = previousLockMode;
@@ -549,6 +572,7 @@ describe("Permanent task deletion", () => {
 			});
 			state.activeSessionId = sessionId;
 		});
+		await observeSessionsDead(task.id);
 		expect(existsSync(taskDir)).toBe(true);
 
 		await core.deleteTask(task.id);

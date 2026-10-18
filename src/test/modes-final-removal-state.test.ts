@@ -35,16 +35,17 @@ describe("final task removal mode state", () => {
 	it("prunes only final deletion, while browsing and archive/completion changes preserve selection", async () => {
 		const directory = mkdtempSync(join(tmpdir(), "agentic-workspace-mode-final-removal-"));
 		const modes = getDefaultModeCatalog();
+		const agentConfiguration = {
+			selectedPreset: "opencode",
+			presets: {
+				opencode: { command: "opencode", env: {}, prepare: "", bootstrap: "opencode", resumeFlag: "--session" },
+			},
+			modes,
+		};
 		mkdirSync(join(directory, ".agentic-workspace"), { recursive: true });
 		writeFileSync(
-			join(directory, ".agentic-workspace", "agents.json"),
-			JSON.stringify({
-				selectedPreset: "opencode",
-				presets: {
-					opencode: { command: "opencode", env: {}, prepare: "", bootstrap: "opencode", resumeFlag: "--session" },
-				},
-				modes,
-			}),
+			join(directory, ".agentic-workspace", "agentic-workspace.config.yml"),
+			`agent_configuration: ${JSON.stringify(agentConfiguration)}\n`,
 		);
 		const store = await openViewStateStore(
 			join(directory, ".agentic-workspace"),
@@ -73,7 +74,7 @@ describe("final task removal mode state", () => {
 				tasksDir: join(directory, "agentic-workspace", "tasks"),
 				projectRoot: directory,
 				configFilePath: "",
-				loadConfig: async () => ({ projectName: "Test", statuses: ["To Do", "Done"] }),
+				loadConfig: async () => ({ projectName: "Test", statuses: ["To Do", "Done"], agentConfiguration }),
 				listMilestones: async () => [],
 				listArchivedMilestones: async () => [],
 			},

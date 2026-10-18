@@ -117,7 +117,7 @@ describe("ambiguous content identity", () => {
 		expect(error).toBeInstanceOf(AmbiguousIdError);
 		expect((error as AmbiguousIdError).message).toContain("Document ID doc-1 is ambiguous; 2 files match:");
 		expect((error as AmbiguousIdError).candidates).toEqual(["doc-1 - Alpha.md", "nested/doc-01 - Beta.md"]);
-		expect((error as AmbiguousIdError).message).toContain("agentic-workspace doctor");
+		expect((error as AmbiguousIdError).message).toContain("Remove the conflicting files, then retry.");
 	});
 
 	it("fails closed when a decision ID matches several files", async () => {

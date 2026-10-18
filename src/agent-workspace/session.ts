@@ -65,6 +65,7 @@ export class Session {
 	readonly id: string;
 	private currentRecord: Readonly<AgentSession>;
 	private currentExecution?: RunningExecution;
+	private executionExitObserved = false;
 	private readonly modeId: ModeId;
 	private stopObserving?: Unsubscribe;
 	private readonly listeners = new Set<(event: SessionEvent) => void>();
@@ -109,7 +110,10 @@ export class Session {
 		const previous = this.currentRecord;
 		if (execution) {
 			await execution.stop();
+			this.executionExitObserved = true;
 			this.releaseExecution(execution);
+		} else if (!this.executionExitObserved) {
+			throw new Error(`Cannot confirm session ${this.id} stopped without a current execution or observed exit.`);
 		}
 		const record = {
 			...previous,
@@ -187,6 +191,7 @@ export class Session {
 		const previous = this.currentExecution;
 		this.releaseExecution(previous);
 		this.currentExecution = execution;
+		this.executionExitObserved = false;
 		if (this.disposed) return;
 		this.stopObserving = execution.observe((event) => {
 			if (this.currentExecution !== execution || this.disposed) return;
@@ -298,6 +303,7 @@ export class Session {
 		}[event.kind];
 		if (capability !== "supported") return;
 		if (event.kind === "execution-exit") {
+			this.executionExitObserved = true;
 			const failed = event.exitCode !== undefined && event.exitCode !== 0;
 			this.currentRecord = {
 				...this.currentRecord,

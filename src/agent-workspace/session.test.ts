@@ -150,19 +150,13 @@ describe("Session lifecycle", () => {
 		expect(publications[0]).toMatchObject({ phase: "update", reason: "stop", expectedMembership: { kind: "present" } });
 	});
 
-	test("stop without an installed execution still publishes stopped lifecycle", async () => {
+	test("stop without an installed execution or observed exit cannot claim stopped", async () => {
 		const session = new Session(record, "mode");
-		let published: LifecycleCheckpoint | undefined;
-		await session.stop({
-			checkpoint: async (checkpoint) => {
-				published = checkpoint;
-			},
-		});
-		expect(published).toMatchObject({
-			phase: "update",
-			reason: "stop",
-			record: { status: AGENT_SESSION_STATUS.STOPPED },
-		});
+		let publications = 0;
+		await expect(session.stop({ checkpoint: async () => void publications++ })).rejects.toThrow(
+			"without a current execution or observed exit",
+		);
+		expect(publications).toBe(0);
 	});
 
 	test("stop failure retains execution tracking and does not publish a stopped record", async () => {

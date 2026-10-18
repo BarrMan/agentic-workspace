@@ -89,7 +89,7 @@ describe("detectDuplicateTaskIds", () => {
 });
 
 describe("formatDuplicateTaskIdWarning", () => {
-	it("lists exact paths and points humans to doctor", () => {
+	it("lists exact paths and tells users how to resolve duplicates", () => {
 		const groups = [
 			{
 				id: "TASK-1",
@@ -103,7 +103,7 @@ describe("formatDuplicateTaskIdWarning", () => {
 		expect(warning).toContain("TASK-1");
 		expect(warning).toContain("/repo/agentic-workspace/tasks/task-1 - A.md");
 		expect(warning).toContain("/repo/agentic-workspace/tasks/task-1 - B.md");
-		expect(warning).toContain("agentic-workspace doctor");
+		expect(warning).toContain("Remove the conflicting files, then retry.");
 		expect(warning).not.toContain("prompt");
 		expect(warning).not.toContain("agent repair");
 	});
@@ -111,7 +111,7 @@ describe("formatDuplicateTaskIdWarning", () => {
 	it("provides a concise TUI summary", () => {
 		const groups = [{ id: "TASK-1", tasks: [makeTask("TASK-1", "A"), makeTask("task-1", "B")] }];
 		expect(formatDuplicateTaskIdSummary(groups)).toBe(
-			"Duplicate task IDs detected: TASK-1. Run 'agentic-workspace doctor' to review them.",
+			"Duplicate task IDs detected: TASK-1. Remove the conflicting files, then retry.",
 		);
 	});
 });

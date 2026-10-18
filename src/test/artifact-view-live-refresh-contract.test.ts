@@ -30,7 +30,9 @@ describe("artifact viewer live-refresh contract", () => {
 			join(container, "task.md"),
 			"---\ntask_schema_version: 3\nid: BACK-23\ntitle: Live refresh\nstatus: To Do\nassignee: []\ncreated_date: 2026-10-10\nlabels: []\ndependencies: []\n---\n\nTask body\n",
 		);
-		const artifactPath = join(container, "plan.md");
+		const artifactsDir = join(container, "artifacts");
+		await mkdir(artifactsDir, { recursive: true });
+		const artifactPath = join(artifactsDir, "plan.md");
 		await writeFile(artifactPath, "draft v1\n");
 		const repository = new TaskArtifactRepository({ agenticWorkspaceDirectory: agenticWorkspaceDir });
 		const initial = await repository.status(taskId, "plan.md");
@@ -89,7 +91,7 @@ describe("artifact viewer live-refresh contract", () => {
 			await repository.approveCurrentVersion(taskId, "plan.md", current.sha256!);
 			for (const listener of [...listeners]) listener();
 			await settle(() => setup.captureCharFrame().includes("Approved"));
-			const sidecar = join(container, ".artifacts.json");
+			const sidecar = join(container, "artifacts", ".artifacts.json");
 			const sidecarStat = await Bun.file(sidecar).stat();
 			await repository.revokeApproval(taskId, "plan.md");
 			await utimes(sidecar, sidecarStat.atime, sidecarStat.mtime);

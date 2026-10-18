@@ -70,7 +70,7 @@ describe("real WorkspaceController Settings persistence", () => {
 		await initializeTestProject(core, "Settings persistence");
 		const { task } = await core.createTaskFromInput({ title: "Settings fixture", status: "To Do" });
 		await upsertAgentConfiguration(core, "project", initialConfiguration());
-		const path = join(core.filesystem.agenticWorkspaceDir, "agents.json");
+		const path = core.filesystem.configFilePath;
 		let workspaceState: WorkspaceStateService | undefined;
 		if (pinExternalRoot) {
 			const storageHome = await mkdtemp(join(tmpdir(), "settings-pinned-home-"));
@@ -151,7 +151,7 @@ describe("real WorkspaceController Settings persistence", () => {
 			path,
 			open,
 			saved,
-			json: async () => JSON.parse(await readFile(path, "utf8")) as AgentConfiguration,
+			json: async () => core.filesystem.loadConfig().then((config) => config?.agentConfiguration as AgentConfiguration),
 		};
 	}
 	async function eventually(predicate: () => Promise<boolean>) {
@@ -390,16 +390,18 @@ describe("real WorkspaceController Settings persistence", () => {
 		down(f.setup);
 		f.setup.mockInput.pressEnter();
 		const original = await readFile(f.path, "utf8");
-		await writeFile(f.path, "invalid configuration JSON\n");
+		await writeFile(f.path, "agent_configuration: 123\n");
+		f.core.filesystem.invalidateConfigCache();
 		save(f.setup);
 		await eventually(async () => {
 			await f.setup.flush();
 			return f.setup.captureCharFrame().includes("Error:");
 		});
 		expect(f.setup.captureCharFrame()).toContain("Categories");
-		expect(f.setup.captureCharFrame()).toContain("Invalid agent configuration");
-		expect(await readFile(f.path, "utf8")).toBe("invalid configuration JSON\n");
+		expect(f.setup.captureCharFrame()).toContain("Invalid project agent configuration");
+		expect(await readFile(f.path, "utf8")).toBe("agent_configuration: 123\n");
 		await writeFile(f.path, original);
+		f.core.filesystem.invalidateConfigCache();
 		save(f.setup);
 		await f.saved();
 		expect((await f.json()).modes?.profiles.plan?.permissions.repository).toBe("read-write");
@@ -466,12 +468,12 @@ try:
     send(down+enter); edit("pty-result.md — PTY purpose"); send(commit)
     send(down+enter+enter); edit("pty-approved.md"); send(enter)
     send(down+enter); send(down*11+enter)
-    send("\x13")
-    path = os.path.join(root, "agentic-workspace", "agents.json")
+    send("\x1b[115;5u")
+    path = sys.argv[-1]
     expected = {"model":{"kind":"explicit","id":"pty-model"}, "prompt":"PTY prompt", "permissions":{"repository":"read-write","task":"read-write","artifacts":"read-write","subagents":"disabled"}, "artifacts":[{"path":"pty-result.md","purpose":"PTY purpose"}], "approvalArtifact":"pty-approved.md", "textColor":"brightgreen"}
     deadline = time.monotonic()+5
     while True:
-        with open(path) as file: persisted = json.load(file)["modes"]["profiles"]["plan"]
+        with open(path) as file: persisted = json.loads(file.read().split("agent_configuration: ", 1)[1].splitlines()[0])["modes"]["profiles"]["plan"]
         if all(persisted.get(key)==value for key,value in expected.items()): break
         if time.monotonic() > deadline: raise AssertionError("PTY persisted mismatch: " + json.dumps(persisted) + "; " + output[-1000:])
         pump(0.1)
@@ -489,7 +491,7 @@ finally:
     except subprocess.TimeoutExpired: process.kill(); process.wait()
     os.close(master)
 `;
-		const child = Bun.spawn(["python3", "-c", script, ...command, rootDir], {
+		const child = Bun.spawn(["python3", "-c", script, ...command, rootDir, core.filesystem.configFilePath], {
 			cwd: rootDir,
 			stdout: "pipe",
 			stderr: "pipe",
@@ -507,6 +509,7 @@ finally:
 			approvalArtifact: "pty-approved.md",
 		});
 		expect(Object.values(evidence.reopened).every((value) => value === true)).toBe(true);
+		core.filesystem.invalidateConfigCache();
 		expect((await loadAgentConfiguration(core, "project"))?.modes?.profiles.plan).toEqual(evidence.persisted);
 	}, 30000);
 });

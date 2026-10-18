@@ -110,14 +110,9 @@ describe("subtask ordering consistency", () => {
 		);
 	});
 
-	it("agrees with the CLI plain and JSON task lists", async () => {
+	it("agrees with the supported CLI plain task list", async () => {
 		const plain = await runCliCommand(["task", "list", "--plain"], TEST_DIR);
 		expect(plain.exitCode).toBe(0);
 		expect(idsFromPlainOutput(plain.stdout)).toEqual(EXPECTED_DESCENDING_ORDER);
-
-		const json = await runCliCommand(["task", "list", "--json"], TEST_DIR);
-		expect(json.exitCode).toBe(0);
-		const payload = JSON.parse(json.stdout) as { tasks: Array<{ id: string }> };
-		expect(payload.tasks.map((task) => task.id)).toEqual(EXPECTED_DESCENDING_ORDER);
 	});
 });

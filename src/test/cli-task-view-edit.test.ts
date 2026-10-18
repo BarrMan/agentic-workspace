@@ -88,7 +88,7 @@ describe("CLI task view and edit", () => {
 		else process.env.XDG_CONFIG_HOME = previousConfigHome;
 	});
 
-	it("edits structured fields without interpreting an opaque body", async () => {
+	it("edits only title and description without interpreting an opaque body", async () => {
 		const core = new Core(testDir);
 		await core.createTask({
 			id: "task-1",
@@ -100,21 +100,21 @@ describe("CLI task view and edit", () => {
 			dependencies: [],
 			rawContent: "## Description\n\nBody text",
 		});
-		await $`${[...cliCommand, "task", "edit", "1", "--title", "Updated", "--desc", "Structured description", "--status", "In Progress"]}`
+		await $`${[...cliCommand, "task", "edit", "1", "--title", "Updated", "--description", "Structured description"]}`
 			.cwd(testDir)
 			.quiet();
 		const task = await core.filesystem.loadTask("task-1");
 		expect(task).toMatchObject({
 			title: "Updated",
 			description: "Structured description",
-			status: "In Progress",
+			status: "To Do",
 			rawContent: "## Description\n\nBody text",
 		});
 		expect(await Bun.file(task?.filePath ?? "").text()).toContain("task_schema_version: 3");
 	});
 
 	it("retains formatted plain task output", async () => {
-		await $`${[...cliCommand, "task", "create", "Visible", "--desc", "Description"]}`.cwd(testDir).quiet();
+		await $`${[...cliCommand, "task", "create", "Visible", "--description", "Description"]}`.cwd(testDir).quiet();
 		const result = await $`${[...cliCommand, "task", "view", "1", "--plain"]}`.cwd(testDir).quiet();
 		expect(result.stdout.toString()).toContain("Task TASK-1 - Visible");
 		expect(result.stdout.toString()).toContain("Description:");

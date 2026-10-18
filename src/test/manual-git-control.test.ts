@@ -1,9 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { join } from "node:path";
 import { $ } from "bun";
-import { addAgentInstructions } from "../agent-instructions.ts";
 import { Core } from "../core/agentic-workspace.ts";
-import { MilestoneHandlers } from "../mcp/tools/milestones/handlers.ts";
 import { createUniqueTestDir, initGitRepo, initializeTestProject, safeCleanup } from "./test-utils.ts";
 
 describe("manual Git control", () => {
@@ -68,7 +66,7 @@ describe("manual Git control", () => {
 		await expectUserGitState();
 	});
 
-	it("persists documents, decisions, milestones and instructions without committing", async () => {
+	it("persists documents and decisions without committing", async () => {
 		const document = await core.createDocumentFromInput({ title: "Guide", content: "Original", path: "guides" });
 		await core.updateDocumentFromInput({
 			id: document.id,
@@ -80,13 +78,6 @@ describe("manual Git control", () => {
 		const decision = await core.createDecisionWithTitle("Decision");
 		await core.updateDecisionFromContent(decision.id, "---\ntitle: Updated decision\n---\nUpdated content\n");
 		expect((await core.filesystem.loadDecision(decision.id))?.title).toBe("Updated decision");
-		const milestones = new MilestoneHandlers(core);
-		expect((await milestones.addMilestone({ name: "Release" })).isError).toBeUndefined();
-		expect((await milestones.renameMilestone({ from: "Release", to: "Renamed release" })).isError).toBeUndefined();
-		expect((await milestones.archiveMilestone({ name: "Renamed release" })).isError).toBeUndefined();
-		expect(await core.filesystem.listArchivedMilestones()).toHaveLength(1);
-		await addAgentInstructions(directory, ["AGENTS.md"]);
-		expect(await Bun.file(join(directory, "AGENTS.md")).exists()).toBe(true);
 		await expectUserGitState();
 	});
 });

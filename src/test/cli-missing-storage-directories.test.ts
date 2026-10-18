@@ -83,19 +83,6 @@ describe("CLI mutations with missing storage directories", () => {
 		await safeCleanup(testDir);
 	});
 
-	it("creates a draft when its storage directory is absent", async () => {
-		expect(existsSync(join(testDir, "agentic-workspace", "drafts"))).toBe(false);
-		const result = await $`${cliCommand} draft create "First draft" -d "Keep this description"`
-			.cwd(testDir)
-			.nothrow()
-			.quiet();
-		expect(result.exitCode).toBe(0);
-		expect(result.stdout.toString()).toContain("Created draft DRAFT-1");
-		const draft = await core.filesystem.loadDraft("DRAFT-1");
-		expect(draft?.title).toBe("First draft");
-		expect(draft?.description).toBe("Keep this description");
-	});
-
 	it("creates a decision when its storage directory is absent", async () => {
 		const result = await $`${cliCommand} decision create "First decision" -s accepted --plain`
 			.cwd(testDir)
@@ -106,44 +93,5 @@ describe("CLI mutations with missing storage directories", () => {
 		const decision = await core.filesystem.loadDecision("decision-1");
 		expect(decision?.title).toBe("First decision");
 		expect(decision?.status).toBe("accepted");
-	});
-
-	it.each([
-		{ command: "archive", status: "To Do", destination: "archive/tasks" },
-		{ command: "complete", status: "Done", destination: "completed" },
-	])("$command creates its destination and preserves task content", async ({ command, status, destination }) => {
-		const { task } = await core.createTaskFromInput({ title: "Move this task", status, description: "Keep this body" });
-		const { task: dependent } = await core.createTaskFromInput({ title: "Dependent task", dependencies: [task.id] });
-		if (!task.filePath) throw new Error("Expected the created task path");
-		const content = await Bun.file(task.filePath).text();
-		const destinationDir = join(testDir, "agentic-workspace", destination);
-		expect(existsSync(destinationDir)).toBe(false);
-
-		const result = await $`${cliCommand} task ${command} ${task.id}`.cwd(testDir).nothrow().quiet();
-		expect(result.exitCode).toBe(0);
-		expect(await Bun.file(task.filePath).exists()).toBe(false);
-		expect(await Bun.file(join(destinationDir, task.id.toLowerCase(), "task.md")).text()).toBe(content);
-		const updatedDependent = await core.filesystem.loadTask(dependent.id);
-		expect(updatedDependent?.dependencies).toEqual(command === "archive" ? [] : [task.id]);
-	});
-
-	it("demotes a task when the drafts directory is absent", async () => {
-		const { task } = await core.createTaskFromInput({
-			title: "Move into drafts",
-			status: "In Progress",
-			description: "Keep this draft body",
-		});
-		const { task: dependent } = await core.createTaskFromInput({ title: "Dependent task", dependencies: [task.id] });
-		if (!task.filePath) throw new Error("Expected the created task path");
-		expect(existsSync(join(testDir, "agentic-workspace", "drafts"))).toBe(false);
-
-		const result = await $`${cliCommand} task demote ${task.id}`.cwd(testDir).nothrow().quiet();
-		expect(result.exitCode).toBe(0);
-		expect(await Bun.file(task.filePath).exists()).toBe(false);
-		const draft = await core.filesystem.loadDraft("DRAFT-1");
-		expect(draft?.title).toBe(task.title);
-		expect(draft?.description).toBe(task.description);
-		expect(draft?.status).toBe("In Progress");
-		expect((await core.filesystem.loadTask(dependent.id))?.dependencies).toEqual([]);
 	});
 });

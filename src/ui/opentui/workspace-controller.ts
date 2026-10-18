@@ -262,6 +262,7 @@ function sessionEntry(session: AgentSession | undefined): OpenTuiWorkspaceAgentS
 		id: session.id,
 		status: session.status,
 		preset: session.preset,
+		cwd: session.cwd,
 		taskId: session.taskId,
 	};
 }
@@ -1331,6 +1332,8 @@ export class OpenTuiWorkspaceController {
 			session.status === AGENT_SESSION_STATUS.STOPPED
 		)
 			return snapshot;
+		if (this.#agents.has(session.id) || this.#startingTasks.has(task.id) || this.#attachingSessions.has(session.id))
+			return snapshot;
 		if (session.status === AGENT_SESSION_STATUS.PARKED) {
 			void this.#startTaskSession(
 				task.id,
@@ -1344,8 +1347,6 @@ export class OpenTuiWorkspaceController {
 			return snapshot;
 		}
 		if (session.status !== AGENT_SESSION_STATUS.RUNNING) return snapshot;
-		if (this.#agents.has(session.id) || this.#startingTasks.has(task.id) || this.#attachingSessions.has(session.id))
-			return snapshot;
 		const catalog = this.#modeCatalog ?? (await loadProjectModeCatalog(this.#core));
 		const selectedModeId = selectedModeForTask(state, task.id, catalog);
 		if (selectedModeId !== modeId) return snapshot;
@@ -1418,6 +1419,18 @@ export class OpenTuiWorkspaceController {
 		if (!catalog) return Promise.resolve();
 		const modeId = options.modeId ?? selectedModeForTask(state ?? {}, taskId, catalog);
 		const launchKey = `${taskId}\u0000${modeId}`;
+		const settleAutomaticResume = (message: string): void => {
+			const sessionId = options.sessionId;
+			if (!sessionId || options.rejectFailure || this.#agents.has(sessionId)) return;
+			const session = this.#allSessions?.get(taskId)?.sessions.find((candidate) => candidate.id === sessionId);
+			this.#agents.set(sessionId, {
+				taskId,
+				label: session?.preset ?? modeId,
+				status: "error",
+				error: message,
+			});
+			this.#activeAgents.set(taskId, sessionId);
+		};
 		if (this.#deletingTasks.has(taskId)) return Promise.resolve();
 		if (
 			this.#closed ||
@@ -1508,10 +1521,12 @@ export class OpenTuiWorkspaceController {
 						}
 						return;
 					}
+					settleAutomaticResume(error.message);
 					if (options.rejectFailure) throw error;
 					return;
 				}
 				this.#notice = `Could not start agent: ${String(error)}`;
+				settleAutomaticResume(error instanceof Error ? error.message : String(error));
 				if (options.rejectFailure) throw error;
 			})
 			.finally(() => {

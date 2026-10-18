@@ -120,10 +120,4 @@ describe("CLI auto-plain behavior in non-TTY runs", () => {
 		expect(out).toContain("File: ");
 		expect(out).not.toContain("Task TASK-2 - Second Task");
 	});
-
-	test("task edit preserves legacy concise output without --plain", async () => {
-		const result = await $`${CLI_COMMAND} task edit 1 -s "In Progress"`.cwd(TEST_DIR).quiet();
-		expect(result.exitCode).toBe(0);
-		expect(result.stdout.toString()).toContain("Updated task TASK-1");
-	});
 });

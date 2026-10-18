@@ -13,11 +13,17 @@ import { OpenTuiWorkspaceController } from "../ui/opentui/workspace-controller.t
 
 it("rejects a legacy project before acquiring stores or a terminal, without changing configuration", async () => {
 	const root = await mkdtemp(join(tmpdir(), "workspace-mode-preflight-"));
-	const configuration = `${JSON.stringify(getBuiltInAgentConfiguration())}\n`;
-	const path = join(root, "agents.json");
+	const configuration = `agent_configuration: ${JSON.stringify(getBuiltInAgentConfiguration())}\n`;
+	const path = join(root, "agentic-workspace.config.yml");
 	await writeFile(path, configuration);
 	let hosts = 0;
-	const core = { filesystem: { rootDir: root, agenticWorkspaceDir: root } } as unknown as Core;
+	const core = {
+		filesystem: {
+			rootDir: root,
+			agenticWorkspaceDir: root,
+			loadConfig: async () => ({ agentConfiguration: getBuiltInAgentConfiguration() }),
+		},
+	} as unknown as Core;
 	const controller = new OpenTuiWorkspaceController(core, {
 		runtime: {
 			createHost: async () => {
@@ -27,11 +33,15 @@ it("rejects a legacy project before acquiring stores or a terminal, without chan
 		},
 	});
 	try {
-		await expect(controller.run()).rejects.toThrow("agentic-workspace agent-config init project");
+		await expect(controller.run()).rejects.toThrow(
+			"Project modes are not initialized. Run `agentic-workspace workspace` and configure project modes in the TUI.",
+		);
 		// A rejected preflight must remain retryable rather than leaving a pending completion.
-		await expect(controller.run()).rejects.toThrow("agentic-workspace agent-config init project");
+		await expect(controller.run()).rejects.toThrow(
+			"Project modes are not initialized. Run `agentic-workspace workspace` and configure project modes in the TUI.",
+		);
 		expect(hosts).toBe(0);
-		expect(await readdir(root)).toEqual(["agents.json"]);
+		expect(await readdir(root)).toEqual(["agentic-workspace.config.yml"]);
 		expect(await readFile(path, "utf8")).toBe(configuration);
 	} finally {
 		await rm(root, { recursive: true, force: true });

@@ -29,9 +29,8 @@
  *    Both fds are the SAME duplex unix socket. Verified: `os.write(1, marker)`
  *    reached the pane; `os.write(0, marker)` did not.
  *
- * 3. `pipe-pane` CANNOT BE ATTACHED RETROACTIVELY. A pane's output stream only
- *    exists from the moment the pane is created. See `createArmedSession` for
- *    the mandated ordering.
+ * 3. `pipe-pane` CAN attach to an existing pane. It forwards subsequent bytes;
+ *    bytes emitted before attachment cannot be recovered (seed with capture-pane).
 
  * 4. tmux RUNS `%` FORMAT SUBSTITUTION ON THE PIPE COMMAND STRING. The man
  *    page: the string "may contain the special character sequences supported
@@ -55,20 +54,15 @@
  * The same command works through Bun source execution and a compiled binary.
  */
 
-import { existsSync, unlinkSync, writeSync } from "node:fs";
+import { existsSync, mkdtempSync, rmSync, writeSync } from "node:fs";
 import { connect, createServer, type Server, type Socket } from "node:net";
+import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import {
-	deadPaneGroupState,
-	isMissingTmuxTarget,
-	paneRootState,
-	processGroupGone,
-	terminateProcessTree,
-} from "../../process-tree.ts";
+import { isMissingTmuxTarget } from "../../process-tree.ts";
 import type { ActivityMetadata } from "../../types.ts";
 import type { TmuxExec, VtInputPort } from "./types.ts";
-import { paneTarget, TMUX_COMMAND_TIMEOUT_MS } from "./types.ts";
+import { TMUX_COMMAND_TIMEOUT_MS } from "./types.ts";
 
 // ---------------------------------------------------------------------------
 // tmux option names — spec §2.4: "tmux options are leases, never status storage".
@@ -184,7 +178,8 @@ type VtChannelOptions = {
 	 */
 	readonly socketName: string;
 	readonly exec: TmuxExec;
-	readonly sessionName: string;
+	/** Exact tmux pane id (for example `%12`), not a session/window selector. */
+	readonly paneId: string;
 	/** Receive original pane bytes; the embedded terminal owns parsing and rendering. */
 	readonly onOutput: (bytes: Uint8Array) => void;
 	/** Grid size to emulate; should track the pane's real size. */
@@ -199,6 +194,7 @@ type VtChannelOptions = {
 	readonly now?: () => number;
 	readonly log?: VtLog;
 	readonly onError?: (error: Error) => void;
+	readonly onDisconnect?: (error?: Error) => void;
 };
 
 type ArmedSessionOptions = VtChannelOptions & {
@@ -276,7 +272,7 @@ const probeInputPath = async (
 ): Promise<boolean> => {
 	const stamp = opts.now?.() ?? 0;
 	const session = `vtprobe_${process.pid}_${stamp}`;
-	const target = paneTarget(session);
+	const target = session;
 	const marker = `__VTPROBE_${process.pid}_${stamp}__`;
 	// THREE traps here. Each one made an earlier revision report a false
 	// negative on a machine where `-I` works perfectly.
@@ -378,11 +374,8 @@ type LeaseVerdict =
 	/** Holder exists but its heartbeat went stale; safe to take over. */
 	| { readonly kind: "Stale"; readonly owner: string; readonly heartbeat: number };
 
-const readOption = async (
-	opts: Pick<VtChannelOptions, "exec" | "sessionName">,
-	name: string,
-): Promise<string | null> => {
-	const res = await opts.exec.run(buildShowOptionArgv(opts.sessionName, name));
+const readOption = async (opts: Pick<VtChannelOptions, "exec" | "paneId">, name: string): Promise<string | null> => {
+	const res = await opts.exec.run(buildShowOptionArgv(opts.paneId, name));
 	if (res.exitCode !== 0) return null;
 	const v = res.stdout.replace(/\n$/, "");
 	return v.length === 0 ? null : v;
@@ -399,39 +392,51 @@ const readOption = async (
  * re-read, so the "fight" is bounded to one extra call per contender.
  */
 const claimPipeLease = async (opts: VtChannelOptions, target: string): Promise<LeaseVerdict> => {
-	const owner = opts.ownerId ?? `pid:${process.pid}`;
-	const now = opts.now?.() ?? Date.now();
+	const lock = `awvt-lease-${target.replaceAll(/[^a-zA-Z0-9_-]/g, "_")}`;
+	await opts.exec.run(["wait-for", "-L", lock]);
+	try {
+		const owner = opts.ownerId ?? `pid:${process.pid}`;
+		const now = opts.now?.() ?? Date.now();
 
-	const existingOwner = await readOption(opts, VT_PIPE_OWNER_OPT);
-	if (existingOwner !== null && existingOwner !== owner) {
-		const hbRaw = await readOption(opts, VT_OWNER_HB_OPT);
-		const hb = hbRaw === null ? 0 : Number(hbRaw);
-		if (Number.isFinite(hb) && now - hb < VT_HEARTBEAT_STALE_MS) {
-			return { kind: "Held", owner: existingOwner, heartbeat: hb };
+		const existingOwner = await readOption(opts, VT_PIPE_OWNER_OPT);
+		if (existingOwner !== null && existingOwner !== owner) {
+			const hbRaw = await readOption(opts, VT_OWNER_HB_OPT);
+			const hb = hbRaw === null ? 0 : Number(hbRaw);
+			if (Number.isFinite(hb) && now - hb < VT_HEARTBEAT_STALE_MS) {
+				return { kind: "Held", owner: existingOwner, heartbeat: hb };
+			}
+			// Stale: the owner died. Log and take over, exactly as AoE's stale path.
+			(opts.log ?? (() => {}))(`vt: previous pipe owner ${existingOwner} is stale (hb ${hb}); taking over`);
 		}
-		// Stale: the owner died. Log and take over, exactly as AoE's stale path.
-		(opts.log ?? (() => {}))(`vt: previous pipe owner ${existingOwner} is stale (hb ${hb}); taking over`);
+
+		await opts.exec.run(buildSetOptionArgv(target, VT_PIPE_OWNER_OPT, owner));
+		await opts.exec.run(buildSetOptionArgv(target, VT_OWNER_OPT, owner));
+		await opts.exec.run(buildSetOptionArgv(target, VT_OWNER_HB_OPT, String(now)));
+
+		// Re-read: whoever's value survived is the winner both contenders agree on.
+		const settled = await readOption(opts, VT_PIPE_OWNER_OPT);
+		if (settled === owner) return { kind: "Claimed" };
+		return {
+			kind: "Held",
+			owner: settled ?? "unknown",
+			heartbeat: now,
+		};
+	} finally {
+		await opts.exec.run(["wait-for", "-U", lock]);
 	}
-
-	await opts.exec.run(buildSetOptionArgv(target, VT_PIPE_OWNER_OPT, owner));
-	await opts.exec.run(buildSetOptionArgv(target, VT_OWNER_OPT, owner));
-	await opts.exec.run(buildSetOptionArgv(target, VT_OWNER_HB_OPT, String(now)));
-
-	// Re-read: whoever's value survived is the winner both contenders agree on.
-	const settled = await readOption(opts, VT_PIPE_OWNER_OPT);
-	if (settled === owner) return { kind: "Claimed" };
-	return {
-		kind: "Held",
-		owner: settled ?? "unknown",
-		heartbeat: now,
-	};
 };
 
-const releaseLease = async (opts: Pick<VtChannelOptions, "exec" | "sessionName">, owner: string): Promise<void> => {
-	const current = await readOption(opts, VT_PIPE_OWNER_OPT);
-	if (current !== owner) return; // Someone else took over; leave their lease alone.
-	for (const name of [VT_PIPE_OWNER_OPT, VT_OWNER_OPT, VT_OWNER_HB_OPT]) {
-		await opts.exec.run(buildUnsetOptionArgv(opts.sessionName, name));
+const releaseLease = async (opts: Pick<VtChannelOptions, "exec" | "paneId">, owner: string): Promise<void> => {
+	const lock = `awvt-lease-${opts.paneId.replaceAll(/[^a-zA-Z0-9_-]/g, "_")}`;
+	await opts.exec.run(["wait-for", "-L", lock]);
+	try {
+		const current = await readOption(opts, VT_PIPE_OWNER_OPT);
+		if (current !== owner) return; // Someone else took over; leave their lease alone.
+		for (const name of [VT_PIPE_OWNER_OPT, VT_OWNER_OPT, VT_OWNER_HB_OPT]) {
+			await opts.exec.run(buildUnsetOptionArgv(opts.paneId, name));
+		}
+	} finally {
+		await opts.exec.run(["wait-for", "-U", lock]);
 	}
 };
 
@@ -479,8 +484,8 @@ export const runVtPipe = (socketPath?: string): void => {
 	const stop = (code: number): void => {
 		if (stopped) return;
 		stopped = true;
-		socket.destroy();
-		process.exit(code);
+		if (code !== 0) socket.destroy();
+		socket.end(() => process.exit(code));
 	};
 
 	// tmux supplies a non-blocking socket, not a file. Bun's fs.ReadStream
@@ -489,14 +494,14 @@ export const runVtPipe = (socketPath?: string): void => {
 	paneOutput.on("data", (chunk: Buffer | string) => {
 		const buf = typeof chunk === "string" ? Buffer.from(chunk) : chunk;
 		if (!socket.writable) return;
-		socket.write(buf);
+		if (!socket.write(buf)) paneOutput.pause();
 	});
+	socket.on("drain", () => paneOutput.resume());
 	paneOutput.on("error", () => {
 		stop(0);
 	});
 	paneOutput.on("end", () => {
 		// tmux closed the pipe; flush what we have, then stop.
-		socket.end();
 		stop(0);
 	});
 
@@ -631,9 +636,9 @@ export const tryWriteVtInput = (
  *
  * NEVER THROWS. That is the contract that makes the fallback safe.
  */
-const createVtChannel = async (opts: VtChannelOptions): Promise<VtChannel | null> => {
+export const createVtChannel = async (opts: VtChannelOptions): Promise<VtChannel | null> => {
 	const log = opts.log ?? (() => {});
-	const target = paneTarget(opts.sessionName);
+	const target = opts.paneId;
 	const owner = opts.ownerId ?? `pid:${process.pid}`;
 
 	let capabilities: VtCapabilities;
@@ -659,7 +664,8 @@ const createVtChannel = async (opts: VtChannelOptions): Promise<VtChannel | null
 	}
 
 	// --- socket ------------------------------------------------------------
-	const socketPath = opts.socketPath ?? `/tmp/agentic-workspace-vt-${opts.sessionName}-${process.pid}.sock`;
+	const runtimeDir = opts.socketPath === undefined ? mkdtempSync(join(tmpdir(), "awvt-")) : undefined;
+	const socketPath = opts.socketPath ?? join(runtimeDir as string, "p.sock");
 	const forwarderExe = opts.forwarderExe ?? process.execPath;
 	const command = buildForwarderCommand(forwarderExe, socketPath);
 
@@ -686,12 +692,33 @@ const createVtChannel = async (opts: VtChannelOptions): Promise<VtChannel | null
 	};
 	server.on("connection", retainConnection);
 
-	const abandon = (reason: string): null => {
+	const abandon = async (reason: string): Promise<null> => {
 		log(`vt: ${reason}`);
 		acceptedSocket?.destroy();
 		server.removeListener("connection", retainConnection);
 		server.close();
-		void releaseLease(opts, owner).catch(() => {});
+		const failures: unknown[] = [];
+		try {
+			const clearOwnedPipe = buildPipePaneArgv(target, "", capabilities.pipeFlags).map(shQuote).join(" ");
+			const result = await opts.exec.run([
+				"if-shell",
+				"-F",
+				"-t",
+				target,
+				`#{==:#{${VT_PIPE_OWNER_OPT}},${owner}}`,
+				clearOwnedPipe,
+			]);
+			if (result.exitCode !== 0) throw new Error(result.stderr);
+		} catch (error) {
+			failures.push(error);
+		}
+		try {
+			await releaseLease(opts, owner);
+		} catch (error) {
+			failures.push(error);
+		}
+		if (runtimeDir) rmSync(runtimeDir, { recursive: true, force: true });
+		if (failures.length) throw new AggregateError(failures, "VT arm cleanup failed");
 		return null;
 	};
 
@@ -699,11 +726,11 @@ const createVtChannel = async (opts: VtChannelOptions): Promise<VtChannel | null
 	try {
 		const armed = await opts.exec.run(buildPipePaneArgv(target, command, capabilities.pipeFlags));
 		if (armed.exitCode !== 0) {
-			return abandon(`pipe-pane arming failed (exit ${armed.exitCode}): ${armed.stderr.trim()}`);
+			return await abandon(`pipe-pane arming failed (exit ${armed.exitCode}): ${armed.stderr.trim()}`);
 		}
 		socket = acceptedSocket ?? (await awaitForwarderConnection(server, socketPath, TMUX_COMMAND_TIMEOUT_MS, log));
 	} catch (error) {
-		return abandon(errorText(error));
+		return await abandon(errorText(error));
 	}
 
 	// Deliver original bytes without an intermediate parser, grid, or text conversion.
@@ -728,6 +755,7 @@ const createVtChannel = async (opts: VtChannelOptions): Promise<VtChannel | null
 			reportSocketDeliveryFailure(
 				new Error(`${pendingSocketInputBytes} accepted input bytes remained buffered when the VT socket closed`),
 			);
+		if (!disposed) opts.onDisconnect?.();
 	});
 
 	// --- fused lease tick: spec §6, `session.rs:53-54` --------------------
@@ -750,7 +778,12 @@ const createVtChannel = async (opts: VtChannelOptions): Promise<VtChannel | null
 					target,
 					activityFormat,
 					";",
-					...buildSetOptionArgv(target, VT_OWNER_HB_OPT, String(stamp)),
+					"if-shell",
+					"-F",
+					"-t",
+					target,
+					`#{==:#{${VT_PIPE_OWNER_OPT}},${owner}}`,
+					buildSetOptionArgv(target, VT_OWNER_HB_OPT, String(stamp)).map(shQuote).join(" "),
 				],
 				{ signal },
 			);
@@ -802,11 +835,7 @@ const createVtChannel = async (opts: VtChannelOptions): Promise<VtChannel | null
 		server.removeListener("connection", retainConnection);
 		server.close();
 		// Unlink explicitly: a stale socket path makes the NEXT arm fail to bind.
-		try {
-			unlinkSync(socketPath);
-		} catch {
-			// Already gone, or never created. Nothing to clean up.
-		}
+		if (runtimeDir) rmSync(runtimeDir, { recursive: true, force: true });
 		disposing = (async () => {
 			const failures: Error[] = [];
 			try {
@@ -817,9 +846,7 @@ const createVtChannel = async (opts: VtChannelOptions): Promise<VtChannel | null
 			// Check and remove in one tmux command queue; stale owners cannot remove a successor pipe.
 			const cleanup = [
 				buildPipePaneArgv(target, "", capabilities.pipeFlags),
-				...[VT_PIPE_OWNER_OPT, VT_OWNER_OPT, VT_OWNER_HB_OPT].map((name) =>
-					buildUnsetOptionArgv(opts.sessionName, name),
-				),
+				...[VT_PIPE_OWNER_OPT, VT_OWNER_OPT, VT_OWNER_HB_OPT].map((name) => buildUnsetOptionArgv(opts.paneId, name)),
 			]
 				.map((argv) => argv.map(shQuote).join(" "))
 				.join(" ; ");
@@ -865,11 +892,6 @@ const createVtChannel = async (opts: VtChannelOptions): Promise<VtChannel | null
  */
 const bindForwarderSocket = (socketPath: string, log: VtLog): Promise<Server> =>
 	new Promise<Server>((resolve, reject) => {
-		try {
-			unlinkSync(socketPath);
-		} catch {
-			// Nothing at that path, which is the normal case.
-		}
 		const server = createServer();
 		server.once("error", (error) => {
 			reject(error);
@@ -897,136 +919,3 @@ const awaitForwarderConnection = (server: Server, socketPath: string, timeoutMs:
 			resolve(socket);
 		});
 	});
-
-// ---------------------------------------------------------------------------
-// Session creation — THE ORDERING TRAP (spec §6, established fact).
-// ---------------------------------------------------------------------------
-
-/**
- * Discard a half-created armed session without stranding what it may already have launched.
- *
- * `wait-for -S <gate>` can succeed on the tmux server and still report a failure to us (a timeout on
- * the client). The pane is therefore already running the agent, whose children may ignore SIGHUP —
- * and `kill-session` on its own only SIGHUPs them. So the pane root is read while tmux can still
- * prove the pane alive, its process group is killed, and the pane is removed last.
- *
- * Removing the pane is legal only after the absence or the termination is proven. An unreadable
- * probe, or a group that survives SIGKILL, throws and leaves the pane in place: the caller's own
- * teardown owns the same session and can still reach it, while a silent `null` here would hand the
- * fallback path a second session on top of live, unreachable descendants.
- */
-const discardArmedSession = async (opts: Pick<ArmedSessionOptions, "exec">, sessionName: string): Promise<void> => {
-	const target = paneTarget(sessionName);
-	const probe = await opts.exec.run(["display-message", "-p", "-t", target, "#{pane_pid} #{pane_dead}"]);
-	const removePane = () => opts.exec.run(["kill-session", "-t", sessionName]).catch(() => {});
-	if (probe.exitCode !== 0) {
-		if (isMissingTmuxTarget(`${probe.stderr}${probe.stdout}`)) {
-			await removePane();
-			return;
-		}
-		throw new Error(
-			`could not verify the pane tree for ${sessionName}: ${probe.stderr.trim() || `exit ${probe.exitCode}`}`,
-		);
-	}
-	const pane = paneRootState(probe.stdout);
-	if (pane.pid !== undefined) {
-		if (!pane.dead) {
-			if ((await terminateProcessTree(pane.pid)) === "survivor")
-				throw new Error(`pane tree ${pane.pid} for ${sessionName} survived SIGKILL`);
-			if (!processGroupGone(pane.pid))
-				throw new Error(`process group ${pane.pid} for ${sessionName} still has live members`);
-		} else if (deadPaneGroupState(pane.pid, undefined) !== "gone") {
-			// The root exited before this cleanup and there is no snapshot to attribute the leftover
-			// group with, so the pane is kept as the caller's only handle on it.
-			throw new Error(`process group ${pane.pid} for ${sessionName} cannot be attributed to the pane`);
-		}
-	}
-	await removePane();
-};
-
-type ArmedSessionResult = {
-	readonly sessionName: string;
-	readonly channel: VtChannel | null;
-	readonly cols: number;
-	readonly rows: number;
-};
-
-/**
- * Create a silent, noninteractive launch gate, attach output, then release the agent.
- * No command travels through the pane's input, so shell prompts and command echo
- * cannot reach the native terminal. The pipe must still attach before launch:
- * bytes emitted before pipe-pane attaches cannot be recovered.
- */
-export const createArmedSession = async (opts: ArmedSessionOptions): Promise<ArmedSessionResult | null> => {
-	const log = opts.log ?? (() => {});
-	const cols = opts.cols ?? DEFAULT_COLS;
-	const rows = opts.rows ?? DEFAULT_ROWS;
-	const sessionName = opts.sessionName;
-	const launchGate = `${sessionName}-launch`;
-	// The gate shell `exec`s the command directly: `opts.command` already begins with a single
-	// `env ... /bin/sh -c '<script>'` (or an equivalent caller-supplied program), so no second
-	// `/bin/sh -c` wrapper is layered on top and only one shell survives the gate.
-	const command = opts.command?.length
-		? `tmux -L ${shQuote(opts.socketName)} wait-for ${shQuote(launchGate)} && exec ${opts.command}`
-		: undefined;
-	let channel: VtChannel | null = null;
-
-	try {
-		// The noninteractive shell waits silently until output is subscribed.
-		const created = await opts.exec.run([
-			"new-session",
-			"-d",
-			"-s",
-			sessionName,
-			"-x",
-			String(cols),
-			"-y",
-			String(rows),
-			...(opts.cwd ? ["-c", opts.cwd] : []),
-			...perSessionEnvArgs(),
-			...(command ? ["/bin/sh", "-c", command] : []),
-		]);
-		if (created.exitCode !== 0) {
-			log(`vt: new-session failed: ${created.stderr.trim()}`);
-			return null;
-		}
-
-		const retained = await opts.exec.run(["set-option", "-t", paneTarget(sessionName), "remain-on-exit", "on"]);
-		if (retained.exitCode !== 0) throw new Error(retained.stderr.trim() || "Could not retain agent output");
-
-		// createVtChannel installs its data listener before returning.
-		channel = await createVtChannel({ ...opts, cols, rows });
-		if (channel === null) {
-			await discardArmedSession(opts, sessionName);
-			return null;
-		}
-
-		if (command) {
-			const launched = await opts.exec.run(["wait-for", "-S", launchGate]);
-			if (launched.exitCode !== 0) {
-				throw new Error(launched.stderr.trim() || "Could not release agent launch");
-			}
-		}
-
-		return { sessionName, channel, cols, rows };
-	} catch (error) {
-		const failures: unknown[] = [error];
-		try {
-			await channel?.dispose();
-		} catch (disposeError) {
-			failures.push(disposeError);
-		}
-		try {
-			await discardArmedSession(opts, sessionName);
-		} catch (discardError) {
-			// The pane is left in place on purpose: the caller owns this session and its teardown can
-			// still reach the pane tree that this path could not remove.
-			log(`vt: could not discard armed session: ${errorText(discardError)}`);
-			failures.push(discardError);
-		}
-		log(`vt: createArmedSession threw: ${errorText(error)}`);
-		if (failures.length > 1)
-			throw new AggregateError(failures, `Could not fully clean up armed session ${sessionName}`);
-		return null;
-	}
-};

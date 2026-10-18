@@ -52,7 +52,7 @@ describe("artifact approval key contract", () => {
 			expect((await second.read("BACK-23", path)).bytes).toEqual(bytes.get(path)!);
 		}
 
-		const sidecarPath = join(container, ".artifacts.json");
+		const sidecarPath = join(container, "artifacts", ".artifacts.json");
 		const sidecar = JSON.parse(await readFile(sidecarPath, "utf8"));
 		for (const path of paths) expect(Object.hasOwn(sidecar.approvals, path)).toBe(true);
 		expect(Object.getPrototypeOf(sidecar.approvals)).toBe(Object.prototype);
@@ -78,7 +78,7 @@ describe("artifact approval key contract", () => {
 		const plan = configuration.modes.profiles.plan;
 		if (!plan) throw new Error("Missing PLAN profile");
 		plan.artifacts = [];
-		await writeFile(join(core.filesystem.agenticWorkspaceDir, "agents.json"), JSON.stringify(configuration));
+		await core.filesystem.saveConfig({ ...(await core.filesystem.loadConfig())!, agentConfiguration: configuration });
 
 		const loaded = await loadAgentConfiguration(core, "project");
 		expect(loaded?.modes?.profiles.plan?.artifacts).toEqual([]);
