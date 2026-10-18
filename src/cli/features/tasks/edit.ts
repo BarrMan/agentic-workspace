@@ -9,7 +9,7 @@ import type { Task, TaskUpdateInput } from "../../../types/index.ts";
 import { AmbiguousIdError } from "../../../utils/entity-id.ts";
 import { DRAFT_PREFIX, normalizeId } from "../../../utils/prefix-config.ts";
 import { getValidStatuses } from "../../../utils/status.ts";
-import { canonicalTaskId, LOCAL_TASK_LOOKUP_HINT } from "../../../utils/task-path.ts";
+import { LOCAL_TASK_LOOKUP_HINT } from "../../../utils/task-path.ts";
 import { addEditFieldOptions, hasEditFieldFlags } from "../task/edit-fields.ts";
 import { parseTaskEditOptions } from "./edit-options.ts";
 import { pickTaskForEditWizard, runTaskEditWizard } from "./wizard.ts";
@@ -54,7 +54,7 @@ const taskEditTarget: EditCommandTarget = {
 	label: "Task",
 	pluralLabel: "tasks",
 	statuses: (core) => getValidStatuses(core),
-	resolve: (core, id) => core.loadTaskById(id, { includeCrossBranch: false }),
+	resolve: (core, id) => core.loadTaskById(id.toUpperCase(), { includeCrossBranch: false }),
 	listCandidates: (core) => core.queryTasks({ includeCrossBranch: false }),
 	selectionValue: (candidate) => candidate.id,
 	update: (core, existing, input) => core.editTask(existing.id, input, { includeCrossBranch: false }),
@@ -94,7 +94,7 @@ function normalizeEditRequestIds(requestedIds: string[] | undefined): string[] {
 	const taskIds: string[] = [];
 	for (const value of requestedIds ?? []) {
 		const trimmed = String(value).trim();
-		if (!trimmed || taskIds.some((seen) => canonicalTaskId(seen) === canonicalTaskId(trimmed))) continue;
+		if (!trimmed || taskIds.includes(trimmed)) continue;
 		taskIds.push(trimmed);
 	}
 	return taskIds;

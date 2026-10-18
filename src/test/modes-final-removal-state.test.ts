@@ -63,6 +63,8 @@ describe("final task removal mode state", () => {
 		const host = { renderer, root: {}, async destroy() {} } as unknown as OpenTuiHost;
 		const core = {
 			loadTasks: async () => taskList,
+			loadMilestones: async () => [],
+			loadArchivedMilestones: async () => [],
 			loadTaskSnapshot: async () => ({
 				tasks: taskList,
 				activeTasks: taskList,

@@ -149,6 +149,12 @@ describe("provider-emitted receipts complete harness readiness", () => {
 				// Receipt bytes come from executing the generated adapter emitter during launchPrepared.
 				const expected = execution.providerConversationId;
 				expect(expected).toBeString();
+				expect(execution.events).toEqual({
+					turnCompleted: "supported",
+					permissionWait: provider === "opencode-v1" ? "supported" : "unsupported",
+					executionExit: "supported",
+					activity: "supported",
+				});
 				for (const stage of ["initialized", "prompt-accepted"] as const) {
 					const receiptPath = join(test.emitted.launchDirectory, stage);
 					expect(await readFile(receiptPath, "utf8")).toBe(`${expected}${provider === "opencode-v1" ? "\n" : ""}`);

@@ -94,48 +94,24 @@ function resolveFolderConfigPath(agenticWorkspacePath: string): string | null {
 function resolveBuiltInAgenticWorkspaceDirectory(projectRoot: string): {
 	agenticWorkspaceDir: string;
 	agenticWorkspacePath: string;
+	configPath: string | null;
 	source: Extract<AgenticWorkspaceDirectorySource, "agentic-workspace" | ".agentic-workspace">;
 } | null {
-	const defaultAgenticWorkspacePath = join(projectRoot, DEFAULT_DIRECTORIES.AGENTIC_WORKSPACE);
-	const hiddenAgenticWorkspacePath = join(projectRoot, DEFAULT_DIRECTORIES.HIDDEN_AGENTIC_WORKSPACE);
-	const defaultAgenticWorkspaceExists = directoryExists(defaultAgenticWorkspacePath);
-	const hiddenAgenticWorkspaceExists = directoryExists(hiddenAgenticWorkspacePath);
-	const defaultConfigPath = defaultAgenticWorkspaceExists ? resolveFolderConfigPath(defaultAgenticWorkspacePath) : null;
-	const hiddenConfigPath = hiddenAgenticWorkspaceExists ? resolveFolderConfigPath(hiddenAgenticWorkspacePath) : null;
-
-	if (defaultConfigPath) {
+	const candidates = [
+		{ name: DEFAULT_DIRECTORIES.AGENTIC_WORKSPACE, source: AGENTIC_WORKSPACE_DIRECTORY_SOURCE.DEFAULT },
+		{ name: DEFAULT_DIRECTORIES.HIDDEN_AGENTIC_WORKSPACE, source: AGENTIC_WORKSPACE_DIRECTORY_SOURCE.HIDDEN },
+	].map(({ name, source }) => {
+		const agenticWorkspacePath = join(projectRoot, name);
+		const exists = directoryExists(agenticWorkspacePath);
 		return {
-			agenticWorkspaceDir: DEFAULT_DIRECTORIES.AGENTIC_WORKSPACE,
-			agenticWorkspacePath: defaultAgenticWorkspacePath,
-			source: AGENTIC_WORKSPACE_DIRECTORY_SOURCE.DEFAULT,
+			agenticWorkspaceDir: name,
+			agenticWorkspacePath,
+			configPath: exists ? resolveFolderConfigPath(agenticWorkspacePath) : null,
+			exists,
+			source,
 		};
-	}
-
-	if (hiddenConfigPath) {
-		return {
-			agenticWorkspaceDir: DEFAULT_DIRECTORIES.HIDDEN_AGENTIC_WORKSPACE,
-			agenticWorkspacePath: hiddenAgenticWorkspacePath,
-			source: AGENTIC_WORKSPACE_DIRECTORY_SOURCE.HIDDEN,
-		};
-	}
-
-	if (defaultAgenticWorkspaceExists) {
-		return {
-			agenticWorkspaceDir: DEFAULT_DIRECTORIES.AGENTIC_WORKSPACE,
-			agenticWorkspacePath: defaultAgenticWorkspacePath,
-			source: AGENTIC_WORKSPACE_DIRECTORY_SOURCE.DEFAULT,
-		};
-	}
-
-	if (hiddenAgenticWorkspaceExists) {
-		return {
-			agenticWorkspaceDir: DEFAULT_DIRECTORIES.HIDDEN_AGENTIC_WORKSPACE,
-			agenticWorkspacePath: hiddenAgenticWorkspacePath,
-			source: AGENTIC_WORKSPACE_DIRECTORY_SOURCE.HIDDEN,
-		};
-	}
-
-	return null;
+	});
+	return candidates.find(({ configPath }) => configPath) ?? candidates.find(({ exists }) => exists) ?? null;
 }
 
 export function resolveAgenticWorkspaceDirectoryFromRootConfig(
@@ -234,14 +210,13 @@ export function resolveAgenticWorkspaceDirectory(projectRoot: string): AgenticWo
 		};
 	}
 
-	const folderConfigPath = resolveFolderConfigPath(builtIn.agenticWorkspacePath);
 	return {
 		projectRoot,
 		agenticWorkspaceDir: builtIn.agenticWorkspaceDir,
 		agenticWorkspacePath: builtIn.agenticWorkspacePath,
 		source: builtIn.source,
-		configPath: folderConfigPath,
-		configSource: folderConfigPath ? AGENTIC_WORKSPACE_CONFIG_SOURCE.FOLDER : null,
+		configPath: builtIn.configPath,
+		configSource: builtIn.configPath ? AGENTIC_WORKSPACE_CONFIG_SOURCE.FOLDER : null,
 		rootConfigPath,
 		rootConfigExists,
 	};

@@ -197,16 +197,16 @@ Sessions let users launch and continue agent conversations attached to tasks, ob
 
 **Behavior:**
 1. Fail creation and report the error.
-2. Only after final publication failure, stop the new execution and roll back its provisional relationship.
-3. Keep durable tracking of any execution that may still be running.
-4. Startup/readiness failures may require cleanup; the harness cleans allocations it cannot return as part of a failed launch attempt.
+2. Stop or clean up any execution created by the failed attempt.
+3. Roll back the provisional relationship after cleanup; repeated rollback is safe.
+4. Keep durable tracking of any execution that may still be running or whose cleanup failed.
 
-**Outcome:** Creation is not reported as successful; the provisional relationship is rolled back only after final publication failure.
+**Outcome:** Creation is not reported as successful; the provisional relationship is rolled back, and durable tracking is retained when the execution may still be running.
 
-**Failures:** Startup/readiness failures stop creation and may require cleanup; final publication failure stops the new execution and rolls back its provisional relationship.
+**Failures:** Any creation failure stops or cleans up the execution and rolls back the provisional relationship; cleanup failure retains durable tracking.
 
 **Acceptance Criteria:**
-- [ ] Startup, initial-delivery, and final-publication failures fail creation and report errors; startup/readiness failures may require cleanup, while only final-publication failure rolls back the provisional relationship, retaining durable tracking for any execution that may remain running.
+- [ ] Startup, initial-delivery, and final-publication failures fail creation and report errors; the provisional relationship is rolled back after cleanup, and durable tracking is retained for any execution that may remain running or whose cleanup failed.
 
 ### SESSION-010: Report settlement truthfully
 
@@ -218,7 +218,7 @@ Sessions let users launch and continue agent conversations attached to tasks, ob
 
 **Behavior:**
 1. Report completed effects, the original error, and cleanup/publication errors.
-2. Do not imply rollback beyond the provisional-relationship rollback required after final publication failure.
+2. Do not imply rollback beyond the provisional-relationship rollback required after a failed creation.
 3. Do not erase last tracking information for an execution that could not be stopped.
 
 **Outcome:** Reports reflect actual effects and preserve tracking information for an unstopped execution.
@@ -481,7 +481,7 @@ Parked is a loaded runtime state, distinct from stopped. Activity indications ar
 |---|---|
 | Provisional creation | A session relationship is reserved while startup is in progress; it is not ready. |
 | Ready | Initialization, identity, accepted initial delivery, and durable publication are established. |
-| Creation failed | Creation did not succeed; only final durable publication failure rolls back the provisional relationship. |
+| Creation failed | Creation did not succeed; the provisional relationship is rolled back after execution cleanup. |
 | Handoff successor confirmed | The distinct successor is durably published and confirmed running. |
 | Handoff settled | An eligible predecessor owned by this app instance is retired only after successor confirmation. |
 
@@ -491,15 +491,15 @@ Parked is a loaded runtime state, distinct from stopped. Activity indications ar
 |---|---|---|---|
 | No reserved session | Startup reservation after task-status coordination | Provisional creation | Reserve and persist exactly one provisional relationship in the selected mode. |
 | Provisional creation | Initialization, identity, accepted initial delivery, and durable publication succeed | Ready | Report readiness only after all required evidence and publication are established. |
-| Provisional creation | Startup/readiness or initial-delivery failure | Creation failed | Fail and report creation; retain tracking for any execution that may still be running and do not roll back the relationship. |
-| Provisional creation | Final durable publication fails | Creation failed | Stop the new execution and roll back its provisional relationship; retain tracking if it may still be running. |
+| Provisional creation | Startup/readiness or initial-delivery failure | Creation failed | Fail and report creation; stop or clean up the execution and roll back the provisional relationship; retain tracking if it may still be running or cleanup failed. |
+| Provisional creation | Final durable publication fails | Creation failed | Stop or clean up the execution and roll back the provisional relationship; retain tracking if it may still be running or cleanup failed. |
 | Successor creation | Successor is durably published and confirmed running | Handoff successor confirmed | Keep the predecessor intact until this confirmation. |
 | Handoff successor confirmed | Handoff retires an eligible predecessor owned by this app instance | Handoff settled | Retire only after confirmation; preserve the successor if predecessor retirement fails. |
 
 **Invariants:**
 - Creation readiness requires provider initialization, established identity, accepted initial delivery, and durable publication.
 - Task-status coordination precedes reservation and session startup; handoff confirmation precedes predecessor retirement.
-- Only final durable publication failure rolls back the provisional creation relationship.
+- A creation failure rolls back the provisional creation relationship after attempting execution cleanup; tracking is retained when the execution may still be running or cleanup failed.
 
 ## User Interactions
 

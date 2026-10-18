@@ -225,33 +225,19 @@ describe("Core", () => {
 			expect(await Bun.file(taskPath).exists()).toBe(true);
 		});
 
-		it("does not update a longer legacy sibling for a shorter numeric ID", async () => {
-			await core.createTask({ ...sampleTask, id: "BACK-1-EXTRA", title: "Longer sibling" });
+		it("does not update a longer numeric sibling for a shorter numeric ID", async () => {
+			await core.createTask({ ...sampleTask, id: "BACK-12", title: "Longer sibling" });
 
 			await expect(core.updateTaskFromInput("BACK-1", { title: "Wrong target" })).rejects.toThrow(
 				"Task not found: BACK-1",
 			);
-			expect((await core.filesystem.loadTask("BACK-1-EXTRA"))?.title).toBe("Longer sibling");
+			expect((await core.filesystem.loadTask("BACK-12"))?.title).toBe("Longer sibling");
 		});
 
-		it("should resolve tasks using flexible ID formats", async () => {
-			const standardTask: Task = { ...sampleTask, id: "task-5", title: "Standard" };
-			const paddedTask: Task = { ...sampleTask, id: "task-007", title: "Padded" };
-			await core.createTask(standardTask);
-			await core.createTask(paddedTask);
-
-			const uppercase = await core.getTask("TASK-5");
-			expect(uppercase?.id).toBe("TASK-5");
-
-			const bare = await core.getTask("5");
-			expect(bare?.id).toBe("TASK-5");
-
-			const zeroPadded = await core.getTask("TASK-007");
-			expect(zeroPadded?.id).toBe("TASK-007");
-			expect(await core.getTask("0007")).toBeNull();
-
-			const mixedCase = await core.getTask("Task-007");
-			expect(mixedCase?.id).toBe("TASK-007");
+		it("resolves lowercase prefixed IDs without changing the exact numeric segment", async () => {
+			await core.createTask({ ...sampleTask, id: "TASK-01", title: "Padded" });
+			expect(await core.getTask("task-01")).toMatchObject({ id: "TASK-01", title: "Padded" });
+			expect(await core.getTask("TASK-1")).toBeNull();
 		});
 
 		it("returns the local task when merge policy selects a same-path padded ID variant", async () => {
@@ -613,16 +599,14 @@ describe("Core", () => {
 			expect(task?.source).toBe("local");
 		});
 
-		it("should resolve an exact legacy task ID without guessing", async () => {
+		it("rejects legacy alphanumeric task IDs", async () => {
 			await mkdir(join(core.filesystem.tasksDir, "task-prefixed"), { recursive: true });
 			await Bun.write(
 				join(core.filesystem.tasksDir, "task-prefixed", "task.md"),
 				serializeTask({ ...sampleTask, id: "TASK-PREFIXED", title: "Legacy task" }),
 			);
 
-			const loaded = await core.getTask("task-prefixed");
-			expect(loaded?.id).toBe("TASK-PREFIXED");
-			expect(loaded?.title).toBe("Legacy task");
+			expect(await core.getTask("task-prefixed")).toBeNull();
 		});
 
 		it("resolves distinct padded task IDs from their own canonical containers", async () => {
@@ -639,41 +623,6 @@ describe("Core", () => {
 
 			expect(await core.getTask("TASK-1")).toMatchObject({ id: "TASK-1", title: "First" });
 			expect(await core.getTask("TASK-01")).toMatchObject({ id: "TASK-01", title: "Second" });
-		});
-
-		it("should resolve numeric-only IDs with custom prefix (BACK-364)", async () => {
-			// Configure custom prefix
-			const config = await core.filesystem.loadConfig();
-			if (!config) {
-				throw new Error("Expected config to be loaded");
-			}
-			await core.filesystem.saveConfig({
-				...config,
-				prefixes: { task: "back" },
-			});
-
-			// Create tasks with custom prefix
-			const task1: Task = { ...sampleTask, id: "back-358", title: "Custom Prefix Task" };
-			const task2: Task = { ...sampleTask, id: "back-5.1", title: "Custom Prefix Subtask" };
-			await core.createTask(task1);
-			await core.createTask(task2);
-
-			// Numeric-only lookup should find task with custom prefix
-			const byNumeric = await core.getTask("358");
-			expect(byNumeric?.id).toBe("BACK-358");
-			expect(byNumeric?.title).toBe("Custom Prefix Task");
-
-			// Dotted numeric lookup should find subtask
-			const byDotted = await core.getTask("5.1");
-			expect(byDotted?.id).toBe("BACK-5.1");
-			expect(byDotted?.title).toBe("Custom Prefix Subtask");
-
-			// Full prefixed ID should also work (case-insensitive)
-			const byFullId = await core.getTask("BACK-358");
-			expect(byFullId?.id).toBe("BACK-358");
-
-			const byLowercase = await core.getTask("back-358");
-			expect(byLowercase?.id).toBe("BACK-358");
 		});
 
 		it("assigns ordinal 1000 to the first created task when none exist", async () => {
@@ -1088,7 +1037,7 @@ describe("Core", () => {
 			}
 
 			const taskWithoutStatus: Task = {
-				id: "task-custom",
+				id: "task-990",
 				title: "Custom Task",
 				status: "",
 				assignee: [],
@@ -1100,7 +1049,7 @@ describe("Core", () => {
 
 			await core.createTask(taskWithoutStatus);
 
-			const loadedTask = await core.filesystem.loadTask("task-custom");
+			const loadedTask = await core.filesystem.loadTask("task-990");
 			expect(loadedTask?.status).toBe("Custom Status");
 		});
 
@@ -1116,7 +1065,7 @@ describe("Core", () => {
 			}
 
 			const taskWithoutStatus: Task = {
-				id: "task-fallback",
+				id: "task-991",
 				title: "Fallback Task",
 				status: "",
 				assignee: [],
@@ -1128,7 +1077,7 @@ describe("Core", () => {
 
 			await core.createTask(taskWithoutStatus);
 
-			const loadedTask = await core.filesystem.loadTask("task-fallback");
+			const loadedTask = await core.filesystem.loadTask("task-991");
 			expect(loadedTask?.status).toBe("To Do");
 		});
 

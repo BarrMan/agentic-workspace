@@ -52,8 +52,9 @@ export class PromptAgent implements Agent {
 		return preset.command.replaceAll("{prompt}", prompt).replaceAll("{instructions}", prompt);
 	}
 
-	resumeCommand(_request: ResumeCommandRequest): string {
-		throw new Error("Custom prompt agent commands do not define a native resume command.");
+	resumeCommand(request: ResumeCommandRequest): string {
+		if (!request.nativeSessionId) throw new Error("Cannot resume without a native session id.");
+		return `exec ${request.preset.command.split(/\s+/)[0]} --resume ${shellQuote(request.nativeSessionId)}`;
 	}
 
 	async prepare(request: PreparationResources & { intent: SessionIntent }): Promise<AgentPreparation> {
@@ -76,8 +77,8 @@ export class PromptAgent implements Agent {
 		_publish: (identity: NativeIdentity) => Promise<void>,
 	): Promise<void> {}
 
-	askCommand(_request: AskCommandRequest): string {
-		throw new Error("Custom prompt agent commands do not define a native resume command.");
+	askCommand(request: AskCommandRequest): string {
+		return `exec ${request.preset.command.split(/\s+/)[0]} -p --resume ${shellQuote(request.nativeSessionId)} ${shellQuote(request.question)}`;
 	}
 
 	async installStatusHooks(_options: StatusHookInstallOptions): Promise<InstalledStatusHook> {

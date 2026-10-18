@@ -1,5 +1,4 @@
 import type { Task } from "../types/index.ts";
-import { canonicalTaskId } from "./task-id.ts";
 import { createTaskRecordIndex, type TaskRecordIndex } from "./task-record-index.ts";
 import { compareTaskIds } from "./task-sorting.ts";
 
@@ -70,9 +69,9 @@ export function createDependencyGraphContext(options: DependencyGraphOptions): D
 	const dependencies = new Map<string, Array<{ key: string; reference: string }>>();
 	const dependents = new Map<string, Array<{ key: string; reference: string }>>();
 	for (const record of index.records) {
-		const fromKey = canonicalTaskId(record.task.id);
+		const fromKey = record.task.id.toUpperCase();
 		const declared = (record.task.dependencies ?? []).map((reference) => ({
-			key: canonicalTaskId(reference),
+			key: reference.toUpperCase(),
 			reference,
 		}));
 		dependencies.set(fromKey, declared);
@@ -121,7 +120,7 @@ export function buildDependencyGraph(
 ): DependencyGraph {
 	const context = "index" in options && "dependencies" in options ? options : createDependencyGraphContext(options);
 	const { index } = context;
-	const rootKey = canonicalTaskId(root.id);
+	const rootKey = root.id.toUpperCase();
 	const entries = new Map<string, GraphEntry>();
 	const edges = new Map<string, { fromKey: string; toKey: string }>();
 
@@ -198,7 +197,7 @@ export function buildDependencyGraph(
 	};
 
 	traverse("dependencies", (key) =>
-		dependenciesOf(key).map((reference) => ({ key: canonicalTaskId(reference), reference })),
+		dependenciesOf(key).map((reference) => ({ key: reference.toUpperCase(), reference })),
 	);
 	traverse("dependents", (key) => context.dependents.get(key) ?? []);
 

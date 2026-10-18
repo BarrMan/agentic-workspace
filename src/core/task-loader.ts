@@ -17,7 +17,6 @@ import type { AgenticWorkspaceConfig, Task, TaskDirectoryType, TaskSource } from
 import { isLocalEditableTask, TASK_DIRECTORY, TASK_SOURCE } from "../types/index.ts";
 import { DEFAULT_TASK_PREFIX, extractAnyPrefix } from "../utils/prefix-config.ts";
 import { isValidTaskId } from "../utils/task-id.ts";
-import { canonicalTaskId, normalizeTaskId, normalizeTaskIdentity } from "../utils/task-path.ts";
 import { normalizeTaskLifecyclePath, type TaskIdentityIndex } from "./task-identity-index.ts";
 
 export function getBranchHistoryCutoff(activeBranchDays: number, now = Date.now()): Date | undefined {
@@ -85,9 +84,8 @@ export async function addSearchableArtifactText<T extends Task>(
 function getTaskContainerId(path: string): string | null {
 	const parts = path.replaceAll("\\", "/").split("/");
 	const id = parts.at(-2);
-	if (!id || parts.at(-1) !== "task.md" || !extractAnyPrefix(id) || !isValidTaskId(id)) return null;
-	if (id !== normalizeTaskId(id).toLowerCase()) return null;
-	return normalizeTaskId(id);
+	if (!id || parts.at(-1) !== "task.md" || !isValidTaskId(id.toUpperCase())) return null;
+	return id.toUpperCase();
 }
 
 const STATE_DIRECTORIES: Array<{ path: string; type: TaskDirectoryType }> = [
@@ -211,12 +209,12 @@ function chooseIdentityHydrationCandidates(
 	const localIdentities = new Set(
 		(localTasks ?? [])
 			.filter((task) => task.filePath)
-			.map((task) => `${canonicalTaskId(task.id)}\0${logicalTaskPath(task.filePath ?? "", agenticWorkspaceDir)}`),
+			.map((task) => `${task.id}\0${logicalTaskPath(task.filePath ?? "", agenticWorkspaceDir)}`),
 	);
 	const winners = new Map<string, RemoteIndexEntry>();
 	for (const entries of index.values()) {
 		for (const entry of entries) {
-			const identity = `${canonicalTaskId(entry.id)}\0${logicalTaskPath(entry.path, agenticWorkspaceDir)}`;
+			const identity = `${entry.id}\0${logicalTaskPath(entry.path, agenticWorkspaceDir)}`;
 			if (localIdentities.has(identity)) continue;
 			const current = winners.get(identity);
 			if (!current || isPreferredIdentityEntry(entry, current)) winners.set(identity, entry);
@@ -420,7 +418,7 @@ export class BranchTaskLoader {
 		const id = getTaskContainerId(path);
 		if (!id || !STATE_DIRECTORIES.some((entry) => path.endsWith(`/${entry.path}/${id.toLowerCase()}/task.md`)))
 			return null;
-		return normalizeTaskIdentity(parseTask(await this.git.showFile(commit, path)));
+		return parseTask(await this.git.showFile(commit, path));
 	}
 
 	retainSnapshot(
@@ -483,7 +481,7 @@ export class BranchTaskLoader {
 		});
 		await Promise.all(workers);
 
-		const localById = new Map(localTasks.map((task) => [normalizeTaskId(task.id), task]));
+		const localById = new Map(localTasks.map((task) => [task.id, task]));
 		const strategy = userConfig?.taskResolutionStrategy ?? "most_progressed";
 		const candidatesFor = (
 			index: Map<string, RemoteIndexEntry[]>,
@@ -628,7 +626,7 @@ export class BranchTaskLoader {
 			return files.flatMap((path) => {
 				const id = getTaskRecordId(path, agenticWorkspaceDir, prefix);
 				if (!id) return [];
-				const identity = canonicalTaskId(id);
+				const identity = id;
 				const priorPath = seenLayouts.get(identity);
 				if (priorPath && priorPath !== path) {
 					console.warn(`Duplicate task identity ${id} across task record paths: ${priorPath} and ${path}`);
@@ -660,7 +658,7 @@ export class BranchTaskLoader {
 		if (!cached) {
 			const promise = this.git.showFile(commit, path).then((content): Task | null | typeof MALFORMED_TASK => {
 				try {
-					return normalizeTaskIdentity(parseTask(content));
+					return parseTask(content);
 				} catch (error) {
 					warnUnparseableTaskFile(`${commit}:${path}`, error);
 					return MALFORMED_TASK;

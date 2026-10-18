@@ -186,7 +186,11 @@ describe("SessionApplication", () => {
 			resume: async (nativeId, context) => await provider.resume(nativeId, context),
 		};
 		const cleanupApp = new SessionApplication(core, { store, harness: customProvider });
-		await expect(cleanupApp.newSession(task.id)).rejects.toThrow(/cleanup failed/);
+		const cleanupError = await cleanupApp.newSession(task.id).catch((cause) => cause);
+		expect(cleanupError).toBeInstanceOf(AggregateError);
+		expect((cleanupError as AggregateError).errors).toHaveLength(2);
+		expect((cleanupError as AggregateError).errors.map(String).join(" ")).toContain("write 3 failed");
+		expect((cleanupError as AggregateError).errors.map(String).join(" ")).toContain("runtime cleanup failed");
 		expect(Object.values((await store.read(task.id)).modes).flatMap(({ sessions }) => sessions)).toHaveLength(1);
 
 		const rollbackStoreFixture = await fixture();
@@ -205,6 +209,64 @@ describe("SessionApplication", () => {
 				({ sessions }) => sessions,
 			),
 		).toHaveLength(1);
+	});
+
+	it("makes creation rollback idempotent when the provisional relationship is already absent", async () => {
+		const { core, store, task } = await fixture();
+		let creation: { taskId: string; modeId: string; provisionalSessionId: string; createdAt: string } | undefined;
+		const provider: HarnessProvider = {
+			launch: async (context) => {
+				creation = {
+					taskId: context.taskId,
+					modeId: context.modeId,
+					provisionalSessionId: context.sessionId,
+					createdAt: context.record.createdAt,
+				};
+				throw new Error("startup failed");
+			},
+			resume: async () => {
+				throw new Error("unused");
+			},
+		};
+		const application = new SessionApplication(core, { store, harness: provider });
+		await expect(application.newSession(task.id)).rejects.toThrow("startup failed");
+		if (!creation) throw new Error("Expected creation identity");
+		await (
+			application as unknown as {
+				rollbackCreation: (
+					session: { execution?: undefined },
+					identity: NonNullable<typeof creation>,
+					original: unknown,
+				) => Promise<void>;
+			}
+		).rollbackCreation({ execution: undefined }, creation, new Error("repeat"));
+		expect(Object.values((await store.read(task.id)).modes).flatMap(({ sessions }) => sessions)).toHaveLength(0);
+	});
+
+	it("does not replace a newer active pointer while rolling back a failed creation", async () => {
+		const { core, store, application, task } = await fixture();
+		const existing = await application.newSession(task.id);
+		await store.mutate(task.id, async (state) => {
+			const history = Object.values(state.modes).find(({ sessions }) => sessions.some(({ id }) => id === existing.id));
+			if (!history) throw new Error("Expected existing session");
+			const record = history.sessions.find(({ id }) => id === existing.id);
+			if (record) record.status = "parked";
+		});
+		const provider = new Provider(store, new Error("startup failed"), async (context) => {
+			await store.mutate(context.taskId, async (state) => {
+				const history = state.modes[context.modeId];
+				if (!history) throw new Error("Expected mode history");
+				history.activeSessionId = existing.id;
+			});
+		});
+		const failingApplication = new SessionApplication(core, { store, harness: provider });
+		await expect(failingApplication.newSession(task.id)).rejects.toThrow("startup failed");
+		const persisted = await store.read(task.id);
+		const history = Object.values(persisted.modes).find(({ sessions }) =>
+			sessions.some(({ id }) => id === existing.id),
+		);
+		expect(history?.activeSessionId).toBe(existing.id);
+		expect(history?.sessions.map(({ id }) => id)).toEqual([existing.id]);
 	});
 
 	it("distinguishes an unpublished flush from a committed write whose lock release failed", async () => {

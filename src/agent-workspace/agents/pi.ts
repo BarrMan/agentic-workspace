@@ -68,6 +68,12 @@ export default function agenticWorkspaceStatus(pi) {
 
 export class PiAgent implements Agent {
 	readonly name = "pi";
+	readonly events = {
+		turnCompleted: "supported",
+		permissionWait: "unsupported",
+		executionExit: "supported",
+		activity: "supported",
+	} as const;
 	readonly supported = true;
 	readonly hookBacked = true;
 	readonly chromeRules = PI_CHROME_RULES;
@@ -135,6 +141,16 @@ export class PiAgent implements Agent {
 				? this.resumeCommand({ preset: withIdentity, nativeSessionId: identity.id })
 				: this.launchCommand({ preset: withIdentity, bootstrapPath, nativeSessionId: identity.id });
 		return { command, env, identity };
+	}
+
+	readiness(intent: SessionIntent, launchDirectory: string, identity?: NativeIdentity) {
+		const id = identity?.id ?? (intent.kind === "resume" ? intent.nativeSessionId : undefined);
+		return {
+			initialized: { path: join(launchDirectory, "initialized"), ...(id ? { expected: id } : {}) },
+			...(intent.kind === "new"
+				? { promptAccepted: { path: join(launchDirectory, "prompt-accepted"), ...(id ? { expected: id } : {}) } }
+				: {}),
+		};
 	}
 
 	async reconcileIdentity(

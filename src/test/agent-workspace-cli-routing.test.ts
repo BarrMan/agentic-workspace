@@ -5,7 +5,7 @@ import { AgentSessionService } from "../agent-workspace/sessions.ts";
 import { registerAgentWorkspaceCommands } from "../commands/agent-workspace.ts";
 import type { Core } from "../core/agentic-workspace.ts";
 
-describe("agent-session CLI routing", () => {
+describe("agent-workspace CLI routing", () => {
 	afterEach(() => {
 		for (const mock of mocks) mock.mockRestore();
 		mocks.length = 0;
@@ -18,10 +18,6 @@ describe("agent-session CLI routing", () => {
 		program.exitOverride();
 		registerAgentWorkspaceCommands(program, {
 			project: async () =>
-				({
-					filesystem: { rootDir: process.cwd(), agenticWorkspaceDir: join(process.cwd(), ".agentic-workspace") },
-				}) as Core,
-			root: async () =>
 				({
 					filesystem: { rootDir: process.cwd(), agenticWorkspaceDir: join(process.cwd(), ".agentic-workspace") },
 				}) as Core,
@@ -51,7 +47,7 @@ describe("agent-session CLI routing", () => {
 		return { stdout, stderr };
 	};
 
-	it("starts a persistent session without requesting immediate stop", async () => {
+	it("routes agent-session start to AgentSessionService", async () => {
 		const mockStart = spyOn(AgentSessionService.prototype, "start").mockResolvedValue({
 			id: "session-1",
 			preset: "opencode",
@@ -62,6 +58,6 @@ describe("agent-session CLI routing", () => {
 		const output = await captureOutput(program, ["node", "test", "agent-session", "start", "BACK-1"]);
 
 		expect(mockStart).toHaveBeenCalledWith("BACK-1", { preset: undefined, modeId: undefined });
-		expect(output.stdout).toContain("Started session session-1");
+		expect(output.stdout).toBe("Started session session-1 (preset: opencode).\n");
 	});
 });

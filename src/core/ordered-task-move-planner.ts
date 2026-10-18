@@ -1,5 +1,5 @@
 import type { Task } from "../types/index.ts";
-import { AmbiguousTaskIdError, canonicalTaskId } from "../utils/task-path.ts";
+import { AmbiguousTaskIdError } from "../utils/task-path.ts";
 import { calculateBlockOrdinals } from "./reorder.ts";
 import type { TaskIdentityResolution } from "./task-identity-index.ts";
 
@@ -15,12 +15,12 @@ type OrderedTaskResolver = {
 function validateOrderedTaskIds(orderedTaskIds: string[], tasksToMove: Task[]): void {
 	const orderedKeys = new Set<string>();
 	for (const id of orderedTaskIds) {
-		const key = canonicalTaskId(id);
+		const key = id.toUpperCase();
 		if (orderedKeys.has(key)) throw new Error(`Duplicate task ID in orderedTaskIds: ${id}`);
 		orderedKeys.add(key);
 	}
 	for (const task of tasksToMove) {
-		if (!orderedKeys.has(canonicalTaskId(task.id))) {
+		if (!orderedKeys.has(task.id.toUpperCase())) {
 			throw new Error("orderedTaskIds must include every task being moved");
 		}
 	}
@@ -32,14 +32,14 @@ function resolveOrderedTaskRows(
 	tasksToMove: Task[],
 	failures: Array<{ taskId: string; reason: string }>,
 ): OrderedTaskRow[] {
-	const movedByKey = new Map(tasksToMove.map((task) => [canonicalTaskId(task.id), task]));
-	const failedKeys = new Set(failures.map((failure) => canonicalTaskId(failure.taskId)));
+	const movedByKey = new Map(tasksToMove.map((task) => [task.id.toUpperCase(), task]));
+	const failedKeys = new Set(failures.map((failure) => failure.taskId.toUpperCase()));
 	return orderedTaskIds.flatMap<OrderedTaskRow>((id): OrderedTaskRow[] => {
-		const key = canonicalTaskId(id);
+		const key = id.toUpperCase();
 		if (failedKeys.has(key)) return [];
 		const movedTask = movedByKey.get(key);
 		if (movedTask) return [{ task: movedTask, moved: true }];
-		const resolution = resolver.resolveTaskForMutation(key);
+		const resolution = resolver.resolveTaskForMutation(id);
 		if (resolution.status === "ambiguous") throw new AmbiguousTaskIdError(id, resolution.candidates);
 		return resolution.status === "found" ? [{ task: resolution.task, moved: false }] : [];
 	});

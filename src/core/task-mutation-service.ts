@@ -1,3 +1,4 @@
+import { relative, sep } from "node:path";
 import { Task as TaskModel } from "../agent-workspace/task.ts";
 import type { ResolvedAgentConfiguration } from "../agent-workspace/types.ts";
 import type { FileSystem } from "../file-system/operations.ts";
@@ -14,7 +15,7 @@ import {
 import { getCanonicalStatus, getValidStatuses } from "../utils/status.ts";
 import { executeStatusCallback } from "../utils/status-callback.ts";
 import { validateDependencies } from "../utils/task-builders.ts";
-import { AmbiguousTaskIdError, LOCAL_TASK_LOOKUP_HINT, normalizeTaskId, taskIdsEqual } from "../utils/task-path.ts";
+import { AmbiguousTaskIdError, LOCAL_TASK_LOOKUP_HINT, taskIdsEqual } from "../utils/task-path.ts";
 import { formatValidTaskTypeValues, resolveTaskTypeValue } from "../utils/task-type-config.ts";
 import { completedTaskIdentityRecord, TaskIdentityIndex, type TaskIdentityResolution } from "./task-identity-index.ts";
 import type { TaskReadOptions } from "./task-query-workflow.ts";
@@ -95,11 +96,15 @@ export class ProjectTaskMutations {
 	}
 
 	async generateNextId(type: EntityType = EntityType.Task, parent?: string): Promise<string> {
+		this.filesystem.invalidateConfigCache();
 		const config = await this.filesystem.loadConfig();
 		const prefix = getPrefixForType(type, config ?? undefined);
+		if (type === EntityType.Task && !parent) {
+			return await this.filesystem.allocateTaskId(prefix, config?.zeroPaddedIds, this.occupiedTaskIds);
+		}
 		const allIds = await this.getExistingIdsForType(type);
 		if (parent) {
-			const normalizedParent = allIds.find((id) => taskIdsEqual(parent, id)) ?? normalizeTaskId(parent);
+			const normalizedParent = allIds.find((id) => taskIdsEqual(parent, id)) ?? parent;
 			return generateNextSubtaskId(allIds, normalizedParent, prefix, config?.zeroPaddedIds);
 		}
 		return generateNextId(allIds, prefix, config?.zeroPaddedIds);
@@ -107,7 +112,14 @@ export class ProjectTaskMutations {
 
 	async loadTaskForMutation(taskId: string, options: TaskReadOptions = {}): Promise<Task | null> {
 		if (options.includeCrossBranch === false) return await this.loadWorkingCopyTask(taskId, true);
-		return (await this.loadTask(taskId, true)) ?? (await this.filesystem.loadTask(taskId, { includeArchived: true }));
+		const task = await this.loadTask(taskId, true);
+		if (task?.source === "completed") return null;
+		const resolved = task ?? (await this.filesystem.loadTask(taskId, { includeArchived: true }));
+		if (resolved?.filePath) {
+			const completedPath = relative(this.filesystem.completedDir, resolved.filePath);
+			if (completedPath !== "" && completedPath !== ".." && !completedPath.startsWith(`..${sep}`)) return null;
+		}
+		return resolved;
 	}
 
 	async loadWorkingCopyTask(taskId: string, forMutation: boolean, activeTasks?: Task[]): Promise<Task | null> {

@@ -284,7 +284,7 @@ describe("Task Dependencies", () => {
 		expect(completed?.dependencies).toEqual([]);
 	});
 
-	test("should sanitize archive links when archiving by numeric id with custom task prefix", async () => {
+	test("should sanitize archive links when archiving by full id with custom task prefix", async () => {
 		const config = await core.filesystem.loadConfig();
 		expect(config).not.toBeNull();
 		if (!config) {
@@ -301,7 +301,7 @@ describe("Task Dependencies", () => {
 			dependencies: [archiveTarget.id],
 		});
 
-		const archived = await core.archiveTask("1");
+		const archived = await core.archiveTask(archiveTarget.id);
 		expect(archived.success).toBe(true);
 
 		const updatedDependent = await core.filesystem.loadTask(dependentTask.id);
@@ -594,12 +594,10 @@ describe("Self-referential and cyclic dependencies", () => {
 		expect(await core.filesystem.loadDraft("draft-2")).toBeNull();
 	});
 
-	test("a bare-number dependency resolves to the existing draft, not the allocated task ID", async () => {
+	test("an explicit draft dependency does not resolve to the allocated task ID", async () => {
 		const { task: draft } = await core.createTaskFromInput({ title: "Existing draft", status: "Draft" });
 
-		// With no tasks yet, creation allocates task-1; bare 1 must keep naming the record that
-		// already claims it instead of being rejected as a self-dependency on the allocated ID.
-		const { task } = await core.createTaskFromInput({ title: "Depends on the draft", dependencies: ["1"] });
+		const { task } = await core.createTaskFromInput({ title: "Depends on the draft", dependencies: [draft.id] });
 		expect(task.dependencies).toEqual([draft.id]);
 	});
 

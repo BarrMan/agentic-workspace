@@ -48,4 +48,4 @@ CLI.run(argv) {
 - CLI validates parsed command input before calling Controller.
 - CLI calls the same Controller methods as Renderer.
 - `session.resume` resolves retained stopped sessions, not only live sessions.
-- CLI never reads or writes Storage directly.
+- CLI never reads or writes Storage directly and never holds a workspace filesystem handle; it calls Controller only.

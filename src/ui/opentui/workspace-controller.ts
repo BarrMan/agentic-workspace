@@ -62,7 +62,6 @@ import { watchConfig } from "../../utils/config-watcher.ts";
 import { createMilestoneFilterValueResolver } from "../../utils/milestone-filter.ts";
 import { resolveMilestoneInputForStorage } from "../../utils/milestone-storage.ts";
 import { getPriorityOptions, getPriorityValues } from "../../utils/priority-config.ts";
-import { normalizeTaskId } from "../../utils/task-id.ts";
 import { applyTaskFilters } from "../../utils/task-search.ts";
 import { sortByNewestFirst } from "../../utils/task-sorting.ts";
 import { getTaskTypeValues } from "../../utils/task-type-config.ts";
@@ -660,7 +659,7 @@ export class OpenTuiWorkspaceController {
 	}
 
 	#notifyArtifactChanged(taskId: string): void {
-		const listeners = this.#artifactChangeListeners.get(normalizeTaskId(taskId).toLowerCase());
+		const listeners = this.#artifactChangeListeners.get(taskId);
 		if (!listeners) return;
 		for (const listener of [...listeners]) listener();
 	}
@@ -1067,7 +1066,7 @@ export class OpenTuiWorkspaceController {
 				list: async (taskId) => this.#core.filesystem.taskArtifacts.list(taskId),
 				read: async (taskId, path) => this.#core.filesystem.taskArtifacts.read(taskId, path),
 				subscribeArtifactChanges: (taskId, callback) => {
-					const key = normalizeTaskId(taskId).toLowerCase();
+					const key = taskId;
 					let listeners = this.#artifactChangeListeners.get(key);
 					if (!listeners) {
 						listeners = new Set();
@@ -1172,8 +1171,8 @@ export class OpenTuiWorkspaceController {
 		const [tasks, config, milestones, archivedMilestones] = await Promise.all([
 			this.#view === "board" ? this.#core.loadTasks() : this.#workspaceState.listTasks(),
 			this.#core.filesystem.loadConfig(),
-			this.#core.filesystem.listMilestones(),
-			this.#core.filesystem.listArchivedMilestones(),
+			this.#core.loadMilestones(),
+			this.#core.loadArchivedMilestones(),
 		]);
 		this.#tasks = new Map(tasks.map((task) => [task.id, task]));
 		this.#milestones = milestones;

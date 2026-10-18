@@ -46,6 +46,8 @@ function fixture(
 	const agentConfiguration = { ...getBuiltInAgentConfiguration(), modes: getDefaultModeCatalog() };
 	const core = {
 		loadTasks: async () => [task],
+		loadMilestones: async () => [],
+		loadArchivedMilestones: async () => [],
 		loadTaskSnapshot: async () => ({
 			tasks: [task],
 			activeTasks: [task],

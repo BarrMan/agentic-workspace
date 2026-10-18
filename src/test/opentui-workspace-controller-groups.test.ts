@@ -73,6 +73,8 @@ function setup(groups: Groups, runtimeOverrides: Record<string, unknown> = {}) {
 	} as never;
 	const core = {
 		loadTasks: async () => tasks,
+		loadMilestones: async () => [],
+		loadArchivedMilestones: async () => [],
 		loadTaskSnapshot: async () => ({
 			tasks,
 			activeTasks: tasks,

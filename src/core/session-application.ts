@@ -9,7 +9,7 @@ import {
 	type RunningExecution,
 	type SessionLaunchContext,
 } from "../agent-workspace/harness.ts";
-import { type LifecycleCheckpoint, Session } from "../agent-workspace/session.ts";
+import { type LifecycleCheckpoint, Session, type SessionRuntime } from "../agent-workspace/session.ts";
 import { preflightAgentLaunch } from "../agent-workspace/session-launch.ts";
 import { BunRunner, SessionProcess } from "../agent-workspace/session-process.ts";
 import {
@@ -50,6 +50,7 @@ type CapturedTask = {
 export class SessionApplication {
 	readonly store: SessionStore;
 	private readonly harness: HarnessProvider;
+	private readonly runtime: SessionRuntime;
 	private readonly executions = new Map<string, Session>();
 	private readonly executionIds = new Map<string, string>();
 	private readonly capturedTasks = new Map<string, CapturedTask>();
@@ -66,6 +67,12 @@ export class SessionApplication {
 			});
 		this.harness =
 			options.harness ?? new Harness(core.filesystem.rootDir, new SessionProcess(runner, core.filesystem.rootDir));
+		this.runtime = {
+			start: (context) => this.harness.launch(context),
+			resume: (providerSessionId, context) => this.harness.resume(providerSessionId, context),
+			stop: async (execution) => await execution.stop(),
+			observe: (execution, listener) => execution.observe(listener),
+		};
 	}
 
 	/** Compatibility entry point for operations not yet represented by this vertical slice. */
@@ -101,7 +108,7 @@ export class SessionApplication {
 			const record = await createSessionRecord(this.store, taskRecord.id, selectedPreset, pathContext);
 			record.nativeProvider = agentFor(preset.bootstrap)?.nativeNamespace;
 			record.nativeWorkspace = true;
-			const provisionalSession = new Session(record, selectedMode);
+			const provisionalSession = new Session(record, selectedMode, this.runtime);
 			let creation!: SessionCreationIdentity;
 			let session!: Session;
 			this.capturedTasks.set(this.key(taskId, record.id), {
@@ -130,14 +137,13 @@ export class SessionApplication {
 				else this.capturedTasks.delete(this.key(taskId, record.id));
 				throw error;
 			}
-			const launch = this.launchContext(session.record, selectedMode, resolved, preset, launchProfile);
-			const captured: CapturedLaunch = { preset, launch };
-			this.executions.set(this.key(taskId, session.id), session);
 			let release: (() => Promise<void>) | undefined;
 			try {
+				const launch = this.launchContext(session.record, selectedMode, resolved, preset, launchProfile);
+				const captured: CapturedLaunch = { preset, launch };
+				this.executions.set(this.key(taskId, session.id), session);
 				release = await this.store.claimSession(taskId, session.id);
 				await session.start({
-					harness: this.harness,
 					context: captured.launch,
 					checkpoint: async (checkpoint) => await this.publish(session, checkpoint),
 				});
@@ -233,7 +239,7 @@ export class SessionApplication {
 				)
 					throw new Error(`Session ${sessionId} changed during exact-resume preflight.`);
 				const launch = this.launchContext(record, modeId, resolved, preset, launchProfile);
-				const session = new Session(record, modeId);
+				const session = new Session(record, modeId, this.runtime);
 				this.capturedTasks.set(this.key(taskId, sessionId), {
 					task: taskRecord,
 					profiles: catalog.profiles,
@@ -241,8 +247,7 @@ export class SessionApplication {
 				});
 				this.executions.set(this.key(taskId, sessionId), session);
 				this.executionIds.delete(this.key(taskId, sessionId));
-				await session.resume(nativeId, {
-					harness: this.harness,
+				await session.resume({
 					context: launch,
 					checkpoint: async (checkpoint) => await this.publish(session, checkpoint),
 				});
@@ -357,7 +362,8 @@ export class SessionApplication {
 			await this.store.mutate(creation.taskId, async (state) => {
 				const history = state.modes[creation.modeId];
 				const current = history?.sessions.find(({ id }) => id === creation.provisionalSessionId);
-				if (!current || current.createdAt !== creation.createdAt)
+				if (!current) return;
+				if (current.createdAt !== creation.createdAt)
 					throw new Error(`Creation incarnation no longer matches: ${creation.provisionalSessionId}`);
 				const captured = this.capturedTasks.get(this.key(creation.taskId, creation.provisionalSessionId));
 				if (!captured)

@@ -1,5 +1,5 @@
 import { realpathSync } from "node:fs";
-import { mkdir, readdir, rename, rm, stat, unlink, writeFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, rename, rm, stat, unlink, writeFile } from "node:fs/promises";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { DEFAULT_DIRECTORIES, DEFAULT_FILES, DRAFT_STATUS, FALLBACK_STATUS } from "../constants/index.ts";
 import { resolveMainWorktreeRootSync } from "../git/main-worktree.ts";
@@ -25,23 +25,19 @@ import { AmbiguousIdError, isAmbiguousIdError } from "../utils/entity-id.ts";
 import {
 	DEFAULT_TASK_PREFIX,
 	DRAFT_PREFIX,
-	extractAnyPrefix,
+	escapeRegex,
 	generateNextId,
 	idForFilename,
 	normalizeId,
 } from "../utils/prefix-config.ts";
-import { canonicalTaskId } from "../utils/task-id.ts";
+import { isValidDraftId, isValidTaskId, taskIdsEqual } from "../utils/task-id.ts";
 import { withoutVacatedTaskLinks } from "../utils/task-links.ts";
 import {
 	AmbiguousTaskIdError,
 	draftIdsMatchLoosely,
 	extractDraftIdFromFilename,
-	extractTaskIdFromFilename,
 	findDuplicateDraftFilenameGroups,
-	getTaskPath,
 	isAmbiguousTaskIdError,
-	normalizeTaskIdentity,
-	taskIdsEqual,
 } from "../utils/task-path.ts";
 import { applyTaskFilters } from "../utils/task-search.ts";
 import { sortByTaskId } from "../utils/task-sorting.ts";
@@ -54,13 +50,6 @@ import { TaskArtifactRepository } from "./task-artifact-repository.ts";
 import { TaskRepository } from "./task-repository.ts";
 
 // Interface for task path resolution context
-interface TaskPathContext {
-	filesystem: {
-		tasksDir: string;
-		completedDir?: string;
-	};
-}
-
 interface CreateLockOptions {
 	timeoutMs?: number;
 	retryDelayMs?: number;
@@ -521,12 +510,8 @@ export class FileSystem {
 		};
 	}
 
-	// Uses a maintained lockfile with stale-lock recovery; USE_GLOBAL_TASK_ID_LOCK=false restores legacy behavior.
+	// Uses a maintained lockfile with stale-lock recovery.
 	async withCreateLock<T>(fn: () => Promise<T>, options: CreateLockOptions = {}): Promise<T> {
-		if (process.env.USE_GLOBAL_TASK_ID_LOCK?.toLowerCase() === "false") {
-			return await fn();
-		}
-
 		const agenticWorkspaceDir = await this.getAgenticWorkspaceDir();
 		const lockTarget = await this.getCreateLockTarget(agenticWorkspaceDir);
 		const timeoutMs = options.timeoutMs ?? DEFAULT_CREATE_LOCK_TIMEOUT_MS;
@@ -554,13 +539,9 @@ export class FileSystem {
 	 * clobber concurrent locks held by one process. Unlike the create lock, the lockfile
 	 * lives under this project's AgenticWorkspace directory rather than the shared git common dir:
 	 * an edit protects one file, so sibling worktrees editing their own copy of a task must
-	 * not fail each other. USE_GLOBAL_TASK_ID_LOCK=false bypasses it like the create lock.
+	 * not fail each other.
 	 */
 	async withTaskLock<T>(task: Pick<Task, "id" | "filePath">, fn: () => Promise<T>): Promise<T> {
-		if (process.env.USE_GLOBAL_TASK_ID_LOCK?.toLowerCase() === "false") {
-			return await fn();
-		}
-
 		const filePath = task.filePath?.trim();
 		if (!filePath) {
 			throw new Error(`Cannot lock task ${task.id} for editing without its file path.`);
@@ -574,9 +555,6 @@ export class FileSystem {
 	 * while two editors of the same draft file still fail fast against each other.
 	 */
 	async withDraftLock<T>(reference: DraftFileReference, fn: () => Promise<T>): Promise<T> {
-		if (process.env.USE_GLOBAL_TASK_ID_LOCK?.toLowerCase() === "false") {
-			return await fn();
-		}
 		const normalizedId = reference.canonicalId.trim().toLowerCase();
 		const identityKey = normalizedId
 			.split(".")
@@ -600,6 +578,69 @@ export class FileSystem {
 			(error) => this.toTaskLockError(error, reference.canonicalId),
 			fn,
 		);
+	}
+
+	/** Counter shape: { "PREFIX": { "next": integer } }; callers hold the create lock. */
+	async allocateTaskId(
+		prefix: string,
+		zeroPadding: number | undefined,
+		existingIds: () => Promise<string[]>,
+	): Promise<string> {
+		const agenticWorkspaceDir = await this.getAgenticWorkspaceDir();
+		const lockTarget = await this.getCreateLockTarget(agenticWorkspaceDir);
+		const counterPath = join(dirname(lockTarget.locksDir), "task-counter.json");
+		await mkdir(dirname(counterPath), { recursive: true });
+		let counters: Record<string, { next: number }>;
+		try {
+			counters = JSON.parse(await readFile(counterPath, "utf8"));
+		} catch (error) {
+			if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+			counters = {};
+		}
+
+		const canonicalPrefix = prefix.toUpperCase();
+		let next = counters[canonicalPrefix]?.next;
+		if (next === undefined || !Number.isSafeInteger(next) || next < 1) {
+			const prefixPattern = new RegExp(`^${escapeRegex(canonicalPrefix)}-(\\d+)$`);
+			let max = 0;
+			for (const id of await existingIds()) {
+				const match = id.toUpperCase().match(prefixPattern);
+				if (match?.[1]) max = Math.max(max, Number(match[1]));
+			}
+			next = max + 1;
+		}
+
+		for (let attempt = 0; attempt < 10; attempt += 1) {
+			const allocated = next++;
+			if (!Number.isSafeInteger(next))
+				throw new Error(`Task ID counter for ${canonicalPrefix} exceeded the safe integer range.`);
+			counters[canonicalPrefix] = { next };
+			const temporaryPath = `${counterPath}.${process.pid}.${Date.now()}.tmp`;
+			try {
+				await writeFile(temporaryPath, JSON.stringify(counters, null, 2), { flag: "wx" });
+				await rename(temporaryPath, counterPath);
+			} catch (error) {
+				await unlink(temporaryPath).catch((cleanupError) => {
+					if ((cleanupError as NodeJS.ErrnoException).code !== "ENOENT") throw cleanupError;
+				});
+				throw error;
+			}
+			const number = String(allocated).padStart(zeroPadding && zeroPadding > 0 ? zeroPadding : 0, "0");
+			const id = `${canonicalPrefix}-${number}`;
+			const occupied = await Promise.all(
+				(["tasks", "completed", "archive/tasks"] as const).map(async (location) => {
+					try {
+						await stat(await this.taskArtifacts.containerPath(id.toLowerCase(), location));
+						return true;
+					} catch (error) {
+						if ((error as NodeJS.ErrnoException).code === "ENOENT") return false;
+						throw error;
+					}
+				}),
+			);
+			if (!occupied.some(Boolean)) return id;
+		}
+		throw new Error(`Could not allocate an unused task ID for ${canonicalPrefix} after 10 attempts.`);
 	}
 
 	private async withEntityFileLock<T>(
@@ -657,9 +698,9 @@ export class FileSystem {
 		task: Task,
 		isDraft = false,
 	): Promise<{ id: string; filename: string; filePath: string }> {
-		let prefix = isDraft ? DRAFT_PREFIX : extractAnyPrefix(task.id);
-		if (!prefix) prefix = (await this.loadConfig())?.prefixes?.task ?? DEFAULT_TASK_PREFIX;
-		const id = normalizeId(task.id, prefix);
+		const id = isDraft ? normalizeId(task.id, DRAFT_PREFIX) : task.id.toUpperCase();
+		if (!isDraft && !isValidTaskId(id)) throw new Error(`Invalid task ID: ${task.id}`);
+		if (isDraft && !isValidDraftId(id)) throw new Error(`Invalid draft ID: ${task.id}`);
 		const filename = `${idForFilename(id)} - ${this.sanitizeFilename(task.title)}.md`;
 		const directory = isDraft ? await this.getDraftsDir() : await this.getTasksDir();
 		const preservesPath = !isDraft && typeof task.filePath === "string" && task.filePath.trim().length > 0;
@@ -694,8 +735,7 @@ export class FileSystem {
 		const roots = await Promise.all([this.getTasksDir(), this.getCompletedDir(), this.getArchiveTasksDir()]);
 		const root = roots.find((candidate) => resolve(dirname(container)) === resolve(candidate));
 		if (!root) throw new Error(`Task ${task.id} has a non-canonical storage path; refusing operation.`);
-		const prefix = extractAnyPrefix(task.id) ?? DEFAULT_TASK_PREFIX;
-		if (basename(container).toLowerCase() !== normalizeId(task.id, prefix).toLowerCase())
+		if (basename(container) !== task.id.toLowerCase())
 			throw new Error(`Task ${task.id} record/container identity mismatch; refusing operation.`);
 		const record = await this.existingTaskAtWritePath(path, true);
 		if (!record || !taskIdsEqual(record.id, task.id))
@@ -715,59 +755,56 @@ export class FileSystem {
 		return {};
 	}
 
-	async saveTask(task: Task, options: { approvalMutation?: boolean } = {}): Promise<string> {
+	async saveTask(task: Task, options: { approvalMutation?: boolean; create?: boolean } = {}): Promise<string> {
+		if (task.parentTaskId && !isValidTaskId(task.parentTaskId.toUpperCase())) {
+			throw new Error(`Invalid parent task ID: ${task.parentTaskId}`);
+		}
 		const { id: requestedId } = await this.resolveTaskWriteTarget(task);
-		const prefix = extractAnyPrefix(requestedId) ?? DEFAULT_TASK_PREFIX;
-		const normalizedId = normalizeId(requestedId, prefix).toLowerCase();
+		const normalizedId = requestedId.toLowerCase();
 		const roots = await Promise.all([this.getTasksDir(), this.getCompletedDir(), this.getArchiveTasksDir()]);
 		let existingTask: Task | null = null;
 		let filepath: string;
 
 		if (typeof task.filePath === "string" && task.filePath.trim()) {
+			if (options.create)
+				throw new Error(`Task ID ${requestedId} already exists; refusing to merge or reuse its identity.`);
 			const resolved = await this.resolveCanonicalExistingRecord(task);
 			filepath = resolved.path;
 			existingTask = resolved.record;
 		} else {
-			const [active, completed, archived] = await Promise.all([
-				this.listTasks(),
-				this.listCompletedTasks(),
-				this.listArchivedTasks(),
-			]);
-			const matches = [...active, ...completed, ...archived].filter((candidate) =>
-				taskIdsEqual(candidate.id, requestedId),
-			);
-			if (matches.length > 1)
-				throw new AmbiguousTaskIdError(
-					requestedId,
-					matches.map((candidate) => candidate.filePath ?? candidate.id),
-				);
-			existingTask = matches[0] ?? null;
-			if (existingTask?.filePath) {
-				const resolved = await this.resolveCanonicalExistingRecord(existingTask);
+			const existing = await this.loadTask(requestedId, { includeArchived: true });
+			if (existing && options.create)
+				throw new Error(`Task ID ${requestedId} already exists; refusing to merge or reuse its identity.`);
+			if (existing?.filePath) {
+				const resolved = await this.resolveCanonicalExistingRecord(existing);
 				filepath = resolved.path;
 				existingTask = resolved.record;
 			} else {
-				const activeRoot = resolve(roots[0]);
 				const container = await this.taskArtifacts.containerPath(normalizedId, "tasks");
-				if (resolve(dirname(container)) !== activeRoot)
+				if (resolve(dirname(container)) !== resolve(roots[0]))
 					throw new Error(`Task ${requestedId} resolves outside active task storage.`);
-				let exists = false;
 				try {
-					exists = (await stat(container)).isDirectory();
+					await stat(container);
+					throw new Error(`Task container ${container} already exists; refusing to merge or reuse its task ID.`);
 				} catch (error) {
 					if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
 				}
-				if (exists)
-					throw new Error(`Task container ${container} already exists; refusing to merge or reuse its task ID.`);
 				filepath = join(container, "task.md");
 			}
 		}
 
 		if (existingTask && !taskIdsEqual(existingTask.id, task.id))
 			throw new Error(`Task identity mismatch: requested ${task.id}, stored record is ${existingTask.id}.`);
-		const normalizedParentTaskId = task.parentTaskId
-			? normalizeId(task.parentTaskId, extractAnyPrefix(task.parentTaskId) ?? prefix)
-			: undefined;
+		const [activeTasks, completedTasks] = await Promise.all([this.listTasks(), this.listCompletedTasks()]);
+		const duplicateMatches = [...activeTasks, ...completedTasks].filter((record) =>
+			taskIdsEqual(record.id, requestedId),
+		);
+		if (duplicateMatches.length > 1)
+			throw new AmbiguousTaskIdError(
+				requestedId,
+				duplicateMatches.map((record) => record.filePath ?? record.id),
+			);
+		const exactParentTaskId = task.parentTaskId;
 		const normalizedTask = {
 			...task,
 			...(!options.approvalMutation && existingTask ? { modeApprovals: existingTask.modeApprovals } : {}),
@@ -776,7 +813,7 @@ export class FileSystem {
 			parentTaskId:
 				existingTask?.parentTaskId && task.parentTaskId && taskIdsEqual(existingTask.parentTaskId, task.parentTaskId)
 					? existingTask.parentTaskId
-					: normalizedParentTaskId,
+					: exactParentTaskId?.toUpperCase(),
 		};
 		const content = serializeTask(normalizedTask, await this.retainedTaskFrontmatter(filepath));
 		const container = dirname(filepath);
@@ -809,35 +846,32 @@ export class FileSystem {
 	}
 
 	async loadTask(taskId: string, options: { includeArchived?: boolean } = {}): Promise<Task | null> {
-		const tasksDir = await this.getTasksDir();
-		const [activeTasks, completedTasks, archivedTasks] = await Promise.all([
-			this.listTasks(),
-			this.listCompletedTasks(),
-			options.includeArchived ? this.listArchivedTasks() : Promise.resolve([]),
+		const canonicalId = taskId.toUpperCase();
+		if (!isValidTaskId(canonicalId)) return null;
+		const idDirectory = canonicalId.toLowerCase();
+		const directories = await Promise.all([
+			this.getTasksDir(),
+			this.getCompletedDir(),
+			...(options.includeArchived ? [this.getArchiveTasksDir()] : []),
 		]);
-		const identityMatches = [...activeTasks, ...completedTasks, ...archivedTasks].filter((task) =>
-			taskIdsEqual(taskId, task.id),
-		);
-		if (identityMatches.length > 1) {
-			throw new AmbiguousTaskIdError(
-				taskId,
-				identityMatches.map((task) => task.filePath ?? task.id),
-			);
+		const matches: Task[] = [];
+		for (const directory of directories) {
+			await this.taskRepository.listFiles(directory);
+			const filepath = join(directory, idDirectory, "task.md");
+			try {
+				const parsed = parseTask(await Bun.file(filepath).text());
+				if (taskIdsEqual(parsed.id, canonicalId)) matches.push({ ...parsed, filePath: filepath });
+			} catch (error) {
+				if ((error as NodeJS.ErrnoException).code === "ENOENT") continue;
+				throw error;
+			}
 		}
-		const activeMatch = activeTasks.find((task) => taskIdsEqual(taskId, task.id));
-		if (activeMatch?.filePath) return activeMatch;
-		const archivedMatch = archivedTasks.find((task) => taskIdsEqual(taskId, task.id));
-		if (archivedMatch?.filePath) return archivedMatch;
-		if (identityMatches.length === 1) return null;
-
-		const core = { filesystem: { tasksDir, completedDir: this.completedDir } };
-		const filepath = await getTaskPath(taskId, core as TaskPathContext);
-
-		if (!filepath) return null;
-
-		const content = await Bun.file(filepath).text();
-		const task = normalizeTaskIdentity(parseTask(content));
-		return { ...task, filePath: filepath };
+		if (matches.length > 1)
+			throw new AmbiguousTaskIdError(
+				canonicalId,
+				matches.map((task) => task.filePath ?? task.id),
+			);
+		return matches[0] ?? null;
 	}
 
 	async readParsedTaskFile(filepath: string, cacheEpoch = this.taskParseCacheEpoch): Promise<Task> {
@@ -1012,14 +1046,19 @@ export class FileSystem {
 	 */
 	async loadDraftFromFile(filePath: string): Promise<Task | null> {
 		try {
-			const task = normalizeTaskIdentity(parseTask(await Bun.file(filePath).text()));
-			return { ...task, filePath };
+			const task = parseTask(await Bun.file(filePath).text());
+			if (!isValidDraftId(task.id)) return null;
+			return { ...task, id: task.id.toUpperCase(), filePath };
 		} catch {
 			return null;
 		}
 	}
 
-	async promoteDraft(draftId: string, validateAllocatedTask?: (task: Task) => Promise<void>): Promise<boolean> {
+	async promoteDraft(
+		draftId: string,
+		validateAllocatedTask?: (task: Task) => Promise<void>,
+		allocateTaskId?: () => Promise<string>,
+	): Promise<boolean> {
 		const sourcePath = await this.resolveDraftFilePath(draftId);
 		if (!sourcePath) return false;
 
@@ -1036,20 +1075,16 @@ export class FileSystem {
 
 				const config = await this.loadConfig();
 				const taskPrefix = config?.prefixes?.task ?? DEFAULT_TASK_PREFIX;
-				const [existingTasks, completedTasks, archivedTasks, drafts, occupiedDraftFileIds] = await Promise.all([
+				const [existingTasks, completedTasks, archivedTasks] = await Promise.all([
 					this.listTasks(),
 					this.listCompletedTasks(),
 					this.listArchivedTasks(),
-					this.listDrafts(),
-					this.listOccupiedDraftFileIds(),
 				]);
-				const occupiedIds = [...existingTasks, ...completedTasks, ...archivedTasks, ...drafts]
-					.map((task) => task.id)
-					.concat(occupiedDraftFileIds);
-				const canonicalOccupiedIds = [
-					...new Map(occupiedIds.map((id) => [canonicalTaskId(id, taskPrefix), id])).values(),
-				];
-				const newTaskId = generateNextId(canonicalOccupiedIds, taskPrefix, config?.zeroPaddedIds);
+				const newTaskId = allocateTaskId
+					? await allocateTaskId()
+					: await this.allocateTaskId(taskPrefix, config?.zeroPaddedIds, async () =>
+							[...existingTasks, ...completedTasks, ...archivedTasks].map((task) => task.id),
+						);
 				const targetContainer = await this.taskArtifacts.containerPath(newTaskId.toLowerCase(), "tasks");
 				try {
 					await stat(targetContainer);
@@ -1175,13 +1210,17 @@ export class FileSystem {
 	}
 
 	private async readDraftFile(filepath: string): Promise<Task> {
-		return { ...normalizeTaskIdentity(parseTask(await Bun.file(filepath).text())), filePath: filepath };
+		const task = parseTask(await Bun.file(filepath).text());
+		if (!isValidDraftId(task.id)) throw new Error(`Invalid draft ID: ${task.id}`);
+		return { ...task, id: task.id.toUpperCase(), filePath: filepath };
 	}
 
 	async saveDraft(task: Task): Promise<string> {
 		const { id: draftId } = await this.resolveTaskWriteTarget(task, true);
-		const canonicalId = normalizeId(draftId, DRAFT_PREFIX).toLowerCase();
-		const container = await this.taskArtifacts.containerPath(canonicalId, "drafts");
+		const canonicalId = normalizeId(draftId, DRAFT_PREFIX);
+		if (!isValidDraftId(canonicalId)) throw new Error(`Invalid draft ID: ${task.id}`);
+		const containerId = canonicalId.toLowerCase();
+		const container = await this.taskArtifacts.containerPath(containerId, "drafts");
 		const filepath = join(container, "task.md");
 		const sourcePath = typeof task.filePath === "string" ? resolve(task.filePath) : undefined;
 		const sourceContainer = sourcePath && basename(sourcePath) === "task.md" ? dirname(sourcePath) : undefined;
@@ -1308,7 +1347,7 @@ export class FileSystem {
 		const filename = basename(absolutePath);
 		let task: Task;
 		try {
-			task = normalizeTaskIdentity(parseTask(await Bun.file(realFilePath).text()));
+			task = parseTask(await Bun.file(realFilePath).text());
 		} catch {
 			throw new DraftParseError(filename);
 		}
@@ -1398,7 +1437,8 @@ export class FileSystem {
 			.map((filename) => {
 				const containerRecord = filename.endsWith("/task.md");
 				const identity = containerRecord ? filename.slice(0, -"/task.md".length) : filename;
-				return extractTaskIdFromFilename(`${identity} -`) ?? extractDraftIdFromFilename(filename);
+				const taskId = identity.match(/^([A-Za-z]+-\d+(?:\.\d+)*)/)?.[1];
+				return taskId ?? extractDraftIdFromFilename(filename);
 			})
 			.filter((id): id is string => id !== null);
 	}
@@ -1436,13 +1476,13 @@ export class FileSystem {
 		for (const filename of filenames) {
 			let parsed: Task | null;
 			try {
-				parsed = normalizeTaskIdentity(parseTask(await Bun.file(join(draftsDir, filename)).text()));
+				parsed = parseTask(await Bun.file(join(draftsDir, filename)).text());
 			} catch {
 				unreadable.push(filename);
 				continue;
 			}
 			const declaredId = extractDraftIdFromFilename(filename);
-			if (!declaredId || !draftIdsMatchLoosely(parsed.id, filename)) {
+			if (!parsed || !declaredId || !draftIdsMatchLoosely(parsed.id, filename)) {
 				drifted.push({ path: filename, frontmatterId: parsed.id, filenameId: declaredId ?? "(unreadable)" });
 			}
 		}

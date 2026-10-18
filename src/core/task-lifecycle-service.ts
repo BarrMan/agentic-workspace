@@ -63,13 +63,17 @@ export class TaskLifecycleService {
 			await this.filesystem.saveDraft(draft);
 			const existingTaskIds = new Set((await this.filesystem.listTasks()).map((task) => task.id));
 			if (
-				!(await this.filesystem.promoteDraft(reference.canonicalId, async (promoted) => {
-					await this.mutations.applyTaskUpdateInput(
-						promoted,
-						{ dependencies: promoted.dependencies },
-						async () => promoted.status,
-					);
-				}))
+				!(await this.filesystem.promoteDraft(
+					reference.canonicalId,
+					async (promoted) => {
+						await this.mutations.applyTaskUpdateInput(
+							promoted,
+							{ dependencies: promoted.dependencies },
+							async () => promoted.status,
+						);
+					},
+					() => this.mutations.generateNextId(),
+				))
 			) {
 				throw new Error(`Could not promote draft ${reference.canonicalId}.`);
 			}
@@ -182,7 +186,7 @@ export class TaskLifecycleService {
 
 	async promoteDraft(draftId: string): Promise<boolean> {
 		const existingTaskIds = new Set((await this.filesystem.listTasks()).map((task) => task.id));
-		const promoted = await this.filesystem.promoteDraft(draftId);
+		const promoted = await this.filesystem.promoteDraft(draftId, undefined, () => this.mutations.generateNextId());
 		if (!promoted) return false;
 		const task = (await this.filesystem.listTasks()).find((candidate) => !existingTaskIds.has(candidate.id));
 		if (task) await this.remapTaskSessionIdentity?.(draftId, task.id);

@@ -30,7 +30,7 @@ describe("task container creation recovery contract", () => {
 
 			core.finalizeCreatedTask = finalize;
 			const { task } = await core.createTaskFromInput({ title: "Recover task", status: "To Do" });
-			expect(task.id).toBe("TASK-1");
+			expect(task.id).toBe("TASK-2");
 			expect((await core.filesystem.listTasks()).filter((item) => item.id === task.id)).toHaveLength(1);
 		} finally {
 			await safeCleanup(dir);
@@ -57,17 +57,17 @@ describe("task container creation recovery contract", () => {
 		}
 	});
 
-	it("refuses to merge into an occupied task identity", async () => {
+	it("skips an occupied task identity without merging its artifacts", async () => {
 		const { dir, core } = await setup();
 		try {
 			const occupied = join(dir, "agentic-workspace", "tasks", "task-1");
 			await mkdir(occupied, { recursive: true });
 			await writeFile(join(occupied, "notes.txt"), "keep me");
-			await expect(core.createTaskFromInput({ title: "Occupied", status: "To Do" })).rejects.toThrow(
-				/already exists|refusing to merge/i,
-			);
+			const { task } = await core.createTaskFromInput({ title: "Occupied", status: "To Do" });
+			expect(task.id).toBe("TASK-2");
 			expect(await readFile(join(occupied, "notes.txt"), "utf8")).toBe("keep me");
 			expect(await Bun.file(join(occupied, "task.md")).exists()).toBe(false);
+			expect(await Bun.file(join(dir, "agentic-workspace", "tasks", "task-2", "task.md")).exists()).toBe(true);
 		} finally {
 			await safeCleanup(dir);
 		}

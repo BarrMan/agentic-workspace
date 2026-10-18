@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdir } from "node:fs/promises";
 import { Writable } from "node:stream";
+import type { ShellExpression } from "bun";
 import { $ as shell } from "bun";
 import { runCli } from "../cli/register.ts";
 import { Core } from "../core/agentic-workspace.ts";
@@ -9,7 +10,7 @@ import { createUniqueTestDir, initializeFilesystemTestProject, safeCleanup } fro
 
 const CLI_COMMAND = ["agentic-workspace"];
 
-function $(parts: TemplateStringsArray, ...values: unknown[]) {
+function $(parts: TemplateStringsArray, ...values: ShellExpression[]) {
 	const source = parts.reduce(
 		(text, part, index) =>
 			`${text}${part}${Array.isArray(values[index]) ? values[index].map((value) => JSON.stringify(value)).join(" ") : values[index] === undefined ? "" : JSON.stringify(values[index])}`,
@@ -101,7 +102,7 @@ describe("CLI auto-plain behavior in non-TTY runs", () => {
 	});
 
 	test("task view falls back to plain output without --plain", async () => {
-		const result = await $`${CLI_COMMAND} task view 1`.cwd(TEST_DIR).quiet();
+		const result = await $`${CLI_COMMAND} task view TASK-1`.cwd(TEST_DIR).quiet();
 		expect(result.exitCode).toBe(0);
 
 		const out = result.stdout.toString();

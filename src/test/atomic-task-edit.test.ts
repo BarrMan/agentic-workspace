@@ -30,12 +30,8 @@ function createDeferred<T>(): Deferred<T> {
 describe("atomic task editing", () => {
 	let testDir: string;
 	let setup: Core;
-	let originalGlobalLockEnv: string | undefined;
 
 	beforeEach(async () => {
-		originalGlobalLockEnv = process.env.USE_GLOBAL_TASK_ID_LOCK;
-		delete process.env.USE_GLOBAL_TASK_ID_LOCK;
-
 		testDir = createUniqueTestDir("atomic-task-edit");
 		await mkdir(testDir, { recursive: true });
 		setup = new Core(testDir);
@@ -43,11 +39,6 @@ describe("atomic task editing", () => {
 	});
 
 	afterEach(async () => {
-		if (originalGlobalLockEnv === undefined) {
-			delete process.env.USE_GLOBAL_TASK_ID_LOCK;
-		} else {
-			process.env.USE_GLOBAL_TASK_ID_LOCK = originalGlobalLockEnv;
-		}
 		await safeCleanup(testDir);
 	});
 
@@ -256,30 +247,4 @@ describe("atomic task editing", () => {
 		expect(shared).toBeDefined();
 		expect(succeeded).toContain(shared?.title ?? "");
 	}, 60_000);
-
-	it("bypasses the task lock when the legacy escape hatch is set", async () => {
-		const task = await createContendedTask();
-		process.env.USE_GLOBAL_TASK_ID_LOCK = "false";
-
-		const bothEntered = createDeferred<void>();
-		const releaseBoth = createDeferred<void>();
-		let entries = 0;
-		const enter = async (value: string): Promise<string> => {
-			entries += 1;
-			if (entries === 2) bothEntered.resolve();
-			await releaseBoth.promise;
-			return value;
-		};
-
-		const operations = Promise.all([
-			setup.filesystem.withTaskLock(task, () => enter("first")),
-			setup.filesystem.withTaskLock(task, () => enter("second")),
-		]);
-		try {
-			await withTimeout(bothEntered.promise, "both operations to enter without serialization", 250);
-		} finally {
-			releaseBoth.resolve();
-		}
-		expect(await operations).toEqual(["first", "second"]);
-	});
 });

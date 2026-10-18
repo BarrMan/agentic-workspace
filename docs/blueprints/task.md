@@ -12,6 +12,7 @@ type Task = {
   selectedModeId: ModeId
   modes: Map<ModeId, ModeSessions>
   worktree: Worktree | null
+  worktreePolicy: "enabled" | "disabled" | null
   approval: Approval
   newSession: SessionFactory
 }

@@ -1,4 +1,4 @@
-import type { HarnessProvider, RunningExecution, RunningExecutionEvent, SessionLaunchContext } from "./harness.ts";
+import type { RunningExecution, RunningExecutionEvent, SessionLaunchContext } from "./harness.ts";
 import { AGENT_SESSION_STATUS, type AgentActivity, type AgentSession, type ModeId } from "./types.ts";
 
 export type SessionStartupCheckpointPhase = "identity" | "ready";
@@ -48,8 +48,14 @@ export interface SessionPublication {
 	readonly checkpoint: LifecycleCheckpointSink;
 }
 export interface SessionLaunchOperation extends SessionPublication {
-	readonly harness: HarnessProvider;
 	readonly context: SessionLaunchContext;
+}
+/** Provider and execution-host operations are kept behind this SessionRuntime boundary. */
+export interface SessionRuntime {
+	start(context: SessionLaunchContext): Promise<RunningExecution>;
+	resume(providerSessionId: string, context: SessionLaunchContext): Promise<RunningExecution>;
+	stop(execution: RunningExecution): Promise<void>;
+	observe(execution: RunningExecution, listener: (event: RunningExecutionEvent) => void): Unsubscribe;
 }
 export interface SessionEvent {
 	readonly kind: "turn-completed" | "permission-wait" | "execution-exit" | "activity";
@@ -65,16 +71,20 @@ export class Session {
 	readonly id: string;
 	private currentRecord: Readonly<AgentSession>;
 	private currentExecution?: RunningExecution;
+	private providerSessionId?: string;
 	private executionExitObserved = false;
 	private readonly modeId: ModeId;
+	private readonly runtime: SessionRuntime;
 	private stopObserving?: Unsubscribe;
 	private readonly listeners = new Set<(event: SessionEvent) => void>();
 	private disposed = false;
 
-	constructor(record: Readonly<AgentSession>, modeId: ModeId) {
+	constructor(record: Readonly<AgentSession>, modeId: ModeId, runtime: SessionRuntime) {
 		this.id = record.id;
 		this.currentRecord = record;
+		this.providerSessionId = record.nativeSessionId;
 		this.modeId = modeId;
+		this.runtime = runtime;
 	}
 
 	get record(): Readonly<AgentSession> {
@@ -87,15 +97,16 @@ export class Session {
 
 	async start(operation: SessionLaunchOperation): Promise<void> {
 		if (this.modeId !== operation.context.modeId) throw new Error(`Session ${this.id} belongs to another mode`);
-		const execution = await operation.harness.launch(operation.context);
+		const execution = await this.runtime.start(operation.context);
 		await this.installExecution(execution);
 		await this.emitCheckpoint(operation, "identity");
 		await this.emitCheckpoint(operation, "ready", AGENT_SESSION_STATUS.RUNNING);
 	}
 
-	async resume(nativeId: string, operation: SessionLaunchOperation): Promise<void> {
+	async resume(operation: SessionLaunchOperation): Promise<void> {
 		if (this.modeId !== operation.context.modeId) throw new Error(`Session ${this.id} belongs to another mode`);
-		const execution = await operation.harness.resume(nativeId, operation.context);
+		if (!this.providerSessionId) throw new Error(`Session ${this.id} has no retained provider conversation`);
+		const execution = await this.runtime.resume(this.providerSessionId, operation.context);
 		await this.installExecution(execution);
 		const resumed = { ...this.currentRecord, endedAt: undefined, error: undefined };
 		delete resumed.endedAt;
@@ -109,7 +120,7 @@ export class Session {
 		const execution = this.currentExecution;
 		const previous = this.currentRecord;
 		if (execution) {
-			await execution.stop();
+			await this.runtime.stop(execution);
 			this.executionExitObserved = true;
 			this.releaseExecution(execution);
 		} else if (!this.executionExitObserved) {
@@ -193,7 +204,7 @@ export class Session {
 		this.currentExecution = execution;
 		this.executionExitObserved = false;
 		if (this.disposed) return;
-		this.stopObserving = execution.observe((event) => {
+		this.stopObserving = this.runtime.observe(execution, (event) => {
 			if (this.currentExecution !== execution || this.disposed) return;
 			this.publish(event, execution);
 		});
@@ -214,11 +225,15 @@ export class Session {
 		clearTerminal = false,
 	): Promise<void> {
 		const record: AgentSession = { ...this.record, status };
-		const nativeId = this.currentExecution?.providerConversationId ?? this.currentExecution?.identity.nativeSessionId;
-		if (phase === "identity" && nativeId) record.nativeSessionId = nativeId;
+		const providerSessionId =
+			this.currentExecution?.providerConversationId ?? this.currentExecution?.identity.nativeSessionId;
+		if (phase === "identity" && providerSessionId) {
+			this.providerSessionId = providerSessionId;
+			record.nativeSessionId = providerSessionId;
+		}
 		const fields: Partial<AgentSession> = {};
 		const clear: (keyof AgentSession)[] = [];
-		if (phase === "identity" && nativeId) fields.nativeSessionId = nativeId;
+		if (phase === "identity" && providerSessionId) fields.nativeSessionId = providerSessionId;
 		if (phase === "ready") fields.status = status;
 		if (clearTerminal) clear.push("error", "endedAt");
 		await publication.checkpoint({

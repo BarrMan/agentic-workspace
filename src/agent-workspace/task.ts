@@ -91,6 +91,7 @@ export class Task {
 		};
 		history.sessions.unshift(structuredClone(session.record) as AgentSession);
 		history.activeSessionId = session.id;
+		this.#selectedModeId = modeId;
 		return { session, creation };
 	}
 
@@ -127,6 +128,7 @@ export class Task {
 		const history = this.#requireMode(modeId);
 		if (!history.sessions.some(({ id }) => id === sessionId)) throw new Error(`Unknown session: ${sessionId}`);
 		history.activeSessionId = sessionId;
+		this.#selectedModeId = modeId;
 	}
 
 	selectSurvivorAfterStop(modeId: ModeId, stoppedSessionId: string): void {

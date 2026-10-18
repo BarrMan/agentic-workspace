@@ -125,6 +125,9 @@ function dateString(value: unknown, field: string, taskId?: string): string | un
 function taskFrontmatterFields(frontmatter: Record<string, unknown>) {
 	const id = String(frontmatter[TASK_FRONTMATTER_FIELDS.ID] || "");
 	const subtasks = frontmatter[TASK_FRONTMATTER_FIELDS.SUBTASKS];
+	const worktreePolicy = optionalTaskValue(frontmatter[TASK_FRONTMATTER_FIELDS.WORKTREE_POLICY]);
+	if (worktreePolicy !== undefined && worktreePolicy !== "enabled" && worktreePolicy !== "disabled")
+		throw new TaskFrontmatterSchemaError(id, `${TASK_FRONTMATTER_FIELDS.WORKTREE_POLICY} must be enabled or disabled`);
 	return {
 		id,
 		title: String(frontmatter[TASK_FRONTMATTER_FIELDS.TITLE] || ""),
@@ -158,6 +161,7 @@ function taskFrontmatterFields(frontmatter: Record<string, unknown>) {
 		onStatusChange: optionalTaskValue(frontmatter[TASK_FRONTMATTER_FIELDS.ON_STATUS_CHANGE]),
 		agentConfiguration: frontmatter[TASK_FRONTMATTER_FIELDS.AGENT_CONFIGURATION] as Task["agentConfiguration"],
 		modeApprovals: taskModeApprovals(frontmatter[TASK_FRONTMATTER_FIELDS.MODE_APPROVALS], id),
+		worktreePolicy: worktreePolicy as Task["worktreePolicy"],
 	};
 }
 

@@ -74,7 +74,7 @@ export class ProjectTaskGraph {
 
 	resolveParentTask(taskId: string): Task {
 		const resolution = this.identityIndex?.resolveForRead(taskId);
-		if (resolution?.status === "ambiguous") throw new AmbiguousTaskIdError(taskId, resolution.candidates);
+		if (resolution?.status === "ambiguous") throw new AmbiguousTaskIdError(taskId.toUpperCase(), resolution.candidates);
 		if (resolution?.status === "found") return resolution.task;
 		throw new TaskCollectionParentNotFoundError(taskId);
 	}

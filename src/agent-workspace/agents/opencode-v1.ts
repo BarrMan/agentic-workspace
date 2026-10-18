@@ -16,6 +16,7 @@ import {
 	shellQuote,
 } from "./agent.ts";
 import { OPENCODE_CHROME_RULES } from "./chrome-rules.ts";
+import { openCodeBootstrapForVersion } from "./opencode-version.ts";
 import { discoverModels, sanitizeProfilePreset, withExplicitModel } from "./profile.ts";
 
 function appendArguments(command: string, arguments_: string): string {
@@ -56,6 +57,12 @@ function openCodeSkillConfig(parsed: ReturnType<typeof parseOpenCodeConfig>, ski
 /** OpenCode 1.19 TUI adapter: launch normally and let the plugin observe session creation. */
 export class OpencodeV1Agent implements Agent {
 	readonly name = "opencode-v1";
+	readonly events = {
+		turnCompleted: "supported",
+		permissionWait: "supported",
+		executionExit: "supported",
+		activity: "supported",
+	} as const;
 	readonly supported = true;
 	readonly hookBacked = true;
 	readonly chromeRules = OPENCODE_CHROME_RULES;
@@ -128,6 +135,16 @@ export class OpencodeV1Agent implements Agent {
 			};
 		// v1 observes its created conversation from a provider event, so prepare returns no identity.
 		return { command: this.launchCommand({ preset, bootstrapPath }), env };
+	}
+
+	readiness(intent: SessionIntent, launchDirectory: string, identity?: NativeIdentity) {
+		const id = identity?.id ?? (intent.kind === "resume" ? intent.nativeSessionId : undefined);
+		return {
+			initialized: { path: join(launchDirectory, "initialized"), ...(id ? { expected: id } : {}) },
+			...(intent.kind === "new"
+				? { promptAccepted: { path: join(launchDirectory, "prompt-accepted"), ...(id ? { expected: id } : {}) } }
+				: {}),
+		};
 	}
 
 	async reconcileIdentity(origin: LaunchOrigin, publish: (identity: NativeIdentity) => Promise<void>): Promise<void> {
@@ -324,9 +341,9 @@ async function assertOpenCodeV1(command: string, cwd: string, env: Record<string
 	const errors = new Response(child.stderr).text();
 	try {
 		const [exitCode, version] = await Promise.all([child.exited, output]);
-		if (timedOut || exitCode !== 0 || version.trim() !== "1.19.0") {
+		if (timedOut || exitCode !== 0 || openCodeBootstrapForVersion(version) !== "opencode-v1") {
 			throw new Error(
-				`OpenCode v1 adapter requires OpenCode 1.19.0; ${timedOut ? "version check timed out" : `found ${JSON.stringify(version.trim())}`}.`,
+				`OpenCode v1 adapter requires an OpenCode v1 binary; ${timedOut ? "version check timed out" : `found ${JSON.stringify(version.trim())}`}.`,
 			);
 		}
 	} finally {

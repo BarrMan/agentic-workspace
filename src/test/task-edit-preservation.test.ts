@@ -91,9 +91,9 @@ describe("Task edit section preservation", () => {
 			await Bun.write(artifactPath, "Opaque working state.\n");
 
 			// Update just the description
-			await $`${cliCommand} task edit 1 --description "UPDATED description"`.cwd(dir).quiet();
+			await $`${cliCommand} task edit TASK-1 --description "UPDATED description"`.cwd(dir).quiet();
 
-			const result = await $`${cliCommand} task view 1 --plain`.cwd(dir).text();
+			const result = await $`${cliCommand} task view TASK-1 --plain`.cwd(dir).text();
 
 			expect(result).toContain("UPDATED description");
 			expect(await Bun.file(artifactPath).text()).toBe("Opaque working state.\n");
@@ -122,10 +122,10 @@ describe("Task edit section preservation", () => {
 
 			const artifactPath = join(dir, "agentic-workspace", "tasks", "task-2", "working-state.md");
 			await Bun.write(artifactPath, "Working notes remain opaque.\n");
-			await $`${cliCommand} task edit 2 --description "Updated description"`.cwd(dir).quiet();
+			await $`${cliCommand} task edit TASK-2 --description "Updated description"`.cwd(dir).quiet();
 
 			// Verify the task description and independent artifact survive canonical saves.
-			const result = await $`${cliCommand} task view 2 --plain`.cwd(dir).text();
+			const result = await $`${cliCommand} task view TASK-2 --plain`.cwd(dir).text();
 
 			expect(result).toContain("Updated description");
 			expect(await Bun.file(artifactPath).text()).toBe("Working notes remain opaque.\n");
@@ -149,9 +149,9 @@ describe("Task edit section preservation", () => {
 				description: "Test description",
 			});
 
-			await $`${cliCommand} task edit 3 --description "Updated description"`.cwd(dir).quiet();
+			await $`${cliCommand} task edit TASK-3 --description "Updated description"`.cwd(dir).quiet();
 
-			const result = await $`${cliCommand} task view 3 --plain`.cwd(dir).text();
+			const result = await $`${cliCommand} task view TASK-3 --plain`.cwd(dir).text();
 			const taskContent = await Bun.file(join(dir, "agentic-workspace", "tasks", "task-3", "task.md")).text();
 
 			expect(result).toContain("Updated description");
@@ -178,9 +178,9 @@ describe("Task edit section preservation", () => {
 
 			const artifactPath = join(dir, "agentic-workspace", "tasks", "task-4", "working-state.md");
 			await Bun.write(artifactPath, "Pending work.\n");
-			await $`${cliCommand} task edit 4 --description "Updated description"`.cwd(dir).quiet();
+			await $`${cliCommand} task edit TASK-4 --description "Updated description"`.cwd(dir).quiet();
 
-			const result = await $`${cliCommand} task view 4 --plain`.cwd(dir).text();
+			const result = await $`${cliCommand} task view TASK-4 --plain`.cwd(dir).text();
 
 			expect(result).toContain("Updated description");
 			expect(await Bun.file(artifactPath).text()).toBe("Pending work.\n");
@@ -205,9 +205,9 @@ describe("Task edit section preservation", () => {
 			});
 
 			// Update description
-			await $`${cliCommand} task edit 5 --description "Updated minimal description"`.cwd(dir).quiet();
+			await $`${cliCommand} task edit TASK-5 --description "Updated minimal description"`.cwd(dir).quiet();
 
-			const result = await $`${cliCommand} task view 5 --plain`.cwd(dir).text();
+			const result = await $`${cliCommand} task view TASK-5 --plain`.cwd(dir).text();
 			const taskContent = await Bun.file(join(dir, "agentic-workspace", "tasks", "task-5", "task.md")).text();
 
 			expect(result).toContain("Updated minimal description");

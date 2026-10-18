@@ -17,6 +17,7 @@ import type {
 import { shellQuote } from "./agent.ts";
 import { OPENCODE_CHROME_RULES } from "./chrome-rules.ts";
 import { createOpencodeV2CliPlugin } from "./opencode-v2-cli-plugin.ts";
+import { openCodeBootstrapForVersion } from "./opencode-version.ts";
 import { commandArguments, discoverModels, sanitizeProfilePreset, withExplicitModel } from "./profile.ts";
 
 function appendArguments(command: string, arguments_: string): string {
@@ -86,7 +87,7 @@ async function runCli(args: string[], cwd: string, env: Record<string, string>, 
 
 async function assertOpenCodeV2(preset: AgentPreset, cwd: string, env: Record<string, string>) {
 	const result = await runCli([...commandArguments(preset.command), "--version"], cwd, env, 5_000);
-	if (result.exitCode !== 0 || !/\bv?2\.\d+\.\d+\b/i.test(result.output)) {
+	if (result.exitCode !== 0 || openCodeBootstrapForVersion(result.output) !== "opencode-v2") {
 		throw new Error("The opencode-v2 harness requires an OpenCode v2 CLI binary.");
 	}
 }
@@ -121,6 +122,12 @@ async function lookupNativeSession(
 
 export class OpencodeV2Agent implements Agent {
 	readonly name = "opencode-v2";
+	readonly events = {
+		turnCompleted: "supported",
+		permissionWait: "unsupported",
+		executionExit: "supported",
+		activity: "supported",
+	} as const;
 	readonly supported = true;
 	readonly hookBacked = true;
 	readonly chromeRules = OPENCODE_CHROME_RULES;
@@ -239,6 +246,17 @@ export class OpencodeV2Agent implements Agent {
 							}
 						},
 					}
+				: {}),
+		};
+	}
+
+	readiness(intent: SessionIntent, launchDirectory: string, identity?: NativeIdentity) {
+		const id = identity?.id ?? (intent.kind === "resume" ? intent.nativeSessionId : undefined);
+		return {
+			initialized: { path: join(launchDirectory, "initialized"), ...(id ? { expected: id } : {}) },
+			confirmationRequired: intent.kind === "new",
+			...(intent.kind === "new"
+				? { promptAccepted: { path: join(launchDirectory, "prompt-accepted"), ...(id ? { expected: id } : {}) } }
 				: {}),
 		};
 	}

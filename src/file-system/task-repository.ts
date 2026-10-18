@@ -3,7 +3,7 @@ import { access, readdir } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { parseTask } from "../markdown/parser.ts";
 import type { Task } from "../types/index.ts";
-import { extractTaskIdFromFilename, normalizeTaskIdentity } from "../utils/task-path.ts";
+import { isValidTaskId, taskIdsEqual } from "../utils/task-id.ts";
 
 export const TASK_FILE_READ_CONCURRENCY = 32;
 
@@ -91,7 +91,7 @@ export class TaskRepository {
 	async readFiles(
 		directory: string,
 		files: string[],
-		options: { normalizeIdentity: boolean; debugLabel: string },
+		_options: { normalizeIdentity: boolean; debugLabel: string },
 		epoch = this.cacheEpoch,
 	): Promise<Task[]> {
 		const directoryPath = resolve(directory);
@@ -130,11 +130,9 @@ export class TaskRepository {
 				}
 				const containerName = file.endsWith("/task.md") ? file.slice(0, -"/task.md".length) : null;
 				if (containerName !== null) {
-					if (!/^[a-z]+-[a-z0-9]+(?:[._-][a-z0-9]+)*$/.test(containerName) || parsed.id.toLowerCase() !== containerName)
-						continue;
+					if (!isValidTaskId(containerName.toUpperCase()) || !taskIdsEqual(parsed.id, containerName)) continue;
 				}
-				const task = options.normalizeIdentity ? normalizeTaskIdentity(parsed) : parsed;
-				tasks[index] = { ...task, filePath: filepath };
+				tasks[index] = { ...parsed, filePath: filepath };
 			}
 		};
 		await Promise.all(Array.from({ length: Math.min(TASK_FILE_READ_CONCURRENCY, files.length) }, worker));
@@ -153,8 +151,7 @@ export class TaskRepository {
 		const candidates = await Promise.all(
 			entries.map(async (entry) => {
 				if (entry.isDirectory()) {
-					// Containers are canonical only when the folder itself is a normalized lower-case ID.
-					if (!/^[a-z]+-[a-z0-9]+(?:[._-][a-z0-9]+)*$/.test(entry.name)) return null;
+					if (!isValidTaskId(entry.name.toUpperCase())) return null;
 					try {
 						await access(join(directory, entry.name, "task.md"));
 						return join(entry.name, "task.md");
@@ -163,11 +160,7 @@ export class TaskRepository {
 						throw error;
 					}
 				}
-				if (
-					!entry.isFile() ||
-					(!extractTaskIdFromFilename(entry.name) && !/^[a-z]+-[a-z0-9]+(?:[._-][a-z0-9]+)*\.md$/i.test(entry.name))
-				)
-					return null;
+				if (!entry.isFile() || !/^[A-Za-z]+-\d+(?:\.\d+)*(?:\s+-.*)?\.md$/i.test(entry.name)) return null;
 				throw new Error(
 					`Unsupported flat task record ${join(directory, entry.name)}. Manually convert <name>.md to <lowercase-id>/task.md, set frontmatter id to match the directory name, and set task_schema_version to 3.`,
 				);

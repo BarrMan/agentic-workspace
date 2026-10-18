@@ -16,7 +16,7 @@ Controller {
   newSession: SessionFactory
   signals: Signals
   storage: Storage
-  configuration: Configuration
+  configuration: Config
 }
 ```
 
@@ -24,6 +24,7 @@ Controller {
 
 ```ts
 // application.ts
+configuration = await Config.load(storage)
 controller.load(project)
 renderer.init(controller)
 
@@ -32,7 +33,7 @@ Controller.load(project) {
   tasks = data.taskRecords.map(record => Task.fromRecord(record, this.newSession))
 
   this.tasks = new Map(tasks.map(task => [task.id, task]))
-  this.modes = this.configuration.loadModes(project)
+  this.modes = this.configuration.modes  // loaded snapshot; Controller does not re-read files
   this.sessions = []
   this.selectedTask = tasks[0]
   this.selectedMode = this.modes.get(this.selectedTask.selectedModeId)
@@ -102,19 +103,12 @@ Controller.createSession(task, mode) {
       instructions: mode.config.prompt,
       configuration: mode.config,
     })
-  } catch (error) {
-    this.removeSession(session)
-    this.signals.publish("NoticeChanged", error)   // reservation stays
-    return null
-  }
-
-  try {
     this.storage.saveTask(task)                    // provider identity durable
   } catch (error) {
-    session.stop()
+    session.stop()                                 // idempotent; may have no execution
     task.removeSession(session)
     this.removeSession(session)
-    this.storage.saveTask(task)
+    this.storage.saveTask(task)                    // rollback the reservation
     this.signals.publish("NoticeChanged", error)
     return null
   }
@@ -282,6 +276,7 @@ Shutdown stops every live session. A failed stop propagates; it is not retried o
 ## Invariants
 
 - Callers supply valid data. Controller does not re-validate parameters.
+- Controller holds a Storage, never a workspace filesystem, workspace path, or workspace record format. Every workspace read and write, including milestone and task corpus reads, goes through Storage. Controller does not expose Storage to Renderer or CLI.
 - Controller knows Task and Session; it does not know SessionRuntime.
 - Loading transfers persisted data into state. Renderer initializes after `controller.load`.
 - `sessions` holds only live sessions created or resumed in this run.

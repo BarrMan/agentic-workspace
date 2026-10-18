@@ -6,7 +6,7 @@ import { basename, dirname, isAbsolute, relative, resolve, sep } from "node:path
 import type { ArtifactApprovalSidecar, ArtifactStatus } from "../agent-workspace/types.ts";
 import { resolveMainWorktreeRoot } from "../git/main-worktree.ts";
 import { parseTask } from "../markdown/parser.ts";
-import { normalizeTaskId, taskIdsEqual } from "../utils/task-id.ts";
+import { isValidTaskId, taskIdsEqual } from "../utils/task-id.ts";
 
 const SIDECAR = ".artifacts.json";
 const SIDECAR_LOCK = ".artifacts.json.lock";
@@ -109,9 +109,10 @@ export class TaskArtifactRepository {
 	}
 
 	private canonicalId(taskId: string): string {
-		const canonical = normalizeTaskId(taskId).toLowerCase();
-		if (!/^[a-z][a-z0-9]*-[a-z0-9]+(?:[.-][a-z0-9]+)*$/.test(canonical)) throw new Error(`Invalid task ID: ${taskId}`);
-		return canonical.toLowerCase();
+		const canonical = taskId.toUpperCase();
+		if (!isValidTaskId(canonical) && !/^DRAFT-[A-Z0-9]+$/.test(canonical))
+			throw new Error(`Invalid task ID: ${taskId}`);
+		return canonical;
 	}
 
 	private async root(): Promise<string> {
@@ -137,14 +138,15 @@ export class TaskArtifactRepository {
 
 	async containerPath(taskId: string, location?: TaskContainerLocation): Promise<string> {
 		const root = await this.root();
-		const id = this.canonicalId(taskId);
+		const canonicalTaskId = taskId.toUpperCase();
+		const id = this.canonicalId(canonicalTaskId).toLowerCase();
 		const locationPath = (base: TaskContainerLocation): string => {
 			const configured = this.filesystemRoots[base];
 			return configured ? resolve(root, configured, id) : resolve(root, base, id);
 		};
 		if (location) {
 			const candidate = locationPath(location);
-			await this.validateContainer(candidate, taskId, false);
+			await this.validateContainer(candidate, canonicalTaskId, false);
 			return candidate;
 		}
 		const liveMatches: string[] = [];
@@ -155,7 +157,7 @@ export class TaskArtifactRepository {
 				const info = await lstat(candidate);
 				if (!info.isDirectory() || info.isSymbolicLink())
 					throw new Error(`Task container is not a real directory: ${candidate}`);
-				await this.validateContainer(candidate, taskId, true);
+				await this.validateContainer(candidate, canonicalTaskId, true);
 				(base.startsWith("archive/") ? archivedMatches : liveMatches).push(candidate);
 			} catch (error) {
 				if ((error as NodeJS.ErrnoException).code === "ENOENT") {

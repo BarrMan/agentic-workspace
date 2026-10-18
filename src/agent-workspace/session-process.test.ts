@@ -125,8 +125,8 @@ describe("native runtime ownership probes", () => {
 		const server = {
 			cmd: async () => {
 				throw new TmuxTransportError("error connecting to /private/tmp/tmux-501/default", {
-					kind: "transport",
-					delivery: "not-sent",
+					kind: "spawn",
+					delivery: "not_started",
 				});
 			},
 		} as unknown as TmuxServer;

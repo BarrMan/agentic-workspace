@@ -1,6 +1,6 @@
 # Storage
 
-Part of [BLUEPRINT](../BLUEPRINT.md). Storage owns model-typed persistence and presentation configuration. It validates encoding and never applies model rules. Paths and formats are fixed by [ADR-0002](../adr/0002-storage-filesystem-paths-formats.md).
+Part of [BLUEPRINT](../BLUEPRINT.md). Storage owns model-typed workspace persistence and presentation configuration. It is the only component that knows workspace paths, record formats, storage codecs, locks, and file watching. It validates encoding and never applies model rules. Runtime execution resources belong to SessionRuntime, Harness, or Renderer. Paths and formats are fixed by [ADR-0002](../adr/0002-storage-filesystem-paths-formats.md).
 
 ## Operations
 
@@ -26,9 +26,49 @@ Storage.loadSessionHistories(taskId) {
   }))
 }
 
+Storage.loadTasks() {
+  return this.readTaskRecords(this.tasksPath())
+}
+
+Storage.loadMilestones() {
+  return this.readMilestones(this.milestonesPath())
+}
+
+Storage.loadArchivedMilestones() {
+  return this.readMilestones(this.archivedMilestonesPath())
+}
+
+Storage.loadUserAgentConfiguration() {
+  return this.readUserAgentConfiguration()
+}
+
+Storage.loadProjectAgentConfiguration() {
+  return this.loadProjectConfig()?.agentConfiguration ?? null
+}
+
 Storage.saveTask(task) {
   this.writeAtomic(this.taskPath(task.id), this.serializeTaskRecord(task.serialize()))
   this.writeAtomic(this.sessionsPath(task.id), JSON.stringify(this.sessionState(task)))
+}
+
+Storage.allocateTaskId(prefix) {
+  // Called under the create lock.
+  counter = this.readTaskCounter() ?? {}
+  if (counter[prefix] is missing) {
+    counter[prefix] = { next: this.maximumExistingTopLevelTaskNumber(prefix, [active, completed, archived, siblingWorktrees]) ?? 0 }
+    this.writeAtomic(this.taskCounterPathInCreateLockDirectory(), JSON.stringify(counter))
+  }
+  while (true) {
+    counter[prefix].next++
+    this.writeAtomic(this.taskCounterPathInCreateLockDirectory(), JSON.stringify(counter))
+    try {
+      id = `${prefix}-${counter[prefix].next}`
+      this.saveTaskCreateOnly(id)
+      return id
+    } catch (error) {
+      if (!isTaskTargetConflict(error)) throw error
+    }
+  }
 }
 
 Storage.sessionState(task) {
@@ -69,7 +109,12 @@ Storage.writeAtomic(path, content) {
 
 ## Invariants
 
+- Only Storage holds a workspace filesystem handle. Controller, Renderer, and CLI never read or write workspace records, construct workspace storage paths, or hold a workspace filesystem handle. Renderer may use Storage only for presentation configuration; CLI calls Controller only.
+- Runtime-host I/O stays with SessionRuntime, Harness, or Renderer: provider receipts, terminal sockets and panes, process handles, logs, and user-selected input files are not workspace persistence.
+- `loadTasks`, `loadMilestones`, and `loadArchivedMilestones` are the read operations for Controller workflows; no caller reaches through Storage to its filesystem.
 - Task records are `task.md` Markdown with YAML frontmatter, schema version 3.
+- Task IDs are `PREFIX-NUMBER` strings with optional dotted numeric subtask segments. New IDs are written uppercase; existing stored casing is preserved, and identity comparison is case-insensitive. Numeric segments are preserved exactly (`TASK-01` differs from `TASK-1`). Legacy alphanumeric IDs are invalid. Lookup does not normalize numeric segments, accept bare numbers, or infer prefixes. The ID contract is defined in [TASK-003](../specs/tasks.md#task-003-task-identity).
+- `task-counter.json` lives in the directory that owns the create lock (shared across linked worktrees; otherwise the AgenticWorkspace directory). Its shape is per-prefix, for example `{ "TASK": { "next": 2 }, "OPS": { "next": 2 } }`, where `next` is the last allocated top-level number. Under the create lock, allocation increments the selected prefix entry and atomically persists it (temporary file plus rename) before create-only save. A target-container conflict consumes another number and retries; numbers are never decremented or reused. A missing prefix entry is bootstrapped once from that prefix's maximum existing top-level task number across active, completed, and archived containers, including sibling worktrees as needed (zero when none exist); there is no per-create scan. A corrupt counter is an error and does not trigger a scan. The create lock cannot be bypassed.
 - Session state is `state.json` JSON version 2; presentation state is `view-state.json` JSON.
 - Storage returns records; Controller constructs Task models with the Session factory.
 - Task metadata and session relationships are separate records; `loadProject` rejoins them.

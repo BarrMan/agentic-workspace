@@ -1,5 +1,4 @@
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
-import { $ } from "bun";
 import { findGitWorktreeRoot, resolveMainWorktreeRoot } from "../git/main-worktree.ts";
 import { resolveAgenticWorkspaceDirectory } from "./agentic-workspace-directory.ts";
 
@@ -24,18 +23,7 @@ async function findMarkerRoot(startDir: string, boundary?: string): Promise<stri
  * @returns The project root path, or null if no AgenticWorkspace project found
  */
 export async function findAgenticWorkspaceRoot(startDir: string): Promise<string | null> {
-	let localRoot = await findMarkerRoot(startDir);
-
-	// Fallback: try git repository root
-	if (!localRoot) {
-		try {
-			const result = await $`git rev-parse --show-toplevel`.cwd(startDir).quiet();
-			const gitRoot = result.stdout.toString().trim();
-			if (gitRoot && hasProjectMarker(gitRoot)) localRoot = gitRoot;
-		} catch {
-			// Not in a git repository or git not available
-		}
-	}
+	const localRoot = await findMarkerRoot(startDir);
 
 	const worktreeRoot = await findGitWorktreeRoot(startDir);
 	const mainRoot = worktreeRoot ? await resolveMainWorktreeRoot(worktreeRoot) : null;

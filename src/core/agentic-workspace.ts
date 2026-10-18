@@ -1,15 +1,13 @@
 import { stat } from "node:fs/promises";
 import { isAbsolute, join, relative } from "node:path";
-import { resolveAgentConfiguration } from "../agent-workspace/config.ts";
+import { Config, resolveAgentConfiguration } from "../agent-workspace/config.ts";
 import { BunRunner } from "../agent-workspace/session-process.ts";
 import { SessionStore } from "../agent-workspace/session-store.ts";
 import { AgentSessionService } from "../agent-workspace/sessions.ts";
-import { resolveSessionSettings } from "../agent-workspace/types.ts";
 import { openViewStateStore } from "../agent-workspace/view-state-store.ts";
 import { DEFAULT_DIRECTORIES, DEFAULT_STATUSES, FALLBACK_STATUS } from "../constants/index.ts";
 import { type DraftFileReference, FileSystem, isConfigValueError } from "../file-system/operations.ts";
 import { GitOperations } from "../git/operations.ts";
-import { ensureTaskWorktree } from "../git/task-worktree.ts";
 import {
 	type Decision,
 	type Document,
@@ -39,7 +37,7 @@ import { buildIdRegex, normalizeId } from "../utils/prefix-config.ts";
 import { formatValidPriorityValues, resolvePriorityValue } from "../utils/priority-config.ts";
 import { resolveRuntimeCwd } from "../utils/runtime-cwd.ts";
 import { formatValidStatuses, getCanonicalStatuses } from "../utils/status.ts";
-import { AmbiguousTaskIdError, canonicalTaskId, LOCAL_TASK_LOOKUP_HINT, normalizeTaskId } from "../utils/task-path.ts";
+import { AmbiguousTaskIdError, LOCAL_TASK_LOOKUP_HINT, taskIdsEqual } from "../utils/task-path.ts";
 import { applyTaskFilters } from "../utils/task-search.ts";
 import { sortByOrdinal } from "../utils/task-sorting.ts";
 import { attachSubtaskSummaries } from "../utils/task-subtasks.ts";
@@ -49,6 +47,7 @@ import { PersistentTaskRead } from "./persistent-task-read.ts";
 import { ProjectContentService } from "./project-content-service.ts";
 import { DEFAULT_ORDINAL_STEP, resolveOrdinalConflicts } from "./reorder.ts";
 import { searchSnapshot } from "./search-service.ts";
+import { Storage } from "./storage.ts";
 import {
 	type CreatedTaskRollbackResult,
 	type CreatedTaskWrite,
@@ -150,6 +149,8 @@ export class Core {
 	private readonly taskMutations: ProjectTaskMutations;
 	private readonly taskLifecycle: TaskLifecycleService;
 	private readonly persistentReads: PersistentTaskRead;
+	private readonly storage: Storage;
+	private configSnapshot?: Promise<Config>;
 
 	private get fs(): FileSystem {
 		return this.filesystem;
@@ -158,8 +159,11 @@ export class Core {
 	constructor(projectRoot: string) {
 		this.filesystem = new FileSystem(projectRoot);
 		this.filesystem.freezeResolution();
+		this.storage = new Storage(this.filesystem);
+		this.configSnapshot = Config.load(this.storage);
+		void this.configSnapshot.catch(() => undefined);
 		this.git = new GitOperations(projectRoot, null, () => this.filesystem.loadConfig());
-		this.persistentReads = new PersistentTaskRead(this.filesystem, this.git);
+		this.persistentReads = new PersistentTaskRead(this.filesystem, this.git, this.storage);
 		this.vacatedTaskReferences = new VacatedTaskReferenceService(this.filesystem);
 		this.taskMutations = new ProjectTaskMutations(
 			this.filesystem,
@@ -167,6 +171,15 @@ export class Core {
 			() => this.getActiveAndCompletedTaskIds(),
 		);
 		this.taskLifecycle = this.createTaskLifecycleService();
+	}
+
+	async getConfig(): Promise<Config> {
+		this.configSnapshot ??= Config.load(this.storage);
+		return await this.configSnapshot;
+	}
+
+	async reloadConfiguration(): Promise<void> {
+		await (await this.getConfig()).reload();
 	}
 
 	private createTaskLifecycleService(): TaskLifecycleService {
@@ -362,7 +375,7 @@ export class Core {
 	}
 
 	async getTask(taskId: string, options: TaskReadOptions = {}): Promise<Task | null> {
-		return await this.persistentReads.get(taskId, {
+		return await this.persistentReads.get(taskId.toUpperCase(), {
 			includeCrossBranch: options.includeCrossBranch,
 			includeArchived: options.includeArchived,
 		});
@@ -561,7 +574,7 @@ export class Core {
 		for (const entry of worktreeEntries) {
 			if (entry.type === TASK_DIRECTORY.TASK || entry.type === TASK_DIRECTORY.COMPLETED) occupiedIds.add(entry.id);
 		}
-		return [...new Map([...occupiedIds].map((id) => [canonicalTaskId(id, taskPrefix), id])).values()];
+		return [...occupiedIds];
 	}
 
 	/**
@@ -601,7 +614,7 @@ export class Core {
 			return await this.fs.saveDraft(task);
 		}
 
-		return await this.fs.saveTask(task);
+		return await this.fs.saveTask(task, { create: true });
 	}
 
 	async finalizeCreatedTask(task: Task, isDraft: boolean): Promise<Task | null> {
@@ -625,10 +638,8 @@ export class Core {
 	async resolveParentTaskIdForCreate(parentTaskId: string): Promise<string> {
 		const parentTask = await this.loadTaskById(parentTaskId, { includeCrossBranch: false });
 		if (!parentTask) {
-			const config = await this.fs.loadConfig();
-			const canonicalParent = canonicalTaskId(parentTaskId, config?.prefixes?.task ?? "task");
 			throw new Error(
-				`Parent task ${canonicalParent} not found. ${LOCAL_TASK_LOOKUP_HINT} Use an existing task ID with --parent; use --milestone to assign a task to a milestone.`,
+				`Parent task ${parentTaskId} not found. ${LOCAL_TASK_LOOKUP_HINT} Use an existing task ID with --parent; use --milestone to assign a task to a milestone.`,
 			);
 		}
 		return parentTask.id;
@@ -639,28 +650,11 @@ export class Core {
 			const config = await this.fs.loadConfig();
 			task.status = config?.defaultStatus || FALLBACK_STATUS;
 		}
+		const config = await this.getConfig();
+		task.worktreePolicy = config.sessionSettings.worktreePerTask ? "enabled" : "disabled";
 
 		const filepath = await this.writePreparedTask(task, false);
-		const savedTask = await this.finalizeCreatedTask(task, false);
-		await this.ensureTaskWorktreeFor(savedTask ?? task);
-
 		return filepath;
-	}
-
-	/**
-	 * Create the task's worktree when the effective session settings enable it. Called after a real
-	 * task is persisted; drafts never reach here. A failure warns but never fails the creation.
-	 */
-	async ensureTaskWorktreeFor(task: Task): Promise<string | undefined> {
-		try {
-			const { config } = await resolveAgentConfiguration(this, task.id);
-			if (!resolveSessionSettings(config).worktreePerTask) return undefined;
-			return await ensureTaskWorktree(this.fs.rootDir, task);
-		} catch (error) {
-			const message = error instanceof Error ? error.message : String(error);
-			console.error(`Could not create worktree for ${task.id}: ${message}`);
-			return undefined;
-		}
 	}
 
 	async updateTask(task: Task): Promise<string> {
@@ -807,9 +801,7 @@ export class Core {
 		for (const rawId of taskIds) {
 			const trimmed = String(rawId || "").trim();
 			if (!trimmed) continue;
-			// Canonical identity collapses cosmetic spellings such as leading zeros, so TASK-1 and
-			// TASK-01 cannot both survive and write the same task twice.
-			const key = canonicalTaskId(trimmed);
+			const key = trimmed.toUpperCase();
 			if (seen.has(key)) continue;
 			seen.add(key);
 			requestedIds.push(trimmed);
@@ -822,7 +814,7 @@ export class Core {
 		};
 
 		const resolutions = requestedIds.map((taskId) => {
-			const resolution = store.resolveTaskForMutation(normalizeTaskId(taskId));
+			const resolution = store.resolveTaskForMutation(taskId);
 			if (resolution.status === "ambiguous") {
 				return { taskId, task: null, ambiguity: new AmbiguousTaskIdError(taskId, resolution.candidates) };
 			}
@@ -839,15 +831,15 @@ export class Core {
 		targetMilestone?: string | null;
 		defaultStep?: number;
 	}): Promise<{ updatedTask: Task; changedTasks: Task[] }> {
-		const taskId = normalizeTaskId(String(params.taskId || "").trim());
+		const taskId = String(params.taskId || "").trim();
 		const targetStatus = String(params.targetStatus || "").trim();
-		const orderedTaskIds = params.orderedTaskIds.map((id) => normalizeTaskId(String(id || "").trim())).filter(Boolean);
+		const orderedTaskIds = params.orderedTaskIds.map((id) => String(id || "").trim()).filter(Boolean);
 		const defaultStep = params.defaultStep ?? DEFAULT_ORDINAL_STEP;
 
 		if (!taskId) throw new Error("taskId is required");
 		if (!targetStatus) throw new Error("targetStatus is required");
 		if (orderedTaskIds.length === 0) throw new Error("orderedTaskIds must include at least one task");
-		if (!orderedTaskIds.includes(taskId)) {
+		if (!orderedTaskIds.some((id) => taskIdsEqual(id, taskId))) {
 			throw new Error("orderedTaskIds must include the task being moved");
 		}
 
@@ -855,10 +847,10 @@ export class Core {
 		// shared resolver quietly drop it and reorder the column into an order nobody asked for.
 		const seen = new Set<string>();
 		for (const id of orderedTaskIds) {
-			if (seen.has(id)) {
+			if (seen.has(id.toUpperCase())) {
 				throw new Error(`Duplicate task id ${id} in orderedTaskIds`);
 			}
-			seen.add(id);
+			seen.add(id.toUpperCase());
 		}
 
 		const { resolutions } = await this.resolveTasksForBoardMove(orderedTaskIds);
@@ -869,7 +861,7 @@ export class Core {
 		// Tasks that couldn't be loaded (may have been moved/deleted) drop out of the ordering
 		const validTasks = resolutions.map((resolution) => resolution.task).filter((t): t is Task => t !== null);
 
-		const movedTask = validTasks.find((task) => task.id === taskId);
+		const movedTask = validTasks.find((task) => taskIdsEqual(task.id, taskId));
 		if (!movedTask) throw new Error(`Task ${taskId} not found while reordering`);
 
 		// Reject reordering tasks from other branches - they can only be modified in their source branch
@@ -1005,8 +997,10 @@ export class Core {
 		normalizedTargetMilestone: string | undefined,
 		defaultStep: number,
 	): MoveTaskPlacement {
-		const stayingIds = new Set(tasksToMove.filter((task) => task.status === targetStatus).map((task) => task.id));
-		const arriving = tasksToMove.filter((task) => !stayingIds.has(task.id));
+		const stayingIds = new Set(
+			tasksToMove.filter((task) => task.status === targetStatus).map((task) => task.id.toUpperCase()),
+		);
+		const arriving = tasksToMove.filter((task) => !stayingIds.has(task.id.toUpperCase()));
 		if (arriving.length === 0) {
 			const movedTasks = tasksToMove.map(applyMove);
 			return {
@@ -1018,7 +1012,7 @@ export class Core {
 			};
 		}
 
-		const movedIds = new Set(tasksToMove.map((task) => task.id));
+		const movedIds = new Set(tasksToMove.map((task) => task.id.toUpperCase()));
 		const sanitizeOrdinal = (task: Task): Task =>
 			task.ordinal === undefined || Number.isFinite(task.ordinal) ? task : { ...task, ordinal: undefined };
 		const inTargetLane = (task: Task): boolean =>
@@ -1026,11 +1020,13 @@ export class Core {
 		const columnTasks = sortByOrdinal(
 			store
 				.getTasks({ status: targetStatus })
-				.filter((task) => (stayingIds.has(task.id) ? true : !movedIds.has(task.id) && inTargetLane(task)))
+				.filter((task) =>
+					stayingIds.has(task.id.toUpperCase()) ? true : !movedIds.has(task.id.toUpperCase()) && inTargetLane(task),
+				)
 				.map(sanitizeOrdinal),
 		);
 		const tasksInOrder = [
-			...columnTasks.map((task) => (stayingIds.has(task.id) ? applyMove(task) : task)),
+			...columnTasks.map((task) => (stayingIds.has(task.id.toUpperCase()) ? applyMove(task) : task)),
 			...arriving.map((task) => ({ ...applyMove(task), ordinal: undefined })),
 		];
 		return this.reconcileMovedTasks(
@@ -1049,17 +1045,17 @@ export class Core {
 		tasksToMove: Task[],
 		applyMove: (task: Task) => Task,
 	): { movedTasks: Task[]; changedTasks: Task[] } {
-		const updatesMap = new Map(tasksInOrder.map((task) => [task.id, task]));
+		const updatesMap = new Map(tasksInOrder.map((task) => [task.id.toUpperCase(), task]));
 		for (const update of resolutionUpdates) {
-			updatesMap.set(update.id, update);
+			updatesMap.set(update.id.toUpperCase(), update);
 		}
 		const originalMap = new Map([
-			...originalTasks.map((task) => [task.id, task] as const),
-			...tasksToMove.map((task) => [task.id, task] as const),
+			...originalTasks.map((task) => [task.id.toUpperCase(), task] as const),
+			...tasksToMove.map((task) => [task.id.toUpperCase(), task] as const),
 		]);
-		const movedTasks = tasksToMove.map((task) => updatesMap.get(task.id) ?? applyMove(task));
+		const movedTasks = tasksToMove.map((task) => updatesMap.get(task.id.toUpperCase()) ?? applyMove(task));
 		const changedTasks = Array.from(updatesMap.values()).filter((task) => {
-			const original = originalMap.get(task.id);
+			const original = originalMap.get(task.id.toUpperCase());
 			return (
 				!original ||
 				(original.status ?? "") !== (task.status ?? "") ||
@@ -1186,6 +1182,18 @@ export class Core {
 	): Promise<Task[]> {
 		const snapshot = await this.loadTaskSnapshot();
 		return options?.includeCompleted ? snapshot.identityIndex.getTasks(true) : snapshot.tasks;
+	}
+
+	async loadStoredTasks(): Promise<Task[]> {
+		return await this.storage.loadTasks();
+	}
+
+	async loadMilestones(): Promise<Milestone[]> {
+		return await this.storage.loadMilestones();
+	}
+
+	async loadArchivedMilestones(): Promise<Milestone[]> {
+		return await this.storage.loadArchivedMilestones();
 	}
 }
 

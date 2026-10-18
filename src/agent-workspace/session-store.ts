@@ -19,7 +19,6 @@ import lockfile from "proper-lockfile";
 import { findGitWorktreeRoot } from "../git/main-worktree.ts";
 import { GitOperations } from "../git/operations.ts";
 import { count, debug, isEnabled } from "../utils/debug-log.ts";
-import { normalizeTaskId } from "../utils/task-id.ts";
 import type { ProcessRunner } from "./session-process.ts";
 import { slug } from "./session-utils.ts";
 import {
@@ -285,6 +284,10 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 	return typeof value === "object" && value !== null;
 }
 
+function canonicalTaskId(taskId: string): string {
+	return /^draft-/i.test(taskId) ? taskId.toUpperCase() : taskId;
+}
+
 function hasOnlyKeys(value: Record<string, unknown>, keys: readonly string[]): boolean {
 	return Object.keys(value).every((key) => keys.includes(key));
 }
@@ -408,7 +411,7 @@ export class SessionStore {
 			);
 		}
 		try {
-			return this.validate(parsed, taskId);
+			return this.validate(parsed, canonicalTaskId(taskId));
 		} catch {
 			const version = isRecord(parsed) ? parsed.version : undefined;
 			if (typeof version === "number" && version > 2) {
@@ -544,7 +547,7 @@ export class SessionStore {
 	}
 
 	async paths(taskId: string): Promise<SessionPaths> {
-		const taskDir = join(await this.projectStateRoot(), slug(taskId));
+		const taskDir = join(await this.projectStateRoot(), slug(canonicalTaskId(taskId)));
 		return { taskDir, statePath: join(taskDir, "state.json") };
 	}
 
@@ -668,7 +671,7 @@ export class SessionStore {
 				throw new Error(`Cannot remap session state for ${oldTaskId}; a valid version 2 state is required.`);
 			this.validate(lockedParsed, oldTaskId);
 
-			const normalizedNewTaskId = normalizeTaskId(newTaskId);
+			const normalizedNewTaskId = canonicalTaskId(newTaskId);
 			const sourceState = this.validate(lockedParsed, oldTaskId);
 			const modes: VersionedSessionState["modes"] = {};
 			for (const [modeId, history] of Object.entries(sourceState.modes ?? {})) {

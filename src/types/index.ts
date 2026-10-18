@@ -68,6 +68,7 @@ export interface Task {
 	/** Monorepo project/component this task belongs to. Allowed values come from config `projects`; absent config means the field is unusable. */
 	project?: string;
 	branch?: string;
+	worktreePolicy?: "enabled" | "disabled";
 	ordinal?: number;
 	filePath?: string;
 	contentRef?: string;

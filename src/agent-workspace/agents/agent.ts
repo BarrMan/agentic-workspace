@@ -34,6 +34,14 @@ export type SessionIntent = { kind: "new" } | { kind: "resume"; nativeSessionId:
  */
 export type NativeIdentity = { id: string; basis: "provider-confirmed" | "client-established" };
 
+export type ReadinessExpectation = string | Readonly<Record<string, string>>;
+export type AgentEventCapabilities = {
+	readonly turnCompleted: "supported" | "unsupported";
+	readonly permissionWait: "supported" | "unsupported";
+	readonly executionExit: "supported" | "unsupported";
+	readonly activity: "supported" | "unsupported";
+};
+
 /**
  * Everything a deferred identity delivery needs to reconcile one launch.
  * It identifies the exact expected record, its owning mode, the exact owned pane, and the
@@ -109,6 +117,7 @@ export interface StatusHookInstallOptions {
 
 export interface Agent {
 	readonly name: string;
+	readonly events?: AgentEventCapabilities;
 	readonly supported: boolean;
 	readonly hookBacked: boolean;
 	readonly prepareBeforeAsk: boolean;
@@ -121,6 +130,16 @@ export interface Agent {
 	askCommand(request: AskCommandRequest): string;
 	preflightLaunch?(request: AgentPreflightRequest): Promise<unknown>;
 	prepare(request: PreparationResources & { intent: SessionIntent }): Promise<AgentPreparation>;
+	/** Provider-owned receipt evidence required before launch/resume can return. */
+	readiness?(
+		intent: SessionIntent,
+		launchDirectory: string,
+		identity?: NativeIdentity,
+	): {
+		initialized: { path: string; expected?: ReadinessExpectation };
+		promptAccepted?: { path: string; expected?: ReadinessExpectation };
+		confirmationRequired?: boolean;
+	};
 	/**
 	 * Acquire a deferred native identity from the provider and publish it exactly once.
 	 * Immediate-identity adapters implement this as a no-op; a receipt-based adapter reads its

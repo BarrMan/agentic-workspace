@@ -32,23 +32,29 @@ TaskDetails, ConfigInputs, Approval, ResolvedConfig, PresentationConfig, Worktre
 
 ## Configuration
 
-`Configuration.loadModes` resolves each mode once at startup. No Controller operation resolves configuration.
+`Config.load(storage)` reads user and project agent configuration at startup through [Storage](storage.md). Config knows nothing about Task or Session. `getConfig(...overrides)` returns a fresh field-wise merge: built-in < user < project < overrides. Explicit `false` survives. `reload()` replaces the snapshot after a successful configuration save.
 
 ```ts
-Configuration.loadModes(project) {
-  modes = new Map()
-
-  for (record of project.modes) {
-    modes.set(record.id, {
-      id: record.id,
-      config: this.resolve(record, project),
-    })
-  }
-
-  return modes
+Config.load(storage) {
+  config = new Config(storage)
+  await config.reload()
+  return config
 }
 
-Configuration.resolve(record, project) {
-  return { ...record.config, ...project.settings }  // precedence is owned by SPEC configuration
+Config.reload() {
+  user = await this.storage.loadUserAgentConfiguration()
+  project = await this.storage.loadProjectAgentConfiguration()
+  this.userConfiguration = clone(user)
+  this.projectConfiguration = clone(project)
 }
+
+Config.getConfig(...overrides) {
+  config = merge(builtIn, this.userConfiguration, this.projectConfiguration, ...overrides)
+  return clone(config)  // never mutate the snapshot
+}
+
+Config.sessionSettings  // resolveSessionSettings(getConfig())
+Config.modes             // getConfig().modes
 ```
+
+Task-scoped overrides are passed to `getConfig` by the caller; Config never loads a Task.

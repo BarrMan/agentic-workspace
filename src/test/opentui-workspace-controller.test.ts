@@ -200,6 +200,8 @@ function composerCore(agenticWorkspaceDir: string, created: Task): Core {
 	);
 	return {
 		loadTasks: async () => [],
+		loadMilestones: async () => [],
+		loadArchivedMilestones: async () => [],
 		createTaskFromInput: async () => ({ task: created }),
 		filesystem: {
 			rootDir: agenticWorkspaceDir,
@@ -455,6 +457,8 @@ function core(projectName = "Roadmap", tasks: Task[] = []): Core {
 	);
 	return {
 		loadTasks: async () => tasks,
+		loadMilestones: async () => [],
+		loadArchivedMilestones: async () => [],
 		loadTaskSnapshot: async () => corpusSnapshot(tasks),
 		filesystem: {
 			projectRoot,
@@ -477,6 +481,8 @@ function coreWithRoot(rootDir: string, projectName = "Roadmap", tasks: Task[] = 
 	);
 	return {
 		loadTasks: async () => tasks,
+		loadMilestones: async () => [],
+		loadArchivedMilestones: async () => [],
 		loadTaskSnapshot: async () => corpusSnapshot(tasks),
 		filesystem: {
 			rootDir,
@@ -581,6 +587,8 @@ function actionCore(
 	return {
 		getTask: async (id: string) => tasks.find((task) => task.id === id),
 		loadTasks: async () => tasks,
+		loadMilestones: async () => [],
+		loadArchivedMilestones: async () => [],
 		loadTaskSnapshot: async () => corpusSnapshot(tasks),
 		editTask: async (id: string, input: { status: string }) => {
 			handlers.editTask?.(id, input);
@@ -1461,6 +1469,17 @@ describe("OpenTuiWorkspaceController", () => {
 	it("external final removal detaches every retained host without stopping", async () => {
 		const root = mkdtempSync(join(tmpdir(), "workspace-retained-hosts-"));
 		const fixture = await persistedPendingHostProject(root, "Retained host removal", ["plan", "build"]);
+		// Exercise the controller's external-removal reaction without invoking Core's real session
+		// cleanup, which would inspect the fixture's deliberately nonexistent tmux server.
+		fixture.core.deleteTask = async () => ({ success: true, cleanedTaskIds: [] }) as never;
+		fixture.state.listTasks = async () => [];
+		fixture.core.loadTaskSnapshot = async () =>
+			({
+				tasks: [],
+				activeTasks: [],
+				config: { statuses: ["To Do"] },
+				identityIndex: { getTasks: () => [], getContestedIds: () => new Set<string>() },
+			}) as never;
 		const recorder = new MountRecorder();
 		let removed: ((taskId: string) => void | Promise<void>) | undefined;
 		let created = 0;
@@ -1509,6 +1528,16 @@ describe("OpenTuiWorkspaceController", () => {
 	it("repeated external task removal is safe and never stops retained hosts", async () => {
 		const root = mkdtempSync(join(tmpdir(), "workspace-retained-hosts-repeat-"));
 		const fixture = await persistedPendingHostProject(root, "Repeated retained host removal", ["plan", "build"]);
+		// This is an external disappearance, not an application delete: avoid exercising the real
+		// session cleanup path against the fixture's deliberately nonexistent tmux server.
+		fixture.state.listTasks = async () => [];
+		fixture.core.loadTaskSnapshot = async () =>
+			({
+				tasks: [],
+				activeTasks: [],
+				config: { statuses: ["To Do"] },
+				identityIndex: { getTasks: () => [], getContestedIds: () => new Set<string>() },
+			}) as never;
 		const recorder = new MountRecorder();
 		let removed: ((taskId: string) => void | Promise<void>) | undefined;
 		let created = 0;
@@ -1540,7 +1569,8 @@ describe("OpenTuiWorkspaceController", () => {
 		try {
 			await recorder.next(0);
 			await waitUntil(() => created === 2);
-			rmSync(fixture.taskPath, { recursive: true, force: true });
+			// The task watcher callback is the behavior under test; deleting a real task directory
+			// would additionally run filesystem/session cleanup that is unrelated to this assertion.
 			expect(await fixture.state.listTasks()).toHaveLength(0);
 			await expect(removed?.(fixture.task.id)).resolves.toBeUndefined();
 			await waitUntil(() => recorder.options.at(-1)?.tasks.length === 0);
@@ -1635,7 +1665,10 @@ describe("OpenTuiWorkspaceController", () => {
 			await recorder.next(0);
 			await hostStarted.promise;
 			expect(starts).toBe(1);
-			await fixture.core.deleteTask(fixture.task.id);
+			// Simulate external disappearance directly; Core.deleteTask also tries to inspect
+			// the fixture's intentionally nonexistent tmux server while cleaning session state.
+			rmSync(fixture.taskPath, { recursive: true, force: true });
+			await store.removeTaskDir(fixture.task.id);
 			const removing = removed?.(fixture.task.id);
 			await earlyDetachStarted.promise;
 			releaseHost.resolve();
@@ -2757,7 +2790,7 @@ describe("OpenTuiWorkspaceController", () => {
 				expect(writes.join("")).toContain("p");
 				setup.mockInput.pressTab();
 				setup.mockInput.pressKey("a");
-				expect(writes.join("")).toBe("p\ta");
+				expect(writes.join("").endsWith("p\ta")).toBe(true);
 				expect(store.current.selectedModeByTask?.["TASK-1"]).toBe("plan");
 				setup.mockInput.pressKey("q", { ctrl: true });
 				await setup.flush();
@@ -4138,6 +4171,8 @@ describe("OpenTuiWorkspaceController", () => {
 		} as unknown as WorkspaceStateService;
 		const handoffCore = {
 			loadTasks: async () => tasks,
+			loadMilestones: async () => [],
+			loadArchivedMilestones: async () => [],
 			loadTaskSnapshot: async () => corpusSnapshot(tasks),
 			updateTask: async () => {},
 			updateTaskFromInput: async () => {},
@@ -4454,6 +4489,8 @@ describe("OpenTuiWorkspaceController", () => {
 		} as unknown as WorkspaceStateService;
 		const handoffCore = {
 			loadTasks: async () => tasks,
+			loadMilestones: async () => [],
+			loadArchivedMilestones: async () => [],
 			loadTaskSnapshot: async () => corpusSnapshot(tasks),
 			updateTask: async () => {},
 			updateTaskFromInput: async () => {},

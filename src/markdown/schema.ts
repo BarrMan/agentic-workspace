@@ -23,6 +23,7 @@ export const TASK_FRONTMATTER_FIELDS = {
 	ON_STATUS_CHANGE: "onStatusChange",
 	AGENT_CONFIGURATION: "agentConfiguration",
 	MODE_APPROVALS: "mode_approvals",
+	WORKTREE_POLICY: "worktree_policy",
 	DESCRIPTION: "description",
 } as const;
 

@@ -25,10 +25,16 @@ afterEach(async () => {
 describe("resolveLaunchPreset", () => {
 	it("resolves supported OpenCode versions to their concrete session harness", async () => {
 		for (const [version, bootstrap] of [
+			["1.0.0", "opencode-v1"],
 			["1.19.0", "opencode-v1"],
+			["1.19.3", "opencode-v1"],
+			["1.20.0", "opencode-v1"],
+			["v1.19.0", "opencode-v1"],
 			["opencode 1.19.0", "opencode-v1"],
 			["v2.4.0", "opencode-v2"],
+			["2.0.26", "opencode-v2"],
 			["opencode v2.0.26", "opencode-v2"],
+			["OpenCode v2.0.26", "opencode-v2"],
 		] as const) {
 			const { cwd, command } = await versionCommand(version);
 			const resolved = await resolveLaunchPreset({ ...preset, command }, { cwd, env: {} });
@@ -37,7 +43,7 @@ describe("resolveLaunchPreset", () => {
 	});
 
 	it("does not guess unsupported OpenCode versions", async () => {
-		for (const version of ["1.20.0", "2.0.26", "OpenCode v2.0.26", "opencode v2.0.26 extra"]) {
+		for (const version of ["0.19.0", "3.0.0", "1.19", "1.19.x", "2.0", "1.19.0-beta.1", "opencode v2.0.26 extra"]) {
 			const { cwd, command } = await versionCommand(version);
 			await expect(resolveLaunchPreset({ ...preset, command }, { cwd, env: {} })).rejects.toThrow(
 				"Unsupported OpenCode version",

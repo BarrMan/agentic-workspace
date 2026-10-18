@@ -142,6 +142,13 @@ describe("FileSystem", () => {
 			expect(loadedTask?.description).toBe(sampleTask.description);
 		});
 
+		it("rejects legacy alphanumeric task IDs on save", async () => {
+			await expect(filesystem.saveTask({ ...sampleTask, id: "TASK-PREFIXED" })).rejects.toThrow("Invalid task ID");
+			await expect(filesystem.saveTask({ ...sampleTask, parentTaskId: "TASK-PREFIXED" })).rejects.toThrow(
+				"Invalid parent task ID",
+			);
+		});
+
 		it("preserves unknown frontmatter and opaque body when saving an existing task", async () => {
 			await filesystem.saveTask({
 				...sampleTask,
@@ -195,7 +202,9 @@ describe("FileSystem", () => {
 				await Bun.write(item.path, serializeTask(record));
 				const before = await Bun.file(item.path).text();
 				if (item.accepted) {
+					await expect(filesystem.saveTask({ ...record, filePath: undefined }, { create: true })).rejects.toThrow();
 					await filesystem.saveTask({ ...record, filePath: undefined, title: "Changed by ID" });
+					expect(await Bun.file(item.path).text()).toContain("Changed by ID");
 					await filesystem.saveTask({ ...record, title: "Changed" });
 					expect(await Bun.file(item.path).text()).toContain("Changed");
 					// Use a fresh copy after the save; lifecycle must validate the same identity.
@@ -248,11 +257,11 @@ describe("FileSystem", () => {
 			expect(task).toBeNull();
 		});
 
-		it("does not read a longer legacy sibling for a shorter numeric ID", async () => {
-			await filesystem.saveTask({ ...sampleTask, id: "BACK-1-EXTRA", title: "Longer sibling" });
+		it("does not read a longer numeric sibling for a shorter numeric ID", async () => {
+			await filesystem.saveTask({ ...sampleTask, id: "BACK-12", title: "Longer sibling" });
 
 			expect(await filesystem.loadTask("BACK-1")).toBeNull();
-			expect((await filesystem.loadTask("back-1-extra"))?.title).toBe("Longer sibling");
+			expect((await filesystem.loadTask("back-12"))?.title).toBe("Longer sibling");
 		});
 
 		it("loads each padded spelling from its own container", async () => {
@@ -269,28 +278,28 @@ describe("FileSystem", () => {
 			);
 		});
 
-		it("does not archive a longer legacy sibling for a shorter numeric ID", async () => {
-			await filesystem.saveTask({ ...sampleTask, id: "BACK-1-EXTRA", title: "Longer sibling" });
+		it("does not archive a longer numeric sibling for a shorter numeric ID", async () => {
+			await filesystem.saveTask({ ...sampleTask, id: "BACK-12", title: "Longer sibling" });
 
 			expect(await filesystem.archiveTask("BACK-1")).toBe(false);
-			expect((await filesystem.loadTask("BACK-1-EXTRA"))?.title).toBe("Longer sibling");
+			expect((await filesystem.loadTask("BACK-12"))?.title).toBe("Longer sibling");
 			expect(await readdir(filesystem.archiveTasksDir)).toHaveLength(0);
 		});
 
-		it("does not complete a longer legacy sibling for a shorter numeric ID", async () => {
-			await filesystem.saveTask({ ...sampleTask, id: "BACK-1-EXTRA", title: "Longer sibling" });
+		it("does not complete a longer numeric sibling for a shorter numeric ID", async () => {
+			await filesystem.saveTask({ ...sampleTask, id: "BACK-12", title: "Longer sibling" });
 
 			expect(await filesystem.completeTask("BACK-1")).toBe(false);
-			expect((await filesystem.loadTask("BACK-1-EXTRA"))?.title).toBe("Longer sibling");
+			expect((await filesystem.loadTask("BACK-12"))?.title).toBe("Longer sibling");
 			expect(await readdir(filesystem.completedDir)).toHaveLength(0);
 		});
 
-		it("does not delete a longer legacy sibling during numeric save cleanup", async () => {
-			await filesystem.saveTask({ ...sampleTask, id: "BACK-1-EXTRA", title: "Longer sibling" });
+		it("does not delete a longer numeric sibling during numeric save cleanup", async () => {
+			await filesystem.saveTask({ ...sampleTask, id: "BACK-12", title: "Longer sibling" });
 			await filesystem.saveTask({ ...sampleTask, id: "BACK-1", title: "Numeric target" });
 
 			expect((await filesystem.loadTask("BACK-1"))?.title).toBe("Numeric target");
-			expect((await filesystem.loadTask("BACK-1-EXTRA"))?.title).toBe("Longer sibling");
+			expect((await filesystem.loadTask("BACK-12"))?.title).toBe("Longer sibling");
 		});
 
 		it("should list all tasks", async () => {
@@ -945,7 +954,7 @@ title: Broken Task
 	describe("edge cases", () => {
 		it("should handle task with task- prefix in id", async () => {
 			const taskWithPrefix: Task = {
-				id: "task-prefixed",
+				id: "task-777",
 				title: "Already Prefixed",
 				status: "To Do",
 				assignee: [],
@@ -954,39 +963,19 @@ title: Broken Task
 				dependencies: [],
 				description: "Task with task- prefix",
 			};
-			const longerLegacyTask: Task = {
+			const longerTask: Task = {
 				...taskWithPrefix,
-				id: "task-prefixed-extra",
-				title: "Longer Legacy ID",
+				id: "task-778",
+				title: "Longer ID",
 			};
 
 			await filesystem.saveTask(taskWithPrefix);
-			await filesystem.saveTask(longerLegacyTask);
-			const loaded = await filesystem.loadTask("task-prefixed");
-			const longerLoaded = await filesystem.loadTask("task-prefixed-extra");
+			await filesystem.saveTask(longerTask);
+			const loaded = await filesystem.loadTask("task-777");
+			const longerLoaded = await filesystem.loadTask("task-778");
 
-			expect(loaded?.id).toBe("TASK-PREFIXED"); // IDs are normalized to uppercase
-			expect(longerLoaded?.id).toBe("TASK-PREFIXED-EXTRA");
-		});
-
-		it("should handle task without task- prefix in id", async () => {
-			// ID without any prefix pattern (no letters-dash)
-			const taskWithoutPrefix: Task = {
-				id: "123",
-				title: "No Prefix",
-				status: "To Do",
-				assignee: [],
-				createdDate: "2025-06-07",
-				labels: [],
-				dependencies: [],
-				description: "Task without prefix",
-			};
-
-			await filesystem.saveTask(taskWithoutPrefix);
-			const loaded = await filesystem.loadTask("task-123");
-
-			// IDs without prefix get the configured (or default) task prefix
-			expect(loaded?.id).toBe("TASK-123");
+			expect(loaded?.id).toBe("TASK-777"); // IDs are normalized to uppercase
+			expect(longerLoaded?.id).toBe("TASK-778");
 		});
 
 		it("should preserve custom prefix in id", async () => {
@@ -1037,7 +1026,7 @@ title: Broken Task
 
 		it("should sanitize filenames correctly", async () => {
 			const taskWithSpecialChars: Task = {
-				id: "task-special",
+				id: "task-998",
 				title: "Task/with\\special:chars?",
 				status: "To Do",
 				assignee: [],
@@ -1048,14 +1037,14 @@ title: Broken Task
 			};
 
 			await filesystem.saveTask(taskWithSpecialChars);
-			const loaded = await filesystem.loadTask("task-special");
+			const loaded = await filesystem.loadTask("task-998");
 
 			expect(loaded?.title).toBe("Task/with\\special:chars?");
 		});
 
 		it("should preserve case in filenames", async () => {
 			const taskWithMixedCase: Task = {
-				id: "task-mixed",
+				id: "task-997",
 				title: "Fix Task List Ordering",
 				status: "To Do",
 				assignee: [],
@@ -1069,17 +1058,17 @@ title: Broken Task
 
 			// Check that the file exists with preserved case
 			const files = await readdir(filesystem.tasksDir);
-			expect(files).toContain("task-mixed");
-			expect(await Bun.file(join(filesystem.tasksDir, "task-mixed", "task.md")).exists()).toBe(true);
+			expect(files).toContain("task-997");
+			expect(await Bun.file(join(filesystem.tasksDir, "task-997", "task.md")).exists()).toBe(true);
 
 			// Verify the task can be loaded
-			const loaded = await filesystem.loadTask("task-mixed");
+			const loaded = await filesystem.loadTask("task-997");
 			expect(loaded?.title).toBe("Fix Task List Ordering");
 		});
 
 		it("refuses retired flat task files without changing their bytes", async () => {
 			const legacyTask: Task = {
-				id: "task-legacy",
+				id: "task-995",
 				title: "Legacy user's login (OAuth)",
 				status: "To Do",
 				assignee: [],
@@ -1089,40 +1078,38 @@ title: Broken Task
 				description: "Legacy punctuation task",
 			};
 
-			const flatPath = join(filesystem.tasksDir, "task-legacy - Legacy-user's-login-(OAuth).md");
+			const flatPath = join(filesystem.tasksDir, "task-995 - Legacy-user's-login-(OAuth).md");
 			await Bun.write(flatPath, serializeTask(legacyTask));
-			await expect(filesystem.loadTask("task-legacy")).rejects.toThrow(
-				/unsupported flat task record.*manually convert/i,
-			);
+			await expect(filesystem.loadTask("task-995")).rejects.toThrow(/unsupported flat task record.*manually convert/i);
 			expect(await Bun.file(flatPath).exists()).toBe(true);
 			expect(await Bun.file(flatPath).text()).toContain("task_schema_version: 3");
-			expect((await readdir(filesystem.tasksDir)).some((file) => file === "task-legacy")).toBe(false);
+			expect((await readdir(filesystem.tasksDir)).some((file) => file === "task-995")).toBe(false);
 		});
 
 		it("should sanitize a variety of problematic task titles", async () => {
 			const cases: Array<{ id: string; title: string; expected: string }> = [
 				{
-					id: "task-bad-1",
+					id: "task-980",
 					title: "Fix the user's login (OAuth)! #1",
 					expected: "Fix-the-users-login-OAuth-1",
 				},
 				{
-					id: "task-bad-2",
+					id: "task-981",
 					title: "Crazy!@#$%^&*()Name",
 					expected: "Crazy-Name",
 				},
 				{
-					id: "task-bad-3",
+					id: "task-982",
 					title: "File with <bad> |chars| and /slashes\\",
 					expected: "File-with-bad-chars-and-slashes",
 				},
 				{
-					id: "task-bad-4",
+					id: "task-983",
 					title: "Tabs\tand\nnewlines",
 					expected: "Tabs-and-newlines",
 				},
 				{
-					id: "task-bad-5",
+					id: "task-984",
 					title: "Edge -- dashes ???",
 					expected: "Edge-dashes",
 				},
@@ -1152,7 +1139,7 @@ title: Broken Task
 
 		it("names a task file with a placeholder title instead of an empty segment", async () => {
 			const task: Task = {
-				id: "task-punct-only",
+				id: "task-994",
 				title: punctuationOnlyTitle,
 				status: "To Do",
 				assignee: [],
@@ -1165,15 +1152,15 @@ title: Broken Task
 			await filesystem.saveTask(task);
 
 			const files = await readdir(filesystem.tasksDir);
-			expect(files).toContain("task-punct-only");
-			expect(await filesystem.getTaskWritePath(task)).toBe(join(filesystem.tasksDir, "task-punct-only - untitled.md"));
+			expect(files).toContain("task-994");
+			expect(await filesystem.getTaskWritePath(task)).toBe(join(filesystem.tasksDir, "task-994 - untitled.md"));
 			// The title itself is preserved in the file; only the filename uses the placeholder
-			expect((await filesystem.loadTask("task-punct-only"))?.title).toBe(punctuationOnlyTitle);
+			expect((await filesystem.loadTask("task-994"))?.title).toBe(punctuationOnlyTitle);
 		});
 
 		it("keeps the id parseable by the readers that split the task filename", async () => {
 			await filesystem.saveTask({
-				id: "task-punct-reader",
+				id: "task-993",
 				title: punctuationOnlyTitle,
 				status: "To Do",
 				assignee: [],
@@ -1184,9 +1171,9 @@ title: Broken Task
 			});
 
 			const files = await readdir(filesystem.tasksDir);
-			const filename = files.find((f) => f.startsWith("task-punct-reader"));
+			const filename = files.find((f) => f.startsWith("task-993"));
 			expect(filename).toBeDefined();
-			expect(filename).toBe("task-punct-reader");
+			expect(filename).toBe("task-993");
 			expect(await Bun.file(join(filesystem.tasksDir, filename!, "task.md")).exists()).toBe(true);
 		});
 
@@ -1280,7 +1267,7 @@ title: Broken Task
 				rawContent: "",
 			};
 
-			await filesystem.saveTask(task);
+			const taskPath = await filesystem.saveTask(task);
 			await filesystem.saveDocument(document);
 			await filesystem.saveDecision(decision);
 
@@ -1290,7 +1277,7 @@ title: Broken Task
 				`decision:${filesystem.agenticWorkspaceDir}`,
 			]);
 			unsubscribe();
-			await filesystem.saveTask({ ...task, title: "Unobserved task" });
+			await filesystem.saveTask({ ...task, filePath: taskPath, title: "Unobserved task" });
 			expect(mutations).toHaveLength(3);
 		});
 	});

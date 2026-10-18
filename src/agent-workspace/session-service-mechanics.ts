@@ -3,7 +3,7 @@ import { realpathSync } from "node:fs";
 import { stat } from "node:fs/promises";
 import { join, resolve, sep } from "node:path";
 import type { Core } from "../core/agentic-workspace.ts";
-import { taskWorktreeExists, taskWorktreePath } from "../git/task-worktree.ts";
+import { ensureTaskWorktree, taskWorktreePath } from "../git/task-worktree.ts";
 import { TASK_SOURCE, type Task } from "../types/index.ts";
 import type { Agent, LaunchOrigin, NativeIdentity, SessionIntent } from "./agents/agent.ts";
 import { agentFor } from "./agents/agents.ts";
@@ -225,8 +225,6 @@ export async function withTaskSessionAdmission<T>(
 	taskId: string,
 	operation: (task: Task) => Promise<T>,
 ): Promise<T> {
-	if (process.env.USE_GLOBAL_TASK_ID_LOCK?.toLowerCase() === "false")
-		throw new Error(`Task session locking is disabled; refusing session operation for ${taskId}.`);
 	const task = await core.loadTaskForMutation(taskId, { includeCrossBranch: false });
 	if (!task || !task.filePath || task.source === TASK_SOURCE.REMOTE || task.source === TASK_SOURCE.LOCAL_BRANCH)
 		throw new Error(`Locally editable task not found: ${taskId}`);
@@ -387,12 +385,22 @@ export async function pathContextFor(core: Core, taskId: string, cwd: string): P
 
 export async function sessionCwdFor(
 	core: Core,
-	task: { id: string; title: string },
+	task: Pick<Task, "id" | "title" | "worktreePolicy">,
 	settings: SessionSettings,
 ): Promise<string> {
-	if (settings.worktreePerTask && (await taskWorktreeExists(core.filesystem.rootDir, task)))
-		return taskWorktreePath(core.filesystem.rootDir, task);
-	return core.filesystem.rootDir;
+	const enabled = settings.worktreePerTask || task.worktreePolicy === "enabled";
+	if (!enabled) return core.filesystem.rootDir;
+	const expectedPath = taskWorktreePath(core.filesystem.rootDir, task);
+	try {
+		const path = await ensureTaskWorktree(core.filesystem.rootDir, task);
+		if (path) return path;
+	} catch (error) {
+		throw new Error(
+			`Could not prepare worktree for ${task.id} at ${expectedPath}: ${error instanceof Error ? error.message : String(error)}`,
+			{ cause: error },
+		);
+	}
+	throw new Error(`Could not prepare worktree for ${task.id} at ${expectedPath}: worktree creation returned no path`);
 }
 
 export async function createSessionRecord(

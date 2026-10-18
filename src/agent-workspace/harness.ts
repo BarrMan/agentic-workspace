@@ -2,13 +2,10 @@ import { randomUUID } from "node:crypto";
 import { watch } from "node:fs";
 import { readFile, rm } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
+import type { ReadinessExpectation } from "./agents/agent.ts";
+import { agentFor } from "./agents/agents.ts";
 import { resolveLaunchPreset } from "./agents/opencode-resolution.ts";
-import {
-	initializedReceiptPath,
-	preflightAgentLaunch,
-	prepareAgentLaunchResources,
-	promptAcceptedReceiptPath,
-} from "./session-launch.ts";
+import { preflightAgentLaunch, prepareAgentLaunchResources } from "./session-launch.ts";
 import { BunRunner, missingPaneStderr, SessionProcess } from "./session-process.ts";
 import { sessionActivityDir } from "./status-hooks.ts";
 import type {
@@ -76,15 +73,6 @@ export interface HarnessProvider {
 	resume(nativeId: string, context: SessionLaunchContext): Promise<RunningExecution>;
 }
 
-export interface HarnessReadinessEvidence {
-	readonly identity: string;
-	readonly initialization: string;
-	readonly promptAcknowledgment: string;
-	readonly resume: string;
-	readonly failure: string;
-	readonly events: RunningExecutionEvents;
-}
-
 export const PROVIDER_READINESS_DEADLINE_MS = 10_000;
 
 export interface ProviderReadinessFailureDiagnostic {
@@ -100,64 +88,7 @@ export interface ProviderReadinessFailureDiagnostic {
 	readonly receiptPath: string;
 }
 
-export const HARNESS_READINESS_MATRIX = {
-	"opencode-v1": {
-		identity: "Plugin `session.created` event, written as the `<sessionId>.native-session-id` receipt.",
-		initialization: "Owned pane live and the plugin has flushed the identity receipt.",
-		promptAcknowledgment: "Project-authored plugin emits prompt-accepted after bootstrap submission.",
-		resume: "Identity receipt plus a live initialized pane; no bootstrap replay.",
-		failure:
-			"Owned pane disappears or exits within `LAUNCH_PROBE_DURATION_MS`; the v1 CLI preflight has its own bounded timeout.",
-		events: {
-			turnCompleted: "supported",
-			permissionWait: "supported",
-			executionExit: "supported",
-			activity: "supported",
-		},
-	},
-	"opencode-v2": {
-		identity: "Client-allocated `ses_<uuid>` confirmed by the server session response.",
-		initialization: "Server session lookup succeeds for the launched session.",
-		promptAcknowledgment: "Server accepts the bootstrap message (API ack / SSE event).",
-		resume: "Server session lookup for the exact native id; no bootstrap replay.",
-		failure:
-			"Version probe (5s) and resume-session probe (8s) preflight; pane disappearance or exit within the shared launch-probe deadline is conclusive.",
-		events: {
-			turnCompleted: "supported",
-			permissionWait: "unsupported",
-			executionExit: "supported",
-			activity: "supported",
-		},
-	},
-	claude: {
-		identity: "Client `--session-id`, correlated with the `SessionStart` hook `session_id`.",
-		initialization: "`SessionStart` hook observed for the launched session.",
-		promptAcknowledgment: "`UserPromptSubmit` hook fires for the bootstrap prompt.",
-		resume: "`SessionStart` hook with `source: resume`; no bootstrap replay.",
-		failure: "Pane disappearance or exit within the shared launch-probe deadline.",
-		events: {
-			turnCompleted: "supported",
-			permissionWait: "supported",
-			executionExit: "supported",
-			activity: "supported",
-		},
-	},
-	pi: {
-		identity: "Client `--session-id`, correlated with `session_start` session metadata.",
-		initialization: "`session_start` extension event observed.",
-		promptAcknowledgment: "`before_agent_start` carries the accepted bootstrap prompt.",
-		resume: "`session_start` event; no bootstrap replay.",
-		failure: "Pane disappearance or exit within the shared launch-probe deadline.",
-		events: {
-			turnCompleted: "supported",
-			permissionWait: "unsupported",
-			executionExit: "supported",
-			activity: "supported",
-		},
-	},
-} as const satisfies Record<"opencode-v1" | "opencode-v2" | "claude" | "pi", HarnessReadinessEvidence>;
-
-export type ReadinessReceiptExpectation = string | Readonly<Record<string, string>>;
+export type ReadinessReceiptExpectation = ReadinessExpectation;
 
 export function parseReadinessReceipt(contents: string, expected?: ReadinessReceiptExpectation): boolean {
 	const value = contents.trim();
@@ -267,6 +198,7 @@ export class Harness implements HarnessProvider {
 	}
 
 	resume(nativeId: string, context: SessionLaunchContext): Promise<RunningExecution> {
+		if (!nativeId.trim()) return Promise.reject(new Error("Resume requires a non-empty retained provider session ID."));
 		return this.start(context, { kind: "resume", nativeSessionId: nativeId });
 	}
 
@@ -275,6 +207,9 @@ export class Harness implements HarnessProvider {
 		intent: { kind: "new" } | { kind: "resume"; nativeSessionId: string },
 	): Promise<RunningExecution> {
 		const record = context.record as AgentSession;
+		const agent = agentFor(context.preset.bootstrap);
+		if (!agent) throw new Error(`No agent registered for bootstrap type ${context.preset.bootstrap}.`);
+		if (!agent.readiness) throw new Error(`Agent ${agent.name} does not provide Harness readiness evidence.`);
 		const executionId = randomUUID();
 		const env = { ...context.configuration.config.presets[record.preset]?.env, ...context.preset.env };
 		const preset = await resolveLaunchPreset(context.preset, { cwd: record.cwd, env });
@@ -309,38 +244,34 @@ export class Harness implements HarnessProvider {
 				...(intent.kind === "resume" ? { nativeSessionId: intent.nativeSessionId } : {}),
 			});
 			await this.process.launchPrepared(record, prepared);
-			const launchDirectory = prepared.resources.skill.path;
-			const initializedPath = initializedReceiptPath(launchDirectory);
+			const readiness = agent.readiness(intent, prepared.resources.skill.path, prepared.identity);
+			await waitForReceipts(
+				[readiness.initialized.path],
+				readiness.initialized.expected,
+				record,
+				this.process,
+				this.readinessDeadlineMs,
+			);
+			const observedId = await observedNativeId(readiness.initialized.path);
+			if (!observedId || !observedId.trim())
+				throw new Error(`Provider initialized receipt has no native identity for session ${record.id}.`);
 			if (intent.kind === "new") {
-				const initializedExpected: ReadinessReceiptExpectation | undefined =
-					context.preset.bootstrap === "claude" && prepared.identity
-						? { session_id: prepared.identity.id }
-						: prepared.identity?.id;
-				await waitForReceipts([initializedPath], initializedExpected, record, this.process, this.readinessDeadlineMs);
-				const nativeId = await observedNativeId(initializedPath);
-				if (!nativeId) throw new Error(`Provider initialized receipt has no native identity for session ${record.id}.`);
+				if (!readiness.promptAccepted)
+					throw new Error(`Provider prompt acceptance evidence is unavailable for session ${record.id}.`);
 				await waitForReceipts(
-					[promptAcceptedReceiptPath(launchDirectory)],
-					context.preset.bootstrap === "claude" ? { session_id: nativeId } : nativeId,
+					[readiness.promptAccepted.path],
+					readiness.promptAccepted.expected,
 					record,
 					this.process,
 					this.readinessDeadlineMs,
 				);
-				if (context.preset.bootstrap === "opencode-v2") {
-					if (!prepared.confirmSession)
-						throw new Error(`OpenCode v2 confirmation is unavailable for session ${record.id}.`);
-					if (!(await prepared.confirmSession(nativeId)))
-						throw new Error(`OpenCode v2 could not confirm session ${nativeId} after prompt acceptance.`);
-				}
-			} else {
-				const expected: ReadinessReceiptExpectation =
-					context.preset.bootstrap === "claude"
-						? { session_id: intent.nativeSessionId, source: "resume" }
-						: intent.nativeSessionId;
-				await waitForReceipts([initializedPath], expected, record, this.process, this.readinessDeadlineMs);
+				if (readiness.confirmationRequired && !prepared.confirmSession)
+					throw new Error(`Provider session confirmation is unavailable for session ${record.id}.`);
+				if (prepared.confirmSession && !(await prepared.confirmSession(observedId)))
+					throw new Error(`Provider could not confirm session ${observedId} after prompt acceptance.`);
 			}
-			const identity = intent.kind === "resume" ? intent.nativeSessionId : await observedNativeId(initializedPath);
-			if (!identity) throw new Error(`Provider identity missing for session ${record.id}.`);
+			const identity = intent.kind === "resume" ? intent.nativeSessionId : observedId;
+			if (!identity?.trim()) throw new Error(`Provider identity missing for session ${record.id}.`);
 			return await this.execution(context, record, identity, prepared, executionId);
 		} catch (cause) {
 			let startupError = cause;
@@ -400,17 +331,17 @@ export class Harness implements HarnessProvider {
 			executionId,
 			nativeSessionId: nativeId,
 		};
-		const permissionWait: RunningExecution["events"]["permissionWait"] =
-			context.preset.bootstrap === "opencode-v2" || context.preset.bootstrap === "pi" ? "unsupported" : "supported";
+		const agent = agentFor(context.preset.bootstrap);
+		if (!agent) throw new Error(`No agent registered for bootstrap type ${context.preset.bootstrap}.`);
 		const subscriptions = new Set<() => void>();
 		return {
 			identity,
 			providerConversationId: nativeId,
-			events: {
-				turnCompleted: "supported",
-				permissionWait,
-				executionExit: "supported",
-				activity: "supported",
+			events: agent.events ?? {
+				turnCompleted: "unsupported",
+				permissionWait: "unsupported",
+				executionExit: "unsupported",
+				activity: "unsupported",
 			},
 			input: (text) => this.process.input(record, text),
 			sendKey: (key) => this.process.sendKey(record, key),

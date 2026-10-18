@@ -60,6 +60,7 @@ function fixture(records: Map<string, string>) {
 describe("current-only Git task snapshots", () => {
 	it("never reads flat records or artifacts, even when they contain current task frontmatter", async () => {
 		const path = "agentic-workspace/tasks/task-1/task.md";
+		const uppercaseContainer = "agentic-workspace/tasks/TASK-2/task.md";
 		const ignored = [
 			"agentic-workspace/tasks/task-1 - Old.md",
 			"agentic-workspace/completed/task-2 - Current schema, flat layout.md",
@@ -67,7 +68,6 @@ describe("current-only Git task snapshots", () => {
 			"agentic-workspace/tasks/task-1/plan.md",
 			"agentic-workspace/tasks/task-1/nested/task.md",
 			"agentic-workspace/tasks/task-2 - Title/task.md",
-			"agentic-workspace/tasks/TASK-2/task.md",
 			"agentic-workspace/tasks/2/task.md",
 			"agentic-workspace/tasks/not an id/task.md",
 			"agentic-workspace/docs/task-2/task.md",
@@ -76,15 +76,16 @@ describe("current-only Git task snapshots", () => {
 		const records = new Map(ignored.map((record) => [record, serializeTask(task("TASK-2"))]));
 		records.set(ignored[0] ?? "", "---\nid: TASK-1\n---\nOld record");
 		records.set(path, serializeTask(task()));
+		records.set(uppercaseContainer, serializeTask(task("TASK-2")));
 		const { loader, calls } = fixture(records);
 		const result = await loader.load(tips, config, [], true);
 		expect(result.complete).toBe(true);
-		expect(result.entries.map((entry) => entry.path)).toEqual([path]);
-		expect(calls.blobs).toEqual([path]);
+		expect(result.entries.map((entry) => entry.path)).toEqual([path, uppercaseContainer]);
+		expect(calls.blobs.sort()).toEqual([path, uppercaseContainer].sort());
 		for (const record of ignored.filter((record) => !record.startsWith("other/"))) {
 			expect(await loader.loadPersistentTask(commit, record)).toBeNull();
 		}
-		expect(calls.blobs).toEqual([path]);
+		expect(calls.blobs.sort()).toEqual([path, uppercaseContainer].sort());
 	});
 
 	for (const version of [undefined, 1, 2, 9]) {

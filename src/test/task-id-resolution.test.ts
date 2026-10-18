@@ -1,76 +1,18 @@
 import { describe, expect, it } from "bun:test";
-import type { Task } from "../types/index.ts";
-import { resolveTaskById } from "../utils/task-id.ts";
+import { isValidTaskId, taskIdsEqual } from "../utils/task-id.ts";
 
-const task = (id: string): Task => ({
-	id,
-	title: id,
-	status: "To Do",
-	assignee: [],
-	labels: [],
-	dependencies: [],
-	createdDate: "2026-07-10",
-});
-
-describe("resolveTaskById", () => {
-	it("infers the configured prefix for an exact dotted numeric route", () => {
-		const result = resolveTaskById([task("BACK-1.2")], "1.2");
-		expect(result.status).toBe("found");
-		if (result.status === "found") {
-			expect(result.task.id).toBe("BACK-1.2");
-		}
+describe("exact task IDs", () => {
+	it("accepts only prefixed numeric IDs with optional dotted segments", () => {
+		for (const id of ["TASK-1", "BACK-001.02", "TASK-9007199254740992.2"]) expect(isValidTaskId(id)).toBe(true);
+		for (const id of ["1", "TASK-PREFIXED", "TASK-1-EXTRA", "TASK-1/2", "TASK-1.2x"])
+			expect(isValidTaskId(id)).toBe(false);
 	});
 
-	it("matches a custom prefix case-insensitively without changing its body", () => {
-		const tasks = [task("BACK-7"), task("JIRA-7")];
-		const result = resolveTaskById(tasks, "jira-7");
-		expect(result.status).toBe("found");
-		if (result.status === "found") {
-			expect(result.task.id).toBe("JIRA-7");
-		}
-	});
-
-	it("resolves safe legacy IDs by exact identity only", () => {
-		const result = resolveTaskById([task("TASK-PREFIXED"), task("TASK-PREFIXED-EXTRA")], "task-prefixed");
-		expect(result.status).toBe("found");
-		if (result.status === "found") {
-			expect(result.task.id).toBe("TASK-PREFIXED");
-		}
-		expect(resolveTaskById([task("TASK-PREFIXED")], "TASK-PREFIXED-EXTRA").status).toBe("not-found");
-	});
-
-	it("fails closed on duplicate exact legacy identities", () => {
-		expect(resolveTaskById([task("TASK-PREFIXED"), task("task-prefixed")], "TASK-PREFIXED").status).toBe("ambiguous");
-	});
-
-	it("compares arbitrarily large decimal segments without number coercion", () => {
-		const adjacent = resolveTaskById([task("TASK-9007199254740993")], "TASK-9007199254740992");
-		expect(adjacent.status).toBe("not-found");
-
-		const padded = resolveTaskById([task("TASK-9007199254740992.0002")], "task-9007199254740992.0002");
-		expect(padded.status).toBe("found");
-		expect(resolveTaskById([task("TASK-9007199254740992.0002")], "task-09007199254740992.2").status).toBe("not-found");
-
-		const zero = resolveTaskById([task("TASK-0000.00")], "0000.00");
-		expect(zero.status).toBe("found");
-	});
-
-	it("infers bare numeric prefixes and keeps padded IDs distinct", () => {
-		expect(resolveTaskById([task("BACK-7"), task("JIRA-7")], "7").status).toBe("ambiguous");
-		expect(resolveTaskById([task("BACK-1.2"), task("BACK-001.02")], "BACK-1.2").status).toBe("found");
-		expect(
-			resolveTaskById([task("TASK-9007199254740992.2"), task("TASK-09007199254740992.0002")], "TASK-9007199254740992.2")
-				.status,
-		).toBe("found");
-	});
-
-	it("distinguishes invalid and missing route IDs", () => {
-		expect(resolveTaskById([task("BACK-1")], "BACK-1/2").status).toBe("invalid");
-		expect(resolveTaskById([task("BACK-1")], "../1").status).toBe("invalid");
-		expect(resolveTaskById([task("TASK-PREFIXED")], "TASK-..").status).toBe("invalid");
-		expect(resolveTaskById([task("TASK-PREFIXED")], "TASK-PREFIXED\\..\\secret").status).toBe("invalid");
-		expect(resolveTaskById([task("TASK-PREFIXED")], "TASK-PREFIXED%2F..%2Fsecret").status).toBe("invalid");
-		expect(resolveTaskById([task("BACK-1")], "2").status).toBe("not-found");
-		expect(resolveTaskById([task("TASK-PREFIXED")], "TASK-MISSING").status).toBe("not-found");
+	it("compares task IDs case-insensitively without numeric normalization", () => {
+		expect(taskIdsEqual("TASK-1.2", "TASK-1.2")).toBe(true);
+		expect(taskIdsEqual("TASK-1", "task-1")).toBe(true);
+		expect(taskIdsEqual("TASK-01", "TASK-1")).toBe(false);
+		expect(taskIdsEqual("TASK-1.2", "TASK-01.2")).toBe(false);
+		expect(taskIdsEqual("BACK-7", "JIRA-7")).toBe(false);
 	});
 });

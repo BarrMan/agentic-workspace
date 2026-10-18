@@ -347,8 +347,6 @@ describe("Permanent task deletion", () => {
 	});
 
 	it("refuses session admissions under deletion's lock and rejects retries after deletion", async () => {
-		const previousLockMode = process.env.USE_GLOBAL_TASK_ID_LOCK;
-		delete process.env.USE_GLOBAL_TASK_ID_LOCK;
 		const releaseDelete = Promise.withResolvers<void>();
 		let deletion: Promise<unknown> | undefined;
 		let testError: unknown;
@@ -452,78 +450,37 @@ describe("Permanent task deletion", () => {
 					}
 				}
 			}
-			if (previousLockMode === undefined) delete process.env.USE_GLOBAL_TASK_ID_LOCK;
-			else process.env.USE_GLOBAL_TASK_ID_LOCK = previousLockMode;
 		}
 		if (failed) throw testError;
 	});
 
 	it("does not delete a task when its native runtime ownership is uncertain", async () => {
-		const previousLockMode = process.env.USE_GLOBAL_TASK_ID_LOCK;
-		delete process.env.USE_GLOBAL_TASK_ID_LOCK;
-		try {
-			core = new Core(testDir);
-			await initializeFilesystemTestProject(core, "Owned native deletion lock");
-			const { task } = await core.createTaskFromInput({ title: "Owned host delete" });
-			const store = new SessionStore(testDir, new BunRunner());
-			const sessionId = "owned-running";
-			const { taskDir } = await store.paths(task.id);
-			await store.mutate(task.id, async (state) => {
-				state.sessions.push({
-					id: sessionId,
-					taskId: task.id,
-					preset: "test",
-					tmuxName: `agentic-workspace-${task.id.toLowerCase()}-${sessionId}`,
-					nativeSessionId: "native-owned",
-					nativeWorkspace: true,
-					ownerPid: process.pid,
-					cwd: testDir,
-					createdAt: new Date().toISOString(),
-					status: "running",
-					outputPath: join(taskDir, `${sessionId}.log`),
-					bootstrapPath: join(taskDir, `${sessionId}.md`),
-				});
-				state.activeSessionId = sessionId;
+		core = new Core(testDir);
+		await initializeFilesystemTestProject(core, "Owned native deletion lock");
+		const { task } = await core.createTaskFromInput({ title: "Owned host delete" });
+		const store = new SessionStore(testDir, new BunRunner());
+		const sessionId = "owned-running";
+		const { taskDir } = await store.paths(task.id);
+		await store.mutate(task.id, async (state) => {
+			state.sessions.push({
+				id: sessionId,
+				taskId: task.id,
+				preset: "test",
+				tmuxName: `agentic-workspace-${task.id.toLowerCase()}-${sessionId}`,
+				nativeSessionId: "native-owned",
+				nativeWorkspace: true,
+				ownerPid: process.pid,
+				cwd: testDir,
+				createdAt: new Date().toISOString(),
+				status: "running",
+				outputPath: join(taskDir, `${sessionId}.log`),
+				bootstrapPath: join(taskDir, `${sessionId}.md`),
 			});
-			await expect(core.deleteTask(task.id)).rejects.toThrow("Could not inspect tmux instance");
-			expect(await core.filesystem.loadTask(task.id)).not.toBeNull();
-			expect((await store.read(task.id)).sessions.map(({ id }) => id)).toEqual([sessionId]);
-		} finally {
-			if (previousLockMode === undefined) delete process.env.USE_GLOBAL_TASK_ID_LOCK;
-			else process.env.USE_GLOBAL_TASK_ID_LOCK = previousLockMode;
-		}
-	});
-
-	it("refuses destructive deletion when task-session locking is disabled", async () => {
-		const previousLockMode = process.env.USE_GLOBAL_TASK_ID_LOCK;
-		process.env.USE_GLOBAL_TASK_ID_LOCK = "false";
-		try {
-			core = new Core(testDir);
-			await initializeFilesystemTestProject(core, "Delete task");
-			const { task } = await core.createTaskFromInput({ title: "Keep lock required" });
-			const store = new SessionStore(testDir, new BunRunner());
-			await store.mutate(task.id, async (state) => {
-				state.sessions.push({
-					id: "stopped-lock-check",
-					taskId: task.id,
-					preset: "test",
-					tmuxName: `agentic-workspace-${task.id.toLowerCase()}-stopped-lock-check`,
-					cwd: testDir,
-					createdAt: new Date().toISOString(),
-					status: "stopped",
-					outputPath: join((await store.paths(task.id)).taskDir, "stopped-lock-check.log"),
-					bootstrapPath: join((await store.paths(task.id)).taskDir, "stopped-lock-check.md"),
-				});
-				state.activeSessionId = "stopped-lock-check";
-			});
-
-			await expect(core.deleteTask(task.id)).rejects.toThrow("Task session locking is disabled");
-			expect(await core.filesystem.loadTask(task.id)).not.toBeNull();
-			expect((await store.read(task.id)).sessions.map(({ id }) => id)).toEqual(["stopped-lock-check"]);
-		} finally {
-			if (previousLockMode === undefined) delete process.env.USE_GLOBAL_TASK_ID_LOCK;
-			else process.env.USE_GLOBAL_TASK_ID_LOCK = previousLockMode;
-		}
+			state.activeSessionId = sessionId;
+		});
+		await expect(core.deleteTask(task.id)).rejects.toThrow("Could not inspect tmux instance");
+		expect(await core.filesystem.loadTask(task.id)).not.toBeNull();
+		expect((await store.read(task.id)).sessions.map(({ id }) => id)).toEqual([sessionId]);
 	});
 
 	it("strips dependency links and references from a second task", async () => {

@@ -49,6 +49,8 @@ function setup() {
 	);
 	const core = {
 		loadTasks: async () => [task],
+		loadMilestones: async () => [],
+		loadArchivedMilestones: async () => [],
 		loadTaskSnapshot: async () => ({
 			tasks: [task],
 			activeTasks: [task],

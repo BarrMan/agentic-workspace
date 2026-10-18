@@ -60,4 +60,5 @@ Renderer.detach(attachment) {
 
 - Only Renderer knows the terminal backend.
 - Keybindings call Controller methods only.
+- Renderer may use filesystem or socket APIs for its own terminal transport, but never reads workspace records or constructs workspace storage paths.
 - Detach never stops execution.

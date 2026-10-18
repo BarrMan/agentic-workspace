@@ -74,6 +74,11 @@ describe("task frontmatter storage", () => {
 		).toThrow(FrontmatterSchemaError);
 	});
 
+	it("preserves task ID and dependency casing from frontmatter", () => {
+		const content = serializeTask({ ...task, id: "task-01", dependencies: ["back-02"] });
+		expect(parseTask(content)).toMatchObject({ id: "task-01", dependencies: ["back-02"] });
+	});
+
 	it("publishes concurrent different-mode approvals from fresh locked task state", async () => {
 		const root = await mkdtemp(join(tmpdir(), "agentic-workspace-task-approval-"));
 		const core = new Core(root);
@@ -105,6 +110,7 @@ describe("task frontmatter storage", () => {
 			consequences: "",
 			rawContent: "",
 		});
+
 		expect(() => parseDecision(decision.replace("decision_schema_version: 1", "decision_schema_version: 9"))).toThrow(
 			UnsupportedRecordFrontmatterSchemaError,
 		);

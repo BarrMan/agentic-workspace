@@ -81,7 +81,7 @@ describe("CLI task create/edit descriptions", () => {
 		const core = new Core(TEST_DIR);
 		expect((await core.filesystem.loadTask("task-1"))?.description).toBe("Hello");
 
-		await $`${cliCommand} task edit 1 --description "Updated description"`.cwd(TEST_DIR).quiet();
+		await $`${cliCommand} task edit task-1 --description "Updated description"`.cwd(TEST_DIR).quiet();
 		expect((await core.filesystem.loadTask("task-1"))?.description).toBe("Updated description");
 	});
 });

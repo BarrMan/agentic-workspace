@@ -75,7 +75,11 @@ describe("Cleanup functionality", () => {
 
 			const success = await core.completeTask("task-2");
 			expect(success).toBe(true);
-			expect(await core.filesystem.loadTask("task-2")).toBeNull();
+			expect(await core.filesystem.loadTask("task-2")).toMatchObject({
+				id: "TASK-2",
+				status: "Not Done",
+				filePath: join(TEST_DIR, "agentic-workspace", "completed", "task-2", "task.md"),
+			});
 
 			const completedTasks = await core.filesystem.listCompletedTasks();
 			expect(completedTasks).toHaveLength(1);

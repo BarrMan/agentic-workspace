@@ -2,10 +2,12 @@ import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { Core } from "../core/agentic-workspace.ts";
+import { Storage } from "../core/storage.ts";
 import { parseTask } from "../markdown/parser.ts";
 import { serializeTask } from "../markdown/serializer.ts";
 import { createUniqueTestDir, initializeTestProject, safeCleanup } from "../test/test-utils.ts";
 import {
+	Config,
 	getBuiltInAgentConfiguration,
 	getDefaultModeCatalog,
 	getEditableAgentConfiguration,
@@ -63,6 +65,45 @@ afterEach(async () => {
 });
 
 describe("agent workspace configuration", () => {
+	it("loads a project configuration over the user configuration", async () => {
+		await upsertAgentConfiguration(core, "root", configuration());
+		await upsertAgentConfiguration(core, "project", {
+			...configuration(),
+			presets: { custom: { command: "project-agent", env: {}, prepare: "", bootstrap: "pi" } },
+			sessions: { worktreePerTask: true, yoloMode: false },
+		});
+
+		const config = await Config.load(new Storage(core.filesystem));
+		expect(config.getConfig().presets.custom?.command).toBe("project-agent");
+		expect(config.sessionSettings.worktreePerTask).toBe(true);
+	});
+
+	it("returns isolated merged configs and preserves explicit false overrides", async () => {
+		await upsertAgentConfiguration(core, "project", {
+			...configuration(),
+			sessions: { worktreePerTask: true, yoloMode: true },
+		});
+		const config = await Config.load(new Storage(core.filesystem));
+		const merged = config.getConfig({ sessions: { worktreePerTask: false, yoloMode: false } });
+		expect(merged.sessions).toEqual({ worktreePerTask: false, yoloMode: false });
+		const customPreset = merged.presets.custom;
+		if (!customPreset) throw new Error("Custom preset missing");
+		customPreset.command = "mutated";
+		expect(config.getConfig().presets.custom?.command).toBe("custom-agent --run");
+		expect(config.getConfig().sessions).toEqual({ worktreePerTask: true, yoloMode: true });
+	});
+
+	it("reloads changed project configuration", async () => {
+		await upsertAgentConfiguration(core, "project", configuration());
+		const config = await Config.load(new Storage(core.filesystem));
+		await upsertAgentConfiguration(core, "project", {
+			...configuration(),
+			presets: { custom: { command: "updated-agent", env: {}, prepare: "", bootstrap: "claude" } },
+		});
+		await config.reload();
+		expect(config.getConfig().presets.custom?.command).toBe("updated-agent");
+	});
+
 	it("resolves a saved arbitrary preset name from current task, project, then user configuration", async () => {
 		await core.createTaskFromInput({ title: "Current configuration", status: "To Do" });
 		const saved = { taskId: "TASK-1", preset: "custom" };
@@ -561,6 +602,26 @@ it("seeds a project-only mode catalog on explicit initialization and round-trips
 	expect(saved?.modes?.profiles.plan?.name).toBe("Planner");
 	expect(saved?.presets.opencode?.env.KEEP).toBe("configured-only");
 	expect((await getEditableAgentConfiguration(core, "root")).modes).toBeUndefined();
+});
+
+it("round-trips explicit mode model selections and rejects invalid model identifiers", async () => {
+	const project = await initializeAgentConfiguration(core, "project");
+	const plan = project.modes?.profiles.plan;
+	if (!plan || !project.modes) throw new Error("Missing seeded PLAN profile");
+	plan.model = { kind: "explicit", id: "provider/model-v1" };
+	await upsertAgentConfiguration(core, "project", project);
+	expect((await loadAgentConfiguration(core, "project"))?.modes?.profiles.plan?.model).toEqual({
+		kind: "explicit",
+		id: "provider/model-v1",
+	});
+
+	for (const id of ["", "model\nother", "model\0id"]) {
+		const invalid = structuredClone(project);
+		const invalidPlan = invalid.modes?.profiles.plan;
+		if (!invalidPlan) throw new Error("Missing PLAN profile");
+		invalidPlan.model = { kind: "explicit", id };
+		await expect(upsertAgentConfiguration(core, "project", invalid)).rejects.toThrow(/invalid name, prompt, or model/);
+	}
 });
 
 it("does not reseed removed modes on ordinary saves and resolves renamed profiles by stable ID", async () => {

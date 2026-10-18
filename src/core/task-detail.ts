@@ -1,7 +1,6 @@
 import { TASK_SOURCE, type Task, type TaskSummary } from "../types/index.ts";
 import { buildDependencyGraph, createDependencyGraphContext, type DependencyGraph } from "../utils/dependency-graph.ts";
 import { createReadinessGraph, getTaskReadiness, type TaskReadiness } from "../utils/readiness.ts";
-import { canonicalTaskId } from "../utils/task-id.ts";
 import { createTaskRecordIndex } from "../utils/task-record-index.ts";
 import type { Core } from "./agentic-workspace.ts";
 
@@ -37,9 +36,7 @@ export async function loadTaskCorpus(
 	const snapshot = await core.loadTaskSnapshot(options.includeCrossBranch);
 	return {
 		tasks: snapshot.activeTasks.concat(
-			snapshot.tasks.filter(
-				(task) => !snapshot.activeTasks.some((local) => canonicalTaskId(local.id) === canonicalTaskId(task.id)),
-			),
+			snapshot.tasks.filter((task) => !snapshot.activeTasks.some((local) => local.id === task.id)),
 		),
 		completedTasks: snapshot.identityIndex.getTasks(true).filter((task) => task.source === TASK_SOURCE.COMPLETED),
 		statuses: snapshot.config?.statuses,

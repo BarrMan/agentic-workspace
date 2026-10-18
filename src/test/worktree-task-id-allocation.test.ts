@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "bun:test";
-import { mkdir } from "node:fs/promises";
+import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { $ } from "bun";
 import { Core } from "../core/agentic-workspace.ts";
@@ -139,5 +139,67 @@ describe("task ID allocation across git worktrees", () => {
 
 		const mainTask = await mainCore.createTaskFromInput({ title: "Main task" });
 		expect(mainTask.task.id).toBe("OPS-2");
+	});
+
+	it("persists per-prefix counters, bootstraps once, and consumes occupied numbers", async () => {
+		testDir = createUniqueTestDir("task-counter");
+		const mainRepo = await createRepository(testDir, "Task Counter Test");
+		const core = new Core(mainRepo);
+		const counterPath = join(mainRepo, ".git", "agentic-workspace", "task-counter.json");
+		const allocate = async (prefix: string, ids: string[]) =>
+			await core.withCreateLock(() => core.filesystem.allocateTaskId(prefix, undefined, async () => ids));
+
+		expect(await allocate("OPS", ["OPS-7", "OPS-7.1"])).toBe("OPS-8");
+		const restartedCore = new Core(mainRepo);
+		await expect(
+			restartedCore.withCreateLock(() =>
+				restartedCore.filesystem.allocateTaskId("OPS", undefined, async () => {
+					throw new Error("persisted counter should skip bootstrap");
+				}),
+			),
+		).resolves.toBe("OPS-9");
+		const persisted = JSON.parse(await readFile(counterPath, "utf8"));
+		expect(persisted).toEqual({ OPS: { next: 10 } });
+
+		const occupiedContainer = await core.filesystem.taskArtifacts.containerPath("ops-10", "tasks");
+		await mkdir(occupiedContainer, { recursive: true });
+		expect(await allocate("OPS", [])).toBe("OPS-11");
+		expect(await stat(occupiedContainer).then(() => true)).toBe(true);
+
+		await expect(core.withCreateLock(() => core.filesystem.allocateTaskId("PAD", 3, async () => []))).resolves.toBe(
+			"PAD-001",
+		);
+		await expect(core.withCreateLock(() => core.filesystem.allocateTaskId("PAD", 3, async () => []))).resolves.toBe(
+			"PAD-002",
+		);
+	});
+
+	it("skips IDs in completed storage and persists the consumed number", async () => {
+		testDir = createUniqueTestDir("task-counter-completed-collision");
+		const mainRepo = await createRepository(testDir, "Completed Task Counter Test");
+		const core = new Core(mainRepo);
+		const counterPath = join(mainRepo, ".git", "agentic-workspace", "task-counter.json");
+		await mkdir(join(mainRepo, ".git", "agentic-workspace"), { recursive: true });
+		await writeFile(counterPath, JSON.stringify({ OPS: { next: 1 } }));
+		await mkdir(await core.filesystem.taskArtifacts.containerPath("ops-1", "completed"), { recursive: true });
+
+		await expect(
+			core.withCreateLock(() => core.filesystem.allocateTaskId("OPS", undefined, async () => [])),
+		).resolves.toBe("OPS-2");
+		expect(JSON.parse(await readFile(counterPath, "utf8"))).toEqual({ OPS: { next: 3 } });
+	});
+
+	it("skips IDs in archived task storage", async () => {
+		testDir = createUniqueTestDir("task-counter-archived-collision");
+		const mainRepo = await createRepository(testDir, "Archived Task Counter Test");
+		const core = new Core(mainRepo);
+		const counterPath = join(mainRepo, ".git", "agentic-workspace", "task-counter.json");
+		await mkdir(join(mainRepo, ".git", "agentic-workspace"), { recursive: true });
+		await writeFile(counterPath, JSON.stringify({ OPS: { next: 1 } }));
+		await mkdir(await core.filesystem.taskArtifacts.containerPath("ops-1", "archive/tasks"), { recursive: true });
+
+		await expect(
+			core.withCreateLock(() => core.filesystem.allocateTaskId("OPS", undefined, async () => [])),
+		).resolves.toBe("OPS-2");
 	});
 });

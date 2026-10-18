@@ -24,8 +24,8 @@ export function formatTaskEditError(error: unknown, taskId: string, commandKind 
 
 export async function resolveCliMilestoneInput(core: Core, milestone: string): Promise<string> {
 	const [activeMilestones, archivedMilestones] = await Promise.all([
-		core.filesystem.listMilestones(),
-		core.filesystem.listArchivedMilestones(),
+		core.loadMilestones(),
+		core.loadArchivedMilestones(),
 	]);
 	return resolveMilestoneInputForStorage(milestone, activeMilestones, archivedMilestones);
 }

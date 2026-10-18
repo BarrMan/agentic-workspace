@@ -58,6 +58,11 @@ const taskFrontmatterFields: readonly TaskFrontmatterField[] = [
 		mode: TASK_FRONTMATTER_FIELD_MODE.TRUTHY,
 	},
 	{ key: TASK_FRONTMATTER_FIELDS.MODE_APPROVALS, property: "modeApprovals", mode: TASK_FRONTMATTER_FIELD_MODE.TRUTHY },
+	{
+		key: TASK_FRONTMATTER_FIELDS.WORKTREE_POLICY,
+		property: "worktreePolicy",
+		mode: TASK_FRONTMATTER_FIELD_MODE.TRUTHY,
+	},
 ];
 
 function taskFrontmatter(task: Task, retained: Record<string, unknown> = {}): Record<string, unknown> {

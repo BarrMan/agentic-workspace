@@ -40,7 +40,7 @@ describe("CLI description newlines", () => {
 		await cli(["task", "create", "Multi-line", "--description", description], testDir);
 		const core = new Core(testDir);
 		expect((await core.filesystem.loadTask("task-1"))?.description).toBe(description);
-		await cli(["task", "edit", "1", "--description", "Replacement\ntext"], testDir);
+		await cli(["task", "edit", "TASK-1", "--description", "Replacement\ntext"], testDir);
 		expect((await core.filesystem.loadTask("task-1"))?.description).toBe("Replacement\ntext");
 	});
 

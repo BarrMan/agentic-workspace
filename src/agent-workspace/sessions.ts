@@ -1445,8 +1445,6 @@ export class AgentSessionService {
 
 	/** Stop every UUID recorded for a task, regardless of mode or active-session pointer. */
 	async stopAllTaskSessions(taskId: string, ownedStops?: OwnedNativeSessionStops): Promise<void> {
-		if (process.env.USE_GLOBAL_TASK_ID_LOCK?.toLowerCase() === "false")
-			throw new Error(`Task session locking is disabled; refusing destructive session cleanup for ${taskId}.`);
 		const snapshot = await this.store.read(taskId);
 		const entries = Object.entries(snapshot.modes)
 			.flatMap(([modeId, history]) => history.sessions.map((session) => ({ modeId, session })))

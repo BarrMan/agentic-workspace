@@ -1,5 +1,12 @@
 import { realpathSync } from "node:fs";
-import { type CmdOptions, type NewSessionOptions, type RespawnOptions, Server, TmuxCommandError } from "libtmux";
+import {
+	type CmdOptions,
+	type NewSessionOptions,
+	type RespawnOptions,
+	Server,
+	TmuxCommandError,
+	TmuxTransportError,
+} from "libtmux";
 import { captureProcessOutput } from "../process/capture.ts";
 import type { SessionIntent } from "./agents/agent.ts";
 import { cleanupPreparedLaunchResources, type PreparedLaunchResources } from "./completion-supervisor-resources.ts";
@@ -107,7 +114,7 @@ function quote(value: string): string {
 function errorResult(error: unknown): SessionCommandResult {
 	if (error instanceof TmuxCommandError)
 		return { exitCode: error.exitCode, stdout: error.stdout.join("\n"), stderr: error.stderr.join("\n") };
-	if (error instanceof Error && error.constructor.name === "TmuxTransportError")
+	if (error instanceof TmuxTransportError)
 		return {
 			exitCode: 1,
 			stdout: new TextDecoder().decode(error.stdout),

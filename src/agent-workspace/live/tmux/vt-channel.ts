@@ -197,13 +197,6 @@ type VtChannelOptions = {
 	readonly onDisconnect?: (error?: Error) => void;
 };
 
-type ArmedSessionOptions = VtChannelOptions & {
-	/** Command released only after the output pipe and subscriber are ready. */
-	readonly command?: string;
-	/** Pane working directory, applied by tmux via `new-session -c` (never a shell `cd` prefix). */
-	readonly cwd?: string;
-};
-
 export type VtChannel = VtInputPort & {
 	readonly dispose: () => Promise<void>;
 	/**
@@ -547,9 +540,6 @@ export const writeAllSync = (
 	}
 	return true;
 };
-
-const DEFAULT_COLS = 80;
-const DEFAULT_ROWS = 24;
 
 // ---------------------------------------------------------------------------
 // Channel

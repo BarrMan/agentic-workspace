@@ -1152,6 +1152,13 @@ describe.concurrent("AgentSessionService", () => {
 		expect(afterPrepare.activeSessionId).toBe(second.record.id);
 		await releaseFakeExecutionPane(service, runner, second.record);
 		await service.finishNativeSession("TASK-1", second.record.id, sessionOrigin(second));
+		await (service as unknown as { store: SessionStore }).store.mutateSession(
+			"TASK-1",
+			second.record.id,
+			async (record) => {
+				delete record.nativeSessionId;
+			},
+		);
 		const before = await service.list("task-1");
 		await expect(service.prepareNativeSession("task-1", second.record.id)).rejects.toThrow("resume");
 		expect(await service.list("task-1")).toEqual(before);

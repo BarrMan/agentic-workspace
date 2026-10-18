@@ -185,7 +185,7 @@ describe("OpenCode 1.19 TUI adapter", () => {
 		const root = await mkdtemp(join(tmpdir(), "agentic-workspace-opencode-v1-version-"));
 		try {
 			const executable = join(root, "opencode");
-			await writeFile(executable, "#!/bin/sh\necho 1.19.0\n");
+			await writeFile(executable, "#!/bin/sh\necho 1.19.3\n");
 			await chmod(executable, 0o700);
 			const agent = new OpencodeV1Agent();
 			const request = {
@@ -220,6 +220,15 @@ describe("OpenCode 1.19 TUI adapter", () => {
 				command: expect.stringContaining(executable),
 			});
 
+			await writeFile(executable, "#!/bin/sh\necho 1.20.0\n");
+			await agent.preflightLaunch({
+				preset: request.preset,
+				cwd: request.cwd,
+				bootstrapPath: request.bootstrapPath,
+				env: request.env,
+				resume: false,
+			});
+
 			await writeFile(executable, "#!/bin/sh\necho 2.0.0\n");
 			await expect(
 				agent.preflightLaunch({
@@ -229,7 +238,7 @@ describe("OpenCode 1.19 TUI adapter", () => {
 					env: request.env,
 					resume: false,
 				}),
-			).rejects.toThrow("requires OpenCode 1.19.0");
+			).rejects.toThrow("requires an OpenCode v1 binary");
 		} finally {
 			await rm(root, { recursive: true, force: true });
 		}

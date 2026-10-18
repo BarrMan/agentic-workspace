@@ -3,6 +3,7 @@ import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import lockfile from "proper-lockfile";
 import type { Core } from "../core/agentic-workspace.ts";
+import type { Storage } from "../core/storage.ts";
 import { parseConfig, serializeConfig } from "../file-system/config.ts";
 import type { AgenticWorkspaceConfig } from "../types/index.ts";
 import { isModeTextColor } from "./mode-colors.ts";
@@ -16,6 +17,7 @@ import {
 	type ModeProfile,
 	type ResolvedAgentConfiguration,
 	type RuntimeAgentBootstrap,
+	resolveSessionSettings,
 	type SessionSettings,
 } from "./types.ts";
 
@@ -127,7 +129,7 @@ export function getBuiltInAgentConfiguration(): AgentConfiguration {
 	return clone(BUILT_IN_CONFIGURATION);
 }
 
-function rootConfigFilePath(): string {
+export function rootConfigFilePath(): string {
 	const configHome = process.env.XDG_CONFIG_HOME || join(process.env.HOME || homedir(), ".config");
 	return join(configHome, "agentic-workspace", ROOT_CONFIGURATION_FILE_NAME);
 }
@@ -267,7 +269,7 @@ function assertSessionSettings(value: unknown, label: string): void {
 	}
 }
 
-async function readRootConfiguration(path: string): Promise<AgentConfiguration | null> {
+export async function readRootConfiguration(path: string): Promise<AgentConfiguration | null> {
 	let content: string;
 	try {
 		content = await readFile(path, "utf8");
@@ -285,6 +287,59 @@ async function readRootConfiguration(path: string): Promise<AgentConfiguration |
 	if (parsed === undefined) return null;
 	assertAgentConfiguration(parsed, `Invalid agent configuration at ${path}`);
 	return clone(parsed);
+}
+
+function mergeAgentConfiguration(base: AgentConfiguration, override: Partial<AgentConfiguration>): AgentConfiguration {
+	return {
+		...base,
+		...override,
+		presets: { ...base.presets, ...override.presets },
+		...(override.sessions !== undefined && { sessions: { ...base.sessions, ...override.sessions } }),
+	};
+}
+
+/** A task-independent startup snapshot of user and project agent configuration. */
+export class Config {
+	private userConfiguration: AgentConfiguration | null = null;
+	private projectConfiguration: AgentConfiguration | null = null;
+	private loaded = false;
+
+	constructor(private readonly storage: Storage) {}
+
+	static async load(storage: Storage): Promise<Config> {
+		const config = new Config(storage);
+		await config.reload();
+		return config;
+	}
+
+	async reload(): Promise<void> {
+		const [user, project] = await Promise.all([
+			this.storage.loadUserAgentConfiguration(),
+			this.storage.loadProjectAgentConfiguration(),
+		]);
+		if (user) assertAgentConfiguration(user, "Invalid user agent configuration");
+		if (project) assertAgentConfiguration(project, "Invalid project agent configuration");
+		this.userConfiguration = user ? clone(user) : null;
+		this.projectConfiguration = project ? clone(project) : null;
+		this.loaded = true;
+	}
+
+	getConfig(...overrides: Array<Partial<AgentConfiguration> | undefined>): AgentConfiguration {
+		if (!this.loaded) throw new Error("Agent configuration has not been loaded; call reload() first.");
+		let config = getBuiltInAgentConfiguration();
+		if (this.userConfiguration) config = mergeAgentConfiguration(config, this.userConfiguration);
+		if (this.projectConfiguration) config = mergeAgentConfiguration(config, this.projectConfiguration);
+		for (const override of overrides) if (override) config = mergeAgentConfiguration(config, override);
+		return clone(config);
+	}
+
+	get sessionSettings(): SessionSettings {
+		return resolveSessionSettings(this.getConfig());
+	}
+
+	get modes(): ModeCatalog | undefined {
+		return this.getConfig().modes;
+	}
 }
 
 async function withConfigurationLock<T>(path: string, operation: () => Promise<T>): Promise<T> {
@@ -442,6 +497,7 @@ async function updateAgentConfigurationInternal(
 				assertAgentConfiguration(initialized);
 				const workspaceConfig = (await core.filesystem.loadConfig()) ?? parseConfig("", path);
 				await core.filesystem.saveConfig({ ...workspaceConfig, agentConfiguration: initialized });
+				await core.reloadConfiguration();
 				return initialized;
 			}
 			const base = existing ?? (await getEditableAgentConfiguration(core, scope, taskId));
@@ -452,6 +508,7 @@ async function updateAgentConfigurationInternal(
 				const workspaceConfig = (await core.filesystem.loadConfig()) ?? parseConfig("", path);
 				await core.filesystem.saveConfig({ ...workspaceConfig, agentConfiguration: next } as AgenticWorkspaceConfig);
 			}
+			await core.reloadConfiguration();
 			return next;
 		});
 	}

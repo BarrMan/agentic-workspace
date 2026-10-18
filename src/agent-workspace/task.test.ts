@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Task as TaskRecord } from "../types/index.ts";
 import type { RunningExecution, RunningExecutionEvent } from "./harness.ts";
-import { Session } from "./session.ts";
+import { Session, type SessionRuntime } from "./session.ts";
 import type { ProcessRunner } from "./session-process.ts";
 import { SessionStore } from "./session-store.ts";
 import type { TaskHydrationInput } from "./task.ts";
@@ -22,6 +22,9 @@ const configuration: ResolvedAgentConfiguration = { scope: "project", config: { 
 
 function fixture(overrides: Partial<TaskHydrationInput> = {}) {
 	let provisions = 0;
+	let startRuntime: SessionRuntime["start"] = async () => {
+		throw new Error("unused");
+	};
 	const createSession: TaskHydrationInput["createSession"] = ({ taskId, modeId }) => {
 		provisions++;
 		const record: AgentSession = {
@@ -35,7 +38,15 @@ function fixture(overrides: Partial<TaskHydrationInput> = {}) {
 			outputPath: "",
 			bootstrapPath: "",
 		};
-		return new Session(record, modeId);
+		const runtime: SessionRuntime = {
+			start: (context) => startRuntime(context),
+			resume: async () => {
+				throw new Error("unused");
+			},
+			stop: async () => {},
+			observe: () => () => {},
+		};
+		return new Session(record, modeId, runtime);
 	};
 	const dto: TaskRecord = {
 		id: "T-1",
@@ -62,6 +73,9 @@ function fixture(overrides: Partial<TaskHydrationInput> = {}) {
 		get provisions() {
 			return provisions;
 		},
+		setStartRuntime(start: SessionRuntime["start"]) {
+			startRuntime = start;
+		},
 		dto,
 	};
 }
@@ -87,7 +101,7 @@ describe("Task", () => {
 		roots.push(root);
 		const runner: ProcessRunner = { run: async () => ({ exitCode: 1, stdout: "", stderr: "unused" }) };
 		const store = new SessionStore(root, runner);
-		const { task } = fixture();
+		const { task, setStartRuntime } = fixture();
 		let session: Session | undefined;
 		let creation: ReturnType<Task["reserveSession"]>["creation"] | undefined;
 		await store.mutate("T-1", async (state) => {
@@ -121,17 +135,14 @@ describe("Task", () => {
 			observe: (_listener: (event: RunningExecutionEvent) => void) => () => {},
 			teardownListeners: () => {},
 		};
+		setStartRuntime(async () => {
+			const persisted = await store.readMode("T-1", "a");
+			expect(persisted.sessions.map(({ id }) => id)).toEqual([reservedSession.id]);
+			calls.push("launch");
+			return running;
+		});
 		await reservedSession.start({
 			context: { taskId: "T-1", modeId: "a", sessionId: reservedSession.id, record: reservedSession.record } as never,
-			harness: {
-				launch: async () => {
-					const persisted = await store.readMode("T-1", "a");
-					expect(persisted.sessions.map(({ id }) => id)).toEqual([reservedSession.id]);
-					calls.push("launch");
-					return running;
-				},
-				resume: async () => running,
-			},
 			checkpoint: async ({ phase }) => {
 				calls.push(phase);
 				if (phase === "identity" || phase === "ready") {

@@ -231,7 +231,7 @@ describe("local task command performance boundaries", () => {
 				tripwires.restore();
 			}
 
-			const child = await core.createTaskFromInput({ title: "Child of a local parent", parentTaskId: "1" });
+			const child = await core.createTaskFromInput({ title: "Child of a local parent", parentTaskId: "TASK-1" });
 			expect(child.task.id).toBe("TASK-1.2");
 			expect(child.task.parentTaskId).toBe("TASK-1");
 		} finally {
@@ -246,7 +246,7 @@ describe("local task command performance boundaries", () => {
 			try {
 				const updated = await core.updateTaskFromInput(
 					"TASK-1",
-					{ addDependencies: ["2"] },
+					{ addDependencies: ["TASK-2"] },
 					{
 						includeCrossBranch: false,
 					},
@@ -283,10 +283,10 @@ describe("local task command performance boundaries", () => {
 			const tripwires = installCrossBranchTripwires(core);
 			try {
 				await expect(
-					core.createTaskFromInput({ title: "Child of an ambiguous parent", parentTaskId: "2" }),
+					core.createTaskFromInput({ title: "Child of an ambiguous parent", parentTaskId: "TASK-2" }),
 				).rejects.toBeInstanceOf(AmbiguousTaskIdError);
 				await expect(
-					core.updateTaskFromInput("TASK-1", { addDependencies: ["2"] }, { includeCrossBranch: false }),
+					core.updateTaskFromInput("TASK-1", { addDependencies: ["TASK-2"] }, { includeCrossBranch: false }),
 				).rejects.toBeInstanceOf(AmbiguousTaskIdError);
 				tripwires.expectUntouched();
 			} finally {

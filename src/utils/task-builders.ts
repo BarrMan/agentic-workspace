@@ -3,7 +3,7 @@ import type { FileSystem } from "../file-system/operations.ts";
 import type { Task } from "../types/index.ts";
 import { buildDependencyGraph, findCycleThroughRoot } from "./dependency-graph.ts";
 import { AmbiguousIdError } from "./entity-id.ts";
-import { AmbiguousTaskIdError, canonicalTaskId, taskIdsEqual } from "./task-path.ts";
+import { AmbiguousTaskIdError, taskIdsEqual } from "./task-path.ts";
 
 /**
  * Shared utilities for building tasks and validating dependencies
@@ -23,7 +23,7 @@ function resolveUniqueDependency(dependency: string, matches: Task[]): string | 
 	if (rest.length === 0) return first.id;
 
 	const candidates = matches.map((match) => match.filePath ?? match.id);
-	const [canonicalId, ...otherIdentities] = [...new Set(matches.map((match) => canonicalTaskId(match.id)))];
+	const [canonicalId, ...otherIdentities] = [...new Set(matches.map((match) => match.id))];
 	if (canonicalId && otherIdentities.length === 0) {
 		// Name the colliding identity rather than the input, which may be a bare number.
 		throw new AmbiguousTaskIdError(canonicalId, candidates);
@@ -207,7 +207,7 @@ function collectDependencyDefects(
 }
 
 function cycleIdentity(cycle: string[]): string {
-	const members = cycle.slice(0, -1).map((id) => canonicalTaskId(id));
+	const members = cycle.slice(0, -1);
 	const start = members.reduce((lowest, member, index) => (member < (members[lowest] as string) ? index : lowest), 0);
 	return [...members.slice(start), ...members.slice(0, start)].join("\0");
 }

@@ -32,12 +32,9 @@ async function expectResolvesWithin(promise: Promise<unknown>, timeoutMs: number
 describe("atomic task creation", () => {
 	let testDir: string;
 	let configHome: string;
-	let originalGlobalLockEnv: string | undefined;
 	let originalXdgConfigHome: string | undefined;
 
 	beforeEach(async () => {
-		originalGlobalLockEnv = process.env.USE_GLOBAL_TASK_ID_LOCK;
-		delete process.env.USE_GLOBAL_TASK_ID_LOCK;
 		// User-level configuration must not leak into the project's parent lookup; pin it to an empty
 		// directory (mirrors `config.test.ts`).
 		originalXdgConfigHome = process.env.XDG_CONFIG_HOME;
@@ -56,11 +53,6 @@ describe("atomic task creation", () => {
 	});
 
 	afterEach(async () => {
-		if (originalGlobalLockEnv === undefined) {
-			delete process.env.USE_GLOBAL_TASK_ID_LOCK;
-		} else {
-			process.env.USE_GLOBAL_TASK_ID_LOCK = originalGlobalLockEnv;
-		}
 		if (originalXdgConfigHome === undefined) delete process.env.XDG_CONFIG_HOME;
 		else process.env.XDG_CONFIG_HOME = originalXdgConfigHome;
 		await rm(configHome, { recursive: true, force: true });
@@ -131,40 +123,6 @@ describe("atomic task creation", () => {
 
 		expect(new Set([createdA.task.id, createdB.task.id]).size).toBe(2);
 		expect([createdA.task.id, createdB.task.id].sort()).toEqual(["TASK-1", "TASK-2"]);
-	});
-
-	it("internally bypasses create-lock serialization when the global lock is disabled by the legacy escape hatch", async () => {
-		process.env.USE_GLOBAL_TASK_ID_LOCK = "false";
-
-		const first = new Core(testDir);
-		const second = new Core(testDir);
-		const bothEntered = createDeferred<void>();
-		const releaseBoth = createDeferred<void>();
-		let entries = 0;
-		const enter = async (value: string): Promise<string> => {
-			entries += 1;
-			if (entries === 2) bothEntered.resolve();
-			await releaseBoth.promise;
-			return value;
-		};
-
-		const firstOperation = first.filesystem.withCreateLock(() => enter("first"));
-		const secondOperation = second.filesystem.withCreateLock(() => enter("second"));
-		const outcomesPromise = Promise.allSettled([firstOperation, secondOperation]);
-		let outcomes: PromiseSettledResult<string>[];
-
-		try {
-			await expectResolvesWithin(bothEntered.promise, 250, "both operations should enter without serialization");
-			expect(entries).toBe(2);
-		} finally {
-			releaseBoth.resolve();
-			outcomes = await outcomesPromise;
-		}
-
-		expect(outcomes).toEqual([
-			{ status: "fulfilled", value: "first" },
-			{ status: "fulfilled", value: "second" },
-		]);
 	});
 
 	it("assigns unique ids when two draft promotions race", async () => {

@@ -18,6 +18,8 @@ Harness owns one provider execution attempt. It turns a provider-neutral request
 
 Harness does not decide task, mode, session, selection, or persistence state. It does not render terminals or own keybindings. SessionRuntime passes resolved data in; Harness returns an execution handle or throws.
 
+Harness may read and write its own provider receipts, resource files, sockets, and process handles. It never reads or writes workspace records or constructs workspace storage paths.
+
 ## Interface
 
 ```ts

@@ -3,6 +3,8 @@ import { existsSync } from "node:fs";
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { getBuiltInAgentConfiguration, upsertAgentConfiguration } from "../agent-workspace/config.ts";
+import { sessionCwdFor } from "../agent-workspace/session-service-mechanics.ts";
+import { resolveSessionSettings } from "../agent-workspace/types.ts";
 import { Core } from "../core/agentic-workspace.ts";
 import { taskWorktreeExists, taskWorktreePath } from "../git/task-worktree.ts";
 import type { Task } from "../types/index.ts";
@@ -75,23 +77,25 @@ describe("task worktree lifecycle", () => {
 		}
 	});
 
-	it("creates the task worktree on task creation when worktreePerTask is enabled", async () => {
+	it("freezes enabled policy without allocating a worktree at task creation", async () => {
 		const current = await setupCore({ worktreePerTask: true });
 		const task = newTask("TASK-1", "Add worktree support");
 		await current.createTask(task);
 
 		const expectedPath = taskWorktreePath(TEST_DIR, task);
-		expect(await taskWorktreeExists(TEST_DIR, task)).toBe(true);
-		expect(existsSync(expectedPath)).toBe(true);
+		expect(task.worktreePolicy).toBe("enabled");
+		expect((await current.filesystem.loadTask(task.id))?.worktreePolicy).toBe("enabled");
+		expect(await taskWorktreeExists(TEST_DIR, task)).toBe(false);
+		expect(existsSync(expectedPath)).toBe(false);
 		expect(expectedPath).toBe(taskWorktreePath(TEST_DIR, { id: "TASK-1", title: "Add worktree support" }));
 	});
 
-	it("creates the worktree through createTaskFromInput as well", async () => {
+	it("does not allocate through createTaskFromInput either", async () => {
 		const current = await setupCore({ worktreePerTask: true });
 		const { task } = await current.createTaskFromInput({ title: "Input path task" });
 
-		expect(await taskWorktreeExists(TEST_DIR, task)).toBe(true);
-		expect(existsSync(taskWorktreePath(TEST_DIR, task))).toBe(true);
+		expect(task.worktreePolicy).toBe("enabled");
+		expect(await taskWorktreeExists(TEST_DIR, task)).toBe(false);
 	});
 
 	it("does not create a worktree when worktreePerTask is disabled or absent", async () => {
@@ -99,6 +103,7 @@ describe("task worktree lifecycle", () => {
 		const task = newTask("TASK-1", "No worktree here");
 		await current.createTask(task);
 
+		expect(task.worktreePolicy).toBe("disabled");
 		expect(await taskWorktreeExists(TEST_DIR, task)).toBe(false);
 		expect(existsSync(taskWorktreePath(TEST_DIR, task))).toBe(false);
 	});
@@ -111,11 +116,45 @@ describe("task worktree lifecycle", () => {
 		expect(existsSync(taskWorktreePath(TEST_DIR, task))).toBe(false);
 	});
 
+	it("creates and uses the worktree at the first session cwd resolution", async () => {
+		const current = await setupCore({ worktreePerTask: true });
+		const task = newTask("TASK-1", "Finish the worktree lifecycle");
+		await current.createTask(task);
+		expect(await taskWorktreeExists(TEST_DIR, task)).toBe(false);
+		expect(await sessionCwdFor(current, task, resolveSessionSettings(undefined))).toBe(
+			taskWorktreePath(TEST_DIR, task),
+		);
+		expect(await taskWorktreeExists(TEST_DIR, task)).toBe(true);
+	});
+
+	it("fails path-specifically rather than using project root when allocation fails", async () => {
+		const current = await setupCore({ worktreePerTask: true });
+		const task = newTask("TASK-1", "Cannot allocate");
+		await current.createTask(task);
+		await safeCleanup(TEST_DIR);
+		await expect(sessionCwdFor(current, task, resolveSessionSettings(undefined))).rejects.toThrow(
+			taskWorktreePath(TEST_DIR, task),
+		);
+	});
+
+	it("keeps creation policy after configuration changes", async () => {
+		const current = await setupCore({ worktreePerTask: true });
+		const task = newTask("TASK-1", "Frozen enabled policy");
+		await current.createTask(task);
+		await upsertAgentConfiguration(current, "project", {
+			...getBuiltInAgentConfiguration(),
+			sessions: { worktreePerTask: false, yoloMode: false },
+		});
+		expect(await sessionCwdFor(current, task, resolveSessionSettings(undefined))).toBe(
+			taskWorktreePath(TEST_DIR, task),
+		);
+	});
+
 	it("retains the worktree when task status becomes Done", async () => {
 		const current = await setupCore({ worktreePerTask: true });
 		const task = newTask("TASK-1", "Finish the worktree lifecycle");
 		await current.createTask(task);
-		expect(await taskWorktreeExists(TEST_DIR, task)).toBe(true);
+		await sessionCwdFor(current, task, resolveSessionSettings(undefined));
 
 		await current.updateTaskFromInput(task.id, { status: "Done" });
 
@@ -127,6 +166,7 @@ describe("task worktree lifecycle", () => {
 		const current = await setupCore({ worktreePerTask: true });
 		const task = newTask("TASK-1", "Original title");
 		await current.createTask(task);
+		await sessionCwdFor(current, task, resolveSessionSettings(undefined));
 		const originalPath = taskWorktreePath(TEST_DIR, task);
 		expect(existsSync(originalPath)).toBe(true);
 
@@ -148,6 +188,7 @@ describe("task worktree lifecycle", () => {
 		const current = await setupCore({ worktreePerTask: true });
 		const task = newTask("TASK-1", "Keep uncommitted work");
 		await current.createTask(task);
+		await sessionCwdFor(current, task, resolveSessionSettings(undefined));
 		const worktree = taskWorktreePath(TEST_DIR, task);
 		const userFile = join(worktree, "uncommitted.txt");
 		await Bun.write(userFile, "preserve this data\n");
@@ -165,7 +206,7 @@ describe("task worktree lifecycle", () => {
 		await current.createTask(task);
 
 		const firstPath = taskWorktreePath(TEST_DIR, task);
-		await current.ensureTaskWorktreeFor(task);
+		await sessionCwdFor(current, task, resolveSessionSettings(undefined));
 
 		expect(await taskWorktreeExists(TEST_DIR, task)).toBe(true);
 		expect(taskWorktreePath(TEST_DIR, task)).toBe(firstPath);

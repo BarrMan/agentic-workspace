@@ -8,11 +8,11 @@ AgenticWorkspace manages project tasks, configured modes, retained conversations
 
 | Component | Responsibility | Depends on |
 |---|---|---|
-| Models | Task, Mode, Session, RunningExecution, Configuration, preferences, groups. Owns business rules and relations. | none |
+| Models | Task, Mode, Session, RunningExecution, Config, preferences, groups. Owns business rules and relations. | none |
 | Controller | Sole operation boundary. Owns models, persists through Storage, calls Session operations, publishes signals. | Models, Storage |
 | Renderer | Views, keybindings, focus, layout, terminal attachment, terminal backend. | Controller, Storage (presentation config), SessionRuntime |
 | CLI | Maps supported commands to Controller operations. | Controller |
-| Storage | Model-typed persistence and presentation configuration. | Models, filesystem |
+| Storage | Model-typed persistence and presentation configuration. Sole owner of the filesystem. | Models, filesystem |
 | SessionRuntime | Start, exact-resume, stop, observe, attach. Composed of Harness and terminal host. | Models, execution host |
 
 Controller is UI-agnostic: no keybindings, focus, layout, or terminal backend. Only Renderer knows the terminal backend. Application init runs `controller.load(project)` before `renderer.init(controller)`.
@@ -34,9 +34,11 @@ Controller is UI-agnostic: no keybindings, focus, layout, or terminal backend. O
 ## Shared Rules
 
 - Callers supply valid data. Controller does not re-validate parameters; models enforce their schema, Storage validates encoding, and SessionRuntime validates provider identity.
+- Storage is the only component that knows workspace persistence: workspace paths, record formats, storage codecs, locks, and file watching. Controller calls Storage; Renderer may call Storage only for presentation configuration; CLI calls Controller only. No application or frontend component holds a workspace filesystem handle or constructs workspace storage paths. Milestone and task reads are Storage operations, not Controller filesystem calls.
+- Runtime execution resources are not workspace persistence: provider receipts, terminal sockets and panes, process handles, logs, and user-selected input files stay with SessionRuntime, Harness, or Renderer. Those components may use filesystem or socket APIs for their own resources, but never to read or write workspace records.
 - Signals are post-commit. Handlers never call Controller operations.
 - Only an explicit Controller operation starts or resumes a session. Runtime state is observed, never persisted as history; `unknown` authorizes no destructive action.
-- Create order: reserve → persist reservation → start → persist identity → publish. Startup failure keeps the reservation; only final publication failure rolls it back.
+- Create order: reserve → persist reservation → start → persist identity → publish. Any creation failure stops or cleans up the execution and rolls back the reservation; if cleanup fails or the execution may still be running, keep durable tracking of it.
 - Terminal detach never stops execution. Shutdown stops every owned execution.
 - Every Renderer and CLI operation uses the same Controller method.
 - A start is never blocked. The project-wide soft limit stops only positively idle sessions, longest continuously idle first; running, permission, and unknown sessions are protected.

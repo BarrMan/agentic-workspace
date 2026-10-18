@@ -23,6 +23,8 @@ export class TaskCreationService {
 		const project = await this.core.normalizeProject(input.project);
 		const createdDate = formatStoredDate();
 		const config = await this.core.filesystem.loadConfig();
+		const configSnapshot = await this.core.getConfig();
+		const worktreePolicy = configSnapshot.sessionSettings.worktreePerTask ? "enabled" : "disabled";
 
 		const { task, write } = await this.core.withCreateLock(async () => {
 			const parentTaskId = prepared.requestedParentTaskId
@@ -51,6 +53,7 @@ export class TaskCreationService {
 				ordinal: await this.core.resolveCreateOrdinal(input.ordinal, prepared.isDraft),
 				createdDate,
 			});
+			if (!prepared.isDraft) task.worktreePolicy = worktreePolicy;
 			const filePath = await this.core.writePreparedTask(task, prepared.isDraft);
 			return {
 				task,
@@ -66,7 +69,6 @@ export class TaskCreationService {
 		try {
 			const savedTask = await this.core.finalizeCreatedTask(task, prepared.isDraft);
 			const result = savedTask ?? task;
-			if (!prepared.isDraft) await this.core.ensureTaskWorktreeFor(result);
 			return { task: result, filePath: write.filePath };
 		} catch (error) {
 			const rollback = await this.core.rollbackCreatedTask(write).catch((rollbackError) => {

@@ -194,9 +194,9 @@ describe("task watcher reconciliation", () => {
 	it("classifies equivalent events identically on checkout and canonical roots", async () => {
 		const mainRoot = join(testDir, "main-worktree");
 		const resolveMainRoot = spyOn(mainWorktree, "resolveMainWorktreeRoot").mockResolvedValue(mainRoot);
-		const filePath = await taskFilePath(core, "task-parity");
-		await Bun.write(filePath, serializeTask(sampleTask("task-parity", "Parity")));
-		const initial = await core.filesystem.loadTask("task-parity");
+		const filePath = await taskFilePath(core, "TASK-199");
+		await Bun.write(filePath, serializeTask(sampleTask("TASK-199", "Parity")));
+		const initial = await core.filesystem.loadTask("TASK-199");
 		if (!initial) throw new Error("Expected parity fixture task");
 		const artifacts: string[] = [];
 		let idleCount = 0;
@@ -220,11 +220,11 @@ describe("task watcher reconciliation", () => {
 
 		const cases: { event: string | null; kind: "directory" | "record" | "artifact" | "ignore"; path?: string }[] = [
 			{ event: null, kind: "directory" },
-			{ event: "task-parity", kind: "directory" },
-			{ event: "task-parity/task.md", kind: "record" },
-			{ event: "task-parity/.artifacts.json", kind: "artifact", path: ".artifacts.json" },
-			{ event: "task-parity/.task-atomic-write", kind: "ignore" },
-			{ event: "task-parity/notes/nested.txt", kind: "artifact", path: "notes/nested.txt" },
+			{ event: "TASK-199", kind: "directory" },
+			{ event: "TASK-199/task.md", kind: "record" },
+			{ event: "TASK-199/.artifacts.json", kind: "artifact", path: ".artifacts.json" },
+			{ event: "TASK-199/.task-atomic-write", kind: "ignore" },
+			{ event: "TASK-199/notes/nested.txt", kind: "artifact", path: "notes/nested.txt" },
 		];
 		for (const testCase of cases) {
 			for (const callback of watcherCallbacks) {

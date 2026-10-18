@@ -79,6 +79,12 @@ export function claudeHooksConfig(
 
 export class ClaudeAgent implements Agent {
 	readonly name = "claude";
+	readonly events = {
+		turnCompleted: "supported",
+		permissionWait: "supported",
+		executionExit: "supported",
+		activity: "supported",
+	} as const;
 	readonly supported = true;
 	readonly hookBacked = true;
 	readonly chromeRules = CLAUDE_CHROME_RULES;
@@ -150,6 +156,24 @@ export class ClaudeAgent implements Agent {
 				? this.resumeCommand({ preset: withIdentity, nativeSessionId: identity.id })
 				: this.launchCommand({ preset: withIdentity, bootstrapPath, nativeSessionId: identity.id });
 		return { command, env, identity };
+	}
+
+	readiness(intent: SessionIntent, launchDirectory: string, identity?: NativeIdentity) {
+		const id = identity?.id ?? (intent.kind === "resume" ? intent.nativeSessionId : undefined);
+		return {
+			initialized: {
+				path: join(launchDirectory, "initialized"),
+				...(id ? { expected: { session_id: id, source: intent.kind === "resume" ? "resume" : "startup" } } : {}),
+			},
+			...(intent.kind === "new"
+				? {
+						promptAccepted: {
+							path: join(launchDirectory, "prompt-accepted"),
+							...(id ? { expected: { session_id: id } } : {}),
+						},
+					}
+				: {}),
+		};
 	}
 
 	async reconcileIdentity(

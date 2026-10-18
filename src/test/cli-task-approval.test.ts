@@ -73,7 +73,7 @@ describe("CLI task mode approval", () => {
 	});
 
 	it("records only the named task/mode approval in task.md", async () => {
-		const result = await runTaskCommand(["task", "approve", "1", "build"]);
+		const result = await runTaskCommand(["task", "approve", "TASK-1", "build"]);
 		expect(result.exitCode, result.stderr).toBe(0);
 		expect(result.stdout).toContain("task TASK-1 for mode build");
 		const content = await readFile(`${testDir}/agentic-workspace/tasks/task-1/task.md`, "utf8");
@@ -85,7 +85,7 @@ describe("CLI task mode approval", () => {
 	it("fails for unknown tasks and modes", async () => {
 		const unknownTask = await runTaskCommand(["task", "approve", "missing", "build"]);
 		expect(unknownTask.exitCode).not.toBe(0);
-		const unknownMode = await runTaskCommand(["task", "approve", "1", "missing"]);
+		const unknownMode = await runTaskCommand(["task", "approve", "TASK-1", "missing"]);
 		expect(unknownMode.exitCode).not.toBe(0);
 	});
 

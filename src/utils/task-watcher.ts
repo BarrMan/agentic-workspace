@@ -4,8 +4,7 @@ import { basename, dirname } from "node:path";
 import type { Core } from "../core/agentic-workspace.ts";
 import { resolveMainWorktreeRoot } from "../git/main-worktree.ts";
 import type { Task } from "../types/index.ts";
-import { hasAnyPrefix } from "./prefix-config.ts";
-import { extractTaskIdFromFilename, normalizeTaskId, normalizeTaskIdentity, taskIdsEqual } from "./task-path.ts";
+import { isValidTaskId, taskIdsEqual } from "./task-id.ts";
 
 export interface TaskWatcherCallbacks {
 	/** Called when a new task file is created */
@@ -48,7 +47,7 @@ function classifyTaskWatchEvent(eventType: string, filename: string | Buffer | n
 	const segments = fileName.split(/[\\/]/);
 	if (segments.length > 1) {
 		const [taskId, ...containerSegments] = segments;
-		if (containerSegments.join("/") === "task.md" && taskId && hasAnyPrefix(taskId)) return { kind: "record", taskId };
+		if (containerSegments.join("/") === "task.md" && taskId && isValidTaskId(taskId)) return { kind: "record", taskId };
 		const artifactSegments = containerSegments[0] === "artifacts" ? containerSegments.slice(1) : containerSegments;
 		const path = artifactSegments.join("/");
 		if (
@@ -68,8 +67,6 @@ function classifyTaskWatchEvent(eventType: string, filename: string | Buffer | n
 			return { kind: "artifact", taskId, path };
 		return { kind: "ignore" };
 	}
-	const [taskId] = fileName.split(" ");
-	if (taskId && hasAnyPrefix(taskId) && fileName.endsWith(".md")) return { kind: "record", taskId };
 	// Top-level rename names can identify container changes or be omitted by the platform.
 	return { kind: "directory" };
 }
@@ -82,6 +79,10 @@ function isUsableTask(task: Task | null, taskId: string): task is Task {
 	return Boolean(task && taskIdsEqual(task.id, taskId) && task.title.trim() && task.status.trim());
 }
 
+function canonicalTask(task: Task): Task {
+	return task.id === task.id.toUpperCase() ? task : { ...task, id: task.id.toUpperCase() };
+}
+
 /**
  * Identity of a task's content, ignoring where it was read from and when.
  * Re-reading the same task after a write yields the same signature, so consumers can
@@ -89,7 +90,7 @@ function isUsableTask(task: Task | null, taskId: string): task is Task {
  */
 export function taskContentSignature(task: Task): string {
 	const { branch: _branch, filePath: _filePath, lastModified: _lastModified, source: _source, ...content } = task;
-	return JSON.stringify(content);
+	return JSON.stringify({ ...content, id: task.id.toUpperCase() });
 }
 
 function createReconciliation(initialTask?: Task): TaskReconciliation {
@@ -106,19 +107,14 @@ async function readTaskFileSnapshot(tasksDir: string): Promise<TaskFileSnapshot>
 	try {
 		const directory = await stat(tasksDir);
 		if (!directory.isDirectory()) return { state: "incomplete" };
-		const [flatFiles, canonicalFiles] = await Promise.all([
-			Array.fromAsync(new Bun.Glob("*.md").scan({ cwd: tasksDir, followSymlinks: true })),
-			Array.fromAsync(new Bun.Glob("**/task.md").scan({ cwd: tasksDir, followSymlinks: true })),
-		]);
+		const canonicalFiles = await Array.fromAsync(
+			new Bun.Glob("**/task.md").scan({ cwd: tasksDir, followSymlinks: true }),
+		);
 		await stat(tasksDir);
 		const taskIds = new Set<string>();
-		for (const file of flatFiles) {
-			const taskId = extractTaskIdFromFilename(file);
-			if (taskId) taskIds.add(normalizeTaskId(taskId));
-		}
 		for (const file of canonicalFiles) {
 			const taskId = basename(dirname(file));
-			if (hasAnyPrefix(taskId)) taskIds.add(normalizeTaskId(taskId));
+			if (isValidTaskId(taskId)) taskIds.add(taskId.toUpperCase());
 		}
 		return { state: "complete", taskIds };
 	} catch {
@@ -136,9 +132,7 @@ async function classifyTaskRead(core: Core, taskId: string, tasksDir: string): P
 	if (isUsableTask(task, taskId)) return { kind: "candidate", task, signature: taskContentSignature(task) };
 	if (task !== null) return { kind: "retry" };
 	const snapshot = await readTaskFileSnapshot(tasksDir);
-	return snapshot.state === "complete" && !snapshot.taskIds.has(normalizeTaskId(taskId))
-		? { kind: "absent" }
-		: { kind: "retry" };
+	return snapshot.state === "complete" && !snapshot.taskIds.has(taskId) ? { kind: "absent" } : { kind: "retry" };
 }
 
 async function publishTaskRemoval(
@@ -148,7 +142,7 @@ async function publishTaskRemoval(
 ): Promise<void> {
 	if (state.hasPublishedState && state.lastPublishedSignature === null) return;
 	try {
-		await callbacks.onTaskRemoved?.(taskId);
+		await callbacks.onTaskRemoved?.(taskId.toUpperCase());
 		state.hasPublishedState = true;
 		state.lastPublishedSignature = null;
 	} catch {
@@ -164,9 +158,10 @@ async function publishTaskCandidate(
 ): Promise<boolean> {
 	if (state.hasPublishedState && state.lastPublishedSignature === signature) return true;
 	try {
+		const presentationTask = canonicalTask(task);
 		if (!state.hasPublishedState || state.lastPublishedSignature === null)
-			await callbacks.onTaskAdded?.(normalizeTaskIdentity(task));
-		else await callbacks.onTaskChanged?.(normalizeTaskIdentity(task));
+			await callbacks.onTaskAdded?.(presentationTask);
+		else await callbacks.onTaskChanged?.(presentationTask);
 		state.hasPublishedState = true;
 		state.lastPublishedSignature = signature;
 		return true;
@@ -216,7 +211,7 @@ function scheduleVisibleTasks(
 ): void {
 	for (const task of tasks) {
 		if (!isUsableTask(task, task.id)) continue;
-		const taskId = normalizeTaskId(task.id);
+		const taskId = task.id.toUpperCase();
 		visibleTaskIds.add(taskId);
 		const state = reconciliations.get(taskId);
 		if (!state?.hasPublishedState || state.lastPublishedSignature !== taskContentSignature(task)) schedule(taskId);
@@ -246,7 +241,7 @@ export function watchTasks(
 ): { stop: () => void } {
 	const tasksDir = core.filesystem.tasksDir;
 	const reconciliations = new Map(
-		initialTasks.filter((task) => !task.branch).map((task) => [normalizeTaskId(task.id), createReconciliation(task)]),
+		initialTasks.filter((task) => !task.branch).map((task) => [task.id.toUpperCase(), createReconciliation(task)]),
 	);
 	let stopped = false;
 	let directoryGeneration = 0;
@@ -304,7 +299,7 @@ export function watchTasks(
 	};
 
 	const schedule = (taskId: string) => {
-		const normalizedTaskId = normalizeTaskId(taskId);
+		const normalizedTaskId = taskId.toUpperCase();
 		const state = reconciliations.get(normalizedTaskId) ?? createReconciliation();
 		reconciliations.set(normalizedTaskId, state);
 		state.generation += 1;

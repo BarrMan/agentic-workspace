@@ -1,13 +1,14 @@
 import { afterAll, describe, expect, it } from "bun:test";
 import { mkdir } from "node:fs/promises";
 import { Writable } from "node:stream";
+import type { ShellExpression } from "bun";
 import { $ as shell } from "bun";
 import { runCli } from "../cli/register.ts";
 import { Core } from "../index.ts";
 import { createUniqueTestDir, initializeFilesystemTestProject, safeCleanup } from "./test-utils.ts";
 
 const CLI_COMMAND = ["agentic-workspace"];
-function $(parts: TemplateStringsArray, ...values: unknown[]) {
+function $(parts: TemplateStringsArray, ...values: ShellExpression[]) {
 	const source = parts.reduce(
 		(text, part, index) =>
 			`${text}${part}${Array.isArray(values[index]) ? values[index].map((value) => JSON.stringify(value)).join(" ") : values[index] === undefined ? "" : JSON.stringify(values[index])}`,
@@ -69,10 +70,7 @@ async function makeDir(): Promise<string> {
 	return dir;
 }
 
-/**
- * Every command that takes a task or draft ID must resolve it through the same identity path,
- * so a bare numeric ID works wherever a prefixed ID works - including under a custom ID prefix.
- */
+/** Initializes a project using a custom canonical task prefix. */
 async function initCustomPrefixProject(dir: string): Promise<Core> {
 	const core = new Core(dir);
 	await initializeFilesystemTestProject(core, "Custom Prefix ID Resolution");
@@ -101,7 +99,7 @@ async function createTask(
 	});
 }
 
-/** One case per ID-accepting command, run once with a bare numeric ID and once with a prefixed ID. */
+/** One case per ID-accepting command. */
 interface IdCommandCase {
 	name: string;
 	/** Receives the ID form under test and returns the CLI arguments to run. */
@@ -128,10 +126,7 @@ describe("CLI task ID resolution with a custom ID prefix", () => {
 	});
 
 	for (const testCase of idCommandCases) {
-		for (const [form, id] of [
-			["bare numeric", "1"],
-			["prefixed", "BACK-1"],
-		] as const) {
+		for (const [form, id] of [["prefixed", "BACK-1"]] as const) {
 			it(`resolves a ${form} ID for ${testCase.name}`, async () => {
 				const TEST_DIR = await makeDir();
 				const core = await initCustomPrefixProject(TEST_DIR);

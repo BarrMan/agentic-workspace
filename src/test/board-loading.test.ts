@@ -168,13 +168,13 @@ describe("Board Loading with checkActiveBranches", () => {
 
 		it("should not load tasks from other branches when checkActiveBranches is false", async () => {
 			// 0. Ensure main has at least one commit so it exists
-			await core.createTask(createTestTask("task-main"));
+			await core.createTask(createTestTask("TASK-900"));
 			await $`git add .`.cwd(TEST_DIR).quiet();
 			await $`git commit -m "Initial commit on main"`.cwd(TEST_DIR).quiet();
 
 			// 1. Create a task on a different branch
 			await $`git checkout -b other-branch`.cwd(TEST_DIR).quiet();
-			const otherTask = createTestTask("task-other", "To Do");
+			const otherTask = createTestTask("TASK-901", "To Do");
 			await core.createTask(otherTask);
 			await $`git add .`.cwd(TEST_DIR).quiet();
 			await $`git commit -m "Add task on other branch"`.cwd(TEST_DIR).quiet();

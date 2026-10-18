@@ -123,6 +123,8 @@ async function setup() {
 	const controller = new OpenTuiWorkspaceController(
 		{
 			loadTasks: async () => [task],
+			loadMilestones: async () => [],
+			loadArchivedMilestones: async () => [],
 			loadTaskSnapshot: async () => ({
 				tasks: [task],
 				activeTasks: [task],

@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from "bun:test";
 import { mkdir } from "node:fs/promises";
 import { Writable } from "node:stream";
+import type { ShellExpression } from "bun";
 import { $ as shell } from "bun";
 import { runCli } from "../cli/register.ts";
 import { Core } from "../index.ts";
@@ -9,7 +10,7 @@ import { createUniqueTestDir, initializeFilesystemTestProject, safeCleanup } fro
 let TEST_DIR: string;
 
 const cliCommand = ["agentic-workspace"];
-function $(parts: TemplateStringsArray, ...values: unknown[]) {
+function $(parts: TemplateStringsArray, ...values: ShellExpression[]) {
 	const source = parts.reduce(
 		(text, part, index) =>
 			`${text}${part}${Array.isArray(values[index]) ? values[index].map((value) => JSON.stringify(value)).join(" ") : values[index] === undefined ? "" : JSON.stringify(values[index])}`,

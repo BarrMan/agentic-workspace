@@ -1,8 +1,8 @@
-import type { FileSystem } from "../file-system/operations.ts";
 import type { Task, TaskListFilter } from "../types/index.ts";
 import { isLocalEditableTask } from "../types/index.ts";
 import { createMilestoneFilterValueResolver } from "../utils/milestone-filter.ts";
 import { applyTaskFilters } from "../utils/task-search.ts";
+import type { Storage } from "./storage.ts";
 
 export type TaskQueryOptions = {
 	filters?: TaskListFilter;
@@ -23,10 +23,10 @@ export type TaskReadOptions = {
 export async function filterTaskQueryResults(
 	collection: Task[],
 	options: TaskQueryOptions,
-	filesystem: FileSystem,
+	storage: Storage,
 ): Promise<Task[]> {
 	const resolveMilestoneLabel = options.filters?.milestone
-		? await Promise.all([filesystem.listMilestones(), filesystem.listArchivedMilestones()]).then(([active, archived]) =>
+		? await Promise.all([storage.loadMilestones(), storage.loadArchivedMilestones()]).then(([active, archived]) =>
 				createMilestoneFilterValueResolver([...active, ...archived]),
 			)
 		: undefined;

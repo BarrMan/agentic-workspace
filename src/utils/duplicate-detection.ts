@@ -1,5 +1,4 @@
 import type { Task } from "../types/index.ts";
-import { canonicalTaskId } from "./task-id.ts";
 
 export type DuplicateGroup = {
 	id: string;
@@ -66,15 +65,15 @@ export function hasContentIdentityIssues(report: ContentIdentityReport): boolean
 export function detectDuplicateTaskIds(tasks: Task[]): DuplicateGroup[] {
 	const byId = new Map<string, Task[]>();
 	for (const task of tasks) {
-		const key = canonicalTaskId(task.id);
+		const key = task.id.toUpperCase();
 		const group = byId.get(key) ?? [];
 		group.push(task);
 		byId.set(key, group);
 	}
 	return Array.from(byId.entries())
 		.filter(([, group]) => group.length > 1)
-		.map(([id, group]) => ({
-			id,
+		.map(([, group]) => ({
+			id: group[0]?.id ?? "",
 			tasks: [...group].sort((left, right) =>
 				(left.filePath ?? left.title).localeCompare(right.filePath ?? right.title),
 			),

@@ -119,6 +119,12 @@ describe("provider prompt-acceptance receipts", () => {
 		try {
 			const execution = await new Harness(test.root, test.process).launch(test.context);
 			expect(execution.providerConversationId).toBeString();
+			expect(execution.events).toEqual({
+				turnCompleted: "supported",
+				permissionWait: "supported",
+				executionExit: "supported",
+				activity: "supported",
+			});
 			const nativeId = execution.providerConversationId;
 			if (!nativeId) throw new Error("Claude launch did not return its native identity.");
 			expect(JSON.parse(await Bun.file(join(test.emitted.launchDirectory, "initialized")).text())).toMatchObject({
@@ -129,6 +135,18 @@ describe("provider prompt-acceptance receipts", () => {
 				session_id: nativeId,
 			});
 			await execution.stop();
+		} finally {
+			await test.cleanup();
+		}
+	});
+
+	it("rejects a blank retained provider identity before preparing a resume", async () => {
+		const test = await fixture();
+		try {
+			await expect(new Harness(test.root, test.process).resume("  ", test.context)).rejects.toThrow(
+				"Resume requires a non-empty retained provider session ID",
+			);
+			expect(test.emitted.order).toEqual([]);
 		} finally {
 			await test.cleanup();
 		}

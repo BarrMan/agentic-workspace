@@ -5,6 +5,7 @@ import { TASK_SOURCE, type Task } from "../types/index.ts";
 import { AmbiguousTaskIdError } from "../utils/task-path.ts";
 import { createTaskSearchIndex } from "../utils/task-search.ts";
 import { TaskCollectionParentNotFoundError } from "./domain-errors.ts";
+import type { Storage } from "./storage.ts";
 import {
 	completedTaskIdentityRecord,
 	TaskIdentityIndex,
@@ -18,6 +19,7 @@ export class PersistentTaskRead {
 	constructor(
 		private readonly filesystem: FileSystem,
 		private readonly git: GitOperations,
+		private readonly storage: Storage,
 	) {}
 
 	async load(includeCrossBranch = true): Promise<TaskCorpusSnapshot & { identityIndex: TaskIdentityIndex }> {
@@ -80,6 +82,7 @@ export class PersistentTaskRead {
 			: corpus.identityIndex.resolveForRead(taskId);
 		if (result.status === "ambiguous") throw new AmbiguousTaskIdError(taskId, result.candidates);
 		if (result.status === "found") return result.task;
+		if (options.forMutation) return null;
 		return await this.filesystem.loadTask(taskId, { includeArchived: options.includeArchived });
 	}
 
@@ -100,6 +103,6 @@ export class PersistentTaskRead {
 		const matches = options.query?.trim()
 			? createTaskSearchIndex(tasks).search({ query: options.query.trim() })
 			: tasks;
-		return filterTaskQueryResults(matches, { ...options, filters }, this.filesystem);
+		return filterTaskQueryResults(matches, { ...options, filters }, this.storage);
 	}
 }

@@ -49,7 +49,7 @@ This contract defines task identity and data, project storage, artifacts, work c
 
 ### TASK-002: Creation and status configuration
 
-**Description:** Task statuses come from project configuration, and the CLI directs users to edit the configured status list in the configuration file. Creation produces a task directly, allocates its ID under a creation lock, and saves the new record. Subsequent task actions operate on that task identity. The application does not provide draft promotion or demotion.
+**Description:** Task statuses come from project configuration, and the CLI directs users to edit the configured status list in the configuration file. Creation produces a task directly, allocates its ID under a creation lock using the persisted task counter, and saves the new record without overwriting an existing target. Subsequent task actions operate on that task identity. The application does not provide draft promotion or demotion.
 
 **Trigger:** A task is created or its status is used.
 
@@ -57,7 +57,7 @@ This contract defines task identity and data, project storage, artifacts, work c
 
 **Behavior:**
 1. Use configured statuses and direct CLI users to edit the configured list in the configuration file.
-2. Create and save a task directly, allocating its ID under a creation lock.
+2. Create and save a task directly, allocating its ID under the creation lock and persisted-counter procedure in TASK-003.
 3. Use that task identity for subsequent actions; do not provide draft promotion or demotion.
 
 **Outcome:** The task is saved directly with an allocated identity.
@@ -69,23 +69,28 @@ This contract defines task identity and data, project storage, artifacts, work c
 
 ### TASK-003: Task identity
 
-**Description:** A task ID is its complete prefixed string: `TASK-01` and `TASK-1` are distinct identities, and numeric suffixes are not compared. Creation must not allocate an identity already in use. Duplicate records are not merged or repaired. Archived task IDs remain reserved and are not reused. Identity collisions are reported with both record paths and fail closed rather than guessing; ambiguous task IDs are rejected.
+**Description:** Task IDs use `PREFIX-NUMBER` with optional dotted numeric subtask segments (for example, `TASK-1.2`). Input may use lowercase; the outer API boundary uppercases the complete ID for lookup and new IDs are written in uppercase, while existing records may retain their stored casing. Identity comparison is case-insensitive; this is a comparison rule, not an alias, numeric-normalization, or prefix-inference layer. Numeric segments are preserved exactly, so `TASK-01` and `TASK-1` are distinct. Legacy alphanumeric IDs are invalid. Lookup does not accept a bare number or infer a prefix. Allocation uses a persisted counter, not a scan for the next available ID except to bootstrap a missing prefix entry. Creation must not allocate an identity already in use. Duplicate records are not merged or repaired. Archived task IDs remain reserved and are not reused.
 
 **Trigger:** A task is created or addressed by ID.
 
 **Preconditions:** An ID is being allocated or resolved.
 
 **Behavior:**
-1. Treat the complete prefixed string as identity; do not compare numeric suffixes.
-2. Do not reuse allocated or archived IDs, and do not merge or repair duplicate records.
-3. Report identity collisions with both record paths and fail closed; reject ambiguous IDs.
+1. Accept `PREFIX-NUMBER` with optional dotted numeric subtask segments. Uppercase the complete input ID at the outer API boundary for lookup, write new IDs in uppercase, and compare IDs case-insensitively. Preserve every numeric segment exactly, including leading zeroes; stored casing does not change identity.
+2. Reject legacy alphanumeric IDs. Do not normalize numeric segments, look up bare numbers, infer prefixes, or scan task records for allocation after bootstrap.
+3. Persist `task-counter.json` in the directory that owns the create lock (shared across linked worktrees; otherwise the AgenticWorkspace directory). Its per-prefix shape is `{ "TASK": { "next": 2 }, "OPS": { "next": 2 } }`; each `next` is the last allocated top-level number for that prefix. Under the create lock, increment that prefix's `next`, atomically persist the counter using a temporary file and rename, then attempt a create-only save for the resulting ID. If the target container already exists, consume another number and retry. Never decrement or reuse a number.
+4. If a prefix entry is missing, bootstrap it once from the maximum existing top-level task number for that prefix across active, completed, and archived task containers, including sibling worktrees as needed (use zero if none exist), and persist it. There is no per-create scan. A corrupt counter is an error; do not scan as a fallback. Never bypass the create lock.
+5. Do not reuse allocated or archived IDs, and do not merge or repair duplicate records.
+6. Report record identity collisions with both record paths and fail closed rather than guessing; reject ambiguous task IDs.
 
 **Outcome:** Task IDs remain distinct and unambiguous.
 
 **Failures:** Collisions fail closed with both record paths; ambiguous IDs are rejected.
 
 **Acceptance Criteria:**
-- `TASK-01` and `TASK-1` remain distinct; collisions fail closed, ambiguous IDs are rejected, and archived IDs are not reused.
+- New IDs are uppercase and existing stored casing is preserved; comparisons ignore case. `TASK-01` and `TASK-1` remain distinct; numeric segments are never stripped or padded.
+- Allocation uses the per-prefix counter in `task-counter.json` under the create lock, atomically persists increments before create-only save, and consumes another number on target-container conflict. A missing prefix entry is bootstrapped once from the maximum existing top-level number across active, completed, and archived tasks (including sibling worktrees as needed); allocation does not scan per create. Corrupt counters fail without scanning.
+- Lookup does not normalize numeric segments, accept bare numbers, or infer prefixes; archived IDs are not reused and identity collisions fail closed.
 
 ### TASK-004: Dependencies
 
@@ -245,23 +250,24 @@ This contract defines task identity and data, project storage, artifacts, work c
 
 ### TASK-012: Task worktrees
 
-**Description:** A worktree-per-task setting controls task worktree use. When enabled, a worktree is created on the first session launch. Task creation creates the task record without allocating the worktree. If worktree creation fails, retain the task and show a visible warning; a requested worktree failure must not silently redirect execution into the project checkout. Resume preparation with a missing recorded working directory fails with a path-specific error.
+**Description:** A worktree-per-task setting controls task worktree use. The effective policy is captured on the task at creation and does not change for that task when configuration later changes. When enabled, a worktree is created on the first session launch. Task creation creates the task record without allocating the worktree. If worktree creation fails, retain the task and fail session launch with a path-specific error; a requested worktree failure must not silently redirect execution into the project checkout. Resume preparation with a missing recorded working directory fails with a path-specific error.
 
 **Trigger:** A task is created, a session is launched, or a session is resumed.
 
-**Preconditions:** Task worktrees are enabled for worktree operations.
+**Preconditions:** A task has a worktree policy captured at creation. Legacy tasks without a captured policy use the current worktree-per-task setting.
 
 **Behavior:**
-1. Create the task record without a worktree; create the worktree on first session launch.
-2. On creation failure, retain the task, show a visible warning, and do not redirect execution to the project checkout.
-3. Fail resume preparation with a path-specific error if the recorded working directory is missing.
+1. Capture the effective worktree policy on the task record without allocating a worktree.
+2. On first session launch, create or adopt the worktree when the captured policy is enabled; use the project root when it is disabled.
+3. On worktree creation failure, retain the task and fail session launch with an error naming the expected path; do not redirect execution to the project checkout.
+4. Fail resume preparation with a path-specific error if the recorded working directory is missing.
 
-**Outcome:** Task creation, launch, and resume use the configured worktree behavior.
+**Outcome:** Task creation, launch, and resume use the task's captured worktree policy.
 
-**Failures:** Worktree failure retains the task and visibly warns without redirecting execution; a missing resume directory produces a path-specific error.
+**Failures:** Worktree failure retains the task and fails launch with a path-specific error without redirecting execution; a missing resume directory produces a path-specific error.
 
 **Acceptance Criteria:**
-- Creation does not allocate a worktree, first launch does; failure retains and warns without redirecting, and missing resume paths fail specifically.
+- The task captures its worktree policy at creation; creation does not allocate a worktree; first launch allocates when enabled; failure retains the task and reports the path without redirecting; missing resume paths fail specifically.
 
 ### TASK-013: Done and completion
 
@@ -536,7 +542,7 @@ This contract defines task identity and data, project storage, artifacts, work c
 
 **Response:** Apply the requested operation using configured task status and storage; show task listings, views, operation results, warnings, and actionable errors.
 
-**Feedback:** Show a visible warning when worktree creation fails, require confirmation naming the task ID and title and stating that deletion cannot be undone for destructive deletion, and distinguish status-only Done from explicit completion/cleanup.
+**Feedback:** Fail session launch with a path-specific error when worktree creation fails, require confirmation naming the task ID and title and stating that deletion cannot be undone for destructive deletion, and distinguish status-only Done from explicit completion/cleanup.
 
 ## External Behavior
 
@@ -579,7 +585,7 @@ This contract defines task identity and data, project storage, artifacts, work c
 | A task ID collision or ambiguous ID is encountered | Fail closed, report both record paths for a collision, and reject ambiguity rather than guessing. |
 | A collection contains malformed records | Skip each malformed record, warn with its filename and parse error, and preserve readable results. |
 | A direct action targets a malformed record | Fail with a helpful error; bulk collection reads that skip malformed records may exit 0, while explicit single-record loads remain strict. |
-| A requested worktree cannot be created | Retain the task, show a visible warning, and do not redirect execution into the project checkout. |
+| A requested worktree cannot be created | Retain the task, fail session launch with a path-specific error, and do not redirect execution into the project checkout. |
 | A recorded resume working directory is missing | Fail resume preparation with a path-specific error. |
 | An artifact path escapes the task's `artifacts/` directory, including through a symlink | Reject the path. |
 | An artifact change notification is missed | No periodic recheck or recovery of the missed notification is guaranteed. |

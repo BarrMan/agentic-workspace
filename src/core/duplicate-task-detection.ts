@@ -2,7 +2,6 @@ import { basename, dirname, relative, sep } from "node:path";
 import { parseTask } from "../markdown/parser.ts";
 import type { Task } from "../types/index.ts";
 import { type DuplicateGroup, detectDuplicateTaskIds } from "../utils/duplicate-detection.ts";
-import { canonicalTaskId } from "../utils/task-id.ts";
 import type { Core } from "./agentic-workspace.ts";
 import type { BranchTaskStateEntry, TaskCorpusSnapshot } from "./task-loader.ts";
 
@@ -69,7 +68,7 @@ export async function findLocalDuplicateTaskIds(core: Core, snapshot?: TaskCorpu
 			const folderId = basename(dirname(path))
 				.split(" - ", 1)[0]
 				?.replace(/^task-/i, "");
-			if (!folderId || canonicalTaskId(folderId) !== canonicalTaskId(task.id)) {
+			if (!folderId || folderId !== task.id) {
 				(task as Task & { containerMismatch?: string }).containerMismatch =
 					`${task.filePath}: container identity does not match task ID ${task.id}.`;
 			}
@@ -83,7 +82,7 @@ function logicalBranchTaskPath(path: string, id: string): string {
 	const filename = basename(path).toLowerCase();
 	const separatorIndex = filename.indexOf(" - ");
 	if (separatorIndex < 0) return path.toLowerCase().split(sep).join("/");
-	return `${canonicalTaskId(id).toLowerCase()}${filename.slice(separatorIndex)}`;
+	return `${id.toLowerCase()}${filename.slice(separatorIndex)}`;
 }
 
 function appendCurrentBranchEntries(
@@ -109,7 +108,7 @@ function groupBranchEntries(entries: BranchTaskStateEntry[]): Map<string, Branch
 	const byId = new Map<string, BranchTaskStateEntry[]>();
 	for (const entry of entries) {
 		if (entry.type !== "task" && entry.type !== "completed") continue;
-		const id = canonicalTaskId(entry.id);
+		const id = entry.id;
 		byId.set(id, [...(byId.get(id) ?? []), entry]);
 	}
 	return byId;

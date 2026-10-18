@@ -1,4 +1,5 @@
 import type { AgentPreset } from "../types.ts";
+import { openCodeBootstrapForVersion } from "./opencode-version.ts";
 import { commandArguments } from "./profile.ts";
 
 const VERSION_TIMEOUT_MS = 2_000;
@@ -36,11 +37,9 @@ export async function resolveLaunchPreset(
 		]);
 		const version = output.trim();
 		if (exitCode !== 0) throw new Error(`Could not determine the OpenCode version (exit ${exitCode}).`);
-		if (/^(?:opencode )?1\.19\.0$/.test(version)) return { ...structuredClone(preset), bootstrap: "opencode-v1" };
-		if (/^(?:opencode )?v2\.\d+\.\d+$/.test(version)) {
-			return { ...structuredClone(preset), bootstrap: "opencode-v2" };
-		}
-		throw new Error(`Unsupported OpenCode version ${JSON.stringify(version)}; expected 1.19.0 or version 2.`);
+		const bootstrap = openCodeBootstrapForVersion(version);
+		if (bootstrap) return { ...structuredClone(preset), bootstrap };
+		throw new Error(`Unsupported OpenCode version ${JSON.stringify(version)}; expected OpenCode v1 or v2.`);
 	} finally {
 		clearTimeout(timeout);
 		await child.exited;

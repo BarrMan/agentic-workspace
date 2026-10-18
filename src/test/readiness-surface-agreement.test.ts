@@ -100,7 +100,7 @@ describe("readiness agreement across surfaces", () => {
 			return JSON.parse(result.stdout).task;
 		};
 
-		const readyDetail = await detailFor("2");
+		const readyDetail = await detailFor("TASK-2");
 		expect(readyDetail.isReady).toBe(true);
 		expect(readyDetail.readiness).toEqual({
 			isReady: true,
@@ -109,7 +109,7 @@ describe("readiness agreement across surfaces", () => {
 			missingDependencies: [],
 		});
 
-		const blockedDetail = await detailFor("4");
+		const blockedDetail = await detailFor("TASK-4");
 		expect(blockedDetail.isReady).toBe(false);
 		expect(blockedDetail.readiness).toEqual({
 			isReady: false,
@@ -118,7 +118,7 @@ describe("readiness agreement across surfaces", () => {
 			missingDependencies: [],
 		});
 
-		const unknownDetail = await detailFor("5");
+		const unknownDetail = await detailFor("TASK-5");
 		expect(unknownDetail.readiness).toEqual({
 			isReady: false,
 			isBlocked: true,
@@ -127,7 +127,7 @@ describe("readiness agreement across surfaces", () => {
 		});
 
 		// A finished task is neither ready to start nor blocked.
-		const finishedDetail = await detailFor("6");
+		const finishedDetail = await detailFor("TASK-6");
 		expect(finishedDetail.isReady).toBe(false);
 		expect(finishedDetail.readiness.isBlocked).toBe(false);
 	});
@@ -185,7 +185,7 @@ describe("readiness agreement across surfaces", () => {
 			missingDependencies: [],
 		};
 
-		const viewResult = await runCliCommand(["task", "view", "8", "--json"]);
+		const viewResult = await runCliCommand(["task", "view", "TASK-8", "--json"]);
 		expect(viewResult.exitCode).toBe(0);
 		const viewed = JSON.parse(viewResult.stdout).task;
 		expect(viewed.isReady).toBe(false);

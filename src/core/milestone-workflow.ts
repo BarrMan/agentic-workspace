@@ -5,7 +5,7 @@ import { buildMilestoneMatchKeys, findActiveMilestoneByAlias, keySetsIntersect }
 import { milestoneKey, normalizeMilestoneName } from "./milestones.ts";
 
 export type MilestoneRenameInput = { from: string; to: string; updateTasks?: boolean; dueDate?: string | null };
-export type MilestoneRemoveInput = { name: string; taskHandling?: "clear" | "keep" | "reassign"; reassignTo?: string };
+export type MilestoneRemoveInput = { name: string; taskHandling?: "clear" | "reassign"; reassignTo?: string };
 
 export class MilestoneWorkflowError extends Error {
 	constructor(
@@ -30,7 +30,7 @@ export type MilestoneRenameResult = {
 
 export type MilestoneRemoveResult = {
 	milestone: Milestone;
-	taskHandling: "clear" | "keep" | "reassign";
+	taskHandling: "clear" | "reassign";
 	reassignedMilestone?: Milestone;
 	updatedTaskIds: string[];
 };
@@ -55,7 +55,7 @@ type MilestoneRemovalPreparation = {
 	source: Milestone;
 	active: Milestone[];
 	archived: Milestone[];
-	taskHandling: "clear" | "keep" | "reassign";
+	taskHandling: "clear" | "reassign";
 	reassignedMilestone?: Milestone;
 };
 
@@ -122,10 +122,7 @@ export class MilestoneWorkflow {
 		const to = normalizeMilestoneName(input.to);
 		if (!from || !to)
 			throw new MilestoneWorkflowError("Both 'from' and 'to' milestone names are required.", "VALIDATION_ERROR");
-		const [active, archived] = await Promise.all([
-			this.core.filesystem.listMilestones(),
-			this.core.filesystem.listArchivedMilestones(),
-		]);
+		const [active, archived] = await Promise.all([this.core.loadMilestones(), this.core.loadArchivedMilestones()]);
 		const source = findActiveMilestoneByAlias(from, active);
 		if (!source) throw new MilestoneWorkflowError(`Milestone not found: "${from}"`, "NOT_FOUND");
 		let dueDate: string | undefined;
@@ -173,7 +170,7 @@ export class MilestoneWorkflow {
 		milestones: Milestone[],
 		replacement: string | null,
 	): Promise<MilestoneTaskUpdate> {
-		const tasks = await this.core.filesystem.listTasks();
+		const tasks = await this.core.loadStoredTasks();
 		const keys = taskMatchKeys(input, source, !titleAliasCollides(source, milestones));
 		return updateTaskMilestones(
 			this.core,
@@ -195,10 +192,7 @@ export class MilestoneWorkflow {
 	private async prepareRemoval(input: MilestoneRemoveInput): Promise<MilestoneRemovalPreparation> {
 		const name = normalizeMilestoneName(input.name);
 		if (!name) throw new MilestoneWorkflowError("Milestone name cannot be empty.", "VALIDATION_ERROR");
-		const [active, archived] = await Promise.all([
-			this.core.filesystem.listMilestones(),
-			this.core.filesystem.listArchivedMilestones(),
-		]);
+		const [active, archived] = await Promise.all([this.core.loadMilestones(), this.core.loadArchivedMilestones()]);
 		const source = findActiveMilestoneByAlias(name, active);
 		if (!source) throw new MilestoneWorkflowError(`Milestone not found: "${name}"`, "NOT_FOUND");
 		const taskHandling = input.taskHandling ?? "clear";
@@ -253,13 +247,12 @@ export class MilestoneWorkflow {
 			updatedTaskIds: [],
 		};
 		try {
-			if (taskHandling !== "keep")
-				updates = await this.updateMatchingTasks(
-					source,
-					input.name,
-					[...active, ...archived],
-					reassignedMilestone?.id ?? null,
-				);
+			updates = await this.updateMatchingTasks(
+				source,
+				input.name,
+				[...active, ...archived],
+				reassignedMilestone?.id ?? null,
+			);
 		} catch {
 			const failures = await rollbackTaskMilestones(this.core, updates.previousMilestones);
 			throw new MilestoneWorkflowError(

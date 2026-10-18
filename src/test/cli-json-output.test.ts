@@ -190,7 +190,7 @@ describe("CLI JSON output", () => {
 
 	it("returns curated task details for view", async () => {
 		const { runCli } = await makeProject();
-		for (const args of [["task", "view", "1", "--json"]]) {
+		for (const args of [["task", "view", "TASK-1", "--json"]]) {
 			const result = await runCli(args);
 			expect(result.exitCode).toBe(0);
 			const output = JSON.parse(result.stdout.toString());
@@ -229,11 +229,11 @@ describe("CLI JSON output", () => {
 		]);
 		expect(withMarkdown.exitCode).toBe(0);
 
-		const absent = await runCli(["task", "view", "2", "--json"]);
+		const absent = await runCli(["task", "view", "TASK-2", "--json"]);
 		expect(absent.exitCode).toBe(0);
 		expect(JSON.parse(absent.stdout.toString()).task.description).toBeNull();
 
-		const markdown = await runCli(["task", "view", "3", "--json"]);
+		const markdown = await runCli(["task", "view", "TASK-3", "--json"]);
 		expect(markdown.exitCode).toBe(0);
 		expect(JSON.parse(markdown.stdout.toString()).task.description).toBe("First line\n\n- item with `code`");
 	});
@@ -332,7 +332,7 @@ describe("CLI JSON output", () => {
 		const { runCli } = await makeProject();
 		for (const args of [
 			["task", "list", "--json", "--plain"],
-			["task", "view", "1", "--json", "--plain"],
+			["task", "view", "TASK-1", "--json", "--plain"],
 			["search", "JSON", "--json", "--plain"],
 			["decision", "list", "--json", "--plain"],
 		]) {
@@ -369,7 +369,7 @@ describe("CLI JSON output", () => {
 	it("uses stderr and a nonzero exit for JSON errors", async () => {
 		const { runCli } = await makeProject();
 		for (const args of [
-			["task", "view", "999", "--json"],
+			["task", "view", "TASK-999", "--json"],
 			["task", "999", "--json"],
 			["task", "list", "--limit", "0", "--json"],
 		]) {

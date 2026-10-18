@@ -100,7 +100,7 @@ describe("CLI task view and edit", () => {
 			dependencies: [],
 			rawContent: "## Description\n\nBody text",
 		});
-		await $`${[...cliCommand, "task", "edit", "1", "--title", "Updated", "--description", "Structured description"]}`
+		await $`${[...cliCommand, "task", "edit", "TASK-1", "--title", "Updated", "--description", "Structured description"]}`
 			.cwd(testDir)
 			.quiet();
 		const task = await core.filesystem.loadTask("task-1");
@@ -115,7 +115,7 @@ describe("CLI task view and edit", () => {
 
 	it("retains formatted plain task output", async () => {
 		await $`${[...cliCommand, "task", "create", "Visible", "--description", "Description"]}`.cwd(testDir).quiet();
-		const result = await $`${[...cliCommand, "task", "view", "1", "--plain"]}`.cwd(testDir).quiet();
+		const result = await $`${[...cliCommand, "task", "view", "TASK-1", "--plain"]}`.cwd(testDir).quiet();
 		expect(result.stdout.toString()).toContain("Task TASK-1 - Visible");
 		expect(result.stdout.toString()).toContain("Description:");
 	});

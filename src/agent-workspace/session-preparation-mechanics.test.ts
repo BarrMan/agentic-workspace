@@ -1,9 +1,10 @@
 import { afterEach, describe, expect, it } from "bun:test";
-import { mkdtemp, rm } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Core } from "../core/agentic-workspace.ts";
 import { initializeTestProject } from "../test/test-utils.ts";
+import { resolveSessionPreset, upsertAgentConfiguration } from "./config.ts";
 import type { ProcessRunner, TmuxServer } from "./session-process.ts";
 import { SessionProcess } from "./session-process.ts";
 import {
@@ -31,6 +32,14 @@ describe("session preparation mechanics", () => {
 		roots.push(root);
 		const core = new Core(root);
 		await initializeTestProject(core, "Preparation mechanics");
+		const opencode = join(root, "test-bin", "opencode");
+		await mkdir(join(root, "test-bin"));
+		await writeFile(opencode, "#!/bin/sh\nprintf '1.19.3\\n'\n");
+		await chmod(opencode, 0o700);
+		await upsertAgentConfiguration(core, "project", {
+			selectedPreset: "opencode",
+			presets: { opencode: { command: opencode, env: {}, prepare: "", bootstrap: "opencode" } },
+		});
 		await core.createTaskFromInput({ title: "Preparation task", status: "To Do" });
 		const task = { id: "TASK-1", title: "Preparation task" };
 		const record: AgentSession = {
@@ -77,6 +86,8 @@ describe("session preparation mechanics", () => {
 			},
 		);
 		const store = new SessionStore(root, runner);
+		const resolved = await resolveSessionPreset(core, { taskId: task.id, preset: "opencode" });
+		expect(resolved.command).toBe(opencode);
 		const preset = await executionPresetWithEnvironment(core, task.id, "opencode", pathContext);
 		const modeId = await resolveModeId(core, store, task.id, "build");
 		const resolvedProfile = await profileFor(core, modeId, preset.preset);

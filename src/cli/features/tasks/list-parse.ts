@@ -3,7 +3,6 @@ import type { Core } from "../../../index.ts";
 import type { TaskListFilter } from "../../../types/index.ts";
 import { parsePositiveIntegerOption } from "../../../utils/list-window.ts";
 import { parseDelimitedStringList } from "../../../utils/task-builders.ts";
-import { canonicalTaskId } from "../../../utils/task-path.ts";
 
 export type TaskListRequest = {
 	filters: TaskListFilter;
@@ -102,15 +101,14 @@ export async function parseTaskListRequest(
 	let parentId: string | undefined;
 	let parentDisplayId: string | undefined;
 	if (options.parent !== undefined) {
-		parentId = String(options.parent).trim();
+		parentId = String(options.parent).trim().toUpperCase();
 		if (!parentId) {
 			console.error("Cannot use an empty value with --parent. Omit the flag to list every task.");
 			process.exitCode = 1;
 			return null;
 		}
 		filters.parentTaskId = parentId;
-		const config = await core.filesystem.loadConfig();
-		parentDisplayId = canonicalTaskId(parentId, config?.prefixes?.task ?? "task");
+		parentDisplayId = parentId;
 	}
 	const sortField = options.sort ? String(options.sort).toLowerCase() : "newest";
 	if (!sortFields.includes(sortField)) {
