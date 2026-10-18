@@ -193,7 +193,7 @@ export const createSessionTransport = (socketName?: string): SessionTransport =>
 	};
 };
 
-/** Compatibility factory for server-only, observation/legacy callers. */
+/** Server factory for server-only observation callers. */
 export const createSessionServer = (): Server => createSessionTransport().server as Server;
 
 export class SessionProcess {
@@ -293,10 +293,10 @@ export class SessionProcess {
 		options: {
 			includeDead?: boolean;
 			yolo?: boolean;
-			profile?: ModeProfile;
+			profile: ModeProfile;
 			repositoryRoot?: string;
 			taskRoot?: string;
-		} = {},
+		},
 	): Promise<void> {
 		if (!session.nativeSessionId)
 			throw new Error("Cannot resume this agent without its exact native session ID; start a new session instead.");

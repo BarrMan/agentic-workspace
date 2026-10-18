@@ -398,7 +398,7 @@ describe("real WorkspaceController Settings persistence", () => {
 			return f.setup.captureCharFrame().includes("Error:");
 		});
 		expect(f.setup.captureCharFrame()).toContain("Categories");
-		expect(f.setup.captureCharFrame()).toContain("Invalid project agent configuration");
+		expect(f.setup.captureCharFrame()).toContain('invalid value for "agent_configuration"');
 		expect(await readFile(f.path, "utf8")).toBe("agent_configuration: 123\n");
 		await writeFile(f.path, original);
 		f.core.filesystem.invalidateConfigCache();

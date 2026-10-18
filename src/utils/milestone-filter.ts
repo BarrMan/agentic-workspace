@@ -1,4 +1,5 @@
 import Fuse from "fuse.js";
+import { parseMilestoneId } from "../core/milestones.ts";
 import type { Milestone } from "../types/index.ts";
 
 export const NO_MILESTONE_FILTER_VALUE = "\u0000no-milestone";
@@ -36,14 +37,13 @@ export function createMilestoneFilterValueResolver(milestones: Milestone[]): Mil
 		if (!normalized) return undefined;
 		const direct = milestonesById.get(normalized);
 		if (direct) return direct.id;
-		const idMatch = normalized.match(/^(?:m-)?(\d+)$/i);
-		if (!idMatch?.[1]) return undefined;
-		const numericAlias = idMatch[1].replace(/^0+(?=\d)/, "");
+		const numericPart = parseMilestoneId(normalized);
+		if (!numericPart) return undefined;
+		const numericAlias = numericPart.replace(/^0+(?=\d)/, "");
 		const canonical = milestonesById.get(`m-${numericAlias}`);
 		if (canonical) return canonical.id;
 		return Array.from(milestonesById.values()).find((milestone) => {
-			const candidateMatch = milestone.id.match(/^m-(\d+)$/i);
-			return candidateMatch?.[1]?.replace(/^0+(?=\d)/, "") === numericAlias;
+			return parseMilestoneId(milestone.id)?.replace(/^0+(?=\d)/, "") === numericAlias;
 		})?.id;
 	};
 

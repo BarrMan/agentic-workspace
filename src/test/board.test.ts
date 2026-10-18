@@ -493,11 +493,11 @@ describe("generateMilestoneGroupedBoard", () => {
 		];
 		const milestones = [
 			{ id: "m-1", title: "Canonical", description: "", rawContent: "" },
-			{ id: "1", title: "Legacy", description: "", rawContent: "" },
+			{ id: "1", title: "Historical", description: "", rawContent: "" },
 		];
 
 		const board = generateMilestoneGroupedBoard(tasks, ["To Do"], milestones, "Test Project");
 		expect(board).toContain("## Canonical (2 tasks)");
-		expect(board).not.toContain("## Legacy (1 tasks)");
+		expect(board).not.toContain("## Historical (1 tasks)");
 	});
 });

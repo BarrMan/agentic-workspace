@@ -1,11 +1,10 @@
 import { basename } from "node:path";
 import type { Core } from "../index.ts";
+import { parseTaskId } from "./task-id.ts";
 
 function numericIdBody(value: string, prefix: string): string | null {
-	const prefixWithSeparator = `${prefix}-`;
-	if (!value.toLowerCase().startsWith(prefixWithSeparator.toLowerCase())) return null;
-	const body = value.substring(prefixWithSeparator.length);
-	return /^\d+$/.test(body) ? body : null;
+	const parsed = parseTaskId(value, prefix);
+	return parsed?.segments.length === 1 ? (parsed.segments[0] ?? null) : null;
 }
 
 function numericIdFromFilename(file: string, prefix: string): string | null {

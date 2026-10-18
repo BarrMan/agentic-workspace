@@ -70,7 +70,7 @@ async function writableDirectory(path: string): Promise<boolean> {
 	}
 }
 
-async function canonicalViewLock(projectRoot: string, external: boolean): Promise<string | undefined> {
+async function canonicalViewLock(projectRoot: string): Promise<string | undefined> {
 	const canonical = join(projectRoot, "agentic-workspace", ".locks", "workspace-view-state");
 	let parent = dirname(canonical);
 	for (;;) {
@@ -89,7 +89,7 @@ async function canonicalViewLock(projectRoot: string, external: boolean): Promis
 		}
 		parent = dirname(parent);
 	}
-	if (!external || (await writableDirectory(projectRoot)))
+	if (await writableDirectory(projectRoot))
 		throw new Error(
 			`Cannot use canonical workspace view-state lock at ${canonical}; refusing a different lock namespace.`,
 		);
@@ -261,20 +261,18 @@ class ViewStateStoreImpl<T extends object> implements ViewStateStore<T> {
 		const settings = { staleMs: LOCK_STALE_MS, retries: LOCK_RETRIES, retryDelayMs: LOCK_RETRY_DELAY_MS };
 		const toError = (error: unknown) =>
 			new Error(`Could not lock workspace view state: ${error instanceof Error ? error.message : String(error)}`);
-		const withCanonical = async () => {
-			const canonical = await canonicalViewLock(this.rootDir, this.externalStateRoot !== undefined);
-			if (!canonical) return await operation();
-			return await this.lock.withTarget(this.rootDir, canonical, settings, toError, operation);
-		};
-		if (!this.externalStateRoot) return await withCanonical();
-		// All external clients serialize here; canonical locking also excludes old writable clients.
-		return await this.lock.withTarget(
-			this.externalStateRoot,
-			join(this.externalStateRoot, "workspace-view-state.lock"),
-			settings,
-			toError,
-			withCanonical,
-		);
+		if (this.externalStateRoot) {
+			return await this.lock.withTarget(
+				this.externalStateRoot,
+				join(this.externalStateRoot, "workspace-view-state.lock"),
+				settings,
+				toError,
+				operation,
+			);
+		}
+		const canonical = await canonicalViewLock(this.rootDir);
+		if (!canonical) return await operation();
+		return await this.lock.withTarget(this.rootDir, canonical, settings, toError, operation);
 	}
 }
 

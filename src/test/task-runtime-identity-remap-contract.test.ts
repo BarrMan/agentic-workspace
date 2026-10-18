@@ -82,7 +82,7 @@ describe("MAIN task runtime identity remap contract", () => {
 		expect(promotedBuild.sessions[0]).toMatchObject({ cwd: runtimeDir, outputPath, bootstrapPath });
 		expect(await readFile(outputPath, "utf8")).toBe("actual session output\n");
 		expect(await readFile(bootstrapPath, "utf8")).toBe("actual bootstrap\n");
-		expect((await store.read(draft.id)).sessions).toEqual([]);
+		expect(Object.values((await store.read(draft.id)).modes).flatMap(({ sessions }) => sessions)).toEqual([]);
 
 		await core.demoteTask(promoted.id);
 		const demoted = (await core.filesystem.listDrafts()).find(({ title }) => title === "Remap me");
@@ -128,9 +128,9 @@ describe("MAIN task runtime identity remap contract", () => {
 
 		const sourcePaths = await store.paths("TASK-V1");
 		await Bun.write(sourcePaths.statePath, JSON.stringify({ version: 1, taskId: "TASK-V1", sessions: [] }));
-		const legacyBefore = await readFile(sourcePaths.statePath, "utf8");
+		const beforeV1 = await readFile(sourcePaths.statePath, "utf8");
 		await expect(store.remapTaskIdentity("TASK-V1", "DRAFT-V1")).rejects.toThrow(/valid version 2 state/i);
-		expect(await readFile(sourcePaths.statePath, "utf8")).toBe(legacyBefore);
+		expect(await readFile(sourcePaths.statePath, "utf8")).toBe(beforeV1);
 	});
 
 	it("retries an exact installed destination after remap-phase failures without losing source or sidecars", async () => {

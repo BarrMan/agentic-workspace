@@ -11,7 +11,7 @@ import type { Core } from "../core/agentic-workspace.ts";
 import { selectedModeForTask, validateSelectedModeByTask } from "../ui/opentui/workspace/state.ts";
 import { OpenTuiWorkspaceController } from "../ui/opentui/workspace-controller.ts";
 
-it("rejects a legacy project before acquiring stores or a terminal, without changing configuration", async () => {
+it("rejects a mode-less project before acquiring stores or a terminal, without changing configuration", async () => {
 	const root = await mkdtemp(join(tmpdir(), "workspace-mode-preflight-"));
 	const configuration = `agent_configuration: ${JSON.stringify(getBuiltInAgentConfiguration())}\n`;
 	const path = join(root, "agentic-workspace.config.yml");

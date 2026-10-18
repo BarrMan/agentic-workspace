@@ -23,13 +23,10 @@ export function findSessionMode(modes?: Record<ModeId, ModeSessionHistory>, sess
 	return undefined;
 }
 
-/** Return each session across mode histories, falling back to the legacy flat list when needed. */
-export function allModeSessions(state?: {
-	modes?: Record<ModeId, ModeSessionHistory>;
-	sessions?: AgentSession[];
-}): AgentSession[] {
+/** Return each session across mode histories. */
+export function allModeSessions(state?: { modes?: Record<ModeId, ModeSessionHistory> }): AgentSession[] {
 	const modes = state?.modes;
-	if (!modes || Object.keys(modes).length === 0) return state?.sessions ?? [];
+	if (!modes || Object.keys(modes).length === 0) return [];
 
 	const sessions: AgentSession[] = [];
 	const seen = new Set<string>();

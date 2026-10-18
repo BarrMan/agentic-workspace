@@ -1,6 +1,6 @@
 import { mkdir, rename } from "node:fs/promises";
 import { dirname, join } from "node:path";
-import { collectMilestoneAliasKeys } from "../core/milestones.ts";
+import { collectMilestoneAliasKeys, isMilestoneId, parseMilestoneId } from "../core/milestones.ts";
 import { FrontmatterSchemaError, parseMarkdown, parseMilestone } from "../markdown/parser.ts";
 import { serializeMilestone } from "../markdown/serializer.ts";
 import type { Milestone } from "../types/index.ts";
@@ -33,9 +33,8 @@ function filename(id: string, title: string): string {
 }
 
 function canonicalIdentifier(input: string): string | null {
-	return /^\d+$/.test(input) || /^m-\d+$/.test(input)
-		? `m-${String(Number.parseInt(input.replace(/^m-/, ""), 10))}`
-		: null;
+	const numericPart = parseMilestoneId(input);
+	return numericPart ? `m-${String(Number.parseInt(numericPart, 10))}` : null;
 }
 
 function emptyMatches(): MilestoneMatches {
@@ -44,7 +43,7 @@ function emptyMatches(): MilestoneMatches {
 
 function chooseMatch(input: string, matches: MilestoneMatches): MilestoneFile | null {
 	const one = (items: MilestoneFile[]) => (items.length === 1 ? items[0] : null);
-	const numeric = /^\d+$/.test(input) || /^m-\d+$/.test(input);
+	const numeric = isMilestoneId(input);
 	return numeric
 		? (matches.rawId[0] ??
 				matches.canonicalId[0] ??
@@ -174,15 +173,15 @@ export class MilestoneStore {
 			const ids = await Promise.all(
 				allFiles.flatMap((files, index) =>
 					files.map(async (file) => {
-						const match = file.match(/^m-(\d+)/i);
+						const match = parseMilestoneId(file.split(" - ", 1)[0] ?? "");
 						try {
-							const id = parseMilestone(await Bun.file(join(index === 0 ? active : archived, file)).text()).id.match(
-								/^m-(\d+)$/i,
-							)?.[1];
-							return id ? Number.parseInt(id, 10) : match?.[1] ? Number.parseInt(match[1], 10) : null;
+							const id = parseMilestoneId(
+								parseMilestone(await Bun.file(join(index === 0 ? active : archived, file)).text()).id,
+							);
+							return id ? Number.parseInt(id, 10) : match ? Number.parseInt(match, 10) : null;
 						} catch (error) {
 							if (error instanceof FrontmatterSchemaError) throw error;
-							return match?.[1] ? Number.parseInt(match[1], 10) : null;
+							return match ? Number.parseInt(match, 10) : null;
 						}
 					}),
 				),

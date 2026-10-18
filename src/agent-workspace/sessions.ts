@@ -369,7 +369,7 @@ export class AgentSessionService {
 	 */
 	async listAllSessions(): Promise<Map<string, TaskSessions>> {
 		const states = await this.store.readAll();
-		return new Map(states.map((state) => [state.taskId, state]));
+		return new Map(states.map((state) => [state.taskId, { ...state, sessions: allModeSessions(state) }]));
 	}
 
 	async reset(taskId: string): Promise<void> {
@@ -487,14 +487,10 @@ export class AgentSessionService {
 				await removeOwnedPath(join(canonicalTaskDir, `${session.id}.md`));
 				await removeOwnedPath(join(canonicalTaskDir, `${session.id}.native-session-id`));
 				await removeOwnedPath(join(canonicalTaskDir, `${session.id}.activity`), true);
-				for (const [modeId, history] of Object.entries(currentState.modes)) {
+				for (const history of Object.values(currentState.modes)) {
 					history.sessions = history.sessions.filter((current) => current.id !== session.id);
-					if (history.activeSessionId === session.id) {
-						history.activeSessionId = history.sessions[0]?.id;
-						if (modeId === currentState.legacyModeId) currentState.activeSessionId = history.activeSessionId;
-					}
+					if (history.activeSessionId === session.id) history.activeSessionId = history.sessions[0]?.id;
 				}
-				currentState.sessions = currentState.modes[currentState.legacyModeId]?.sessions ?? [];
 			});
 		}
 		await this.store.reset(task.id);
@@ -630,7 +626,7 @@ export class AgentSessionService {
 				: (sessionId ?? (hasModeCatalog ? state.modes[modeId]?.activeSessionId : undefined));
 			let record: AgentSession;
 			let preset: AgentPreset;
-			let profile: ModeProfile | undefined;
+			let profile: ModeProfile;
 			let environment: Record<string, string>;
 			let settings: SessionSettings;
 			let preflight: PreflightedAgentLaunch | undefined;
@@ -731,6 +727,7 @@ export class AgentSessionService {
 			} else {
 				const target = await this.createNewTarget(task, modeId, newSession);
 				({ record, preset, environment, settings } = target);
+				({ preset, profile } = await profileFor(this.core, modeId, preset));
 				freshTarget = newSession ? { ...target, modeId } : undefined;
 				releaseClaim = await this.store.claimSession(task.id, record.id);
 			}
@@ -824,7 +821,7 @@ export class AgentSessionService {
 			environment?: Record<string, string>;
 			settings: SessionSettings;
 			modeId: ModeId;
-			profile?: ModeProfile;
+			profile: ModeProfile;
 			directReservation?: Awaited<ReturnType<AgentSessionService["reserveSession"]>>;
 		},
 	): Promise<SharedAgentAttachment> {
@@ -833,9 +830,7 @@ export class AgentSessionService {
 		const { modeId, settings, directReservation } = options;
 		const currentProfile = options.preflight
 			? { preset: options.preflight.preset, profile: options.preflight.options.profile }
-			: options.profile || directReservation
-				? { preset, profile: options.profile }
-				: await profileFor(this.core, modeId, preset);
+			: { preset, profile: options.profile };
 		const launchPreset = currentProfile.preset;
 		const nativePathContext = directReservation
 			? undefined
@@ -1246,7 +1241,7 @@ export class AgentSessionService {
 		launchPreset: AgentPreset;
 		settings: SessionSettings;
 		modeId: ModeId;
-		profile: { profile?: ModeProfile; preset: AgentPreset };
+		profile: { profile: ModeProfile; preset: AgentPreset };
 		reserved: AgentSession;
 		preceding?: AgentSession;
 		priorActiveSessionId?: string;
@@ -1727,7 +1722,7 @@ export class AgentSessionService {
 		// on every session start, with no bound on the iteration.
 		if (isEnabled("session")) debug("session", "enforceRunningLimit.scan", { taskStates: states.length, max });
 		for (const state of states) {
-			for (const session of state.sessions) {
+			for (const session of allModeSessions(state)) {
 				if (session.nativeWorkspace || session.status !== AGENT_SESSION_STATUS.RUNNING) continue;
 				const alive = await this.process.alive(session);
 				if (alive.exitCode === 0 && alive.stdout.trim() === "0") live.push(session);

@@ -3,10 +3,13 @@ import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
+import { getDefaultModeCatalog } from "../config.ts";
 import type { AgentPreset, ModeProfile } from "../types.ts";
 import { OpencodeV2Agent } from "./opencode-v2.ts";
 
 const preset: AgentPreset = { bootstrap: "opencode", command: "opencode", prepare: "", env: {} };
+const profile = getDefaultModeCatalog().profiles.build;
+if (!profile) throw new Error("Missing default build mode profile.");
 
 describe("OpenCode v2 adapter", () => {
 	test("uses an exact native session for interactive launch, resume, and ask", async () => {
@@ -22,6 +25,7 @@ describe("OpenCode v2 adapter", () => {
 				skillPath: join(directory, "skills", "SKILL.md"),
 				env: { PATH: process.env.PATH ?? "" },
 				intent: { kind: "new" },
+				profile,
 			});
 			const nativeSessionId = prepared.identity?.id ?? "";
 			expect(nativeSessionId).toMatch(/^ses_[0-9a-f]{32}$/);
@@ -76,6 +80,7 @@ printf '%s\\n' "$LOOKUP_RESULT"
 					taskRoot,
 					env: { PATH: process.env.PATH ?? "" },
 					intent: { kind: "resume", nativeSessionId: "ses_seed" },
+					profile,
 				}),
 			).rejects.toThrow("requires its durable status directory");
 			const prepared = await new OpencodeV2Agent().prepare({
@@ -90,6 +95,7 @@ printf '%s\\n' "$LOOKUP_RESULT"
 				taskRoot,
 				env,
 				intent: { kind: "new" },
+				profile,
 			});
 			const cliConfig = Bun.JSONC.parse(prepared.env.OPENCODE_CLI_CONFIG_CONTENT ?? "{}") as { plugins: string[] };
 			expect(cliConfig.plugins).toEqual([
@@ -212,6 +218,7 @@ printf '%s\\n' "$LOOKUP_RESULT"
 				sessionId: "BACK-RESUME",
 				env: resumeEnv,
 				intent: { kind: "resume", nativeSessionId: "ses_saved" },
+				profile,
 			});
 			const resumeConfig = Bun.JSONC.parse(resumePrepared.env.OPENCODE_CLI_CONFIG_CONTENT ?? "{}") as {
 				plugins: string[];
@@ -268,6 +275,7 @@ printf '%s\\n' "$LOOKUP_RESULT"
 					skillPath: join(directory, "skills", "SKILL.md"),
 					env: { PATH: process.env.PATH ?? "", OPENCODE_CONFIG_CONTENT: '{ "skills": { "paths": [] } }' },
 					intent: { kind: "resume", nativeSessionId: "ses_seed" },
+					profile,
 				}),
 			).rejects.toThrow("skills must be an array of directory paths");
 			const explicit: ModeProfile = {
@@ -344,6 +352,7 @@ esac
 					skillPath: join(directory, "skills", "SKILL.md"),
 					env: { V2_TEST_VERSION: version },
 					intent: { kind: "resume", nativeSessionId },
+					profile,
 				});
 			const preflightResume = (nativeSessionId: string) =>
 				agent.preflightLaunch({
@@ -353,6 +362,7 @@ esac
 					env: {},
 					nativeSessionId,
 					resume: true,
+					profile,
 				});
 			expect((await prepareResume("ses_existing")).identity?.id).toBe("ses_existing");
 			await expect(preflightResume("ses_missing")).rejects.toThrow("was not found or is unavailable");
@@ -366,6 +376,7 @@ esac
 					sessionId: "agentic-workspace-session",
 					resume: false,
 					nativeSessionId: "ses_new",
+					profile,
 				}),
 			).rejects.toThrow("Unsupported OpenCode v2 config schema");
 			await expect(
@@ -377,6 +388,7 @@ esac
 					sessionId: "agentic-workspace-session",
 					resume: false,
 					nativeSessionId: "ses_new",
+					profile,
 				}),
 			).rejects.toThrow("plugins must be an array");
 			await expect(
@@ -387,6 +399,7 @@ esac
 					env: { V2_TEST_VERSION: "v1.19.0" },
 					resume: true,
 					nativeSessionId: "ses_existing",
+					profile,
 				}),
 			).rejects.toThrow("requires an OpenCode v2 CLI binary");
 			await expect(
@@ -397,6 +410,7 @@ esac
 					env: { V2_TEST_VERSION: "v1.19.0" },
 					resume: false,
 					nativeSessionId: "ses_new",
+					profile,
 				}),
 			).rejects.toThrow("requires an OpenCode v2 CLI binary");
 			const askMissing = agent.askCommand({

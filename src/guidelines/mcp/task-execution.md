@@ -19,13 +19,3 @@ Mode permissions describe intent and are passed to the agent harness where the n
 6. Implement and verify work in proportion to its scope, and update task status to reflect reality. Follow the task finalization guide when wrapping up.
 
 Artifacts are ordinary durable project data, not permission boundaries. Do not claim that the PLAN/BUILD workflow itself enforces review, blocks implementation, or isolates access.
-
-### Explicit project upgrade
-
-Existing projects are not migrated automatically by ordinary reads. Use the project-level command explicitly:
-
-```sh
-Manually convert each flat task or draft `<name>.md` to `<lowercase-id>/task.md` under its existing root, and set frontmatter `id` to match the directory name.
-```
-
-Preview reports planned task/session changes, blockers, and a source fingerprint without writing project data. Review it, then apply using the exact fingerprint shown; if the source changed, preview again and use the new fingerprint. Recovery handles an interrupted transaction; run preview again afterward before continuing. Existing legacy agent-summary text is preserved as the `legacy-agent-summary.md` artifact rather than discarded.

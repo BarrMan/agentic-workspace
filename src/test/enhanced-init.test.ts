@@ -139,7 +139,7 @@ describe("Enhanced init command", () => {
 	test("initializeProject should preserve an existing reserved prefix on re-init", async () => {
 		const core = new Core(tmpDir);
 		await initializeProject(core, {
-			projectName: "Legacy Reserved Prefix",
+			projectName: "Historical Reserved Prefix",
 			integrationMode: "none",
 			advancedConfig: { taskPrefix: "JIRA" },
 		});
@@ -149,7 +149,7 @@ describe("Enhanced init command", () => {
 		await core.filesystem.saveConfig(existingConfig);
 
 		const result = await initializeProject(core, {
-			projectName: "Legacy Reserved Prefix",
+			projectName: "Historical Reserved Prefix",
 			integrationMode: "none",
 			existingConfig,
 			advancedConfig: { taskPrefix: "task" },
@@ -162,7 +162,7 @@ describe("Enhanced init command", () => {
 		// Re-init cannot introduce a reserved prefix either.
 		await expect(
 			initializeProject(core, {
-				projectName: "Legacy Reserved Prefix",
+				projectName: "Historical Reserved Prefix",
 				integrationMode: "none",
 				existingConfig,
 				advancedConfig: { taskPrefix: "doc" },

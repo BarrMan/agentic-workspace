@@ -6,10 +6,8 @@ import type { Core } from "../core/agentic-workspace.ts";
 import type { Storage } from "../core/storage.ts";
 import { parseConfig, serializeConfig } from "../file-system/config.ts";
 import type { AgenticWorkspaceConfig } from "../types/index.ts";
-import { isModeTextColor } from "./mode-colors.ts";
+import { assertAgentConfiguration, assertModeCatalog, validateArtifactPath } from "./agent-config-schema.ts";
 import {
-	AGENT_BOOTSTRAP_TYPES,
-	type AgentBootstrap,
 	type AgentConfigScope,
 	type AgentConfiguration,
 	type AgentPreset,
@@ -21,27 +19,9 @@ import {
 	type SessionSettings,
 } from "./types.ts";
 
-const BOOTSTRAP_TYPES = new Set<AgentBootstrap>(AGENT_BOOTSTRAP_TYPES);
-const SAFE_PRESET_NAME = /^(?!__proto__$|prototype$|constructor$)[A-Za-z_][A-Za-z0-9_-]*$/;
-const POSIX_ENV_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/;
 const ROOT_CONFIGURATION_FILE_NAME = "agentic-workspace.config.yml";
-const SAFE_MODE_ID = /^(?!__proto__$|prototype$|constructor$)[a-z][a-z0-9-]*$/;
 
-/** Task-container relative names only; internal files and task records are not artifacts. */
-export function validateArtifactPath(path: string): string {
-	if (
-		!path ||
-		path.includes("\0") ||
-		path.includes("\\") ||
-		path.startsWith("/") ||
-		/^[A-Za-z]:/.test(path) ||
-		path.split("/").some((part) => !part || part === "." || part === "..") ||
-		path === "task.md" ||
-		path === ".artifacts.json"
-	)
-		throw new Error(`Invalid task artifact path: ${path}`);
-	return path;
-}
+export { validateArtifactPath };
 
 const PLAN_PROFILE: ModeProfile = {
 	name: "PLAN",
@@ -137,136 +117,6 @@ export function rootConfigFilePath(): string {
 function requireTaskId(scope: AgentConfigScope, taskId: string | undefined): string {
 	if (scope === "card" && !taskId) throw new Error("A task ID is required for card agent configuration.");
 	return taskId ?? "";
-}
-
-function hasNul(value: string): boolean {
-	return value.includes("\0");
-}
-
-function assertPreset(value: unknown, name: string, label: string): void {
-	if (!SAFE_PRESET_NAME.test(name) || !value || typeof value !== "object" || Array.isArray(value)) {
-		throw new Error(`${label}.presets entries must be named objects.`);
-	}
-	const preset = value as Partial<AgentPreset>;
-	if (Object.hasOwn(value, "worktree")) {
-		throw new Error(`${label}.presets.${name}.worktree is retired; remove this unsupported field from the preset.`);
-	}
-	if (typeof preset.command !== "string" || !preset.command.trim() || hasNul(preset.command)) {
-		throw new Error(`${label}.presets.${name}.command must be a non-empty string.`);
-	}
-	if (typeof preset.prepare !== "string" || hasNul(preset.prepare)) {
-		throw new Error(`${label}.presets.${name}.prepare must be a string.`);
-	}
-	if (!BOOTSTRAP_TYPES.has(preset.bootstrap as AgentBootstrap)) {
-		throw new Error(`${label}.presets.${name}.bootstrap is invalid; set it to a supported bootstrap value.`);
-	}
-	if (preset.resumeFlag !== undefined) {
-		if (typeof preset.resumeFlag !== "string" || !preset.resumeFlag.trim() || hasNul(preset.resumeFlag)) {
-			throw new Error(`${label}.presets.${name}.resumeFlag must be a non-empty string without NUL bytes.`);
-		}
-	}
-	assertPresetEnvironment(preset.env, name, label);
-}
-
-function assertPresetEnvironment(value: unknown, name: string, label: string): void {
-	if (!value || typeof value !== "object" || Array.isArray(value)) {
-		throw new Error(`${label}.presets.${name}.env must be an object of strings.`);
-	}
-	for (const [key, envValue] of Object.entries(value)) {
-		if (!POSIX_ENV_NAME.test(key) || typeof envValue !== "string" || hasNul(envValue)) {
-			throw new Error(`${label}.presets.${name}.env must be an object of strings.`);
-		}
-	}
-}
-
-function assertAgentConfiguration(value: unknown, label = "Agent configuration"): asserts value is AgentConfiguration {
-	if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error(`${label} must be an object.`);
-	const config = value as Partial<AgentConfiguration>;
-	if (typeof config.selectedPreset !== "string" || !SAFE_PRESET_NAME.test(config.selectedPreset)) {
-		throw new Error(`${label}.selectedPreset must be a non-empty string.`);
-	}
-	if (!config.presets || typeof config.presets !== "object" || Array.isArray(config.presets)) {
-		throw new Error(`${label}.presets must be an object.`);
-	}
-	if (!Object.hasOwn(config.presets, config.selectedPreset)) {
-		throw new Error(`${label}.selectedPreset must name a configured preset.`);
-	}
-
-	for (const [name, preset] of Object.entries(config.presets)) assertPreset(preset, name, label);
-
-	if (config.sessions !== undefined) assertSessionSettings(config.sessions, label);
-	if (config.modes !== undefined) assertModeCatalog(config.modes, `${label}.modes`);
-}
-
-function assertModeCatalog(value: unknown, label: string): asserts value is ModeCatalog {
-	if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error(`${label} must be an object.`);
-	const catalog = value as Partial<ModeCatalog>;
-	if (
-		catalog.version !== 1 ||
-		typeof catalog.defaultModeId !== "string" ||
-		!catalog.profiles ||
-		typeof catalog.profiles !== "object" ||
-		Array.isArray(catalog.profiles)
-	)
-		throw new Error(`${label} has an invalid version or profiles.`);
-	const ids = Object.keys(catalog.profiles);
-	if (
-		!ids.length ||
-		!Array.isArray(catalog.order) ||
-		catalog.order.length !== ids.length ||
-		new Set(catalog.order).size !== ids.length ||
-		ids.some((id) => !SAFE_MODE_ID.test(id) || !catalog.order?.includes(id)) ||
-		!catalog.profiles[catalog.defaultModeId]
-	)
-		throw new Error(`${label} must have unique ordered profiles and a valid defaultModeId.`);
-	for (const [id, raw] of Object.entries(catalog.profiles)) {
-		if (!raw || typeof raw !== "object" || Array.isArray(raw))
-			throw new Error(`${label}.profiles.${id} must be an object.`);
-		const profile = raw as ModeProfile;
-		if (profile.textColor !== undefined && !isModeTextColor(profile.textColor))
-			throw new Error(`${label}.profiles.${id}.textColor must be a supported lowercase named color.`);
-		if (
-			typeof profile.name !== "string" ||
-			!profile.name.trim() ||
-			typeof profile.prompt !== "string" ||
-			!profile.model ||
-			!["default", "explicit"].includes(profile.model.kind) ||
-			(profile.model.kind === "explicit" && (!profile.model.id.trim() || /[\0\r\n]/.test(profile.model.id)))
-		)
-			throw new Error(`${label}.profiles.${id} has invalid name, prompt, or model.`);
-		const p = profile.permissions;
-		if (
-			!p ||
-			!["none", "read", "read-write"].includes(p.repository) ||
-			!["read", "read-write"].includes(p.task) ||
-			!["read", "read-write"].includes(p.artifacts) ||
-			!["allowed", "disabled"].includes(p.subagents) ||
-			!Array.isArray(profile.artifacts)
-		)
-			throw new Error(`${label}.profiles.${id} has invalid permissions or artifacts.`);
-		for (const artifact of profile.artifacts) {
-			if (!artifact || typeof artifact.purpose !== "string")
-				throw new Error(`${label}.profiles.${id} has an invalid artifact declaration.`);
-			validateArtifactPath(artifact.path);
-		}
-		if (profile.approvalArtifact !== undefined) validateArtifactPath(profile.approvalArtifact);
-	}
-}
-
-function assertSessionSettings(value: unknown, label: string): void {
-	if (!value || typeof value !== "object" || Array.isArray(value)) {
-		throw new Error(`${label}.sessions must be an object.`);
-	}
-	const sessions = value as Partial<SessionSettings>;
-	if (typeof sessions.worktreePerTask !== "boolean") {
-		throw new Error(`${label}.sessions.worktreePerTask must be a boolean.`);
-	}
-	if (typeof sessions.yoloMode !== "boolean") {
-		throw new Error(`${label}.sessions.yoloMode must be a boolean.`);
-	}
-	if (Object.hasOwn(value, "autoResumeOnRestart") && typeof sessions.autoResumeOnRestart !== "boolean") {
-		throw new Error(`${label}.sessions.autoResumeOnRestart must be a boolean.`);
-	}
 }
 
 export async function readRootConfiguration(path: string): Promise<AgentConfiguration | null> {

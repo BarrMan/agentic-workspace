@@ -48,6 +48,7 @@ async function setup() {
 		profiles: {
 			plan: {
 				name: "PLAN",
+				textColor: "green" as const,
 				model: { kind: "default" as const },
 				prompt: "",
 				permissions: {
@@ -61,6 +62,7 @@ async function setup() {
 			},
 			build: {
 				name: "BUILD",
+				textColor: "blue" as const,
 				model: { kind: "default" as const },
 				prompt: "",
 				permissions: {

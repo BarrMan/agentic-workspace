@@ -1680,7 +1680,7 @@ describe("OpenTuiWorkspaceController", () => {
 			await waitUntil(() => recorder.options.at(-1)?.tasks.length === 0);
 			expect(transportResource).toBe(false);
 			expect(releasedResources).toBe(1);
-			expect((await store.read(fixture.task.id)).sessions).toEqual([]);
+			expect(Object.values((await store.read(fixture.task.id)).modes).flatMap(({ sessions }) => sessions)).toEqual([]);
 
 			const { filePath: _removedFilePath, ...replacementTask } = fixture.task;
 			await fixture.core.createTask({ ...replacementTask, title: "Same-ID replacement" });

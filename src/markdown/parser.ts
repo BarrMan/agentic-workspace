@@ -1,16 +1,28 @@
+import { z } from "zod";
 import type { Decision, Document, Milestone, ParsedMarkdown, Task } from "../types/index.ts";
-import { normalizeDueDate } from "../utils/due-date.ts";
-import { normalizePriorityValue } from "../utils/priority-config.ts";
 import { parseFrontmatter } from "./frontmatter.ts";
+import {
+	DECISION_FRONTMATTER_KEY_MAP,
+	DecisionFrontmatterSchema,
+	DOCUMENT_FRONTMATTER_KEY_MAP,
+	DocumentFrontmatterSchema,
+	MILESTONE_FRONTMATTER_KEY_MAP,
+	MilestoneFrontmatterSchema,
+} from "./record-schemas.ts";
 import {
 	DECISION_FRONTMATTER_FIELDS,
 	DECISION_FRONTMATTER_SCHEMA_VERSION,
-	DOCUMENT_FRONTMATTER_FIELDS,
 	MILESTONE_FRONTMATTER_FIELDS,
 	MILESTONE_FRONTMATTER_SCHEMA_VERSION,
 	TASK_FRONTMATTER_FIELDS,
 	TASK_FRONTMATTER_SCHEMA_VERSION,
 } from "./schema.ts";
+import {
+	STRUCTURED_DEPENDENCY_MESSAGE,
+	TASK_FRONTMATTER_KEY_MAP,
+	TaskFrontmatterSchema,
+	TaskRecordSchema,
+} from "./task-record-schema.ts";
 
 export {
 	DECISION_FRONTMATTER_SCHEMA_VERSION,
@@ -51,14 +63,6 @@ export class UnsupportedRecordFrontmatterSchemaError extends FrontmatterSchemaEr
 	}
 }
 
-export function parseMarkdown(content: string): ParsedMarkdown {
-	const parsed = parseFrontmatter(content);
-	return {
-		frontmatter: parsed.data,
-		content: parsed.content,
-	};
-}
-
 export class TaskDependenciesParseError extends Error {
 	constructor(taskId: string, entryIndex?: number) {
 		const location = entryIndex === undefined ? "the field" : `entry ${entryIndex + 1}`;
@@ -69,140 +73,73 @@ export class TaskDependenciesParseError extends Error {
 	}
 }
 
-function isStructuredDependency(value: unknown): boolean {
-	return Array.isArray(value) || Object.prototype.toString.call(value) === "[object Object]";
-}
-
-function parseDependencies(value: unknown, taskId: string): string[] {
-	if (Array.isArray(value)) {
-		const invalidIndex = value.findIndex(isStructuredDependency);
-		if (invalidIndex !== -1) throw new TaskDependenciesParseError(taskId, invalidIndex);
-		return value.map(String);
-	}
-	if (isStructuredDependency(value)) throw new TaskDependenciesParseError(taskId);
-	return [];
-}
-
-function taskList(value: unknown): string[] {
-	return Array.isArray(value) ? value.map(String) : [];
-}
-
-function optionalTaskValue(value: unknown): string | undefined {
-	return value ? String(value) : undefined;
-}
-
-function taskAssignees(value: unknown, taskId: string): string[] {
-	if (value === undefined || value === null) return [];
-	if (!Array.isArray(value)) throw new TaskFrontmatterSchemaError(taskId, "assignee must be a list");
-	return value.map(String);
-}
-
-function taskModeApprovals(value: unknown, taskId: string): Record<string, true> | undefined {
-	if (value === undefined) return undefined;
-	if (value === null || typeof value !== "object" || Array.isArray(value))
-		throw new TaskFrontmatterSchemaError(taskId, "mode_approvals must be a mode-keyed mapping");
-	const approvals: Record<string, true> = {};
-	for (const [modeId, approval] of Object.entries(value)) {
-		if (!modeId || approval !== true)
-			throw new TaskFrontmatterSchemaError(taskId, "mode_approvals entries must map nonempty mode IDs to true");
-		approvals[modeId] = true;
-	}
-	return approvals;
-}
-
-const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}(?: \d{2}:\d{2})?$/;
-
-function dateString(value: unknown, field: string, taskId?: string): string | undefined {
-	if (value === undefined || value === null || value === "") return undefined;
-	if (typeof value !== "string" || !DATE_PATTERN.test(value)) {
-		const detail = `${field} must be a date string in YYYY-MM-DD or YYYY-MM-DD HH:mm format`;
-		if (taskId !== undefined) throw new TaskFrontmatterSchemaError(taskId, detail);
-		throw new FrontmatterSchemaError(`Invalid frontmatter: ${detail}.`);
-	}
-	return value;
-}
-
-function taskFrontmatterFields(frontmatter: Record<string, unknown>) {
-	const id = String(frontmatter[TASK_FRONTMATTER_FIELDS.ID] || "");
-	const subtasks = frontmatter[TASK_FRONTMATTER_FIELDS.SUBTASKS];
-	const worktreePolicy = optionalTaskValue(frontmatter[TASK_FRONTMATTER_FIELDS.WORKTREE_POLICY]);
-	if (worktreePolicy !== undefined && worktreePolicy !== "enabled" && worktreePolicy !== "disabled")
-		throw new TaskFrontmatterSchemaError(id, `${TASK_FRONTMATTER_FIELDS.WORKTREE_POLICY} must be enabled or disabled`);
+export function parseMarkdown(content: string): ParsedMarkdown {
+	const parsed = parseFrontmatter(content);
 	return {
-		id,
-		title: String(frontmatter[TASK_FRONTMATTER_FIELDS.TITLE] || ""),
-		status: String(frontmatter[TASK_FRONTMATTER_FIELDS.STATUS] || ""),
-		assignee: taskAssignees(frontmatter[TASK_FRONTMATTER_FIELDS.ASSIGNEE], id),
-		reporter: optionalTaskValue(frontmatter[TASK_FRONTMATTER_FIELDS.REPORTER]),
-		createdDate:
-			dateString(frontmatter[TASK_FRONTMATTER_FIELDS.CREATED_DATE], TASK_FRONTMATTER_FIELDS.CREATED_DATE, id) ?? "",
-		updatedDate: dateString(
-			frontmatter[TASK_FRONTMATTER_FIELDS.UPDATED_DATE],
-			TASK_FRONTMATTER_FIELDS.UPDATED_DATE,
-			id,
-		),
-		dueDate: normalizeDueDate(frontmatter[TASK_FRONTMATTER_FIELDS.DUE_DATE], TASK_FRONTMATTER_FIELDS.DUE_DATE),
-		labels: taskList(frontmatter[TASK_FRONTMATTER_FIELDS.LABELS]),
-		milestone: optionalTaskValue(frontmatter[TASK_FRONTMATTER_FIELDS.MILESTONE]),
-		references: taskList(frontmatter[TASK_FRONTMATTER_FIELDS.REFERENCES]),
-		documentation: taskList(frontmatter[TASK_FRONTMATTER_FIELDS.DOCUMENTATION]),
-		modifiedFiles: taskList(frontmatter[TASK_FRONTMATTER_FIELDS.MODIFIED_FILES]),
-		parentTaskId: optionalTaskValue(frontmatter[TASK_FRONTMATTER_FIELDS.PARENT_TASK_ID]),
-		subtasks: Array.isArray(subtasks) ? subtasks.map(String) : undefined,
-		priority: normalizePriorityValue(
-			frontmatter[TASK_FRONTMATTER_FIELDS.PRIORITY] ? String(frontmatter[TASK_FRONTMATTER_FIELDS.PRIORITY]) : undefined,
-		),
-		type: optionalTaskValue(frontmatter[TASK_FRONTMATTER_FIELDS.TYPE]),
-		project: optionalTaskValue(frontmatter[TASK_FRONTMATTER_FIELDS.PROJECT]),
-		ordinal:
-			frontmatter[TASK_FRONTMATTER_FIELDS.ORDINAL] !== undefined
-				? Number(frontmatter[TASK_FRONTMATTER_FIELDS.ORDINAL])
-				: undefined,
-		onStatusChange: optionalTaskValue(frontmatter[TASK_FRONTMATTER_FIELDS.ON_STATUS_CHANGE]),
-		agentConfiguration: frontmatter[TASK_FRONTMATTER_FIELDS.AGENT_CONFIGURATION] as Task["agentConfiguration"],
-		modeApprovals: taskModeApprovals(frontmatter[TASK_FRONTMATTER_FIELDS.MODE_APPROVALS], id),
-		worktreePolicy: worktreePolicy as Task["worktreePolicy"],
+		frontmatter: parsed.data,
+		content: parsed.content,
 	};
 }
 
-function taskText(value: unknown): string | undefined {
-	return typeof value === "string" ? value : undefined;
+function frontmatterFields<KeyMap extends Record<string, string>>(
+	frontmatter: Record<string, unknown>,
+	keyMap: KeyMap,
+): Record<keyof KeyMap, unknown> {
+	const fields: Record<string, unknown> = {};
+	for (const [property, key] of Object.entries(keyMap)) fields[property] = frontmatter[key];
+	return fields as Record<keyof KeyMap, unknown>;
 }
 
-function recordText(frontmatter: Record<string, unknown>, key: string): string | undefined {
-	const value = frontmatter[key];
-	if (value !== undefined && typeof value !== "string") {
-		throw new FrontmatterSchemaError(
-			`Invalid record frontmatter for ${String(frontmatter.id || "(missing id)")}: ${key} must be a string.`,
-		);
-	}
-	return value;
+function formatIssue(issue: z.ZodIssue): string {
+	if (issue.path.length === 0) return issue.message;
+	const path = issue.path.join(".");
+	return issue.message.startsWith(path) ? issue.message : `${path}: ${issue.message}`;
 }
 
-function taskStructuredFrontmatter(frontmatter: Record<string, unknown>, taskId: string) {
-	const textFields: readonly string[] = [TASK_FRONTMATTER_FIELDS.DESCRIPTION];
-	for (const [key, value] of Object.entries(frontmatter)) {
-		if (textFields.includes(key) && value !== undefined && typeof value !== "string")
-			throw new TaskFrontmatterSchemaError(taskId, `${key} must be a string`);
+function throwTaskSchemaError(taskId: string, error: z.ZodError): never {
+	for (const issue of error.issues) {
+		if (issue.message !== STRUCTURED_DEPENDENCY_MESSAGE) continue;
+		const index = issue.path.find((part): part is number => typeof part === "number");
+		throw new TaskDependenciesParseError(taskId, index);
 	}
-	return {
-		description: taskText(frontmatter[TASK_FRONTMATTER_FIELDS.DESCRIPTION]),
-	};
+	const issue = error.issues[0];
+	throw new TaskFrontmatterSchemaError(taskId, issue ? formatIssue(issue) : "invalid frontmatter");
+}
+
+function throwRecordSchemaError(kind: "decision" | "document" | "milestone", id: string, error: z.ZodError): never {
+	const issue = error.issues[0];
+	const detail = issue ? formatIssue(issue) : "invalid frontmatter";
+	throw new FrontmatterSchemaError(`Invalid ${kind} frontmatter for ${id || "(missing id)"}: ${detail}.`);
+}
+
+function parseTaskFrontmatter(frontmatter: Record<string, unknown>) {
+	const taskId = String(frontmatter[TASK_FRONTMATTER_FIELDS.ID] || "");
+	try {
+		return TaskFrontmatterSchema.parse(frontmatterFields(frontmatter, TASK_FRONTMATTER_KEY_MAP));
+	} catch (error) {
+		if (error instanceof z.ZodError) throwTaskSchemaError(taskId, error);
+		throw error;
+	}
 }
 
 export function parseTask(content: string): Task {
 	const { frontmatter, content: rawContent } = parseMarkdown(content);
-	const fields = taskFrontmatterFields(frontmatter);
+	const fields = parseTaskFrontmatter(frontmatter);
 	const schemaVersion = frontmatter[TASK_FRONTMATTER_FIELDS.SCHEMA_VERSION];
 	if (schemaVersion !== TASK_FRONTMATTER_SCHEMA_VERSION)
-		throw new UnsupportedTaskFrontmatterSchemaError(fields.id, frontmatter[TASK_FRONTMATTER_FIELDS.SCHEMA_VERSION]);
+		throw new UnsupportedTaskFrontmatterSchemaError(fields.id, schemaVersion);
 
-	return {
-		...fields,
-		dependencies: parseDependencies(frontmatter[TASK_FRONTMATTER_FIELDS.DEPENDENCIES], fields.id),
-		rawContent,
-		...taskStructuredFrontmatter(frontmatter, fields.id),
-	};
+	try {
+		const record = TaskRecordSchema.parse({
+			...fields,
+			dependencies: frontmatter[TASK_FRONTMATTER_FIELDS.DEPENDENCIES],
+			rawContent,
+		});
+		return record as Task;
+	} catch (error) {
+		if (error instanceof z.ZodError) throwTaskSchemaError(fields.id, error);
+		throw error;
+	}
 }
 
 export function parseDecision(content: string): Decision {
@@ -215,36 +152,26 @@ export function parseDecision(content: string): Decision {
 			frontmatter[DECISION_FRONTMATTER_FIELDS.SCHEMA_VERSION],
 		);
 
-	return {
-		id,
-		title: String(frontmatter[DECISION_FRONTMATTER_FIELDS.TITLE] || ""),
-		date: dateString(frontmatter[DECISION_FRONTMATTER_FIELDS.DATE], DECISION_FRONTMATTER_FIELDS.DATE) ?? "",
-		status: String(frontmatter[DECISION_FRONTMATTER_FIELDS.STATUS] || "proposed") as Decision["status"],
-		context: recordText(frontmatter, DECISION_FRONTMATTER_FIELDS.CONTEXT) || "",
-		decision: recordText(frontmatter, DECISION_FRONTMATTER_FIELDS.DECISION) || "",
-		consequences: recordText(frontmatter, DECISION_FRONTMATTER_FIELDS.CONSEQUENCES) || "",
-		alternatives: recordText(frontmatter, DECISION_FRONTMATTER_FIELDS.ALTERNATIVES),
-		rawContent, // Raw markdown content without frontmatter
-	};
+	try {
+		const record = DecisionFrontmatterSchema.parse(frontmatterFields(frontmatter, DECISION_FRONTMATTER_KEY_MAP));
+		return { ...record, rawContent };
+	} catch (error) {
+		if (error instanceof z.ZodError) throwRecordSchemaError("decision", id, error);
+		throw error;
+	}
 }
 
 export function parseDocument(content: string): Document {
 	const { frontmatter, content: rawContent } = parseMarkdown(content);
-	const tags = frontmatter[DOCUMENT_FRONTMATTER_FIELDS.TAGS];
+	const id = String(frontmatter[DOCUMENT_FRONTMATTER_KEY_MAP.id] || "");
 
-	return {
-		id: String(frontmatter[DOCUMENT_FRONTMATTER_FIELDS.ID] || ""),
-		title: String(frontmatter[DOCUMENT_FRONTMATTER_FIELDS.TITLE] || ""),
-		type: String(frontmatter[DOCUMENT_FRONTMATTER_FIELDS.TYPE] || "other") as Document["type"],
-		createdDate:
-			dateString(frontmatter[DOCUMENT_FRONTMATTER_FIELDS.CREATED_DATE], DOCUMENT_FRONTMATTER_FIELDS.CREATED_DATE) ?? "",
-		updatedDate: dateString(
-			frontmatter[DOCUMENT_FRONTMATTER_FIELDS.UPDATED_DATE],
-			DOCUMENT_FRONTMATTER_FIELDS.UPDATED_DATE,
-		),
-		rawContent: rawContent.trim(),
-		tags: Array.isArray(tags) ? tags.map(String) : undefined,
-	};
+	try {
+		const record = DocumentFrontmatterSchema.parse(frontmatterFields(frontmatter, DOCUMENT_FRONTMATTER_KEY_MAP));
+		return { ...record, rawContent: rawContent.trim() };
+	} catch (error) {
+		if (error instanceof z.ZodError) throwRecordSchemaError("document", id, error);
+		throw error;
+	}
 }
 
 export function parseMilestone(content: string): Milestone {
@@ -257,14 +184,11 @@ export function parseMilestone(content: string): Milestone {
 			frontmatter[MILESTONE_FRONTMATTER_FIELDS.SCHEMA_VERSION],
 		);
 
-	return {
-		id,
-		title: String(frontmatter[MILESTONE_FRONTMATTER_FIELDS.TITLE] || ""),
-		dueDate: normalizeDueDate(
-			frontmatter[MILESTONE_FRONTMATTER_FIELDS.DUE_DATE],
-			MILESTONE_FRONTMATTER_FIELDS.DUE_DATE,
-		),
-		description: recordText(frontmatter, MILESTONE_FRONTMATTER_FIELDS.DESCRIPTION) || "",
-		rawContent,
-	};
+	try {
+		const record = MilestoneFrontmatterSchema.parse(frontmatterFields(frontmatter, MILESTONE_FRONTMATTER_KEY_MAP));
+		return { ...record, rawContent };
+	} catch (error) {
+		if (error instanceof z.ZodError) throwRecordSchemaError("milestone", id, error);
+		throw error;
+	}
 }

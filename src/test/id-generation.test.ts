@@ -5,8 +5,19 @@ import { join } from "node:path";
 import { Core } from "../core/agentic-workspace.ts";
 import { serializeTask } from "../markdown/serializer.ts";
 import type { Task } from "../types/index.ts";
+import { isValidTaskId, parseTaskId, taskIdsEqual } from "../utils/task-id.ts";
 
 const TEST_DIR = join(tmpdir(), "agentic-workspace-id-gen-test");
+
+describe("shared task ID grammar", () => {
+	it("parses numeric segments without conflating stored casing or zero padding", () => {
+		expect(parseTaskId("BACK-01.2", "back")).toEqual({ prefix: "BACK", segments: ["01", "2"] });
+		expect(parseTaskId("BACK-1x", "back")).toBeNull();
+		expect(isValidTaskId("BACK-01.2")).toBe(true);
+		expect(taskIdsEqual("back-01", "BACK-01")).toBe(true);
+		expect(taskIdsEqual("BACK-01", "BACK-1")).toBe(false);
+	});
+});
 
 describe("Task ID Generation with Archives", () => {
 	let core: Core;
@@ -139,16 +150,16 @@ describe("Task ID Generation with Archives", () => {
 		expect(second.task.id).toBe("TASK-002");
 	});
 
-	it("should detect existing subtasks with different casing (legacy data)", async () => {
+	it("should detect existing subtasks with different casing (historical data)", async () => {
 		// Create parent task via Core (will be uppercase TASK-1)
 		await core.createTaskFromInput({ title: "Parent Task" });
 
-		// Simulate legacy lowercase subtask by directly writing to filesystem
+		// Simulate a lowercase stored subtask by directly writing to filesystem
 		// This represents a file created before the uppercase ID change
 		const tasksDir = core.filesystem.tasksDir;
-		const legacySubtask: Task = {
-			id: "task-1.1", // Lowercase - legacy format
-			title: "Legacy Subtask",
+		const lowercaseSubtask: Task = {
+			id: "task-1.1", // Lowercase stored casing
+			title: "Historical Subtask",
 			status: "To Do",
 			assignee: [],
 			createdDate: "2025-01-01",
@@ -156,10 +167,10 @@ describe("Task ID Generation with Archives", () => {
 			dependencies: [],
 			parentTaskId: "task-1",
 		};
-		const content = serializeTask(legacySubtask);
+		const content = serializeTask(lowercaseSubtask);
 		await Bun.write(join(tasksDir, "task-1.1", "task.md"), content);
 
-		// Create new subtask via Core - should detect the legacy subtask and get TASK-1.2
+		// Create new subtask via Core - should detect the lowercase stored subtask and get TASK-1.2
 		// BUG: Currently returns TASK-1.1 due to case-sensitive startsWith() check
 		const newSubtask = await core.createTaskFromInput({ title: "New Subtask", parentTaskId: "task-1" });
 		expect(newSubtask.task.id).toBe("TASK-1.2");

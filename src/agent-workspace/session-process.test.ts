@@ -93,7 +93,7 @@ describe("native runtime ownership probes", () => {
 		}
 	});
 
-	it("rejects legacy native-workspace ownership instead of adopting it", async () => {
+	it("rejects non-live native-workspace ownership instead of adopting it", async () => {
 		const server = { cmd: async () => [row({ role: "native-workspace" })] } as unknown as TmuxServer;
 		const runner: ProcessRunner = {
 			run: async () => {

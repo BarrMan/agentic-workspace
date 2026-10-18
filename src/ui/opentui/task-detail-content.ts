@@ -252,7 +252,7 @@ function renderLines(lines: DetailChunk[][]): DetailChunk[] {
 
 /**
  * Render a task's full detail as OpenTUI styled text. This is the StyledText replacement for the
- * legacy `generateDetailContent`; it emits the same sections in the same order, including id + title,
+ * previous `generateDetailContent`; it emits the same sections in the same order, including id + title,
  * so a caller must not prepend its own header.
  */
 export function generateTaskDetailStyled(task: Task | TaskDetail, options: TaskDetailStyledOptions = {}): StyledText {

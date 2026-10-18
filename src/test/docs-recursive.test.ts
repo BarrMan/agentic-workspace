@@ -76,7 +76,7 @@ describe("Docs recursive listing and ID generation", () => {
 	// `doc list` resolves the picked document through getDocumentContent, the same reader
 	// `doc view` uses. It used to match the selected id against filenames instead, which
 	// only recognised `<id> - <title>.md` at the top level.
-	it("reads document content for legacy title-only filenames and for subdirectories", async () => {
+	it("reads document content for title-only filenames and for subdirectories", async () => {
 		const core = new Core(TEST_DIR);
 
 		// Documents created before the id was added to the filename are stored as `<Title>.md`.
@@ -89,7 +89,7 @@ type: other
 created_date: 2020-01-01
 ---
 
-Legacy title-only body
+Historical title-only body
 `,
 		);
 		await core.createDocument(
@@ -100,7 +100,7 @@ Legacy title-only body
 		const docs = await core.filesystem.listDocuments();
 		expect(docs.map((doc) => doc.path).sort()).toEqual(["API-Guidelines.md", "guides/api/doc-2 - Nested.md"]);
 
-		expect(await core.getDocumentContent("doc-1")).toContain("Legacy title-only body");
+		expect(await core.getDocumentContent("doc-1")).toContain("Historical title-only body");
 		expect(await core.getDocumentContent("doc-2")).toContain("Nested body");
 	});
 

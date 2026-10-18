@@ -257,7 +257,7 @@ describe("Core.reorderTask", () => {
 		expect(task3?.ordinal).toBe(2000);
 	});
 
-	it("reorders tasks with legacy lowercase IDs", async () => {
+	it("reorders tasks with lowercase IDs", async () => {
 		await createTasks([
 			["task-1", "To Do", 1000],
 			["task-2", "To Do", 2000],

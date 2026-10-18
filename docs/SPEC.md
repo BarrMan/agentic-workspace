@@ -244,7 +244,7 @@ None recorded in the [Supported Integration Operations contract](specs/supported
 
 ## Global Behavioral Invariants
 
-- Intended behavior in this specification and its indexed feature contracts applies across supported product surfaces. Legacy compatibility requires an explicit approved exception.
+- Intended behavior in this specification and its indexed feature contracts applies across supported product surfaces. Compatibility requires an explicit approved exception.
 - Approved safety and identity constraints remain in force across features. An unresolved policy does not weaken an established guarantee.
 - Failure handling follows [CONVENTIONS](CONVENTIONS.md#error-handling); a failure of one record or action affects only that operation.
 - Product behavior is distinct from visual composition: screen-specific composition belongs in the [screen specifications](screens/README.md), and colors belong to the [design system](DESIGN-SYSTEM.md). Session-header composition and task-list width are specified by the [workspace screen](screens/workspace.md#ordered-regions).

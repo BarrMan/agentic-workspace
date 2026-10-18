@@ -4,8 +4,12 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { TmuxCommandError } from "libtmux";
 import { preparedLaunchResources } from "./completion-supervisor-resources.ts";
+import { getDefaultModeCatalog } from "./config.ts";
 import type { ProcessRunner, TmuxServer } from "./session-process.ts";
 import type { AgentPreset, AgentSession } from "./types.ts";
+
+const profile = getDefaultModeCatalog().profiles.build;
+if (!profile) throw new Error("Missing default build mode profile.");
 
 let resourceMarker = "";
 let preparedLaunch: unknown;
@@ -261,7 +265,7 @@ describe("persisted prepared launch resources", () => {
 		const f = await fixture();
 		const process = f.makeProcess();
 		preparedLaunch = f.launch;
-		await process.resume(f.session, { bootstrap: "opencode" } as AgentPreset);
+		await process.resume(f.session, { bootstrap: "opencode" } as AgentPreset, { profile });
 		expect(f.events.indexOf("kill-pane:resource-present")).toBeLessThan(f.events.indexOf("create"));
 		expect(f.events.indexOf("create")).toBeLessThan(f.events.indexOf("capture"));
 		expect(f.events.indexOf("capture")).toBeLessThan(f.events.indexOf("respawn"));
@@ -272,7 +276,9 @@ describe("persisted prepared launch resources", () => {
 		const f = await fixture();
 		f.setPaneDeadOnRespawn();
 		preparedLaunch = f.launch;
-		const error = await rejection(f.makeProcess().resume(f.session, { bootstrap: "opencode" } as AgentPreset));
+		const error = await rejection(
+			f.makeProcess().resume(f.session, { bootstrap: "opencode" } as AgentPreset, { profile }),
+		);
 		expect(error).toMatchObject({ kind: "conclusive-startup-failure" });
 		expect(error).toMatchObject({ message: expect.stringContaining("failed to launch") });
 	});
@@ -281,7 +287,9 @@ describe("persisted prepared launch resources", () => {
 		const f = await fixture();
 		f.setPaneDeadAfter(60);
 		preparedLaunch = f.launch;
-		const error = await rejection(f.makeProcess().resume(f.session, { bootstrap: "opencode" } as AgentPreset));
+		const error = await rejection(
+			f.makeProcess().resume(f.session, { bootstrap: "opencode" } as AgentPreset, { profile }),
+		);
 		expect(error).toMatchObject({ kind: "conclusive-startup-failure" });
 		expect(error).toMatchObject({ message: expect.stringContaining("failed to launch") });
 	});
@@ -297,9 +305,9 @@ describe("persisted prepared launch resources", () => {
 		const f = await fixture();
 		await f.makeProcess().launchPrepared(f.session, f.launch);
 		preflightError = new Error("resume prerequisite rejected");
-		await expect(f.makeProcess().resume(f.session, { bootstrap: "opencode" } as AgentPreset)).rejects.toThrow(
-			"resume prerequisite rejected",
-		);
+		await expect(
+			f.makeProcess().resume(f.session, { bootstrap: "opencode" } as AgentPreset, { profile }),
+		).rejects.toThrow("resume prerequisite rejected");
 		expect(f.events.some((event) => event.startsWith("kill-pane:"))).toBe(false);
 		expect(await readFile(join(f.resources.skill.path, ".agentic-workspace-launch-owner"), "utf8")).toBe(
 			f.resources.skill.marker,
@@ -353,9 +361,9 @@ describe("persisted prepared launch resources", () => {
 		f.server.newSession = async () => {
 			throw new Error("tmux create denied");
 		};
-		await expect(f.makeProcess().resume(f.session, { bootstrap: "opencode" } as AgentPreset)).rejects.toThrow(
-			"tmux create denied",
-		);
+		await expect(
+			f.makeProcess().resume(f.session, { bootstrap: "opencode" } as AgentPreset, { profile }),
+		).rejects.toThrow("tmux create denied");
 		await expect(readFile(f.resources.skill.path)).rejects.toMatchObject({ code: "ENOENT" });
 		expect(f.events).not.toContain("respawn");
 	});

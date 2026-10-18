@@ -1,4 +1,5 @@
 import { type AgenticWorkspaceConfig, EntityType, type PrefixConfig } from "../types/index.ts";
+import { isNumericTaskIdSegment, parseTaskId, taskIdBody, taskIdRegex } from "./task-id.ts";
 
 /**
  * Default prefix configuration for tasks.
@@ -116,9 +117,7 @@ export function normalizeId(id: string, prefix: string): string {
  */
 export function extractIdBody(id: string, prefix: string): string {
 	const trimmed = id.trim();
-	const prefixPattern = new RegExp(`^${escapeRegex(prefix)}-(.+)$`, "i");
-	const match = trimmed.match(prefixPattern);
-	return match?.[1] ?? trimmed;
+	return taskIdBody(trimmed, prefix) ?? trimmed;
 }
 
 /**
@@ -170,7 +169,7 @@ export function buildGlobPattern(prefix: string): string {
  * "task-5.2.1".match(regex) // => ["task-5.2.1", "5.2.1"]
  */
 export function buildIdRegex(prefix: string): RegExp {
-	return new RegExp(`^${escapeRegex(prefix)}-(\\d+(?:\\.\\d+)*)`, "i");
+	return taskIdRegex(prefix);
 }
 
 /**
@@ -185,7 +184,7 @@ export function buildIdRegex(prefix: string): RegExp {
  * "task-123 - Some Title.md".match(regex) // => ["task-123", "123"]
  */
 export function buildFilenameIdRegex(prefix: string): RegExp {
-	return new RegExp(`^${escapeRegex(prefix)}-(\\d+(?:\\.\\d+)*)`, "i");
+	return taskIdRegex(prefix);
 }
 
 /**
@@ -271,16 +270,15 @@ export function idsEqual(id1: string, id2: string, prefix: string): boolean {
  * generateNextId(["task-001", "task-002"], "task", 3) // => "task-003"
  */
 export function generateNextId(existingIds: string[], prefix: string, zeroPadding?: number): string {
-	const regex = buildIdRegex(prefix);
 	const upperPrefix = prefix.toUpperCase();
 	let max = 0n;
 
 	for (const id of existingIds) {
-		const match = id.match(regex);
-		if (match?.[1]) {
+		const parsed = parseTaskId(id, prefix);
+		if (parsed) {
 			// Only consider top-level IDs (no dots for subtasks)
-			const body = match[1];
-			if (!body.includes(".")) {
+			const body = parsed.segments[0];
+			if (parsed.segments.length === 1 && body) {
 				const num = BigInt(body);
 				if (num > max) {
 					max = num;
@@ -357,11 +355,11 @@ function subtaskSequenceNumber(
 	)
 		return null;
 	const sequence = bodySegments[parentSegments.length];
-	return sequence && /^\d+$/.test(sequence) ? BigInt(sequence) : null;
+	return sequence && isNumericTaskIdSegment(sequence) ? BigInt(sequence) : null;
 }
 
 function canonicalizeNumericSegments(segments: string[]): string[] | null {
-	if (!segments.every((segment) => /^\d+$/.test(segment))) return null;
+	if (!segments.every(isNumericTaskIdSegment)) return null;
 	return segments.map((segment) => segment.replace(/^0+/, "") || "0");
 }
 

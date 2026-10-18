@@ -103,7 +103,7 @@ describe("all-mode task cleanup contract", () => {
 	it("cleans running histories across modes once by UUID and preserves exact native identity", async () => {
 		const plan = session("plan-running", "running", "plan");
 		const build = session("build-running", "running", "build");
-		const merged = session("legacy-running", "starting");
+		const merged = session("queued-running", "starting");
 		const state: TaskSessions = {
 			taskId: "TASK-1",
 			sessions: [merged],
@@ -120,9 +120,9 @@ describe("all-mode task cleanup contract", () => {
 			},
 		});
 
-		expect(cleaned.map(({ id }) => id)).toEqual(["legacy-running", "plan-running", "build-running"]);
+		expect(cleaned.map(({ id }) => id)).toEqual(["queued-running", "plan-running", "build-running"]);
 		expect(cleaned.map(({ nativeSessionId }) => nativeSessionId)).toEqual([
-			"native-legacy-running",
+			"native-queued-running",
 			"native-plan-running",
 			"native-build-running",
 		]);
@@ -182,8 +182,10 @@ describe("all-mode task cleanup contract", () => {
 			const store = new SessionStore(root, new BunRunner());
 			const sessionId = "parked-during-completion";
 			await store.mutate(taskId, async (state) => {
-				state.sessions.push({ ...session(sessionId, "parked"), taskId });
-				state.activeSessionId = sessionId;
+				state.modes.build ??= { sessions: [] };
+				const history = state.modes.build;
+				history.sessions.push({ ...session(sessionId, "parked"), taskId });
+				history.activeSessionId = sessionId;
 			});
 			const cleanup = core.sessions.cleanupTaskWorktreeSessions.bind(core.sessions);
 			core.sessions.cleanupTaskWorktreeSessions = async (id) => {
@@ -227,8 +229,8 @@ describe("all-mode task cleanup contract", () => {
 			const contender = new AgentSessionService(new Core(root), { runner, tmuxServer: server });
 			await expect(contender.start(taskId)).rejects.toThrow();
 			expect(processCalls).toBe(0);
-			expect((await store.read(taskId)).sessions.map((record) => record.id)).toEqual([sessionId]);
-			expect((await store.read(taskId)).sessions[0]?.status).toBe("stopped");
+			expect((await store.read(taskId)).modes.build?.sessions.map((record) => record.id)).toEqual([sessionId]);
+			expect((await store.read(taskId)).modes.build?.sessions[0]?.status).toBe("stopped");
 
 			releaseMove.resolve();
 			expect(await completing).toBe(true);

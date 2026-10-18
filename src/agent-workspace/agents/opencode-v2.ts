@@ -188,7 +188,7 @@ export class OpencodeV2Agent implements Agent {
 			| { opencode: ReturnType<typeof parseOpenCodeConfig>; cli?: ReturnType<typeof parseCliConfig> }
 			| undefined;
 		const { settings, skills } = preflight?.opencode ?? parseOpenCodeConfig(env.OPENCODE_CONFIG_CONTENT);
-		const explicitModel = request.profile?.model.kind === "explicit" ? request.profile.model.id : undefined;
+		const explicitModel = request.profile.model.kind === "explicit" ? request.profile.model.id : undefined;
 		if (explicitModel && !preflight) withExplicitModel(preset, explicitModel);
 		env.OPENCODE_CONFIG_CONTENT = JSON.stringify({
 			...settings,
@@ -281,7 +281,7 @@ export class OpencodeV2Agent implements Agent {
 						: `Cannot resume OpenCode v2: session lookup did not confirm '${request.nativeSessionId}'.`,
 				);
 		}
-		const explicitModel = request.profile?.model.kind === "explicit" ? request.profile.model.id : undefined;
+		const explicitModel = request.profile.model.kind === "explicit" ? request.profile.model.id : undefined;
 		if (explicitModel) withExplicitModel(request.preset, explicitModel);
 		const opencode = parseOpenCodeConfig(request.env.OPENCODE_CONFIG_CONTENT);
 		const cli = request.sessionId ? parseCliConfig(request.env.OPENCODE_CLI_CONFIG_CONTENT) : undefined;

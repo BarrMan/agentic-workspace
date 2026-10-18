@@ -426,9 +426,6 @@ export class SessionApplication {
 
 	private writeTask(task: Task, state: Awaited<ReturnType<SessionStore["read"]>>): void {
 		state.modes = task.serializeSessions();
-		const legacy = state.modes[state.legacyModeId] ?? { sessions: [] };
-		state.sessions = legacy.sessions;
-		state.activeSessionId = legacy.activeSessionId;
 	}
 
 	private async withTaskAdmission<T>(

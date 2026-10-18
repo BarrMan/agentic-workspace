@@ -42,7 +42,7 @@ describe("Permanent task deletion", () => {
 	async function observeSessionsDead(taskId: string): Promise<void> {
 		const store = new SessionStore(testDir, new BunRunner());
 		const state = await store.read(taskId);
-		const sessions = [...state.sessions, ...Object.values(state.modes).flatMap(({ sessions }) => sessions)];
+		const sessions = Object.values(state.modes).flatMap(({ sessions }) => sessions);
 		const server: TmuxServer = {
 			newSession: async () => ({}),
 			panes: async () => [],
@@ -80,7 +80,9 @@ describe("Permanent task deletion", () => {
 		const store = new SessionStore(testDir, new BunRunner());
 		const { taskDir } = await store.paths(task.id);
 		await store.mutate(task.id, async (state) => {
-			state.sessions.push({
+			state.modes.build ??= { sessions: [] };
+			const history = state.modes.build;
+			history.sessions.push({
 				id: "native-running",
 				taskId: task.id,
 				preset: "opencode",
@@ -93,14 +95,14 @@ describe("Permanent task deletion", () => {
 				outputPath: join(taskDir, "native-running.log"),
 				bootstrapPath: join(taskDir, "native-running.md"),
 			});
-			state.activeSessionId = "native-running";
+			history.activeSessionId = "native-running";
 		});
 
 		await expect(core.deleteTask(task.id)).rejects.toThrow(
 			"Could not inspect tmux instance for session native-running",
 		);
 		expect(await core.filesystem.loadTask(task.id)).not.toBeNull();
-		expect((await store.read(task.id)).sessions.map(({ id }) => id)).toEqual(["native-running"]);
+		expect((await store.read(task.id)).modes.build?.sessions.map(({ id }) => id)).toEqual(["native-running"]);
 	});
 
 	it("refuses mixed-mode deletion when runtime ownership cannot be established", async () => {
@@ -164,10 +166,6 @@ describe("Permanent task deletion", () => {
 				mode.sessions.push(record);
 				mode.activeSessionId = record.id;
 				state.modes[fixture.modeId as string] = mode;
-				if (fixture.modeId === state.legacyModeId) {
-					state.sessions.push(record);
-					state.activeSessionId = record.id;
-				}
 				await Bun.write(record.outputPath, `output:${fixture.id}`);
 				await Bun.write(record.bootstrapPath, `bootstrap:${fixture.id}`);
 				if (fixture.id === "queued-starting") {
@@ -189,8 +187,10 @@ describe("Permanent task deletion", () => {
 			bootstrapPath: join(unrelatedTaskDir, "unrelated-running.md"),
 		};
 		await store.mutate(otherTask.id, async (state) => {
-			state.sessions.push(unrelatedRecord);
-			state.activeSessionId = unrelatedRecord.id;
+			state.modes.build ??= { sessions: [] };
+			const history = state.modes.build;
+			history.sessions.push(unrelatedRecord);
+			history.activeSessionId = unrelatedRecord.id;
 		});
 		const providerData = join(testDir, "provider-conversation.json");
 		await Bun.write(providerData, "preserve provider data\n");
@@ -212,7 +212,7 @@ describe("Permanent task deletion", () => {
 			expect(existsSync(join(taskDir, `${fixture.id}.md`))).toBe(true);
 		}
 		expect(existsSync(join(workspaceRequestDir(testDir), "queued-starting.json"))).toBe(true);
-		expect((await store.read(otherTask.id)).sessions).toEqual([unrelatedRecord]);
+		expect((await store.read(otherTask.id)).modes.build?.sessions).toEqual([unrelatedRecord]);
 		expect(await Bun.file(providerData).text()).toBe("preserve provider data\n");
 		expect(externalCalls).toBeGreaterThan(0);
 	});
@@ -235,8 +235,10 @@ describe("Permanent task deletion", () => {
 			bootstrapPath: join(taskDir, "boundary-session.md"),
 		};
 		await store.mutate(task.id, async (state) => {
-			state.sessions.push(record);
-			state.activeSessionId = record.id;
+			state.modes.build ??= { sessions: [] };
+			const history = state.modes.build;
+			history.sessions.push(record);
+			history.activeSessionId = record.id;
 		});
 		await Bun.write(record.outputPath, "retained until task removal\n");
 		await observeSessionsDead(task.id);
@@ -246,7 +248,7 @@ describe("Permanent task deletion", () => {
 		};
 		await expect(core.deleteTask(task.id)).rejects.toThrow("forget preflight failed");
 		expect(await core.filesystem.loadTask(task.id)).not.toBeNull();
-		expect((await store.read(task.id)).sessions).toEqual([record]);
+		expect((await store.read(task.id)).modes.build?.sessions).toEqual([record]);
 		expect(await Bun.file(record.outputPath).text()).toBe("retained until task removal\n");
 
 		core.sessions.forgetTaskSessions = originalForget;
@@ -258,7 +260,7 @@ describe("Permanent task deletion", () => {
 		};
 		await expect(core.deleteTask(task.id)).rejects.toThrow("post-removal failure");
 		expect(await core.filesystem.loadTask(task.id)).toBeNull();
-		expect((await store.read(task.id)).sessions).toEqual([]);
+		expect(Object.values((await store.read(task.id)).modes).flatMap(({ sessions }) => sessions)).toEqual([]);
 		expect(existsSync(record.outputPath)).toBe(false);
 	});
 
@@ -290,7 +292,9 @@ describe("Permanent task deletion", () => {
 		const store = new SessionStore(testDir, new BunRunner());
 		const { taskDir } = await store.paths(task.id);
 		await store.mutate(task.id, async (state) => {
-			state.sessions.push({
+			state.modes.build ??= { sessions: [] };
+			const history = state.modes.build;
+			history.sessions.push({
 				id: "stopped-session",
 				taskId: task.id,
 				preset: "opencode",
@@ -301,7 +305,7 @@ describe("Permanent task deletion", () => {
 				outputPath: join(taskDir, "stopped-session.log"),
 				bootstrapPath: join(taskDir, "stopped-session.md"),
 			});
-			state.activeSessionId = "stopped-session";
+			history.activeSessionId = "stopped-session";
 		});
 		await Bun.write(join(taskDir, "stopped-session.log"), "output\n");
 		expect(existsSync(taskDir)).toBe(true);
@@ -309,7 +313,7 @@ describe("Permanent task deletion", () => {
 
 		await core.deleteTask(task.id);
 		expect(await core.filesystem.loadTask(task.id)).toBeNull();
-		expect((await store.read(task.id)).sessions).toEqual([]);
+		expect(Object.values((await store.read(task.id)).modes).flatMap(({ sessions }) => sessions)).toEqual([]);
 		expect(existsSync(join(taskDir, "stopped-session.log"))).toBe(false);
 		expect(existsSync(join(taskDir, "stopped-session.md"))).toBe(false);
 	});
@@ -325,7 +329,9 @@ describe("Permanent task deletion", () => {
 		await Bun.write(outputPath, "must remain until full preflight passes\n");
 		await Bun.write(sentinel, "outside-owned data\n");
 		await store.mutate(task.id, async (state) => {
-			state.sessions.push({
+			state.modes.build ??= { sessions: [] };
+			const history = state.modes.build;
+			history.sessions.push({
 				id: "tampered-session",
 				taskId: task.id,
 				preset: "opencode",
@@ -336,12 +342,12 @@ describe("Permanent task deletion", () => {
 				outputPath,
 				bootstrapPath: sentinel,
 			});
-			state.activeSessionId = "tampered-session";
+			history.activeSessionId = "tampered-session";
 		});
 
 		await expect(core.sessions.purge(task.id)).rejects.toThrow("outside its task session directory");
 		expect(await core.filesystem.loadTask(task.id)).not.toBeNull();
-		expect((await store.read(task.id)).sessions[0]?.bootstrapPath).toBe(sentinel);
+		expect((await store.read(task.id)).modes.build?.sessions[0]?.bootstrapPath).toBe(sentinel);
 		expect(existsSync(outputPath)).toBe(true);
 		expect(existsSync(sentinel)).toBe(true);
 	});
@@ -359,7 +365,9 @@ describe("Permanent task deletion", () => {
 			const sessionId = "existing-stopped";
 			const { taskDir } = await store.paths(task.id);
 			await store.mutate(task.id, async (state) => {
-				state.sessions.push({
+				state.modes.build ??= { sessions: [] };
+				const history = state.modes.build;
+				history.sessions.push({
 					id: sessionId,
 					taskId: task.id,
 					preset: "test",
@@ -372,7 +380,7 @@ describe("Permanent task deletion", () => {
 					outputPath: join(taskDir, `${sessionId}.log`),
 					bootstrapPath: join(taskDir, `${sessionId}.md`),
 				});
-				state.activeSessionId = sessionId;
+				history.activeSessionId = sessionId;
 			});
 			await observeSessionsDead(task.id);
 			const enteredDelete = Promise.withResolvers<void>();
@@ -419,7 +427,7 @@ describe("Permanent task deletion", () => {
 			const lockedOutcomes = await Promise.allSettled(attempts);
 			expect(lockedOutcomes.every((result) => result.status === "rejected")).toBe(true);
 			expect(externalProcessCalls).toBe(0);
-			expect((await store.read(task.id)).sessions).toEqual([]);
+			expect(Object.values((await store.read(task.id)).modes).flatMap(({ sessions }) => sessions)).toEqual([]);
 
 			releaseDelete.resolve();
 			await deletion;
@@ -434,7 +442,7 @@ describe("Permanent task deletion", () => {
 				results.every((result) => result.status === "rejected" && /Locally editable task/.test(String(result.reason))),
 			).toBe(true);
 			expect(externalProcessCalls).toBe(0);
-			expect((await store.read(task.id)).sessions).toEqual([]);
+			expect(Object.values((await store.read(task.id)).modes).flatMap(({ sessions }) => sessions)).toEqual([]);
 		} catch (error) {
 			failed = true;
 			testError = error;
@@ -462,7 +470,9 @@ describe("Permanent task deletion", () => {
 		const sessionId = "owned-running";
 		const { taskDir } = await store.paths(task.id);
 		await store.mutate(task.id, async (state) => {
-			state.sessions.push({
+			state.modes.build ??= { sessions: [] };
+			const history = state.modes.build;
+			history.sessions.push({
 				id: sessionId,
 				taskId: task.id,
 				preset: "test",
@@ -476,11 +486,11 @@ describe("Permanent task deletion", () => {
 				outputPath: join(taskDir, `${sessionId}.log`),
 				bootstrapPath: join(taskDir, `${sessionId}.md`),
 			});
-			state.activeSessionId = sessionId;
+			history.activeSessionId = sessionId;
 		});
 		await expect(core.deleteTask(task.id)).rejects.toThrow("Could not inspect tmux instance");
 		expect(await core.filesystem.loadTask(task.id)).not.toBeNull();
-		expect((await store.read(task.id)).sessions.map(({ id }) => id)).toEqual([sessionId]);
+		expect((await store.read(task.id)).modes.build?.sessions.map(({ id }) => id)).toEqual([sessionId]);
 	});
 
 	it("strips dependency links and references from a second task", async () => {
@@ -516,7 +526,9 @@ describe("Permanent task deletion", () => {
 		await Bun.write(outputPath, "session output\n");
 		await Bun.write(bootstrapPath, "# bootstrap\n");
 		await store.mutate(task.id, async (state) => {
-			state.sessions.push({
+			state.modes.build ??= { sessions: [] };
+			const history = state.modes.build;
+			history.sessions.push({
 				id: sessionId,
 				taskId: task.id,
 				preset: "opencode",
@@ -527,7 +539,7 @@ describe("Permanent task deletion", () => {
 				outputPath,
 				bootstrapPath,
 			});
-			state.activeSessionId = sessionId;
+			history.activeSessionId = sessionId;
 		});
 		await observeSessionsDead(task.id);
 		expect(existsSync(taskDir)).toBe(true);
@@ -536,6 +548,6 @@ describe("Permanent task deletion", () => {
 
 		expect(existsSync(outputPath)).toBe(false);
 		expect(existsSync(bootstrapPath)).toBe(false);
-		expect((await store.read(task.id)).sessions).toEqual([]);
+		expect(Object.values((await store.read(task.id)).modes).flatMap(({ sessions }) => sessions)).toEqual([]);
 	});
 });

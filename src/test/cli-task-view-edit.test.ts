@@ -120,14 +120,14 @@ describe("CLI task view and edit", () => {
 		expect(result.stdout.toString()).toContain("Description:");
 	});
 
-	it("refuses legacy flat records without modifying their bytes", async () => {
+	it("ignores flat records without modifying their bytes", async () => {
 		const content =
-			"---\nid: TASK-2\ntitle: Legacy\nstatus: To Do\nassignee: []\ncreated_date: '2026-10-01'\nlabels: []\ndependencies: []\n---\n\n## Description\n\n<!-- SECTION:DESCRIPTION:BEGIN -->\nPreserved\n<!-- SECTION:DESCRIPTION:END -->\n";
+			"---\nid: TASK-2\ntitle: Historical\nstatus: To Do\nassignee: []\ncreated_date: '2026-10-01'\nlabels: []\ndependencies: []\n---\n\n## Description\n\n<!-- SECTION:DESCRIPTION:BEGIN -->\nPreserved\n<!-- SECTION:DESCRIPTION:END -->\n";
 		const first = `${testDir}/agentic-workspace/tasks/task-2 - First.md`;
 		await writeFile(first, content);
 		const result = await $`${[...cliCommand, "task", "view", "TASK-2", "--plain"]}`.cwd(testDir).nothrow().quiet();
 		expect(result.exitCode).toBe(1);
-		expect(result.stderr.toString()).toContain("Manually convert <name>.md to <lowercase-id>/task.md");
+		expect(result.stderr.toString()).not.toContain("Manually convert");
 		expect(await readFile(first, "utf8")).toBe(content);
 	});
 });

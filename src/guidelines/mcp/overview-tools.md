@@ -8,8 +8,6 @@ PLAN and BUILD are workflow presets using the project's Default model selection.
 
 Task artifacts are generic task-relative files for durable context. Suggested PLAN files (`spec.md` and `plan.md`) are optional conventions. The `.artifacts.json` sidecar records user-owned approval hashes and timestamps: agents cannot write or approve it, and approval applies only while exact artifact bytes match the reviewed hash.
 
-Flat task and draft records are unsupported. Manually move each `<name>.md` to `<lowercase-id>/task.md` under the same root and set frontmatter `id` to match the directory name. Preserve legacy summary content manually before editing a task.
-
 ### MCP tools quick reference
 
 - `get_agentic-workspace_instructions`

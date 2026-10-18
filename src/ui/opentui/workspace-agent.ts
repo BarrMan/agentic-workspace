@@ -4,16 +4,16 @@ import type { AgentHost } from "../../agent-workspace/live/agent-host.ts";
 class WorkspaceAgentTerminal extends EmbeddedTerminalRenderable {
 	override encodeKey(key: KeyEvent): Uint8Array {
 		// OpenTUI's native embedded-terminal encoder drops the ESC prefix for
-		// Alt/Option plus a printable character and returns empty for legacy SS3
+		// Alt/Option plus a printable character and returns empty for SS3
 		// arrows, so it cannot reconstruct those bytes. Forward the original raw
 		// sequence in those cases. Otherwise normalize only the public metadata
-		// mismatch (legacy Alt parses as `meta`, Kitty Alt as both `meta` and
+		// mismatch (Alt parses as `meta`, Kitty Alt as both `meta` and
 		// `option`, and the encoder interprets `meta` as Super); the native
 		// encoder still owns all other bytes, terminal modes, and Backspace
 		// versus forward Delete. Never mutate the incoming event.
 		const isAlt = key.meta && (key.source === "raw" || key.option);
 		const { sequence } = key;
-		// Legacy Meta plus one printable ASCII byte, e.g. iTerm2's Option+Left/Right.
+		// Historical Meta plus one printable ASCII byte, e.g. iTerm2's Option+Left/Right.
 		const isPrintableAlt =
 			isAlt &&
 			sequence.length === 2 &&
@@ -21,7 +21,7 @@ class WorkspaceAgentTerminal extends EmbeddedTerminalRenderable {
 			sequence.charCodeAt(1) >= 0x20 &&
 			sequence.charCodeAt(1) <= 0x7e;
 		if (isPrintableAlt) return new TextEncoder().encode(sequence);
-		// Legacy SS3 arrows (`ESC O A`-`ESC O D`) encode to empty in the native encoder.
+		// Historical SS3 arrows (`ESC O A`-`ESC O D`) encode to empty in the native encoder.
 		const isSs3Arrow =
 			sequence.length === 3 &&
 			sequence.charCodeAt(0) === 0x1b &&

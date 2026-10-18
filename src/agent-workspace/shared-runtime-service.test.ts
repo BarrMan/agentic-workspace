@@ -341,7 +341,8 @@ describe("shared runtime session service", () => {
 		const record =
 			Object.values(state.modes ?? {})
 				.flatMap((history) => history.sessions)
-				.find((session) => session.status === "failed") ?? state.sessions[0];
+				.find((session) => session.status === "failed") ??
+			Object.values(state.modes).flatMap((history) => history.sessions)[0];
 		expect(record?.status).toBe("failed");
 		expect(record?.error).toContain("controlled predispatch tag failure");
 		expect(runtime.launches).toHaveLength(0);
@@ -456,7 +457,7 @@ describe("shared runtime session service", () => {
 		const killsBeforePublicationFailure = runtime.kills;
 		runtime.afterLaunch = async () => {
 			const state = await new SessionStore(root, runtime).read("TASK-4");
-			const record = state.sessions[0];
+			const record = state.modes.build?.sessions[0];
 			if (!record) throw new Error("Missing record at publication failure seam");
 			await new SessionStore(root, runtime).remove("TASK-4", record.id);
 		};

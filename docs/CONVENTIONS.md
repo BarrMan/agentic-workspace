@@ -64,12 +64,12 @@ This document owns repeatable coding, organization, and verification practices. 
 
 ### Changes and Refactoring
 
+- Define each persisted record's shape and validation once in a schema beside its codec; map schema failures to the public error contract. Do not add per-field decoders or validators.
 - Keep record validation, serialization, callers, and fixtures aligned with an interface change.
 - Pruning stale worktree registrations must not discard worktree contents, branches, or uncommitted data. Prune only registrations proven stale; preserve and report any worktree containing work.
 - Persist information only for an essential product or recovery need; do not persist redundant historical state. Fix application-produced corruption at its source; do not add automatic repair.
-- Follow [SPEC](SPEC.md): remove superseded behavior and its callers/fixtures rather than retaining aliases, legacy readers, fallback paths, or compatibility projections. If stored-data preservation or ownership is unresolved, escalate it; a bounded assignment does not authorize a compatibility route or automatic conversion.
-- For breaking stored-data changes during development, use manual correction only with explicit data-preservation authorization. Do not add permanent migration or legacy-compatibility support.
-- The application ships no migration tooling; refusal messages for incompatible stored data give manual conversion guidance.
+- Follow [SPEC](SPEC.md): remove superseded behavior and its callers/fixtures rather than retaining aliases or fallback paths. If stored-data preservation or ownership is unresolved, escalate it; a bounded assignment does not authorize a compatibility route.
+- For breaking stored-data changes during development, use manual correction only with explicit data-preservation authorization.
 
 ## Validation
 

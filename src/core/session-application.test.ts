@@ -141,8 +141,6 @@ describe("SessionApplication", () => {
 		expect(published).toHaveLength(1);
 		expect(published[0]?.status).toBe("running");
 		expect(published[0]?.nativeWorkspace).toBe(true);
-		expect(reloaded.sessions).toEqual(reloaded.modes[reloaded.legacyModeId]?.sessions ?? []);
-		expect(reloaded.activeSessionId).toBe(reloaded.modes[reloaded.legacyModeId]?.activeSessionId);
 	});
 
 	it("hydrates a fresh Task for rollback and rejects a replaced incarnation", async () => {
@@ -354,8 +352,6 @@ describe("SessionApplication", () => {
 				history.sessions = history.sessions.filter(({ id }) => id !== current.id);
 				if (history.activeSessionId === current.id) history.activeSessionId = history.sessions[0]?.id;
 			}
-			state.sessions = [];
-			state.activeSessionId = undefined;
 		});
 		await expect(application.stopSession(task.id, current.id)).rejects.toThrow();
 		expect(Object.values((await store.read(task.id)).modes).flatMap(({ sessions }) => sessions)).toHaveLength(0);

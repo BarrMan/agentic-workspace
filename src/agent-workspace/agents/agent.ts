@@ -71,7 +71,7 @@ export interface PreparationResources {
 	sessionId?: string;
 	env: Record<string, string>; // mutable launch environment (already has FORBIDDEN_ENV stripped)
 	title?: string;
-	profile?: ModeProfile;
+	profile: ModeProfile;
 	repositoryRoot?: string;
 	taskRoot?: string;
 	preflightResult?: unknown;
@@ -85,7 +85,7 @@ export interface AgentPreflightRequest {
 	resume: boolean;
 	env: Record<string, string>;
 	sessionId?: string;
-	profile?: ModeProfile;
+	profile: ModeProfile;
 }
 
 export interface AgentModel {

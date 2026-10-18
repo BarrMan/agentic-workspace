@@ -7,6 +7,7 @@ import { join } from "node:path";
 import type { Agent } from "./agents/agent.ts";
 import { agentFor, builtInAgents, registerAgent } from "./agents/agents.ts";
 import { renderSessionBootstrap } from "./bootstrap.ts";
+import { getDefaultModeCatalog } from "./config.ts";
 import { prepareHarnessEnvironment } from "./harness-environment.ts";
 import { preflightAgentLaunch, prepareAgentAsk, prepareAgentLaunch } from "./session-launch.ts";
 import { STATUS_DIR_ENV, sessionActivityDir } from "./status-hooks.ts";
@@ -15,6 +16,8 @@ import { usePromptInjectionAgent } from "./test-fake-agent.ts";
 import type { AgentPreset, ModeProfile } from "./types.ts";
 
 const preset: AgentPreset = { command: "opencode", bootstrap: "opencode", env: {}, prepare: "" };
+const defaultProfile = getDefaultModeCatalog().profiles.build;
+if (!defaultProfile) throw new Error("Missing default build mode profile.");
 const quote = (value: string) => `'${value.replaceAll("'", "'\"'\"'")}'`;
 
 async function fakeOpenCodeV1(root: string): Promise<string> {
@@ -51,14 +54,14 @@ describe("session-local agent launch", () => {
 			const checked = await preflightAgentLaunch(
 				{ command: "claude", bootstrap: "claude", env: {}, prepare: "" },
 				bootstrapPath,
-				{ cwd: root, intent: { kind: "new" } },
+				{ cwd: root, intent: { kind: "new" }, profile: defaultProfile },
 			);
 			expect(checked.policyPreset.command).toBe("capability-sanitized");
 			const ask = await prepareAgentAsk(
 				{ command: "claude", bootstrap: "claude", env: {}, prepare: "" },
 				"native-1",
 				"question",
-				undefined,
+				defaultProfile,
 				{ repositoryRoot: root, taskRoot: root },
 			);
 			try {
@@ -124,7 +127,7 @@ describe("session-local agent launch", () => {
 			const staleClaude = await prepareAgentLaunch(
 				{ command: "claude --dangerously-skip-permissions", bootstrap: "claude", env: {}, prepare: "" },
 				bootstrapPath,
-				{ cwd: root, intent: { kind: "new" }, yolo: false },
+				{ cwd: root, intent: { kind: "new" }, yolo: false, profile: defaultProfile },
 			);
 			try {
 				expect(staleClaude.command).not.toContain("--dangerously-skip-permissions");
@@ -135,7 +138,7 @@ describe("session-local agent launch", () => {
 				const resumed = await prepareAgentLaunch(
 					{ command: "claude --dangerously-skip-permissions", bootstrap: "claude", env: {}, prepare: "" },
 					bootstrapPath,
-					{ cwd: root, intent: { kind: "resume", nativeSessionId: "existing-session" }, yolo },
+					{ cwd: root, intent: { kind: "resume", nativeSessionId: "existing-session" }, yolo, profile: defaultProfile },
 				);
 				try {
 					expect(resumed.command.includes("--dangerously-skip-permissions")).toBe(yolo);
@@ -148,6 +151,7 @@ describe("session-local agent launch", () => {
 				cwd: root,
 				intent: { kind: "new" },
 				yolo: true,
+				profile: defaultProfile,
 			});
 			try {
 				expect(pi.command).not.toContain("--dangerously-skip-permissions");
@@ -158,7 +162,7 @@ describe("session-local agent launch", () => {
 			const unparsedPi = await prepareAgentLaunch(
 				{ command: 'pi "unterminated', bootstrap: "pi", env: {}, prepare: "" },
 				bootstrapPath,
-				{ cwd: root, intent: { kind: "new" }, yolo: false },
+				{ cwd: root, intent: { kind: "new" }, yolo: false, profile: defaultProfile },
 			);
 			try {
 				expect(unparsedPi.command).toContain('pi "unterminated');
@@ -193,6 +197,7 @@ describe("session-local agent launch", () => {
 			const launch = await prepareAgentLaunch(configured, bootstrapPath, {
 				cwd: root,
 				intent: { kind: "resume", nativeSessionId: "ses_existing" },
+				profile: defaultProfile,
 			});
 			const config = JSON.parse(launch.env.OPENCODE_CONFIG_CONTENT ?? "{}");
 			const skillPath = join(config.skills.paths[1], "agentic-workspace-task-management", "SKILL.md");
@@ -244,7 +249,7 @@ describe("session-local agent launch", () => {
 					env: { CAPTURE: outputPath, CUSTOM_SETTING: "safe ' \\$(false)" },
 				},
 				bootstrapPath,
-				{ cwd: root, intent: { kind: "new" } },
+				{ cwd: root, intent: { kind: "new" }, profile: defaultProfile, prompt },
 			);
 			try {
 				const child = Bun.spawn(["/bin/sh", "-c", launch.command], {
@@ -289,12 +294,13 @@ describe("session-local agent launch", () => {
 				{
 					cwd: root,
 					intent: { kind: "new" },
+					profile: defaultProfile,
 					repositoryRoot: projectDir,
 					taskRoot: taskDir,
 					environment: {
 						VALUE: "$SHOULD_NOT_EXPAND",
 						AGENTIC_WORKSPACE_PROJECT_DIR: "/untrusted",
-						AGENTIC_WORKSPACE_CWD: "/legacy",
+						AGENTIC_WORKSPACE_CWD: "/historical",
 					},
 				},
 			);
@@ -312,7 +318,7 @@ describe("session-local agent launch", () => {
 				{ ...preset, bootstrap: "claude", command: quote(process.execPath) },
 				"native-ask",
 				"question",
-				undefined,
+				defaultProfile,
 				{ repositoryRoot: projectDir, taskRoot: taskDir, cwd: root },
 			);
 			try {
@@ -337,7 +343,12 @@ describe("session-local agent launch", () => {
 			env: { EXPANDED: `$(printf x >> ${quote(counter)}; printf once)` },
 			prepare: "",
 		};
-		const options = { cwd: root, sessionId: "snapshot-session", intent: { kind: "new" as const } };
+		const options = {
+			cwd: root,
+			sessionId: "snapshot-session",
+			intent: { kind: "new" as const },
+			profile: defaultProfile,
+		};
 		try {
 			const preflight = await preflightAgentLaunch(configured, bootstrapPath, options);
 			const launch = await prepareAgentLaunch(
@@ -446,7 +457,7 @@ describe("session-local agent launch", () => {
 					},
 					"",
 					"question",
-					undefined,
+					defaultProfile,
 					roots,
 				),
 			).rejects.toThrow("exact native session ID");
@@ -460,7 +471,7 @@ describe("session-local agent launch", () => {
 					},
 					"ses_missing",
 					"question",
-					undefined,
+					defaultProfile,
 					roots,
 				),
 			).rejects.toThrow("did not confirm 'ses_missing'");
@@ -516,6 +527,7 @@ describe("session-local agent launch", () => {
 			const launch = await prepareAgentLaunch(configured, bootstrapPath, {
 				cwd: root,
 				intent: { kind: "new" },
+				profile: defaultProfile,
 				repositoryRoot: projectDir,
 				taskRoot: taskDir,
 				environment,
@@ -553,7 +565,7 @@ describe("session-local agent launch", () => {
 					env: { OUTPUT: output },
 				},
 				bootstrapPath,
-				{ cwd: root, intent: { kind: "new" } },
+				{ cwd: root, intent: { kind: "new" }, profile: defaultProfile },
 			);
 			try {
 				const child = Bun.spawn(["/bin/sh", "-c", launch.command], {
@@ -590,7 +602,13 @@ describe("session-local agent launch", () => {
 					env: { OUTPUT: output },
 				},
 				bootstrapPath,
-				{ cwd: root, intent: { kind: "new" }, sessionId: "sess-pi" },
+				{
+					cwd: root,
+					intent: { kind: "new" },
+					sessionId: "sess-pi",
+					profile: defaultProfile,
+					prompt: "Active task: BACK-42.\nWait for user instructions.",
+				},
 			);
 			try {
 				const child = Bun.spawn(["/bin/sh", "-c", launch.command], {
@@ -626,12 +644,14 @@ describe("session-local agent launch", () => {
 				prepareAgentLaunch({ ...preset, bootstrap: "claude", command: "agent {prompt}" }, "/missing", {
 					cwd: tmpdir(),
 					intent: { kind: "new" },
+					profile: defaultProfile,
 				}),
 			).rejects.toThrow("{skill}");
 			await expect(
 				prepareAgentLaunch({ ...preset, bootstrap: "claude", command: "agent {skill}" }, "/missing", {
 					cwd: tmpdir(),
 					intent: { kind: "new" },
+					profile: defaultProfile,
 				}),
 			).rejects.toThrow("{prompt} or {instructions}");
 		} finally {
@@ -641,6 +661,7 @@ describe("session-local agent launch", () => {
 			prepareAgentLaunch({ ...preset, bootstrap: "opencode-v1" }, "/missing", {
 				cwd: tmpdir(),
 				intent: { kind: "resume", nativeSessionId: "" },
+				profile: defaultProfile,
 			}),
 		).rejects.toThrow("exact native session ID");
 	});
@@ -651,7 +672,7 @@ describe("session-local agent launch", () => {
 			const launch = await prepareAgentLaunch(
 				{ ...preset, bootstrap: "claude", command: `${quote(process.execPath)}` },
 				bootstrapPath,
-				{ cwd: root, intent: { kind: "new" }, sessionId: "sess-1" },
+				{ cwd: root, intent: { kind: "new" }, sessionId: "sess-1", profile: defaultProfile },
 			);
 			try {
 				const statusDir = launch.env[STATUS_DIR_ENV];
@@ -698,6 +719,7 @@ describe("session-local agent launch", () => {
 					cwd: root,
 					intent: { kind: "new" },
 					sessionId: "sess-1",
+					profile: defaultProfile,
 				},
 			);
 			try {
@@ -722,6 +744,7 @@ describe("session-local agent launch", () => {
 				cwd: root,
 				intent: { kind: "new" },
 				sessionId: "sess-1",
+				profile: defaultProfile,
 			});
 			try {
 				const match = launch.command.match(/(\/\S*agentic-workspace-status-extension\.ts)/);
@@ -743,9 +766,14 @@ describe("session-local agent launch", () => {
 			// The workspace native prepare, CLI `agent-session start`, and CLI resume all funnel through
 			// this one function, so each must yield the same owned status dir, hook file, and argv.
 			const claudePaths = [
-				{ cwd: root, intent: { kind: "new" as const }, sessionId: "s-1" },
-				{ cwd: root, intent: { kind: "new" as const }, sessionId: "s-2" },
-				{ cwd: root, intent: { kind: "resume" as const, nativeSessionId: "n-3" }, sessionId: "s-3" },
+				{ cwd: root, intent: { kind: "new" as const }, sessionId: "s-1", profile: defaultProfile },
+				{ cwd: root, intent: { kind: "new" as const }, sessionId: "s-2", profile: defaultProfile },
+				{
+					cwd: root,
+					intent: { kind: "resume" as const, nativeSessionId: "n-3" },
+					sessionId: "s-3",
+					profile: defaultProfile,
+				},
 			];
 			for (const options of claudePaths) {
 				const launch = await prepareAgentLaunch(
@@ -767,6 +795,7 @@ describe("session-local agent launch", () => {
 				cwd: root,
 				intent: { kind: "new" },
 				sessionId: "s-1",
+				profile: defaultProfile,
 			});
 			try {
 				expect(pi.env[STATUS_DIR_ENV]).toBeString();
@@ -781,6 +810,7 @@ describe("session-local agent launch", () => {
 					cwd: root,
 					intent: { kind: "new" },
 					sessionId: "s-1",
+					profile: defaultProfile,
 				},
 			);
 			try {
@@ -800,6 +830,7 @@ describe("session-local agent launch", () => {
 		const launch = await prepareAgentLaunch({ ...preset, bootstrap: "claude", command: "claude" }, bootstrapPath, {
 			cwd: root,
 			intent: { kind: "new" },
+			profile: defaultProfile,
 			prompt,
 		});
 		try {

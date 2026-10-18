@@ -498,17 +498,17 @@ describe("Self-referential and cyclic dependencies", () => {
 	});
 
 	test("repairing a stored cycle by replacing the dependency list succeeds", async () => {
-		const legacy = (id: string, dependencies: string[]): Task => ({
+		const storedTask = (id: string, dependencies: string[]): Task => ({
 			id,
-			title: `Legacy ${id}`,
+			title: `Stored ${id}`,
 			status: "To Do",
 			assignee: [],
 			createdDate: "2024-01-01",
 			labels: [],
 			dependencies,
 		});
-		await core.createTask(legacy("task-1", ["task-2"]));
-		await core.createTask(legacy("task-2", ["task-1"]));
+		await core.createTask(storedTask("task-1", ["task-2"]));
+		await core.createTask(storedTask("task-2", ["task-1"]));
 		const { task: other } = await core.createTaskFromInput({ title: "Clean target" });
 
 		// The stored record's own outgoing edges must not veto the repair that removes them.
@@ -637,18 +637,18 @@ describe("Self-referential and cyclic dependencies", () => {
 
 	test("a stored self-dependency does not block adding an unrelated dependency", async () => {
 		const { task: other } = await core.createTaskFromInput({ title: "Other" });
-		const legacy: Task = {
+		const storedTask: Task = {
 			id: "task-9",
-			title: "Legacy self-dependent",
+			title: "Stored self-dependent",
 			status: "To Do",
 			assignee: [],
 			createdDate: "2024-01-01",
 			labels: [],
 			dependencies: ["task-9"],
 		};
-		await core.createTask(legacy);
+		await core.createTask(storedTask);
 
-		await core.updateTaskFromInput(legacy.id, { addDependencies: [other.id] });
-		expect((await core.filesystem.loadTask(legacy.id))?.dependencies).toEqual(["task-9", other.id]);
+		await core.updateTaskFromInput(storedTask.id, { addDependencies: [other.id] });
+		expect((await core.filesystem.loadTask(storedTask.id))?.dependencies).toEqual(["task-9", other.id]);
 	});
 });

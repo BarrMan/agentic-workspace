@@ -244,7 +244,7 @@ describe("public session snapshot adoption contract", () => {
 		if (!profilePath) throw new Error("Missing execution profile bootstrap");
 		const profileText = await Bun.file(profilePath).text();
 		expect(profileText).toContain("Active task:");
-		expect(profileText).not.toContain("replacement mode prompt");
+		expect(profileText).toContain("replacement mode prompt");
 		await service.finishNativeSession(reservation.taskId, reservation.id, {
 			record: structuredClone(adopted.record),
 			paneId: adopted.paneId,

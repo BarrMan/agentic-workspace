@@ -36,8 +36,8 @@ describe("prepareHarnessEnvironment", () => {
 		const inherited = {
 			PATH: process.env.PATH ?? "/bin:/usr/bin",
 			BASE: "base value",
-			AGENTIC_WORKSPACE_CWD: "/legacy",
-			TASK_ID: "legacy-task",
+			AGENTIC_WORKSPACE_CWD: "/spaced root",
+			TASK_ID: "stale-task",
 			AGENTIC_WORKSPACE_PROJECT_DIR: "/untrusted-project",
 		};
 		const preset = {

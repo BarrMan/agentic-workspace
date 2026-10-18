@@ -1,6 +1,6 @@
 import type { Dirent } from "node:fs";
 import { access, readdir } from "node:fs/promises";
-import { dirname, join, resolve } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 import { parseTask } from "../markdown/parser.ts";
 import type { Task } from "../types/index.ts";
 import { isValidTaskId, taskIdsEqual } from "../utils/task-id.ts";
@@ -100,7 +100,7 @@ export class TaskRepository {
 			for (const path of new Set([...this.parsedFiles.keys(), ...this.fileReadGenerations.keys()])) {
 				const parent = dirname(path);
 				const belongsToDirectory =
-					parent === directoryPath || (dirname(parent) === directoryPath && path.endsWith("/task.md"));
+					parent === directoryPath || (dirname(parent) === directoryPath && basename(path) === "task.md");
 				if (belongsToDirectory && !livePaths.has(path)) {
 					this.parsedFiles.delete(path);
 					this.fileReadGenerations.delete(path);
@@ -128,7 +128,7 @@ export class TaskRepository {
 					}
 					continue;
 				}
-				const containerName = file.endsWith("/task.md") ? file.slice(0, -"/task.md".length) : null;
+				const containerName = basename(file) === "task.md" ? dirname(file) : null;
 				if (containerName !== null) {
 					if (!isValidTaskId(containerName.toUpperCase()) || !taskIdsEqual(parsed.id, containerName)) continue;
 				}
@@ -150,20 +150,15 @@ export class TaskRepository {
 
 		const candidates = await Promise.all(
 			entries.map(async (entry) => {
-				if (entry.isDirectory()) {
-					if (!isValidTaskId(entry.name.toUpperCase())) return null;
-					try {
-						await access(join(directory, entry.name, "task.md"));
-						return join(entry.name, "task.md");
-					} catch (error) {
-						if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
-						throw error;
-					}
+				if (!entry.isDirectory()) return null;
+				if (!isValidTaskId(entry.name.toUpperCase())) return null;
+				try {
+					await access(join(directory, entry.name, "task.md"));
+					return join(entry.name, "task.md");
+				} catch (error) {
+					if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
+					throw error;
 				}
-				if (!entry.isFile() || !/^[A-Za-z]+-\d+(?:\.\d+)*(?:\s+-.*)?\.md$/i.test(entry.name)) return null;
-				throw new Error(
-					`Unsupported flat task record ${join(directory, entry.name)}. Manually convert <name>.md to <lowercase-id>/task.md, set frontmatter id to match the directory name, and set task_schema_version to 3.`,
-				);
 			}),
 		);
 		return candidates.filter((candidate): candidate is string => candidate !== null).sort();

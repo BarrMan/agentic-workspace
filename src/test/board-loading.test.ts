@@ -106,7 +106,7 @@ describe("Board Loading with checkActiveBranches", () => {
 		await core.createTask(createTestTask("task-1"));
 		await $`git add .`.cwd(TEST_DIR).quiet();
 		await $`git commit -m "Add local task"`.cwd(TEST_DIR).quiet();
-		await $`git checkout -b legacy-history`.cwd(TEST_DIR).quiet();
+		await $`git checkout -b history-branch`.cwd(TEST_DIR).quiet();
 		await core.createTask(createTestTask("task-3"));
 		await $`git add .`.cwd(TEST_DIR).quiet();
 		await $`git commit -m "Add branch task"`.cwd(TEST_DIR).quiet();
@@ -114,7 +114,7 @@ describe("Board Loading with checkActiveBranches", () => {
 		await mkdir(join(core.filesystem.completedDir, "task-2"), { recursive: true });
 		await Bun.write(
 			completedLegacyPath,
-			"---\nid: TASK-2\ntitle: Legacy\nstatus: Done\nassignee: []\ncreated_date: '2026-10-01'\nlabels: []\ndependencies: []\n---\n",
+			"---\nid: TASK-2\ntitle: Historical\nstatus: Done\nassignee: []\ncreated_date: '2026-10-01'\nlabels: []\ndependencies: []\n---\n",
 		);
 		await $`git add .`.cwd(TEST_DIR).quiet();
 		await $`git commit -m "Add unversioned completed task"`.cwd(TEST_DIR).quiet();

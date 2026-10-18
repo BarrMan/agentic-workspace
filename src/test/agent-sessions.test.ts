@@ -7,7 +7,7 @@ import { TmuxCommandError } from "libtmux";
 import { agentFor } from "../agent-workspace/agents/agents.ts";
 import { renderSessionBootstrap, yoloFlagFor } from "../agent-workspace/bootstrap.ts";
 import type { PreparedLaunchResources } from "../agent-workspace/completion-supervisor-resources.ts";
-import { upsertAgentConfiguration } from "../agent-workspace/config.ts";
+import { getDefaultModeCatalog, upsertAgentConfiguration } from "../agent-workspace/config.ts";
 import * as processTree from "../agent-workspace/process-tree.ts";
 import { prepareAgentLaunch } from "../agent-workspace/session-launch.ts";
 import { SessionStore } from "../agent-workspace/session-store.ts";
@@ -374,8 +374,10 @@ async function seedAskSessions(root: string, sessions: AgentSession[], activeSes
 	await upsertAgentConfiguration(new Core(root), "project", { selectedPreset: "test", presets: { test: askPreset } });
 	const store = new SessionStore(root, new BunRunner());
 	await store.mutate("TASK-1", async (state) => {
-		state.sessions.splice(0, state.sessions.length, ...sessions);
-		state.activeSessionId = activeSessionId ?? sessions.at(-1)?.id;
+		state.modes.build ??= { sessions: [] };
+		const history = state.modes.build;
+		history.sessions.splice(0, history.sessions.length, ...sessions);
+		history.activeSessionId = activeSessionId ?? sessions.at(-1)?.id;
 	});
 }
 
@@ -472,8 +474,13 @@ describe("agent auto-approval (yolo) flags", () => {
 		await writeFile(opencode, "#!/usr/bin/env bun\nif (process.argv.includes('--version')) console.log('1.19.0');\n");
 		await chmod(opencode, 0o700);
 		const preset: AgentPreset = { command: opencode, env: {}, prepare: "", bootstrap: "opencode-v1" };
+		const profile = getDefaultModeCatalog().profiles.build!;
 		try {
-			const off = await prepareAgentLaunch(preset, bootstrapPath, { cwd: root, intent: { kind: "new" } });
+			const off = await prepareAgentLaunch(preset, bootstrapPath, {
+				cwd: root,
+				intent: { kind: "new" },
+				profile,
+			});
 			try {
 				expect(off.command).not.toContain("--auto");
 			} finally {
@@ -483,6 +490,7 @@ describe("agent auto-approval (yolo) flags", () => {
 				cwd: root,
 				intent: { kind: "new" },
 				yolo: true,
+				profile,
 			});
 			try {
 				expect(on.command).toContain("--auto");
@@ -761,10 +769,12 @@ describe.concurrent("AgentSessionService", () => {
 			if (sessionId === native.id && !raced) {
 				raced = true;
 				await store.mutate(taskId, async (state) => {
-					const current = state.sessions.find((candidate) => candidate.id === sessionId);
-					if (current) {
-						current.status = "parked";
-						current.ownerPid = undefined;
+					for (const history of Object.values(state.modes)) {
+						const current = history.sessions.find((candidate) => candidate.id === sessionId);
+						if (current) {
+							current.status = "parked";
+							current.ownerPid = undefined;
+						}
 					}
 				});
 			}
@@ -774,7 +784,7 @@ describe.concurrent("AgentSessionService", () => {
 		await expect(service.stopAllTaskSessions("TASK-1", new Map([[native.id, async () => {}]]))).rejects.toThrow(
 			"status or owner changed",
 		);
-		expect((await store.read("TASK-1")).sessions[0]?.status).toBe("parked");
+		expect((await store.read("TASK-1")).modes.build?.sessions[0]?.status).toBe("parked");
 	});
 
 	it("preflights every mode before invoking an owned native stop capability", async () => {
@@ -837,14 +847,15 @@ describe.concurrent("AgentSessionService", () => {
 		const session = await service.start("task-1");
 		const all = await service.listAllSessions();
 		expect(all.get("TASK-1")?.sessions.map((entry) => entry.id)).toEqual([session.id]);
-		expect(all.get("TASK-1")?.activeSessionId).toBe(session.id);
 
 		// A task with durable session state but no task file: `list` must keep rejecting it, while the
 		// single-scan read must still see the state. This is the whole point of the method.
 		const store = new SessionStore(root, new BunRunner());
 		await store.mutate("TASK-404", async (state) => {
-			state.sessions.push({ ...session, id: "ghost", taskId: "TASK-404" });
-			state.activeSessionId = "ghost";
+			state.modes.build ??= { sessions: [] };
+			const history = state.modes.build;
+			history.sessions.push({ ...session, id: "ghost", taskId: "TASK-404" });
+			history.activeSessionId = "ghost";
 		});
 		const scanned = await service.listAllSessions();
 		expect(scanned.get("TASK-404")?.sessions.map((entry) => entry.id)).toEqual(["ghost"]);
@@ -1316,7 +1327,7 @@ describe.concurrent("AgentSessionService", () => {
 		expect((await service.list("task-1")).activeSessionId).toBeDefined();
 	});
 
-	it("starts at project root even when the legacy preset enables worktrees", async () => {
+	it("starts at project root when worktrees are not configured", async () => {
 		const { root, core, runner } = await project();
 		await upsertAgentConfiguration(core, "project", {
 			selectedPreset: "test",
@@ -1857,8 +1868,8 @@ describe.concurrent("AgentSessionService", () => {
 		expect(existsSync(session.bootstrapPath)).toBeTrue();
 		// `stop` releases the active pointer; re-point it at the stopped record so deletion must clear it.
 		const store = new SessionStore(root, new BunRunner());
-		await store.mutate("TASK-1", async (state) => {
-			state.activeSessionId = session.id;
+		await store.mutateSession("TASK-1", session.id, async (_record, history) => {
+			history.activeSessionId = session.id;
 		});
 
 		const killsBefore = runner.actions.filter((action) => action.type === "kill").length;

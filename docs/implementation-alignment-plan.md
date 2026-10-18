@@ -4,7 +4,7 @@
 
 This is a bounded execution plan and evidence ledger, not a contract. Authority remains with [PRODUCT](PRODUCT.md), [SPEC](SPEC.md) and its linked [feature contracts](SPEC.md#features), [BLUEPRINT](BLUEPRINT.md) and its [blueprint pages](BLUEPRINT.md#detailed-pages), [CONVENTIONS](CONVENTIONS.md), [DESIGN-SYSTEM](DESIGN-SYSTEM.md), [screen specifications](screens/README.md), and [accepted ADRs](adr/README.md). Resolve conflicts against the owning contract; do not change a requirement to fit existing code.
 
-Scope is an entire-project alignment audit followed by only evidenced, contract-required source/test corrections. This plan does not authorize contract edits, unrelated broad refactors, new mirrored interfaces, permanent migrations/aliases/compatibility paths, automatic repair of user data, or safety-gate weakening. Incompatible real data may receive manual correction only with explicit preservation authorization. Escalate genuine unresolved policy/architecture decisions to the owner; do not treat approved requirements as open decisions.
+Scope is an entire-project alignment audit followed by only evidenced, contract-required source/test corrections. This plan does not authorize contract edits, unrelated broad refactors, new mirrored interfaces, permanent aliases or compatibility paths, automatic repair of user data, or safety-gate weakening. Incompatible real data may receive manual correction only with explicit preservation authorization. Escalate genuine unresolved policy/architecture decisions to the owner; do not treat approved requirements as open decisions.
 
 The `research/aoe` plans are explicitly historical evidence. Do not adopt their claims as authority or edit/delete them in this work. No current task ID is supplied; this supporting plan belongs here in `docs/`.
 
@@ -83,7 +83,7 @@ The following slices guide the first ledger discovery only; they do not predecla
 - For TASK-013–019, ledger status-only Done separately from completion and archive/deletion behavior; trace each cleanup side effect and stopping point in the full chain.
 - For TASK-020–022, inspect their exact requirements and callers; do not infer coverage from the artifact containment test.
 - Acceptance: task identity and unrelated records survive collisions/failures; relocation/deletion reports completed effects without pretending rollback; artifact traversal/symlink escapes fail closed; no required workflow/documents inferred from default names. P5 owns lifecycle archive/deletion scenarios TASK-012–013,015–019.
-- Recovery: inspect interrupted multi-step operations and cleanup failures for preserved resources/evidence. No automatic data repair, retries, migration, or compatibility projection.
+- Recovery: inspect interrupted multi-step operations and cleanup failures for preserved resources/evidence. No automatic data repair or retries.
 
 ### P3 — Session and Harness
 
@@ -143,7 +143,7 @@ The following slices guide the first ledger discovery only; they do not predecla
 - Reconcile each family row and every screen/architecture/contract section against the worker's implementation/test refs; inspect changed files and source diffs narrowly.
 - Confirm owners and exact file scopes were respected; account for every file changed and every baseline user edit. Require tests named in ledgers actually executed and commands/result preserved.
 - Confirm accepted open decisions were not silently decided in code. If unresolved authority blocks conformance, pause that operation and seek explicit approval rather than broadening scope.
-- Check policy-sensitive data changes with preservation authorization; reject automatic migration/repair and unowned data deletion.
+- Check policy-sensitive data changes with preservation authorization; reject automatic repair and unowned data deletion.
 - Report unverified live/runtime claims plainly and leave acceptance incomplete when required live evidence cannot be obtained.
 - Full family verification occurs here after all delegated downstream scenarios are joined. The parent integrator owns ledger index and final checks; package artifacts, when execution starts, live at `docs/alignment/<package-id>.md`. Do not create them during this planning edit.
 
@@ -158,7 +158,7 @@ The following slices guide the first ledger discovery only; they do not predecla
 - Update evidence after edits: prior inspection or a previously passing test does not validate changed source. Keep the evidence path and tested revision/file state clear.
 - Open contract decisions are not automatically package blockers when irrelevant. Escalate only when a concrete requirement cannot be safely implemented without one; avoid approval requests for decisions already settled by the contract.
 - If a package finds unexpected overlap, stop before editing. Propose the exact path transfer and dependency update to the integrator; do not let two writers race or silently enlarge the allowlist.
-- If data preservation cannot be established, leave existing data untouched and block the destructive change pending explicit authorization. There is no default permission to convert or repair.
+- If data preservation cannot be established, leave existing data untouched and block the destructive change pending explicit authorization. There is no default permission to repair.
 
 ### Acceptance evidence by surface
 
@@ -236,7 +236,7 @@ Authority: use the owning SPEC/architecture/screen/ADR contract; this plan is su
 Requirements: enumerate exact IDs and all acceptance, failure, recovery, and subscenario sections before coding.
 Ledger: one row per requirement/subscenario; owner, implementation ref, test ref, status unknown/gap/blocked/verified, evidence type and result. Verify owned rows before slice release; explicitly assign outstanding downstream rows. Full alignment waits for P9.
 Write allowlist: <exact paths>. No-touch: <exact shared paths and other owners>. One writer per file, including tests; stop for serial handoff if overlap appears.
-Acceptance: <observable positive and failure/recovery cases>. Preserve safety, data, partial effects and unrelated work. No aliases/migrations/automatic repair or broad refactor.
+Acceptance: <observable positive and failure/recovery cases>. Preserve safety, data, partial effects and unrelated work. No aliases or automatic repair, and no broad refactor.
 Validation owner: <name/role>. Run only <targeted command(s)>; report exact command and result. Distinguish inspection, source tests, live runtime, and installed binary.
 Return: changed paths; row ledger/evidence; validation; unresolved decision/dependency; failure/recovery and preserved-work notes. Do not claim alignment beyond audited rows.
 ```

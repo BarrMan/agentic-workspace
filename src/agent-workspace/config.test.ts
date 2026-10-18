@@ -3,7 +3,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { Core } from "../core/agentic-workspace.ts";
 import { Storage } from "../core/storage.ts";
-import { parseTask } from "../markdown/parser.ts";
+import { parseMarkdown, parseTask } from "../markdown/parser.ts";
 import { serializeTask } from "../markdown/serializer.ts";
 import { createUniqueTestDir, initializeTestProject, safeCleanup } from "../test/test-utils.ts";
 import {
@@ -150,7 +150,7 @@ describe("agent workspace configuration", () => {
 		}
 		expect((await resolveSessionPreset(core, saved)).command).toBe("custom-agent --run");
 	});
-	it("round-trips raw legacy color omissions without filling colors on load, save, or repeated initialization", async () => {
+	it("round-trips omitted mode colors without filling them on load, save, or repeated initialization", async () => {
 		const modes = getDefaultModeCatalog();
 		for (const profile of Object.values(modes.profiles)) delete profile.textColor;
 		const plan = modes.profiles.plan;
@@ -163,9 +163,8 @@ describe("agent workspace configuration", () => {
 		if (!loaded?.modes) throw new Error("Missing loaded catalog");
 		expect(savedConfig?.agentConfiguration).toEqual({ ...configuration(), modes });
 		for (const profile of Object.values(loaded.modes.profiles)) expect(Object.hasOwn(profile, "textColor")).toBe(false);
-		expect(effectiveModeTextColor(loaded.modes.profiles.plan, "plan")).toBe("green");
-		expect(effectiveModeTextColor(loaded.modes.profiles.build, "build")).toBe("blue");
-		expect(effectiveModeTextColor(loaded.modes.profiles.custom, "custom")).toBeUndefined();
+		for (const [id, profile] of Object.entries(loaded.modes.profiles))
+			expect(effectiveModeTextColor(profile, id)).toBeUndefined();
 		await upsertAgentConfiguration(core, "project", loaded);
 		await initializeAgentConfiguration(core, "project");
 		expect((await core.filesystem.loadConfig())?.agentConfiguration).toEqual({ ...configuration(), modes });
@@ -233,7 +232,7 @@ describe("agent workspace configuration", () => {
 	it("rejects the retired per-preset worktree key without rewriting the configuration", async () => {
 		const path = join(process.env.XDG_CONFIG_HOME as string, "agentic-workspace", "agentic-workspace.config.yml");
 		await mkdir(dirname(path), { recursive: true });
-		const raw = `agent_configuration: ${JSON.stringify({ selectedPreset: "legacy", presets: { legacy: { command: "legacy {prompt}", env: {}, prepare: "", worktree: true, bootstrap: "opencode" } } })}\n`;
+		const raw = `agent_configuration: ${JSON.stringify({ selectedPreset: "retired", presets: { retired: { command: "retired {prompt}", env: {}, prepare: "", worktree: true, bootstrap: "opencode" } } })}\n`;
 		await writeFile(path, raw, "utf8");
 
 		await expect(loadAgentConfiguration(core, "root")).rejects.toThrow(
@@ -373,18 +372,21 @@ describe("agent workspace configuration", () => {
 		expect((await resolveSessionPreset(core, session)).command).toBe("current-task-agent");
 	});
 
-	it("defaults auto-resume on for legacy config and validates explicit values", async () => {
+	it("defaults auto-resume on for configuration without auto-resume and validates explicit values", async () => {
 		expect(resolveSessionSettings(undefined)).toEqual({
 			worktreePerTask: false,
 			yoloMode: false,
 			autoResumeOnRestart: true,
 		});
-		const legacy = { ...configuration(), sessions: { worktreePerTask: false, yoloMode: false } };
+		const configurationWithoutAutoResume = {
+			...configuration(),
+			sessions: { worktreePerTask: false, yoloMode: false },
+		};
 		await upsertAgentConfiguration(core, "root", {
 			...configuration(),
 			sessions: { worktreePerTask: false, yoloMode: false, autoResumeOnRestart: false },
 		});
-		await upsertAgentConfiguration(core, "project", legacy);
+		await upsertAgentConfiguration(core, "project", configurationWithoutAutoResume);
 		expect(resolveSessionSettings(await loadAgentConfiguration(core, "project"))).toMatchObject({
 			autoResumeOnRestart: true,
 		});
@@ -402,12 +404,15 @@ describe("agent workspace configuration", () => {
 			resolveSessionSettings(await resolveAgentConfiguration(core, task.id).then(({ config }) => config)),
 		).toMatchObject({ autoResumeOnRestart: false });
 		await upsertAgentConfiguration(core, "project", {
-			...legacy,
-			sessions: { ...legacy.sessions, autoResumeOnRestart: false },
+			...configurationWithoutAutoResume,
+			sessions: { ...configurationWithoutAutoResume.sessions, autoResumeOnRestart: false },
 		});
 		expect((await loadAgentConfiguration(core, "project"))?.sessions?.autoResumeOnRestart).toBe(false);
 		for (const value of ["false", 0, null]) {
-			const invalid = { ...legacy, sessions: { ...legacy.sessions, autoResumeOnRestart: value } };
+			const invalid = {
+				...configurationWithoutAutoResume,
+				sessions: { ...configurationWithoutAutoResume.sessions, autoResumeOnRestart: value },
+			};
 			await expect(upsertAgentConfiguration(core, "project", invalid as never)).rejects.toThrow(
 				/sessions.autoResumeOnRestart must be a boolean/,
 			);
@@ -472,7 +477,10 @@ describe("agent workspace configuration", () => {
 				task.id,
 			),
 		).rejects.toThrow(/bootstrap is invalid/);
-		expect((await core.filesystem.loadTask(task.id))?.agentConfiguration).toEqual(stale);
+		await expect(core.filesystem.loadTask(task.id)).rejects.toThrow(/bootstrap is invalid/);
+		expect(parseMarkdown(await readFile(task.filePath as string, "utf8")).frontmatter.agentConfiguration).toEqual(
+			stale,
+		);
 	});
 
 	it("reloads a saved card preset with an empty environment", async () => {
@@ -541,6 +549,7 @@ describe("agent workspace configuration", () => {
 		await writeFile(task.filePath as string, content.replace("---\n", "---\nagentConfiguration: null\n"), "utf8");
 		await expect(loadAgentConfiguration(core, "card", task.id)).rejects.toThrow("must be an object");
 
+		await writeFile(task.filePath as string, content, "utf8");
 		const duplicatePath = join(core.filesystem.completedDir, task.id.toLowerCase(), "task.md");
 		await mkdir(dirname(duplicatePath), { recursive: true });
 		await writeFile(duplicatePath, serializeTask({ ...task, title: "Duplicate" }), "utf8");

@@ -6,7 +6,7 @@ import { basename, dirname, isAbsolute, relative, resolve, sep } from "node:path
 import type { ArtifactApprovalSidecar, ArtifactStatus } from "../agent-workspace/types.ts";
 import { resolveMainWorktreeRoot } from "../git/main-worktree.ts";
 import { parseTask } from "../markdown/parser.ts";
-import { isValidTaskId, taskIdsEqual } from "../utils/task-id.ts";
+import { isValidDraftId, isValidTaskId, taskIdsEqual } from "../utils/task-id.ts";
 
 const SIDECAR = ".artifacts.json";
 const SIDECAR_LOCK = ".artifacts.json.lock";
@@ -110,8 +110,7 @@ export class TaskArtifactRepository {
 
 	private canonicalId(taskId: string): string {
 		const canonical = taskId.toUpperCase();
-		if (!isValidTaskId(canonical) && !/^DRAFT-[A-Z0-9]+$/.test(canonical))
-			throw new Error(`Invalid task ID: ${taskId}`);
+		if (!isValidTaskId(canonical) && !isValidDraftId(canonical)) throw new Error(`Invalid task ID: ${taskId}`);
 		return canonical;
 	}
 

@@ -484,7 +484,7 @@ describe("native shortcut help", () => {
 		}
 	});
 
-	test("keeps legacy string-only help searchable and read-only", async () => {
+	test("keeps string-only help searchable and read-only", async () => {
 		const setup = await createTestRenderer({ width: 100, height: 30, kittyKeyboard: true });
 		renderers.push(setup);
 		const parent = new BoxRenderable(setup.renderer, { width: "100%", height: "100%" });

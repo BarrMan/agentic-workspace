@@ -26,15 +26,10 @@ export function isModeTextColor(value: unknown): value is ModeTextColor {
 	return typeof value === "string" && MODE_TEXT_COLORS.some((color) => color === value);
 }
 
-/** Presentation-only legacy defaults; never mutate or fill the persisted catalog. */
+/** Presentation color from the persisted profile; it never fills a missing value. */
 export function effectiveModeTextColor(
 	profile: Pick<ModeProfile, "name" | "textColor"> | undefined,
-	modeId?: ModeId,
+	_modeId?: ModeId,
 ): ModeTextColor | undefined {
-	if (!profile) return undefined;
-	if (profile.textColor !== undefined) return profile.textColor;
-	const identity = modeId ?? profile.name.toLowerCase();
-	if (identity === "plan") return "green";
-	if (identity === "build") return "blue";
-	return undefined;
+	return profile?.textColor;
 }

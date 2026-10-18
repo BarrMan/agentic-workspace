@@ -87,8 +87,10 @@ esac
 		await writeFile(record.outputPath, "");
 		const store = new SessionStore(root, new BunRunner());
 		await store.mutate(record.taskId, async (state) => {
-			state.sessions.push(record);
-			state.activeSessionId = record.id;
+			const history = state.modes.build ?? { sessions: [] };
+			state.modes.build = history;
+			history.sessions.push(record);
+			history.activeSessionId = record.id;
 		});
 		const core = {
 			filesystem: {

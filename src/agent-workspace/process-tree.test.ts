@@ -61,7 +61,7 @@ describe("owned process primitives", () => {
 		expect(captureOwnedDescendants(root, [], () => undefined)).toBeUndefined();
 	});
 
-	it("normalizes legacy spaced root, parent, captured, and live-owner timestamps", () => {
+	it("normalizes spaced root, parent, captured, and live-owner timestamps", () => {
 		const oldRoot = { ...root, started: legacySpacing(root.started) };
 		const saved = [
 			{ pid: 11, started: legacySpacing(started(11)), uid: 501, parent: { pid: 10, started: oldRoot.started } },

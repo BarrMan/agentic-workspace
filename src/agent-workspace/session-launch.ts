@@ -62,8 +62,8 @@ export interface PrepareAgentLaunchOptions {
 	sessionId?: string;
 	/** Append the provider's verified auto-approval flag so the session does not prompt for permissions. */
 	yolo?: boolean;
-	/** Resolved immutable mode profile. Omit to keep legacy preset behavior. */
-	profile?: ModeProfile;
+	/** Resolved immutable mode profile. */
+	profile: ModeProfile;
 	/** Already-composed prompt for the Harness path; delivered through the provider CLI argument. */
 	prompt?: string;
 	repositoryRoot?: string;
@@ -92,7 +92,7 @@ function warnEnvironment(text: string): void {
 	process.stderr.write(`warning: ${text}\n`);
 }
 
-function removeLegacyEnvironment(environment: Record<string, string>): Record<string, string> {
+function sanitizeLaunchEnvironment(environment: Record<string, string>): Record<string, string> {
 	const clean = { ...environment };
 	for (const name of FORBIDDEN_ENV) delete clean[name];
 	return clean;
@@ -107,7 +107,7 @@ async function launchEnvironment(
 		return await prepareHarnessEnvironment(preset.env, paths, {
 			onWarning: warnEnvironment,
 		});
-	return removeLegacyEnvironment({
+	return sanitizeLaunchEnvironment({
 		...resolved,
 		AGENTIC_WORKSPACE_PROJECT_DIR: paths.projectDir,
 		AGENTIC_WORKSPACE_WORKTREE_DIR: paths.worktreeDir,
@@ -129,8 +129,7 @@ export async function preflightAgentLaunch(
 	preset = await resolveLaunchPreset(preset, { cwd: options.cwd, env: environment });
 	const agent = agentFor(preset.bootstrap);
 	if (!agent) throw new Error(`No agent registered for bootstrap type ${preset.bootstrap}.`);
-	const profiledPreset =
-		options.profile && agent.prepareProfile ? agent.prepareProfile(options.profile, preset) : preset;
+	const profiledPreset = agent.prepareProfile ? agent.prepareProfile(options.profile, preset) : preset;
 	const policyPreset = agent.sanitizeLaunchPreset(profiledPreset);
 	let command = policyPreset.command;
 	if (options.yolo) {
@@ -189,24 +188,18 @@ export async function prepareAgentLaunchResources(
 		await mkdir(skillDirectory, { recursive: true, mode: 0o700 });
 		const skillPath = join(skillDirectory, "SKILL.md");
 		await writeFile(skillPath, AGENTIC_WORKSPACE_TASK_SKILL_FILE, { mode: 0o600 });
-		// The identity profile bootstrap is the launch prompt file. Mode-profile text is appended only
-		// when a profile is supplied, so a launch with the profile suppressed starts identity-only.
-		const baseExists = await Bun.file(bootstrapPath).exists();
-		const effectiveBootstrapPath =
-			options.prompt !== undefined || options.profile || baseExists
-				? join(directory, "profile-bootstrap.md")
-				: bootstrapPath;
+		// The identity profile bootstrap is the launch prompt file; the mode profile is always
+		// appended unless a fully composed prompt is supplied.
+		const effectiveBootstrapPath = join(directory, "profile-bootstrap.md");
 		if (options.prompt !== undefined) {
 			await writeFile(effectiveBootstrapPath, options.prompt, { mode: 0o600 });
-		} else if (options.profile) {
-			const base = await Bun.file(bootstrapPath).text();
+		} else {
+			const base = (await Bun.file(bootstrapPath).exists()) ? await Bun.file(bootstrapPath).text() : "";
 			await writeFile(
 				effectiveBootstrapPath,
 				`${base}\n\n${profileInstructions(options.profile, projectDir, taskDir)}\n`,
 				{ mode: 0o600 },
 			);
-		} else if (baseExists) {
-			await writeFile(effectiveBootstrapPath, await Bun.file(bootstrapPath).text(), { mode: 0o600 });
 		}
 		const env = { ...environment };
 		if (requestedEnvironment) {
@@ -236,7 +229,7 @@ export async function prepareAgentLaunchResources(
 			title: options.title,
 			preflightResult: adapterResult,
 		});
-		const preparedEnvironment = removeLegacyEnvironment({
+		const preparedEnvironment = sanitizeLaunchEnvironment({
 			...prepared.env,
 			AGENTIC_WORKSPACE_PROJECT_DIR: projectDir,
 			AGENTIC_WORKSPACE_WORKTREE_DIR: options.cwd,
@@ -267,7 +260,7 @@ export async function prepareAgentAsk(
 	configuredPreset: AgentPreset,
 	nativeSessionId: string,
 	question: string,
-	profile: ModeProfile | undefined,
+	profile: ModeProfile,
 	roots: { repositoryRoot: string; taskRoot: string; cwd?: string },
 ): Promise<{ command: string; env: Record<string, string>; cleanup(): Promise<void> }> {
 	const worktreeDir = roots.cwd ?? roots.repositoryRoot;
@@ -289,11 +282,8 @@ export async function prepareAgentAsk(
 	const directory = await mkdtemp(join(tmpdir(), "agentic-workspace-agent-ask-"));
 	const cleanup = () => rm(directory, { recursive: true, force: true });
 	try {
-		const effective =
-			profile && agent.prepareProfile ? agent.prepareProfile(profile, preflight.preset) : preflight.preset;
-		const contextualQuestion = profile
-			? `${profileInstructions(profile, roots.repositoryRoot, roots.taskRoot)}\n\nUser request:\n${question}`
-			: question;
+		const effective = agent.prepareProfile ? agent.prepareProfile(profile, preflight.preset) : preflight.preset;
+		const contextualQuestion = `${profileInstructions(profile, roots.repositoryRoot, roots.taskRoot)}\n\nUser request:\n${question}`;
 		const prepared = agent.prepareBeforeAsk
 			? await (async () => {
 					const skillRoot = join(directory, "skills");
@@ -324,7 +314,7 @@ export async function prepareAgentAsk(
 		});
 		return {
 			command: `/bin/sh -c ${quote(`unset ${FORBIDDEN_ENV.join(" ")}; exec ${command}`)}`,
-			env: removeLegacyEnvironment({
+			env: sanitizeLaunchEnvironment({
 				...prepared.env,
 				AGENTIC_WORKSPACE_PROJECT_DIR: roots.repositoryRoot,
 				AGENTIC_WORKSPACE_WORKTREE_DIR: worktreeDir,

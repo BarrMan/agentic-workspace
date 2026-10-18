@@ -173,6 +173,8 @@ describe("session preparation mechanics", () => {
 			events.push("cleanup");
 		};
 		let settled = false;
+		const resumePreset = { command: "pi", env: {}, prepare: "", bootstrap: "pi" as const };
+		const { profile: resumeProfile } = await profileFor(core, "build", resumePreset);
 		const result = await resumeExistingTarget(
 			core,
 			store,
@@ -180,7 +182,8 @@ describe("session preparation mechanics", () => {
 			task,
 			{
 				record,
-				preset: { command: "pi", env: {}, prepare: "", bootstrap: "pi" },
+				preset: resumePreset,
+				profile: resumeProfile,
 				receipt: undefined,
 				environment: {},
 				settings: { yoloMode: false, worktreePerTask: false },

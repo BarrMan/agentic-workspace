@@ -137,31 +137,19 @@ describe("SessionStore mode persistence contract", () => {
 		}
 	});
 
-	it("keeps flat and nested build projections consistent when the flat pointer is malformed", async () => {
+	it("rejects a v2 record that only has the removed flat history", async () => {
 		const { store, statePath } = await fixture();
 		const selected = session("selected");
 		await mkdir(join(statePath, ".."), { recursive: true });
-		await writeFile(
-			statePath,
-			JSON.stringify({
-				version: 2,
-				taskId: "TASK-23",
-				sessions: [selected],
-				activeSessionId: 42,
-				modes: { build: { sessions: [selected], activeSessionId: selected.id } },
-			}),
-		);
-		expect((await store.read("TASK-23")).activeSessionId).toBe(selected.id);
-		await store.mutate("TASK-23", async (state) => {
-			const current = state.sessions[0];
-			if (!current) throw new Error("missing flat compatibility session");
-			current.lastUsedAt = "now";
-		});
-		const persisted = JSON.parse(await readFile(statePath, "utf8"));
-		expect(persisted.modes.build).toMatchObject({
+		const bytes = JSON.stringify({
+			version: 2,
+			taskId: "TASK-23",
+			sessions: [selected],
 			activeSessionId: selected.id,
-			sessions: [{ id: selected.id, lastUsedAt: "now" }],
 		});
+		await writeFile(statePath, bytes);
+		await expect(store.read("TASK-23")).rejects.toThrow(/invalid session data/i);
+		expect(await readFile(statePath, "utf8")).toBe(bytes);
 	});
 
 	it("rejects obsolete session records without writing during read", async () => {
@@ -274,21 +262,25 @@ describe("SessionStore mode persistence contract", () => {
 	it("rejects v1 state without rewriting it or allowing writes", async () => {
 		const { store, statePath } = await fixture();
 		await mkdir(join(statePath, ".."), { recursive: true });
-		const legacy = {
+		const unsupported = {
 			version: 1,
 			taskId: "TASK-23",
-			activeSessionId: "legacy-id",
-			sessions: [session("legacy-id", { nativeSessionId: "native-legacy" })],
+			activeSessionId: "old-id",
+			sessions: [session("old-id", { nativeSessionId: "native-old" })],
 		};
-		const bytes = `${JSON.stringify(legacy, null, 2)}\n`;
+		const bytes = `${JSON.stringify(unsupported, null, 2)}\n`;
 		await writeFile(statePath, bytes);
 		await expect(store.readMode("TASK-23", "build")).rejects.toThrow(/unsupported format version 1/i);
 
 		const ordinaryWrites = [
-			() => store.mutate("TASK-23", async (state) => state.sessions.push(session("flat-write"))),
+			() =>
+				store.mutate("TASK-23", async (state) => {
+					state.modes.plan ??= { sessions: [] };
+					state.modes.plan.sessions.push(session("plan-write"));
+				}),
 			() => store.mutateMode("TASK-23", "plan", async (history) => history.sessions.push(session("mode-write"))),
 			() =>
-				store.mutateSession("TASK-23", "legacy-id", async (record) => {
+				store.mutateSession("TASK-23", "old-id", async (record) => {
 					record.status = "parked";
 				}),
 		];

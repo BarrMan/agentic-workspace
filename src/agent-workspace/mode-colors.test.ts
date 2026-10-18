@@ -30,14 +30,10 @@ describe("mode text colors", () => {
 		expect(getBuiltInAgentConfiguration().modes).toBeUndefined();
 	});
 
-	test("legacy presentation defaults use stable identity without mutating profiles or resurrecting missing modes", () => {
+	test("presentation colors come only from the profile", () => {
 		const profile = { name: "RENAMED" };
-		expect(effectiveModeTextColor(profile, "plan")).toBe("green");
-		expect(effectiveModeTextColor(profile, "build")).toBe("blue");
-		expect(effectiveModeTextColor(profile, "custom")).toBeUndefined();
-		expect(effectiveModeTextColor({ name: "PLAN" })).toBe("green");
-		expect(effectiveModeTextColor({ name: "BUILD" })).toBe("blue");
-		expect(effectiveModeTextColor({ name: "PLAN" }, "custom")).toBeUndefined();
+		expect(effectiveModeTextColor(profile, "plan")).toBeUndefined();
+		expect(effectiveModeTextColor({ name: "PLAN" }, "build")).toBeUndefined();
 		expect(effectiveModeTextColor(undefined, "plan")).toBeUndefined();
 		expect(effectiveModeTextColor({ name: "PLAN", textColor: "brightgreen" }, "plan")).toBe("brightgreen");
 		expect(profile).toEqual({ name: "RENAMED" });

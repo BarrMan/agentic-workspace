@@ -65,7 +65,7 @@ describe("shared workspace context", () => {
 		).toEqual(JSON.parse(withConversation));
 	});
 
-	it("rejects mismatched roots, malformed pane IDs, and private/legacy PID protocols", async () => {
+	it("rejects mismatched roots, malformed pane IDs, and private PID protocols", async () => {
 		await expect(
 			readWorkspaceContext({
 				env: { [WORKSPACE_CONTEXT_ENV]: serializeWorkspaceContext(base) },

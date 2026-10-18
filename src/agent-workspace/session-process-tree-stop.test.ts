@@ -167,7 +167,7 @@ describe("SessionProcess tmux instance lifecycle", () => {
 		expect(wrongRetired.events).toEqual([]);
 	});
 
-	it("demotes a verified live pane idempotently and refuses legacy or foreign tags", async () => {
+	it("demotes a verified live pane idempotently and refuses non-live or foreign tags", async () => {
 		const live = await fixture();
 		const writes: string[] = [];
 		live.pane.setOption = async (name: string, value: string) => {

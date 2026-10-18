@@ -44,7 +44,7 @@ The root is the configured workspace-owned task-data location: `.agentic-workspa
 
 ### Formats
 
-**Task records:** UTF-8 Markdown with YAML frontmatter delimited by `---`. `task_schema_version` is `3`; `id` matches the lowercase container directory. The Markdown body is opaque content owned by the task record. Flat `<name>.md` task files and mismatched directory/frontmatter identities are unsupported and fail closed with a conversion message.
+**Task records:** UTF-8 Markdown with YAML frontmatter delimited by `---`. `task_schema_version` is `3`; `id` matches the lowercase container directory. The Markdown body is opaque content owned by the task record. Mismatched directory/frontmatter identities fail closed.
 
 **Artifacts:** Files under `artifacts/`; approval metadata lives in `.artifacts.json` version 1, keyed by artifact path with SHA-256 hashes. Artifact paths resolve inside the directory, including through symlinks.
 
@@ -58,7 +58,7 @@ The root is the configured workspace-owned task-data location: `.agentic-workspa
 
 ### Embedded database
 
-Rejected: adds a binary dependency and migration surface for records that must stay human-editable, diffable, and usable without a running server.
+Rejected: adds a binary dependency for records that must stay human-editable, diffable, and usable without a running server.
 
 ### One JSON document for all workspace data
 
@@ -67,10 +67,6 @@ Rejected: all-or-nothing writes, large merge conflicts, and no readable task pro
 ### YAML-only task records
 
 Rejected: task content needs a Markdown body. YAML frontmatter plus Markdown body keeps metadata structured and prose readable.
-
-### Flat task files
-
-Rejected: each task needs a container for `artifacts/`, and container identity must agree with frontmatter identity.
 
 ### Provider-owned storage
 
@@ -91,7 +87,7 @@ The filesystem keeps workspace data inspectable, versionable, and portable. Mark
 **Trade-offs**
 - Storage must implement path resolution, locking, atomic writes, and format version checks.
 - Cross-record transactions are unavailable; operations sequence per-record writes and report partial effects.
-- Format migrations must preserve unknown frontmatter and fail explicitly on unsupported versions.
+- Format version checks must preserve unknown frontmatter and fail explicitly on unsupported versions.
 - Relocation is a filesystem move, not a database backup/restore.
 
 ## References

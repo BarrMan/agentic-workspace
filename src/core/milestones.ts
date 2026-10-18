@@ -2,6 +2,14 @@ import type { Milestone, MilestoneBucket, Task } from "../types/index.ts";
 
 const NO_MILESTONE_KEY = "__none";
 
+export function parseMilestoneId(value: string): string | null {
+	return /^(?:m-)?(\d+)$/i.exec(value)?.[1] ?? null;
+}
+
+export function isMilestoneId(value: string): boolean {
+	return parseMilestoneId(value) !== null;
+}
+
 /**
  * Normalize a milestone name/ID by trimming whitespace
  */
@@ -22,9 +30,9 @@ export function collectMilestoneAliasKeys(value: string): Set<string> {
 	const key = milestoneKey(normalized);
 	if (!key) return new Set();
 	const keys = new Set([key]);
-	const match = normalized.match(/^(?:m-)?(\d+)$/i);
-	if (match?.[1]) {
-		const numeric = String(Number.parseInt(match[1], 10));
+	const numericPart = parseMilestoneId(normalized);
+	if (numericPart) {
+		const numeric = String(Number.parseInt(numericPart, 10));
 		keys.add(numeric);
 		keys.add(`m-${numeric}`);
 	}
@@ -32,8 +40,8 @@ export function collectMilestoneAliasKeys(value: string): Set<string> {
 }
 
 export function canonicalMilestoneId(value: string): string | null {
-	const match = normalizeMilestoneName(value).match(/^(?:m-)?(\d+)$/i);
-	return match?.[1] ? `m-${String(Number.parseInt(match[1], 10))}` : null;
+	const numericPart = parseMilestoneId(normalizeMilestoneName(value));
+	return numericPart ? `m-${String(Number.parseInt(numericPart, 10))}` : null;
 }
 
 function setMilestoneAlias(
@@ -48,7 +56,8 @@ function setMilestoneAlias(
 		return;
 	}
 	if (!allowOverwrite) return;
-	const preferredRawId = /^\d+$/.test(aliasKey) ? `m-${aliasKey}` : /^m-\d+$/.test(aliasKey) ? aliasKey : null;
+	const numericPart = parseMilestoneId(aliasKey);
+	const preferredRawId = numericPart ? (aliasKey.toLowerCase().startsWith("m-") ? aliasKey : `m-${aliasKey}`) : null;
 	if (!preferredRawId) {
 		aliasMap.set(aliasKey, normalizedId);
 		return;
@@ -212,7 +221,7 @@ export function resolveMilestoneAliasToId(
 	if (!normalized) return undefined;
 	const exactId = milestones.find((milestone) => milestoneKey(milestone.id) === milestoneKey(normalized));
 	if (exactId) return exactId;
-	if (!/^(?:m-)?\d+$/i.test(normalized)) return undefined;
+	if (!isMilestoneId(normalized)) return undefined;
 	const canonicalId = canonicalizeMilestone(normalized, buildMilestoneIdAliasMap(milestones, archivedMilestones));
 	return milestones.find((milestone) => milestoneKey(milestone.id) === milestoneKey(canonicalId));
 }

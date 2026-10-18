@@ -172,22 +172,22 @@ describe("pinned project state root", () => {
 		}
 	});
 
-	it("rejects a registered legacy worktree store without needing ambient cwd", async () => {
+	it("rejects a registered older worktree store without needing ambient cwd", async () => {
 		const execution = await worktree();
-		const legacy = join(execution, ".agentic-workspace", "task-1");
-		await mkdir(legacy, { recursive: true });
-		await writeFile(join(legacy, "state.json"), "historical bytes");
+		const old = join(execution, ".agentic-workspace", "task-1");
+		await mkdir(old, { recursive: true });
+		await writeFile(join(old, "state.json"), "historical bytes");
 		const store = new SessionStore(root, runner);
 		await expect(store.mutateMode("TASK-1", "build", async () => undefined)).rejects.toThrow("Ambiguous agent state");
-		expect(await readFile(join(legacy, "state.json"), "utf8")).toBe("historical bytes");
+		expect(await readFile(join(old, "state.json"), "utf8")).toBe("historical bytes");
 		expect(await readdir(root)).not.toContain(".agentic-workspace");
 	});
 
-	it("rejects legacy external claims and a conflicting explicit root", async () => {
+	it("rejects older external claims and a conflicting explicit root", async () => {
 		const execution = await worktree();
-		const legacy = join(external(execution, home), "task-1");
-		await mkdir(legacy, { recursive: true });
-		await writeFile(join(legacy, "owner.claim"), "");
+		const old = join(external(execution, home), "task-1");
+		await mkdir(old, { recursive: true });
+		await writeFile(join(old, "owner.claim"), "");
 		await expect(resolveProjectStateRoot(root)).rejects.toThrow("Ambiguous agent state");
 		await expect(resolveProjectStateRoot(root, { stateRoot: join(sandbox, "unrelated") })).rejects.toThrow(
 			"Invalid agent state root",
@@ -220,20 +220,20 @@ describe("pinned project state root", () => {
 		expect(await readdir(root)).toEqual([]);
 	});
 
-	it("rejects linked legacy task containers and dangling container links without writes", async () => {
+	it("rejects linked older task containers and dangling container links without writes", async () => {
 		const execution = await worktree();
 		const target = join(sandbox, "task-container");
-		const legacy = join(execution, ".agentic-workspace");
+		const old = join(execution, ".agentic-workspace");
 		await mkdir(target);
 		await writeFile(join(target, "state.json"), "preserve");
-		await mkdir(legacy);
-		await symlink(target, join(legacy, "task-1"), "dir");
+		await mkdir(old);
+		await symlink(target, join(old, "task-1"), "dir");
 		await expect(new SessionStore(root, runner).claimSession("TASK-1", "session-1")).rejects.toThrow(
 			"Ambiguous agent state",
 		);
 		expect(await readFile(join(target, "state.json"), "utf8")).toBe("preserve");
-		await rm(join(legacy, "task-1"));
-		await symlink(join(sandbox, "missing"), join(legacy, "task-1"), "dir");
+		await rm(join(old, "task-1"));
+		await symlink(join(sandbox, "missing"), join(old, "task-1"), "dir");
 		await expect(resolveProjectStateRoot(root)).rejects.toThrow("Cannot inspect agent state");
 		expect(await readdir(root)).not.toContain(".agentic-workspace");
 	});
@@ -269,23 +269,23 @@ describe("pinned project state root", () => {
 	])("preserves registered worktree path bytes and refuses its old store (%s)", async (name) => {
 		const execution = await worktree(name);
 		expect(await new GitOperations(root).listWorktreePaths()).toContain(execution);
-		const legacy = join(execution, ".agentic-workspace", "task-1");
-		await mkdir(legacy, { recursive: true });
-		await writeFile(join(legacy, "state.json"), "preserve");
+		const old = join(execution, ".agentic-workspace", "task-1");
+		await mkdir(old, { recursive: true });
+		await writeFile(join(old, "state.json"), "preserve");
 		await expect(resolveProjectStateRoot(root)).rejects.toThrow("Ambiguous agent state");
-		expect(await readFile(join(legacy, "state.json"), "utf8")).toBe("preserve");
+		expect(await readFile(join(old, "state.json"), "utf8")).toBe("preserve");
 		expect(await readdir(root)).not.toContain(".agentic-workspace");
 	});
 
 	it("allows ..cache as a descendant name when checking old execution stores", async () => {
 		await worktree();
 		const execution = join(root, "..cache");
-		const legacy = join(execution, ".agentic-workspace", "task-1");
-		await mkdir(legacy, { recursive: true });
-		await writeFile(join(legacy, "state.json"), "preserve");
+		const old = join(execution, ".agentic-workspace", "task-1");
+		await mkdir(old, { recursive: true });
+		await writeFile(join(old, "state.json"), "preserve");
 		process.env.AGENTIC_WORKSPACE_CWD = execution;
 		await expect(resolveProjectStateRoot(root)).rejects.toThrow("Ambiguous agent state");
-		expect(await readFile(join(legacy, "state.json"), "utf8")).toBe("preserve");
+		expect(await readFile(join(old, "state.json"), "utf8")).toBe("preserve");
 		expect(await readdir(root)).not.toContain(".agentic-workspace");
 	});
 
@@ -301,18 +301,18 @@ describe("pinned project state root", () => {
 		expect(await readFile(join(saved, "view-state.json"), "utf8")).toBe("preserve");
 	});
 
-	it("checks inherited storage base for legacy claims after HOME changes", async () => {
+	it("checks inherited storage base for older claims after HOME changes", async () => {
 		const execution = await worktree();
 		const saved = external(root, home);
-		const legacy = join(external(execution, home), "task-1");
+		const old = join(external(execution, home), "task-1");
 		await mkdir(saved, { recursive: true });
 		await writeFile(join(saved, "view-state.json"), "preserve");
-		await mkdir(legacy, { recursive: true });
-		await writeFile(join(legacy, "owner.claim"), "preserve claim");
+		await mkdir(old, { recursive: true });
+		await writeFile(join(old, "owner.claim"), "preserve claim");
 		process.env.HOME = join(sandbox, "new-home");
 		const store = new SessionStore(root, runner, undefined, { stateRoot: saved });
 		await expect(store.claimSession("TASK-1", "session-1")).rejects.toThrow("Ambiguous agent state");
-		expect(await readFile(join(legacy, "owner.claim"), "utf8")).toBe("preserve claim");
+		expect(await readFile(join(old, "owner.claim"), "utf8")).toBe("preserve claim");
 		expect(await readFile(join(saved, "view-state.json"), "utf8")).toBe("preserve");
 		expect(existsSync(process.env.HOME)).toBe(false);
 		expect(await readdir(root)).not.toContain(".agentic-workspace");
@@ -349,13 +349,13 @@ describe("pinned project state root", () => {
 		expect(await readdir(root)).toEqual([]);
 	});
 
-	it("retains canonical locking for writable-project external state clients", async () => {
+	it("uses only the external lock for writable-project external state clients", async () => {
 		const saved = external(root, home);
 		const view = await openViewStateStore(root, () => ({ count: 0 }), { stateRoot: saved });
 		try {
 			await view.update(() => {
-				expect(statSync(join(root, "agentic-workspace", ".locks", "workspace-view-state")).isDirectory()).toBe(true);
 				expect(statSync(join(saved, "workspace-view-state.lock")).isDirectory()).toBe(true);
+				expect(existsSync(join(root, "agentic-workspace", ".locks", "workspace-view-state"))).toBe(false);
 				return { count: 1 };
 			});
 		} finally {
@@ -363,14 +363,13 @@ describe("pinned project state root", () => {
 		}
 	});
 
-	it("retains an existing usable canonical namespace even with a read-only project root", async () => {
+	it("ignores an existing canonical namespace for external state clients", async () => {
 		await mkdir(join(root, "agentic-workspace", ".locks"), { recursive: true });
 		await chmod(root, 0o500);
 		const saved = external(root, home);
-		const view = await openViewStateStore(root, () => ({ count: 0 }));
+		const view = await openViewStateStore(root, () => ({ count: 0 }), { stateRoot: saved });
 		try {
 			await view.update(() => {
-				expect(statSync(join(root, "agentic-workspace", ".locks", "workspace-view-state")).isDirectory()).toBe(true);
 				expect(statSync(join(saved, "workspace-view-state.lock")).isDirectory()).toBe(true);
 				return { count: 1 };
 			});
@@ -379,28 +378,27 @@ describe("pinned project state root", () => {
 		}
 	});
 
-	it("does not switch namespaces for an unusable canonical lock directory in a writable project", async () => {
+	it("ignores an unusable canonical lock directory for external state clients", async () => {
 		const locks = join(root, "agentic-workspace", ".locks");
 		await mkdir(locks, { recursive: true });
 		await chmod(locks, 0o500);
+		const saved = external(root, home);
+		const view = await openViewStateStore(root, () => ({ count: 0 }), { stateRoot: saved });
 		try {
-			await expect(openViewStateStore(root, () => ({}), { stateRoot: external(root, home) })).rejects.toThrow(
-				"refusing a different lock namespace",
-			);
-			expect(existsSync(join(external(root, home), "view-state.json"))).toBe(false);
-			expect(existsSync(join(external(root, home), "workspace-view-state.lock"))).toBe(false);
+			await view.update(() => ({ count: 1 }));
+			expect(existsSync(join(saved, "view-state.json"))).toBe(true);
 		} finally {
+			view.close();
 			await chmod(locks, 0o700);
 		}
 	});
 
-	it("does not interpret an unreadable canonical lock directory as read-only", async () => {
+	it("rejects an unreadable canonical lock directory for canonical state clients", async () => {
 		const locks = join(root, "agentic-workspace", ".locks");
 		await mkdir(locks, { recursive: true });
 		await chmod(locks, 0o000);
-		await chmod(root, 0o500);
 		try {
-			await expect(openViewStateStore(root, () => ({}))).rejects.toThrow();
+			await expect(openViewStateStore(root, () => ({ count: 0 }))).rejects.toThrow();
 			expect(existsSync(join(external(root, home), "view-state.json"))).toBe(false);
 			expect(existsSync(join(external(root, home), "workspace-view-state.lock"))).toBe(false);
 		} finally {

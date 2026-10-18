@@ -36,7 +36,7 @@ export const taskTypeScenarioTasks: readonly Task[] = [
 	},
 	{
 		id: "TASK-4",
-		title: "Shared legacy task",
+		title: "Shared filter task",
 		status: "To Do",
 		labels: [],
 		assignee: [],

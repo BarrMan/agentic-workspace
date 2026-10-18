@@ -58,7 +58,7 @@ function fixture(records: Map<string, string>) {
 }
 
 describe("current-only Git task snapshots", () => {
-	it("never reads flat records or artifacts, even when they contain current task frontmatter", async () => {
+	it("reads only canonical task containers, never artifacts or malformed paths", async () => {
 		const path = "agentic-workspace/tasks/task-1/task.md";
 		const uppercaseContainer = "agentic-workspace/tasks/TASK-2/task.md";
 		const ignored = [

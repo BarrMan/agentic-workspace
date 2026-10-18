@@ -203,7 +203,7 @@ export interface Decision {
 	id: string;
 	title: string;
 	date: string;
-	status: "proposed" | "accepted" | "rejected" | "superseded";
+	status: string;
 	context: string;
 	decision: string;
 	consequences: string;
@@ -220,7 +220,7 @@ export interface Milestone {
 	readonly rawContent: string; // Raw markdown content without frontmatter
 }
 
-export const DOCUMENT_TYPE_VALUES = ["readme", "guide", "specification", "other"] as const;
+export const DOCUMENT_TYPE_VALUES = ["guide", "reference", "design", "other"] as const;
 export type DocumentType = (typeof DOCUMENT_TYPE_VALUES)[number];
 
 export interface Document {

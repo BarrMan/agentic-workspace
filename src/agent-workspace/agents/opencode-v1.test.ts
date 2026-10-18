@@ -3,7 +3,11 @@ import { chmod, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
+import { getDefaultModeCatalog } from "../config.ts";
 import { OpencodeV1Agent } from "./opencode-v1.ts";
+
+const profile = getDefaultModeCatalog().profiles.build;
+if (!profile) throw new Error("Missing default build mode profile.");
 
 describe("OpenCode 1.19 TUI adapter", () => {
 	it("launches with --prompt and records its created native session in the task root", async () => {
@@ -199,6 +203,7 @@ describe("OpenCode 1.19 TUI adapter", () => {
 				sessionId: "agentic-workspace-1",
 				env: {},
 				intent: { kind: "new" as const },
+				profile,
 			};
 			await agent.preflightLaunch({
 				preset: request.preset,
@@ -206,6 +211,7 @@ describe("OpenCode 1.19 TUI adapter", () => {
 				bootstrapPath: request.bootstrapPath,
 				env: request.env,
 				resume: false,
+				profile,
 			});
 			await expect(
 				agent.preflightLaunch({
@@ -214,6 +220,7 @@ describe("OpenCode 1.19 TUI adapter", () => {
 					bootstrapPath: request.bootstrapPath,
 					env: { OPENCODE_CONFIG_CONTENT: "[]" },
 					resume: false,
+					profile,
 				}),
 			).rejects.toThrow("must contain a configuration object");
 			await expect(agent.prepare(request)).resolves.toMatchObject({
@@ -227,6 +234,7 @@ describe("OpenCode 1.19 TUI adapter", () => {
 				bootstrapPath: request.bootstrapPath,
 				env: request.env,
 				resume: false,
+				profile,
 			});
 
 			await writeFile(executable, "#!/bin/sh\necho 2.0.0\n");
@@ -237,6 +245,7 @@ describe("OpenCode 1.19 TUI adapter", () => {
 					bootstrapPath: request.bootstrapPath,
 					env: request.env,
 					resume: false,
+					profile,
 				}),
 			).rejects.toThrow("requires an OpenCode v1 binary");
 		} finally {

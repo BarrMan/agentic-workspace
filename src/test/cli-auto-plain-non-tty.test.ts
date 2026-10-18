@@ -112,7 +112,7 @@ describe("CLI auto-plain behavior in non-TTY runs", () => {
 		expect(out).not.toContain("\x1b");
 	});
 
-	test("task create preserves legacy concise output without --plain", async () => {
+	test("task create preserves concise output without --plain", async () => {
 		const result = await $`${CLI_COMMAND} task create "Second Task"`.cwd(TEST_DIR).quiet();
 		expect(result.exitCode).toBe(0);
 

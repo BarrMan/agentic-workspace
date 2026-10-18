@@ -405,10 +405,10 @@ describe("Core", () => {
 				"Completed branch identity",
 			]);
 			core.git.listRecentBranches = async () => {
-				throw new Error("Statistics must not use the legacy local-branch loader");
+				throw new Error("Statistics must not use the retired local-branch loader");
 			};
 			core.git.listRecentRemoteBranches = async () => {
-				throw new Error("Statistics must not use the legacy remote-branch loader");
+				throw new Error("Statistics must not use the retired remote-branch loader");
 			};
 			const statistics = (await core.loadAllTasksForStatistics()).tasks;
 			expect(statistics.map((task) => task.title).sort()).toEqual([
@@ -599,11 +599,11 @@ describe("Core", () => {
 			expect(task?.source).toBe("local");
 		});
 
-		it("rejects legacy alphanumeric task IDs", async () => {
+		it("rejects unsupported alphanumeric task IDs", async () => {
 			await mkdir(join(core.filesystem.tasksDir, "task-prefixed"), { recursive: true });
 			await Bun.write(
 				join(core.filesystem.tasksDir, "task-prefixed", "task.md"),
-				serializeTask({ ...sampleTask, id: "TASK-PREFIXED", title: "Legacy task" }),
+				serializeTask({ ...sampleTask, id: "TASK-PREFIXED", title: "Historical task" }),
 			);
 
 			expect(await core.getTask("task-prefixed")).toBeNull();
@@ -685,14 +685,14 @@ describe("Core", () => {
 			expect(task.ordinal).toBe(4000);
 		});
 
-		it("preserves legacy no-ordinal ordering when no existing tasks have ordinals", async () => {
+		it("preserves no-ordinal ordering when no existing tasks have ordinals", async () => {
 			await core.createTask({
 				...sampleTask,
 				id: "task-20",
-				title: "Legacy no ordinal seed",
+				title: "Historical no ordinal seed",
 			});
 
-			const { task } = await core.createTaskFromInput({ title: "Legacy appended task" });
+			const { task } = await core.createTaskFromInput({ title: "Historical appended task" });
 			expect(task.ordinal).toBeUndefined();
 
 			const loadedTask = await core.filesystem.loadTask(task.id);

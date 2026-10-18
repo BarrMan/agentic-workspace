@@ -72,7 +72,7 @@ describe("milestone filter matching", () => {
 	it("prefers canonical IDs over zero-padded aliases", () => {
 		const resolveMilestone = createMilestoneFilterValueResolver([
 			{ id: "m-1", title: "Canonical", description: "", rawContent: "" },
-			{ id: "m-01", title: "Legacy", description: "", rawContent: "" },
+			{ id: "m-01", title: "Historical", description: "", rawContent: "" },
 		]);
 		const values = ["m-1", "m-01"];
 

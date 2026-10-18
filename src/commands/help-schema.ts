@@ -2,7 +2,8 @@ import { readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import type { Command } from "commander";
 import { DEFAULT_STATUSES, DRAFT_STATUS } from "../constants/index.ts";
-import { decodeConfigYaml } from "../file-system/config.ts";
+import { parseConfig } from "../file-system/config.ts";
+import type { AgenticWorkspaceConfig } from "../types/index.ts";
 import { resolveAgenticWorkspaceDirectory } from "../utils/agentic-workspace-directory.ts";
 import { getPriorityLabels } from "../utils/priority-config.ts";
 import { getProjectValues } from "../utils/project-config.ts";
@@ -81,35 +82,12 @@ export function addHelpSchema(command: Command, schema: HelpSchema): Command {
 	return command.addHelpText("after", () => renderHelpSchema(schema));
 }
 
-function parseArrayFromConfig(content: string, keyName: string): string[] | null {
-	const decoded = decodeConfigYaml(content, keyName);
-	return "value" in decoded && Array.isArray(decoded.value)
-		? decoded.value.filter((value): value is string => typeof value === "string")
-		: null;
-}
-
-function parseStatusesFromConfig(content: string): string[] | null {
-	return parseArrayFromConfig(content, "statuses");
-}
-
-function parsePrioritiesFromConfig(content: string): string[] | null {
-	return parseArrayFromConfig(content, "priorities");
-}
-
-function parseTaskTypesFromConfig(content: string): string[] | null {
-	return parseArrayFromConfig(content, "types");
-}
-
-function parseProjectsFromConfig(content: string): string[] | null {
-	return parseArrayFromConfig(content, "projects");
-}
-
-function parseStringValueFromConfig(content: string, keys: string[]): string | null {
-	for (const key of keys) {
-		const decoded = decodeConfigYaml(content, key);
-		if ("value" in decoded && typeof decoded.value === "string") return decoded.value.trim() || null;
+function readConfig(configPath: string): AgenticWorkspaceConfig | null {
+	try {
+		return parseConfig(readFileSync(configPath, "utf8"), configPath);
+	} catch {
+		return null;
 	}
-	return null;
 }
 
 function findAgenticWorkspaceConfigPathSync(startDir: string): string | null {
@@ -142,16 +120,8 @@ function normalizeStatusValues(statuses: string[]): string[] {
 function getCliStatusValues(options?: { includeDraft?: boolean }): string[] {
 	let configuredStatuses: string[] = [...DEFAULT_STATUSES];
 	const configPath = findAgenticWorkspaceConfigPathSync(getRuntimeConfigStartDir());
-	if (configPath) {
-		try {
-			const parsed = parseStatusesFromConfig(readFileSync(configPath, "utf8"));
-			if (parsed && parsed.length > 0) {
-				configuredStatuses = parsed;
-			}
-		} catch {
-			configuredStatuses = [...DEFAULT_STATUSES];
-		}
-	}
+	const config = configPath ? readConfig(configPath) : null;
+	if (config && config.statuses.length > 0) configuredStatuses = config.statuses;
 
 	const normalizedStatuses = normalizeStatusValues(configuredStatuses);
 	return options?.includeDraft ? includeDraftStatus(normalizedStatuses) : normalizedStatuses;
@@ -159,55 +129,26 @@ function getCliStatusValues(options?: { includeDraft?: boolean }): string[] {
 
 function getCliPriorityValues(): string[] {
 	const configPath = findAgenticWorkspaceConfigPathSync(getRuntimeConfigStartDir());
-	if (configPath) {
-		try {
-			const parsed = parsePrioritiesFromConfig(readFileSync(configPath, "utf8"));
-			if (parsed && parsed.length > 0) {
-				return getPriorityLabels(parsed);
-			}
-		} catch {
-			return getPriorityLabels();
-		}
-	}
-	return getPriorityLabels();
+	const config = configPath ? readConfig(configPath) : null;
+	return getPriorityLabels(config?.priorities);
 }
 
 export function getCliTaskTypeValues(): string[] {
 	const configPath = findAgenticWorkspaceConfigPathSync(getRuntimeConfigStartDir());
-	if (configPath) {
-		try {
-			const parsed = parseTaskTypesFromConfig(readFileSync(configPath, "utf8"));
-			return getTaskTypeValues(parsed);
-		} catch {
-			return getTaskTypeValues();
-		}
-	}
-	return getTaskTypeValues();
+	const config = configPath ? readConfig(configPath) : null;
+	return getTaskTypeValues(config?.types);
 }
 
 function getCliProjectValues(): string[] {
 	const configPath = findAgenticWorkspaceConfigPathSync(getRuntimeConfigStartDir());
-	if (configPath) {
-		try {
-			const parsed = parseProjectsFromConfig(readFileSync(configPath, "utf8"));
-			return getProjectValues(parsed ?? []);
-		} catch {
-			return [];
-		}
-	}
-	return [];
+	const config = configPath ? readConfig(configPath) : null;
+	return getProjectValues(config?.projects ?? []);
 }
 
 function getCliTaskPrefix(): string {
 	const configPath = findAgenticWorkspaceConfigPathSync(getRuntimeConfigStartDir());
-	if (configPath) {
-		try {
-			return parseStringValueFromConfig(readFileSync(configPath, "utf8"), ["task_prefix", "taskPrefix"]) ?? "task";
-		} catch {
-			return "task";
-		}
-	}
-	return "task";
+	const config = configPath ? readConfig(configPath) : null;
+	return config?.prefixes?.task ?? "task";
 }
 
 function taskIdExample(body: string): string {

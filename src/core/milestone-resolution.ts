@@ -1,5 +1,11 @@
 import type { Milestone } from "../types/index.ts";
-import { collectMilestoneAliasKeys, milestoneKey, normalizeMilestoneName } from "./milestones.ts";
+import {
+	collectMilestoneAliasKeys,
+	isMilestoneId,
+	milestoneKey,
+	normalizeMilestoneName,
+	parseMilestoneId,
+} from "./milestones.ts";
 
 function lookupKeys(value: string): string[] {
 	return [...collectMilestoneAliasKeys(value)];
@@ -13,9 +19,9 @@ function findMatchingId(value: string, milestones: Milestone[]): Milestone | und
 	const normalized = normalizeMilestoneName(value);
 	const exact = milestones.find((milestone) => milestoneKey(milestone.id) === milestoneKey(normalized));
 	if (exact) return exact;
-	const match = normalized.match(/^(?:m-)?(\d+)$/i);
-	if (match?.[1]) {
-		const canonical = `m-${String(Number.parseInt(match[1], 10))}`;
+	const numericPart = parseMilestoneId(normalized);
+	if (numericPart) {
+		const canonical = `m-${String(Number.parseInt(numericPart, 10))}`;
 		const canonicalMatch = milestones.find((milestone) => milestoneKey(milestone.id) === canonical);
 		if (canonicalMatch) return canonicalMatch;
 	}
@@ -29,7 +35,7 @@ export function findActiveMilestoneByAlias(value: string, milestones: Milestone[
 	if (!key) return undefined;
 	const idMatch = findMatchingId(normalized, milestones);
 	const titleMatches = milestones.filter((milestone) => milestoneKey(milestone.title) === key);
-	return /^m-\d+$/i.test(normalized) || /^\d+$/.test(normalized)
+	return isMilestoneId(normalized)
 		? (idMatch ?? (titleMatches.length === 1 ? titleMatches[0] : undefined))
 		: ((titleMatches.length === 1 ? titleMatches[0] : undefined) ?? idMatch);
 }

@@ -337,7 +337,7 @@ describe("independent MAIN settings persistence through public input", () => {
 	});
 
 	for (const color of ["Default", "green", "blue", "brightgreen"] as const) {
-		it(`serializes and reloads custom profile ${color} without confusing legacy PLAN defaults`, async () => {
+		it(`serializes and reloads custom profile ${color} without confusing default PLAN values`, async () => {
 			const f = await fixture();
 			const mount = mountOpenTuiAgentSettings(f.setup.renderer, f.root, {
 				configuration: f.configuration,

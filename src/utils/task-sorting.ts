@@ -1,4 +1,5 @@
 import { getPriorityRank } from "./priority-config.ts";
+import { parseTaskId as parseTaskIdSegments, taskIdBody } from "./task-id.ts";
 
 /**
  * Parse a task ID into its numeric components for proper sorting.
@@ -7,11 +8,12 @@ import { getPriorityRank } from "./priority-config.ts";
  */
 export function parseTaskId(taskId: string): number[] {
 	// Remove any prefix pattern (letters followed by dash) - handles task-, draft-, JIRA-, etc.
-	const numericPart = taskId.replace(/^[a-zA-Z]+-/i, "");
+	const numericPart = taskIdBody(taskId) ?? taskId;
 
 	// Try to extract numeric parts from the ID
 	// First check if it's a standard numeric ID (e.g., "1", "1.2", etc.)
-	const dotParts = numericPart.split(".");
+	const parsed = parseTaskIdSegments(taskId);
+	const dotParts = parsed?.segments ?? numericPart.split(".");
 	const numericParts = dotParts.map((part) => {
 		const num = Number.parseInt(part, 10);
 		return Number.isNaN(num) ? null : num;

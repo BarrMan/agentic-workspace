@@ -158,8 +158,6 @@ export class DraftIdentityError extends Error {
 	}
 }
 
-class UnsupportedFlatDraftRecordError extends Error {}
-
 export class FileSystem {
 	private resolvedAgenticWorkspaceDir: string;
 	private resolvedAgenticWorkspaceDirName: string;
@@ -728,10 +726,6 @@ export class FileSystem {
 		if (!recordPath) throw new Error(`Task ${task.id} has no record path.`);
 		const path = resolve(recordPath);
 		const container = dirname(path);
-		if (basename(path) !== "task.md")
-			throw new Error(
-				`Task ${task.id} uses an unsupported flat layout. Manually convert <name>.md to <lowercase-id>/task.md, set frontmatter id to match the directory name, and set task_schema_version to 3.`,
-			);
 		const roots = await Promise.all([this.getTasksDir(), this.getCompletedDir(), this.getArchiveTasksDir()]);
 		const root = roots.find((candidate) => resolve(dirname(container)) === resolve(candidate));
 		if (!root) throw new Error(`Task ${task.id} has a non-canonical storage path; refusing operation.`);
@@ -1014,16 +1008,9 @@ export class FileSystem {
 	async archiveDraft(draftId: string): Promise<{ sourcePath: string; targetPath: string } | null> {
 		const sourcePath = await this.resolveDraftFilePath(draftId);
 		if (!sourcePath) return null;
-		const isContainerRecord = basename(sourcePath) === "task.md";
-		const canonicalId = extractDraftIdFromFilename(
-			isContainerRecord ? basename(dirname(sourcePath)) : basename(sourcePath),
-		);
+		const sourceContainer = dirname(sourcePath);
+		const canonicalId = extractDraftIdFromFilename(basename(sourceContainer));
 		if (!canonicalId) return null;
-		const sourceContainer = isContainerRecord ? dirname(sourcePath) : undefined;
-		if (!sourceContainer || basename(sourceContainer).toLowerCase() !== canonicalId.toLowerCase())
-			throw new Error(
-				`Draft ${canonicalId} uses an unsupported flat layout. Manually convert <name>.md to <lowercase-id>/task.md, set frontmatter id to match the directory name, and set task_schema_version to 3 before archiving it.`,
-			);
 		const archiveDraftsDir = await this.getArchiveDraftsDir();
 		const targetContainer = await this.taskArtifacts.containerPath(canonicalId.toLowerCase(), "archive/drafts");
 
@@ -1067,11 +1054,9 @@ export class FileSystem {
 			return await this.withCreateLock(async () => {
 				const draft = await this.loadDraftFromFile(sourcePath);
 				if (!draft) return false;
-				const sourceContainer = basename(sourcePath) === "task.md" ? dirname(sourcePath) : undefined;
-				if (!sourceContainer || basename(sourceContainer).toLowerCase() !== draft.id.toLowerCase())
-					throw new Error(
-						`Draft ${draft.id} uses an unsupported flat layout. Manually convert <name>.md to <lowercase-id>/task.md, set frontmatter id to match the directory name, and set task_schema_version to 3 before promoting it.`,
-					);
+				const sourceContainer = dirname(sourcePath);
+				if (basename(sourceContainer).toLowerCase() !== draft.id.toLowerCase())
+					throw new Error(`Draft ${draft.id} container identity mismatch; refusing to promote it.`);
 
 				const config = await this.loadConfig();
 				const taskPrefix = config?.prefixes?.task ?? DEFAULT_TASK_PREFIX;
@@ -1143,11 +1128,9 @@ export class FileSystem {
 			const task = await this.loadTask(taskId);
 			if (!task?.filePath) return false;
 			const sourcePath = resolve(task.filePath);
-			const sourceContainer = basename(sourcePath) === "task.md" ? dirname(sourcePath) : undefined;
-			if (!sourceContainer || basename(sourceContainer).toLowerCase() !== task.id.toLowerCase())
-				throw new Error(
-					`Task ${task.id} uses an unsupported flat layout. Manually convert <name>.md to <lowercase-id>/task.md, set frontmatter id to match the directory name, and set task_schema_version to 3 before demoting it.`,
-				);
+			const sourceContainer = dirname(sourcePath);
+			if (basename(sourceContainer).toLowerCase() !== task.id.toLowerCase())
+				throw new Error(`Task ${task.id} container identity mismatch; refusing to demote it.`);
 			const existingDrafts = await this.listDrafts();
 			const occupiedFileIds = await this.listOccupiedDraftFileIds();
 			const config = await this.loadConfig();
@@ -1198,14 +1181,8 @@ export class FileSystem {
 	private async listDraftFiles(draftsDir: string): Promise<string[]> {
 		const entries = await readdir(draftsDir, { withFileTypes: true });
 		return entries
-			.map((entry) => {
-				if (entry.isFile() && entry.name.endsWith(".md"))
-					throw new UnsupportedFlatDraftRecordError(
-						`Unsupported flat draft record ${join(draftsDir, entry.name)}. Manually convert <name>.md to <lowercase-id>/task.md, set frontmatter id to match the directory name, and set task_schema_version to 3.`,
-					);
-				return entry.isDirectory() ? join(entry.name, "task.md") : null;
-			})
-			.filter((file): file is string => file !== null)
+			.filter((entry) => entry.isDirectory())
+			.map((entry) => join(entry.name, "task.md"))
 			.sort();
 	}
 
@@ -1226,11 +1203,6 @@ export class FileSystem {
 		const sourceContainer = sourcePath && basename(sourcePath) === "task.md" ? dirname(sourcePath) : undefined;
 		const isExistingContainer = sourceContainer === container;
 
-		if (sourcePath && !isExistingContainer && sourcePath !== filepath) {
-			throw new Error(
-				`Draft ${task.id} uses an unsupported flat layout. Manually convert <name>.md to <lowercase-id>/task.md, set frontmatter id to match the directory name, and set task_schema_version to 3 before saving it.`,
-			);
-		}
 		if (sourcePath && isExistingContainer) {
 			const existing = await this.loadDraftFromFile(filepath);
 			if (!existing || !draftIdsMatchLoosely(existing.id, canonicalId))
@@ -1252,7 +1224,7 @@ export class FileSystem {
 		const normalizedTask = { ...task, id: canonicalId, filePath: filepath };
 		const content = serializeTask(
 			normalizedTask,
-			await this.retainedTaskFrontmatter(sourcePath, isExistingContainer ? filepath : undefined),
+			await this.retainedTaskFrontmatter(isExistingContainer ? sourcePath : undefined),
 		);
 		if (!isExistingContainer) {
 			await this.ensureDirectoryExists(dirname(container));
@@ -1268,7 +1240,7 @@ export class FileSystem {
 			if (!filePath) return null;
 			return await this.loadDraftFromFile(filePath);
 		} catch (error) {
-			if (isAmbiguousIdError(error) || error instanceof UnsupportedFlatDraftRecordError) throw error;
+			if (isAmbiguousIdError(error)) throw error;
 			return null;
 		}
 	}
@@ -1284,8 +1256,7 @@ export class FileSystem {
 			}
 
 			return sortByTaskId(tasks);
-		} catch (error) {
-			if (error instanceof UnsupportedFlatDraftRecordError) throw error;
+		} catch {
 			return [];
 		}
 	}
@@ -1307,8 +1278,7 @@ export class FileSystem {
 			}
 
 			return sortByTaskId(tasks);
-		} catch (error) {
-			if (error instanceof UnsupportedFlatDraftRecordError) throw error;
+		} catch {
 			return [];
 		}
 	}
@@ -1326,10 +1296,6 @@ export class FileSystem {
 		const containerId = parts[0];
 		const isCanonicalContainer =
 			parts.length === 2 && parts[1] === "task.md" && !!containerId && containerId === containerId.toLowerCase();
-		if (parts.length === 1 && parts[0] !== "")
-			throw new UnsupportedFlatDraftRecordError(
-				`Unsupported flat draft record ${absolutePath}. Manually convert <name>.md to <lowercase-id>/task.md, set frontmatter id to match the directory name, and set task_schema_version to 3.`,
-			);
 		if (!isCanonicalContainer) throw new Error(`Invalid draft path: ${filePath}. Drafts must be inside ${draftsDir}.`);
 
 		let realDraftsDir: string;
@@ -1374,8 +1340,7 @@ export class FileSystem {
 		let files: string[];
 		try {
 			files = await this.listDraftFiles(draftsDir);
-		} catch (error) {
-			if (error instanceof UnsupportedFlatDraftRecordError) throw error;
+		} catch {
 			return null;
 		}
 		const candidates = files.filter((file) => {
@@ -1405,8 +1370,7 @@ export class FileSystem {
 		let files: string[];
 		try {
 			files = await this.listDraftFiles(draftsDir);
-		} catch (error) {
-			if (error instanceof UnsupportedFlatDraftRecordError) throw error;
+		} catch {
 			return null;
 		}
 		const normalizedId = normalizeId(draftId, DRAFT_PREFIX);
@@ -1435,8 +1399,8 @@ export class FileSystem {
 		const filenames = await this.listDraftFilenames();
 		return filenames
 			.map((filename) => {
-				const containerRecord = filename.endsWith("/task.md");
-				const identity = containerRecord ? filename.slice(0, -"/task.md".length) : filename;
+				const containerRecord = basename(filename) === "task.md";
+				const identity = containerRecord ? dirname(filename) : filename;
 				const taskId = identity.match(/^([A-Za-z]+-\d+(?:\.\d+)*)/)?.[1];
 				return taskId ?? extractDraftIdFromFilename(filename);
 			})
@@ -1448,8 +1412,8 @@ export class FileSystem {
 		try {
 			const entries = await readdir(draftsDir, { withFileTypes: true });
 			return entries
-				.filter((entry) => entry.isFile() || entry.isDirectory())
-				.map((entry) => (entry.isDirectory() ? join(entry.name, "task.md") : entry.name))
+				.filter((entry) => entry.isDirectory())
+				.map((entry) => join(entry.name, "task.md"))
 				.sort();
 		} catch {
 			// A directory that cannot be scanned is a finding, not an empty store: surface it so

@@ -80,7 +80,7 @@ export interface TaskArtifactServiceContract {
 	revokeApproval(taskId: string, relativePath: string): Promise<ArtifactStatus>;
 }
 
-/** Optional adapter hooks: discovery/preparation are capabilities, not required for legacy adapters. */
+/** Optional adapter hooks: discovery/preparation are capabilities, not required for every adapter. */
 export interface AgentProfileCapabilities {
 	discoverModels?: (options: {
 		command: string;
@@ -274,6 +274,6 @@ export interface TaskSessions {
 	activeSessionId?: string;
 	worktreePath?: string;
 	sessions: AgentSession[];
-	/** Future state version replaces the flat history above; legacy readers keep using sessions. */
+	/** Per-mode histories; `sessions` is the selected mode's projection for service callers. */
 	modes?: Record<ModeId, ModeSessionHistory>;
 }

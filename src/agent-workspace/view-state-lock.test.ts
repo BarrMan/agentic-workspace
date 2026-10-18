@@ -7,7 +7,7 @@ import { dirname, join } from "node:path";
 import lockfile from "proper-lockfile";
 import { openViewStateStore, type ViewStateStore } from "./view-state-store.ts";
 
-describe("external view-state dual locking", () => {
+describe("view-state locking", () => {
 	let sandbox: string;
 	let root: string;
 	let saved: string;
@@ -47,8 +47,18 @@ describe("external view-state dual locking", () => {
 		return store;
 	}
 
+	async function openCanonical(): Promise<ViewStateStore<{ count: number }>> {
+		const store = await openViewStateStore(root, () => ({ count: 0 }));
+		stores.push(store);
+		return store;
+	}
+
 	async function count(): Promise<number> {
 		return JSON.parse(await readFile(join(saved, "view-state.json"), "utf8")).state.count;
+	}
+
+	async function canonicalCount(): Promise<number> {
+		return JSON.parse(await readFile(join(root, ".agentic-workspace", "view-state.json"), "utf8")).state.count;
 	}
 
 	function unlocked(): void {
@@ -56,7 +66,7 @@ describe("external view-state dual locking", () => {
 		expect(existsSync(canonicalLock)).toBe(false);
 	}
 
-	it("rechecks canonical availability after read-only -> writable and serializes both open clients", async () => {
+	it("serializes both open clients through the external lock while the project root is read-only", async () => {
 		await chmod(root, 0o500);
 		const first = await open();
 		await first.update((state) => {
@@ -70,7 +80,7 @@ describe("external view-state dual locking", () => {
 			Array.from({ length: 20 }, (_, index) =>
 				(index % 2 ? first : second).update((state) => {
 					expect(existsSync(externalLock)).toBe(true);
-					expect(existsSync(canonicalLock)).toBe(true);
+					expect(existsSync(canonicalLock)).toBe(false);
 					return { count: state.count + 1 };
 				}),
 			),
@@ -79,14 +89,12 @@ describe("external view-state dual locking", () => {
 		unlocked();
 	});
 
-	it("serializes physical aliases across read-only -> writable while the first writer is paused after reading", async () => {
+	it("serializes physical aliases while the first writer is paused after reading", async () => {
 		await mkdir(saved, { recursive: true });
 		const primary = join(root, ".agentic-workspace");
 		await symlink(saved, primary, "dir");
 		const second = await openViewStateStore(root, () => ({ count: 0 }), { stateRoot: primary });
 		stores.push(second);
-		await chmod(dirname(canonicalLock), 0o500);
-		await chmod(root, 0o500);
 		const first = await open();
 		const prototype = Object.getPrototypeOf(first);
 		const originalRead = prototype.readEnvelope;
@@ -121,8 +129,6 @@ describe("external view-state dual locking", () => {
 			await afterRead;
 			expect(existsSync(externalLock)).toBe(true);
 			expect(existsSync(canonicalLock)).toBe(false);
-			await chmod(root, 0o700);
-			await chmod(dirname(canonicalLock), 0o700);
 			secondStarted = true;
 			secondUpdate = second.update((state) => {
 				secondPatches += 1;
@@ -184,7 +190,6 @@ describe("external view-state dual locking", () => {
 	it("serializes both open clients after writable -> read-only without changing the external lock", async () => {
 		const first = await open();
 		const second = await open();
-		await chmod(dirname(canonicalLock), 0o500);
 		await chmod(root, 0o500);
 		await Promise.all(
 			Array.from({ length: 20 }, (_, index) =>
@@ -199,45 +204,40 @@ describe("external view-state dual locking", () => {
 		unlocked();
 	});
 
-	it("waits for a legacy canonical writer while retaining the outer external lock", async () => {
+	it("acquires only the external lock and ignores the canonical lock", async () => {
 		const store = await open();
+		await mkdir(dirname(canonicalLock), { recursive: true });
 		const release = await lockfile.lock(root, { lockfilePath: canonicalLock, realpath: true, retries: 0 });
 		const original = lockfile.lock;
-		let entered!: () => void;
-		const canonicalAttempted = new Promise<void>((resolve) => (entered = resolve));
+		const attempts: string[] = [];
 		const spy = spyOn(lockfile, "lock").mockImplementation((path, options) => {
-			if (options?.lockfilePath === canonicalLock) entered();
+			attempts.push(options?.lockfilePath ?? "");
 			return original(path, options);
 		});
 		let patches = 0;
-		const update = store.update((state) => {
-			patches += 1;
-			return { count: state.count + 1 };
-		});
 		try {
-			await canonicalAttempted;
-			expect(existsSync(externalLock)).toBe(true);
-			expect(patches).toBe(0);
-			expect(await count()).toBe(0);
+			await store.update((state) => {
+				patches += 1;
+				expect(existsSync(externalLock)).toBe(true);
+				expect(existsSync(canonicalLock)).toBe(true);
+				return { count: state.count + 1 };
+			});
 		} finally {
+			spy.mockRestore();
 			await release();
-			try {
-				await update;
-			} finally {
-				spy.mockRestore();
-			}
 		}
+		expect(attempts).toEqual([externalLock]);
 		expect(patches).toBe(1);
 		expect(await count()).toBe(1);
 		unlocked();
 	});
 
-	it("does not downgrade on inner acquisition failure and releases the outer lock on operation failure", async () => {
+	it("releases the external lock on acquisition failure and on operation failure", async () => {
 		const store = await open();
 		const original = lockfile.lock;
 		const failure = Object.assign(new Error("injected acquisition failure"), { code: "EACCES" });
 		const spy = spyOn(lockfile, "lock").mockImplementation((path, options) => {
-			if (options?.lockfilePath === canonicalLock) return Promise.reject(failure);
+			if (options?.lockfilePath === externalLock) return Promise.reject(failure);
 			return original(path, options);
 		});
 		let patches = 0;
@@ -265,14 +265,13 @@ describe("external view-state dual locking", () => {
 		expect(await count()).toBe(1);
 	});
 
-	it("seeds under external -> canonical acquisition and releases in reverse order", async () => {
+	it("seeds under the external lock only", async () => {
 		const original = lockfile.lock;
 		const events: string[] = [];
 		const spy = spyOn(lockfile, "lock").mockImplementation(async (path, options) => {
 			const release = await original(path, options);
 			const name = options?.lockfilePath === externalLock ? "external" : "canonical";
 			events.push(`acquire ${name}`);
-			if (name === "canonical") expect(existsSync(externalLock)).toBe(true);
 			return async () => {
 				await release();
 				events.push(`release ${name}`);
@@ -283,20 +282,19 @@ describe("external view-state dual locking", () => {
 		} finally {
 			spy.mockRestore();
 		}
-		expect(events).toEqual(["acquire external", "acquire canonical", "release canonical", "release external"]);
+		expect(events).toEqual(["acquire external", "release external"]);
 		expect(await count()).toBe(0);
 		unlocked();
 	});
 
-	it("refuses to bypass a visible old canonical lock during read-only fallback", async () => {
-		const store = await open();
+	it("refuses to bypass a visible canonical lock when the canonical parent cannot be resolved", async () => {
+		const store = await openCanonical();
 		const release = await lockfile.lock(root, { lockfilePath: canonicalLock, realpath: true, retries: 0 });
 		await chmod(dirname(canonicalLock), 0o500);
 		await chmod(root, 0o500);
 		try {
 			await expect(store.update(() => ({ count: 1 }))).rejects.toThrow("Cannot bypass an existing canonical");
-			expect(await count()).toBe(0);
-			expect(existsSync(externalLock)).toBe(false);
+			expect(await canonicalCount()).toBe(0);
 			expect(existsSync(canonicalLock)).toBe(true);
 		} finally {
 			await chmod(root, 0o700);
@@ -306,14 +304,13 @@ describe("external view-state dual locking", () => {
 	});
 
 	it.each(["file", "dangling", "loop"])("refuses a malformed canonical lock parent (%s)", async (kind) => {
-		const store = await open();
+		const store = await openCanonical();
 		const parent = dirname(canonicalLock);
 		await rm(parent, { recursive: true });
 		if (kind === "file") await writeFile(parent, "not a directory");
 		else await symlink(kind === "loop" ? parent : join(sandbox, "missing"), parent, "dir");
-		await chmod(root, 0o500);
 		await expect(store.update(() => ({ count: 1 }))).rejects.toThrow();
-		expect(await count()).toBe(0);
+		expect(await canonicalCount()).toBe(0);
 		unlocked();
 	});
 
@@ -321,11 +318,12 @@ describe("external view-state dual locking", () => {
 		"canonical",
 		"external",
 	])("reports %s release failure without replaying a committed patch", async (which) => {
-		const store = await open();
+		const store = which === "canonical" ? await openCanonical() : await open();
+		const lockPath = which === "canonical" ? canonicalLock : externalLock;
 		const original = lockfile.lock;
 		const spy = spyOn(lockfile, "lock").mockImplementation(async (path, options) => {
 			const release = await original(path, options);
-			if (options?.lockfilePath !== (which === "canonical" ? canonicalLock : externalLock)) return release;
+			if (options?.lockfilePath !== lockPath) return release;
 			return async () => {
 				await release();
 				throw new Error("injected release failure");
@@ -343,7 +341,7 @@ describe("external view-state dual locking", () => {
 			spy.mockRestore();
 		}
 		expect(patches).toBe(1);
-		expect(await count()).toBe(1);
+		expect(await (which === "canonical" ? canonicalCount() : count())).toBe(1);
 		unlocked();
 	});
 });

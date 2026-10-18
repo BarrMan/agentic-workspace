@@ -5,8 +5,12 @@ import { join } from "node:path";
 import { shellQuote } from "./agents/agent.ts";
 import { agentFor } from "./agents/agents.ts";
 import { buildAgentLaunchCommand, buildAgentResumeCommand, renderSessionBootstrap } from "./bootstrap.ts";
+import { getDefaultModeCatalog } from "./config.ts";
 import { usePromptInjectionAgent } from "./test-fake-agent.ts";
 import type { AgentPreset } from "./types.ts";
+
+const profile = getDefaultModeCatalog().profiles.build;
+if (!profile) throw new Error("Missing default build mode profile.");
 
 const preset: AgentPreset = {
 	command: "",
@@ -117,6 +121,7 @@ describe("agent session bootstrap", () => {
 					env: {},
 					preset: bootstrapped(name),
 					intent,
+					profile,
 				});
 			} finally {
 				await rm(directory, { recursive: true, force: true });

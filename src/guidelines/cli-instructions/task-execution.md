@@ -57,7 +57,6 @@ Use CLI commands for AgenticWorkspace changes:
 - Search: `agentic-workspace search "query" --plain`
 - List with task filters: `agentic-workspace task list --status "<active status>" --assignee @your-name --labels backend --search "auth" --limit 20 --plain`
 - Update: `agentic-workspace task edit {{TASK_ID:123}} ...`
-- Repair a task rejected for a missing schema version: `agentic-workspace task migrate-legacy {{TASK_ID:123}}` (review the task first; this only converts the retired section-backed format)
 - Create docs: `agentic-workspace doc create "Title"`
 - Update docs: `agentic-workspace doc update doc-1 --content "Markdown"`
 

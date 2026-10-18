@@ -336,11 +336,7 @@ describe("config watcher", () => {
 			resolveMalformedPointerAttempts = resolve;
 		});
 		rootFilesystem.parseConfig = (content) => {
-			const config = originalParseConfig(content);
-			if (!injectedInterveningContent && content === candidateContent) {
-				injectedInterveningContent = true;
-				writeFileSync(rootConfigPath, interveningInvalidContent);
-			}
+			// Count read attempts before parsing: a malformed document fails the whole parse.
 			if (content === sparseRootContent) {
 				sparseRootAttempts += 1;
 				if (sparseRootAttempts >= 8) resolveSparseRootAttempts();
@@ -352,6 +348,11 @@ describe("config watcher", () => {
 			if (content === invalidPointerContent) {
 				invalidPointerAttempts += 1;
 				if (invalidPointerAttempts >= 8) resolveInvalidPointerAttempts();
+			}
+			const config = originalParseConfig(content);
+			if (!injectedInterveningContent && content === candidateContent) {
+				injectedInterveningContent = true;
+				writeFileSync(rootConfigPath, interveningInvalidContent);
 			}
 			return config;
 		};

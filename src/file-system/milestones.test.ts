@@ -40,7 +40,7 @@ describe("MilestoneStore", () => {
 });
 
 describe("filesystem config parsing", () => {
-	it("accepts the legacy scalar default assignee without weakening list parsing", () => {
+	it("accepts a scalar default assignee without weakening list parsing", () => {
 		const config = parseConfig('statuses: ["To Do"]\ndefault_assignee: "@alex"\n', "/tmp/agentic-workspace/config.yml");
 		expect(config.defaultAssignee).toEqual(["@alex"]);
 	});

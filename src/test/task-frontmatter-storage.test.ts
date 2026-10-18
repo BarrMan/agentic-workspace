@@ -96,7 +96,7 @@ describe("task frontmatter storage", () => {
 		}
 	});
 
-	it("rejects unsupported schema versions without treating records as legacy", () => {
+	it("rejects unsupported schema versions without treating records as an older format", () => {
 		expect(() => parseTask(serializeTask(task).replace("task_schema_version: 3", "task_schema_version: 9"))).toThrow(
 			UnsupportedTaskFrontmatterSchemaError,
 		);

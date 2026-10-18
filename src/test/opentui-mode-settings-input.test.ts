@@ -214,14 +214,14 @@ describe("Modes parser-input interactions", () => {
 		profile(first.setup);
 		down(first.setup, 8);
 		await first.setup.flush();
-		expect(first.setup.captureCharFrame()).toContain("Color: Default (green)");
+		expect(first.setup.captureCharFrame()).toContain("Color: Default");
 		const colorRow = first.setup.renderer.root.findDescendantById("settings-mode-color") as TextRenderable;
-		expect(colorRow.fg).toEqual(parseColor("green"));
+		expect(colorRow.fg).toEqual(parseColor("#d4d4d8"));
 		first.setup.mockInput.pressArrow("left");
 		down(first.setup);
 		profile(first.setup);
 		await first.setup.flush();
-		expect(colorRow.fg).toEqual(parseColor("blue"));
+		expect(colorRow.fg).toEqual(parseColor("#d4d4d8"));
 		first.setup.mockInput.pressArrow("left");
 		first.setup.mockInput.pressArrow("up");
 		profile(first.setup);

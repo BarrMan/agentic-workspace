@@ -2,6 +2,7 @@ import { basename, dirname, relative, sep } from "node:path";
 import { parseTask } from "../markdown/parser.ts";
 import type { Task } from "../types/index.ts";
 import { type DuplicateGroup, detectDuplicateTaskIds } from "../utils/duplicate-detection.ts";
+import { taskIdsEqual } from "../utils/task-id.ts";
 import type { Core } from "./agentic-workspace.ts";
 import type { BranchTaskStateEntry, TaskCorpusSnapshot } from "./task-loader.ts";
 
@@ -65,10 +66,8 @@ export async function findLocalDuplicateTaskIds(core: Core, snapshot?: TaskCorpu
 				continue;
 			}
 			task.filePath = normalizeRelativePath(core.filesystem.rootDir, path);
-			const folderId = basename(dirname(path))
-				.split(" - ", 1)[0]
-				?.replace(/^task-/i, "");
-			if (!folderId || folderId !== task.id) {
+			const folderId = basename(dirname(path));
+			if (!taskIdsEqual(folderId, task.id)) {
 				(task as Task & { containerMismatch?: string }).containerMismatch =
 					`${task.filePath}: container identity does not match task ID ${task.id}.`;
 			}

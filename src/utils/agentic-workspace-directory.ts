@@ -1,7 +1,6 @@
 import { readFileSync, statSync } from "node:fs";
 import { join, normalize } from "node:path";
 import { DEFAULT_DIRECTORIES, DEFAULT_FILES } from "../constants/index.ts";
-import { parseColonConfigLine } from "./config-line.ts";
 
 export const AGENTIC_WORKSPACE_DIRECTORY_SOURCE = {
 	DEFAULT: "agentic-workspace",
@@ -51,23 +50,17 @@ function fileExists(path: string): boolean {
 }
 
 function parseAgenticWorkspaceConfigMetadata(content: string): AgenticWorkspaceConfigMetadata {
-	let projectName: string | null = null;
-	let agenticWorkspaceDirectory: string | null = null;
-
-	for (const rawLine of content.split(/\r?\n/)) {
-		const parsed = parseColonConfigLine(rawLine);
-		if (!parsed) continue;
-		const { key } = parsed;
-		const value = parsed.value.replace(/^['"]|['"]$/g, "");
-		if ((key === "project_name" || key === "projectName") && value) {
-			projectName = value;
-			continue;
-		}
-		if (key === "agentic_workspace_directory" || key === "agenticWorkspaceDirectory") {
-			agenticWorkspaceDirectory = normalizeProjectAgenticWorkspaceDirectory(value);
-		}
+	const parsed: unknown = Bun.YAML.parse(content);
+	if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+		return { projectName: null, agenticWorkspaceDirectory: null };
 	}
-	return { projectName, agenticWorkspaceDirectory };
+	const record = parsed as Record<string, unknown>;
+	const projectName = typeof record.project_name === "string" ? record.project_name : null;
+	const directory = typeof record.agentic_workspace_directory === "string" ? record.agentic_workspace_directory : null;
+	return {
+		projectName,
+		agenticWorkspaceDirectory: normalizeProjectAgenticWorkspaceDirectory(directory),
+	};
 }
 
 function readRootAgenticWorkspaceConfigMetadata(rootConfigPath: string): AgenticWorkspaceConfigMetadata | null {

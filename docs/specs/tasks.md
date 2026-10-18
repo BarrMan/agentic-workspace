@@ -69,7 +69,7 @@ This contract defines task identity and data, project storage, artifacts, work c
 
 ### TASK-003: Task identity
 
-**Description:** Task IDs use `PREFIX-NUMBER` with optional dotted numeric subtask segments (for example, `TASK-1.2`). Input may use lowercase; the outer API boundary uppercases the complete ID for lookup and new IDs are written in uppercase, while existing records may retain their stored casing. Identity comparison is case-insensitive; this is a comparison rule, not an alias, numeric-normalization, or prefix-inference layer. Numeric segments are preserved exactly, so `TASK-01` and `TASK-1` are distinct. Legacy alphanumeric IDs are invalid. Lookup does not accept a bare number or infer a prefix. Allocation uses a persisted counter, not a scan for the next available ID except to bootstrap a missing prefix entry. Creation must not allocate an identity already in use. Duplicate records are not merged or repaired. Archived task IDs remain reserved and are not reused.
+**Description:** Task IDs use `PREFIX-NUMBER` with optional dotted numeric subtask segments (for example, `TASK-1.2`). Input may use lowercase; the outer API boundary uppercases the complete ID for lookup and new IDs are written in uppercase, while existing records may retain their stored casing. Identity comparison is case-insensitive; this is a comparison rule, not an alias, numeric-normalization, or prefix-inference layer. Numeric segments are preserved exactly, so `TASK-01` and `TASK-1` are distinct. Alphanumeric IDs are invalid. Lookup does not accept a bare number or infer a prefix. Allocation uses a persisted counter, not a scan for the next available ID except to bootstrap a missing prefix entry. Creation must not allocate an identity already in use. Duplicate records are not merged or repaired. Archived task IDs remain reserved and are not reused.
 
 **Trigger:** A task is created or addressed by ID.
 
@@ -77,7 +77,7 @@ This contract defines task identity and data, project storage, artifacts, work c
 
 **Behavior:**
 1. Accept `PREFIX-NUMBER` with optional dotted numeric subtask segments. Uppercase the complete input ID at the outer API boundary for lookup, write new IDs in uppercase, and compare IDs case-insensitively. Preserve every numeric segment exactly, including leading zeroes; stored casing does not change identity.
-2. Reject legacy alphanumeric IDs. Do not normalize numeric segments, look up bare numbers, infer prefixes, or scan task records for allocation after bootstrap.
+2. Reject alphanumeric IDs. Do not normalize numeric segments, look up bare numbers, infer prefixes, or scan task records for allocation after bootstrap.
 3. Persist `task-counter.json` in the directory that owns the create lock (shared across linked worktrees; otherwise the AgenticWorkspace directory). Its per-prefix shape is `{ "TASK": { "next": 2 }, "OPS": { "next": 2 } }`; each `next` is the last allocated top-level number for that prefix. Under the create lock, increment that prefix's `next`, atomically persist the counter using a temporary file and rename, then attempt a create-only save for the resulting ID. If the target container already exists, consume another number and retry. Never decrement or reuse a number.
 4. If a prefix entry is missing, bootstrap it once from the maximum existing top-level task number for that prefix across active, completed, and archived task containers, including sibling worktrees as needed (use zero if none exist), and persist it. There is no per-create scan. A corrupt counter is an error; do not scan as a fallback. Never bypass the create lock.
 5. Do not reuse allocated or archived IDs, and do not merge or repair duplicate records.
@@ -254,7 +254,7 @@ This contract defines task identity and data, project storage, artifacts, work c
 
 **Trigger:** A task is created, a session is launched, or a session is resumed.
 
-**Preconditions:** A task has a worktree policy captured at creation. Legacy tasks without a captured policy use the current worktree-per-task setting.
+**Preconditions:** A task has a worktree policy captured at creation. Tasks without a captured policy use the current worktree-per-task setting.
 
 **Behavior:**
 1. Capture the effective worktree policy on the task record without allocating a worktree.

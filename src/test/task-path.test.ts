@@ -62,10 +62,11 @@ describe("Task path utilities", () => {
 		expect(await getTaskPath("BACK-12", core)).toBe(join(core.filesystem.tasksDir, "back-12", "task.md"));
 	});
 
-	it("refuses flat task records with manual conversion guidance", async () => {
+	it("ignores flat task records", async () => {
 		const flatPath = join(core.filesystem.tasksDir, "task-999 - Exact.md");
 		await writeFile(flatPath, "# Exact");
-		await expect(core.filesystem.listTasks()).rejects.toThrow(/unsupported flat task record.*manually convert/i);
+		expect((await core.filesystem.listTasks()).some((task) => task.id === "TASK-999")).toBe(false);
+		expect(await getTaskPath("TASK-999", core)).toBeNull();
 		expect(await Bun.file(flatPath).text()).toBe("# Exact");
 	});
 });

@@ -155,7 +155,7 @@ function workspace() {
 
 describe("public controller.run project mode startup contract", () => {
 	for (const initialView of ["workspace", "board"] as const) {
-		for (const missing of ["project configuration", "modes in legacy project configuration"] as const) {
+		for (const missing of ["project configuration", "modes in mode-less project configuration"] as const) {
 			for (const injected of [false, true]) {
 				it(`rejects absent ${missing} before host/stores/writes (${initialView}, ${injected ? "injected" : "durable"} stores)`, async () => {
 					const fixture = project(missing === "project configuration" ? undefined : getBuiltInAgentConfiguration());
@@ -266,9 +266,9 @@ describe("public controller.run project mode startup contract", () => {
 });
 
 describe("source entrypoint mode startup contract", () => {
-	for (const legacy of [false, true]) {
-		it(`rejects ${legacy ? "legacy configuration without modes" : "missing project configuration"} without filesystem writes`, async () => {
-			const fixture = project(legacy ? getBuiltInAgentConfiguration() : undefined);
+	for (const modeLessConfiguration of [false, true]) {
+		it(`rejects ${modeLessConfiguration ? "configuration without modes" : "missing project configuration"} without filesystem writes`, async () => {
+			const fixture = project(modeLessConfiguration ? getBuiltInAgentConfiguration() : undefined);
 			const before = snapshot(fixture.rootDir);
 			let output = "";
 			const stdout = new Writable({

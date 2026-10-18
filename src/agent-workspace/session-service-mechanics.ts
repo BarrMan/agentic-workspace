@@ -10,7 +10,7 @@ import { agentFor } from "./agents/agents.ts";
 import { resolveLaunchPreset } from "./agents/opencode-resolution.ts";
 import { validateExplicitModel } from "./agents/profile.ts";
 import { buildAgentResumeCommand, renderSessionBootstrap } from "./bootstrap.ts";
-import { loadAgentConfiguration, resolveSessionPreset } from "./config.ts";
+import { getDefaultModeCatalog, loadAgentConfiguration, resolveSessionPreset } from "./config.ts";
 import { prepareHarnessEnvironment } from "./harness-environment.ts";
 import {
 	type PreflightedAgentLaunch,
@@ -111,7 +111,7 @@ export async function prepareSessionLaunch(
 	preset: AgentPreset,
 	settings: SessionSettings,
 	options: {
-		profile?: ModeProfile;
+		profile: ModeProfile;
 		intent: SessionIntent;
 		prepare?: string;
 		clearWorkspaceContext?: boolean;
@@ -167,11 +167,7 @@ export async function prepareSessionLaunch(
 	if (!options.bootstrapBeforeCreate)
 		await store.write(record.bootstrapPath, renderSessionBootstrap({ taskId: task.id }));
 	await process.preparePane(record);
-	const prepared = await prepareAgentLaunchResources(
-		record.bootstrapPath,
-		{ ...preflight, options: { ...preflight.options, profile: undefined } },
-		environment,
-	);
+	const prepared = await prepareAgentLaunchResources(record.bootstrapPath, preflight, environment);
 	if (warnings.length > 0) prepared.warnings = warnings;
 	return { paneId, prepared, agent: preflight.agent };
 }
@@ -325,9 +321,10 @@ export async function profileFor(
 	core: Core,
 	modeId: ModeId,
 	preset: AgentPreset,
-): Promise<{ profile?: ModeProfile; preset: AgentPreset }> {
-	const profile = (await loadAgentConfiguration(core, "project"))?.modes?.profiles[modeId];
-	if (!profile) return { preset };
+): Promise<{ profile: ModeProfile; preset: AgentPreset }> {
+	const catalog = (await loadAgentConfiguration(core, "project"))?.modes ?? getDefaultModeCatalog();
+	const profile = catalog.profiles[modeId];
+	if (!profile) throw new Error(`Unknown mode '${modeId}'.`);
 	let selectedPreset = preset;
 	const agent = agentFor(preset.bootstrap);
 	if (profile.model.kind === "explicit") {
@@ -344,11 +341,10 @@ export async function profileFor(
 
 export async function profileWithCurrentArtifacts(
 	core: Core,
-	profile: ModeProfile | undefined,
+	profile: ModeProfile,
 	taskId: string,
 	taskRoot: string,
-): Promise<ModeProfile | undefined> {
-	if (!profile) return undefined;
+): Promise<ModeProfile> {
 	const entries = await core.filesystem.taskArtifacts.list(taskId);
 	const existing = entries
 		.slice(0, 100)
@@ -518,7 +514,7 @@ export async function resumeExistingTarget(
 	target: {
 		record: AgentSession;
 		preset: AgentPreset;
-		profile?: ModeProfile;
+		profile: ModeProfile;
 		receipt?: string;
 		environment: Record<string, string>;
 		settings: SessionSettings;

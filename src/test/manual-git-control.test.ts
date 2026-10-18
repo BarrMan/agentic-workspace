@@ -34,7 +34,7 @@ describe("manual Git control", () => {
 		expect(await Bun.file(core.filesystem.configFilePath).text()).toBe(configContent);
 	}
 
-	it("ignores legacy commit preferences without rewriting the config", async () => {
+	it("ignores unknown commit preferences without rewriting the config", async () => {
 		const config = await core.filesystem.loadConfig();
 		expect(config?.projectName).toBe("Manual Git");
 		expect(Object.hasOwn(config ?? {}, ["auto", "Commit"].join(""))).toBe(false);

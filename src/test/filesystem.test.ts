@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, spyOn } from "bun:test";
 import * as fsPromises from "node:fs/promises";
-import { mkdir, readdir, rename, stat } from "node:fs/promises";
+import { mkdir, readdir, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { FileSystem } from "../file-system/operations.ts";
 import { serializeTask } from "../markdown/serializer.ts";
@@ -142,7 +142,7 @@ describe("FileSystem", () => {
 			expect(loadedTask?.description).toBe(sampleTask.description);
 		});
 
-		it("rejects legacy alphanumeric task IDs on save", async () => {
+		it("rejects alphanumeric task IDs on save", async () => {
 			await expect(filesystem.saveTask({ ...sampleTask, id: "TASK-PREFIXED" })).rejects.toThrow("Invalid task ID");
 			await expect(filesystem.saveTask({ ...sampleTask, parentTaskId: "TASK-PREFIXED" })).rejects.toThrow(
 				"Invalid parent task ID",
@@ -240,15 +240,14 @@ describe("FileSystem", () => {
 			expect(await Promise.all([filepath, duplicate].map((path) => Bun.file(path).text()))).toEqual(before);
 		});
 
-		it("gives flat task records actionable manual conversion guidance", async () => {
+		it("discovers tasks only from directory containers with task.md", async () => {
 			const filepath = join(filesystem.tasksDir, "task-1.md");
 			await Bun.write(filepath, serializeTask({ ...sampleTask, id: "TASK-1" }));
 			const task = { ...sampleTask, id: "TASK-1", filePath: filepath };
-			const guidance =
-				/unsupported flat layout.*manually convert <name>\.md to <lowercase-id>\/task\.md.*frontmatter id/i;
 
-			await expect(filesystem.moveTaskContainer(task, filesystem.completedDir)).rejects.toThrow(guidance);
-			await expect(filesystem.saveTask({ ...task, title: "Changed" })).rejects.toThrow(guidance);
+			expect(await filesystem.listTasks()).toEqual([]);
+			expect(await filesystem.loadTask("TASK-1")).toBeNull();
+			await expect(filesystem.moveTaskContainer(task, filesystem.completedDir)).rejects.toThrow();
 			expect(await Bun.file(filepath).text()).toContain("Test Task");
 		});
 
@@ -516,17 +515,13 @@ title: Broken Task
 			expect(await Bun.file(join(draftsDir, "draft-001", "task.md")).text()).toContain("Twin");
 		});
 
-		it("refuses flat draft records with manual conversion guidance", async () => {
+		it("discovers drafts only from directory containers", async () => {
 			const draftsDir = await filesystem.getDraftsDir();
-			const flatPath = join(draftsDir, "draft-1 - Legacy.md");
+			const flatPath = join(draftsDir, "draft-1 - Historical.md");
 			await Bun.write(flatPath, serializeTask(sampleDraft));
 
-			await expect(filesystem.listDrafts()).rejects.toThrow(
-				/Unsupported flat draft record .*manually convert <name>\.md to <lowercase-id>\/task\.md/i,
-			);
-			await expect(filesystem.draftReferenceFromPath(flatPath)).rejects.toThrow(
-				/Unsupported flat draft record .*manually convert <name>\.md to <lowercase-id>\/task\.md/i,
-			);
+			expect(await filesystem.listDrafts()).toEqual([]);
+			await expect(filesystem.draftReferenceFromPath(flatPath)).rejects.toThrow(/Invalid draft path/i);
 		});
 
 		it("should list all drafts", async () => {
@@ -785,32 +780,6 @@ title: Broken Task
 			expect(loaded?.alternatives).toBe("Considered JavaScript");
 		});
 
-		it("should remove legacy decision filenames when resaving", async () => {
-			const legacyDecision: Decision = {
-				...sampleDecision,
-				id: "decision-legacy",
-				title: "Legacy Decision (OAuth)!",
-				decision: "First draft",
-			};
-
-			await filesystem.saveDecision(legacyDecision);
-
-			const files = await readdir(filesystem.decisionsDir);
-			const sanitized = files.find((f) => f.startsWith("decision-legacy -"));
-			expect(sanitized).toBe("decision-legacy - Legacy-Decision-OAuth.md");
-
-			const legacyFilename = "decision-legacy - Legacy-Decision-(OAuth)!.md";
-			await rename(join(filesystem.decisionsDir, sanitized as string), join(filesystem.decisionsDir, legacyFilename));
-
-			await filesystem.saveDecision({ ...legacyDecision, decision: "Updated decision" });
-
-			const finalFiles = await readdir(filesystem.decisionsDir);
-			expect(finalFiles).toEqual(["decision-legacy - Legacy-Decision-OAuth.md"]);
-
-			const loaded = await filesystem.loadDecision("decision-legacy");
-			expect(loaded?.decision).toBe("Updated decision");
-		});
-
 		it("should list decision logs", async () => {
 			await filesystem.saveDecision(sampleDecision);
 			const list = await filesystem.listDecisions();
@@ -842,7 +811,7 @@ title: Broken Task
 			const minimalDoc: Document = {
 				id: "doc-2",
 				title: "Simple Doc",
-				type: "readme",
+				type: "guide",
 				createdDate: "2025-06-07",
 				rawContent: "Simple content.",
 			};
@@ -1066,21 +1035,22 @@ title: Broken Task
 			expect(loaded?.title).toBe("Fix Task List Ordering");
 		});
 
-		it("refuses retired flat task files without changing their bytes", async () => {
-			const legacyTask: Task = {
+		it("ignores flat task files without changing their bytes", async () => {
+			const flatTask: Task = {
 				id: "task-995",
-				title: "Legacy user's login (OAuth)",
+				title: "Historical user's login (OAuth)",
 				status: "To Do",
 				assignee: [],
 				createdDate: "2025-06-07",
 				labels: [],
 				dependencies: [],
-				description: "Legacy punctuation task",
+				description: "Historical punctuation task",
 			};
 
-			const flatPath = join(filesystem.tasksDir, "task-995 - Legacy-user's-login-(OAuth).md");
-			await Bun.write(flatPath, serializeTask(legacyTask));
-			await expect(filesystem.loadTask("task-995")).rejects.toThrow(/unsupported flat task record.*manually convert/i);
+			const flatPath = join(filesystem.tasksDir, "task-995 - Historical-user's-login-(OAuth).md");
+			await Bun.write(flatPath, serializeTask(flatTask));
+			expect(await filesystem.loadTask("task-995")).toBeNull();
+			expect((await filesystem.listTasks()).some((task) => task.id === "TASK-995")).toBe(false);
 			expect(await Bun.file(flatPath).exists()).toBe(true);
 			expect(await Bun.file(flatPath).text()).toContain("task_schema_version: 3");
 			expect((await readdir(filesystem.tasksDir)).some((file) => file === "task-995")).toBe(false);

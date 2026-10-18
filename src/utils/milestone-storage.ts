@@ -1,4 +1,4 @@
-import { canonicalMilestoneId, collectMilestoneAliasKeys, milestoneKey } from "../core/milestones.ts";
+import { canonicalMilestoneId, collectMilestoneAliasKeys, isMilestoneId, milestoneKey } from "../core/milestones.ts";
 import type { Milestone } from "../types/index.ts";
 
 type MilestoneRef = Pick<Milestone, "id" | "title">;
@@ -79,7 +79,7 @@ export function resolveMilestoneInputForStorage(
 	}
 
 	const aliasKeys = collectMilestoneAliasKeys(normalized);
-	const looksLikeMilestoneId = /^\d+$/.test(normalized) || /^m-\d+$/i.test(normalized);
+	const looksLikeMilestoneId = isMilestoneId(normalized);
 	const hasAmbiguousActiveTitle = activeTitleIsAmbiguous(normalized, activeMilestones);
 	if (looksLikeMilestoneId) return resolveNumericMilestone(normalized, aliasKeys, activeMilestones, archivedMilestones);
 

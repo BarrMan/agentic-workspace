@@ -66,18 +66,10 @@ async function acquireStateLock(path: string): Promise<() => Promise<void>> {
 	};
 }
 
-export interface SessionState extends TaskSessions {
-	version: 2;
-	modes: NonNullable<TaskSessions["modes"]>;
-	hasSuccessfulSession?: boolean;
-	/** Compatibility projection for flat callers. Mutations target the explicit legacy lane. */
-	legacyModeId: string;
-}
-
-interface VersionedSessionState {
+export interface SessionState {
 	version: 2;
 	taskId: string;
-	modes: Record<string, { sessions: AgentSession[]; activeSessionId?: string }>;
+	modes: NonNullable<TaskSessions["modes"]>;
 	worktreePath?: string;
 	hasSuccessfulSession?: boolean;
 }
@@ -191,7 +183,7 @@ async function resolveStateRoot(context: ReturnType<typeof stateRootContext>): P
 	)
 		throw new Error(`Invalid agent state root ${JSON.stringify(stateRoot)} for project ${projectRoot}.`);
 
-	const legacyRoots = new Set<string>();
+	const otherExecutionRoots = new Set<string>();
 	const gitRoot = await findGitWorktreeRoot(projectRoot, { strict: true });
 	if (gitRoot) {
 		const registered = await new GitOperations(gitRoot).listWorktreePaths();
@@ -214,14 +206,14 @@ async function resolveStateRoot(context: ReturnType<typeof stateRootContext>): P
 				if (error.code === "ENOENT") return candidate;
 				throw error;
 			});
-			if (identity !== projectIdentity) legacyRoots.add(candidate);
+			if (identity !== projectIdentity) otherExecutionRoots.add(candidate);
 			for (const execution of executionIdentities) {
 				const offset = relative(identity, execution.identity);
 				if (
 					(offset === "" && identity !== projectIdentity) ||
 					(offset && offset !== ".." && !offset.startsWith(`..${sep}`) && !isAbsolute(offset))
 				)
-					legacyRoots.add(execution.root);
+					otherExecutionRoots.add(execution.root);
 			}
 		}
 	}
@@ -234,7 +226,7 @@ async function resolveStateRoot(context: ReturnType<typeof stateRootContext>): P
 	}
 	const storageHomes = new Set([home, ...(validExternal && stateRoot ? [dirname(dirname(stateRoot))] : [])]);
 	const conflicts = new Map<string, string>();
-	for (const root of legacyRoots) {
+	for (const root of otherExecutionRoots) {
 		const candidates = [
 			join(root, ".agentic-workspace"),
 			...[...storageHomes].map((base) => externalStateRoot(root, base)),
@@ -446,12 +438,6 @@ export class SessionStore {
 		try {
 			const state = await this.readPersisted(taskId);
 			result = await fn(state);
-			state.modes ??= {};
-			const compatibility = state.modes[state.legacyModeId] ?? { sessions: [] };
-			compatibility.sessions = state.sessions;
-			if (state.activeSessionId === undefined) delete compatibility.activeSessionId;
-			else compatibility.activeSessionId = state.activeSessionId;
-			state.modes[state.legacyModeId] = compatibility;
 			const validated = this.validate(state, taskId);
 			await this.write(paths.statePath, `${JSON.stringify(this.toVersioned(validated), null, "\t")}\n`);
 			writeCommitted = true;
@@ -470,8 +456,7 @@ export class SessionStore {
 		return result as T;
 	}
 
-	/** Mode-scoped mutation API for new callers; unlike the flat compatibility seam it never
-	 * changes another mode's history or active pointer. */
+	/** Mode-scoped mutation API; it never changes another mode's history or active pointer. */
 	async mutateMode<T>(
 		taskId: string,
 		modeId: string,
@@ -486,7 +471,6 @@ export class SessionStore {
 		try {
 			releaseState = await acquireStateLock(paths.statePath);
 			const state = await this.readPersisted(taskId);
-			state.modes ??= {};
 			const history = state.modes[modeId] ?? { sessions: [] };
 			const result = await fn(history);
 			if (
@@ -497,9 +481,6 @@ export class SessionStore {
 			)
 				throw new Error("invalid state");
 			state.modes[modeId] = history;
-			const legacy = state.modes[state.legacyModeId] ?? { sessions: [] };
-			state.sessions = legacy.sessions;
-			state.activeSessionId = legacy.activeSessionId;
 			const output = this.toVersioned(state);
 			this.validate(output, taskId);
 			await this.write(paths.statePath, `${JSON.stringify(output, null, "\t")}\n`);
@@ -528,7 +509,7 @@ export class SessionStore {
 		const release = await acquireStateLock(paths.statePath);
 		try {
 			const state = await this.readPersisted(taskId);
-			const owner = Object.entries(state.modes ?? {}).find(([, candidate]) =>
+			const owner = Object.entries(state.modes).find(([, candidate]) =>
 				candidate.sessions.some((session) => session.id === sessionId),
 			);
 			if (!owner) throw new Error(`Agent session not found: ${sessionId}`);
@@ -647,7 +628,7 @@ export class SessionStore {
 		}
 		if (!oldStateExists) return;
 
-		// Refuse legacy state before creating directories or taking destination locks.
+		// Refuse unsupported state before creating directories or taking destination locks.
 		const raw = await Bun.file(oldPaths.statePath).text();
 		const parsed: unknown = JSON.parse(raw);
 		if (!isRecord(parsed) || parsed.version !== 2 || parsed.taskId !== oldTaskId)
@@ -673,26 +654,22 @@ export class SessionStore {
 
 			const normalizedNewTaskId = canonicalTaskId(newTaskId);
 			const sourceState = this.validate(lockedParsed, oldTaskId);
-			const modes: VersionedSessionState["modes"] = {};
-			for (const [modeId, history] of Object.entries(sourceState.modes ?? {})) {
+			const modes: SessionState["modes"] = {};
+			for (const [modeId, history] of Object.entries(sourceState.modes)) {
 				modes[modeId] = {
 					...history,
 					sessions: history.sessions.map((session) => ({ ...session, taskId: normalizedNewTaskId })),
 				};
 			}
-			const strictState: VersionedSessionState = {
-				...this.toVersioned({
-					version: 2,
-					taskId: normalizedNewTaskId,
-					sessions: [],
-					modes,
-					...(sourceState.worktreePath !== undefined ? { worktreePath: sourceState.worktreePath } : {}),
-					...(sourceState.hasSuccessfulSession !== undefined
-						? { hasSuccessfulSession: sourceState.hasSuccessfulSession }
-						: {}),
-					legacyModeId: "",
-				}),
-			};
+			const strictState = this.toVersioned({
+				version: 2,
+				taskId: normalizedNewTaskId,
+				modes,
+				...(sourceState.worktreePath !== undefined ? { worktreePath: sourceState.worktreePath } : {}),
+				...(sourceState.hasSuccessfulSession !== undefined
+					? { hasSuccessfulSession: sourceState.hasSuccessfulSession }
+					: {}),
+			});
 			const remapped = `${JSON.stringify(strictState, null, "\t")}\n`;
 			let destinationExists = false;
 			try {
@@ -773,17 +750,13 @@ export class SessionStore {
 	async remove(taskId: string, sessionId: string): Promise<AgentSession | undefined> {
 		let removed: AgentSession | undefined;
 		await this.mutate(taskId, async (state) => {
-			for (const history of Object.values(state.modes ?? {})) {
+			for (const history of Object.values(state.modes)) {
 				const index = history.sessions.findIndex((session) => session.id === sessionId);
 				if (index < 0) continue;
 				removed = history.sessions[index];
 				history.sessions.splice(index, 1);
-				if (history.activeSessionId === sessionId) {
-					history.activeSessionId = history.sessions[0]?.id;
-					if (history === state.modes?.[state.legacyModeId]) state.activeSessionId = history.activeSessionId;
-				}
+				if (history.activeSessionId === sessionId) history.activeSessionId = history.sessions[0]?.id;
 			}
-			state.sessions = state.modes?.[state.legacyModeId]?.sessions ?? [];
 		});
 		if (removed) await this.clearNativeSessionReceipt(removed);
 		return removed;
@@ -792,7 +765,7 @@ export class SessionStore {
 	/** Read one mode history without merging it with histories owned by other modes. */
 	async readMode(taskId: string, modeId: string): Promise<{ sessions: AgentSession[]; activeSessionId?: string }> {
 		const state = await this.read(taskId);
-		return state.modes?.[modeId] ?? { sessions: [] };
+		return state.modes[modeId] ?? { sessions: [] };
 	}
 
 	async readAll(): Promise<SessionState[]> {
@@ -814,11 +787,7 @@ export class SessionStore {
 			try {
 				const parsed = JSON.parse(await Bun.file(join(root, entry, "state.json")).text());
 				if (isRecord(parsed) && typeof parsed.taskId === "string") {
-					const state = await this.hydrateNativeSessionReceipts(this.validate(parsed, parsed.taskId));
-					// Project-wide reconciliation/lifecycle consumers must see running sessions even
-					// when a mode is not the compatibility BUILD lane.
-					state.sessions = Object.values(state.modes ?? {}).flatMap((history) => history.sessions);
-					states.push(state);
+					states.push(await this.hydrateNativeSessionReceipts(this.validate(parsed, parsed.taskId)));
 				}
 			} catch (error) {
 				if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
@@ -892,55 +861,34 @@ export class SessionStore {
 	}
 
 	private empty(taskId: string): SessionState {
-		return { version: 2, taskId, sessions: [], modes: {}, legacyModeId: "build" };
+		return { version: 2, taskId, modes: {} };
 	}
 
 	private validate(value: unknown, taskId: string): SessionState {
-		if (!isRecord(value) || value.taskId !== taskId) throw new Error("invalid state");
-		let state: SessionState;
-		if (value.version === 2 && isRecord(value.modes)) {
-			state = this.projectBuildCompatibility(this.decodeVersionedEnvelope(value, taskId), value);
-		} else throw new Error("invalid state");
-		if (state.version === 2) {
-			const seen = new Set<string>();
-			for (const history of Object.values(state.modes ?? {})) {
-				for (const session of history.sessions) {
-					if (seen.has(session.id)) throw new Error("invalid state");
-					seen.add(session.id);
-				}
-				if (
-					(history.sessions.length > 0 && history.activeSessionId === undefined) ||
-					(history.activeSessionId !== undefined &&
-						!history.sessions.some((session) => session.id === history.activeSessionId))
-				)
-					throw new Error("invalid state");
-			}
-		}
-		if (
-			(state.activeSessionId !== undefined && typeof state.activeSessionId !== "string") ||
-			(state.worktreePath !== undefined && typeof state.worktreePath !== "string") ||
-			(state.hasSuccessfulSession !== undefined && typeof state.hasSuccessfulSession !== "boolean")
-		)
+		if (!isRecord(value) || value.version !== 2 || value.taskId !== taskId || !isRecord(value.modes))
 			throw new Error("invalid state");
-		return state;
-	}
-
-	private decodeVersionedEnvelope(value: Record<string, unknown>, taskId: string): SessionState {
 		if (
 			(value.worktreePath !== undefined && typeof value.worktreePath !== "string") ||
 			(value.hasSuccessfulSession !== undefined && typeof value.hasSuccessfulSession !== "boolean")
 		)
 			throw new Error("invalid state");
-		const modes: NonNullable<SessionState["modes"]> = {};
+		const modes: SessionState["modes"] = {};
+		const seen = new Set<string>();
 		for (const [modeId, history] of Object.entries(value.modes as Record<string, unknown>)) {
 			if (
 				!isRecord(history) ||
 				!Array.isArray(history.sessions) ||
 				!history.sessions.every((session) => isSession(session, taskId)) ||
-				(history.sessions.length > 0 && history.activeSessionId === undefined) ||
-				(history.activeSessionId !== undefined && typeof history.activeSessionId !== "string")
+				(history.sessions.length > 0 && typeof history.activeSessionId !== "string") ||
+				(history.activeSessionId !== undefined && typeof history.activeSessionId !== "string") ||
+				(history.activeSessionId !== undefined &&
+					!history.sessions.some((session) => session.id === history.activeSessionId))
 			)
 				throw new Error("invalid state");
+			for (const session of history.sessions) {
+				if (seen.has(session.id)) throw new Error("invalid state");
+				seen.add(session.id);
+			}
 			modes[modeId] = {
 				sessions: history.sessions as AgentSession[],
 				...(typeof history.activeSessionId === "string" ? { activeSessionId: history.activeSessionId } : {}),
@@ -949,40 +897,17 @@ export class SessionStore {
 		return {
 			version: 2,
 			taskId,
-			sessions: [],
 			modes,
-			legacyModeId: "build",
 			...(typeof value.worktreePath === "string" ? { worktreePath: value.worktreePath } : {}),
 			...(typeof value.hasSuccessfulSession === "boolean" ? { hasSuccessfulSession: value.hasSuccessfulSession } : {}),
 		};
 	}
 
-	private projectBuildCompatibility(state: SessionState, original: Record<string, unknown>): SessionState {
-		const build = state.modes?.build ?? { sessions: [] };
-		// `mutate` passes the compatibility projection back through validation; its flat changes
-		// remain authoritative only when explicitly present.
-		const flatSessions = Array.isArray(original.sessions) ? (original.sessions as AgentSession[]) : undefined;
-		const activeSessionId =
-			typeof original.activeSessionId === "string" && flatSessions?.some(({ id }) => id === original.activeSessionId)
-				? original.activeSessionId
-				: build.activeSessionId && flatSessions?.some(({ id }) => id === build.activeSessionId)
-					? build.activeSessionId
-					: flatSessions?.[0]?.id;
-		const legacy = flatSessions
-			? { sessions: flatSessions, ...(activeSessionId === undefined ? {} : { activeSessionId }) }
-			: build;
-		state.modes ??= {};
-		state.modes.build = legacy;
-		state.sessions = legacy.sessions;
-		state.activeSessionId = legacy.activeSessionId;
-		return state;
-	}
-
-	private toVersioned(state: SessionState): VersionedSessionState {
+	private toVersioned(state: SessionState): SessionState {
 		return {
 			version: 2,
 			taskId: state.taskId,
-			modes: state.modes ?? {},
+			modes: state.modes,
 			...(state.worktreePath ? { worktreePath: state.worktreePath } : {}),
 			...(state.hasSuccessfulSession !== undefined ? { hasSuccessfulSession: state.hasSuccessfulSession } : {}),
 		};

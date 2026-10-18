@@ -107,8 +107,6 @@ describe("Task", () => {
 		await store.mutate("T-1", async (state) => {
 			({ session, creation } = task.reserveSession("a"));
 			state.modes = task.serializeSessions();
-			state.sessions = state.modes.build?.sessions ?? [];
-			state.activeSessionId = state.modes.build?.activeSessionId;
 		});
 		if (!session || !creation) throw new Error("reservation was not created");
 		const reservedSession = session;

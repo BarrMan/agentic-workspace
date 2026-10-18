@@ -53,7 +53,7 @@ describe("native workspace terminal", () => {
 		}
 	});
 
-	test("forwards raw Option/Alt word-motion bytes and legacy SS3 arrows", async () => {
+	test("forwards raw Option/Alt word-motion bytes and SS3 arrows", async () => {
 		const setup = await createTestRenderer({ width: 80, height: 24 });
 		renderers.push(setup);
 		const terminal = createWorkspaceAgent(setup.renderer, host([]), 80, 24, (error) => {

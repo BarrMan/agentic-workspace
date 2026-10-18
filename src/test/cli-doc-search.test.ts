@@ -89,7 +89,7 @@ describe("CLI doc search command", () => {
 			{
 				id: "doc-2",
 				title: "Architecture Runbook",
-				type: "specification",
+				type: "design",
 				createdDate: "2026-06-13",
 				rawContent: "Operational architecture procedures.",
 			},
