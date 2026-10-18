@@ -37,7 +37,6 @@ export type LabelMatchMode = "any" | "all";
 export enum EntityType {
 	Task = "task",
 	Draft = "draft",
-	Decision = "decision",
 }
 
 export interface Task {
@@ -198,19 +197,6 @@ export interface TaskListFilter {
 	labelMatch?: LabelMatchMode;
 }
 
-export interface Decision {
-	id: string;
-	title: string;
-	date: string;
-	status: string;
-	context: string;
-	decision: string;
-	consequences: string;
-	alternatives?: string;
-	readonly rawContent: string; // Raw markdown content without frontmatter
-	path?: string; // Decisions-relative file path, set when listed from disk
-}
-
 export interface Milestone {
 	id: string;
 	title: string;
@@ -219,7 +205,7 @@ export interface Milestone {
 	readonly rawContent: string; // Raw markdown content without frontmatter
 }
 
-export type SearchResultType = "task" | "decision";
+export type SearchResultType = "task";
 
 export type SearchPriorityFilter = string;
 
@@ -257,14 +243,7 @@ export interface TaskSearchResult {
 	matches?: SearchMatch[];
 }
 
-export interface DecisionSearchResult {
-	type: "decision";
-	score: number | null;
-	decision: Decision;
-	matches?: SearchMatch[];
-}
-
-export type SearchResult = TaskSearchResult | DecisionSearchResult;
+export type SearchResult = TaskSearchResult;
 
 /**
  * Configuration for ID prefixes used in task files.

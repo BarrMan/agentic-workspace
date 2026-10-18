@@ -4,12 +4,11 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Core } from "../core/agentic-workspace.ts";
 import { BranchTaskLoader } from "../core/task-loader.ts";
-import { ContentRepository } from "../file-system/content-repository.ts";
 import { MilestoneStore } from "../file-system/milestones.ts";
 import type { GitOperations } from "../git/operations.ts";
 import { UnsupportedRecordFrontmatterSchemaError, UnsupportedTaskFrontmatterSchemaError } from "../markdown/parser.ts";
-import { serializeDecision, serializeMilestone, serializeTask } from "../markdown/serializer.ts";
-import type { AgenticWorkspaceConfig, Decision, Milestone, Task } from "../types/index.ts";
+import { serializeMilestone, serializeTask } from "../markdown/serializer.ts";
+import type { AgenticWorkspaceConfig, Milestone, Task } from "../types/index.ts";
 import { coreFileSystem, createUniqueTestDir, initializeFilesystemTestProject, safeCleanup } from "./test-utils.ts";
 
 const task: Task = {
@@ -20,16 +19,6 @@ const task: Task = {
 	createdDate: "2026-09-30",
 	labels: [],
 	dependencies: [],
-	rawContent: "",
-};
-const decision: Decision = {
-	id: "decision-1",
-	title: "Decision",
-	date: "2026-09-30",
-	status: "proposed",
-	context: "",
-	decision: "",
-	consequences: "",
 	rawContent: "",
 };
 const milestone: Milestone = { id: "m-1", title: "Milestone", description: "", rawContent: "" };
@@ -50,26 +39,6 @@ function unsupported(content: string, schema: string): string {
 }
 
 describe("frontmatter diagnostic propagation", () => {
-	it("propagates unsupported decision schema diagnostics through list and load", async () => {
-		const root = await mkdtemp(join(tmpdir(), "agentic-workspace-decision-diagnostics-"));
-		try {
-			const repository = new ContentRepository({
-				decisionsDirectory: async () => root,
-				ensureDirectory: async () => {},
-			});
-			await Bun.write(
-				join(root, "decision-1 - Decision.md"),
-				unsupported(serializeDecision(decision), "decision_schema_version"),
-			);
-			await expect(repository.listDecisions()).rejects.toBeInstanceOf(UnsupportedRecordFrontmatterSchemaError);
-			await expect(repository.loadDecision("decision-1")).rejects.toBeInstanceOf(
-				UnsupportedRecordFrontmatterSchemaError,
-			);
-		} finally {
-			await rm(root, { recursive: true, force: true });
-		}
-	});
-
 	it("propagates unsupported milestone schema diagnostics through list and load", async () => {
 		const root = await mkdtemp(join(tmpdir(), "agentic-workspace-milestone-diagnostics-"));
 		const active = join(root, "active");

@@ -5,7 +5,6 @@ import type { Writable } from "node:stream";
 import { Command } from "commander";
 import { loadProjectModeCatalog } from "../agent-workspace/config.ts";
 import { registerAgentWorkspaceCommands } from "../commands/agent-workspace.ts";
-import { registerContentCommands } from "../commands/content-commands.ts";
 import { configureHelpValues } from "../commands/help-schema.ts";
 import { registerSearchCommand } from "../commands/search.ts";
 import { findLocalDuplicateTaskIds } from "../core/duplicate-task-detection.ts";
@@ -14,11 +13,7 @@ import { Core } from "../index.ts";
 import { formatDuplicateTaskIdWarning } from "../utils/duplicate-detection.ts";
 import type { ReadOutputOptions } from "../utils/read-output-mode.ts";
 import { getVersion } from "../utils/version.ts";
-import {
-	type CliReadOutput,
-	isPlainRequested as isRuntimePlainRequested,
-	resolveListOutput as resolveRuntimeListOutput,
-} from "./features/read-output.ts";
+import { type CliReadOutput, resolveListOutput as resolveRuntimeListOutput } from "./features/read-output.ts";
 import {
 	normalizeCliPriority,
 	normalizeCliProjects,
@@ -71,10 +66,6 @@ export async function runCli(
 
 	async function requireProjectRoot(): Promise<string> {
 		return runtime.projectRoot();
-	}
-
-	function isPlainRequested(options?: { plain?: boolean }): boolean {
-		return isRuntimePlainRequested(options, readOutput);
 	}
 
 	function resolveListOutput(options: ReadOutputOptions, command: Command) {
@@ -151,11 +142,6 @@ export async function runCli(
 		normalizePriority: normalizeCliPriority,
 		normalizeTaskTypes: normalizeCliTaskTypes,
 		normalizeProjects: normalizeCliProjects,
-	});
-	registerContentCommands(program, {
-		createCore: async () => new Core(await requireProjectRoot()),
-		isPlainRequested,
-		resolveListOutput,
 	});
 
 	registerAgentWorkspaceCommands(program, {

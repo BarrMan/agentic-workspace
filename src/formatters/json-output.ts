@@ -1,6 +1,6 @@
 import { isAbsolute, relative } from "node:path";
 import type { TaskDetail, TaskListItem } from "../core/task-detail.ts";
-import type { Decision, DecisionSearchResult, TaskSearchResult } from "../types/index.ts";
+import type { TaskSearchResult } from "../types/index.ts";
 import type { DependencyGraph } from "../utils/dependency-graph.ts";
 import type { ListPage } from "../utils/list-window.ts";
 import type { TaskReadiness } from "../utils/readiness.ts";
@@ -67,14 +67,7 @@ export type TaskArtifactProjection = {
 	}>;
 };
 
-type DecisionSummaryJson = {
-	id: string;
-	title: string;
-	status: Decision["status"];
-	date: string | null;
-};
-
-type SearchResultJson = { type: "task"; data: TaskSummaryJson } | { type: "decision"; data: DecisionSummaryJson };
+type SearchResultJson = { type: "task"; data: TaskSummaryJson };
 
 function nullable(value: string | undefined): string | null {
 	return value ?? null;
@@ -145,15 +138,6 @@ function toTaskDetailsJson(task: TaskDetail, projectRoot: string, artifacts?: Ta
 	};
 }
 
-function toDecisionSummaryJson(decision: Decision): DecisionSummaryJson {
-	return {
-		id: decision.id,
-		title: decision.title,
-		status: decision.status,
-		date: normalizePublicDate(decision.date),
-	};
-}
-
 /** A list cut by `--skip` or `--max-count` reports how many items matched and where the next window starts. */
 function cutListJson(page: ListPage<unknown> | undefined): { total?: number; nextSkip?: number | null } {
 	return page?.cut ? { total: page.total, nextSkip: page.nextSkip } : {};
@@ -171,36 +155,21 @@ export function taskViewJson(task: TaskDetail, projectRoot: string, artifacts?: 
 	};
 }
 
-export function decisionListJson(decisions: Decision[], page?: ListPage<unknown>) {
-	return {
-		schemaVersion: 1,
-		kind: "decision-list" as const,
-		decisions: decisions.map(toDecisionSummaryJson),
-		...cutListJson(page),
-	};
-}
-
 /**
  * A search result set whose task records already carry readiness.
  *
  * The verdict travels on the record inside each result rather than being looked up by ID: two files
  * can claim one ID with different dependencies, and each claimant has to keep its own answer.
  */
-export type SearchResultInput =
-	| DecisionSearchResult
-	| (Omit<TaskSearchResult, "task"> & {
-			task: TaskListItem;
-	  });
+export type SearchResultInput = Omit<TaskSearchResult, "task"> & {
+	task: TaskListItem;
+};
 
 /** The search envelope for results the CLI already narrowed to printable ones, without tasks from other branches. */
 export function searchJson(results: SearchResultInput[], page?: ListPage<unknown>) {
 	const publicResults: SearchResultJson[] = [];
 	for (const result of results) {
-		if (result.type === "task") {
-			publicResults.push({ type: "task", data: toTaskSummaryJson(result.task) });
-			continue;
-		}
-		publicResults.push({ type: "decision", data: toDecisionSummaryJson(result.decision) });
+		publicResults.push({ type: "task", data: toTaskSummaryJson(result.task) });
 	}
 	return { schemaVersion: 1, kind: "search" as const, results: publicResults, ...cutListJson(page) };
 }

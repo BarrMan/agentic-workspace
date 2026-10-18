@@ -7,7 +7,6 @@ import { FrontmatterSchemaError, parseMarkdown, parseTask, TaskDependenciesParse
 import { serializeTask } from "../markdown/serializer.ts";
 import {
 	type AgenticWorkspaceConfig,
-	type Decision,
 	type Milestone,
 	TASK_DIRECTORY_TYPES,
 	type Task,
@@ -35,7 +34,6 @@ import {
 import { applyTaskFilters } from "../utils/task-search.ts";
 import { sortByTaskId } from "../utils/task-sorting.ts";
 import { isConfigValueError, parseConfig, serializeConfig } from "./config.ts";
-import { ContentRepository } from "./content-repository.ts";
 import { type LockAttemptSettings, LockOwner } from "./lock-owner.ts";
 import { MilestoneStore } from "./milestones.ts";
 import { ProjectLayout } from "./project-layout.ts";
@@ -66,8 +64,7 @@ const DRAFT_STATUS_KEY = DRAFT_STATUS.toLowerCase();
 
 export type ContentMutation =
 	| { type: typeof TASK_DIRECTORY; root: string; taskId: string; filePath: string }
-	| { type: "artifact"; root: string; taskId: string; path?: string }
-	| { type: "decision"; root: string; decisionId: string };
+	| { type: "artifact"; root: string; taskId: string; path?: string };
 
 export type ContentMutationListener = (mutation: ContentMutation) => void | Promise<void>;
 
@@ -151,7 +148,6 @@ export class FileSystem {
 	private cachedConfig: AgenticWorkspaceConfig | null = null;
 	private cachedConfigSnapshot: { path: string; content: string } | null = null;
 	private readonly taskRepository: TaskRepository;
-	private readonly contentRepository: ContentRepository;
 	private readonly locks = new LockOwner();
 	private readonly layout = new ProjectLayout();
 	private readonly contentMutationListeners = new Set<ContentMutationListener>();
@@ -181,11 +177,6 @@ export class FileSystem {
 					? join(this.resolvedAgenticWorkspaceDir, DEFAULT_FILES.CONFIG)
 					: (resolution.configPath ?? join(this.resolvedAgenticWorkspaceDir, DEFAULT_FILES.CONFIG));
 		this.taskRepository = new TaskRepository();
-		this.contentRepository = new ContentRepository({
-			decisionsDirectory: async () => await this.getDecisionsDir(),
-			ensureDirectory: async (directory) => await this.ensureDirectoryExists(directory),
-			withCreateLock: (operation) => this.withCreateLock(operation),
-		});
 		this.milestones = new MilestoneStore({
 			activeDirectory: () => this.getMilestonesDir(),
 			archiveDirectory: () => this.getArchiveMilestonesDir(),
@@ -217,9 +208,6 @@ export class FileSystem {
 	}
 	get archiveMilestonesDir(): string {
 		return join(this.resolvedAgenticWorkspaceDir, DEFAULT_DIRECTORIES.ARCHIVE_MILESTONES);
-	}
-	get decisionsDir(): string {
-		return join(this.resolvedAgenticWorkspaceDir, DEFAULT_DIRECTORIES.DECISIONS);
 	}
 
 	get milestonesDir(): string {
@@ -364,11 +352,6 @@ export class FileSystem {
 		return join(agenticWorkspaceDir, DEFAULT_DIRECTORIES.ARCHIVE_DRAFTS);
 	}
 
-	private async getDecisionsDir(): Promise<string> {
-		const agenticWorkspaceDir = await this.getAgenticWorkspaceDir();
-		return join(agenticWorkspaceDir, DEFAULT_DIRECTORIES.DECISIONS);
-	}
-
 	private async getMilestonesDir(): Promise<string> {
 		const agenticWorkspaceDir = await this.getAgenticWorkspaceDir();
 		return join(agenticWorkspaceDir, DEFAULT_DIRECTORIES.MILESTONES);
@@ -390,7 +373,6 @@ export class FileSystem {
 			join(agenticWorkspaceDir, DEFAULT_DIRECTORIES.ARCHIVE_DRAFTS),
 			join(agenticWorkspaceDir, DEFAULT_DIRECTORIES.MILESTONES),
 			join(agenticWorkspaceDir, DEFAULT_DIRECTORIES.ARCHIVE_MILESTONES),
-			join(agenticWorkspaceDir, DEFAULT_DIRECTORIES.DECISIONS),
 		];
 
 		await this.layout.ensureDirectories(directories);
@@ -1386,21 +1368,6 @@ export class FileSystem {
 		return { duplicates, unreadable, drifted };
 	}
 
-	// Decision log operations
-	async saveDecision(
-		decision: Decision,
-		retainedFrontmatter?: Record<string, unknown>,
-	): Promise<{ filepath: string; removedFilepaths: string[] }> {
-		const root = resolve(this.agenticWorkspaceDir);
-		const saved = await this.contentRepository.saveDecision(decision, retainedFrontmatter);
-		await this.publishContentMutation({ type: "decision", root, decisionId: decision.id });
-		return saved;
-	}
-
-	async loadDecision(decisionId: string): Promise<Decision | null> {
-		return await this.contentRepository.loadDecision(decisionId);
-	}
-
 	subscribeToContentMutations(listener: ContentMutationListener): () => void {
 		this.contentMutationListeners.add(listener);
 		return () => this.contentMutationListeners.delete(listener);
@@ -1410,11 +1377,6 @@ export class FileSystem {
 		for (const listener of this.contentMutationListeners) {
 			await listener(mutation);
 		}
-	}
-
-	/** Lists decisions, skipping files that cannot be read or parsed and collecting their paths in `unreadable`. */
-	async listDecisions(unreadable?: string[]): Promise<Decision[]> {
-		return await this.contentRepository.listDecisions(unreadable);
 	}
 
 	async listMilestones(): Promise<Milestone[]> {

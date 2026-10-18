@@ -279,23 +279,17 @@ describe("prefix-config", () => {
 			// Draft prefix is hardcoded, not part of config
 			expect(getPrefixForType(EntityType.Draft, config)).toBe("draft");
 		});
-
-		test("returns decision prefix for Decision type", () => {
-			expect(getPrefixForType(EntityType.Decision)).toBe("decision");
-		});
 	});
 
 	describe("isReservedTaskPrefix", () => {
-		test("rejects prefixes matching the draft, doc, and decision system prefixes", () => {
+		test("rejects prefixes matching the draft system prefix", () => {
 			expect(isReservedTaskPrefix("draft")).toBe(true);
-			expect(isReservedTaskPrefix("doc")).toBe(true);
-			expect(isReservedTaskPrefix("decision")).toBe(true);
+			expect(isReservedTaskPrefix("doc")).toBe(false);
 		});
 
 		test("is case-insensitive", () => {
 			expect(isReservedTaskPrefix("DRAFT")).toBe(true);
-			expect(isReservedTaskPrefix("Doc")).toBe(true);
-			expect(isReservedTaskPrefix("DECISION")).toBe(true);
+			expect(isReservedTaskPrefix("Doc")).toBe(false);
 		});
 
 		test("allows non-reserved prefixes", () => {
@@ -308,14 +302,9 @@ describe("prefix-config", () => {
 	describe("getTaskPrefixError", () => {
 		test("rejects reserved prefixes with the init error used by the wizard and flag", () => {
 			expect(getTaskPrefixError("draft")).toBe(
-				'Task prefix "draft" is reserved for drafts, docs, or decisions. Choose a different prefix.',
+				'Task prefix "draft" is reserved for drafts. Choose a different prefix.',
 			);
-			expect(getTaskPrefixError("DOC")).toBe(
-				'Task prefix "DOC" is reserved for drafts, docs, or decisions. Choose a different prefix.',
-			);
-			expect(getTaskPrefixError("Decision")).toBe(
-				'Task prefix "Decision" is reserved for drafts, docs, or decisions. Choose a different prefix.',
-			);
+			expect(getTaskPrefixError("DOC")).toBeUndefined();
 		});
 
 		test("rejects non-letter prefixes", () => {

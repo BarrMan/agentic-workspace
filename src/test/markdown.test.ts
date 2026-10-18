@@ -1,8 +1,8 @@
 import { describe, expect, it } from "bun:test";
 import { parseFrontmatter } from "../markdown/frontmatter.ts";
-import { parseDecision, parseMarkdown, parseTask, UnsupportedTaskFrontmatterSchemaError } from "../markdown/parser.ts";
-import { serializeDecision, serializeTask } from "../markdown/serializer.ts";
-import type { Decision, Task } from "../types/index.ts";
+import { parseMarkdown, parseTask, UnsupportedTaskFrontmatterSchemaError } from "../markdown/parser.ts";
+import { serializeTask } from "../markdown/serializer.ts";
+import type { Task } from "../types/index.ts";
 
 describe("Markdown Parser", () => {
 	describe("parseMarkdown", () => {
@@ -201,107 +201,15 @@ assignee: "@MrLesk"
 			expect(() => parseTask(content)).toThrow("assignee must be a list");
 		});
 	});
-
-	describe("parseDecision", () => {
-		it("should parse a decision log", () => {
-			const content = `---
-decision_schema_version: 1
-id: decision-1
-title: "Use TypeScript for backend"
-date: "2025-06-03"
-status: "accepted"
-context: We need to choose a language for the backend.
-decision: We will use TypeScript for better type safety.
-consequences: Better development experience but steeper learning curve.
----
-
-## Context
-
-We need to choose a language for the backend.
-
-## Decision
-
-We will use TypeScript for better type safety.
-
-## Consequences
-
-Better development experience but steeper learning curve.`;
-
-			const decision = parseDecision(content);
-
-			expect(decision.id).toBe("decision-1");
-			expect(decision.title).toBe("Use TypeScript for backend");
-			expect(decision.status).toBe("accepted");
-			expect(decision.context).toBe("We need to choose a language for the backend.");
-			expect(decision.decision).toBe("We will use TypeScript for better type safety.");
-			expect(decision.consequences).toBe("Better development experience but steeper learning curve.");
-		});
-
-		it("should parse decision log with alternatives", () => {
-			const content = `---
-decision_schema_version: 1
-id: decision-2
-title: "Choose database"
-date: "2025-06-03"
-status: "proposed"
-context: Need a database solution.
-decision: Use PostgreSQL.
-consequences: Good performance and reliability.
-alternatives: Considered MongoDB and MySQL.
----
-
-## Context
-
-Need a database solution.
-
-## Decision
-
-Use PostgreSQL.
-
-## Consequences
-
-Good performance and reliability.
-
-## Alternatives
-
-Considered MongoDB and MySQL.`;
-
-			const decision = parseDecision(content);
-
-			expect(decision.alternatives).toBe("Considered MongoDB and MySQL.");
-		});
-
-		it("should handle missing sections", () => {
-			const content = `---
-decision_schema_version: 1
-id: decision-3
-title: "Minimal decision"
-date: "2025-06-03"
-status: "proposed"
-context: Some context.
----
-
-## Context
-
-Some context.`;
-
-			const decision = parseDecision(content);
-
-			expect(decision.context).toBe("Some context.");
-			expect(decision.decision).toBe("");
-			expect(decision.consequences).toBe("");
-			expect(decision.alternatives).toBeUndefined();
-		});
-	});
 });
 
 describe("malformed frontmatter", () => {
 	// gray-matter caches the file object before parsing, so an uncached second parse used to
 	// return empty frontmatter and make an unparseable file look like one with no id.
 	it("fails on every parse, not just the first", () => {
-		const malformed = "---\nid: decision-2\ntitle: [unterminated\n---\n\nBody\n";
+		const malformed = "---\nid: task-2\ntitle: [unterminated\n---\n\nBody\n";
 
-		for (const parse of [parseDecision, parseTask, parseMarkdown]) {
+		for (const parse of [parseTask, parseMarkdown]) {
 			expect(() => parse(malformed)).toThrow();
 		}
 	});
@@ -501,46 +409,6 @@ describe("Markdown Serializer", () => {
 			expect(emptyOptionals).toContain("labels: []");
 			expect(emptyOptionals).toContain("dependencies: []");
 			expect(emptyOptionals).not.toMatch(/(?:references|documentation|modified_files|subtasks):/);
-		});
-	});
-
-	describe("serializeDecision", () => {
-		it("should serialize a decision log correctly", () => {
-			const decision: Decision = {
-				id: "decision-1",
-				title: "Use TypeScript",
-				date: "2025-06-03",
-				status: "accepted",
-				context: "We need type safety",
-				decision: "Use TypeScript",
-				consequences: "Better DX",
-				rawContent: "",
-			};
-
-			const result = serializeDecision(decision);
-
-			expect(result).toContain("id: decision-1");
-			expect(result).toContain("decision_schema_version: 1");
-			expect(result).toContain("context: We need type safety");
-			expect(result).toContain("decision: Use TypeScript");
-		});
-
-		it("should serialize decision log with alternatives", () => {
-			const decision: Decision = {
-				id: "decision-2",
-				title: "Database Choice",
-				date: "2025-06-03",
-				status: "accepted",
-				context: "Need database",
-				decision: "PostgreSQL",
-				consequences: "Good performance",
-				alternatives: "Considered MongoDB",
-				rawContent: "",
-			};
-
-			const result = serializeDecision(decision);
-
-			expect(result).toContain("alternatives: Considered MongoDB");
 		});
 	});
 });

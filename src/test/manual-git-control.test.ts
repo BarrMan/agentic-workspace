@@ -65,11 +65,4 @@ describe("manual Git control", () => {
 		expect(await core.archiveDraft(archivedDraft.task.id)).toBe(true);
 		await expectUserGitState();
 	});
-
-	it("persists decisions without committing", async () => {
-		const decision = await core.createDecisionWithTitle("Decision");
-		await core.updateDecisionFromContent(decision.id, "---\ntitle: Updated decision\n---\nUpdated content\n");
-		expect((await coreFileSystem(core).loadDecision(decision.id))?.title).toBe("Updated decision");
-		await expectUserGitState();
-	});
 });

@@ -222,8 +222,6 @@ export class ProjectTaskMutations {
 				]);
 				return [...drafts.map((draft) => draft.id), ...occupied];
 			}
-			case EntityType.Decision:
-				return (await this.storage.listDecisions()).map((decision) => decision.id);
 		}
 	}
 

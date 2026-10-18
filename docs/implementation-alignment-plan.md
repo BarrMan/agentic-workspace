@@ -41,7 +41,7 @@ Every requirement is audited; no family is presumed aligned. At the first packag
 | IF-WB-001–IF-WB-008; [workspace and board](specs/workspace-and-board.md) | P7 Workspace UI (render/interaction owner: designer). |
 | IF-FS-001–IF-FS-003; [filtering and search](specs/filtering-and-search.md) | P8B backend search fixer accountable; P5 corpus/archive wiring, P6 output and P8S filters UI contribute their scenarios. |
 | IF-SI-001–IF-SI-007; [session interaction and feedback](specs/session-interaction-and-feedback.md) | P7 accountable; P3 contributes session behavior and P5 shared coordination. Freeze scenario ownership at checkpoint. |
-| IF-API-001–007, IF-API-009–013; exhaustive operation inventory, every named operation/option and excluded surface; [integration contract](specs/supported-integration-operations.md), including the exhaustive inventory | P6 CLI surface/parity. |
+| IF-API-001–007, IF-API-010–013; exhaustive operation inventory, every named operation/option and excluded surface; [integration contract](specs/supported-integration-operations.md), including the exhaustive inventory | P6 CLI surface/parity. |
 | All six screen docs: [workspace](screens/workspace.md), [board](screens/board.md), [tasks](screens/tasks.md), [settings](screens/settings.md), [sessions and artifacts](screens/sessions-artifacts.md), [help and dialogs](screens/help-dialogs.md), every composition/state/focus/action/size section | P7 workspace; P8S other screens. All UI work authored/reviewed by designer; one writer per file. |
 | [DESIGN-SYSTEM](DESIGN-SYSTEM.md), every shared pattern/status/focus/dialog/open question | P7 design owner; P8S applies shared patterns, not a separate competing style. |
 | [PRODUCT](PRODUCT.md), all vision/scope/users/goals/non-goals | P9 read-only auditor; escalate scope ambiguity, no source change absent owning-contract correction authorization. |
@@ -61,7 +61,7 @@ Expand compact family rows into one row for each ID below and further rows for e
 | Workspace and board | IF-WB-001, IF-WB-002, IF-WB-003, IF-WB-004, IF-WB-005, IF-WB-006, IF-WB-007, IF-WB-008 |
 | Filtering and search | IF-FS-001, IF-FS-002, IF-FS-003 |
 | Session interaction and feedback | IF-SI-001, IF-SI-002, IF-SI-003, IF-SI-004, IF-SI-005, IF-SI-006, IF-SI-007 |
-| Supported integration API | IF-API-001, IF-API-002, IF-API-003, IF-API-004, IF-API-005, IF-API-006, IF-API-007, IF-API-009, IF-API-010, IF-API-011, IF-API-012, IF-API-013 |
+| Supported integration API | IF-API-001, IF-API-002, IF-API-003, IF-API-004, IF-API-005, IF-API-006, IF-API-007, IF-API-010, IF-API-011, IF-API-012, IF-API-013 |
 
 Suggested ledger columns: `requirement/scenario | accountable owner | implementation path + symbol/lines | test path + case | status | evidence type | result/decision`. Include each screen document and every named architecture/design/ADR/convention section as individual section rows or exact section-group rows, with links to their owning contract. There is no automatic pass from a sibling scenario. If a requirement has multiple implementations/adapters, ledger each and record parity evidence.
 

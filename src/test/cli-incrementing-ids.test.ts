@@ -3,7 +3,7 @@ import { mkdir } from "node:fs/promises";
 import { Writable } from "node:stream";
 import { runCli } from "../cli/register.ts";
 import { Core } from "../core/agentic-workspace.ts";
-import type { Decision, Task } from "../types";
+import type { Task } from "../types";
 import { coreFileSystem, createUniqueTestDir, initializeFilesystemTestProject, safeCleanup } from "./test-utils.ts";
 
 let TEST_DIR: string;
@@ -64,28 +64,5 @@ describe("CLI ID Incrementing Behavior", () => {
 		const task2 = await coreFileSystem(core).loadTask("task-2");
 		expect(task2).toBeDefined();
 		expect(task2?.title).toBe("Second Task");
-	});
-
-	test("should increment decision IDs correctly", async () => {
-		const decision1: Decision = {
-			id: "decision-1",
-			title: "First Decision",
-			date: "",
-			status: "proposed",
-			context: "",
-			decision: "",
-			consequences: "",
-			rawContent: "",
-		};
-		await core.createDecision(decision1);
-
-		const result = await runCommand(["decision", "create", "Second Decision"]);
-
-		expect(result.exitCode).toBe(0);
-		expect(result.stdout.toString()).toContain("Created decision decision-2");
-
-		const decision2 = await coreFileSystem(core).loadDecision("decision-2");
-		expect(decision2).not.toBeNull();
-		expect(decision2?.title).toBe("Second Decision");
 	});
 });

@@ -18,8 +18,8 @@ Statuses: **verified** = source/test evidence matches the stated scenario; **gap
 | IF-FS-001 failure scenario | verified | Contract specifies no failures; predicates return booleans and empty filters impose no constraint. |
 | IF-FS-001 empty filters / empty task corpus | verified | Empty checks all-match; `applyTaskFilters` preserves empty input as empty. |
 | IF-FS-001 project-directory boundary | blocked | Supplied task corpus is caller-owned; project loading/scope is outside this backend. |
-| IF-FS-002 — task and decision record coverage | verified | `searchSnapshot` constructs the supported entity classes and applies requested type selection. |
-| IF-FS-002 — task id/title/description and decision body fields | verified | `searchSnapshot` searches stored IDs, titles, task body text and decision-record body text using literal substring checks; decision fields are joined into body text. `search-service.test.ts` covers task and decision fields. |
+| IF-FS-002 — project task coverage | verified | `searchSnapshot` constructs task entities and applies requested type selection. |
+| IF-FS-002 — task id/title/description fields | verified | `searchSnapshot` searches stored IDs, titles, and task body text using literal substring checks. `search-service.test.ts` covers task fields. |
 | IF-FS-002 — case-insensitive literal matching | verified | Shared literal matcher lowercases query and fields; search/parity tests cover case-insensitivity and fuzzy near-miss rejection. |
 | IF-FS-002 — task ID matching | verified | `task-id-search.ts` now supplies only stored ID spellings (case variants); substring matching does not synthesize suffix/numeric-segment aliases. No whole-token boundary is required by the contract. |
 | IF-FS-002 — project scope excludes outside records | blocked | `searchSnapshot` searches exactly its supplied corpus; corpus assembly/scope is not owned here. |

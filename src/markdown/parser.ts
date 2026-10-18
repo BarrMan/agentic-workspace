@@ -1,15 +1,8 @@
 import { z } from "zod";
-import type { Decision, Milestone, ParsedMarkdown, Task } from "../types/index.ts";
+import type { Milestone, ParsedMarkdown, Task } from "../types/index.ts";
 import { parseFrontmatter } from "./frontmatter.ts";
+import { MILESTONE_FRONTMATTER_KEY_MAP, MilestoneFrontmatterSchema } from "./record-schemas.ts";
 import {
-	DECISION_FRONTMATTER_KEY_MAP,
-	DecisionFrontmatterSchema,
-	MILESTONE_FRONTMATTER_KEY_MAP,
-	MilestoneFrontmatterSchema,
-} from "./record-schemas.ts";
-import {
-	DECISION_FRONTMATTER_FIELDS,
-	DECISION_FRONTMATTER_SCHEMA_VERSION,
 	MILESTONE_FRONTMATTER_FIELDS,
 	MILESTONE_FRONTMATTER_SCHEMA_VERSION,
 	TASK_FRONTMATTER_FIELDS,
@@ -22,11 +15,7 @@ import {
 	TaskRecordSchema,
 } from "./task-record-schema.ts";
 
-export {
-	DECISION_FRONTMATTER_SCHEMA_VERSION,
-	MILESTONE_FRONTMATTER_SCHEMA_VERSION,
-	TASK_FRONTMATTER_SCHEMA_VERSION,
-} from "./schema.ts";
+export { MILESTONE_FRONTMATTER_SCHEMA_VERSION, TASK_FRONTMATTER_SCHEMA_VERSION } from "./schema.ts";
 
 export class FrontmatterSchemaError extends Error {}
 
@@ -53,7 +42,7 @@ export class UnsupportedTaskFrontmatterSchemaError extends FrontmatterSchemaErro
 }
 
 export class UnsupportedRecordFrontmatterSchemaError extends FrontmatterSchemaError {
-	constructor(kind: "decision" | "milestone", id: string, version: unknown) {
+	constructor(kind: "milestone", id: string, version: unknown) {
 		super(
 			`${kind[0]?.toUpperCase()}${kind.slice(1)} ${id || "(missing id)"} uses unsupported ${kind} frontmatter schema version ${JSON.stringify(version)}.`,
 		);
@@ -104,7 +93,7 @@ function throwTaskSchemaError(taskId: string, error: z.ZodError): never {
 	throw new TaskFrontmatterSchemaError(taskId, issue ? formatIssue(issue) : "invalid frontmatter");
 }
 
-function throwRecordSchemaError(kind: "decision" | "milestone", id: string, error: z.ZodError): never {
+function throwRecordSchemaError(kind: "milestone", id: string, error: z.ZodError): never {
 	const issue = error.issues[0];
 	const detail = issue ? formatIssue(issue) : "invalid frontmatter";
 	throw new FrontmatterSchemaError(`Invalid ${kind} frontmatter for ${id || "(missing id)"}: ${detail}.`);
@@ -136,25 +125,6 @@ export function parseTask(content: string): Task {
 		return record as Task;
 	} catch (error) {
 		if (error instanceof z.ZodError) throwTaskSchemaError(fields.id, error);
-		throw error;
-	}
-}
-
-export function parseDecision(content: string): Decision {
-	const { frontmatter, content: rawContent } = parseMarkdown(content);
-	const id = String(frontmatter[DECISION_FRONTMATTER_FIELDS.ID] || "");
-	if (frontmatter[DECISION_FRONTMATTER_FIELDS.SCHEMA_VERSION] !== DECISION_FRONTMATTER_SCHEMA_VERSION)
-		throw new UnsupportedRecordFrontmatterSchemaError(
-			"decision",
-			id,
-			frontmatter[DECISION_FRONTMATTER_FIELDS.SCHEMA_VERSION],
-		);
-
-	try {
-		const record = DecisionFrontmatterSchema.parse(frontmatterFields(frontmatter, DECISION_FRONTMATTER_KEY_MAP));
-		return { ...record, rawContent };
-	} catch (error) {
-		if (error instanceof z.ZodError) throwRecordSchemaError("decision", id, error);
 		throw error;
 	}
 }

@@ -8,7 +8,7 @@
 
 ## Purpose
 
-Define one declarative validation boundary for Markdown frontmatter. Tasks, decisions, and milestones previously decoded individual fields with hand-written helpers, so types, defaults, list coercion, date checks, and enums were spread across parser code and easy to apply inconsistently.
+Define one declarative validation boundary for Markdown frontmatter. Tasks and milestones previously decoded individual fields with hand-written helpers, so types, defaults, list coercion, date checks, and enums were spread across parser code and easy to apply inconsistently.
 
 ## Blueprint Mapping
 
@@ -48,7 +48,7 @@ JSON Schema describes the wire shape well but is less direct for TypeScript-firs
 
 ## Rationale
 
-Zod keeps the validation contract in one place, makes field rules readable next to their property names, and infers the parsed shape without a decorator runtime or a second type definition. Plain schema values fit the existing plain `Task`, `Decision`, and `Milestone` interfaces, work with Bun's YAML output, and let the parser translate issues into the established error classes instead of changing callers.
+Zod keeps the validation contract in one place, makes field rules readable next to their property names, and infers the parsed shape without a decorator runtime or a second type definition. Plain schema values fit the existing plain `Task` and `Milestone` interfaces, work with Bun's YAML output, and let the parser translate issues into the established error classes instead of changing callers.
 
 ## Consequences
 
@@ -58,7 +58,6 @@ Zod keeps the validation contract in one place, makes field rules readable next 
 - Adding a field means adding it to the key map and one schema object, not another decoding helper.
 
 **Trade-offs**
-- Decision `status` is now checked against its declared union; malformed values that previously loaded as strings now fail validation.
 - Dependency values remain a special case because their error must preserve `TaskDependenciesParseError` and entry index reporting.
 - Frontmatter in unknown keys is outside the schema; retention depends on the serializer being given the original frontmatter.
 
@@ -66,5 +65,5 @@ Zod keeps the validation contract in one place, makes field rules readable next 
 
 - [Markdown parser](../../src/markdown/parser.ts) — public parse functions and error mapping.
 - [Task record schema](../../src/markdown/task-record-schema.ts) — task field, date, enum, and dependency rules.
-- [Record schemas](../../src/markdown/record-schemas.ts) — decision and milestone rules.
+- [Record schemas](../../src/markdown/record-schemas.ts) — milestone rules.
 - [SPEC](../../docs/SPEC.md) — current record behavior.

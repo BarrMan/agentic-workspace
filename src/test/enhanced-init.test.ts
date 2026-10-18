@@ -112,14 +112,14 @@ describe("Enhanced init command", () => {
 	});
 
 	test("initializeProject should reject reserved task prefixes", async () => {
-		for (const taskPrefix of ["draft", "Decision"]) {
+		for (const taskPrefix of ["draft"]) {
 			const core = new Core(tmpDir);
 			await expect(
 				initializeProject(core, {
 					projectName: "Reserved Prefix Init",
 					advancedConfig: { taskPrefix },
 				}),
-			).rejects.toThrow(/reserved for drafts or decisions/);
+			).rejects.toThrow(/reserved for drafts/);
 			expect(await Bun.file(join(tmpDir, "agentic-workspace", "config.yml")).exists()).toBe(false);
 		}
 	});
@@ -144,15 +144,6 @@ describe("Enhanced init command", () => {
 		expect(result.config.prefixes?.task).toBe("draft");
 		const loadedConfig = await coreFileSystem(core).loadConfig();
 		expect(loadedConfig?.prefixes?.task).toBe("draft");
-
-		// Re-init cannot introduce a reserved prefix either.
-		await expect(
-			initializeProject(core, {
-				projectName: "Historical Reserved Prefix",
-				existingConfig,
-				advancedConfig: { taskPrefix: "decision" },
-			}),
-		).rejects.toThrow(/reserved for drafts or decisions/);
 	});
 
 	test("initializeProject should use custom taskPrefix from advancedConfig", async () => {

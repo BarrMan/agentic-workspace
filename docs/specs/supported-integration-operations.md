@@ -130,25 +130,25 @@ Provide agents inside sessions and external applications with a selective public
 - List and read operate on the target task's artifacts directory.
 - Writing from a file and from standard input replaces the selected contents in that directory.
 
-### IF-API-006: Search project records
+### IF-API-006: Search project tasks
 
-**Description:** The CLI must provide cross-record search with filters and plain-text or JSON output as defined by [Filtering and search](filtering-and-search.md#product-requirements-filtering-and-search).
+**Description:** The CLI must provide task search with filters and plain-text or JSON output as defined by [Filtering and search](filtering-and-search.md#product-requirements-filtering-and-search).
 
-**Trigger:** A caller submits a cross-record search.
+**Trigger:** A caller submits a task search.
 
 **Preconditions:** A project directory is available.
 
 **Behavior:**
-1. Search tasks and decision records within the project scope.
+1. Search project tasks within the project scope.
 2. Follow the search contract for matching, filters, archived records, and output formats.
 3. Do not support pagination, regex, or fuzzy ranking.
 
-**Outcome:** Matching records are returned in plain text or JSON.
+**Outcome:** Matching tasks are returned in plain text or JSON.
 
 **Failures:** Follow the filtering-and-search contract.
 
 **Acceptance Criteria:**
-- Search covers project tasks and decision records and supports plain-text and JSON output.
+- Search covers project tasks and supports plain-text and JSON output.
 - Search behavior follows the linked contract, including its exclusion of pagination, regex, and fuzzy ranking.
 
 ### IF-API-007: Ask a retained session
@@ -173,24 +173,6 @@ Provide agents inside sessions and external applications with a selective public
 - Sending to a saved session starts execution bound to that conversation when needed.
 - With no previous saved session in the current mode, the call reports failure, starts no execution, makes no session changes, and exits nonzero.
 - If answering fails or is interrupted, the call reports failure without returning an answer and exits nonzero; already completed message/execution effects are not rolled back.
-
-### IF-API-009: Manage decision records
-
-**Description:** The CLI must create and list decision records.
-
-**Trigger:** A caller requests decision-record creation or listing.
-
-**Preconditions:** The project directory is available.
-
-**Behavior:**
-1. Create or list decision records as requested.
-
-**Outcome:** The requested decision-record operation is completed.
-
-**Failures:** The operation fails when the requested action cannot be completed.
-
-**Acceptance Criteria:**
-- Decision records can be created and listed through the CLI.
 
 ### IF-API-010: Set the calling session's model
 
@@ -304,9 +286,8 @@ Provide agents inside sessions and external applications with a selective public
 - Start a session using workspace launch semantics (IF-API-003; [session startup](sessions.md#session-004-start-consistently-across-surfaces)).
 - Set task/mode approval in response to user direction (IF-API-004; [mode approval](configuration.md#functional-requirements)).
 - List, read, and write generic files in a task's artifacts directory; writes replace selected contents from a file or standard input (IF-API-005; [task artifacts](tasks.md#task-009-artifact-file-operations)).
-- Search tasks and decision records across the project with filters and plain-text or JSON output, subject to [filtering and search](filtering-and-search.md#product-requirements-filtering-and-search) (IF-API-006).
+- Search project tasks with filters and plain-text or JSON output, subject to [filtering and search](filtering-and-search.md#product-requirements-filtering-and-search) (IF-API-006).
 - Ask the previous saved session in the current mode one message and wait for its response as a question/answer result (IF-API-007; [ask operation](sessions.md#session-004-start-consistently-across-surfaces)). Sending to a saved session starts the execution bound to that conversation; there is no separate resume step or session-state eligibility policy.
-- Create and list decision records (IF-API-009).
 - Set the calling session's current model for its mode in project configuration, independently of provider (IF-API-010).
 
 The inventory is exhaustive. Unsupported inputs include `agent-config init` and CLI setup; named guides and instruction-file editing; board export, including Markdown export and README editing; `agent-session reset`; plural aliases; removed commands; age-based batch cleanup; interactive screen-launch commands other than the user entry point `workspace`; and `--no-git`. Any operation or option not listed as supported is unsupported. TUI capabilities not specified here do not thereby become CLI operations.

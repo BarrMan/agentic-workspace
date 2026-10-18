@@ -1,8 +1,6 @@
-import type { Decision, Milestone, Task } from "../types/index.ts";
+import type { Milestone, Task } from "../types/index.ts";
 import { stringifyFrontmatter } from "./frontmatter.ts";
 import {
-	DECISION_FRONTMATTER_FIELDS,
-	DECISION_FRONTMATTER_SCHEMA_VERSION,
 	MILESTONE_FRONTMATTER_FIELDS,
 	MILESTONE_FRONTMATTER_SCHEMA_VERSION,
 	TASK_FRONTMATTER_FIELDS,
@@ -95,24 +93,6 @@ function serializeRecord(content: string, frontmatter: Record<string, unknown>):
 export function serializeTask(task: Task, retainedFrontmatter?: Record<string, unknown>): string {
 	const rawContent = task.rawContent ?? "";
 	return serializeRecord(rawContent, taskFrontmatter(task, retainedFrontmatter));
-}
-
-export function serializeDecision(decision: Decision, retained: Record<string, unknown> = {}): string {
-	const frontmatter: Record<string, unknown> = {
-		...retained,
-		[DECISION_FRONTMATTER_FIELDS.SCHEMA_VERSION]: DECISION_FRONTMATTER_SCHEMA_VERSION,
-		[DECISION_FRONTMATTER_FIELDS.ID]: decision.id,
-		[DECISION_FRONTMATTER_FIELDS.TITLE]: decision.title,
-		[DECISION_FRONTMATTER_FIELDS.DATE]: decision.date,
-		[DECISION_FRONTMATTER_FIELDS.STATUS]: decision.status,
-		[DECISION_FRONTMATTER_FIELDS.CONTEXT]: decision.context,
-		[DECISION_FRONTMATTER_FIELDS.DECISION]: decision.decision,
-		[DECISION_FRONTMATTER_FIELDS.CONSEQUENCES]: decision.consequences,
-	};
-	delete frontmatter[DECISION_FRONTMATTER_FIELDS.ALTERNATIVES];
-	if (decision.alternatives !== undefined)
-		frontmatter[DECISION_FRONTMATTER_FIELDS.ALTERNATIVES] = decision.alternatives;
-	return serializeRecord(decision.rawContent, frontmatter);
 }
 
 export function serializeMilestone(milestone: Milestone, retained: Record<string, unknown> = {}): string {

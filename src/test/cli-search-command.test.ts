@@ -3,7 +3,7 @@ import { mkdir } from "node:fs/promises";
 import { Writable } from "node:stream";
 import { runCli } from "../cli/register.ts";
 import { Core } from "../index.ts";
-import { coreFileSystem, createUniqueTestDir, initializeFilesystemTestProject, safeCleanup } from "./test-utils.ts";
+import { createUniqueTestDir, initializeFilesystemTestProject, safeCleanup } from "./test-utils.ts";
 
 let TEST_DIR: string;
 const cliCommand = ["agentic-workspace"];
@@ -102,32 +102,19 @@ describe("CLI search command", () => {
 			priority: "high",
 			modifiedFiles: ["src/core/search-service.ts"],
 		});
-
-		await coreFileSystem(core).saveDecision({
-			id: "decision-1",
-			title: "Adopt centralized search",
-			date: "2025-09-18",
-			status: "accepted",
-			context: "Discussed search consolidation",
-			decision: "Adopt shared Fuse index",
-			consequences: "Unified search paths",
-			rawContent: "## Context\nDiscussed search consolidation\n\n## Decision\nAdopt shared Fuse index",
-		});
 	});
 
 	afterAll(async () => {
 		await safeCleanup(TEST_DIR);
 	});
 
-	it("returns matching tasks and decisions in plain output", async () => {
+	it("returns matching tasks in plain output", async () => {
 		const result = await $`${cliCommand} search central --plain`.cwd(TEST_DIR).quiet();
 
 		expect(result.exitCode).toBe(0);
 		const stdout = result.stdout.toString();
 		expect(stdout).toContain("Tasks:");
 		expect(stdout).toContain("TASK-1 - Central search integration");
-		expect(stdout).toContain("Decisions:");
-		expect(stdout).toContain("decision-1 - Adopt centralized search");
 	});
 
 	it("honors status and priority filters for task results", async () => {

@@ -2,18 +2,18 @@
 
 ## Overview
 
-Let users narrow the workspace task list and find records across project tasks and decision records.
+Let users narrow the workspace task list and find project tasks.
 
 ## Goals
 
 - Filter workspace tasks within the project directory.
-- Search project tasks and other project records using predictable literal matching.
+- Search project tasks using predictable literal matching.
 
 ## Scope
 
 ### In Scope
 
-- Task filtering by supported dimensions, filter summaries and reset actions, and cross-record search across supported project records and formats.
+- Task filtering by supported dimensions, filter summaries and reset actions, and task search across supported formats.
 
 ### Out of Scope
 
@@ -23,9 +23,9 @@ Let users narrow the workspace task list and find records across project tasks a
 
 | Actor | Description |
 |---|---|
-| User | Applies, reviews, and clears task filters; submits record searches. |
-| Integration caller | Submits cross-record searches and requests supported output formats. |
-| Application | Filters project tasks and searches project records. |
+| User | Applies, reviews, and clears task filters; submits task searches. |
+| Integration caller | Submits task searches and requests supported output formats. |
+| Application | Filters and searches project tasks. |
 
 ## Functional Requirements
 
@@ -51,25 +51,25 @@ Let users narrow the workspace task list and find records across project tasks a
 - [ ] IF-FS-001-AC-02: Confirm the interface shows a summary of active filters.
 - [ ] IF-FS-001-AC-03: Clear/reset filters and confirm active constraints are removed and project tasks are shown.
 
-### IF-FS-002: Cross-record search scope and matching
+### IF-FS-002: Task search scope and matching
 
-**Description:** Search spans tasks and decision records within the project directory. It uses case-insensitive literal matching over task ids, titles, descriptions, and assignees, and decision-record bodies.
+**Description:** Search spans project tasks within the project directory. It uses case-insensitive literal matching over task ids, titles, descriptions, and assignees.
 
-**Trigger:** User or integration submits cross-record search.
+**Trigger:** User or integration submits a task search.
 
 **Preconditions:** A project directory is available.
 
 **Behavior:**
-1. Search tasks and decision records within the project directory.
-2. Match case-insensitively and literally over task ids, titles, descriptions, and assignees, and decision-record bodies.
+1. Search project tasks within the project directory.
+2. Match case-insensitively and literally over task ids, titles, descriptions, and assignees.
 
-**Outcome:** Matching project records are returned.
+**Outcome:** Matching project tasks are returned.
 
 **Failures:** Records outside the project scope are excluded.
 
 **Acceptance Criteria:**
-- [ ] IF-FS-002-AC-01: Search a project containing tasks and decision records and confirm both record types are covered.
-- [ ] IF-FS-002-AC-02: Confirm matching checks task ids, titles, descriptions, assignees, and decision-record bodies.
+- [ ] IF-FS-002-AC-01: Search a project and confirm project tasks are covered.
+- [ ] IF-FS-002-AC-02: Confirm matching checks task ids, titles, descriptions, and assignees.
 - [ ] IF-FS-002-AC-03: Confirm matching is case-insensitive and literal.
 - [ ] IF-FS-002-AC-04: Confirm records outside the project directory are excluded.
 
@@ -123,14 +123,14 @@ Let users narrow the workspace task list and find records across project tasks a
 
 | State | Meaning |
 |---|---|
-| Search request | Query and options for a project-scoped record search. |
-| Search results | Matching records in plain-text or JSON format. |
+| Search request | Query and options for a project-scoped task search. |
+| Search results | Matching tasks in plain-text or JSON format. |
 
 **Transitions:**
 
 | From | Trigger | To | Required Behavior |
 |---|---|---|---|
-| Search request | User/integration submits | Search results | Search project records using literal case-insensitive matching and requested archive scope/format. |
+| Search request | User/integration submits | Search results | Search project tasks using literal case-insensitive matching and requested archive scope/format. |
 
 **Invariants:**
 - Search scope is the project directory.
@@ -140,13 +140,13 @@ Let users narrow the workspace task list and find records across project tasks a
 
 ## User Interactions
 
-### Filter tasks and search project records
+### Filter tasks and search project tasks
 
-**Context:** The user is working in a project-scoped workspace or submitting a project-record search.
+**Context:** The user is working in a project-scoped workspace or submitting a project task search.
 
 **Action:** Apply, change, or clear task filters; submit a search query and supported archive/format options.
 
-**Response:** Show matching project tasks with an active-filter summary, or return matching tasks and decision records.
+**Response:** Show matching project tasks with an active-filter summary, or return matching tasks.
 
 **Feedback:** The interface provides filter clear/reset actions; searches use literal case-insensitive matching and return plain-text or JSON results.
 
@@ -154,11 +154,11 @@ Let users narrow the workspace task list and find records across project tasks a
 
 ### Search interface
 
-**Purpose:** Let users and integrations search project records.
+**Purpose:** Let users and integrations search project tasks.
 
 **Inputs:** Search query, project directory, optional archived-record inclusion, and output format.
 
-**Outputs:** Matching tasks and decision records as plain-text or JSON.
+**Outputs:** Matching tasks as plain-text or JSON.
 
 **Failures:** No additional failure behavior is specified in this contract. Unsupported formats, regex, fuzzy ranking, and pagination are not supported.
 

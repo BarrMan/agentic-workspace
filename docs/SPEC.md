@@ -12,7 +12,7 @@ AgenticWorkspace organizes project tasks, configurable agent work, retained conv
 | Sessions | Session identity and observation; running, parked, and stopped states; explicit start/resume, app-close lifecycle, handoff, running-session limit, terminal lifetime, and session deletion. | [Sessions](specs/sessions.md) |
 | Configuration and modes | TUI settings, precedence, dynamic modes, task/mode approval, presets, permissions, models, and mode deletion. | [Configuration and modes](specs/configuration.md) |
 | Workspace and board | Browse and organize project tasks through grouped-list and status-column views. | [Workspace and board](specs/workspace-and-board.md) |
-| Filtering and search | Filter workspace tasks and search across project records. | [Filtering and search](specs/filtering-and-search.md) |
+| Filtering and search | Filter and search workspace tasks. | [Filtering and search](specs/filtering-and-search.md) |
 | Session interaction and feedback | Select and observe sessions; attach to running or parked sessions without changing them, and explicitly start or resume stopped sessions. | [Session interaction and feedback](specs/session-interaction-and-feedback.md) |
 | Supported Integration Operations | Use the explicitly supported selective CLI operations. | [Supported Integration Operations](specs/supported-integration-operations.md) |
 
@@ -150,7 +150,7 @@ None recorded in the [Workspace and board contract](specs/workspace-and-board.md
 
 #### Purpose
 
-Let users narrow the workspace task list and find records across project tasks and decision records.
+Let users narrow the workspace task list and find project tasks.
 
 #### Requirements
 

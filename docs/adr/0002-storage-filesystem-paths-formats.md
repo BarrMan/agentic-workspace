@@ -34,7 +34,6 @@ The root is the configured workspace-owned task-data location: `.agentic-workspa
 | Task artifacts | `<task-container>/artifacts/` |
 | Milestone | `<root>/milestones/m-<id>.md` |
 | Archived milestone | `<root>/archive/milestones/m-<id>.md` |
-| Decision | `<root>/decisions/*.md` |
 | Task session state | `<root>/<slug(task-id)>/state.json` |
 | Session bootstrap | `<root>/<slug(task-id)>/<session-id>.md` |
 | Session log | `<root>/<slug(task-id)>/<session-id>.log` |

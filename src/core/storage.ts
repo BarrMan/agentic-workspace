@@ -7,7 +7,6 @@ import { type DraftFileReference, FileSystem, type FileSystemSelection } from ".
 import { parseTask } from "../markdown/parser.ts";
 import {
 	type AgenticWorkspaceConfig,
-	type Decision,
 	type Milestone,
 	TASK_DIRECTORY,
 	TASK_SOURCE,
@@ -219,18 +218,6 @@ export class Storage {
 		return this.filesystem.diagnoseDraftIdentity();
 	}
 
-	async listDecisions(unreadable?: string[]): Promise<Decision[]> {
-		return await this.filesystem.listDecisions(unreadable);
-	}
-
-	async loadDecision(decisionId: string): Promise<Decision | null> {
-		return await this.filesystem.loadDecision(decisionId);
-	}
-
-	async saveDecision(decision: Decision, retainedFrontmatter?: Record<string, unknown>) {
-		return await this.filesystem.saveDecision(decision, retainedFrontmatter);
-	}
-
 	async withCreateLock<T>(fn: () => Promise<T>): Promise<T> {
 		return await this.filesystem.withCreateLock(fn);
 	}
@@ -262,11 +249,6 @@ export class Storage {
 
 	projectRelativePath(filePath: string): string {
 		return relative(this.filesystem.rootDir, filePath).split(sep).join("/");
-	}
-
-	describeDecisionPath(path: string): string {
-		const directory = `${this.workspaceDirectoryName}/${DEFAULT_DIRECTORIES.DECISIONS}`;
-		return path ? `${directory}/${path}` : directory;
 	}
 
 	async loadTaskStateEntries(

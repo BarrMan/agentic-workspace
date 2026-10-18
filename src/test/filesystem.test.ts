@@ -4,7 +4,7 @@ import { mkdir, readdir, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { FileSystem } from "../file-system/operations.ts";
 import { serializeTask } from "../markdown/serializer.ts";
-import type { AgenticWorkspaceConfig, Decision, Task } from "../types/index.ts";
+import type { AgenticWorkspaceConfig, Task } from "../types/index.ts";
 import { AmbiguousIdError } from "../utils/entity-id.ts";
 import { createUniqueTestDir, safeCleanup } from "./test-utils.ts";
 
@@ -34,7 +34,6 @@ describe("FileSystem", () => {
 				join(TEST_DIR, "agentic-workspace", "archive", "drafts"),
 				join(TEST_DIR, "agentic-workspace", "milestones"),
 				join(TEST_DIR, "agentic-workspace", "archive", "milestones"),
-				join(TEST_DIR, "agentic-workspace", "decisions"),
 			];
 
 			for (const dir of expectedDirs) {
@@ -54,7 +53,6 @@ describe("FileSystem", () => {
 				join(projectDir, "agentic-workspace", "archive", "drafts"),
 				join(projectDir, "agentic-workspace", "milestones"),
 				join(projectDir, "agentic-workspace", "archive", "milestones"),
-				join(projectDir, "agentic-workspace", "decisions"),
 			];
 
 			for (const dir of expectedDirs) {
@@ -732,65 +730,6 @@ title: Broken Task
 		});
 	});
 
-	describe("decision log operations", () => {
-		const sampleDecision: Decision = {
-			id: "decision-1",
-			title: "Use TypeScript",
-			date: "2025-06-07",
-			status: "accepted",
-			context: "Need type safety",
-			decision: "Use TypeScript",
-			consequences: "Better DX",
-			rawContent: "",
-		};
-
-		it("should save and load a decision log", async () => {
-			await filesystem.saveDecision(sampleDecision);
-
-			const loadedDecision = await filesystem.loadDecision("decision-1");
-			expect(loadedDecision?.id).toBe(sampleDecision.id);
-			expect(loadedDecision?.title).toBe(sampleDecision.title);
-			expect(loadedDecision?.status).toBe(sampleDecision.status);
-			expect(loadedDecision?.context).toBe(sampleDecision.context);
-		});
-
-		it("should return null for non-existent decision log", async () => {
-			const decision = await filesystem.loadDecision("non-existent");
-			expect(decision).toBeNull();
-		});
-
-		it("should sanitize decision filenames", async () => {
-			await filesystem.saveDecision({
-				...sampleDecision,
-				id: "decision-3",
-				title: "Use OAuth (v2)!",
-			});
-
-			const decisionFiles = await readdir(filesystem.decisionsDir);
-			expect(decisionFiles).toContain("decision-3 - Use-OAuth-v2.md");
-		});
-
-		it("should save decision log with alternatives", async () => {
-			const decisionWithAlternatives: Decision = {
-				...sampleDecision,
-				id: "decision-2",
-				alternatives: "Considered JavaScript",
-			};
-
-			await filesystem.saveDecision(decisionWithAlternatives);
-			const loaded = await filesystem.loadDecision("decision-2");
-
-			expect(loaded?.alternatives).toBe("Considered JavaScript");
-		});
-
-		it("should list decision logs", async () => {
-			await filesystem.saveDecision(sampleDecision);
-			const list = await filesystem.listDecisions();
-			expect(list).toHaveLength(1);
-			expect(list[0]?.id).toBe(sampleDecision.id);
-		});
-	});
-
 	describe("edge cases", () => {
 		it("should handle task with task- prefix in id", async () => {
 			const taskWithPrefix: Task = {
@@ -1036,22 +975,6 @@ title: Broken Task
 			expect(await Bun.file(join(draftsDir, "draft-punct", "task.md")).exists()).toBe(true);
 		});
 
-		it("names a decision file with a placeholder title", async () => {
-			await filesystem.saveDecision({
-				id: "decision-punct",
-				title: punctuationOnlyTitle,
-				date: "2025-06-07",
-				status: "accepted",
-				context: "Punctuation-only title",
-				decision: "Use a placeholder",
-				consequences: "Filenames stay parseable",
-				rawContent: "",
-			});
-
-			const decisionFiles = await readdir(filesystem.decisionsDir);
-			expect(decisionFiles).toContain("decision-punct - untitled.md");
-		});
-
 		it("publishes completed content mutations and supports unsubscribe", async () => {
 			const mutations: string[] = [];
 			const unsubscribe = filesystem.subscribeToContentMutations((mutation) => {
@@ -1067,27 +990,12 @@ title: Broken Task
 				dependencies: [],
 				rawContent: "",
 			};
-			const decision: Decision = {
-				id: "decision-1",
-				title: "Published decision",
-				date: "2025-01-01",
-				status: "proposed",
-				context: "",
-				decision: "",
-				consequences: "",
-				rawContent: "",
-			};
-
 			const taskPath = await filesystem.saveTask(task);
-			await filesystem.saveDecision(decision);
 
-			expect(mutations).toEqual([
-				`task:${filesystem.agenticWorkspaceDir}`,
-				`decision:${filesystem.agenticWorkspaceDir}`,
-			]);
+			expect(mutations).toEqual([`task:${filesystem.agenticWorkspaceDir}`]);
 			unsubscribe();
 			await filesystem.saveTask({ ...task, filePath: taskPath, title: "Unobserved task" });
-			expect(mutations).toHaveLength(2);
+			expect(mutations).toHaveLength(1);
 		});
 	});
 });

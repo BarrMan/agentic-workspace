@@ -7,7 +7,6 @@ import { DEFAULT_STATUSES, FALLBACK_STATUS } from "../constants/index.ts";
 import { type DraftFileReference, FileSystem, isConfigValueError } from "../file-system/operations.ts";
 import { GitOperations } from "../git/operations.ts";
 import {
-	type Decision,
 	EntityType,
 	type Milestone,
 	type SearchOptions,
@@ -20,14 +19,8 @@ import {
 } from "../types/index.ts";
 import { type ConfigWatcherCallbacks, watchConfigFile } from "../utils/config-watcher.ts";
 import { formatStoredDate } from "../utils/date.ts";
-import {
-	type ContentIdentityReport,
-	type DraftIdentityFindings,
-	detectContentIdentityIssues,
-} from "../utils/duplicate-detection.ts";
-import { decisionIdKey } from "../utils/entity-id.ts";
+import type { DraftIdentityFindings } from "../utils/duplicate-detection.ts";
 import { findAgenticWorkspaceRoot } from "../utils/find-agentic-workspace-root.ts";
-import { nextDecisionId, numericIdFromFilename } from "../utils/id-generators.ts";
 import { formatValidPriorityValues, resolvePriorityValue } from "../utils/priority-config.ts";
 import { resolveRuntimeCwd } from "../utils/runtime-cwd.ts";
 import { formatValidStatuses, getCanonicalStatuses } from "../utils/status.ts";
@@ -41,7 +34,6 @@ import { type TaskWatcherCallbacks, watchTaskRecords } from "../utils/task-watch
 import { TaskCollectionFilterError } from "./domain-errors.ts";
 import { planOrderedTaskPlacement } from "./ordered-task-move-planner.ts";
 import { PersistentTaskRead } from "./persistent-task-read.ts";
-import { ProjectContentService } from "./project-content-service.ts";
 import { DEFAULT_ORDINAL_STEP, resolveOrdinalConflicts } from "./reorder.ts";
 import { searchSnapshot } from "./search-service.ts";
 import { Storage } from "./storage.ts";
@@ -132,7 +124,6 @@ export class Core {
 		if (!this.agentSessions) this.agentSessions = new AgentSessionService(this);
 		return this.agentSessions;
 	}
-	private readonly projectContent: ProjectContentService;
 	private readonly vacatedTaskReferences: VacatedTaskReferenceService;
 	private readonly taskMutations: ProjectTaskMutations;
 	private readonly taskLifecycle: TaskLifecycleService;
@@ -155,7 +146,6 @@ export class Core {
 			() => this.getActiveAndCompletedTaskIds(),
 		);
 		this.taskLifecycle = this.createTaskLifecycleService();
-		this.projectContent = new ProjectContentService(this.storage, this);
 	}
 
 	async getConfig(): Promise<Config> {
@@ -233,24 +223,6 @@ export class Core {
 		return this.storage.diagnoseDraftIdentity();
 	}
 
-	/** Reports decision files whose IDs collide or are missing, so lookups can fail closed. */
-	async diagnoseContentIdentity(): Promise<ContentIdentityReport> {
-		const unreadableDecisions: string[] = [];
-		const decisions = await this.storage.listDecisions(unreadableDecisions);
-		// An empty collected path denotes the content directory itself, which the filesystem reports
-		// when it could not be scanned at all.
-		return {
-			decisions: detectContentIdentityIssues(
-				decisions.map((decision) => ({
-					id: decision.id,
-					path: decision.path ? this.storage.describeDecisionPath(decision.path) : decision.title,
-				})),
-				decisionIdKey,
-				unreadableDecisions.map((path) => this.storage.describeDecisionPath(path)),
-			),
-		};
-	}
-
 	async resolveCreateOrdinal(inputOrdinal: number | undefined, isDraft: boolean): Promise<number | undefined> {
 		if (typeof inputOrdinal === "number") {
 			return inputOrdinal;
@@ -323,13 +295,10 @@ export class Core {
 	}
 
 	async searchPersistently(options: SearchOptions): Promise<SearchResult[]> {
-		const [snapshot, decisions] = await Promise.all([
-			!options.types || options.types.includes("task") ? this.loadTaskSnapshot() : null,
-			!options.types || options.types.includes("decision") ? this.storage.listDecisions() : [],
-		]);
+		const snapshot = !options.types || options.types.includes("task") ? await this.loadTaskSnapshot() : null;
 		const tasks = snapshot?.tasks ?? [];
 		const searchableTasks = tasks.length ? await this.storage.addSearchableArtifactText(tasks) : tasks;
-		return searchSnapshot(searchableTasks, decisions, options);
+		return searchSnapshot(searchableTasks, options);
 	}
 
 	/** Loads one request-local Markdown/Git snapshot without retaining it on Core. */
@@ -413,14 +382,13 @@ export class Core {
 	/**
 	 * Generates the next ID for a given entity type.
 	 *
-	 * @param type - The entity type (Task, Draft, Decision). Defaults to Task.
+	 * @param type - The entity type (Task, Draft). Defaults to Task.
 	 * @param parent - Optional parent ID for subtask generation (only applicable for tasks).
 	 * @returns The next available ID (e.g., "task-42", "draft-5")
 	 *
 	 * Folder scanning by type:
 	 * - Task: /tasks, /completed, cross-branch (if enabled), remote (if enabled)
 	 * - Draft: /drafts only
-	 * - Decision: /decisions only
 	 */
 	async generateNextId(type: EntityType = EntityType.Task, parent?: string): Promise<string> {
 		return await this.taskMutations.generateNextId(type, parent);
@@ -484,10 +452,6 @@ export class Core {
 					this.storage.listOccupiedDraftFileIds(),
 				]);
 				return [...drafts.map((d) => d.id), ...occupiedFileIds];
-			}
-			case EntityType.Decision: {
-				const decisions = await this.storage.listDecisions();
-				return decisions.map((d) => d.id);
 			}
 			default:
 				return [];
@@ -1003,18 +967,6 @@ export class Core {
 		return await this.taskLifecycle.demoteTask(taskId, options);
 	}
 
-	async createDecision(decision: Decision): Promise<void> {
-		return await this.projectContent.createDecision(decision);
-	}
-
-	async updateDecisionFromContent(decisionId: string, content: string): Promise<void> {
-		return await this.projectContent.updateDecisionFromContent(decisionId, content);
-	}
-
-	async createDecisionWithTitle(title: string): Promise<Decision> {
-		return await this.projectContent.createDecisionWithTitle(title);
-	}
-
 	/**
 	 * Load and process all tasks with the same logic as CLI overview
 	 * This method extracts the common task loading logic for reuse
@@ -1063,44 +1015,6 @@ export class Core {
 	/** Workspace directory used to locate runtime stores; not a record path. */
 	get workspaceDirectory(): string {
 		return this.storage.workspaceDirectoryPath;
-	}
-
-	async listDecisions(): Promise<Decision[]> {
-		return await this.storage.listDecisions();
-	}
-
-	async generateNextDecisionId(): Promise<string> {
-		const config = await this.storage.loadConfig();
-		const [decisions, branches] = await Promise.all([this.storage.listDecisions(), this.git.listAllBranches()]);
-		const branchIds = await this.listBranchRecordIds(branches, "decisions", config?.remoteOperations);
-		return nextDecisionId(
-			config,
-			decisions.map((decision) => decision.id),
-			branchIds,
-		);
-	}
-
-	private async listBranchRecordIds(
-		branches: readonly string[],
-		directory: string,
-		remoteOperations: boolean | undefined,
-	): Promise<string[]> {
-		if (remoteOperations !== false) {
-			try {
-				await this.git.fetch();
-			} catch (error) {
-				if (process.env.DEBUG) console.error("Could not fetch branch record IDs:", error);
-				return [];
-			}
-		}
-		const workspaceDirectory = this.storage.workspaceDirectoryName;
-		const results = await Promise.all(
-			branches.map(async (branch) => {
-				const files = await this.git.listFilesInTree(branch, `${workspaceDirectory}/${directory}`);
-				return files.map((file) => numericIdFromFilename(file, "decision")).filter((id): id is string => id !== null);
-			}),
-		);
-		return results.flat().map((id) => `decision-${id}`);
 	}
 
 	async findTaskRecordPath(taskId: string): Promise<string | null> {

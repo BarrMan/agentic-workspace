@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from "bun:test";
 import { Core } from "../core/agentic-workspace.ts";
 import { searchSnapshot } from "../core/search-service.ts";
-import type { Decision, Task, TaskSearchResult } from "../types/index.ts";
+import type { Task, TaskSearchResult } from "../types/index.ts";
 import { coreFileSystem, createUniqueTestDir, safeCleanup } from "./test-utils.ts";
 
 const directories: string[] = [];
@@ -75,28 +75,6 @@ describe("snapshot search", () => {
 		expect(titles(await core.searchPersistently({ query: "replacement", types: ["task"] }))).toEqual(["Updated"]);
 	});
 
-	it("searches structured decision fields without depending on opaque content", async () => {
-		const core = await createProject();
-		const decision: Decision = {
-			id: "decision-1",
-			title: "Choose storage",
-			date: "2026-09-30",
-			status: "accepted",
-			context: "Needle context",
-			decision: "Use frontmatter fields",
-			consequences: "Needle consequence",
-			alternatives: "Needle alternative",
-			rawContent: "Opaque body",
-		};
-		await core.createDecision(decision);
-
-		for (const query of ["context", "consequence", "alternative"]) {
-			const results = await core.searchPersistently({ query, types: ["decision"] });
-			expect(results).toHaveLength(1);
-			expect(results[0]).toMatchObject({ type: "decision", decision: { id: decision.id } });
-		}
-	});
-
 	it("matches literal substrings case-insensitively without fuzzy ranking", async () => {
 		const core = await createProject();
 		await coreFileSystem(core).saveTask(task("TASK-1", "Needle", "ordinary text"));
@@ -109,11 +87,11 @@ describe("snapshot search", () => {
 	it("keeps matching and empty-query results in supplied corpus order", () => {
 		const first = task("TASK-2", "needle first", "");
 		const second = task("TASK-1", "needle second", "");
-		const matches = searchSnapshot([first, second], [], { query: "NEEDLE", types: ["task"] });
-		const unfiltered = searchSnapshot([first, second], [], { query: "  ", types: ["task"] });
+		const matches = searchSnapshot([first, second], { query: "NEEDLE", types: ["task"] });
+		const unfiltered = searchSnapshot([first, second], { query: "  ", types: ["task"] });
 
 		expect(matches.map((result) => result.type === "task" && result.task.id)).toEqual(["TASK-2", "TASK-1"]);
 		expect(unfiltered.map((result) => result.type === "task" && result.task.id)).toEqual(["TASK-2", "TASK-1"]);
-		expect(searchSnapshot([], [], { query: "missing" })).toEqual([]);
+		expect(searchSnapshot([], { query: "missing" })).toEqual([]);
 	});
 });

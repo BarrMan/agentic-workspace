@@ -42,7 +42,7 @@ export function formatRootEntry({ version, initialized, color = false }: RootEnt
 		lines.push("No AgenticWorkspace project is available in this directory.", "");
 	} else {
 		lines.push(sectionTitle("Common workflow:", color));
-		lines.push(commandLine('agentic-workspace search "query" --plain', "Search tasks, docs, and decisions"));
+		lines.push(commandLine('agentic-workspace search "query" --plain', "Search tasks and docs"));
 		lines.push(commandLine("agentic-workspace task list --plain", "List tasks"));
 		lines.push(
 			commandLine(renderConfiguredTaskIds("agentic-workspace task view {{TASK_ID:123}} --plain"), "Read task context"),

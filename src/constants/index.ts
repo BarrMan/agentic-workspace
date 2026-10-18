@@ -20,8 +20,6 @@ export const DEFAULT_DIRECTORIES = {
 	ARCHIVE_DRAFTS: "archive/drafts",
 	/** Archived milestones directory */
 	ARCHIVE_MILESTONES: "archive/milestones",
-	/** Decision logs directory */
-	DECISIONS: "decisions",
 	/** Milestones directory */
 	MILESTONES: "milestones",
 } as const;

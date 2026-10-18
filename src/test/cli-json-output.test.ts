@@ -3,7 +3,7 @@ import { mkdir } from "node:fs/promises";
 import { Writable } from "node:stream";
 import { runCli } from "../cli/register.ts";
 import { Core } from "../index.ts";
-import { coreFileSystem, createUniqueTestDir, initializeFilesystemTestProject, safeCleanup } from "./test-utils.ts";
+import { createUniqueTestDir, initializeFilesystemTestProject, safeCleanup } from "./test-utils.ts";
 
 const createdDirs: string[] = [];
 
@@ -73,16 +73,6 @@ async function makeProject() {
 		onStatusChange: "echo secret",
 	});
 
-	await coreFileSystem(core).saveDecision({
-		id: "decision-1",
-		title: "Use stable JSON",
-		date: "2026-07-12",
-		status: "accepted",
-		context: "JSON task consumers need stability",
-		decision: "Publish curated fields",
-		consequences: "Version the contract",
-		rawContent: "JSON task decision",
-	});
 	createdDirs.push(TEST_DIR);
 	return { dir: TEST_DIR, runCli: (args: string[], cwd = TEST_DIR) => runCommand(args, cwd) };
 }
@@ -153,29 +143,6 @@ describe("CLI JSON output", () => {
 		expect(bare.modifiedFiles).toEqual([]);
 	});
 
-	it("returns a compact versioned decision-list envelope", async () => {
-		const { runCli } = await makeProject();
-		const result = await runCli(["decision", "list", "--json"]);
-		expect(result.exitCode).toBe(0);
-		expect(result.stderr.toString()).toBe("");
-		expect(result.stdout.toString().endsWith("\n")).toBe(true);
-
-		expect(JSON.parse(result.stdout.toString())).toEqual({
-			schemaVersion: 1,
-			kind: "decision-list",
-			decisions: [
-				{
-					id: "decision-1",
-					title: "Use stable JSON",
-					status: "accepted",
-					date: "2026-07-12",
-				},
-			],
-		});
-		expect(result.stdout.toString()).not.toContain("rawContent");
-		expect(result.stdout.toString()).not.toContain("Publish curated fields");
-	});
-
 	it("returns curated task details for view", async () => {
 		const { runCli } = await makeProject();
 		for (const args of [["task", "view", "TASK-1", "--json"]]) {
@@ -226,23 +193,17 @@ describe("CLI JSON output", () => {
 		expect(JSON.parse(markdown.stdout.toString()).task.description).toBe("First line\n\n- item with `code`");
 	});
 
-	it("preserves heterogeneous search rank and omits scores", async () => {
+	it("preserves search rank and omits scores", async () => {
 		const { runCli } = await makeProject();
 		const result = await runCli(["search", "JSON task", "--json"]);
 		expect(result.exitCode).toBe(0);
 		const output = JSON.parse(result.stdout.toString());
 		expect(output.schemaVersion).toBe(1);
 		expect(output.kind).toBe("search");
-		expect(output.results.map((entry: { type: string }) => entry.type)).toEqual(["task", "decision"]);
+		expect(output.results.map((entry: { type: string }) => entry.type)).toEqual(["task"]);
 		expect(output.results[0].data.id).toBe("TASK-1");
 		// Task results carry the same verdict the task list publishes.
 		expect(output.results[0].data.isReady).toBe(false);
-		expect(output.results[1].data).toEqual({
-			id: "decision-1",
-			title: "Use stable JSON",
-			status: "accepted",
-			date: "2026-07-12",
-		});
 		for (const entry of output.results) {
 			expect(entry.score).toBeUndefined();
 		}
@@ -260,7 +221,6 @@ describe("CLI JSON output", () => {
 			["task", "list", "--json", "--plain"],
 			["task", "view", "TASK-1", "--json", "--plain"],
 			["search", "JSON", "--json", "--plain"],
-			["decision", "list", "--json", "--plain"],
 		]) {
 			const result = await runCli(args);
 			expect(result.exitCode).toBe(1);
@@ -326,7 +286,6 @@ describe("CLI JSON output", () => {
 			["task", "list", "--help"],
 			["task", "view", "--help"],
 			["search", "--help"],
-			["decision", "list", "--help"],
 		]) {
 			const result = await runCli(args);
 			expect(result.exitCode).toBe(0);

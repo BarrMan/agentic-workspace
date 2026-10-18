@@ -27,18 +27,6 @@ export const TASK_FRONTMATTER_FIELDS = {
 	DESCRIPTION: "description",
 } as const;
 
-export const DECISION_FRONTMATTER_FIELDS = {
-	SCHEMA_VERSION: "decision_schema_version",
-	ID: "id",
-	TITLE: "title",
-	DATE: "date",
-	STATUS: "status",
-	CONTEXT: "context",
-	DECISION: "decision",
-	CONSEQUENCES: "consequences",
-	ALTERNATIVES: "alternatives",
-} as const;
-
 export const MILESTONE_FRONTMATTER_FIELDS = {
 	SCHEMA_VERSION: "milestone_schema_version",
 	ID: "id",
@@ -50,5 +38,4 @@ export const MILESTONE_FRONTMATTER_FIELDS = {
 export const FRONTMATTER_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}(?: \d{2}:\d{2})?$/;
 
 export const TASK_FRONTMATTER_SCHEMA_VERSION = 3;
-export const DECISION_FRONTMATTER_SCHEMA_VERSION = 1;
 export const MILESTONE_FRONTMATTER_SCHEMA_VERSION = 1;

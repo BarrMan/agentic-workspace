@@ -50,22 +50,21 @@ type ParsedSearchOptions = {
 	filters: SearchFilters;
 };
 
-const SEARCH_RESULT_TYPES = ["task", "decision"] as const;
+const SEARCH_RESULT_TYPES = ["task"] as const;
 const SEARCH_RESULT_HEADINGS: Record<(typeof SEARCH_RESULT_TYPES)[number], string> = {
 	task: "Tasks:",
-	decision: "Decisions:",
 };
 
 export function registerSearchCommand(program: Command, dependencies: SearchCommandDependencies): void {
 	const TASK_TYPE_EXAMPLE = JSON.stringify(getCliTaskTypeValues()[0] ?? "<configured-type>");
 	const searchCommand = addHelpSchema(program.command("search [query]"), {
-		reads: "Tasks and decisions from the configured agentic-workspace directory",
+		reads: "Tasks from the configured agentic-workspace directory",
 		required: [],
 		optional: [
 			{ name: "query", type: "String", description: "Literal search text" },
 			{
 				name: "type",
-				type: choiceType(["task", "decision"], { multiple: true }),
+				type: choiceType(["task"], { multiple: true }),
 				description: "Result types",
 			},
 			{
@@ -105,8 +104,8 @@ export function registerSearchCommand(program: Command, dependencies: SearchComm
 			`agentic-workspace search "crash" --task-type ${TASK_TYPE_EXAMPLE} --plain`,
 		],
 	})
-		.description("search tasks and decisions using literal text matching")
-		.option("--type <type>", "limit results to type (task, decision)", createMultiValueAccumulator())
+		.description("search tasks using literal text matching")
+		.option("--type <type>", "limit results to type (task)", createMultiValueAccumulator())
 		.option(
 			"--task-type <type>",
 			"filter task results by configured task type (repeatable or comma-separated)",
@@ -193,7 +192,7 @@ function resolveSearchResultTypes(
 	rawTaskTypes: string[],
 	rawSearchProjects: string[],
 ): SearchResultType[] {
-	const allowedTypes: SearchResultType[] = ["task", "decision"];
+	const allowedTypes: SearchResultType[] = ["task"];
 	if (!rawTypes)
 		return modifiedFileFilters?.length || rawTaskTypes.length > 0 || rawSearchProjects.length > 0
 			? ["task"]
@@ -202,7 +201,7 @@ function resolveSearchResultTypes(
 		.map((value) => value.toLowerCase())
 		.filter((value): value is SearchResultType => {
 			if (allowedTypes.includes(value as SearchResultType)) return true;
-			console.warn(`Ignoring unsupported type '${value}'. Supported: task, decision`);
+			console.warn(`Ignoring unsupported type '${value}'. Supported: task`);
 			return false;
 		});
 }
@@ -289,12 +288,8 @@ function printSearchResults(results: SearchResult[]): void {
 
 function formatSearchResultRow(result: SearchResult): string {
 	const scoreText = formatScore(result.score);
-	if (result.type === "task") {
-		const { task } = result;
-		return `  ${task.id} - ${task.title}${task.status ? ` (${task.status})` : ""}${task.priority ? ` [${task.priority.toUpperCase()}]` : ""}${scoreText}`;
-	}
-	const { id, title } = (result as Extract<SearchResult, { type: "decision" }>).decision;
-	return `  ${id} - ${title}${scoreText}`;
+	const { task } = result;
+	return `  ${task.id} - ${task.title}${task.status ? ` (${task.status})` : ""}${task.priority ? ` [${task.priority.toUpperCase()}]` : ""}${scoreText}`;
 }
 
 function formatScore(score: number | null): string {
