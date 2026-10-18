@@ -17,7 +17,7 @@ import { Core } from "../core/agentic-workspace.ts";
 import { mountOpenTuiWorkspace, type OpenTuiWorkspaceOptions } from "../ui/opentui/workspace.ts";
 import { OpenTuiWorkspaceController } from "../ui/opentui/workspace-controller.ts";
 import { getTestCliCommand } from "./test-cli.ts";
-import { initializeTestProject } from "./test-utils.ts";
+import { coreFileSystem, initializeTestProject } from "./test-utils.ts";
 
 function initialConfiguration(): AgentConfiguration {
 	return {
@@ -70,7 +70,7 @@ describe("real WorkspaceController Settings persistence", () => {
 		await initializeTestProject(core, "Settings persistence");
 		const { task } = await core.createTaskFromInput({ title: "Settings fixture", status: "To Do" });
 		await upsertAgentConfiguration(core, "project", initialConfiguration());
-		const path = core.filesystem.configFilePath;
+		const path = coreFileSystem(core).configFilePath;
 		let workspaceState: WorkspaceStateService | undefined;
 		if (pinExternalRoot) {
 			const storageHome = await mkdtemp(join(tmpdir(), "settings-pinned-home-"));
@@ -86,7 +86,7 @@ describe("real WorkspaceController Settings persistence", () => {
 				else process.env.AGENTIC_WORKSPACE_CWD = originalAgenticWorkspaceCwd;
 			});
 			process.env.HOME = storageHome;
-			const hash = createHash("sha256").update(core.filesystem.rootDir).digest("hex").slice(0, 16);
+			const hash = createHash("sha256").update(coreFileSystem(core).rootDir).digest("hex").slice(0, 16);
 			workspaceState = new WorkspaceStateService(core, { stateRoot: join(storageHome, ".agentic-workspace", hash) });
 			await workspaceState.stateRoot;
 			process.env.HOME = join(storageHome, "changed-home");
@@ -151,7 +151,10 @@ describe("real WorkspaceController Settings persistence", () => {
 			path,
 			open,
 			saved,
-			json: async () => core.filesystem.loadConfig().then((config) => config?.agentConfiguration as AgentConfiguration),
+			json: async () =>
+				coreFileSystem(core)
+					.loadConfig()
+					.then((config) => config?.agentConfiguration as AgentConfiguration),
 		};
 	}
 	async function eventually(predicate: () => Promise<boolean>) {
@@ -182,7 +185,7 @@ describe("real WorkspaceController Settings persistence", () => {
 		const pinnedRoot = f.stateRoot;
 		if (!pinnedRoot) throw new Error("Fixture did not pin a state root.");
 		expect(await readFile(join(pinnedRoot, "view-state.json"), "utf8")).toContain('"state"');
-		expect(existsSync(join(f.core.filesystem.rootDir, ".agentic-workspace", "view-state.json"))).toBe(false);
+		expect(existsSync(join(coreFileSystem(f.core).rootDir, ".agentic-workspace", "view-state.json"))).toBe(false);
 		const originalDelete = AgentSessionService.prototype.deleteMode;
 		const deletion = spyOn(AgentSessionService.prototype, "deleteMode").mockImplementation(async function (
 			this: AgentSessionService,
@@ -202,7 +205,7 @@ describe("real WorkspaceController Settings persistence", () => {
 			await f.saved();
 			expect(deletion).toHaveBeenCalledTimes(1);
 			expect((await f.json()).modes?.profiles.plan).toBeUndefined();
-			expect(existsSync(join(f.core.filesystem.rootDir, ".agentic-workspace", "view-state.json"))).toBe(false);
+			expect(existsSync(join(coreFileSystem(f.core).rootDir, ".agentic-workspace", "view-state.json"))).toBe(false);
 		} finally {
 			deletion.mockRestore();
 		}
@@ -325,15 +328,15 @@ describe("real WorkspaceController Settings persistence", () => {
 
 	it("refuses session moves, then saves empty-mode deletion, added modes and color", async () => {
 		const f = await fixture();
-		const store = new SessionStore(f.core.filesystem.rootDir, new BunRunner());
+		const store = new SessionStore(coreFileSystem(f.core).rootDir, new BunRunner());
 		const session: AgentSession = {
 			id: "persisted-session",
 			taskId: f.task.id,
 			preset: "contract",
 			tmuxName: "test-stopped-settings",
-			cwd: f.core.filesystem.rootDir,
-			outputPath: join(f.core.filesystem.rootDir, "output.log"),
-			bootstrapPath: join(f.core.filesystem.rootDir, "bootstrap.sh"),
+			cwd: coreFileSystem(f.core).rootDir,
+			outputPath: join(coreFileSystem(f.core).rootDir, "output.log"),
+			bootstrapPath: join(coreFileSystem(f.core).rootDir, "bootstrap.sh"),
 			createdAt: "2026-10-10T10:00:00.000Z",
 			status: "stopped",
 		};
@@ -391,7 +394,7 @@ describe("real WorkspaceController Settings persistence", () => {
 		f.setup.mockInput.pressEnter();
 		const original = await readFile(f.path, "utf8");
 		await writeFile(f.path, "agent_configuration: 123\n");
-		f.core.filesystem.invalidateConfigCache();
+		coreFileSystem(f.core).invalidateConfigCache();
 		save(f.setup);
 		await eventually(async () => {
 			await f.setup.flush();
@@ -401,7 +404,7 @@ describe("real WorkspaceController Settings persistence", () => {
 		expect(f.setup.captureCharFrame()).toContain('invalid value for "agent_configuration"');
 		expect(await readFile(f.path, "utf8")).toBe("agent_configuration: 123\n");
 		await writeFile(f.path, original);
-		f.core.filesystem.invalidateConfigCache();
+		coreFileSystem(f.core).invalidateConfigCache();
 		save(f.setup);
 		await f.saved();
 		expect((await f.json()).modes?.profiles.plan?.permissions.repository).toBe("read-write");
@@ -491,7 +494,7 @@ finally:
     except subprocess.TimeoutExpired: process.kill(); process.wait()
     os.close(master)
 `;
-		const child = Bun.spawn(["python3", "-c", script, ...command, rootDir, core.filesystem.configFilePath], {
+		const child = Bun.spawn(["python3", "-c", script, ...command, rootDir, coreFileSystem(core).configFilePath], {
 			cwd: rootDir,
 			stdout: "pipe",
 			stderr: "pipe",
@@ -509,7 +512,7 @@ finally:
 			approvalArtifact: "pty-approved.md",
 		});
 		expect(Object.values(evidence.reopened).every((value) => value === true)).toBe(true);
-		core.filesystem.invalidateConfigCache();
+		coreFileSystem(core).invalidateConfigCache();
 		expect((await loadAgentConfiguration(core, "project"))?.modes?.profiles.plan).toEqual(evidence.persisted);
 	}, 30000);
 });

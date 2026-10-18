@@ -236,13 +236,13 @@ export async function loadAgentConfiguration(
 ): Promise<AgentConfiguration | null> {
 	if (scope === "root") return await readRootConfiguration(rootConfigFilePath());
 	if (scope === "project") {
-		const configuration = await core.filesystem.loadConfig();
+		const configuration = await core.getStoredConfig();
 		if (!configuration?.agentConfiguration) return null;
 		assertAgentConfiguration(configuration.agentConfiguration, "Invalid project agent configuration");
 		return clone(configuration.agentConfiguration);
 	}
 
-	const task = await core.filesystem.loadTask(requireTaskId(scope, taskId));
+	const task = await core.getTask(requireTaskId(scope, taskId));
 	if (!task) throw new Error(`Task not found: ${taskId}`);
 	if (task.agentConfiguration === undefined) return null;
 	assertAgentConfiguration(task.agentConfiguration, `Invalid agent configuration on task ${task.id}`);
@@ -334,19 +334,19 @@ async function updateAgentConfigurationInternal(
 	onlyIfAbsent: boolean,
 ): Promise<AgentConfiguration> {
 	if (scope !== "card") {
-		const path = scope === "root" ? rootConfigFilePath() : core.filesystem.configFilePath;
+		const path = scope === "root" ? rootConfigFilePath() : core.projectConfigPath;
 		return await withConfigurationLock(path, async () => {
 			const existing =
 				scope === "root"
 					? await readRootConfiguration(path)
-					: ((await core.filesystem.loadConfig())?.agentConfiguration ?? null);
+					: ((await core.getStoredConfig())?.agentConfiguration ?? null);
 			if (existing) assertAgentConfiguration(existing, `Invalid ${scope} agent configuration`);
 			if (existing && onlyIfAbsent) {
 				if (scope !== "project" || existing.modes !== undefined) return existing;
 				const initialized = clone(updater(clone(existing)));
 				assertAgentConfiguration(initialized);
-				const workspaceConfig = (await core.filesystem.loadConfig()) ?? parseConfig("", path);
-				await core.filesystem.saveConfig({ ...workspaceConfig, agentConfiguration: initialized });
+				const workspaceConfig = (await core.getStoredConfig()) ?? parseConfig("", path);
+				await core.saveWorkspaceConfig({ ...workspaceConfig, agentConfiguration: initialized });
 				await core.reloadConfiguration();
 				return initialized;
 			}
@@ -355,8 +355,8 @@ async function updateAgentConfigurationInternal(
 			assertAgentConfiguration(next);
 			if (scope === "root") await writeRootConfiguration(path, next);
 			else {
-				const workspaceConfig = (await core.filesystem.loadConfig()) ?? parseConfig("", path);
-				await core.filesystem.saveConfig({ ...workspaceConfig, agentConfiguration: next } as AgenticWorkspaceConfig);
+				const workspaceConfig = (await core.getStoredConfig()) ?? parseConfig("", path);
+				await core.saveWorkspaceConfig({ ...workspaceConfig, agentConfiguration: next } as AgenticWorkspaceConfig);
 			}
 			await core.reloadConfiguration();
 			return next;
@@ -364,10 +364,10 @@ async function updateAgentConfigurationInternal(
 	}
 
 	const id = requireTaskId(scope, taskId);
-	const task = await core.filesystem.loadTask(id);
+	const task = await core.getTask(id);
 	if (!task) throw new Error(`Task not found: ${id}`);
-	return await core.filesystem.withTaskLock(task, async () => {
-		const current = await core.filesystem.loadTask(id);
+	return await core.withTaskLock(task, async () => {
+		const current = await core.getTask(id);
 		if (!current) throw new Error(`Task not found: ${id}`);
 		const stored = current.agentConfiguration;
 		const existing = stored === undefined ? undefined : clone(stored);

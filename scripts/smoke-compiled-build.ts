@@ -1,8 +1,6 @@
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { Client } from "@modelcontextprotocol/sdk/client/index.js";
-import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 
 const executablePath = process.argv[2];
 const expectedVersion = process.argv[3];
@@ -77,24 +75,6 @@ async function captureCleanupFailure(
 	} catch (error) {
 		cleanupFailures.push(new Error(label, { cause: error }));
 	}
-}
-
-function waitForTransportClose(transport: StdioClientTransport): Promise<void> {
-	if (transport.pid === null) {
-		return Promise.resolve();
-	}
-
-	const previousOnClose = transport.onclose;
-	return new Promise((resolveClose, reject) => {
-		transport.onclose = () => {
-			try {
-				previousOnClose?.();
-				resolveClose();
-			} catch (error) {
-				reject(error);
-			}
-		};
-	});
 }
 
 function withTimeout<T>(operation: Promise<T>, label: string, timeoutMs: number, details: () => string): Promise<T> {
@@ -185,84 +165,6 @@ let smokeFailure: CapturedFailure | undefined;
 try {
 	await run([executable, "init", "Compiled Smoke", "--defaults", "--no-git", "--integration-mode", "none"], smokeRoot);
 
-	let mcpStderr = "";
-	const transport = new StdioClientTransport({
-		command: executable,
-		args: ["mcp", "start", "--cwd", smokeRoot, "--debug"],
-		cwd: smokeRoot,
-		env: fixtureEnv,
-		stderr: "pipe",
-	});
-	transport.stderr?.on("data", (chunk) => {
-		mcpStderr += chunk.toString();
-	});
-
-	const client = new Client({ name: "Compiled MCP Smoke Test", version: "1.0.0" }, { capabilities: {} });
-	let mcpFailure: CapturedFailure | undefined;
-	try {
-		await withTimeout(client.connect(transport), "MCP connect", operationTimeout, () => ` stderr:\n${mcpStderr}`);
-		const tools = await withTimeout(
-			client.listTools(),
-			"MCP listTools",
-			operationTimeout,
-			() => ` stderr:\n${mcpStderr}`,
-		);
-		assert(
-			tools.tools.some((tool) => tool.name === "task_list"),
-			"Compiled MCP server is missing task_list.",
-		);
-		const created = await withTimeout(
-			client.callTool({ name: "task_create", arguments: { title: "Compiled Smoke Persisted Task" } }),
-			"MCP task_create",
-			operationTimeout,
-			() => ` stderr:\n${mcpStderr}`,
-		);
-		assert(!created.isError, `Compiled MCP task_create returned an error: ${JSON.stringify(created)}`);
-		const createdText = (created.content as Array<{ text?: string }>)[0]?.text ?? "";
-		assert(
-			createdText.split("\n").includes("Task TASK-1 - Compiled Smoke Persisted Task"),
-			`Compiled MCP task_create did not return the expected task header: ${createdText}`,
-		);
-		const viewed = await withTimeout(
-			client.callTool({ name: "task_view", arguments: { id: "TASK-1" } }),
-			"MCP task_view",
-			operationTimeout,
-			() => ` stderr:\n${mcpStderr}`,
-		);
-		assert(!viewed.isError, `Compiled MCP task_view returned an error: ${JSON.stringify(viewed)}`);
-		const viewedText = (viewed.content as Array<{ text?: string }>)[0]?.text ?? "";
-		assert(
-			viewedText.split("\n").includes("Task TASK-1 - Compiled Smoke Persisted Task"),
-			`Compiled MCP task_view did not read back the expected task header: ${viewedText}`,
-		);
-		const resources = await withTimeout(
-			client.listResources(),
-			"MCP listResources",
-			operationTimeout,
-			() => ` stderr:\n${mcpStderr}`,
-		);
-		assert(
-			resources.resources.some((resource) => resource.uri === "agentic-workspace://workflow/overview"),
-			"Compiled MCP server is missing its workflow overview resource.",
-		);
-	} catch (error) {
-		mcpFailure = { error };
-	}
-
-	const transportClosed = settle(waitForTransportClose(transport));
-	const mcpCleanupFailures: Error[] = [];
-	await captureCleanupFailure(mcpCleanupFailures, "Failed to close compiled MCP client.", async () => {
-		await client.close();
-	});
-	await captureCleanupFailure(mcpCleanupFailures, "Compiled MCP child process did not close.", async () => {
-		await unwrapOutcome(transportClosed, "MCP child close");
-	});
-	throwAfterCleanup(
-		"Compiled MCP smoke check",
-		mcpFailure,
-		mcpCleanupFailures,
-		mcpStderr ? `stderr:\n${mcpStderr}` : "",
-	);
 } catch (error) {
 	smokeFailure = { error };
 }

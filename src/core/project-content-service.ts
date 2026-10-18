@@ -1,48 +1,22 @@
-import { join } from "node:path";
 import { parseFrontmatter } from "../markdown/frontmatter.ts";
 import { DECISION_FRONTMATTER_FIELDS } from "../markdown/schema.ts";
-import type { Decision, Document, DocumentCreateInput, DocumentType, DocumentUpdateInput } from "../types/index.ts";
+import type { Decision } from "../types/index.ts";
 import { formatStoredDate } from "../utils/date.ts";
-import { findDocumentById, normalizeDocumentId } from "../utils/document-id.ts";
-import { getDocumentSubPathFromRelativePath, normalizeDocumentSubPath } from "../utils/document-path.ts";
-import { generateNextDecisionId, generateNextDocId } from "../utils/id-generators.ts";
-import { normalizeStringList } from "../utils/task-builders.ts";
 import type { Core } from "./agentic-workspace.ts";
-
-function normalizeDocumentTypeInput(type: unknown): DocumentType | undefined {
-	if (type === undefined) return undefined;
-	if (typeof type === "string" && ["guide", "reference", "design", "other"].includes(type)) return type as DocumentType;
-	throw new Error("Document type must be one of: guide, reference, design, other.");
-}
+import type { Storage } from "./storage.ts";
 
 export class ProjectContentService {
-	constructor(private readonly core: Core) {}
-
-	async getDocument(documentId: string): Promise<Document | null> {
-		return findDocumentById(await this.core.filesystem.listDocuments(), documentId);
-	}
-
-	async getDocumentContent(documentId: string): Promise<string | null> {
-		const document = await this.getDocument(documentId);
-		if (!document) return null;
-		try {
-			return await Bun.file(
-				join(
-					this.core.filesystem.docsDir,
-					...normalizeDocumentSubPath(document.path ?? `${document.id}.md`).split("/"),
-				),
-			).text();
-		} catch {
-			return null;
-		}
-	}
+	constructor(
+		private readonly storage: Storage,
+		private readonly core: Core,
+	) {}
 
 	async createDecision(decision: Decision, retainedFrontmatter?: Record<string, unknown>): Promise<void> {
-		await this.core.filesystem.saveDecision(decision, retainedFrontmatter);
+		await this.storage.saveDecision(decision, retainedFrontmatter);
 	}
 
 	async updateDecisionFromContent(decisionId: string, content: string): Promise<void> {
-		const existing = await this.core.filesystem.loadDecision(decisionId);
+		const existing = await this.storage.loadDecision(decisionId);
 		if (!existing) throw new Error(`Decision ${decisionId} not found`);
 		const parsed = parseFrontmatter(content);
 		const frontmatter = parsed.data as Partial<
@@ -66,7 +40,7 @@ export class ProjectContentService {
 
 	async createDecisionWithTitle(title: string): Promise<Decision> {
 		const decision: Decision = {
-			id: await generateNextDecisionId(this.core),
+			id: await this.core.generateNextDecisionId(),
 			title,
 			date: formatStoredDate(),
 			status: "proposed",
@@ -77,53 +51,5 @@ export class ProjectContentService {
 		};
 		await this.createDecision(decision);
 		return decision;
-	}
-
-	async createDocument(document: Document, subPath = ""): Promise<void> {
-		const { relativePath } = await this.core.filesystem.saveDocument(document, normalizeDocumentSubPath(subPath));
-		document.path = relativePath;
-	}
-
-	async createDocumentFromInput(input: DocumentCreateInput): Promise<Document> {
-		const title = input.title.trim();
-		if (!title) throw new Error("Title is required to create a document.");
-		const tags = normalizeStringList(input.tags);
-		const document = await this.core.withCreateLock(async () => {
-			const created: Document = {
-				id: normalizeDocumentId(await generateNextDocId(this.core)),
-				title,
-				type: normalizeDocumentTypeInput(input.type) ?? "other",
-				createdDate: formatStoredDate(),
-				rawContent: input.content ?? "",
-				...(tags && tags.length > 0 && { tags }),
-			};
-			await this.createDocument(created, normalizeDocumentSubPath(input.path));
-			return created;
-		});
-		return (await this.getDocument(document.id)) ?? document;
-	}
-
-	async updateDocumentFromInput(input: DocumentUpdateInput): Promise<Document> {
-		const existing = await this.getDocument(input.id);
-		if (!existing) throw new Error(`Document not found: ${input.id}`);
-		const title = input.title?.trim();
-		if (input.title !== undefined && !title) throw new Error("Document title cannot be empty.");
-		const tags = input.tags === undefined ? existing.tags : normalizeStringList(input.tags);
-		const updated: Document = {
-			...existing,
-			id: normalizeDocumentId(existing.id),
-			title: title ?? existing.title,
-			type: normalizeDocumentTypeInput(input.type) ?? existing.type,
-			rawContent: input.content,
-			updatedDate: formatStoredDate(),
-			tags: tags && tags.length > 0 ? tags : undefined,
-		};
-		await this.createDocument(
-			updated,
-			input.path === undefined
-				? getDocumentSubPathFromRelativePath(existing.path)
-				: normalizeDocumentSubPath(input.path),
-		);
-		return (await this.getDocument(existing.id)) ?? updated;
 	}
 }

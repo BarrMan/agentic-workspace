@@ -47,15 +47,6 @@ export const MILESTONE_FRONTMATTER_FIELDS = {
 	DESCRIPTION: "description",
 } as const;
 
-export const DOCUMENT_FRONTMATTER_FIELDS = {
-	ID: "id",
-	TITLE: "title",
-	TYPE: "type",
-	CREATED_DATE: "created_date",
-	UPDATED_DATE: "updated_date",
-	TAGS: "tags",
-} as const;
-
 export const FRONTMATTER_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}(?: \d{2}:\d{2})?$/;
 
 export const TASK_FRONTMATTER_SCHEMA_VERSION = 3;

@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { $ } from "bun";
 import { Core } from "../core/agentic-workspace.ts";
 import type { AgenticWorkspaceConfig } from "../types/index.ts";
-import { initGitRepo } from "./test-utils.ts";
+import { coreFileSystem, initGitRepo } from "./test-utils.ts";
 
 describe("Offline Integration Tests", () => {
 	let tempDir: string;
@@ -60,7 +60,7 @@ remote_operations: false
 	});
 
 	it("should work in offline mode without remote", async () => {
-		const config = await core.filesystem.loadConfig();
+		const config = await coreFileSystem(core).loadConfig();
 		expect(config?.remoteOperations).toBe(false);
 
 		// Create a task - this should work without any remote operations
@@ -111,24 +111,24 @@ remote_operations: false
 
 	it("should work with config command to set remoteOperations", async () => {
 		// Load initial config
-		const initialConfig = await core.filesystem.loadConfig();
+		const initialConfig = await coreFileSystem(core).loadConfig();
 		expect(initialConfig?.remoteOperations).toBe(false);
 
 		// Simulate config set command
 		if (!initialConfig) throw new Error("Config not loaded");
 		const updatedConfig: AgenticWorkspaceConfig = { ...initialConfig, remoteOperations: true };
-		await core.filesystem.saveConfig(updatedConfig);
+		await coreFileSystem(core).saveConfig(updatedConfig);
 
 		// Verify config was updated
-		const newConfig = await core.filesystem.loadConfig();
+		const newConfig = await coreFileSystem(core).loadConfig();
 		expect(newConfig?.remoteOperations).toBe(true);
 
 		// Test changing it back
 		if (!newConfig) throw new Error("Config not loaded");
 		const finalConfig: AgenticWorkspaceConfig = { ...newConfig, remoteOperations: false };
-		await core.filesystem.saveConfig(finalConfig);
+		await coreFileSystem(core).saveConfig(finalConfig);
 
-		const verifyConfig = await core.filesystem.loadConfig();
+		const verifyConfig = await coreFileSystem(core).loadConfig();
 		expect(verifyConfig?.remoteOperations).toBe(false);
 	});
 });

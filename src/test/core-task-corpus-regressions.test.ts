@@ -7,7 +7,7 @@ import { loadTaskCorpus } from "../core/task-detail.ts";
 import { serializeTask } from "../markdown/serializer.ts";
 import type { Task } from "../types/index.ts";
 import { buildDependencyGraph } from "../utils/dependency-graph.ts";
-import { createUniqueTestDir, initGitRepo, safeCleanup } from "./test-utils.ts";
+import { coreFileSystem, createUniqueTestDir, initGitRepo, safeCleanup } from "./test-utils.ts";
 
 let testDir: string;
 let core: Core;
@@ -62,8 +62,8 @@ beforeEach(async () => {
 	extraDirs = [];
 	extraCores = [];
 	core = new Core(testDir);
-	await core.filesystem.ensureAgenticWorkspaceStructure();
-	await core.filesystem.saveConfig({
+	await coreFileSystem(core).ensureAgenticWorkspaceStructure();
+	await coreFileSystem(core).saveConfig({
 		projectName: "Core task corpus regressions",
 		statuses: ["To Do", "In Progress", "Done"],
 		labels: [],
@@ -87,7 +87,7 @@ describe("Core shared task corpus regressions", () => {
 	it("reads changed completed branch content at the same path after its ref moves", async () => {
 		await $`git switch -c feature-completed`.cwd(testDir).quiet();
 		const completedPath = await writeTask(
-			core.filesystem.completedDir,
+			coreFileSystem(core).completedDir,
 			"task-1 - Completed.md",
 			task("TASK-1", "Before ref move", "Done"),
 		);
@@ -110,10 +110,10 @@ describe("Core shared task corpus regressions", () => {
 	});
 
 	it("does not duplicate cross-branch tasks with case-different IDs", async () => {
-		await writeTask(core.filesystem.tasksDir, "task-1 - Local.md", task("task-1", "Local task"));
+		await writeTask(coreFileSystem(core).tasksDir, "task-1 - Local.md", task("task-1", "Local task"));
 		await commit("Add local task", recentCommitDate(3));
 		await $`git switch -c feature-case-different-id`.cwd(testDir).quiet();
-		await writeTask(core.filesystem.tasksDir, "TASK-1 - Branch.md", task("TASK-1", "Branch task"));
+		await writeTask(coreFileSystem(core).tasksDir, "TASK-1 - Branch.md", task("TASK-1", "Branch task"));
 		await commit("Add branch task with case-different ID", recentCommitDate(2));
 		await $`git switch main`.cwd(testDir).quiet();
 
@@ -124,14 +124,14 @@ describe("Core shared task corpus regressions", () => {
 	});
 
 	it("resolves a dependency completed only on another branch as completed in the cross-branch corpus", async () => {
-		await writeTask(core.filesystem.tasksDir, "task-2 - Root.md", {
+		await writeTask(coreFileSystem(core).tasksDir, "task-2 - Root.md", {
 			...task("TASK-2", "Root task"),
 			dependencies: ["TASK-1"],
 		});
 		await commit("Add root task", recentCommitDate(2));
 		await $`git switch -c feature-completed-dependency`.cwd(testDir).quiet();
 		await writeTask(
-			core.filesystem.completedDir,
+			coreFileSystem(core).completedDir,
 			"task-1 - Completed elsewhere.md",
 			task("TASK-1", "Completed elsewhere", "Done"),
 		);
@@ -152,7 +152,7 @@ describe("Core shared task corpus regressions", () => {
 	it("allocates past a completed task on another branch", async () => {
 		await $`git switch -c feature-completed-id`.cwd(testDir).quiet();
 		await writeTask(
-			core.filesystem.completedDir,
+			coreFileSystem(core).completedDir,
 			"task-41 - Completed.md",
 			task("TASK-41", "Completed branch reservation", "Done"),
 		);
@@ -170,7 +170,7 @@ describe("Core shared task corpus regressions", () => {
 	it("keeps an in-flight Core bound to fresh branch state after an ID allocation", async () => {
 		const watcherCore = trackCore(new Core(testDir));
 		await $`git switch -c feature-stale`.cwd(testDir).quiet();
-		await writeTask(watcherCore.filesystem.tasksDir, "task-1 - Branch.md", task("TASK-1", "Before ref move"));
+		await writeTask(coreFileSystem(watcherCore).tasksDir, "task-1 - Branch.md", task("TASK-1", "Before ref move"));
 		await commit("Add branch task", recentCommitDate(2));
 		await $`git switch main`.cwd(testDir).quiet();
 
@@ -197,12 +197,12 @@ describe("Core shared task corpus regressions", () => {
 	it("keeps an in-flight Core bound to fresh branch state after a local deletion", async () => {
 		const watcherCore = trackCore(new Core(testDir));
 		await $`git switch -c feature-stale`.cwd(testDir).quiet();
-		await writeTask(watcherCore.filesystem.tasksDir, "task-1 - Branch.md", task("TASK-1", "Before ref move"));
+		await writeTask(coreFileSystem(watcherCore).tasksDir, "task-1 - Branch.md", task("TASK-1", "Before ref move"));
 		await commit("Add branch task", recentCommitDate(2));
 		await $`git switch main`.cwd(testDir).quiet();
 
 		const deletedTaskPath = await writeTask(
-			watcherCore.filesystem.tasksDir,
+			coreFileSystem(watcherCore).tasksDir,
 			"task-2 - Local only.md",
 			task("TASK-2", "Local only task"),
 		);

@@ -1,5 +1,4 @@
-import { basename, dirname, relative, sep } from "node:path";
-import { parseTask } from "../markdown/parser.ts";
+import { basename, dirname, sep } from "node:path";
 import type { Task } from "../types/index.ts";
 import { type DuplicateGroup, detectDuplicateTaskIds } from "../utils/duplicate-detection.ts";
 import { taskIdKey, taskIdsEqual } from "../utils/task-id.ts";
@@ -17,14 +16,10 @@ export interface CrossBranchDuplicateFinding {
 	locations: CrossBranchDuplicateLocation[];
 }
 
-function normalizeRelativePath(rootDir: string, path: string): string {
-	return relative(rootDir, path).split(sep).join("/");
-}
-
-function withLocation(task: Task, location: "active" | "completed", rootDir: string): Task {
+function withLocation(task: Task, location: "active" | "completed", relativePath: (path: string) => string): Task {
 	return {
 		...task,
-		filePath: task.filePath ? normalizeRelativePath(rootDir, task.filePath) : undefined,
+		filePath: task.filePath ? relativePath(task.filePath) : undefined,
 		source: location === "completed" ? "completed" : "local",
 	};
 }
@@ -38,41 +33,33 @@ export async function findLocalDuplicateTaskIds(core: Core, snapshot?: TaskCorpu
 	let completedTasks: Task[] = snapshot?.completedTasks ?? [];
 	if (!snapshot) {
 		try {
-			[activeTasks, completedTasks] = await Promise.all([
-				core.filesystem.listTasks(),
-				core.filesystem.listCompletedTasks(),
-			]);
+			const corpus = await core.loadTaskSnapshot(false);
+			activeTasks = corpus.activeTasks;
+			completedTasks = corpus.completedTasks;
 		} catch {
 			// The direct record scan below can still diagnose well-formed canonical records individually.
 		}
 	}
+	const relativePath = (path: string) => core.projectRelativePath(path);
 	const tasks = [
-		...activeTasks.map((task) => withLocation(task, "active", core.filesystem.rootDir)),
-		...completedTasks.map((task) => withLocation(task, "completed", core.filesystem.rootDir)),
+		...activeTasks.map((task) => withLocation(task, "active", relativePath)),
+		...completedTasks.map((task) => withLocation(task, "completed", relativePath)),
 	];
-	for (const [root, location] of [
-		[core.filesystem.tasksDir, "active"],
-		[core.filesystem.completedDir, "completed"],
-	] as const) {
-		for await (const path of new Bun.Glob("*/task.md").scan({ cwd: root, absolute: true })) {
-			let task: Task;
-			try {
-				const content = await Bun.file(path).text();
-				task = withLocation(parseTask(content), location, core.filesystem.rootDir);
-			} catch (error) {
-				console.warn(
-					`Skipping unreadable or unparseable task record ${normalizeRelativePath(core.filesystem.rootDir, path)}: ${errorMessage(error)}`,
-				);
-				continue;
-			}
-			task.filePath = normalizeRelativePath(core.filesystem.rootDir, path);
-			const folderId = basename(dirname(path));
-			if (!taskIdsEqual(folderId, task.id)) {
-				(task as Task & { containerMismatch?: string }).containerMismatch =
-					`${task.filePath}: container identity does not match task ID ${task.id}.`;
-			}
-			if (!tasks.some((candidate) => candidate.filePath === task.filePath)) tasks.push(task);
+	for (const record of await core.scanStoredTaskRecords()) {
+		if (!record.task) {
+			console.warn(
+				`Skipping unreadable or unparseable task record ${relativePath(record.path)}: ${errorMessage(record.error)}`,
+			);
+			continue;
 		}
+		const task = withLocation(record.task, record.location, relativePath);
+		task.filePath = relativePath(record.path);
+		const folderId = basename(dirname(record.path));
+		if (!taskIdsEqual(folderId, task.id)) {
+			(task as Task & { containerMismatch?: string }).containerMismatch =
+				`${task.filePath}: container identity does not match task ID ${task.id}.`;
+		}
+		if (!tasks.some((candidate) => candidate.filePath === task.filePath)) tasks.push(task);
 	}
 	return detectDuplicateTaskIds(tasks);
 }
@@ -89,7 +76,7 @@ function appendCurrentBranchEntries(
 	tasks: Task[],
 	type: "task" | "completed",
 	branch: string,
-	rootDir: string,
+	relativePath: (path: string) => string,
 ): void {
 	for (const task of tasks) {
 		if (!task.filePath) continue;
@@ -97,7 +84,7 @@ function appendCurrentBranchEntries(
 			id: task.id,
 			type,
 			branch,
-			path: normalizeRelativePath(rootDir, task.filePath),
+			path: relativePath(task.filePath),
 			lastModified: task.updatedDate ? new Date(task.updatedDate) : new Date(0),
 		});
 	}
@@ -141,12 +128,13 @@ export async function findCrossBranchDuplicateTaskIds(
 	snapshot?: TaskCorpusSnapshot,
 ): Promise<CrossBranchDuplicateFinding[]> {
 	const corpus = snapshot ?? (await core.loadTaskSnapshot());
-	const config = corpus.config ?? (await core.filesystem.loadConfig());
+	const config = corpus.config ?? (await core.getStoredConfig());
 	if (config?.checkActiveBranches === false) return [];
 	const stateEntries: BranchTaskStateEntry[] = corpus.branchStateEntries?.slice() ?? [];
 	const current = (await core.git.getCurrentBranch()) ?? "current";
-	appendCurrentBranchEntries(stateEntries, corpus.activeTasks, "task", current, core.filesystem.rootDir);
-	appendCurrentBranchEntries(stateEntries, corpus.completedTasks, "completed", current, core.filesystem.rootDir);
+	const relativePath = (path: string) => core.projectRelativePath(path);
+	appendCurrentBranchEntries(stateEntries, corpus.activeTasks, "task", current, relativePath);
+	appendCurrentBranchEntries(stateEntries, corpus.completedTasks, "completed", current, relativePath);
 	return [...groupBranchEntries(stateEntries).values()]
 		.flatMap(({ id, entries }) => {
 			const finding = classifyCrossBranchDuplicate(id, entries);

@@ -27,8 +27,7 @@ export function registerTaskArtifactCommands(taskCommand: Command, runtime: Task
 		.option("--plain", "output plain text")
 		.action(async (taskId: string) => {
 			try {
-				const repository = (await runtime.createCore()).filesystem.taskArtifacts;
-				const [directory, entries] = await Promise.all([repository.containerPath(taskId), repository.list(taskId)]);
+				const { directory, entries } = await (await runtime.createCore()).listTaskArtifacts(taskId);
 				if (wantsJson(listCommand))
 					return printJson({
 						directory,
@@ -48,7 +47,7 @@ export function registerTaskArtifactCommands(taskCommand: Command, runtime: Task
 		.option("--json", "output JSON with base64 content")
 		.action(async (taskId: string, path: string) => {
 			try {
-				const result = await (await runtime.createCore()).filesystem.taskArtifacts.read(taskId, path);
+				const result = await (await runtime.createCore()).readTaskArtifact(taskId, path);
 				if (wantsJson(readCommand))
 					return printJson({
 						status: { ...result.status, state: stateLabel(result.status.state) },
@@ -70,7 +69,7 @@ export function registerTaskArtifactCommands(taskCommand: Command, runtime: Task
 				const bytes = options.from
 					? await readFile(options.from)
 					: Buffer.from(await new Response(Bun.stdin.stream()).arrayBuffer());
-				const status = await (await runtime.createCore()).filesystem.taskArtifacts.write(taskId, path, bytes);
+				const status = await (await runtime.createCore()).writeTaskArtifact(taskId, path, bytes);
 				if (wantsJson(writeCommand)) return printJson({ ...status, state: stateLabel(status.state) });
 				console.log(`${stateLabel(status.state)}\t${status.path}`);
 			} catch (error) {

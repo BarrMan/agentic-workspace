@@ -4,7 +4,7 @@ import { Core } from "../core/agentic-workspace.ts";
 import { FileSystem } from "../file-system/operations.ts";
 import { serializeTask } from "../markdown/serializer.ts";
 import type { Task } from "../types/index.ts";
-import { createUniqueTestDir, safeCleanup } from "./test-utils.ts";
+import { coreFileSystem, createUniqueTestDir, safeCleanup } from "./test-utils.ts";
 
 const directories: string[] = [];
 
@@ -16,8 +16,8 @@ async function createProject(name: string): Promise<{ core: Core; filesystem: Fi
 	const root = createUniqueTestDir(name);
 	directories.push(root);
 	const core = new Core(root);
-	await core.filesystem.ensureAgenticWorkspaceStructure();
-	await core.filesystem.saveConfig({
+	await coreFileSystem(core).ensureAgenticWorkspaceStructure();
+	await coreFileSystem(core).saveConfig({
 		projectName: name,
 		statuses: ["To Do", "Done"],
 		labels: [],

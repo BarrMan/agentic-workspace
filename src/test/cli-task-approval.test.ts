@@ -6,7 +6,7 @@ import { $ as shell } from "bun";
 import { getDefaultModeCatalog, updateAgentConfiguration } from "../agent-workspace/config.ts";
 import { runCli } from "../cli/register.ts";
 import { Core } from "../index.ts";
-import { createUniqueTestDir, initializeTestProject, safeCleanup } from "./test-utils.ts";
+import { coreFileSystem, createUniqueTestDir, initializeTestProject, safeCleanup } from "./test-utils.ts";
 
 let testDir: string;
 let configHome: string;
@@ -78,7 +78,7 @@ describe("CLI task mode approval", () => {
 		expect(result.stdout).toContain("task TASK-1 for mode build");
 		const content = await readFile(`${testDir}/agentic-workspace/tasks/task-1/task.md`, "utf8");
 		expect(content).toContain("mode_approvals:\n  build: true");
-		const task = await new Core(testDir).filesystem.loadTask("task-1");
+		const task = await coreFileSystem(new Core(testDir)).loadTask("task-1");
 		expect(task?.modeApprovals).toEqual({ build: true });
 	});
 
@@ -93,6 +93,6 @@ describe("CLI task mode approval", () => {
 		process.env.AGENTIC_WORKSPACE_TASK_ID = "TASK-1";
 		const result = await runTaskCommand(["task", "done"]);
 		expect(result.exitCode).toBe(0);
-		expect((await new Core(testDir).filesystem.loadTask("task-1"))?.modeApprovals ?? {}).toEqual({});
+		expect((await coreFileSystem(new Core(testDir)).loadTask("task-1"))?.modeApprovals ?? {}).toEqual({});
 	});
 });

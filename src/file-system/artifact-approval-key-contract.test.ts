@@ -8,7 +8,7 @@ import {
 	loadAgentConfiguration,
 } from "../agent-workspace/config.ts";
 import { Core } from "../core/agentic-workspace.ts";
-import { createUniqueTestDir, initializeTestProject, safeCleanup } from "../test/test-utils.ts";
+import { coreFileSystem, createUniqueTestDir, initializeTestProject, safeCleanup } from "../test/test-utils.ts";
 import { TaskArtifactRepository } from "./task-artifact-repository.ts";
 
 const roots: string[] = [];
@@ -71,19 +71,24 @@ describe("artifact approval key contract", () => {
 		const root = await createUniqueTestDir("artifact-approval-key-contract-config");
 		roots.push(root);
 		const core = new Core(root);
-		await core.filesystem.ensureAgenticWorkspaceStructure();
+		await coreFileSystem(core).ensureAgenticWorkspaceStructure();
 		await initializeTestProject(core, "Optional artifact declarations");
 		const configuration = getBuiltInAgentConfiguration();
 		configuration.modes = getDefaultModeCatalog();
 		const plan = configuration.modes.profiles.plan;
 		if (!plan) throw new Error("Missing PLAN profile");
 		plan.artifacts = [];
-		await core.filesystem.saveConfig({ ...(await core.filesystem.loadConfig())!, agentConfiguration: configuration });
+		await coreFileSystem(core).saveConfig({
+			...(await coreFileSystem(core).loadConfig())!,
+			agentConfiguration: configuration,
+		});
 
 		const loaded = await loadAgentConfiguration(core, "project");
 		expect(loaded?.modes?.profiles.plan?.artifacts).toEqual([]);
 		const { task } = await core.createTaskFromInput({ title: "Undeclared artifact", status: "To Do" });
-		const repository = new TaskArtifactRepository({ agenticWorkspaceDirectory: core.filesystem.agenticWorkspaceDir });
+		const repository = new TaskArtifactRepository({
+			agenticWorkspaceDirectory: coreFileSystem(core).agenticWorkspaceDir,
+		});
 		const bytes = encoder.encode("artifact without a profile declaration\n");
 		expect((await repository.write(task.id, "notes/result.md", bytes)).path).toBe("notes/result.md");
 		expect((await repository.read(task.id, "notes/result.md")).bytes).toEqual(bytes);

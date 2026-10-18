@@ -18,7 +18,6 @@ Provide agents inside sessions and external applications with a selective public
 
 ### Out of Scope
 
-- MCP.
 - `agent-config init` and CLI setup.
 - Named guides and instruction-file editing.
 - Board export, including Markdown export and README editing.
@@ -140,7 +139,7 @@ Provide agents inside sessions and external applications with a selective public
 **Preconditions:** A project directory is available.
 
 **Behavior:**
-1. Search tasks, documents, and decision records within the project scope.
+1. Search tasks and decision records within the project scope.
 2. Follow the search contract for matching, filters, archived records, and output formats.
 3. Do not support pagination, regex, or fuzzy ranking.
 
@@ -149,7 +148,7 @@ Provide agents inside sessions and external applications with a selective public
 **Failures:** Follow the filtering-and-search contract.
 
 **Acceptance Criteria:**
-- Search covers project tasks, documents, and decision records and supports plain-text and JSON output.
+- Search covers project tasks and decision records and supports plain-text and JSON output.
 - Search behavior follows the linked contract, including its exclusion of pagination, regex, and fuzzy ranking.
 
 ### IF-API-007: Ask a retained session
@@ -174,26 +173,6 @@ Provide agents inside sessions and external applications with a selective public
 - Sending to a saved session starts execution bound to that conversation when needed.
 - With no previous saved session in the current mode, the call reports failure, starts no execution, makes no session changes, and exits nonzero.
 - If answering fails or is interrupted, the call reports failure without returning an answer and exits nonzero; already completed message/execution effects are not rolled back.
-
-### IF-API-008: Manage project documents
-
-**Description:** The CLI must create, update, list, search, and view project documents.
-
-**Trigger:** A caller requests a project-document operation.
-
-**Preconditions:** The project directory is available.
-
-**Behavior:**
-1. Perform the requested create, update, list, search, or view operation on project documents.
-
-**Outcome:** The requested project-document operation is completed.
-
-**Failures:** Creating a document that already exists fails and reports that it exists; it does not modify the document and exits nonzero. Updating a document that does not exist fails and reports that it is missing; it does not create or modify a document and exits nonzero.
-
-**Acceptance Criteria:**
-- Each specified project-document operation is available and acts on project documents.
-- Creating a document that already exists reports failure, leaves the existing document unchanged, and exits nonzero.
-- Updating a missing document reports failure, creates or modifies nothing, and exits nonzero.
 
 ### IF-API-009: Manage decision records
 
@@ -325,13 +304,12 @@ Provide agents inside sessions and external applications with a selective public
 - Start a session using workspace launch semantics (IF-API-003; [session startup](sessions.md#session-004-start-consistently-across-surfaces)).
 - Set task/mode approval in response to user direction (IF-API-004; [mode approval](configuration.md#functional-requirements)).
 - List, read, and write generic files in a task's artifacts directory; writes replace selected contents from a file or standard input (IF-API-005; [task artifacts](tasks.md#task-009-artifact-file-operations)).
-- Search tasks, documents, and decision records across the project with filters and plain-text or JSON output, subject to [filtering and search](filtering-and-search.md#product-requirements-filtering-and-search) (IF-API-006).
+- Search tasks and decision records across the project with filters and plain-text or JSON output, subject to [filtering and search](filtering-and-search.md#product-requirements-filtering-and-search) (IF-API-006).
 - Ask the previous saved session in the current mode one message and wait for its response as a question/answer result (IF-API-007; [ask operation](sessions.md#session-004-start-consistently-across-surfaces)). Sending to a saved session starts the execution bound to that conversation; there is no separate resume step or session-state eligibility policy.
-- Create, update, list, search, and view project documents (IF-API-008).
 - Create and list decision records (IF-API-009).
 - Set the calling session's current model for its mode in project configuration, independently of provider (IF-API-010).
 
-The inventory is exhaustive. Unsupported inputs include MCP; `agent-config init` and CLI setup; named guides and instruction-file editing; board export, including Markdown export and README editing; `agent-session reset`; plural aliases; removed commands; age-based batch cleanup; interactive screen-launch commands other than the user entry point `workspace`; and `--no-git`. Any operation or option not listed as supported is unsupported. TUI capabilities not specified here do not thereby become CLI operations.
+The inventory is exhaustive. Unsupported inputs include `agent-config init` and CLI setup; named guides and instruction-file editing; board export, including Markdown export and README editing; `agent-session reset`; plural aliases; removed commands; age-based batch cleanup; interactive screen-launch commands other than the user entry point `workspace`; and `--no-git`. Any operation or option not listed as supported is unsupported. TUI capabilities not specified here do not thereby become CLI operations.
 
 **Outputs:** Operation results as defined here and in linked feature contracts. Search output is plain text or JSON only.
 
@@ -364,10 +342,8 @@ The inventory is exhaustive. Unsupported inputs include MCP; `agent-config init`
 | `agent-session ask` has no previous saved session in the current mode. | Fail and report that no previous session exists; start no execution, modify no session, and exit nonzero. |
 | The answer to `agent-session ask` fails or is interrupted. | Fail and report that no answer was returned; exit nonzero. Do not roll back the sent message or execution effects already completed. |
 | `agent-session ask` targets the previous saved session in the current mode. | Send one message, start the execution bound to that conversation if needed, wait, and return the response as a question/answer result. |
-| `doc create` targets a document that already exists. | Fail and report that the document exists; leave it unchanged and exit nonzero. |
-| `doc update` targets a document that does not exist. | Fail and report that the document is missing; create or modify nothing and exit nonzero. |
 | A caller requests `agent-session reset`, board export, or `--no-git`. | The operation is unsupported. |
-| A caller requests MCP, `agent-config init`, named guides, instruction-file editing, CLI setup, a removed command, a plural alias, age-based batch cleanup, an interactive screen-launch command other than the user entry point `workspace`, or an operation not in the approved integration inventory. | The integration surface is unsupported. |
+| A caller requests `agent-config init`, named guides, instruction-file editing, CLI setup, a removed command, a plural alias, age-based batch cleanup, an interactive screen-launch command other than the user entry point `workspace`, or an operation not in the approved integration inventory. | The integration surface is unsupported. |
 
 ## Open Questions
 

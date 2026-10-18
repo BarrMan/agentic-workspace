@@ -3,7 +3,7 @@ import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { Core } from "../core/agentic-workspace.ts";
 import type { Task } from "../types/index.ts";
-import { createUniqueTestDir, initializeFilesystemTestProject, safeCleanup } from "./test-utils.ts";
+import { coreFileSystem, createUniqueTestDir, initializeFilesystemTestProject, safeCleanup } from "./test-utils.ts";
 
 let TEST_DIR: string;
 
@@ -37,8 +37,8 @@ describe("Cleanup functionality", () => {
 
 	describe("Core functionality", () => {
 		it("should create completed directory in agentic-workspace structure", async () => {
-			await core.filesystem.ensureAgenticWorkspaceStructure();
-			expect(core.filesystem.completedDir).toBe(join(TEST_DIR, "agentic-workspace", "completed"));
+			await coreFileSystem(core).ensureAgenticWorkspaceStructure();
+			expect(coreFileSystem(core).completedDir).toBe(join(TEST_DIR, "agentic-workspace", "completed"));
 		});
 
 		it("should move Done task to completed folder", async () => {
@@ -46,7 +46,7 @@ describe("Cleanup functionality", () => {
 			await core.createTask(sampleTask);
 
 			// Verify task exists in active tasks
-			const activeTasks = await core.filesystem.listTasks();
+			const activeTasks = await coreFileSystem(core).listTasks();
 			expect(activeTasks).toHaveLength(1);
 			expect(activeTasks[0]?.id).toBe("TASK-1");
 
@@ -55,11 +55,11 @@ describe("Cleanup functionality", () => {
 			expect(success).toBe(true);
 
 			// Verify task is no longer in active tasks
-			const activeTasksAfter = await core.filesystem.listTasks();
+			const activeTasksAfter = await coreFileSystem(core).listTasks();
 			expect(activeTasksAfter).toHaveLength(0);
 
 			// Verify task is in completed tasks
-			const completedTasks = await core.filesystem.listCompletedTasks();
+			const completedTasks = await coreFileSystem(core).listCompletedTasks();
 			expect(completedTasks).toHaveLength(1);
 			expect(completedTasks[0]?.id).toBe("TASK-1");
 			expect(completedTasks[0]?.title).toBe("Test Task");
@@ -75,13 +75,13 @@ describe("Cleanup functionality", () => {
 
 			const success = await core.completeTask("task-2");
 			expect(success).toBe(true);
-			expect(await core.filesystem.loadTask("task-2")).toMatchObject({
+			expect(await coreFileSystem(core).loadTask("task-2")).toMatchObject({
 				id: "TASK-2",
 				status: "Not Done",
 				filePath: join(TEST_DIR, "agentic-workspace", "completed", "task-2", "task.md"),
 			});
 
-			const completedTasks = await core.filesystem.listCompletedTasks();
+			const completedTasks = await coreFileSystem(core).listCompletedTasks();
 			expect(completedTasks).toHaveLength(1);
 			expect(completedTasks[0]?.id).toBe("TASK-2");
 			expect(completedTasks[0]?.status).toBe("Not Done");
@@ -137,11 +137,11 @@ describe("Cleanup functionality", () => {
 		});
 
 		it("uses the final configured status as the cleanup status", async () => {
-			const config = await core.filesystem.loadConfig();
+			const config = await coreFileSystem(core).loadConfig();
 			if (!config) {
 				throw new Error("Expected test project config to exist");
 			}
-			await core.filesystem.saveConfig({
+			await coreFileSystem(core).saveConfig({
 				...config,
 				statuses: ["To Do", "Review", "Closed"],
 				defaultStatus: "To Do",
@@ -195,11 +195,11 @@ describe("Cleanup functionality", () => {
 		});
 
 		it("does not collapse internal spaces when matching the cleanup status", async () => {
-			const config = await core.filesystem.loadConfig();
+			const config = await coreFileSystem(core).loadConfig();
 			if (!config) {
 				throw new Error("Expected test project config to exist");
 			}
-			await core.filesystem.saveConfig({
+			await coreFileSystem(core).saveConfig({
 				...config,
 				statuses: ["To Do", "In Progress", "InProgress"],
 				defaultStatus: "To Do",
@@ -278,7 +278,7 @@ describe("Cleanup functionality", () => {
 		});
 
 		it("should return empty array for listCompletedTasks when no completed tasks exist", async () => {
-			const completedTasks = await core.filesystem.listCompletedTasks();
+			const completedTasks = await coreFileSystem(core).listCompletedTasks();
 			expect(completedTasks).toHaveLength(0);
 		});
 	});

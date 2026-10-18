@@ -1,16 +1,9 @@
-import { access } from "node:fs/promises";
-import { join } from "node:path";
 import { AmbiguousIdError } from "./entity-id.ts";
 import { buildFilenameIdRegex, DRAFT_PREFIX, escapeRegex } from "./prefix-config.ts";
-import { isValidTaskId, taskIdKey } from "./task-id.ts";
-
-export { taskIdsEqual } from "./task-id.ts";
+import { taskIdKey } from "./task-id.ts";
 
 interface TaskPathContext {
-	filesystem: {
-		tasksDir: string;
-		completedDir?: string;
-	};
+	findTaskRecordPath(taskId: string): Promise<string | null>;
 }
 
 /**
@@ -37,18 +30,9 @@ export function isAmbiguousTaskIdError(error: unknown): error is AmbiguousTaskId
 	return error instanceof AmbiguousTaskIdError;
 }
 
-/** Resolve the canonical active record path for an exact task ID. */
+/** Resolve the canonical active record path for an exact task ID through Storage. */
 export async function getTaskPath(taskId: string, context: TaskPathContext): Promise<string | null> {
-	const canonicalId = taskIdKey(taskId);
-	if (!isValidTaskId(canonicalId)) return null;
-	const filepath = join(context.filesystem.tasksDir, canonicalId.toLowerCase(), "task.md");
-	try {
-		await access(filepath);
-		return filepath;
-	} catch (error) {
-		if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
-		throw error;
-	}
+	return await context.findTaskRecordPath(taskId);
 }
 
 /**

@@ -3,10 +3,11 @@ import { mkdir, utimes, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { BoxRenderable } from "@opentui/core";
 import { createTestRenderer, type TestRendererSetup } from "@opentui/core/testing";
-import type { Core } from "../core/agentic-workspace.ts";
+import { Storage } from "../core/storage.ts";
+import { FileSystem } from "../file-system/operations.ts";
 import { TaskArtifactRepository } from "../file-system/task-artifact-repository.ts";
 import { TaskArtifactView, type TaskArtifactViewApi } from "../ui/opentui/task-artifact-view.ts";
-import { watchTasks } from "../utils/task-watcher.ts";
+import { watchTaskRecords } from "../utils/task-watcher.ts";
 import { createUniqueTestDir, getPlatformTimeout, safeCleanup } from "./test-utils.ts";
 
 const taskId = "BACK-23";
@@ -50,18 +51,13 @@ describe("artifact viewer live-refresh contract", () => {
 				return () => listeners.delete(callback);
 			},
 		};
-		const watcher = watchTasks(
-			{
-				filesystem: { tasksDir, rootDir: root },
-			} as Core,
-			{
-				onArtifactChanged: ({ taskId: changedTask }) => {
-					if (changedTask.toLowerCase() === taskId.toLowerCase()) {
-						for (const listener of [...listeners]) listener();
-					}
-				},
+		const watcher = watchTaskRecords(new Storage(new FileSystem(root)), {
+			onArtifactChanged: ({ taskId: changedTask }) => {
+				if (changedTask.toLowerCase() === taskId.toLowerCase()) {
+					for (const listener of [...listeners]) listener();
+				}
 			},
-		);
+		});
 		const setup = await createTestRenderer({ width: 100, height: 32, kittyKeyboard: true });
 		renderers.push(setup);
 		const parent = new BoxRenderable(setup.renderer, { width: "100%", height: "100%" });

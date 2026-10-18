@@ -3,7 +3,7 @@ import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { Core } from "../core/agentic-workspace.ts";
-import { initializeTestProject } from "../test/test-utils.ts";
+import { coreFileSystem, initializeTestProject } from "../test/test-utils.ts";
 import { shellQuote } from "./agents/agent.ts";
 import { getDefaultModeCatalog } from "./config.ts";
 import { prepareAgentAsk, prepareAgentLaunch } from "./session-launch.ts";
@@ -20,14 +20,14 @@ describe("session artifact context contract", () => {
 		await initializeTestProject(core, "Artifact context");
 		await core.createTaskFromInput({ title: "Context task", status: "To Do" });
 		const taskId = "task-1";
-		const taskRoot = await core.filesystem.taskArtifacts.containerPath(taskId);
+		const taskRoot = await coreFileSystem(core).taskArtifacts.containerPath(taskId);
 		const actualPath = "notes/actual.md";
-		await core.filesystem.taskArtifacts.write(
+		await coreFileSystem(core).taskArtifacts.write(
 			taskId,
 			actualPath,
 			new TextEncoder().encode("Current user-authored notes"),
 		);
-		const entries = await core.filesystem.taskArtifacts.list(taskId);
+		const entries = await coreFileSystem(core).taskArtifacts.list(taskId);
 		const existingPaths = entries.map(({ path }) => resolve(taskRoot, path));
 		expect(existingPaths).toContain(resolve(taskRoot, actualPath));
 		const declared = getDefaultModeCatalog().profiles.plan;
@@ -50,7 +50,7 @@ describe("session artifact context contract", () => {
 			cwd: root,
 			intent: { kind: "new" },
 			profile,
-			repositoryRoot: core.filesystem.rootDir,
+			repositoryRoot: coreFileSystem(core).rootDir,
 			taskRoot,
 		});
 		try {
@@ -85,7 +85,7 @@ describe("session artifact context contract", () => {
 			"ses_context",
 			"Review the current notes",
 			profile,
-			{ repositoryRoot: core.filesystem.rootDir, taskRoot },
+			{ repositoryRoot: coreFileSystem(core).rootDir, taskRoot },
 		);
 		try {
 			expect(ask.command).toContain(resolve(taskRoot, "spec.md"));

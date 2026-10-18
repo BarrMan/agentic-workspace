@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { Writable } from "node:stream";
 import { runCli } from "../cli/register.ts";
 import { Core } from "../core/agentic-workspace.ts";
-import { createUniqueTestDir, initializeFilesystemTestProject, safeCleanup } from "./test-utils.ts";
+import { coreFileSystem, createUniqueTestDir, initializeFilesystemTestProject, safeCleanup } from "./test-utils.ts";
 
 const CLI_COMMAND = ["agentic-workspace"];
 let cliQueue = Promise.resolve();
@@ -79,10 +79,10 @@ describe("CLI Zero Padded IDs Feature", () => {
 		await initializeFilesystemTestProject(core, "Padding Test");
 
 		// Enable zero padding in the config
-		const config = await core.filesystem.loadConfig();
+		const config = await coreFileSystem(core).loadConfig();
 		if (config) {
 			config.zeroPaddedIds = 3;
-			await core.filesystem.saveConfig(config);
+			await coreFileSystem(core).saveConfig(config);
 		}
 	});
 
@@ -98,16 +98,6 @@ describe("CLI Zero Padded IDs Feature", () => {
 		const files = await readdir(tasksDir);
 		expect(files.length).toBe(1);
 		expect(files[0]).toStartWith("task-001");
-	});
-
-	test("should create a document with a zero-padded ID", async () => {
-		const result = await $`${CLI_COMMAND} doc create "Padded Doc"`.cwd(TEST_DIR).quiet();
-		expect(result.exitCode).toBe(0);
-
-		const docsDir = join(TEST_DIR, "agentic-workspace", "docs");
-		const files = await readdir(docsDir);
-		expect(files.length).toBe(1);
-		expect(files[0]).toStartWith("doc-001");
 	});
 
 	test("should create a decision with a zero-padded ID", async () => {

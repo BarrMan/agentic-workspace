@@ -50,23 +50,22 @@ type ParsedSearchOptions = {
 	filters: SearchFilters;
 };
 
-const TASK_TYPE_EXAMPLE = JSON.stringify(getCliTaskTypeValues()[0] ?? "<configured-type>");
-const SEARCH_RESULT_TYPES = ["task", "document", "decision"] as const;
-const SEARCH_RESULT_HEADINGS: Record<SearchResultType, string> = {
+const SEARCH_RESULT_TYPES = ["task", "decision"] as const;
+const SEARCH_RESULT_HEADINGS: Record<(typeof SEARCH_RESULT_TYPES)[number], string> = {
 	task: "Tasks:",
-	document: "Documents:",
 	decision: "Decisions:",
 };
 
 export function registerSearchCommand(program: Command, dependencies: SearchCommandDependencies): void {
+	const TASK_TYPE_EXAMPLE = JSON.stringify(getCliTaskTypeValues()[0] ?? "<configured-type>");
 	const searchCommand = addHelpSchema(program.command("search [query]"), {
-		reads: "Tasks, documents, and decisions from the configured agentic-workspace directory",
+		reads: "Tasks and decisions from the configured agentic-workspace directory",
 		required: [],
 		optional: [
 			{ name: "query", type: "String", description: "Literal search text" },
 			{
 				name: "type",
-				type: choiceType(["task", "document", "decision"], { multiple: true }),
+				type: choiceType(["task", "decision"], { multiple: true }),
 				description: "Result types",
 			},
 			{
@@ -106,8 +105,8 @@ export function registerSearchCommand(program: Command, dependencies: SearchComm
 			`agentic-workspace search "crash" --task-type ${TASK_TYPE_EXAMPLE} --plain`,
 		],
 	})
-		.description("search tasks, documents, and decisions using literal text matching")
-		.option("--type <type>", "limit results to type (task, document, decision)", createMultiValueAccumulator())
+		.description("search tasks and decisions using literal text matching")
+		.option("--type <type>", "limit results to type (task, decision)", createMultiValueAccumulator())
 		.option(
 			"--task-type <type>",
 			"filter task results by configured task type (repeatable or comma-separated)",
@@ -157,7 +156,7 @@ async function runSearch(
 	if (!parsed) return;
 	const searchResults = await core.searchPersistently({ query: query ?? "", ...parsed });
 	const outputMode = listOutput.outputMode === "json" ? "json" : "plain";
-	return renderSearchResults(searchResults, outputMode, listOutput.listWindow, core, cwd);
+	return renderSearchResults(searchResults, outputMode, listOutput.listWindow, core);
 }
 
 async function parseSearchOptions(
@@ -194,7 +193,7 @@ function resolveSearchResultTypes(
 	rawTaskTypes: string[],
 	rawSearchProjects: string[],
 ): SearchResultType[] {
-	const allowedTypes: SearchResultType[] = ["task", "document", "decision"];
+	const allowedTypes: SearchResultType[] = ["task", "decision"];
 	if (!rawTypes)
 		return modifiedFileFilters?.length || rawTaskTypes.length > 0 || rawSearchProjects.length > 0
 			? ["task"]
@@ -203,7 +202,7 @@ function resolveSearchResultTypes(
 		.map((value) => value.toLowerCase())
 		.filter((value): value is SearchResultType => {
 			if (allowedTypes.includes(value as SearchResultType)) return true;
-			console.warn(`Ignoring unsupported type '${value}'. Supported: task, document, decision`);
+			console.warn(`Ignoring unsupported type '${value}'. Supported: task, decision`);
 			return false;
 		});
 }
@@ -245,7 +244,6 @@ async function renderSearchResults(
 	outputMode: "plain" | "json",
 	listWindow: ListWindow,
 	core: Core,
-	cwd: string,
 ): Promise<void> {
 	const printed = searchResultsInPrintedOrder(results, outputMode);
 	if (outputMode === "plain") {
@@ -253,7 +251,7 @@ async function renderSearchResults(
 		return;
 	}
 	const page = selectListWindow(printed, listWindow);
-	printJson(searchJson(await projectSearchTaskRows(core, page.items), cwd, core.filesystem.docsDir, page));
+	printJson(searchJson(await projectSearchTaskRows(core, page.items), page));
 }
 
 async function projectSearchTaskRows(core: Core, results: SearchResult[]): Promise<SearchResultInput[]> {
@@ -295,7 +293,7 @@ function formatSearchResultRow(result: SearchResult): string {
 		const { task } = result;
 		return `  ${task.id} - ${task.title}${task.status ? ` (${task.status})` : ""}${task.priority ? ` [${task.priority.toUpperCase()}]` : ""}${scoreText}`;
 	}
-	const { id, title } = result.type === "document" ? result.document : result.decision;
+	const { id, title } = (result as Extract<SearchResult, { type: "decision" }>).decision;
 	return `  ${id} - ${title}${scoreText}`;
 }
 

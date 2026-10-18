@@ -4,7 +4,7 @@ import { Core } from "../core/agentic-workspace.ts";
 import { parseTask } from "../markdown/parser.ts";
 import { serializeTask } from "../markdown/serializer.ts";
 import type { Task } from "../types/index.ts";
-import { createUniqueTestDir, initializeFilesystemTestProject, safeCleanup } from "./test-utils.ts";
+import { coreFileSystem, createUniqueTestDir, initializeFilesystemTestProject, safeCleanup } from "./test-utils.ts";
 
 let TEST_DIR: string;
 
@@ -26,7 +26,7 @@ describe("task type field", () => {
 			const { task } = await core.createTaskFromInput({ title: "Typed task", type: "feature" });
 			expect(task.type).toBe("feature");
 
-			const loaded = await core.filesystem.loadTask(task.id);
+			const loaded = await coreFileSystem(core).loadTask(task.id);
 			expect(loaded?.type).toBe("feature");
 		});
 
@@ -34,12 +34,12 @@ describe("task type field", () => {
 			const { task } = await core.createTaskFromInput({ title: "Typed task", type: "feature" });
 
 			await core.updateTaskFromInput(task.id, { type: "bug" });
-			let loaded = await core.filesystem.loadTask(task.id);
+			let loaded = await coreFileSystem(core).loadTask(task.id);
 			expect(loaded?.type).toBe("bug");
 			expect(loaded?.updatedDate).toBeDefined();
 
 			await core.updateTaskFromInput(task.id, { type: "" });
-			loaded = await core.filesystem.loadTask(task.id);
+			loaded = await coreFileSystem(core).loadTask(task.id);
 			expect(loaded?.type).toBeUndefined();
 		});
 
@@ -81,10 +81,10 @@ describe("task type field", () => {
 
 	describe("config override", () => {
 		it("should validate against configured types and preserve configured casing", async () => {
-			const config = await core.filesystem.loadConfig();
+			const config = await coreFileSystem(core).loadConfig();
 			if (!config) throw new Error("Config not found");
 			config.types = ["Bug", "Epic"];
-			await core.filesystem.saveConfig(config);
+			await coreFileSystem(core).saveConfig(config);
 
 			const { task } = await core.createTaskFromInput({ title: "Custom type", type: "epic" });
 			expect(task.type).toBe("Epic");
@@ -95,17 +95,17 @@ describe("task type field", () => {
 		});
 
 		it("should round-trip the types config key", async () => {
-			const config = await core.filesystem.loadConfig();
+			const config = await coreFileSystem(core).loadConfig();
 			if (!config) throw new Error("Config not found");
 			config.types = ["bug", "epic"];
-			await core.filesystem.saveConfig(config);
+			await coreFileSystem(core).saveConfig(config);
 
-			const reloaded = await new Core(TEST_DIR).filesystem.loadConfig();
+			const reloaded = await coreFileSystem(new Core(TEST_DIR)).loadConfig();
 			expect(reloaded?.types).toEqual(["bug", "epic"]);
 		});
 
 		it("should leave types undefined when the config key is absent", async () => {
-			const config = await core.filesystem.loadConfig();
+			const config = await coreFileSystem(core).loadConfig();
 			expect(config?.types).toBeUndefined();
 		});
 	});
@@ -113,7 +113,7 @@ describe("task type field", () => {
 	describe("back-compat for untyped tasks", () => {
 		it("should keep tasks without type untyped", async () => {
 			const { task } = await core.createTaskFromInput({ title: "Untyped task" });
-			const loaded = await core.filesystem.loadTask(task.id);
+			const loaded = await coreFileSystem(core).loadTask(task.id);
 			expect(loaded?.type).toBeUndefined();
 		});
 
@@ -121,7 +121,7 @@ describe("task type field", () => {
 			const { task } = await core.createTaskFromInput({ title: "Untyped task" });
 			await core.updateTaskFromInput(task.id, { title: "Still untyped" });
 
-			const loaded = await core.filesystem.loadTask(task.id);
+			const loaded = await coreFileSystem(core).loadTask(task.id);
 			if (!loaded) throw new Error("Task not found");
 			expect(loaded.type).toBeUndefined();
 			expect(serializeTask(loaded)).not.toContain("type:");

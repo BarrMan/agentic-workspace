@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { Core } from "../index.ts";
 import { serializeTask } from "../markdown/serializer.ts";
 import type { Task } from "../types/index.ts";
-import { initializeFilesystemTestProject } from "./test-utils.ts";
+import { coreFileSystem, initializeFilesystemTestProject } from "./test-utils.ts";
 
 const roots: string[] = [];
 let root: string;
@@ -40,7 +40,7 @@ function container(location: string, id: string): string {
 }
 
 async function addArtifacts(id: string): Promise<void> {
-	const artifacts = core.filesystem.taskArtifacts;
+	const artifacts = coreFileSystem(core).taskArtifacts;
 	await artifacts.write(id, "design/plan.md", new TextEncoder().encode("the plan\n"));
 	const plan = await artifacts.read(id, "design/plan.md");
 	await artifacts.approveCurrentVersion(id, "design/plan.md", plan.status.sha256!);
@@ -48,7 +48,7 @@ async function addArtifacts(id: string): Promise<void> {
 }
 
 async function expectArtifacts(id: string, location: string): Promise<void> {
-	const repository = core.filesystem.taskArtifacts;
+	const repository = coreFileSystem(core).taskArtifacts;
 	const plan = await repository.read(id, "design/plan.md", location as never);
 	expect(new TextDecoder().decode(plan.bytes)).toBe("the plan\n");
 	expect(plan.status.state).toBe("approved");
@@ -85,14 +85,14 @@ describe("MAIN task-container lifecycle contract", () => {
 		await addArtifacts(draft.id);
 		const draftContainer = container("drafts", draft.id);
 		expect(await core.promoteDraft(draft.id)).toBe(true);
-		const promoted = (await core.filesystem.listTasks()).find((item) => item.title === "Draft container");
+		const promoted = (await coreFileSystem(core).listTasks()).find((item) => item.title === "Draft container");
 		expect(promoted).toBeDefined();
 		if (!promoted) return;
 		await expectArtifacts(promoted.id, "tasks");
 		expect(await Bun.file(join(draftContainer, "artifacts", "design", "plan.md")).exists()).toBe(false);
 
 		expect((await core.demoteTask(promoted.id)).success).toBe(true);
-		const demoted = (await core.filesystem.listDrafts()).find((item) => item.title === "Draft container");
+		const demoted = (await coreFileSystem(core).listDrafts()).find((item) => item.title === "Draft container");
 		expect(demoted).toBeDefined();
 		if (demoted) await expectArtifacts(demoted.id, "drafts");
 	});
@@ -119,18 +119,18 @@ describe("MAIN task-container lifecycle contract", () => {
 		await core.createTask(task("task-1", "Change identity"));
 		await addArtifacts("task-1");
 		expect((await core.demoteTask("task-1")).success).toBe(true);
-		const draft = (await core.filesystem.listDrafts()).find((item) => item.title === "Change identity");
+		const draft = (await coreFileSystem(core).listDrafts()).find((item) => item.title === "Change identity");
 		expect(draft).toBeDefined();
 		if (!draft) return;
 		await expectArtifacts(draft.id, "drafts");
 		expect(await core.promoteDraft(draft.id)).toBe(true);
-		const promoted = (await core.filesystem.listTasks()).find((item) => item.title === "Change identity");
+		const promoted = (await coreFileSystem(core).listTasks()).find((item) => item.title === "Change identity");
 		expect(promoted).toBeDefined();
 		if (!promoted) return;
 		await expectArtifacts(promoted.id, "tasks");
 
 		await core.createTask(task("task-1", "Reused old ID"));
-		const repository = core.filesystem.taskArtifacts;
+		const repository = coreFileSystem(core).taskArtifacts;
 		expect((await repository.list("task-1")).map(({ path }) => path)).toEqual([]);
 	});
 

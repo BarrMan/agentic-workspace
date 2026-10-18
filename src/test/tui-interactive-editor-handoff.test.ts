@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { $ } from "bun";
 import { Core } from "../core/agentic-workspace.ts";
 import { getTestCliCommand } from "./test-cli.ts";
-import { createUniqueTestDir, initializeTestProject, safeCleanup } from "./test-utils.ts";
+import { coreFileSystem, createUniqueTestDir, initializeTestProject, safeCleanup } from "./test-utils.ts";
 
 const TUI_CLI_PATH = process.env.TUI_TEST_CLI_PATH?.trim();
 const CLI_RUNTIME = process.env.TUI_TEST_CLI_RUNTIME?.trim() ?? "bun";
@@ -55,9 +55,9 @@ async function runLiveRefreshScenario(): Promise<{ title: string; transcriptPath
 	await $`git init -b main`.cwd(testDir).quiet();
 	const core = new Core(testDir);
 	await initializeTestProject(core, "Interactive live refresh");
-	const config = await core.filesystem.loadConfig();
+	const config = await coreFileSystem(core).loadConfig();
 	if (!config) throw new Error("Failed to load live refresh config");
-	await core.filesystem.saveConfig({ ...config, remoteOperations: false, checkActiveBranches: false });
+	await coreFileSystem(core).saveConfig({ ...config, remoteOperations: false, checkActiveBranches: false });
 	await core.createTask({
 		id: "task-1",
 		title: "before-refresh",
@@ -110,7 +110,7 @@ exit $exit_code
 	let stdout: string;
 	let stderr: string;
 	let transcript: string;
-	let finalTask: Awaited<ReturnType<typeof core.filesystem.loadTask>>;
+	let finalTask: Awaited<ReturnType<ReturnType<typeof coreFileSystem>["loadTask"]>>;
 	try {
 		let timeout: ReturnType<typeof setTimeout>;
 		try {
@@ -127,7 +127,7 @@ exit $exit_code
 		transcript = await Bun.file(transcriptPath)
 			.text()
 			.catch(() => "(no transcript captured)");
-		finalTask = await core.filesystem.loadTask("task-1");
+		finalTask = await coreFileSystem(core).loadTask("task-1");
 	} finally {
 		try {
 			child.kill();

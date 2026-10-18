@@ -607,7 +607,7 @@ export class GitOperations {
 		},
 	): Promise<{ stdout: string; stderr: string }> {
 		// Use Bun.spawn so we can explicitly control stdio behaviour on Windows. When running
-		// under the MCP stdio transport, delegating to git with inherited stdin can deadlock.
+		// under a piped transport, delegating to git with inherited stdin can deadlock.
 		const env = {
 			...process.env,
 			...(options?.readOnly ? { GIT_OPTIONAL_LOCKS: "0" } : {}),

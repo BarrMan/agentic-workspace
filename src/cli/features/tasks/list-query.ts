@@ -1,12 +1,8 @@
 import { loadTaskListItems } from "../../../core/task-detail.ts";
 import type { Core } from "../../../index.ts";
 import type { Task } from "../../../types/index.ts";
-import {
-	AmbiguousTaskIdError,
-	isAmbiguousTaskIdError,
-	LOCAL_TASK_LOOKUP_HINT,
-	taskIdsEqual,
-} from "../../../utils/task-path.ts";
+import { taskIdsEqual } from "../../../utils/task-id.ts";
+import { AmbiguousTaskIdError, isAmbiguousTaskIdError, LOCAL_TASK_LOOKUP_HINT } from "../../../utils/task-path.ts";
 import { sortTasks } from "../../../utils/task-sorting.ts";
 import type { TaskListRequest } from "./list-parse.ts";
 
@@ -30,7 +26,7 @@ export async function queryTaskList(core: Core, request: TaskListRequest, includ
 		filters: Object.keys(request.filters).length > 0 ? { ...request.filters, parentTaskId: parentId } : undefined,
 		includeCrossBranch: false,
 	});
-	const config = await core.filesystem.loadConfig();
+	const config = await core.getStoredConfig();
 	const narrow = <T extends Task>(rows: T[]): T[] => {
 		const sorted = sortTasks(rows, request.sortField, config?.priorities);
 		const children = parentId

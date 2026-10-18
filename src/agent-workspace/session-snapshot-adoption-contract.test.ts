@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { TmuxCommandError } from "libtmux";
 import { Core } from "../core/agentic-workspace.ts";
-import { initializeTestProject } from "../test/test-utils.ts";
+import { coreFileSystem, initializeTestProject } from "../test/test-utils.ts";
 import {
 	getDefaultModeCatalog,
 	initializeAgentConfiguration,
@@ -193,7 +193,7 @@ describe("public session snapshot adoption contract", () => {
 		);
 		expect(reservation.nativeSessionId).toBeUndefined();
 		const originalCwd = reservation.cwd;
-		const canonicalTaskDir = await core.filesystem.taskArtifacts.containerPath("task-1");
+		const canonicalTaskDir = await coreFileSystem(core).taskArtifacts.containerPath("task-1");
 		expect(reservation.pathContext).toEqual({ projectDir: root, worktreeDir: originalCwd, taskDir: canonicalTaskDir });
 		const prepareCommand =
 			"printf '%s' \"$AGENTIC_WORKSPACE_PROJECT_DIR|$AGENTIC_WORKSPACE_WORKTREE_DIR|$AGENTIC_WORKSPACE_TASK_DIR\"";

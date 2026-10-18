@@ -5,7 +5,7 @@ import { Core } from "../core/agentic-workspace.ts";
 import { findLocalDuplicateTaskIds } from "../core/duplicate-task-detection.ts";
 import { serializeTask } from "../markdown/serializer.ts";
 import type { Task } from "../types/index.ts";
-import { createUniqueTestDir, safeCleanup } from "./test-utils.ts";
+import { coreFileSystem, createUniqueTestDir, safeCleanup } from "./test-utils.ts";
 
 let testDir: string;
 let core: Core;
@@ -32,8 +32,8 @@ async function put(path: string, content: string): Promise<void> {
 beforeEach(async () => {
 	testDir = createUniqueTestDir("container-duplicate-detection-contract");
 	core = new Core(testDir);
-	await core.filesystem.ensureAgenticWorkspaceStructure();
-	await core.filesystem.saveConfig({
+	await coreFileSystem(core).ensureAgenticWorkspaceStructure();
+	await coreFileSystem(core).saveConfig({
 		projectName: "Container duplicate detection",
 		statuses: ["To Do", "In Progress", "Done"],
 		labels: [],
@@ -50,8 +50,8 @@ afterEach(async () => {
 
 describe("container duplicate detection contract", () => {
 	it("detects duplicate canonical containers without altering their contents", async () => {
-		const firstTask = join(core.filesystem.tasksDir, "task-7", "task.md");
-		const secondTask = join(core.filesystem.completedDir, "task-7", "task.md");
+		const firstTask = join(coreFileSystem(core).tasksDir, "task-7", "task.md");
+		const secondTask = join(coreFileSystem(core).completedDir, "task-7", "task.md");
 		await put(firstTask, serializeTask(task("TASK-7", "First container")));
 		await put(secondTask, serializeTask(task("TASK-7", "Second container")));
 

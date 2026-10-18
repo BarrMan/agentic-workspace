@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from "bun:test";
 import { join } from "node:path";
 import { Core } from "../core/agentic-workspace.ts";
 import { FileSystem } from "../file-system/operations.ts";
-import { createUniqueTestDir, safeCleanup } from "./test-utils.ts";
+import { coreFileSystem, createUniqueTestDir, safeCleanup } from "./test-utils.ts";
 
 const directories: string[] = [];
 
@@ -61,9 +61,9 @@ describe("immutable Core project binding", () => {
 		});
 
 		const core = new Core(root);
-		expect(core.filesystem.agenticWorkspaceDir).toBe(join(root, "a"));
+		expect(coreFileSystem(core).agenticWorkspaceDir).toBe(join(root, "a"));
 		expect((await core.queryTasks()).map((task) => task.id)).toEqual(["TASK-1"]);
-		const originalListTasks = core.filesystem.listTasks.bind(core.filesystem);
+		const originalListTasks = coreFileSystem(core).listTasks.bind(coreFileSystem(core));
 		let release: (() => void) | undefined;
 		const paused = new Promise<void>((resolve) => {
 			release = resolve;
@@ -72,7 +72,7 @@ describe("immutable Core project binding", () => {
 		const reading = new Promise<void>((resolve) => {
 			started = resolve;
 		});
-		core.filesystem.listTasks = async () => {
+		coreFileSystem(core).listTasks = async () => {
 			started?.();
 			await paused;
 			return await originalListTasks();

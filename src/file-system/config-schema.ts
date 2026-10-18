@@ -78,7 +78,6 @@ const rawConfigSchema = z.object({
 	agentic_workspace_directory: z.string().optional(),
 	on_status_change: z.string().optional(),
 	task_prefix: taskPrefix.optional(),
-	mcp: z.unknown().optional(),
 });
 
 const ALIASES: ReadonlyArray<readonly [alias: string, key: string]> = [
@@ -134,6 +133,5 @@ export const AgenticWorkspaceConfigSchema = z.preprocess(normalizeAliases, rawCo
 		onStatusChange: raw.on_status_change,
 		prefixes: raw.task_prefix ? { task: raw.task_prefix } : undefined,
 		agenticWorkspaceDirectory: raw.agentic_workspace_directory,
-		mcp: raw.mcp as AgenticWorkspaceConfig["mcp"],
 	}),
 );

@@ -1,8 +1,8 @@
-import type { FileSystem } from "../file-system/operations.ts";
 import type { Task } from "../types/index.ts";
 import { formatStoredDate } from "../utils/date.ts";
+import { taskIdsEqual } from "../utils/task-id.ts";
 import { withoutVacatedTaskLinks } from "../utils/task-links.ts";
-import { taskIdsEqual } from "../utils/task-path.ts";
+import type { Storage } from "./storage.ts";
 
 type VacatedIdCleanup = { active: Task[]; completed: Task[] };
 
@@ -18,12 +18,12 @@ function removeVacatedLinks(tasks: Task[], taskId: string): Task[] {
 
 /** Owns the locked scan and rewrite required before a task ID can be reused. */
 export class VacatedTaskReferenceService {
-	constructor(private readonly filesystem: FileSystem) {}
+	constructor(private readonly storage: Storage) {}
 
 	private async collect(taskId: string): Promise<VacatedIdCleanup> {
 		const [activeTasks, completedTasks] = await Promise.all([
-			this.filesystem.listTasks(),
-			this.filesystem.listCompletedTasks(),
+			this.storage.loadTasks(),
+			this.storage.loadCompletedTasks(),
 		]);
 		const others = (tasks: Task[]) => tasks.filter((task) => !taskIdsEqual(task.id, taskId));
 		return {
@@ -40,7 +40,7 @@ export class VacatedTaskReferenceService {
 		let candidates = cleanupTargets(await this.collect(vacatedTaskId));
 		for (let attempt = 0; attempt < LOCK_ATTEMPTS; attempt++) {
 			const coversLock = (task: Task) => candidates.some((candidate) => taskIdsEqual(candidate.id, task.id));
-			const outcome = await this.filesystem.withTaskLocks(
+			const outcome = await this.storage.withTaskLocks(
 				[target, ...candidates],
 				async (): Promise<{ value: T } | { widened: Task[] }> => {
 					const cleanup = await this.collect(vacatedTaskId);
@@ -61,11 +61,11 @@ export class VacatedTaskReferenceService {
 		const updatedDate = formatStoredDate();
 		for (const task of cleanup.active) {
 			const updated = { ...task, updatedDate };
-			filePaths.push(await this.filesystem.saveTask(updated));
+			filePaths.push(await this.storage.saveTask(updated));
 		}
 		for (const task of cleanup.completed) {
 			const updated = { ...task, updatedDate };
-			filePaths.push(await this.filesystem.saveTask(updated));
+			filePaths.push(await this.storage.saveTask(updated));
 		}
 		return { cleanedTaskIds: cleanupTargets(cleanup).map((task) => task.id), filePaths };
 	}

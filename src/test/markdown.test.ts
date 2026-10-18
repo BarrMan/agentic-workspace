@@ -1,14 +1,8 @@
 import { describe, expect, it } from "bun:test";
 import { parseFrontmatter } from "../markdown/frontmatter.ts";
-import {
-	parseDecision,
-	parseDocument,
-	parseMarkdown,
-	parseTask,
-	UnsupportedTaskFrontmatterSchemaError,
-} from "../markdown/parser.ts";
-import { serializeDecision, serializeDocument, serializeTask } from "../markdown/serializer.ts";
-import type { Decision, Document, Task } from "../types/index.ts";
+import { parseDecision, parseMarkdown, parseTask, UnsupportedTaskFrontmatterSchemaError } from "../markdown/parser.ts";
+import { serializeDecision, serializeTask } from "../markdown/serializer.ts";
+import type { Decision, Task } from "../types/index.ts";
 
 describe("Markdown Parser", () => {
 	describe("parseMarkdown", () => {
@@ -299,38 +293,15 @@ Some context.`;
 			expect(decision.alternatives).toBeUndefined();
 		});
 	});
-
-	describe("parseDocument", () => {
-		it("should parse a document", () => {
-			const content = `---
-id: doc-1
-title: "API Guide"
-type: "guide"
-created_date: 2025-06-07
-tags: [api]
----
-
-Document body.`;
-
-			const doc = parseDocument(content);
-
-			expect(doc.id).toBe("doc-1");
-			expect(doc.title).toBe("API Guide");
-			expect(doc.type).toBe("guide");
-			expect(doc.createdDate).toBe("2025-06-07");
-			expect(doc.tags).toEqual(["api"]);
-			expect(doc.rawContent).toBe("Document body.");
-		});
-	});
 });
 
 describe("malformed frontmatter", () => {
 	// gray-matter caches the file object before parsing, so an uncached second parse used to
 	// return empty frontmatter and make an unparseable file look like one with no id.
 	it("fails on every parse, not just the first", () => {
-		const malformed = "---\nid: doc-2\ntitle: [unterminated\n---\n\nBody\n";
+		const malformed = "---\nid: decision-2\ntitle: [unterminated\n---\n\nBody\n";
 
-		for (const parse of [parseDocument, parseDecision, parseTask, parseMarkdown]) {
+		for (const parse of [parseDecision, parseTask, parseMarkdown]) {
 			expect(() => parse(malformed)).toThrow();
 		}
 	});
@@ -474,7 +445,7 @@ describe("Markdown Serializer", () => {
 				milestone: "v1",
 				dependencies: ["task-1"],
 				references: ["docs/design.md"],
-				documentation: ["doc-1"],
+				documentation: ["reference-1"],
 				modifiedFiles: ["src/markdown/serializer.ts"],
 				parentTaskId: "task-parent",
 				subtasks: ["task-policy.1"],
@@ -570,48 +541,6 @@ describe("Markdown Serializer", () => {
 			const result = serializeDecision(decision);
 
 			expect(result).toContain("alternatives: Considered MongoDB");
-		});
-	});
-
-	describe("serializeDocument", () => {
-		it("should serialize a document correctly", () => {
-			const document: Document = {
-				id: "doc-1",
-				title: "API Documentation",
-				type: "design",
-				createdDate: "2025-06-07",
-				updatedDate: "2025-06-08",
-				rawContent: "This document describes the API endpoints.",
-				tags: ["api", "docs"],
-			};
-
-			const result = serializeDocument(document);
-
-			expect(result).toContain("id: doc-1");
-			expect(result).toContain("title: API Documentation");
-			expect(result).toContain("type: design");
-			expect(result).toContain("created_date: '2025-06-07'");
-			expect(result).toContain("updated_date: '2025-06-08'");
-			expect(result).toContain("tags:");
-			expect(result).toContain("- api");
-			expect(result).toContain("- docs");
-			expect(result).toContain("This document describes the API endpoints.");
-		});
-
-		it("should serialize document without optional fields", () => {
-			const document: Document = {
-				id: "doc-2",
-				title: "Simple Doc",
-				type: "guide",
-				createdDate: "2025-06-07",
-				rawContent: "Simple content.",
-			};
-
-			const result = serializeDocument(document);
-
-			expect(result).toContain("id: doc-2");
-			expect(result).not.toContain("updated_date:");
-			expect(result).not.toContain("tags:");
 		});
 	});
 });

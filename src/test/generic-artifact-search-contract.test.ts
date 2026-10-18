@@ -3,7 +3,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { Core } from "../core/agentic-workspace.ts";
 import type { Task, TaskSearchResult } from "../types/index.ts";
-import { createUniqueTestDir, initializeFilesystemTestProject, safeCleanup } from "./test-utils.ts";
+import { coreFileSystem, createUniqueTestDir, initializeFilesystemTestProject, safeCleanup } from "./test-utils.ts";
 
 const roots: string[] = [];
 
@@ -28,9 +28,9 @@ describe("generic task artifact search contract", () => {
 			description: "Task body is unrelated.",
 			rawContent: "Task body is unrelated.",
 		};
-		await core.filesystem.saveTask(task);
+		await coreFileSystem(core).saveTask(task);
 
-		const taskDirectory = await core.filesystem.taskArtifacts.containerPath(task.id);
+		const taskDirectory = await coreFileSystem(core).taskArtifacts.containerPath(task.id);
 		const artifactsDirectory = join(taskDirectory, "artifacts");
 		await mkdir(artifactsDirectory, { recursive: true });
 		const artifactText = "uniqueordinaryartifactneedle";

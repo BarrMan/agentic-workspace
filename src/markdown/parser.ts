@@ -1,11 +1,9 @@
 import { z } from "zod";
-import type { Decision, Document, Milestone, ParsedMarkdown, Task } from "../types/index.ts";
+import type { Decision, Milestone, ParsedMarkdown, Task } from "../types/index.ts";
 import { parseFrontmatter } from "./frontmatter.ts";
 import {
 	DECISION_FRONTMATTER_KEY_MAP,
 	DecisionFrontmatterSchema,
-	DOCUMENT_FRONTMATTER_KEY_MAP,
-	DocumentFrontmatterSchema,
 	MILESTONE_FRONTMATTER_KEY_MAP,
 	MilestoneFrontmatterSchema,
 } from "./record-schemas.ts";
@@ -106,7 +104,7 @@ function throwTaskSchemaError(taskId: string, error: z.ZodError): never {
 	throw new TaskFrontmatterSchemaError(taskId, issue ? formatIssue(issue) : "invalid frontmatter");
 }
 
-function throwRecordSchemaError(kind: "decision" | "document" | "milestone", id: string, error: z.ZodError): never {
+function throwRecordSchemaError(kind: "decision" | "milestone", id: string, error: z.ZodError): never {
 	const issue = error.issues[0];
 	const detail = issue ? formatIssue(issue) : "invalid frontmatter";
 	throw new FrontmatterSchemaError(`Invalid ${kind} frontmatter for ${id || "(missing id)"}: ${detail}.`);
@@ -157,19 +155,6 @@ export function parseDecision(content: string): Decision {
 		return { ...record, rawContent };
 	} catch (error) {
 		if (error instanceof z.ZodError) throwRecordSchemaError("decision", id, error);
-		throw error;
-	}
-}
-
-export function parseDocument(content: string): Document {
-	const { frontmatter, content: rawContent } = parseMarkdown(content);
-	const id = String(frontmatter[DOCUMENT_FRONTMATTER_KEY_MAP.id] || "");
-
-	try {
-		const record = DocumentFrontmatterSchema.parse(frontmatterFields(frontmatter, DOCUMENT_FRONTMATTER_KEY_MAP));
-		return { ...record, rawContent: rawContent.trim() };
-	} catch (error) {
-		if (error instanceof z.ZodError) throwRecordSchemaError("document", id, error);
 		throw error;
 	}
 }

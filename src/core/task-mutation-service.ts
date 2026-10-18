@@ -1,8 +1,6 @@
-import { relative, sep } from "node:path";
 import { Task as TaskModel } from "../agent-workspace/task.ts";
 import type { ResolvedAgentConfiguration } from "../agent-workspace/types.ts";
-import type { FileSystem } from "../file-system/operations.ts";
-import { EntityType, TASK_SOURCE, type Task, type TaskUpdateInput } from "../types/index.ts";
+import { EntityType, type Task, type TaskUpdateInput } from "../types/index.ts";
 import { formatStoredDate } from "../utils/date.ts";
 import { generateNextId, generateNextSubtaskId, getPrefixForType } from "../utils/prefix-config.ts";
 import { formatValidPriorityValues, resolvePriorityValue } from "../utils/priority-config.ts";
@@ -15,9 +13,11 @@ import {
 import { getCanonicalStatus, getValidStatuses } from "../utils/status.ts";
 import { executeStatusCallback } from "../utils/status-callback.ts";
 import { validateDependencies } from "../utils/task-builders.ts";
-import { AmbiguousTaskIdError, LOCAL_TASK_LOOKUP_HINT, taskIdsEqual } from "../utils/task-path.ts";
+import { taskIdsEqual } from "../utils/task-id.ts";
+import { AmbiguousTaskIdError, LOCAL_TASK_LOOKUP_HINT } from "../utils/task-path.ts";
 import { formatValidTaskTypeValues, resolveTaskTypeValue } from "../utils/task-type-config.ts";
-import { completedTaskIdentityRecord, TaskIdentityIndex, type TaskIdentityResolution } from "./task-identity-index.ts";
+import type { Storage } from "./storage.ts";
+import { TaskIdentityIndex, type TaskIdentityResolution } from "./task-identity-index.ts";
 import type { TaskReadOptions } from "./task-query-workflow.ts";
 import { applyTaskUpdate } from "./task-update/index.ts";
 
@@ -58,16 +58,17 @@ function hasUpdatedDateRelevantChanges(originalTask: Task | null, nextTask: Task
 /** Owns the locked read-apply-write transaction for active task edits. */
 export class ProjectTaskMutations {
 	private readonly approvalTails = new Map<string, Promise<void>>();
+
 	constructor(
-		private readonly filesystem: FileSystem,
+		private readonly storage: Storage,
 		private readonly loadTask: (id: string, forMutation: boolean) => Promise<Task | null>,
 		private readonly occupiedTaskIds: () => Promise<string[]>,
 	) {}
 
 	async requireCanonicalStatus(status: string): Promise<string> {
-		const canonical = await getCanonicalStatus(status, { filesystem: this.filesystem });
+		const canonical = await getCanonicalStatus(status, { getStoredConfig: () => this.storage.loadConfig() });
 		if (canonical) return canonical;
-		const validStatuses = await getValidStatuses({ filesystem: this.filesystem });
+		const validStatuses = await getValidStatuses({ getStoredConfig: () => this.storage.loadConfig() });
 		throw new Error(`Invalid status: ${status}. Valid statuses are: ${validStatuses.join(", ")}`);
 	}
 
@@ -81,7 +82,8 @@ export class ProjectTaskMutations {
 			normalizePriority: (priority) => this.normalizePriority(priority),
 			normalizeType: (type) => this.normalizeTaskType(type),
 			normalizeProject: (project) => this.normalizeProject(project),
-			validateDependencies: (dependencies, candidate) => validateDependencies(dependencies, this.filesystem, candidate),
+			validateDependencies: (dependencies, candidate) =>
+				validateDependencies(dependencies, this.storage.dependencyStore, candidate),
 			taskIdsEqual,
 			formatMissingDependenciesError: (invalid) =>
 				new Error(
@@ -92,15 +94,15 @@ export class ProjectTaskMutations {
 	}
 
 	async withCreateLock<T>(fn: () => Promise<T>): Promise<T> {
-		return await this.filesystem.withCreateLock(fn);
+		return await this.storage.withCreateLock(fn);
 	}
 
 	async generateNextId(type: EntityType = EntityType.Task, parent?: string): Promise<string> {
-		this.filesystem.invalidateConfigCache();
-		const config = await this.filesystem.loadConfig();
+		this.storage.invalidateConfigCache();
+		const config = await this.storage.loadConfig();
 		const prefix = getPrefixForType(type, config ?? undefined);
 		if (type === EntityType.Task && !parent) {
-			return await this.filesystem.allocateTaskId(prefix, config?.zeroPaddedIds, this.occupiedTaskIds);
+			return await this.storage.allocateTaskId(prefix, config?.zeroPaddedIds, this.occupiedTaskIds);
 		}
 		const allIds = await this.getExistingIdsForType(type);
 		if (parent) {
@@ -114,10 +116,9 @@ export class ProjectTaskMutations {
 		if (options.includeCrossBranch === false) return await this.loadWorkingCopyTask(taskId, true);
 		const task = await this.loadTask(taskId, true);
 		if (task?.source === "completed") return null;
-		const resolved = task ?? (await this.filesystem.loadTask(taskId, { includeArchived: true }));
+		const resolved = task ?? (await this.storage.loadTask(taskId, { includeArchived: true }));
 		if (resolved?.filePath) {
-			const completedPath = relative(this.filesystem.completedDir, resolved.filePath);
-			if (completedPath !== "" && completedPath !== ".." && !completedPath.startsWith(`..${sep}`)) return null;
+			if (this.storage.isCompletedTaskRecordPath(resolved.filePath)) return null;
 		}
 		return resolved;
 	}
@@ -133,7 +134,7 @@ export class ProjectTaskMutations {
 	async updateFromInput(taskId: string, input: TaskUpdateInput, options: TaskReadOptions = {}): Promise<Task> {
 		const task = await this.loadTaskForMutation(taskId, options);
 		if (!task) throw new Error(`Task not found: ${taskId}`);
-		return await this.filesystem.withTaskLock(task, async () => {
+		return await this.storage.withTaskLock(task, async () => {
 			const current = await this.loadTaskForMutation(taskId, options);
 			if (!current) throw new Error(`Task not found: ${taskId}`);
 			const { mutated } = await this.applyTaskUpdateInput(current, input, (status) =>
@@ -156,8 +157,8 @@ export class ProjectTaskMutations {
 		try {
 			const task = await this.loadTaskForMutation(taskId);
 			if (!task) throw new Error(`Task not found: ${taskId}`);
-			return await this.filesystem.withTaskLock(task, async () => {
-				const current = await this.filesystem.loadTask(taskId, { includeArchived: true });
+			return await this.storage.withTaskLock(task, async () => {
+				const current = await this.storage.loadTask(taskId, { includeArchived: true });
 				if (!current) throw new Error(`Task not found: ${taskId}`);
 				const profiles = configuration.config.modes?.profiles ?? {};
 				if (!profiles[modeId]) throw new Error(`Unknown mode: ${modeId}`);
@@ -173,7 +174,7 @@ export class ProjectTaskMutations {
 				});
 				model.setModeApproval(modeId);
 				const updated = model.serialize();
-				await this.filesystem.saveTask({ ...updated, filePath: current.filePath }, { approvalMutation: true });
+				await this.storage.saveTask({ ...updated, filePath: current.filePath }, { approvalMutation: true });
 				return updated;
 			});
 		} finally {
@@ -184,7 +185,7 @@ export class ProjectTaskMutations {
 
 	async normalizePriority(value: string | undefined): Promise<string | undefined> {
 		if (value === undefined || value.trim() === "") return undefined;
-		const config = await this.filesystem.loadConfig();
+		const config = await this.storage.loadConfig();
 		const normalized = resolvePriorityValue(value, config);
 		if (!normalized)
 			throw new Error(`Invalid priority: ${value}. Valid values are: ${formatValidPriorityValues(config)}`);
@@ -193,7 +194,7 @@ export class ProjectTaskMutations {
 
 	async normalizeTaskType(value: string | undefined): Promise<string | undefined> {
 		if (value === undefined || value === "") return undefined;
-		const config = await this.filesystem.loadConfig();
+		const config = await this.storage.loadConfig();
 		const canonical = resolveTaskTypeValue(value, config);
 		if (!canonical) throw new Error(`Invalid type: ${value}. Valid types are: ${formatValidTaskTypeValues(config)}`);
 		return canonical;
@@ -201,9 +202,9 @@ export class ProjectTaskMutations {
 
 	async normalizeProject(value: string | undefined): Promise<string | undefined> {
 		if (value === undefined || value === "") return undefined;
-		const config = await this.filesystem.loadConfig();
+		const config = await this.storage.loadConfig();
 		const projects = getProjectValues(config);
-		if (projects.length === 0) throw new Error(noProjectsConfiguredMessage(this.filesystem.configFilePath));
+		if (projects.length === 0) throw new Error(noProjectsConfiguredMessage(this.storage.configFilePath));
 		const canonical = resolveProjectValue(value, config);
 		if (!canonical)
 			throw new Error(`Invalid project: ${value}. Valid projects are: ${formatValidProjectValues(config)}`);
@@ -216,44 +217,28 @@ export class ProjectTaskMutations {
 				return await this.occupiedTaskIds();
 			case EntityType.Draft: {
 				const [drafts, occupied] = await Promise.all([
-					this.filesystem.listDrafts(),
-					this.filesystem.listOccupiedDraftFileIds(),
+					this.storage.loadDrafts(),
+					this.storage.listOccupiedDraftFileIds(),
 				]);
 				return [...drafts.map((draft) => draft.id), ...occupied];
 			}
-			case EntityType.Document:
-				return (await this.filesystem.listDocuments()).map((document) => document.id);
 			case EntityType.Decision:
-				return (await this.filesystem.listDecisions()).map((decision) => decision.id);
+				return (await this.storage.listDecisions()).map((decision) => decision.id);
 		}
 	}
 
 	private async buildWorkingCopyTaskIndex(activeTasks?: Task[]): Promise<TaskIdentityIndex> {
 		const [active, completed, config] = await Promise.all([
-			activeTasks ? Promise.resolve(activeTasks) : this.filesystem.listTasks(),
-			this.filesystem.listCompletedTasks(),
-			this.filesystem.loadConfig(),
+			activeTasks ? Promise.resolve(activeTasks) : this.storage.loadTasks(),
+			this.storage.loadCompletedTasks(),
+			this.storage.loadConfig(),
 		]);
 		return new TaskIdentityIndex(
 			[
-				...active.map((task) => ({
-					id: task.id,
-					type: "task" as const,
-					branch: "local",
-					path: task.filePath ?? `${this.filesystem.tasksDir}/${task.id}`,
-					lastModified: task.lastModified ?? new Date(0),
-					task: { ...task, source: TASK_SOURCE.LOCAL },
-					workingCopy: true,
-				})),
-				...completed.map((task) =>
-					completedTaskIdentityRecord(task, task.filePath ?? `${this.filesystem.completedDir}/${task.id}`),
-				),
+				...active.map((task) => this.storage.activeTaskIdentityRecord(task)),
+				...completed.map((task) => this.storage.projectCompletedTaskIdentityRecord(task)),
 			],
-			{
-				repositoryRoot: null,
-				projectRoot: this.filesystem.rootDir,
-				agenticWorkspaceDirectory: this.filesystem.agenticWorkspaceDirName,
-			},
+			this.storage.taskIdentityContext(null),
 			config?.statuses ?? ["To Do", "In Progress", "Done"],
 			config?.taskResolutionStrategy ?? "most_progressed",
 		);
@@ -262,23 +247,23 @@ export class ProjectTaskMutations {
 	private async loadResolvedTaskOrFilesystem(taskId: string, resolution: TaskIdentityResolution): Promise<Task | null> {
 		if (resolution.status === "ambiguous") throw new AmbiguousTaskIdError(taskId, resolution.candidates);
 		if (resolution.status === "found") return { ...resolution.task };
-		return await this.filesystem.loadTask(taskId);
+		return await this.storage.loadTask(taskId);
 	}
 
 	async saveTask(task: Task): Promise<string> {
-		const original = await this.filesystem.loadTask(task.id, { includeArchived: true });
+		const original = await this.storage.loadTask(task.id, { includeArchived: true });
 		const previousStatus = original?.status ?? "";
 		const statusChanged = previousStatus !== (task.status ?? "");
 		if (hasUpdatedDateRelevantChanges(original, task)) task.updatedDate = formatStoredDate();
 		else if (original?.updatedDate) task.updatedDate = original.updatedDate;
 		else delete task.updatedDate;
-		const filepath = await this.filesystem.saveTask(task);
+		const filepath = await this.storage.saveTask(task);
 		if (statusChanged) await this.executeStatusChangeCallback(task, previousStatus, task.status ?? "");
 		return filepath;
 	}
 
 	private async executeStatusChangeCallback(task: Task, oldStatus: string, newStatus: string): Promise<void> {
-		const config = await this.filesystem.loadConfig();
+		const config = await this.storage.loadConfig();
 		const command = task.onStatusChange ?? config?.onStatusChange;
 		if (!command) return;
 		try {
@@ -288,7 +273,7 @@ export class ProjectTaskMutations {
 				oldStatus,
 				newStatus,
 				taskTitle: task.title,
-				cwd: this.filesystem.rootDir,
+				cwd: this.storage.projectRoot,
 			});
 			if (!result.success) {
 				console.error(`Status change callback failed for ${task.id}: ${result.error ?? "Unknown error"}`);

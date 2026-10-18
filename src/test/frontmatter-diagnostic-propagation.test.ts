@@ -10,7 +10,7 @@ import type { GitOperations } from "../git/operations.ts";
 import { UnsupportedRecordFrontmatterSchemaError, UnsupportedTaskFrontmatterSchemaError } from "../markdown/parser.ts";
 import { serializeDecision, serializeMilestone, serializeTask } from "../markdown/serializer.ts";
 import type { AgenticWorkspaceConfig, Decision, Milestone, Task } from "../types/index.ts";
-import { createUniqueTestDir, initializeFilesystemTestProject, safeCleanup } from "./test-utils.ts";
+import { coreFileSystem, createUniqueTestDir, initializeFilesystemTestProject, safeCleanup } from "./test-utils.ts";
 
 const task: Task = {
 	id: "TASK-1",
@@ -55,7 +55,6 @@ describe("frontmatter diagnostic propagation", () => {
 		try {
 			const repository = new ContentRepository({
 				decisionsDirectory: async () => root,
-				documentsDirectory: async () => root,
 				ensureDirectory: async () => {},
 			});
 			await Bun.write(
@@ -110,11 +109,11 @@ describe("task frontmatter diagnostic propagation", () => {
 	});
 
 	it("skips unsupported task schema in local list but keeps single-task load strict", async () => {
-		const taskPath = join(core.filesystem.tasksDir, "task-1", "task.md");
+		const taskPath = join(coreFileSystem(core).tasksDir, "task-1", "task.md");
 		await Bun.write(taskPath, unsupported(serializeTask(task), "task_schema_version"));
 		const warning = spyOn(console, "warn").mockImplementation(() => {});
 		try {
-			expect(await core.filesystem.listTasks()).toEqual([]);
+			expect(await coreFileSystem(core).listTasks()).toEqual([]);
 			expect(warning).toHaveBeenCalledTimes(1);
 			expect(warning.mock.calls[0]?.[0]).toBe(
 				`Warning: Skipping unparseable task file ${taskPath}: Task TASK-1 uses unsupported task frontmatter schema version 99.`,
@@ -122,7 +121,7 @@ describe("task frontmatter diagnostic propagation", () => {
 		} finally {
 			warning.mockRestore();
 		}
-		await expect(core.filesystem.loadTask("TASK-1")).rejects.toBeInstanceOf(UnsupportedTaskFrontmatterSchemaError);
+		await expect(coreFileSystem(core).loadTask("TASK-1")).rejects.toBeInstanceOf(UnsupportedTaskFrontmatterSchemaError);
 	});
 
 	it("skips unsupported schema with its diagnostic during branch hydration", async () => {

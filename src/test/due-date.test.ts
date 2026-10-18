@@ -7,7 +7,7 @@ import { parseMilestone, parseTask } from "../markdown/parser.ts";
 import { serializeTask } from "../markdown/serializer.ts";
 import type { Task } from "../types/index.ts";
 import { normalizeDueDate } from "../utils/due-date.ts";
-import { createUniqueTestDir, initializeFilesystemTestProject, safeCleanup } from "./test-utils.ts";
+import { coreFileSystem, createUniqueTestDir, initializeFilesystemTestProject, safeCleanup } from "./test-utils.ts";
 
 describe("date-only due date model", () => {
 	it("normalizes a due date to the day alone", () => {
@@ -29,7 +29,7 @@ describe("date-only due date model", () => {
 
 	it("rejects a timestamp whose time or offset is out of range", () => {
 		// Tolerating a real timestamp is the point; turning malformed input into an apparently
-		// valid due date is not, and the CLI, MCP and web API all reach this.
+		// valid due date is not, and the CLI and web API both reach this.
 		expect(() => normalizeDueDate("2026-08-10T99:99", "Due date")).toThrow("YYYY-MM-DD");
 		expect(() => normalizeDueDate("2026-08-10T14:30:60Z", "Due date")).toThrow("YYYY-MM-DD");
 		expect(() => normalizeDueDate("2026-08-10T14:30+99:99", "Due date")).toThrow("YYYY-MM-DD");
@@ -152,7 +152,7 @@ describe("due date persistence operations", () => {
 		testDir = createUniqueTestDir("due-date");
 		await mkdir(testDir, { recursive: true });
 		core = new Core(testDir);
-		await core.filesystem.ensureAgenticWorkspaceStructure();
+		await coreFileSystem(core).ensureAgenticWorkspaceStructure();
 		await initializeFilesystemTestProject(core, "Due date project");
 	});
 
@@ -169,7 +169,7 @@ describe("due date persistence operations", () => {
 
 		const updated = await core.updateTaskFromInput(task.id, { dueDate: "2026-08-12" });
 		expect(updated.dueDate).toBe("2026-08-12");
-		expect((await core.filesystem.loadTask(task.id))?.dueDate).toBe("2026-08-12");
+		expect((await coreFileSystem(core).loadTask(task.id))?.dueDate).toBe("2026-08-12");
 
 		const cleared = await core.updateTaskFromInput(task.id, { dueDate: null });
 		expect(cleared.dueDate).toBeUndefined();
@@ -177,20 +177,20 @@ describe("due date persistence operations", () => {
 	});
 
 	it("creates, updates, and clears a milestone due date", async () => {
-		const milestone = await core.filesystem.createMilestone("Release", undefined, "2026-09-01");
+		const milestone = await coreFileSystem(core).createMilestone("Release", undefined, "2026-09-01");
 		expect(milestone.dueDate).toBe("2026-09-01");
 
-		const updated = await core.filesystem.renameMilestone(milestone.id, milestone.title, "2026-09-02");
+		const updated = await coreFileSystem(core).renameMilestone(milestone.id, milestone.title, "2026-09-02");
 		expect(updated.milestone?.dueDate).toBe("2026-09-02");
 
-		const cleared = await core.filesystem.renameMilestone(milestone.id, milestone.title, null);
+		const cleared = await coreFileSystem(core).renameMilestone(milestone.id, milestone.title, null);
 		expect(cleared.milestone?.dueDate).toBeUndefined();
-		const path = await core.filesystem.getMilestoneFilePath(milestone.id);
+		const path = await coreFileSystem(core).getMilestoneFilePath(milestone.id);
 		expect(await Bun.file(path ?? "").text()).not.toContain("due_date:");
 	});
 
 	it("does not hide valid milestones when another file has an invalid due date", async () => {
-		await core.filesystem.createMilestone("Valid release", undefined, "2026-09-01");
+		await coreFileSystem(core).createMilestone("Valid release", undefined, "2026-09-01");
 		await Bun.write(
 			join(testDir, "agentic-workspace", "milestones", "m-1 - Invalid-release.md"),
 			`---
@@ -203,7 +203,9 @@ description: Invalid release
 `,
 		);
 
-		expect((await core.filesystem.listMilestones()).map((milestone) => milestone.title)).toEqual(["Valid release"]);
+		expect((await coreFileSystem(core).listMilestones()).map((milestone) => milestone.title)).toEqual([
+			"Valid release",
+		]);
 	});
 });
 

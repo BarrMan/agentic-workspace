@@ -1,6 +1,5 @@
 import { mkdir } from "node:fs/promises";
 import { dirname } from "node:path";
-import { createMilestoneIdentityResolver, milestoneKey } from "./core/milestone-identity.ts";
 import { getMilestoneLabel } from "./core/milestones.ts";
 import type { Milestone, Task } from "./types/index.ts";
 import { formatAssignee } from "./utils/assignee-filter.ts";
@@ -179,26 +178,22 @@ export function generateMilestoneGroupedBoard(
 	const now = new Date();
 	const timestamp = now.toISOString().replace("T", " ").substring(0, 19);
 
-	// Collect canonical milestone identifiers from milestone files and tasks.
-	// Task values can be either IDs or titles, so normalize aliases to one key.
 	const milestoneSeen = new Set<string>();
 	const allMilestones: string[] = [];
-	const identity = createMilestoneIdentityResolver(milestoneEntities);
 
 	for (const milestone of milestoneEntities) {
 		const normalizedId = milestone.id.trim();
-		const idKey = milestoneKey(normalizedId);
-		if (normalizedId && !milestoneSeen.has(idKey)) {
-			milestoneSeen.add(idKey);
+		if (normalizedId && !milestoneSeen.has(normalizedId)) {
+			milestoneSeen.add(normalizedId);
 			allMilestones.push(normalizedId);
 		}
 	}
 
 	for (const task of tasks) {
-		const canonicalMilestone = identity.canonicalize(task.milestone);
-		if (canonicalMilestone && !milestoneSeen.has(milestoneKey(canonicalMilestone))) {
-			milestoneSeen.add(milestoneKey(canonicalMilestone));
-			allMilestones.push(canonicalMilestone);
+		const milestone = task.milestone?.trim();
+		if (milestone && !milestoneSeen.has(milestone)) {
+			milestoneSeen.add(milestone);
+			allMilestones.push(milestone);
 		}
 	}
 
@@ -218,9 +213,7 @@ Project: ${projectName}
 
 	// Each milestone section
 	for (const milestone of allMilestones) {
-		const milestoneTasks = tasks.filter(
-			(task) => milestoneKey(identity.canonicalize(task.milestone)) === milestoneKey(milestone),
-		);
+		const milestoneTasks = tasks.filter((task) => task.milestone === milestone);
 		if (milestoneTasks.length > 0) {
 			const milestoneLabel = getMilestoneLabel(milestone, milestoneEntities);
 			sections.push(generateMilestoneSection(milestoneLabel, milestoneTasks, statuses));

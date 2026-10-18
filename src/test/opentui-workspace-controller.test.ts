@@ -38,7 +38,7 @@ import type { OpenTuiWorkspaceMount, OpenTuiWorkspaceOptions } from "../ui/opent
 import { mountOpenTuiWorkspace } from "../ui/opentui/workspace.ts";
 import { createWorkspaceAgent } from "../ui/opentui/workspace-agent.ts";
 import { modeSessionIndication, OpenTuiWorkspaceController } from "../ui/opentui/workspace-controller.ts";
-import { initializeTestProject, waitUntil as waitForCondition } from "./test-utils.ts";
+import { coreFileSystem, initializeTestProject, waitUntil as waitForCondition } from "./test-utils.ts";
 
 class MemoryViewStateStore implements ViewStateStore<SharedWorkspaceState> {
 	#state: SharedWorkspaceState;
@@ -1427,7 +1427,7 @@ describe("OpenTuiWorkspaceController", () => {
 		const watchableCore = {
 			...core(),
 			filesystem: {
-				...core().filesystem,
+				...coreFileSystem(core()),
 				tasksDir: "/tmp/agentic-workspace-tasks",
 				configFilePath: "/tmp/agentic-workspace-config.yml",
 				loadConfig: async () => ({ projectName: "Roadmap", agentConfiguration: projectConfiguration() }),

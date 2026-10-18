@@ -1,6 +1,5 @@
 import { mkdir, rename } from "node:fs/promises";
 import { dirname, join } from "node:path";
-import { createMilestoneIdentityResolver, parseMilestoneId } from "../core/milestone-identity.ts";
 import { FrontmatterSchemaError, parseMarkdown, parseMilestone } from "../markdown/parser.ts";
 import { serializeMilestone } from "../markdown/serializer.ts";
 import type { Milestone } from "../types/index.ts";
@@ -8,6 +7,10 @@ import { normalizeDueDate } from "../utils/due-date.ts";
 
 type Scope = "active" | "archived";
 type MilestoneFile = { file: string; filepath: string; content: string; milestone: Milestone };
+
+function parseMilestoneId(value: string): string | null {
+	return /^m-(\d+)$/i.test(value.trim()) ? value.trim().slice(2) : null;
+}
 
 export interface MilestoneStoreContext {
 	activeDirectory(): Promise<string>;
@@ -50,10 +53,7 @@ export class MilestoneStore {
 			}
 			entries.push({ file, filepath, content, milestone });
 		}
-		const found = createMilestoneIdentityResolver(entries.map((entry) => entry.milestone)).resolveStoredIdentifier(
-			identifier,
-		);
-		return entries.find((entry) => entry.milestone === found) ?? null;
+		return entries.find((entry) => entry.milestone.id === identifier) ?? null;
 	}
 
 	private async restoreRename(

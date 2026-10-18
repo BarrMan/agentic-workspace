@@ -11,6 +11,7 @@ import { serializeTask } from "../markdown/serializer.ts";
 import type { Task } from "../types/index.ts";
 import { watchTasks } from "../utils/task-watcher.ts";
 import {
+	coreFileSystem,
 	createUniqueTestDir,
 	getPlatformTimeout,
 	initializeTestProject,
@@ -88,13 +89,13 @@ function sampleTask(id: string, title: string, status = "To Do"): Task {
 }
 
 async function taskFilePath(core: Core, id: string): Promise<string> {
-	const taskDir = join(core.filesystem.tasksDir, id.toLowerCase());
+	const taskDir = join(coreFileSystem(core).tasksDir, id.toLowerCase());
 	await mkdir(taskDir, { recursive: true });
 	return join(taskDir, "task.md");
 }
 
 function gateFirstTaskRead(core: Core): { captured: Promise<void>; release: () => void; restore: () => void } {
-	const loadTask = core.filesystem.loadTask.bind(core.filesystem);
+	const loadTask = coreFileSystem(core).loadTask.bind(coreFileSystem(core));
 	let resolveCaptured: () => void = () => {};
 	const captured = new Promise<void>((resolve) => {
 		resolveCaptured = resolve;
@@ -104,7 +105,7 @@ function gateFirstTaskRead(core: Core): { captured: Promise<void>; release: () =
 		releaseRead = resolve;
 	});
 	let first = true;
-	core.filesystem.loadTask = async (...args) => {
+	coreFileSystem(core).loadTask = async (...args) => {
 		if (!first) return await loadTask(...args);
 		first = false;
 		try {
@@ -118,11 +119,11 @@ function gateFirstTaskRead(core: Core): { captured: Promise<void>; release: () =
 			throw error;
 		}
 	};
-	return { captured, release: releaseRead, restore: () => (core.filesystem.loadTask = loadTask) };
+	return { captured, release: releaseRead, restore: () => (coreFileSystem(core).loadTask = loadTask) };
 }
 
 function gateFirstTaskDirectoryRead(core: Core): { captured: Promise<void>; release: () => void; restore: () => void } {
-	const listTasks = core.filesystem.listTasks.bind(core.filesystem);
+	const listTasks = coreFileSystem(core).listTasks.bind(coreFileSystem(core));
 	let resolveCaptured: () => void = () => {};
 	const captured = new Promise<void>((resolve) => {
 		resolveCaptured = resolve;
@@ -132,7 +133,7 @@ function gateFirstTaskDirectoryRead(core: Core): { captured: Promise<void>; rele
 		releaseRead = resolve;
 	});
 	let first = true;
-	core.filesystem.listTasks = async (...args) => {
+	coreFileSystem(core).listTasks = async (...args) => {
 		if (!first) return await listTasks(...args);
 		first = false;
 		try {
@@ -146,7 +147,7 @@ function gateFirstTaskDirectoryRead(core: Core): { captured: Promise<void>; rele
 			throw error;
 		}
 	};
-	return { captured, release: releaseRead, restore: () => (core.filesystem.listTasks = listTasks) };
+	return { captured, release: releaseRead, restore: () => (coreFileSystem(core).listTasks = listTasks) };
 }
 
 describe("task watcher reconciliation", () => {
@@ -176,7 +177,7 @@ describe("task watcher reconciliation", () => {
 		armedIdle = undefined;
 		resolveIdle = undefined;
 		core = new Core(testDir);
-		await core.filesystem.ensureAgenticWorkspaceStructure();
+		await coreFileSystem(core).ensureAgenticWorkspaceStructure();
 		watchSpy = spyOn(nodeFs, "watch").mockImplementation(((
 			_path: Parameters<typeof nodeFs.watch>[0],
 			...args: unknown[]
@@ -196,7 +197,7 @@ describe("task watcher reconciliation", () => {
 		const resolveMainRoot = spyOn(mainWorktree, "resolveMainWorktreeRoot").mockResolvedValue(mainRoot);
 		const filePath = await taskFilePath(core, "TASK-199");
 		await Bun.write(filePath, serializeTask(sampleTask("TASK-199", "Parity")));
-		const initial = await core.filesystem.loadTask("TASK-199");
+		const initial = await coreFileSystem(core).loadTask("TASK-199");
 		if (!initial) throw new Error("Expected parity fixture task");
 		const artifacts: string[] = [];
 		let idleCount = 0;
@@ -320,7 +321,7 @@ describe("task watcher reconciliation", () => {
 		const fileName = "task-2/task.md";
 		const filePath = await taskFilePath(core, "task-2");
 		await Bun.write(filePath, serializeTask(original));
-		const initial = await core.filesystem.loadTask(original.id);
+		const initial = await coreFileSystem(core).loadTask(original.id);
 		if (!initial) throw new Error("Expected initial task");
 
 		let resolveChanged: ((task: Task) => void) | undefined;
@@ -360,7 +361,7 @@ describe("task watcher reconciliation", () => {
 		const tasks = [sampleTask("task-3", "Archived"), sampleTask("task-4", "Deleted")];
 		const paths = await Promise.all(tasks.map((task) => taskFilePath(core, task.id)));
 		await Promise.all(paths.map((path, index) => Bun.write(path, serializeTask(tasks[index] as Task))));
-		const initialTasks = await core.filesystem.listTasks();
+		const initialTasks = await coreFileSystem(core).listTasks();
 		const removed: string[] = [];
 		const handle = watchTasks(
 			core,
@@ -426,7 +427,7 @@ describe("task watcher reconciliation", () => {
 		const fileName = "task-9/task.md";
 		const filePath = await taskFilePath(core, "task-9");
 		await Bun.write(filePath, serializeTask(task));
-		const initial = await core.filesystem.loadTask(task.id);
+		const initial = await coreFileSystem(core).loadTask(task.id);
 		if (!initial) throw new Error("Expected initial task");
 
 		const removed: string[] = [];
@@ -454,9 +455,9 @@ describe("task watcher reconciliation", () => {
 		const task = sampleTask("task-10", "Unreadable content");
 		const filePath = await taskFilePath(core, task.id);
 		await Bun.write(filePath, serializeTask(task));
-		const initial = await core.filesystem.loadTask(task.id);
+		const initial = await coreFileSystem(core).loadTask(task.id);
 		if (!initial) throw new Error("Expected initial task");
-		const loadTaskSpy = spyOn(core.filesystem, "loadTask").mockImplementation(async () => {
+		const loadTaskSpy = spyOn(coreFileSystem(core), "loadTask").mockImplementation(async () => {
 			return null;
 		});
 		const removed: string[] = [];
@@ -484,7 +485,7 @@ describe("task watcher reconciliation", () => {
 		const task = sampleTask("task-11", "Directory reconciliation");
 		const filePath = await taskFilePath(core, "task-11");
 		await Bun.write(filePath, serializeTask(task));
-		const initial = await core.filesystem.loadTask(task.id);
+		const initial = await coreFileSystem(core).loadTask(task.id);
 		if (!initial) throw new Error("Expected initial task");
 		const removed: string[] = [];
 		const handle = watchTasks(
@@ -564,7 +565,7 @@ describe("task watcher reconciliation", () => {
 		const original = sampleTask("task-6", "Real watcher");
 		const filePath = await taskFilePath(core, "task-6");
 		await Bun.write(filePath, serializeTask(original));
-		const initial = await core.filesystem.loadTask(original.id);
+		const initial = await coreFileSystem(core).loadTask(original.id);
 		if (!initial) throw new Error("Expected real watcher task");
 
 		let resolveChanged: ((task: Task) => void) | undefined;

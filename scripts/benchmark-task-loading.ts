@@ -4,8 +4,11 @@ import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import { Core } from "../src/core/agentic-workspace.ts";
 import { initializeProject } from "../src/core/init.ts";
+import type { FileSystem } from "../src/file-system/operations.ts";
 import { serializeTask } from "../src/markdown/serializer.ts";
 import type { Task } from "../src/types/index.ts";
+
+const fileSystemOf = (core: Core): FileSystem => (core as unknown as { filesystem: FileSystem }).filesystem;
 
 const DEFAULTS = {
 	iterations: 3,
@@ -242,7 +245,6 @@ async function populateCorpus(root: string, options: Options): Promise<Corpus> {
 	const setupCore = new Core(projectRoot);
 	await initializeProject(setupCore, {
 		projectName: "Task loading benchmark",
-		integrationMode: "none",
 		advancedConfig: {
 			bypassGitHooks: true,
 			checkActiveBranches: true,
@@ -254,12 +256,15 @@ async function populateCorpus(root: string, options: Options): Promise<Corpus> {
 	const activePaths: string[] = [];
 	for (let index = 1; index <= options.localTasks; index += 1) {
 		activePaths.push(
-			await writeTask(setupCore.filesystem.tasksDir, benchmarkTask(index, `Benchmark local task ${index}`)),
+			await writeTask(fileSystemOf(setupCore).tasksDir, benchmarkTask(index, `Benchmark local task ${index}`)),
 		);
 	}
 	for (let index = 1; index <= options.completedTasks; index += 1) {
 		const id = options.localTasks + index;
-		await writeTask(setupCore.filesystem.completedDir, benchmarkTask(id, `Benchmark completed task ${index}`, "Done"));
+		await writeTask(
+			fileSystemOf(setupCore).completedDir,
+			benchmarkTask(id, `Benchmark completed task ${index}`, "Done"),
+		);
 	}
 
 	await runProcess(["git", "add", "."], projectRoot);
@@ -286,7 +291,7 @@ async function populateCorpus(root: string, options: Options): Promise<Corpus> {
 		for (let taskIndex = 1; taskIndex <= branchOnlyCount; taskIndex += 1) {
 			const id = options.localTasks + options.completedTasks + (branchIndex - 1) * branchOnlyCount + taskIndex;
 			await writeTask(
-				setupCore.filesystem.tasksDir,
+				fileSystemOf(setupCore).tasksDir,
 				benchmarkTask(id, `Benchmark branch ${branchIndex} task ${taskIndex}`, "In Progress"),
 			);
 		}
@@ -344,9 +349,9 @@ function instrumentCore(core: Core): Instrumentation {
 			methods[method] = original;
 		});
 	};
-	wrap(core.filesystem, "loadConfig", "configLoads");
-	wrap(core.filesystem, "listTasks", "localTaskScans");
-	wrap(core.filesystem, "listCompletedTasks", "completedTaskScans");
+	wrap(fileSystemOf(core), "loadConfig", "configLoads");
+	wrap(fileSystemOf(core), "listTasks", "localTaskScans");
+	wrap(fileSystemOf(core), "listCompletedTasks", "completedTaskScans");
 	wrap(core.git, "fetch", "remoteFetches");
 	wrap(core.git, "listRecentBranchTips", "branchTipSnapshots");
 	wrap(core.git, "listRecentRemoteBranches", "remoteBranchEnumerations");

@@ -1,4 +1,3 @@
-import { createMilestoneIdentityResolver } from "../../../core/milestone-identity.ts";
 import type { Core } from "../../../index.ts";
 
 export const TASK_SORT_FIELDS = ["priority", "id", "ordinal", "newest"];
@@ -22,10 +21,6 @@ export function formatTaskEditError(error: unknown, taskId: string, commandKind 
 	return message;
 }
 
-export async function resolveCliMilestoneInput(core: Core, milestone: string): Promise<string> {
-	const [activeMilestones, archivedMilestones] = await Promise.all([
-		core.loadMilestones(),
-		core.loadArchivedMilestones(),
-	]);
-	return createMilestoneIdentityResolver(activeMilestones, archivedMilestones).resolveStorageInput(milestone);
+export async function resolveCliMilestoneInput(_core: Core, milestone: string): Promise<string> {
+	return milestone;
 }

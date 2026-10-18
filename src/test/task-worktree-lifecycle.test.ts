@@ -8,7 +8,7 @@ import { resolveSessionSettings } from "../agent-workspace/types.ts";
 import { Core } from "../core/agentic-workspace.ts";
 import { ensureTaskWorktree, taskWorktreeExists, taskWorktreePath } from "../git/task-worktree.ts";
 import type { Task } from "../types/index.ts";
-import { createUniqueTestDir, initGitRepo, initializeTestProject, safeCleanup } from "./test-utils.ts";
+import { coreFileSystem, createUniqueTestDir, initGitRepo, initializeTestProject, safeCleanup } from "./test-utils.ts";
 
 let TEST_DIR: string;
 let WORKTREE_HOME: string;
@@ -109,7 +109,7 @@ describe("task worktree lifecycle", () => {
 
 		const expectedPath = taskWorktreePath(TEST_DIR, task);
 		expect(task.worktreePolicy).toBe("enabled");
-		expect((await current.filesystem.loadTask(task.id))?.worktreePolicy).toBe("enabled");
+		expect((await coreFileSystem(current).loadTask(task.id))?.worktreePolicy).toBe("enabled");
 		expect(await taskWorktreeExists(TEST_DIR, task)).toBe(false);
 		expect(existsSync(expectedPath)).toBe(false);
 		expect(expectedPath).toBe(taskWorktreePath(TEST_DIR, { id: "TASK-1", title: "Add worktree support" }));
@@ -220,7 +220,7 @@ describe("task worktree lifecycle", () => {
 
 		await expect(current.deleteTask(task.id)).rejects.toThrow("Could not remove worktree");
 
-		expect(await current.filesystem.loadTask(task.id)).not.toBeNull();
+		expect(await coreFileSystem(current).loadTask(task.id)).not.toBeNull();
 		expect(await Bun.file(userFile).text()).toBe("preserve this data\n");
 		expect(await taskWorktreeExists(TEST_DIR, task)).toBe(true);
 	});

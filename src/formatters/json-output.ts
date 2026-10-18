@@ -1,12 +1,6 @@
-import { isAbsolute, join, relative } from "node:path";
+import { isAbsolute, relative } from "node:path";
 import type { TaskDetail, TaskListItem } from "../core/task-detail.ts";
-import type {
-	Decision,
-	DecisionSearchResult,
-	Document,
-	DocumentSearchResult,
-	TaskSearchResult,
-} from "../types/index.ts";
+import type { Decision, DecisionSearchResult, TaskSearchResult } from "../types/index.ts";
 import type { DependencyGraph } from "../utils/dependency-graph.ts";
 import type { ListPage } from "../utils/list-window.ts";
 import type { TaskReadiness } from "../utils/readiness.ts";
@@ -73,16 +67,6 @@ export type TaskArtifactProjection = {
 	}>;
 };
 
-type DocumentSummaryJson = {
-	id: string;
-	title: string;
-	type: Document["type"];
-	path: string | null;
-	tags: string[];
-	createdAt: string | null;
-	updatedAt: string | null;
-};
-
 type DecisionSummaryJson = {
 	id: string;
 	title: string;
@@ -90,10 +74,7 @@ type DecisionSummaryJson = {
 	date: string | null;
 };
 
-type SearchResultJson =
-	| { type: "task"; data: TaskSummaryJson }
-	| { type: "document"; data: DocumentSummaryJson }
-	| { type: "decision"; data: DecisionSummaryJson };
+type SearchResultJson = { type: "task"; data: TaskSummaryJson } | { type: "decision"; data: DecisionSummaryJson };
 
 function nullable(value: string | undefined): string | null {
 	return value ?? null;
@@ -164,18 +145,6 @@ function toTaskDetailsJson(task: TaskDetail, projectRoot: string, artifacts?: Ta
 	};
 }
 
-function toDocumentSummaryJson(document: Document, projectRoot: string, docsDir: string): DocumentSummaryJson {
-	return {
-		id: document.id,
-		title: document.title,
-		type: document.type,
-		path: document.path ? toProjectRelativePath(projectRoot, join(docsDir, document.path)) : null,
-		tags: document.tags ?? [],
-		createdAt: normalizePublicDate(document.createdDate),
-		updatedAt: normalizePublicDate(document.updatedDate),
-	};
-}
-
 function toDecisionSummaryJson(decision: Decision): DecisionSummaryJson {
 	return {
 		id: decision.id,
@@ -218,27 +187,17 @@ export function decisionListJson(decisions: Decision[], page?: ListPage<unknown>
  * can claim one ID with different dependencies, and each claimant has to keep its own answer.
  */
 export type SearchResultInput =
-	| DocumentSearchResult
 	| DecisionSearchResult
 	| (Omit<TaskSearchResult, "task"> & {
 			task: TaskListItem;
 	  });
 
 /** The search envelope for results the CLI already narrowed to printable ones, without tasks from other branches. */
-export function searchJson(
-	results: SearchResultInput[],
-	projectRoot: string,
-	docsDir: string,
-	page?: ListPage<unknown>,
-) {
+export function searchJson(results: SearchResultInput[], page?: ListPage<unknown>) {
 	const publicResults: SearchResultJson[] = [];
 	for (const result of results) {
 		if (result.type === "task") {
 			publicResults.push({ type: "task", data: toTaskSummaryJson(result.task) });
-			continue;
-		}
-		if (result.type === "document") {
-			publicResults.push({ type: "document", data: toDocumentSummaryJson(result.document, projectRoot, docsDir) });
 			continue;
 		}
 		publicResults.push({ type: "decision", data: toDecisionSummaryJson(result.decision) });

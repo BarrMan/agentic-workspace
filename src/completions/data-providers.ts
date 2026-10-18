@@ -27,7 +27,7 @@ function getDefaultStatuses(): string[] {
  */
 export async function getTaskIds(): Promise<string[]> {
 	return await withCore(async (core) => {
-		const tasks = await core.filesystem.listTasks();
+		const tasks = await core.loadStoredTasks();
 		return tasks.map((task) => task.id).sort();
 	}, []);
 }
@@ -37,7 +37,7 @@ export async function getTaskIds(): Promise<string[]> {
  */
 export async function getStatuses(): Promise<string[]> {
 	return await withCore(async (core) => {
-		const config: AgenticWorkspaceConfig | null = await core.filesystem.loadConfig();
+		const config: AgenticWorkspaceConfig | null = await core.getStoredConfig();
 		const statuses = config?.statuses;
 		if (Array.isArray(statuses) && statuses.length > 0) {
 			return statuses;
@@ -51,7 +51,7 @@ export async function getStatuses(): Promise<string[]> {
  */
 export async function getLabels(): Promise<string[]> {
 	return await withCore(async (core) => {
-		const tasks = await core.filesystem.listTasks();
+		const tasks = await core.loadStoredTasks();
 		const labels = new Map<string, string>();
 		for (const task of tasks) {
 			for (const label of task.labels) {
@@ -68,7 +68,7 @@ export async function getLabels(): Promise<string[]> {
  */
 export async function getAssignees(): Promise<string[]> {
 	return await withCore(async (core) => {
-		const tasks = await core.filesystem.listTasks();
+		const tasks = await core.loadStoredTasks();
 		const assignees = new Map<string, string>();
 		for (const task of tasks) {
 			for (const assignee of task.assignee) {

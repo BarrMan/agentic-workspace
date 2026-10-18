@@ -6,7 +6,7 @@ import { Core } from "../core/agentic-workspace.ts";
 import { FileSystem } from "../file-system/operations.ts";
 import type { AgenticWorkspaceConfig } from "../types/index.ts";
 import { watchConfig, watchConfigFile } from "../utils/config-watcher.ts";
-import { createUniqueTestDir, getPlatformTimeout, safeCleanup } from "./test-utils.ts";
+import { coreFileSystem, createUniqueTestDir, getPlatformTimeout, safeCleanup } from "./test-utils.ts";
 
 let testDir: string;
 let core: Core;
@@ -39,7 +39,7 @@ function withTimeout<T>(promise: Promise<T>, label: string): Promise<T> {
 }
 
 async function replaceConfigFile(content: string): Promise<void> {
-	const configPath = core.filesystem.configFilePath;
+	const configPath = coreFileSystem(core).configFilePath;
 	const replacementPath = `${configPath}.replacement`;
 	await Bun.write(replacementPath, content);
 	await rename(replacementPath, configPath);
@@ -50,8 +50,8 @@ describe("config watcher", () => {
 		testDir = createUniqueTestDir("config-watcher");
 		watcherChild = undefined;
 		core = new Core(testDir);
-		await core.filesystem.ensureAgenticWorkspaceStructure();
-		await core.filesystem.saveConfig(initialConfig);
+		await coreFileSystem(core).ensureAgenticWorkspaceStructure();
+		await coreFileSystem(core).saveConfig(initialConfig);
 	});
 
 	afterEach(async () => {
@@ -64,7 +64,7 @@ describe("config watcher", () => {
 	});
 
 	it("keeps the last valid config cached while stable unusable content waits for a valid replacement", async () => {
-		const canonicalContent = await Bun.file(core.filesystem.configFilePath).text();
+		const canonicalContent = await Bun.file(coreFileSystem(core).configFilePath).text();
 		const stableContent = canonicalContent
 			.replace('project_name: "Config watcher"', 'project_name: "Stable config"')
 			.replace("check_active_branches: true", "check_active_branches: false");
@@ -117,7 +117,7 @@ describe("config watcher", () => {
 				"",
 			].join("\n"),
 		];
-		const originalParseConfig = core.filesystem.parseConfig.bind(core.filesystem);
+		const originalParseConfig = coreFileSystem(core).parseConfig.bind(coreFileSystem(core));
 		const unusableParseAttempts = new Map(unusableContents.map((content) => [content, 0]));
 		const unusableAttemptResolvers = new Map<string, () => void>();
 		const unusableAttempts = new Map(
@@ -126,7 +126,7 @@ describe("config watcher", () => {
 				new Promise<void>((resolve) => unusableAttemptResolvers.set(content, resolve)),
 			]),
 		);
-		core.filesystem.parseConfig = (content) => {
+		coreFileSystem(core).parseConfig = (content) => {
 			const attempts = unusableParseAttempts.get(content);
 			if (attempts !== undefined) {
 				const nextAttempts = attempts + 1;
@@ -159,7 +159,7 @@ describe("config watcher", () => {
 				if (!unusableAttempt) throw new Error("Missing unusable config attempt signal");
 				await withTimeout(unusableAttempt, `unusable config ${index + 1} read attempts`);
 
-				const cachedConfigs = await Promise.all(Array.from({ length: 20 }, () => core.filesystem.loadConfig()));
+				const cachedConfigs = await Promise.all(Array.from({ length: 20 }, () => coreFileSystem(core).loadConfig()));
 				expect(cachedConfigs).toHaveLength(20);
 				for (const cachedConfig of cachedConfigs) {
 					expect(cachedConfig?.projectName).toBe(initialConfig.projectName);
@@ -177,15 +177,15 @@ describe("config watcher", () => {
 			expect(config.checkActiveBranches).toBe(false);
 			expect(config.prefixes?.task).toBe("BACK");
 			expect(published).toHaveLength(1);
-			expect((await core.filesystem.loadConfig())?.projectName).toBe("Stable config");
+			expect((await coreFileSystem(core).loadConfig())?.projectName).toBe("Stable config");
 		} finally {
 			configWatcher.stop();
-			core.filesystem.parseConfig = originalParseConfig;
+			coreFileSystem(core).parseConfig = originalParseConfig;
 		}
 	});
 
 	it("retains the cached defaultAssignee while an inline edit is not a usable assignee value", async () => {
-		await core.filesystem.saveConfig({ ...initialConfig, defaultAssignee: ["@alice"] });
+		await coreFileSystem(core).saveConfig({ ...initialConfig, defaultAssignee: ["@alice"] });
 		const baseLines = [
 			'project_name: "Config watcher"',
 			'statuses: ["To Do", "Done"]',
@@ -208,7 +208,7 @@ describe("config watcher", () => {
 		const scalarContent = withAssignee('default_assignee: "@carol"');
 		const inlineArrayContent = withAssignee('default_assignee: ["@alice", "@bob"]');
 
-		const originalParseConfig = core.filesystem.parseConfig.bind(core.filesystem);
+		const originalParseConfig = coreFileSystem(core).parseConfig.bind(coreFileSystem(core));
 		const invalidAttempts = new Map(invalidContents.map((content) => [content, 0]));
 		const invalidResolvers = new Map<string, () => void>();
 		const invalidExhausted = new Map(
@@ -217,7 +217,7 @@ describe("config watcher", () => {
 				new Promise<void>((resolve) => invalidResolvers.set(content, resolve)),
 			]),
 		);
-		core.filesystem.parseConfig = (content) => {
+		coreFileSystem(core).parseConfig = (content) => {
 			const attempts = invalidAttempts.get(content);
 			if (attempts !== undefined) {
 				const nextAttempts = attempts + 1;
@@ -234,7 +234,7 @@ describe("config watcher", () => {
 			new Promise<AgenticWorkspaceConfig>((resolve) => {
 				resolveNextPublished = resolve;
 			});
-		const configWatcher = watchConfigFile(core.filesystem, {
+		const configWatcher = watchConfigFile(coreFileSystem(core), {
 			onConfigChanged: (config) => {
 				if (!config) return;
 				published.push(config);
@@ -250,7 +250,7 @@ describe("config watcher", () => {
 				if (!exhausted) throw new Error("Missing invalid config attempt signal");
 				await withTimeout(exhausted, "invalid default_assignee read attempts");
 				expect(published).toHaveLength(0);
-				expect((await core.filesystem.loadConfig())?.defaultAssignee).toEqual(["@alice"]);
+				expect((await coreFileSystem(core).loadConfig())?.defaultAssignee).toEqual(["@alice"]);
 			}
 
 			const scalarPublished = nextPublished();
@@ -262,7 +262,7 @@ describe("config watcher", () => {
 			expect((await withTimeout(inlinePublished, "inline array callback")).defaultAssignee).toEqual(["@alice", "@bob"]);
 		} finally {
 			configWatcher.stop();
-			core.filesystem.parseConfig = originalParseConfig;
+			coreFileSystem(core).parseConfig = originalParseConfig;
 		}
 	});
 
@@ -436,7 +436,7 @@ describe("config watcher", () => {
 	});
 
 	it("publishes a stable prefix-only edit to the canonical config", async () => {
-		const canonicalContent = await Bun.file(core.filesystem.configFilePath).text();
+		const canonicalContent = await Bun.file(coreFileSystem(core).configFilePath).text();
 		const prefixEdit = canonicalContent.replace('task_prefix: "BACK"', 'task_prefix: "JIRA"');
 		let resolvePublished: (config: AgenticWorkspaceConfig) => void = () => {};
 		const publishedConfig = new Promise<AgenticWorkspaceConfig>((resolve) => {
@@ -484,12 +484,12 @@ describe("config watcher", () => {
 	});
 
 	it("reconciles a config changed after cache load but before watcher startup exactly once", async () => {
-		const canonicalContent = await Bun.file(core.filesystem.configFilePath).text();
+		const canonicalContent = await Bun.file(coreFileSystem(core).configFilePath).text();
 		const changedBeforeStartup = canonicalContent.replace(
 			'project_name: "Config watcher"',
 			'project_name: "Changed before startup"',
 		);
-		await Bun.write(core.filesystem.configFilePath, changedBeforeStartup);
+		await Bun.write(coreFileSystem(core).configFilePath, changedBeforeStartup);
 
 		let callbackCount = 0;
 		let resolvePublished: (config: AgenticWorkspaceConfig) => void = () => {};
@@ -512,7 +512,7 @@ describe("config watcher", () => {
 		try {
 			const config = await withTimeout(publishedConfig, "startup config reconciliation");
 			expect(config.projectName).toBe("Changed before startup");
-			expect((await core.filesystem.loadConfig())?.projectName).toBe("Changed before startup");
+			expect((await coreFileSystem(core).loadConfig())?.projectName).toBe("Changed before startup");
 			expect(callbackCount).toBe(1);
 
 			await replaceConfigFile(changedBeforeStartup);
@@ -528,7 +528,7 @@ describe("config watcher", () => {
 	});
 
 	it("suppresses an identical event that arrives during a successful callback", async () => {
-		const canonicalContent = await Bun.file(core.filesystem.configFilePath).text();
+		const canonicalContent = await Bun.file(coreFileSystem(core).configFilePath).text();
 		const updatedContent = canonicalContent.replace(
 			'project_name: "Config watcher"',
 			'project_name: "Held publication"',
@@ -568,7 +568,7 @@ describe("config watcher", () => {
 	});
 
 	it("publishes the newest content after an older successful callback finishes", async () => {
-		const canonicalContent = await Bun.file(core.filesystem.configFilePath).text();
+		const canonicalContent = await Bun.file(coreFileSystem(core).configFilePath).text();
 		const firstContent = canonicalContent.replace('project_name: "Config watcher"', 'project_name: "First held"');
 		const newestContent = canonicalContent.replace('project_name: "Config watcher"', 'project_name: "Newest"');
 		const publishedNames: string[] = [];
@@ -604,7 +604,7 @@ describe("config watcher", () => {
 			releaseFirst();
 			await withTimeout(newestPublished, "newest config publication");
 			expect(publishedNames).toEqual(["First held", "Newest"]);
-			expect((await core.filesystem.loadConfig())?.projectName).toBe("Newest");
+			expect((await coreFileSystem(core).loadConfig())?.projectName).toBe("Newest");
 		} finally {
 			releaseFirst();
 			configWatcher.stop();
@@ -612,7 +612,7 @@ describe("config watcher", () => {
 	});
 
 	it("retries publication beyond the read budget and suppresses duplicate delivery after success", async () => {
-		const canonicalContent = await Bun.file(core.filesystem.configFilePath).text();
+		const canonicalContent = await Bun.file(coreFileSystem(core).configFilePath).text();
 		const updatedContent = canonicalContent.replace(
 			'project_name: "Config watcher"',
 			'project_name: "Retried publication"',
@@ -630,7 +630,7 @@ describe("config watcher", () => {
 		const configWatcher = watchConfig(core, {
 			onConfigChanged: async (config) => {
 				callbackAttempts += 1;
-				cachedProjectNames.push((await core.filesystem.loadConfig())?.projectName ?? "");
+				cachedProjectNames.push((await coreFileSystem(core).loadConfig())?.projectName ?? "");
 				if (callbackAttempts <= 10) {
 					throw new Error("Injected publication failure");
 				}

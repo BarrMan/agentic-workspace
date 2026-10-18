@@ -8,7 +8,6 @@ import { serializeTask } from "../markdown/serializer.ts";
 import {
 	type AgenticWorkspaceConfig,
 	type Decision,
-	type Document,
 	type Milestone,
 	TASK_DIRECTORY_TYPES,
 	type Task,
@@ -68,7 +67,6 @@ const DRAFT_STATUS_KEY = DRAFT_STATUS.toLowerCase();
 export type ContentMutation =
 	| { type: typeof TASK_DIRECTORY; root: string; taskId: string; filePath: string }
 	| { type: "artifact"; root: string; taskId: string; path?: string }
-	| { type: "document"; root: string; documentId: string }
 	| { type: "decision"; root: string; decisionId: string };
 
 export type ContentMutationListener = (mutation: ContentMutation) => void | Promise<void>;
@@ -185,7 +183,6 @@ export class FileSystem {
 		this.taskRepository = new TaskRepository();
 		this.contentRepository = new ContentRepository({
 			decisionsDirectory: async () => await this.getDecisionsDir(),
-			documentsDirectory: async () => await this.getDocsDir(),
 			ensureDirectory: async (directory) => await this.ensureDirectoryExists(directory),
 			withCreateLock: (operation) => this.withCreateLock(operation),
 		});
@@ -223,10 +220,6 @@ export class FileSystem {
 	}
 	get decisionsDir(): string {
 		return join(this.resolvedAgenticWorkspaceDir, DEFAULT_DIRECTORIES.DECISIONS);
-	}
-
-	get docsDir(): string {
-		return join(this.resolvedAgenticWorkspaceDir, DEFAULT_DIRECTORIES.DOCS);
 	}
 
 	get milestonesDir(): string {
@@ -376,11 +369,6 @@ export class FileSystem {
 		return join(agenticWorkspaceDir, DEFAULT_DIRECTORIES.DECISIONS);
 	}
 
-	private async getDocsDir(): Promise<string> {
-		const agenticWorkspaceDir = await this.getAgenticWorkspaceDir();
-		return join(agenticWorkspaceDir, DEFAULT_DIRECTORIES.DOCS);
-	}
-
 	private async getMilestonesDir(): Promise<string> {
 		const agenticWorkspaceDir = await this.getAgenticWorkspaceDir();
 		return join(agenticWorkspaceDir, DEFAULT_DIRECTORIES.MILESTONES);
@@ -402,7 +390,6 @@ export class FileSystem {
 			join(agenticWorkspaceDir, DEFAULT_DIRECTORIES.ARCHIVE_DRAFTS),
 			join(agenticWorkspaceDir, DEFAULT_DIRECTORIES.MILESTONES),
 			join(agenticWorkspaceDir, DEFAULT_DIRECTORIES.ARCHIVE_MILESTONES),
-			join(agenticWorkspaceDir, DEFAULT_DIRECTORIES.DOCS),
 			join(agenticWorkspaceDir, DEFAULT_DIRECTORIES.DECISIONS),
 		];
 
@@ -1414,14 +1401,6 @@ export class FileSystem {
 		return await this.contentRepository.loadDecision(decisionId);
 	}
 
-	// Document operations
-	async saveDocument(document: Document, subPath = ""): Promise<{ relativePath: string; removedFilepaths: string[] }> {
-		const root = resolve(this.agenticWorkspaceDir);
-		const saved = await this.contentRepository.saveDocument(document, subPath);
-		await this.publishContentMutation({ type: "document", root, documentId: document.id });
-		return saved;
-	}
-
 	subscribeToContentMutations(listener: ContentMutationListener): () => void {
 		this.contentMutationListeners.add(listener);
 		return () => this.contentMutationListeners.delete(listener);
@@ -1436,15 +1415,6 @@ export class FileSystem {
 	/** Lists decisions, skipping files that cannot be read or parsed and collecting their paths in `unreadable`. */
 	async listDecisions(unreadable?: string[]): Promise<Decision[]> {
 		return await this.contentRepository.listDecisions(unreadable);
-	}
-
-	/** Lists documents, skipping files that cannot be read or parsed and collecting their paths in `unreadable`. */
-	async listDocuments(unreadable?: string[]): Promise<Document[]> {
-		return await this.contentRepository.listDocuments(unreadable);
-	}
-
-	async loadDocument(id: string): Promise<Document> {
-		return await this.contentRepository.loadDocument(id);
 	}
 
 	async listMilestones(): Promise<Milestone[]> {

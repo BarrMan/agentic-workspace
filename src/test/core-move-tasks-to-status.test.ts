@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { Core } from "../core/agentic-workspace.ts";
 import { serializeTask } from "../markdown/serializer.ts";
 import type { Task } from "../types/index.ts";
-import { createUniqueTestDir, initializeFilesystemTestProject, safeCleanup } from "./test-utils.ts";
+import { coreFileSystem, createUniqueTestDir, initializeFilesystemTestProject, safeCleanup } from "./test-utils.ts";
 
 let TEST_DIR: string;
 let core: Core;
@@ -55,9 +55,9 @@ describe("Core.moveTasksToStatus", () => {
 
 		expect(result.failures).toHaveLength(0);
 		expect(result.movedTasks.map((task) => task.id)).toEqual(["TASK-1", "TASK-3"]);
-		expect((await core.filesystem.loadTask("task-1"))?.status).toBe("In Progress");
-		expect((await core.filesystem.loadTask("task-3"))?.status).toBe("In Progress");
-		expect((await core.filesystem.loadTask("task-2"))?.status).toBe("To Do");
+		expect((await coreFileSystem(core).loadTask("task-1"))?.status).toBe("In Progress");
+		expect((await coreFileSystem(core).loadTask("task-3"))?.status).toBe("In Progress");
+		expect((await coreFileSystem(core).loadTask("task-2"))?.status).toBe("To Do");
 	});
 
 	it("appends the moved tasks after the tasks already in the target column", async () => {
@@ -72,9 +72,9 @@ describe("Core.moveTasksToStatus", () => {
 			targetStatus: "In Progress",
 		});
 
-		const existing = await core.filesystem.loadTask("task-3");
-		const first = await core.filesystem.loadTask("task-2");
-		const second = await core.filesystem.loadTask("task-1");
+		const existing = await coreFileSystem(core).loadTask("task-3");
+		const first = await coreFileSystem(core).loadTask("task-2");
+		const second = await coreFileSystem(core).loadTask("task-1");
 
 		expect(existing?.ordinal).toBe(5000);
 		expect(first?.ordinal).toBeGreaterThan(5000);
@@ -92,7 +92,7 @@ describe("Core.moveTasksToStatus", () => {
 		expect(result.movedTasks.map((task) => task.id)).toEqual(["TASK-1"]);
 		expect(result.failures).toHaveLength(1);
 		expect(result.failures[0]?.taskId).toBe("task-404");
-		expect((await core.filesystem.loadTask("task-1"))?.status).toBe("Done");
+		expect((await coreFileSystem(core).loadTask("task-1"))?.status).toBe("Done");
 	});
 
 	it("ignores a repeated task ID", async () => {
@@ -117,7 +117,7 @@ describe("Core.moveTasksToStatus", () => {
 
 		expect(result.failures).toHaveLength(0);
 		expect(result.changedTasks).toHaveLength(0);
-		expect((await core.filesystem.loadTask("task-1"))?.ordinal).toBe(1000);
+		expect((await coreFileSystem(core).loadTask("task-1"))?.ordinal).toBe(1000);
 	});
 
 	it("keeps an already-in-status task in place in a mixed batch", async () => {
@@ -134,9 +134,9 @@ describe("Core.moveTasksToStatus", () => {
 
 		expect(result.failures).toHaveLength(0);
 		// task-2 already lives in the column, so nothing about it moves.
-		expect((await core.filesystem.loadTask("task-2"))?.ordinal).toBe(500);
+		expect((await coreFileSystem(core).loadTask("task-2"))?.ordinal).toBe(500);
 		expect(result.changedTasks.map((task) => task.id)).toEqual(["TASK-1"]);
-		expect((await core.filesystem.loadTask("task-1"))?.ordinal ?? 0).toBeGreaterThan(1500);
+		expect((await coreFileSystem(core).loadTask("task-1"))?.ordinal ?? 0).toBeGreaterThan(1500);
 	});
 
 	it("applies a named lane to an already-in-status task without touching its ordinal", async () => {
@@ -149,7 +149,7 @@ describe("Core.moveTasksToStatus", () => {
 		});
 
 		expect(result.failures).toHaveLength(0);
-		const task = await core.filesystem.loadTask("task-1");
+		const task = await coreFileSystem(core).loadTask("task-1");
 		expect(task?.milestone).toBe("Release 1");
 		expect(task?.ordinal).toBe(500);
 	});
@@ -167,8 +167,8 @@ describe("Core.moveTasksToStatus", () => {
 		});
 
 		// task-4 had no ordinal and rendered last, so the appended task lands after it.
-		const withoutOrdinal = await core.filesystem.loadTask("task-4");
-		const appended = await core.filesystem.loadTask("task-1");
+		const withoutOrdinal = await coreFileSystem(core).loadTask("task-4");
+		const appended = await coreFileSystem(core).loadTask("task-1");
 		expect(withoutOrdinal?.ordinal ?? 0).toBeGreaterThan(1000);
 		expect(appended?.ordinal ?? 0).toBeGreaterThan(withoutOrdinal?.ordinal ?? 0);
 	});
@@ -179,7 +179,7 @@ describe("Core.moveTasksToStatus", () => {
 			["task-3", "In Progress", 1000],
 			["task-4", "In Progress", 2000],
 		]);
-		const corrupt = await core.filesystem.loadTask("task-4");
+		const corrupt = await coreFileSystem(core).loadTask("task-4");
 		const rawPath = corrupt?.filePath ?? "";
 		const raw = await Bun.file(rawPath).text();
 		await Bun.write(rawPath, raw.replace(/^ordinal: .*$/m, "ordinal: not-a-number"));
@@ -189,7 +189,7 @@ describe("Core.moveTasksToStatus", () => {
 			targetStatus: "In Progress",
 		});
 
-		const appended = await core.filesystem.loadTask("task-1");
+		const appended = await coreFileSystem(core).loadTask("task-1");
 		expect(Number.isFinite(appended?.ordinal)).toBe(true);
 		expect(appended?.ordinal ?? 0).toBeGreaterThan(1000);
 	});
@@ -237,7 +237,7 @@ describe("Core.moveTasksToStatus", () => {
 			});
 
 			for (const id of ["task-1", "task-2", "task-3"]) {
-				const task = await core.filesystem.loadTask(id);
+				const task = await coreFileSystem(core).loadTask(id);
 				expect(task?.status).toBe("In Progress");
 				expect(task?.milestone).toBe("Release 1");
 			}
@@ -250,7 +250,7 @@ describe("Core.moveTasksToStatus", () => {
 				targetStatus: "To Do",
 				targetMilestone: "Release 1",
 			});
-			expect((await core.filesystem.loadTask("task-1"))?.milestone).toBe("Release 1");
+			expect((await coreFileSystem(core).loadTask("task-1"))?.milestone).toBe("Release 1");
 
 			await core.moveTasksToStatus({
 				taskIds: ["task-1"],
@@ -258,7 +258,7 @@ describe("Core.moveTasksToStatus", () => {
 				targetMilestone: null,
 			});
 
-			expect((await core.filesystem.loadTask("task-1"))?.milestone).toBeUndefined();
+			expect((await coreFileSystem(core).loadTask("task-1"))?.milestone).toBeUndefined();
 		});
 
 		it("scopes append ordering to the target lane instead of the whole status", async () => {
@@ -275,11 +275,11 @@ describe("Core.moveTasksToStatus", () => {
 
 			expect(result.failures).toHaveLength(0);
 			expect(result.changedTasks.map((task) => task.id)).toEqual(["TASK-1"]);
-			const moved = await core.filesystem.loadTask("task-1");
+			const moved = await coreFileSystem(core).loadTask("task-1");
 			expect(moved?.milestone).toBe("Release 1");
 			expect(moved?.ordinal ?? 0).toBeGreaterThan(1000);
 			// The other lane keeps its ordinal-less card exactly as it was.
-			expect((await core.filesystem.loadTask("task-4"))?.ordinal).toBeUndefined();
+			expect((await coreFileSystem(core).loadTask("task-4"))?.ordinal).toBeUndefined();
 		});
 
 		it("leaves the milestone alone when the caller names no lane", async () => {
@@ -292,7 +292,7 @@ describe("Core.moveTasksToStatus", () => {
 
 			await core.moveTasksToStatus({ taskIds: ["task-1"], targetStatus: "Done" });
 
-			const task = await core.filesystem.loadTask("task-1");
+			const task = await coreFileSystem(core).loadTask("task-1");
 			expect(task?.status).toBe("Done");
 			expect(task?.milestone).toBe("Release 1");
 		});
@@ -328,9 +328,9 @@ describe("Core.moveTasksToStatus", () => {
 				["task-2", "To Do", 2000],
 			]);
 			// The zero-padded container is a separate identity and must not block TASK-1.
-			await mkdir(join(core.filesystem.tasksDir, "task-01"), { recursive: true });
+			await mkdir(join(coreFileSystem(core).tasksDir, "task-01"), { recursive: true });
 			await Bun.write(
-				join(core.filesystem.tasksDir, "task-01", "task.md"),
+				join(coreFileSystem(core).tasksDir, "task-01", "task.md"),
 				serializeTask(buildTask("TASK-01", "To Do", 1500, { title: "Padded duplicate" })),
 			);
 
@@ -341,8 +341,8 @@ describe("Core.moveTasksToStatus", () => {
 
 			expect(batch.movedTasks.map((task) => task.id).sort()).toEqual(["TASK-1", "TASK-2"]);
 			expect(batch.failures).toHaveLength(0);
-			expect((await core.filesystem.loadTask("task-2"))?.status).toBe("Done");
-			expect((await core.filesystem.loadTask("TASK-01"))?.status).toBe("To Do");
+			expect((await coreFileSystem(core).loadTask("task-2"))?.status).toBe("Done");
+			expect((await coreFileSystem(core).loadTask("TASK-01"))?.status).toBe("To Do");
 
 			const reordered = await core.reorderTask({
 				taskId: "task-1",
@@ -388,16 +388,16 @@ describe("Core.moveTasksToStatus", () => {
 			});
 
 			expect(result.failures).toHaveLength(0);
-			const first = await core.filesystem.loadTask("task-1");
-			const second = await core.filesystem.loadTask("task-2");
+			const first = await coreFileSystem(core).loadTask("task-1");
+			const second = await coreFileSystem(core).loadTask("task-2");
 			expect(first?.status).toBe("In Progress");
 			expect(second?.status).toBe("In Progress");
 			expect(first?.ordinal ?? 0).toBeGreaterThan(1000);
 			expect(second?.ordinal ?? 0).toBeLessThan(2000);
 			expect(first?.ordinal ?? 0).toBeLessThan(second?.ordinal ?? 0);
 			// The neighbors keep their ordinals and stay out of the write set.
-			expect((await core.filesystem.loadTask("task-3"))?.ordinal).toBe(1000);
-			expect((await core.filesystem.loadTask("task-4"))?.ordinal).toBe(2000);
+			expect((await coreFileSystem(core).loadTask("task-3"))?.ordinal).toBe(1000);
+			expect((await coreFileSystem(core).loadTask("task-4"))?.ordinal).toBe(2000);
 			expect(result.changedTasks.map((task) => task.id).sort()).toEqual(["TASK-1", "TASK-2"]);
 		});
 
@@ -414,7 +414,7 @@ describe("Core.moveTasksToStatus", () => {
 				orderedTaskIds: ["TASK-3", "TASK-1", "TASK-4"],
 			});
 
-			expect((await core.filesystem.loadTask("task-1"))?.ordinal).toBe(1500);
+			expect((await coreFileSystem(core).loadTask("task-1"))?.ordinal).toBe(1500);
 		});
 
 		it("writes nothing when the ordering already matches the column", async () => {
@@ -449,7 +449,9 @@ describe("Core.moveTasksToStatus", () => {
 			});
 
 			const ordinals = await Promise.all(
-				["task-3", "task-1", "task-2", "task-4"].map(async (id) => (await core.filesystem.loadTask(id))?.ordinal ?? 0),
+				["task-3", "task-1", "task-2", "task-4"].map(
+					async (id) => (await coreFileSystem(core).loadTask(id))?.ordinal ?? 0,
+				),
 			);
 			expect(ordinals).toEqual([...ordinals].sort((a, b) => a - b));
 			expect(new Set(ordinals).size).toBe(4);
@@ -493,7 +495,7 @@ describe("Core.moveTasksToStatus", () => {
 
 			expect(result.failures).toEqual([{ taskId: "task-9", reason: "Task task-9 not found." }]);
 			expect(result.movedTasks.map((task) => task.id)).toEqual(["TASK-1"]);
-			expect((await core.filesystem.loadTask("task-1"))?.ordinal).toBe(1500);
+			expect((await coreFileSystem(core).loadTask("task-1"))?.ordinal).toBe(1500);
 		});
 	});
 });

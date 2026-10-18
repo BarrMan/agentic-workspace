@@ -1,10 +1,9 @@
 import { afterAll, describe, expect, it } from "bun:test";
-import { mkdir, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { mkdir } from "node:fs/promises";
 import { Writable } from "node:stream";
 import { runCli } from "../cli/register.ts";
 import { Core } from "../index.ts";
-import { createUniqueTestDir, initializeFilesystemTestProject, safeCleanup } from "./test-utils.ts";
+import { coreFileSystem, createUniqueTestDir, initializeFilesystemTestProject, safeCleanup } from "./test-utils.ts";
 
 const createdDirs: string[] = [];
 
@@ -74,18 +73,7 @@ async function makeProject() {
 		onStatusChange: "echo secret",
 	});
 
-	await core.filesystem.saveDocument({
-		id: "doc-1",
-		title: "JSON guide",
-		type: "guide",
-		createdDate: "2026-07-13",
-		updatedDate: "2026-07-14 08:00",
-		rawContent: "JSON task documentation",
-		tags: ["cli"],
-		path: "guides/json.md",
-	});
-
-	await core.filesystem.saveDecision({
+	await coreFileSystem(core).saveDecision({
 		id: "decision-1",
 		title: "Use stable JSON",
 		date: "2026-07-12",
@@ -245,20 +233,11 @@ describe("CLI JSON output", () => {
 		const output = JSON.parse(result.stdout.toString());
 		expect(output.schemaVersion).toBe(1);
 		expect(output.kind).toBe("search");
-		expect(output.results.map((entry: { type: string }) => entry.type)).toEqual(["task", "document", "decision"]);
+		expect(output.results.map((entry: { type: string }) => entry.type)).toEqual(["task", "decision"]);
 		expect(output.results[0].data.id).toBe("TASK-1");
 		// Task results carry the same verdict the task list publishes.
 		expect(output.results[0].data.isReady).toBe(false);
 		expect(output.results[1].data).toEqual({
-			id: "doc-1",
-			title: "JSON guide",
-			type: "guide",
-			path: "agentic-workspace/docs/doc-1 - JSON-guide.md",
-			tags: ["cli"],
-			createdAt: "2026-07-13",
-			updatedAt: "2026-07-14T08:00:00Z",
-		});
-		expect(output.results[2].data).toEqual({
 			id: "decision-1",
 			title: "Use stable JSON",
 			status: "accepted",
@@ -266,59 +245,6 @@ describe("CLI JSON output", () => {
 		});
 		for (const entry of output.results) {
 			expect(entry.score).toBeUndefined();
-		}
-	});
-
-	it("reads no task corpus for a search that matched no task", async () => {
-		const { dir: TEST_DIR } = await makeProject(); // A completed record that cannot be parsed is never cached, so it is re-read and re-logged
-		// under DEBUG on every load of the completed corpus. Counting those lines counts the corpus
-		// reads one command makes.
-		await mkdir(join(TEST_DIR, "agentic-workspace", "completed", "task-99"), { recursive: true });
-		await writeFile(
-			join(TEST_DIR, "agentic-workspace", "completed", "task-99", "task.md"),
-			"---\nid: TASK-99\ntitle: [unclosed\nstatus: Done\n---\n\nbroken\n",
-		);
-		const corpusReads = async (args: string[]) => {
-			const result = await runCommand(args, TEST_DIR, { DEBUG: "1" });
-			expect(result.exitCode).toBe(0);
-			return {
-				stdout: result.stdout,
-				reads: result.stderr.split("\n").filter((line) => line.startsWith("Failed to parse completed task file"))
-					.length,
-			};
-		};
-
-		const asJson = await corpusReads(["search", "JSON", "--type", "document", "--json"]);
-		const asPlain = await corpusReads(["search", "JSON", "--type", "document", "--plain"]);
-		expect(JSON.parse(asJson.stdout).results.every((entry: { type: string }) => entry.type === "document")).toBe(true);
-		// Nothing in that payload carries readiness, so nothing loads the corpus it comes from.
-		expect(asJson.reads).toBe(asPlain.reads);
-	});
-
-	it("uses the configured project-relative docs directory in search paths", async () => {
-		const { runCli } = await makeProject();
-		const customTestDir = createUniqueTestDir("test-cli-json-output-custom-dir");
-		try {
-			await mkdir(customTestDir, { recursive: true });
-
-			const core = new Core(customTestDir);
-			await initializeFilesystemTestProject(core, "Custom JSON Output Test", "planning/agentic-workspace-data");
-			await new Core(customTestDir).filesystem.saveDocument({
-				id: "doc-1",
-				title: "Custom guide",
-				type: "guide",
-				createdDate: "2026-07-15",
-				rawContent: "Custom directory JSON documentation",
-			});
-
-			const result = await runCli(["search", "Custom directory JSON", "--json"], customTestDir);
-			expect(result.exitCode).toBe(0);
-			expect(result.stderr.toString()).toBe("");
-			const output = JSON.parse(result.stdout.toString());
-			expect(output.results).toHaveLength(1);
-			expect(output.results[0].data.path).toBe("planning/agentic-workspace-data/docs/doc-1 - Custom-guide.md");
-		} finally {
-			await safeCleanup(customTestDir);
 		}
 	});
 

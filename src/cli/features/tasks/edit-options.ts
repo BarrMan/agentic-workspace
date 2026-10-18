@@ -60,7 +60,7 @@ async function addPriorityOption(
 	context: TaskEditOptionContext,
 ): Promise<ParseResult | undefined> {
 	if (!options.priority) return undefined;
-	const config = await context.core.filesystem.loadConfig();
+	const config = await context.core.getStoredConfig();
 	const priority = resolvePriorityValue(String(options.priority), config);
 	if (!priority)
 		return { error: `Invalid priority: ${options.priority}. Valid values are: ${formatValidPriorityValues(config)}` };

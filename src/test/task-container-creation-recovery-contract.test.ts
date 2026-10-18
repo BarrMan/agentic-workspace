@@ -2,7 +2,7 @@ import { describe, expect, it } from "bun:test";
 import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { Core } from "../core/agentic-workspace.ts";
-import { createUniqueTestDir, initializeTestProject, safeCleanup } from "./test-utils.ts";
+import { coreFileSystem, createUniqueTestDir, initializeTestProject, safeCleanup } from "./test-utils.ts";
 
 async function setup(): Promise<{ dir: string; core: Core }> {
 	const dir = createUniqueTestDir("task-container-creation-recovery");
@@ -31,7 +31,7 @@ describe("task container creation recovery contract", () => {
 			core.finalizeCreatedTask = finalize;
 			const { task } = await core.createTaskFromInput({ title: "Recover task", status: "To Do" });
 			expect(task.id).toBe("TASK-2");
-			expect((await core.filesystem.listTasks()).filter((item) => item.id === task.id)).toHaveLength(1);
+			expect((await coreFileSystem(core).listTasks()).filter((item) => item.id === task.id)).toHaveLength(1);
 		} finally {
 			await safeCleanup(dir);
 		}

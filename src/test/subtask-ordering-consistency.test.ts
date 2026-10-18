@@ -6,7 +6,7 @@ import { Core } from "../index.ts";
 import type { Task } from "../types/index.ts";
 import { prepareBoardColumns } from "../ui/opentui/board/policies/column-policy.ts";
 import { compareTaskIds } from "../utils/task-sorting.ts";
-import { createUniqueTestDir, initializeFilesystemTestProject, safeCleanup } from "./test-utils.ts";
+import { coreFileSystem, createUniqueTestDir, initializeFilesystemTestProject, safeCleanup } from "./test-utils.ts";
 
 async function runCliCommand(args: string[], cwd: string) {
 	const stdout: string[] = [];
@@ -95,7 +95,7 @@ describe("subtask ordering consistency", () => {
 		expect((await core.loadTasks()).map((task) => task.id)).toEqual(EXPECTED_ORDER);
 		expect((await core.queryTasks()).map((task) => task.id)).toEqual(EXPECTED_ORDER);
 		expect((await core.queryTasks({ includeCrossBranch: false })).map((task) => task.id)).toEqual(EXPECTED_ORDER);
-		expect((await core.filesystem.listTasks()).map((task) => task.id)).toEqual(EXPECTED_ORDER);
+		expect((await coreFileSystem(core).listTasks()).map((task) => task.id)).toEqual(EXPECTED_ORDER);
 	});
 
 	it("agrees with the board columns and with the comparator the web list sorts by", async () => {

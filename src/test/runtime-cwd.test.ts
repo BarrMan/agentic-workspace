@@ -7,7 +7,7 @@ import { CliRuntime } from "../cli/runtime.ts";
 import { getAssignees, getLabels, getStatuses, getTaskIds } from "../completions/data-providers.ts";
 import { Core, createRuntimeCore } from "../core/agentic-workspace.ts";
 import { AGENTIC_WORKSPACE_CWD_ENV, resolveRuntimeCwd } from "../utils/runtime-cwd.ts";
-import { initGitRepo, initializeFilesystemTestProject } from "./test-utils.ts";
+import { coreFileSystem, initGitRepo, initializeFilesystemTestProject } from "./test-utils.ts";
 
 describe("resolveRuntimeCwd", () => {
 	let testDir: string;
@@ -107,7 +107,7 @@ describe("resolveRuntimeCwd", () => {
 		it("binds the Core to process.cwd() when no override is provided", async () => {
 			const core = await createRuntimeCore();
 
-			await expectCanonicalPath(core.filesystem.rootDir, testDir);
+			await expectCanonicalPath(coreFileSystem(core).rootDir, testDir);
 		});
 
 		it("binds the Core to AGENTIC_WORKSPACE_CWD when the override is provided", async () => {
@@ -117,7 +117,7 @@ describe("resolveRuntimeCwd", () => {
 
 			const core = await createRuntimeCore();
 
-			await expectCanonicalPath(core.filesystem.rootDir, projectDir);
+			await expectCanonicalPath(coreFileSystem(core).rootDir, projectDir);
 		});
 
 		it("ascends to the project root when AGENTIC_WORKSPACE_CWD points at a subdirectory", async () => {
@@ -129,7 +129,7 @@ describe("resolveRuntimeCwd", () => {
 
 			const core = await createRuntimeCore();
 
-			await expectCanonicalPath(core.filesystem.rootDir, projectDir);
+			await expectCanonicalPath(coreFileSystem(core).rootDir, projectDir);
 		});
 
 		it("ascends to the project root from a subdirectory of process.cwd()", async () => {
@@ -141,7 +141,7 @@ describe("resolveRuntimeCwd", () => {
 
 			const core = await createRuntimeCore();
 
-			await expectCanonicalPath(core.filesystem.rootDir, projectDir);
+			await expectCanonicalPath(coreFileSystem(core).rootDir, projectDir);
 		});
 
 		it("stays on the resolved directory when no project is found", async () => {
@@ -151,7 +151,7 @@ describe("resolveRuntimeCwd", () => {
 
 			const core = await createRuntimeCore();
 
-			await expectCanonicalPath(core.filesystem.rootDir, nestedDir);
+			await expectCanonicalPath(coreFileSystem(core).rootDir, nestedDir);
 		});
 
 		it("fails closed when AGENTIC_WORKSPACE_CWD points at a missing directory", async () => {

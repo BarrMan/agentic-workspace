@@ -1,12 +1,6 @@
 export * from "./readme.ts";
 // Types
 
-export {
-	_loadAgentGuideline,
-	type AgentInstructionFile,
-	addAgentInstructions,
-	ensureMcpGuidelines,
-} from "./agent-instructions.ts";
 // Kanban board utilities
 export { exportKanbanBoardToFile } from "./board.ts";
 // Constants

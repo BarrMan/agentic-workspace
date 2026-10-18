@@ -1,18 +1,13 @@
-import { stat } from "node:fs/promises";
-import { isAbsolute, join, relative } from "node:path";
 import { Config, resolveAgentConfiguration } from "../agent-workspace/config.ts";
 import { BunRunner } from "../agent-workspace/session-process.ts";
 import { SessionStore } from "../agent-workspace/session-store.ts";
 import { AgentSessionService } from "../agent-workspace/sessions.ts";
 import { openViewStateStore } from "../agent-workspace/view-state-store.ts";
-import { DEFAULT_DIRECTORIES, DEFAULT_STATUSES, FALLBACK_STATUS } from "../constants/index.ts";
+import { DEFAULT_STATUSES, FALLBACK_STATUS } from "../constants/index.ts";
 import { type DraftFileReference, FileSystem, isConfigValueError } from "../file-system/operations.ts";
 import { GitOperations } from "../git/operations.ts";
 import {
 	type Decision,
-	type Document,
-	type DocumentCreateInput,
-	type DocumentUpdateInput,
 	EntityType,
 	type Milestone,
 	type SearchOptions,
@@ -23,24 +18,26 @@ import {
 	type TaskListFilter,
 	type TaskUpdateInput,
 } from "../types/index.ts";
+import { type ConfigWatcherCallbacks, watchConfigFile } from "../utils/config-watcher.ts";
 import { formatStoredDate } from "../utils/date.ts";
-import { decisionIdKey } from "../utils/decision-id.ts";
-import { documentIdKey } from "../utils/document-id.ts";
-import { getDocumentSubPathFromRelativePath } from "../utils/document-path.ts";
 import {
 	type ContentIdentityReport,
 	type DraftIdentityFindings,
 	detectContentIdentityIssues,
 } from "../utils/duplicate-detection.ts";
+import { decisionIdKey } from "../utils/entity-id.ts";
 import { findAgenticWorkspaceRoot } from "../utils/find-agentic-workspace-root.ts";
-import { buildIdRegex } from "../utils/prefix-config.ts";
+import { nextDecisionId, numericIdFromFilename } from "../utils/id-generators.ts";
 import { formatValidPriorityValues, resolvePriorityValue } from "../utils/priority-config.ts";
 import { resolveRuntimeCwd } from "../utils/runtime-cwd.ts";
 import { formatValidStatuses, getCanonicalStatuses } from "../utils/status.ts";
-import { AmbiguousTaskIdError, LOCAL_TASK_LOOKUP_HINT, taskIdsEqual } from "../utils/task-path.ts";
+import { validateDependencies } from "../utils/task-builders.ts";
+import { taskIdsEqual } from "../utils/task-id.ts";
+import { AmbiguousTaskIdError, LOCAL_TASK_LOOKUP_HINT } from "../utils/task-path.ts";
 import { applyTaskFilters } from "../utils/task-search.ts";
 import { sortByOrdinal } from "../utils/task-sorting.ts";
 import { attachSubtaskSummaries } from "../utils/task-subtasks.ts";
+import { type TaskWatcherCallbacks, watchTaskRecords } from "../utils/task-watcher.ts";
 import { TaskCollectionFilterError } from "./domain-errors.ts";
 import { planOrderedTaskPlacement } from "./ordered-task-move-planner.ts";
 import { PersistentTaskRead } from "./persistent-task-read.ts";
@@ -48,20 +45,11 @@ import { ProjectContentService } from "./project-content-service.ts";
 import { DEFAULT_ORDINAL_STEP, resolveOrdinalConflicts } from "./reorder.ts";
 import { searchSnapshot } from "./search-service.ts";
 import { Storage } from "./storage.ts";
-import {
-	type CreatedTaskRollbackResult,
-	type CreatedTaskWrite,
-	rollbackCreatedTask,
-} from "./task-creation-transaction.ts";
+import type { CreatedTaskRollbackResult, CreatedTaskWrite } from "./task-creation-transaction.ts";
 import { TaskCreationService } from "./task-creation-workflow.ts";
-import {
-	completedTaskIdentityRecord,
-	TaskIdentityIndex,
-	type TaskIdentityRecord,
-	workingCopyTaskIdentityRecord,
-} from "./task-identity-index.ts";
+import { TaskIdentityIndex, type TaskIdentityRecord } from "./task-identity-index.ts";
 import { TaskLifecycleService } from "./task-lifecycle-service.ts";
-import { addSearchableArtifactText, type BranchTaskStateEntry, type TaskCorpusSnapshot } from "./task-loader.ts";
+import type { BranchTaskStateEntry, TaskCorpusSnapshot } from "./task-loader.ts";
 import { ProjectTaskMutations } from "./task-mutation-service.ts";
 import type { TaskQueryOptions, TaskReadOptions } from "./task-query-workflow.ts";
 import { planTaskReorder } from "./task-reorder-plan.ts";
@@ -137,14 +125,14 @@ function normalizeTargetMilestone(targetMilestone: string | null | undefined): s
 export { TaskArchiveStatusError } from "./task-lifecycle-service.ts";
 
 export class Core {
-	readonly filesystem: FileSystem;
 	readonly git: GitOperations;
+	private readonly filesystem: FileSystem;
 	private agentSessions?: AgentSessionService;
 	get sessions(): AgentSessionService {
 		if (!this.agentSessions) this.agentSessions = new AgentSessionService(this);
 		return this.agentSessions;
 	}
-	private readonly projectContent = new ProjectContentService(this);
+	private readonly projectContent: ProjectContentService;
 	private readonly vacatedTaskReferences: VacatedTaskReferenceService;
 	private readonly taskMutations: ProjectTaskMutations;
 	private readonly taskLifecycle: TaskLifecycleService;
@@ -152,25 +140,22 @@ export class Core {
 	private readonly storage: Storage;
 	private configSnapshot?: Promise<Config>;
 
-	private get fs(): FileSystem {
-		return this.filesystem;
-	}
-
 	constructor(projectRoot: string) {
 		this.filesystem = new FileSystem(projectRoot);
 		this.filesystem.freezeResolution();
 		this.storage = new Storage(this.filesystem);
 		this.configSnapshot = Config.load(this.storage);
 		void this.configSnapshot.catch(() => undefined);
-		this.git = new GitOperations(projectRoot, null, () => this.filesystem.loadConfig());
-		this.persistentReads = new PersistentTaskRead(this.filesystem, this.git, this.storage);
-		this.vacatedTaskReferences = new VacatedTaskReferenceService(this.filesystem);
+		this.git = new GitOperations(projectRoot, null, () => this.storage.loadConfig());
+		this.persistentReads = new PersistentTaskRead(this.storage, this.git);
+		this.vacatedTaskReferences = new VacatedTaskReferenceService(this.storage);
 		this.taskMutations = new ProjectTaskMutations(
-			this.filesystem,
+			this.storage,
 			(id) => this.persistentReads.get(id, { forMutation: true }),
 			() => this.getActiveAndCompletedTaskIds(),
 		);
 		this.taskLifecycle = this.createTaskLifecycleService();
+		this.projectContent = new ProjectContentService(this.storage, this);
 	}
 
 	async getConfig(): Promise<Config> {
@@ -184,15 +169,15 @@ export class Core {
 
 	private createTaskLifecycleService(): TaskLifecycleService {
 		return new TaskLifecycleService(
-			this.fs,
+			this.storage,
 			this.taskMutations,
 			this.vacatedTaskReferences,
 			async (taskId, ownedStops) => await this.sessions.cleanupTaskWorktreeSessions(taskId, ownedStops),
 			async (oldTaskId, newTaskId) => {
-				const sessions = new SessionStore(this.filesystem.rootDir, new BunRunner());
+				const sessions = new SessionStore(this.storage.projectRoot, new BunRunner());
 				await sessions.remapTaskIdentity(oldTaskId, newTaskId);
 
-				const view = await openViewStateStore(this.filesystem.rootDir, () => ({}), {
+				const view = await openViewStateStore(this.storage.projectRoot, () => ({}), {
 					stateRoot: await sessions.stateRoot,
 				});
 				try {
@@ -224,25 +209,16 @@ export class Core {
 		statuses: string[],
 		resolutionStrategy: "most_recent" | "most_progressed",
 		repositoryRoot?: string | null,
-		filesystem = this.fs,
 		git = this.git,
 	): Promise<TaskIdentityIndex> {
 		const records: TaskIdentityRecord[] = [];
-		for (const task of localTasks) {
-			records.push(workingCopyTaskIdentityRecord(task, "task", task.filePath ?? join(filesystem.tasksDir, task.id)));
-		}
-		for (const task of completedTasks) {
-			records.push(completedTaskIdentityRecord(task, task.filePath ?? join(filesystem.completedDir, task.id)));
-		}
+		for (const task of localTasks) records.push(this.storage.projectTaskIdentityRecord(task));
+		for (const task of completedTasks) records.push(this.storage.projectCompletedTaskIdentityRecord(task));
 		records.push(...branchRecords);
 
 		return new TaskIdentityIndex(
 			records,
-			{
-				repositoryRoot: repositoryRoot === undefined ? await git.getRepositoryRoot() : repositoryRoot,
-				projectRoot: filesystem.rootDir,
-				agenticWorkspaceDirectory: filesystem.agenticWorkspaceDirName,
-			},
+			this.storage.taskIdentityContext(repositoryRoot === undefined ? await git.getRepositoryRoot() : repositoryRoot),
 			statuses,
 			resolutionStrategy,
 		);
@@ -254,35 +230,23 @@ export class Core {
 
 	/** Reports draft files whose numeric identities collide, whose frontmatter drifted from their filename, or that are unreadable. */
 	async diagnoseDraftIdentity(): Promise<DraftIdentityFindings> {
-		return this.fs.diagnoseDraftIdentity();
+		return this.storage.diagnoseDraftIdentity();
 	}
 
-	/** Reports document and decision files whose IDs collide or are missing, so lookups can fail closed. */
+	/** Reports decision files whose IDs collide or are missing, so lookups can fail closed. */
 	async diagnoseContentIdentity(): Promise<ContentIdentityReport> {
-		const unreadableDocuments: string[] = [];
 		const unreadableDecisions: string[] = [];
-		const [documents, decisions] = await Promise.all([
-			this.fs.listDocuments(unreadableDocuments),
-			this.fs.listDecisions(unreadableDecisions),
-		]);
+		const decisions = await this.storage.listDecisions(unreadableDecisions);
 		// An empty collected path denotes the content directory itself, which the filesystem reports
 		// when it could not be scanned at all.
-		const locate = (directory: string, path: string) =>
-			path
-				? `${this.fs.agenticWorkspaceDirName}/${directory}/${path}`
-				: `${this.fs.agenticWorkspaceDirName}/${directory}`;
-		const describe = (directory: string, item: { path?: string; title: string }) =>
-			item.path ? locate(directory, item.path) : item.title;
 		return {
-			documents: detectContentIdentityIssues(
-				documents.map((document) => ({ id: document.id, path: describe(DEFAULT_DIRECTORIES.DOCS, document) })),
-				documentIdKey,
-				unreadableDocuments.map((path) => locate(DEFAULT_DIRECTORIES.DOCS, path)),
-			),
 			decisions: detectContentIdentityIssues(
-				decisions.map((decision) => ({ id: decision.id, path: describe(DEFAULT_DIRECTORIES.DECISIONS, decision) })),
+				decisions.map((decision) => ({
+					id: decision.id,
+					path: decision.path ? this.storage.describeDecisionPath(decision.path) : decision.title,
+				})),
 				decisionIdKey,
-				unreadableDecisions.map((path) => locate(DEFAULT_DIRECTORIES.DECISIONS, path)),
+				unreadableDecisions.map((path) => this.storage.describeDecisionPath(path)),
 			),
 		};
 	}
@@ -295,7 +259,7 @@ export class Core {
 			return undefined;
 		}
 
-		const tasks = await this.fs.listTasks();
+		const tasks = await this.storage.loadTasks();
 		const ordinals = tasks
 			.map((task) => task.ordinal)
 			.filter((ordinal): ordinal is number => typeof ordinal === "number" && Number.isFinite(ordinal));
@@ -327,14 +291,18 @@ export class Core {
 		return formatMissingDependenciesError(invalid);
 	}
 
+	async validateTaskDependencies(dependencies: string[], target?: Task) {
+		return await validateDependencies(dependencies, this.storage.dependencyStore, target);
+	}
+
 	async queryTasks(options: TaskQueryOptions = {}): Promise<Task[]> {
 		const tasks = await this.persistentReads.query(options);
-		return await addSearchableArtifactText(tasks, this.filesystem.taskArtifacts);
+		return await this.storage.addSearchableArtifactText(tasks);
 	}
 
 	/** Shared validation for collection surfaces before applying a prepared task graph. */
 	async resolveCollectionFilters(input: TaskCollectionFilterInput): Promise<TaskListFilter> {
-		const config = await this.filesystem.loadConfig();
+		const config = await this.storage.loadConfig();
 		const priority = input.priority ? resolvePriorityValue(input.priority, config) : undefined;
 		if (input.priority && !priority)
 			throw new TaskCollectionFilterError(
@@ -355,16 +323,13 @@ export class Core {
 	}
 
 	async searchPersistently(options: SearchOptions): Promise<SearchResult[]> {
-		const [snapshot, documents, decisions] = await Promise.all([
+		const [snapshot, decisions] = await Promise.all([
 			!options.types || options.types.includes("task") ? this.loadTaskSnapshot() : null,
-			!options.types || options.types.includes("document") ? this.filesystem.listDocuments() : [],
-			!options.types || options.types.includes("decision") ? this.filesystem.listDecisions() : [],
+			!options.types || options.types.includes("decision") ? this.storage.listDecisions() : [],
 		]);
 		const tasks = snapshot?.tasks ?? [];
-		const searchableTasks = tasks.length
-			? await addSearchableArtifactText(tasks, this.filesystem.taskArtifacts)
-			: tasks;
-		return searchSnapshot(searchableTasks, documents, decisions, options);
+		const searchableTasks = tasks.length ? await this.storage.addSearchableArtifactText(tasks) : tasks;
+		return searchSnapshot(searchableTasks, decisions, options);
 	}
 
 	/** Loads one request-local Markdown/Git snapshot without retaining it on Core. */
@@ -386,7 +351,7 @@ export class Core {
 			options.includeCrossBranch === false
 				? await this.loadWorkingCopyTask(taskId, false, localTasks)
 				: await this.getTask(taskId, options);
-		return task ? attachSubtaskSummaries(task, localTasks ?? (await this.fs.listTasks())) : null;
+		return task ? attachSubtaskSummaries(task, localTasks ?? (await this.storage.loadTasks())) : null;
 	}
 
 	async loadTaskById(taskId: string, options: TaskReadOptions = {}): Promise<Task | null> {
@@ -395,7 +360,7 @@ export class Core {
 
 	async buildWorkingCopyTaskIndex(activeTasks?: Task[]): Promise<TaskIdentityIndex> {
 		if (!activeTasks) return (await this.loadTaskSnapshot(false)).identityIndex;
-		const [completedTasks, config] = await Promise.all([this.fs.listCompletedTasks(), this.fs.loadConfig()]);
+		const [completedTasks, config] = await Promise.all([this.storage.loadCompletedTasks(), this.storage.loadConfig()]);
 		return await this.buildTaskIdentityIndex(
 			activeTasks,
 			completedTasks,
@@ -419,23 +384,12 @@ export class Core {
 	}
 
 	async getTaskContent(taskId: string): Promise<string | null> {
-		const task = await this.fs.loadTask(taskId);
-		const filePath = task?.filePath ?? null;
-		if (!filePath) return null;
-		return await Bun.file(filePath).text();
-	}
-
-	async getDocument(documentId: string): Promise<Document | null> {
-		return await this.projectContent.getDocument(documentId);
-	}
-
-	async getDocumentContent(documentId: string): Promise<string | null> {
-		return await this.projectContent.getDocumentContent(documentId);
+		return await this.storage.loadTaskContent(taskId);
 	}
 
 	async ensureConfigLoaded(): Promise<void> {
 		try {
-			const config = await this.fs.loadConfig();
+			const config = await this.storage.loadConfig();
 			this.git.setConfig(config);
 		} catch (error) {
 			// A config value AgenticWorkspace refuses to read is the user's to fix and must reach the command;
@@ -450,10 +404,6 @@ export class Core {
 		}
 	}
 
-	private async getAgenticWorkspaceDirectoryName(): Promise<string> {
-		return this.fs.agenticWorkspaceDirName;
-	}
-
 	async getGitOps() {
 		await this.ensureConfigLoaded();
 		return this.git;
@@ -463,14 +413,13 @@ export class Core {
 	/**
 	 * Generates the next ID for a given entity type.
 	 *
-	 * @param type - The entity type (Task, Draft, Document, Decision). Defaults to Task.
+	 * @param type - The entity type (Task, Draft, Decision). Defaults to Task.
 	 * @param parent - Optional parent ID for subtask generation (only applicable for tasks).
-	 * @returns The next available ID (e.g., "task-42", "draft-5", "doc-3")
+	 * @returns The next available ID (e.g., "task-42", "draft-5")
 	 *
 	 * Folder scanning by type:
 	 * - Task: /tasks, /completed, cross-branch (if enabled), remote (if enabled)
 	 * - Draft: /drafts only
-	 * - Document: /documents only
 	 * - Decision: /decisions only
 	 */
 	async generateNextId(type: EntityType = EntityType.Task, parent?: string): Promise<string> {
@@ -485,70 +434,8 @@ export class Core {
 	 */
 	private async loadWorktreeTaskStateEntries(taskPrefix: string): Promise<BranchTaskStateEntry[]> {
 		const [repoRoot, worktreeRoots] = await Promise.all([this.git.getRepositoryRoot(), this.git.listWorktreePaths()]);
-		if (!repoRoot || worktreeRoots.length === 0) {
-			return [];
-		}
-
-		const projectRelativePath = relative(repoRoot, this.fs.rootDir);
-		if (projectRelativePath.startsWith("..") || isAbsolute(projectRelativePath)) {
-			return [];
-		}
-
-		const agenticWorkspaceDir = await this.getAgenticWorkspaceDirectoryName();
-		const entries: BranchTaskStateEntry[] = [];
-		for (const worktreeRoot of worktreeRoots) {
-			const projectRoot = projectRelativePath ? join(worktreeRoot, projectRelativePath) : worktreeRoot;
-			entries.push(
-				...(await this.loadTaskStateEntriesFromWorktree(projectRoot, agenticWorkspaceDir, taskPrefix, worktreeRoot)),
-			);
-		}
-
-		return entries;
-	}
-
-	private async loadTaskStateEntriesFromWorktree(
-		projectRoot: string,
-		agenticWorkspaceDir: string,
-		taskPrefix: string,
-		worktreeRoot: string,
-	): Promise<BranchTaskStateEntry[]> {
-		const idRegex = buildIdRegex(taskPrefix);
-		const globPattern = "**/*";
-		const directories: Array<{ path: string; type: typeof TASK_DIRECTORY.TASK | typeof TASK_DIRECTORY.COMPLETED }> = [
-			{ path: join(projectRoot, agenticWorkspaceDir, DEFAULT_DIRECTORIES.TASKS), type: TASK_DIRECTORY.TASK },
-			{ path: join(projectRoot, agenticWorkspaceDir, DEFAULT_DIRECTORIES.COMPLETED), type: TASK_DIRECTORY.COMPLETED },
-		];
-		const entries: BranchTaskStateEntry[] = [];
-
-		for (const { path, type } of directories) {
-			let files: string[];
-			try {
-				files = await Array.fromAsync(new Bun.Glob(globPattern).scan({ cwd: path, followSymlinks: true }));
-			} catch {
-				continue;
-			}
-
-			for (const file of files) {
-				const parts = file.replaceAll("\\", "/").split("/");
-				const recordName =
-					parts.length === 1 ? parts[0] : parts.length === 2 && parts[1] === "task.md" ? `${parts[0]}.md` : null;
-				if (!recordName) continue;
-				const match = recordName.match(idRegex);
-				if (!match?.[1]) continue;
-
-				const filePath = join(path, file);
-				const stats = await stat(filePath).catch(() => null);
-				entries.push({
-					id: `${taskPrefix.toUpperCase()}-${match[1].toUpperCase()}`,
-					type,
-					branch: `worktree:${worktreeRoot}`,
-					path: filePath,
-					lastModified: stats?.mtime ?? new Date(0),
-				});
-			}
-		}
-
-		return entries;
+		if (!repoRoot) return [];
+		return await this.storage.loadTaskStateEntries(repoRoot, worktreeRoots, taskPrefix);
 	}
 
 	private async getActiveAndCompletedTaskIds(): Promise<string[]> {
@@ -562,9 +449,9 @@ export class Core {
 		// task files are committed, so include their filesystem state for allocation.
 		const [worktreeEntries, archivedTasks, drafts, occupiedDraftFileIds] = await Promise.all([
 			this.loadWorktreeTaskStateEntries(taskPrefix),
-			this.fs.listArchivedTasks(),
-			this.fs.listDrafts(),
-			this.fs.listOccupiedDraftFileIds(),
+			this.storage.loadArchivedTasks(),
+			this.storage.loadDrafts(),
+			this.storage.listOccupiedDraftFileIds(),
 		]);
 		const occupiedIds = new Set(snapshot.identityIndex.getOccupiedIds());
 		for (const task of completedTasks) occupiedIds.add(task.id);
@@ -592,15 +479,14 @@ export class Core {
 			case EntityType.Draft: {
 				// Occupancy includes filename-derived ids: an unparsable file still reserves its
 				// numeric id, so allocation can never reuse what it cannot parse.
-				const [drafts, occupiedFileIds] = await Promise.all([this.fs.listDrafts(), this.fs.listOccupiedDraftFileIds()]);
+				const [drafts, occupiedFileIds] = await Promise.all([
+					this.storage.loadDrafts(),
+					this.storage.listOccupiedDraftFileIds(),
+				]);
 				return [...drafts.map((d) => d.id), ...occupiedFileIds];
 			}
-			case EntityType.Document: {
-				const documents = await this.fs.listDocuments();
-				return documents.map((d) => d.id);
-			}
 			case EntityType.Decision: {
-				const decisions = await this.fs.listDecisions();
+				const decisions = await this.storage.listDecisions();
 				return decisions.map((d) => d.id);
 			}
 			default:
@@ -611,20 +497,20 @@ export class Core {
 	async writePreparedTask(task: Task, isDraft: boolean): Promise<string> {
 		if (isDraft) {
 			task.status = "Draft";
-			return await this.fs.saveDraft(task);
+			return await this.storage.saveDraft(task);
 		}
 
-		return await this.fs.saveTask(task, { create: true });
+		return await this.storage.saveTask(task, { create: true });
 	}
 
 	async finalizeCreatedTask(task: Task, isDraft: boolean): Promise<Task | null> {
-		const savedTask = isDraft ? await this.fs.loadDraft(task.id) : await this.fs.loadTask(task.id);
+		const savedTask = isDraft ? await this.storage.loadDraft(task.id) : await this.storage.loadTask(task.id);
 
 		return savedTask;
 	}
 
 	async rollbackCreatedTask(write: CreatedTaskWrite): Promise<CreatedTaskRollbackResult> {
-		return await rollbackCreatedTask(write);
+		return await this.storage.rollbackCreatedTask(write);
 	}
 
 	async createTaskFromInput(input: TaskCreateInput): Promise<{ task: Task; filePath?: string }> {
@@ -647,7 +533,7 @@ export class Core {
 
 	async createTask(task: Task): Promise<string> {
 		if (!task.status) {
-			const config = await this.fs.loadConfig();
+			const config = await this.storage.loadConfig();
 			task.status = config?.defaultStatus || FALLBACK_STATUS;
 		}
 		const config = await this.getConfig();
@@ -686,12 +572,12 @@ export class Core {
 	}
 
 	async updateDraft(task: Task): Promise<string> {
-		await this.fs.loadConfig();
+		await this.storage.loadConfig();
 		// Drafts always keep status Draft
 		task.status = "Draft";
 		task.updatedDate = formatStoredDate();
 
-		const filepath = await this.fs.saveDraft(task);
+		const filepath = await this.storage.saveDraft(task);
 
 		return filepath;
 	}
@@ -701,8 +587,8 @@ export class Core {
 		// read-modify-write and re-read inside it, so a concurrent editor fails fast instead of
 		// losing its update. The reference's own file is the only thing touched; no id is ever
 		// re-resolved to a different path.
-		return await this.fs.withDraftLock(reference, async () => {
-			const current = await this.fs.draftReferenceFromPath(reference.filePath);
+		return await this.storage.withDraftLock(reference, async () => {
+			const current = await this.storage.draftReferenceFromPath(reference.filePath);
 			// Bind the mutated record to the selected file's own identity: a padded filename whose
 			// frontmatter carries an unpadded id must keep converging onto that one file instead of
 			// minting a second spelling of the same numeric id.
@@ -720,7 +606,7 @@ export class Core {
 			}
 
 			const savedPath = await this.updateDraft(current.task);
-			const refreshed = await this.fs.draftReferenceFromPath(savedPath);
+			const refreshed = await this.storage.draftReferenceFromPath(savedPath);
 			return refreshed.task;
 		});
 	}
@@ -730,7 +616,7 @@ export class Core {
 		input: TaskUpdateInput,
 		options: TaskReadOptions = {},
 	): Promise<TaskEditResult> {
-		const resolvedDraft = await this.fs.resolveDraftReference(taskId);
+		const resolvedDraft = await this.storage.resolveDraftReference(taskId);
 		if (resolvedDraft) {
 			const requestedStatus = input.status?.trim();
 			const wantsDraft = requestedStatus?.toLowerCase() === "draft";
@@ -777,7 +663,7 @@ export class Core {
 	}
 
 	async updateTasksBulk(tasks: Task[]): Promise<void> {
-		await this.fs.withTaskLocks(tasks, async () => await this.writeTasksBulk(tasks));
+		await this.storage.withTaskLocks(tasks, async () => await this.writeTasksBulk(tasks));
 	}
 
 	/**
@@ -1077,8 +963,8 @@ export class Core {
 	async archiveMilestone(
 		identifier: string,
 	): Promise<{ success: boolean; sourcePath?: string; targetPath?: string; milestone?: Milestone }> {
-		await this.filesystem.loadConfig();
-		return await this.filesystem.archiveMilestone(identifier);
+		await this.storage.loadConfig();
+		return await this.storage.archiveMilestone(identifier);
 	}
 
 	async renameMilestone(
@@ -1093,8 +979,8 @@ export class Core {
 		previousTitle?: string;
 		previousDueDate?: string;
 	}> {
-		await this.filesystem.loadConfig();
-		return await this.filesystem.renameMilestone(identifier, title, dueDate);
+		await this.storage.loadConfig();
+		return await this.storage.renameMilestone(identifier, title, dueDate);
 	}
 
 	async completeTask(taskId: string, options: TaskReadOptions = {}): Promise<boolean> {
@@ -1129,33 +1015,6 @@ export class Core {
 		return await this.projectContent.createDecisionWithTitle(title);
 	}
 
-	async createDocument(doc: Document, subPath = ""): Promise<void> {
-		return await this.projectContent.createDocument(doc, subPath);
-	}
-
-	async updateDocument(existingDoc: Document, content: string): Promise<void> {
-		await this.updateDocumentFromInput({
-			id: existingDoc.id,
-			title: existingDoc.title,
-			type: existingDoc.type,
-			tags: existingDoc.tags,
-			content,
-			...(existingDoc.path !== undefined && { path: getDocumentSubPathFromRelativePath(existingDoc.path) }),
-		});
-	}
-
-	async createDocumentWithId(title: string, content: string): Promise<Document> {
-		return await this.createDocumentFromInput({ title, content });
-	}
-
-	async createDocumentFromInput(input: DocumentCreateInput): Promise<Document> {
-		return await this.projectContent.createDocumentFromInput(input);
-	}
-
-	async updateDocumentFromInput(input: DocumentUpdateInput): Promise<Document> {
-		return await this.projectContent.updateDocumentFromInput(input);
-	}
-
 	/**
 	 * Load and process all tasks with the same logic as CLI overview
 	 * This method extracts the common task loading logic for reuse
@@ -1172,7 +1031,7 @@ export class Core {
 
 		// Load drafts
 		progressCallback?.("Loading drafts...");
-		const drafts = await this.fs.listDrafts();
+		const drafts = await this.storage.loadDrafts();
 
 		return { tasks, drafts, statuses: statuses as string[], priorities };
 	}
@@ -1184,6 +1043,159 @@ export class Core {
 	): Promise<Task[]> {
 		const snapshot = await this.loadTaskSnapshot();
 		return options?.includeCompleted ? snapshot.identityIndex.getTasks(true) : snapshot.tasks;
+	}
+
+	/** Raw stored configuration for diagnostics; not the resolved agent configuration. */
+	async getStoredConfig() {
+		return await this.storage.loadConfig();
+	}
+
+	/** Project root used to locate runtime resources; workspace records stay behind Storage. */
+	get projectRoot(): string {
+		return this.storage.projectRoot;
+	}
+
+	/** Configured project config file location, for diagnostics and config bootstrap. */
+	get projectConfigPath(): string {
+		return this.storage.configFilePath;
+	}
+
+	/** Workspace directory used to locate runtime stores; not a record path. */
+	get workspaceDirectory(): string {
+		return this.storage.workspaceDirectoryPath;
+	}
+
+	async listDecisions(): Promise<Decision[]> {
+		return await this.storage.listDecisions();
+	}
+
+	async generateNextDecisionId(): Promise<string> {
+		const config = await this.storage.loadConfig();
+		const [decisions, branches] = await Promise.all([this.storage.listDecisions(), this.git.listAllBranches()]);
+		const branchIds = await this.listBranchRecordIds(branches, "decisions", config?.remoteOperations);
+		return nextDecisionId(
+			config,
+			decisions.map((decision) => decision.id),
+			branchIds,
+		);
+	}
+
+	private async listBranchRecordIds(
+		branches: readonly string[],
+		directory: string,
+		remoteOperations: boolean | undefined,
+	): Promise<string[]> {
+		if (remoteOperations !== false) {
+			try {
+				await this.git.fetch();
+			} catch (error) {
+				if (process.env.DEBUG) console.error("Could not fetch branch record IDs:", error);
+				return [];
+			}
+		}
+		const workspaceDirectory = this.storage.workspaceDirectoryName;
+		const results = await Promise.all(
+			branches.map(async (branch) => {
+				const files = await this.git.listFilesInTree(branch, `${workspaceDirectory}/${directory}`);
+				return files.map((file) => numericIdFromFilename(file, "decision")).filter((id): id is string => id !== null);
+			}),
+		);
+		return results.flat().map((id) => `decision-${id}`);
+	}
+
+	async findTaskRecordPath(taskId: string): Promise<string | null> {
+		return await this.storage.findTaskRecordPath(taskId);
+	}
+
+	async listHealthyDrafts(): Promise<Task[]> {
+		return await this.storage.loadHealthyDrafts();
+	}
+
+	async loadDraftRecords(): Promise<Task[]> {
+		return await this.storage.loadDrafts();
+	}
+
+	async draftReferenceFromPath(filePath: string): Promise<DraftFileReference & { task: Task }> {
+		return await this.storage.draftReferenceFromPath(filePath);
+	}
+
+	async resolveDraftReference(draftId: string): Promise<(DraftFileReference & { task: Task }) | null> {
+		return await this.storage.resolveDraftReference(draftId);
+	}
+
+	async loadCompletedTaskRecords(): Promise<Task[]> {
+		return await this.storage.loadCompletedTasks();
+	}
+
+	async loadArchivedTaskRecords(): Promise<Task[]> {
+		return await this.storage.loadArchivedTasks();
+	}
+
+	async withTaskLock<T>(task: Pick<Task, "id" | "filePath">, fn: () => Promise<T>): Promise<T> {
+		return await this.storage.withTaskLock(task, fn);
+	}
+
+	async taskArtifactContainerPath(taskId: string): Promise<string> {
+		return await this.storage.taskArtifacts.containerPath(taskId);
+	}
+
+	async listTaskArtifacts(taskId: string) {
+		const repository = this.storage.taskArtifacts;
+		const [directory, entries] = await Promise.all([repository.containerPath(taskId), repository.list(taskId)]);
+		return { directory, entries };
+	}
+
+	async readTaskArtifact(taskId: string, path: string) {
+		return await this.storage.taskArtifacts.read(taskId, path);
+	}
+
+	async writeTaskArtifact(taskId: string, path: string, bytes: Uint8Array) {
+		return await this.storage.taskArtifacts.write(taskId, path, bytes);
+	}
+
+	async taskArtifactStatus(taskId: string, path: string) {
+		return await this.storage.taskArtifacts.status(taskId, path);
+	}
+
+	async approveTaskArtifactCurrentVersion(taskId: string, path: string, reviewedHash: string) {
+		return await this.storage.taskArtifacts.approveCurrentVersion(taskId, path, reviewedHash);
+	}
+
+	async revokeTaskArtifactApproval(taskId: string, path: string) {
+		return await this.storage.taskArtifacts.revokeApproval(taskId, path);
+	}
+
+	watchTasks(callbacks: TaskWatcherCallbacks, initialTasks: readonly Task[] = []) {
+		return watchTaskRecords(this.storage, callbacks, initialTasks);
+	}
+
+	watchConfig(callbacks: ConfigWatcherCallbacks) {
+		return watchConfigFile(this.filesystem, callbacks);
+	}
+
+	/** Stored task records, including damaged records that listing skips. */
+	async scanStoredTaskRecords() {
+		return await this.storage.scanTaskRecords();
+	}
+
+	/** Project-relative path for a stored record, used in diagnostics. */
+	projectRelativePath(filePath: string): string {
+		return this.storage.projectRelativePath(filePath);
+	}
+
+	async saveWorkspaceConfig(config: Parameters<Storage["saveConfig"]>[0]): Promise<void> {
+		await this.storage.saveConfig(config);
+	}
+
+	async initializeWorkspaceFiles(
+		config: Parameters<Storage["saveConfig"]>[0],
+		selection: Parameters<Storage["initializeWorkspace"]>[1],
+	): Promise<void> {
+		await this.storage.initializeWorkspace(config, selection);
+	}
+
+	async prepareCreatedTaskWrite(filePath: string): Promise<CreatedTaskWrite> {
+		return await this.storage.prepareCreatedTaskWrite(filePath);
 	}
 
 	async loadStoredTasks(): Promise<Task[]> {

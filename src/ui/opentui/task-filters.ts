@@ -12,11 +12,7 @@ export interface FilterState {
 	milestone: string;
 }
 
-export function taskFilterOptions(
-	filters: FilterState,
-	labelMatch: LabelMatchMode = "any",
-	resolveMilestoneLabel?: TaskFilterOptions["resolveMilestoneLabel"],
-): TaskFilterOptions {
+export function taskFilterOptions(filters: FilterState, labelMatch: LabelMatchMode = "any"): TaskFilterOptions {
 	return {
 		query: filters.search,
 		status: filters.status.length > 0 ? [...filters.status] : undefined,
@@ -26,6 +22,5 @@ export function taskFilterOptions(
 		labels: filters.labels,
 		labelMatch,
 		milestone: filters.milestone || undefined,
-		resolveMilestoneLabel,
 	};
 }

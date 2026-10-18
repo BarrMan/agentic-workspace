@@ -3,7 +3,7 @@ import { chmod, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Core } from "../core/agentic-workspace.ts";
-import { initializeTestProject } from "../test/test-utils.ts";
+import { coreFileSystem, initializeTestProject } from "../test/test-utils.ts";
 import { resolveSessionPreset, upsertAgentConfiguration } from "./config.ts";
 import type { ProcessRunner, TmuxServer } from "./session-process.ts";
 import { SessionProcess } from "./session-process.ts";
@@ -51,7 +51,7 @@ describe("session preparation mechanics", () => {
 			pathContext: {
 				projectDir: root,
 				worktreeDir: root,
-				taskDir: await core.filesystem.taskArtifacts.containerPath(task.id),
+				taskDir: await coreFileSystem(core).taskArtifacts.containerPath(task.id),
 			},
 			createdAt: new Date().toISOString(),
 			status: AGENT_SESSION_STATUS.STARTING,
@@ -144,7 +144,7 @@ describe("session preparation mechanics", () => {
 			pathContext: {
 				projectDir: root,
 				worktreeDir: root,
-				taskDir: await core.filesystem.taskArtifacts.containerPath(taskId),
+				taskDir: await coreFileSystem(core).taskArtifacts.containerPath(taskId),
 			},
 			createdAt: new Date().toISOString(),
 			status: AGENT_SESSION_STATUS.STOPPED,

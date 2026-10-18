@@ -1,13 +1,12 @@
-import type { Core } from "../core/agentic-workspace.ts";
-import type { FileSystem } from "../file-system/operations.ts";
 import type { Task } from "../types/index.ts";
 import { buildDependencyGraph, findCycleThroughRoot } from "./dependency-graph.ts";
 import { AmbiguousIdError } from "./entity-id.ts";
-import { AmbiguousTaskIdError, taskIdsEqual } from "./task-path.ts";
+import { taskIdsEqual } from "./task-id.ts";
+import { AmbiguousTaskIdError } from "./task-path.ts";
 
 /**
  * Shared utilities for building tasks and validating dependencies
- * Used by both CLI and MCP to ensure consistent behavior
+ * Used by CLI operations to ensure consistent behavior
  */
 
 /**
@@ -65,9 +64,17 @@ function resolveUniqueDependency(dependency: string, matches: Task[]): string | 
  *
  * Returns the matched canonical IDs, deduplicated, plus the inputs that matched nothing.
  */
+export interface DependencyStore {
+	listTasks(): Promise<Task[]>;
+	listDrafts(): Promise<Task[]>;
+	listCompletedTasks(): Promise<Task[]>;
+	listArchivedTasks(): Promise<Task[]>;
+	loadTask(taskId: string): Promise<Task | null>;
+}
+
 export async function validateDependencies(
 	dependencies: string[],
-	filesystem: FileSystem,
+	filesystem: DependencyStore,
 	target?: Task,
 ): Promise<{ valid: string[]; invalid: string[] }> {
 	const valid: string[] = [];
@@ -114,7 +121,7 @@ export async function validateDependencies(
 async function validateDependencyInput(
 	dependency: string,
 	known: Task[],
-	filesystem: FileSystem,
+	filesystem: DependencyStore,
 	target: Task | undefined,
 	valid: string[],
 	invalid: string[],
@@ -145,7 +152,7 @@ interface DependencyCorpus {
 	archived: Task[];
 }
 
-async function loadDependencyCorpus(filesystem: FileSystem): Promise<DependencyCorpus> {
+async function loadDependencyCorpus(filesystem: DependencyStore): Promise<DependencyCorpus> {
 	const [tasks, drafts, completed, archived] = await Promise.all([
 		filesystem.listTasks(),
 		filesystem.listDrafts(),
@@ -177,8 +184,8 @@ export interface DependencyDefects {
  * shortest cycle, and cycles are deduplicated as rotations of one member sequence, so one cycle is
  * one finding while distinct cycles sharing a task are all reported.
  */
-export async function findDependencyDefects(core: Core): Promise<DependencyDefects> {
-	const corpus = await loadDependencyCorpus(core.filesystem);
+export async function findDependencyDefects(store: DependencyStore): Promise<DependencyDefects> {
+	const corpus = await loadDependencyCorpus(store);
 	const graphCorpus = dependencyGraphCorpus(corpus);
 	const selfDependencies: DependencyDefects["selfDependencies"] = [];
 	const cycles: string[][] = [];

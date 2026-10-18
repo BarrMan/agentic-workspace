@@ -5,8 +5,8 @@ import type { ShellExpression } from "bun";
 import { $ as shell } from "bun";
 import { runCli } from "../cli/register.ts";
 import { Core } from "../index.ts";
-import type { Decision, Document } from "../types/index.ts";
-import { createUniqueTestDir, initializeTestProject, safeCleanup } from "./test-utils.ts";
+import type { Decision } from "../types/index.ts";
+import { coreFileSystem, createUniqueTestDir, initializeTestProject, safeCleanup } from "./test-utils.ts";
 
 const CLI_COMMAND = ["agentic-workspace"];
 
@@ -80,168 +80,6 @@ async function setupDocProject(): Promise<{ dir: string; core: Core }> {
 
 describe("CLI Integration", () => {
 	describe("doc and decision commands", () => {
-		concurrentTest("should create and list documents", async () => {
-			const { dir, core } = await setupDocProject();
-			try {
-				const doc: Document = {
-					id: "doc-1",
-					title: "Guide",
-					type: "guide",
-					createdDate: "2025-06-08",
-					rawContent: "Content",
-				};
-				await core.createDocument(doc);
-
-				const docs = await core.filesystem.listDocuments();
-				expect(docs).toHaveLength(1);
-				expect(docs[0]?.title).toBe("Guide");
-			} finally {
-				await safeCleanup(dir);
-			}
-		});
-
-		concurrentTest("should create documents in a subpath and print the persisted path", async () => {
-			const { dir, core } = await setupDocProject();
-			try {
-				const result = await $`${CLI_COMMAND} doc create "Setup Guide" -p guides/setup`.cwd(dir).quiet();
-				expect(result.exitCode).toBe(0);
-				const stdout = result.stdout.toString();
-				expect(stdout).toContain("Created document doc-1");
-				expect(stdout).toContain("Path: agentic-workspace/docs/guides/setup/doc-1 - Setup-Guide.md");
-
-				const docs = await core.filesystem.listDocuments();
-				expect(docs[0]?.path).toBe("guides/setup/doc-1 - Setup-Guide.md");
-			} finally {
-				await safeCleanup(dir);
-			}
-		});
-
-		concurrentTest("should accept --plain on doc create and print the plain result", async () => {
-			const { dir } = await setupDocProject();
-			try {
-				const result = await $`${CLI_COMMAND} doc create "Setup Guide" --plain`.cwd(dir).nothrow().quiet();
-				expect(result.exitCode).toBe(0);
-				expect(result.stderr.toString()).not.toContain("unknown option");
-				const stdout = result.stdout.toString();
-				expect(stdout).toContain("Created document doc-1");
-				expect(stdout).toContain("Path: agentic-workspace/docs/doc-1 - Setup-Guide.md");
-			} finally {
-				await safeCleanup(dir);
-			}
-		});
-
-		concurrentTest("should reject unsafe document paths", async () => {
-			const { dir } = await setupDocProject();
-			try {
-				const result = await $`${CLI_COMMAND} doc create "Unsafe" -p ../outside`.cwd(dir).nothrow().quiet();
-				expect(result.exitCode).not.toBe(0);
-				expect(result.stderr.toString()).toContain("Document path cannot include traversal segments.");
-			} finally {
-				await safeCleanup(dir);
-			}
-		});
-
-		concurrentTest("should update document content and metadata", async () => {
-			const { dir, core } = await setupDocProject();
-			try {
-				await core.createDocument(
-					{
-						id: "doc-1",
-						title: "Setup Guide",
-						type: "guide",
-						createdDate: "2025-06-08",
-						rawContent: "Old content",
-						tags: ["setup"],
-					},
-					"guides/setup",
-				);
-
-				const updatedContent = "# Updated\n\nRun install steps.";
-				const result =
-					await $`${CLI_COMMAND} doc update doc-1 --title "Install Runbook" --content ${updatedContent} -t design --tags ops,runbook -p runbooks`
-						.cwd(dir)
-						.quiet();
-				expect(result.exitCode).toBe(0);
-				expect(result.stdout.toString()).toContain("Updated document doc-1");
-				expect(result.stdout.toString()).toContain("Path: agentic-workspace/docs/runbooks/doc-1 - Install-Runbook.md");
-
-				const docs = await core.filesystem.listDocuments();
-				const updated = docs.find((doc) => doc.id === "doc-1");
-				expect(updated?.title).toBe("Install Runbook");
-				expect(updated?.type as string).toBe("design");
-				expect(updated?.tags).toEqual(["ops", "runbook"]);
-				expect(updated?.path).toBe("runbooks/doc-1 - Install-Runbook.md");
-				expect(updated?.rawContent.trimEnd()).toBe(updatedContent);
-			} finally {
-				await safeCleanup(dir);
-			}
-		});
-
-		concurrentTest("should preserve omitted document fields when updating", async () => {
-			const { dir, core } = await setupDocProject();
-			try {
-				await core.createDocument(
-					{
-						id: "doc-1",
-						title: "Setup Guide",
-						type: "guide",
-						createdDate: "2025-06-08",
-						rawContent: "Keep this content",
-						tags: ["setup", "guide"],
-					},
-					"guides",
-				);
-
-				await $`${CLI_COMMAND} doc update doc-1 --title "Setup Handbook"`.cwd(dir).quiet();
-
-				const docs = await core.filesystem.listDocuments();
-				const updated = docs.find((doc) => doc.id === "doc-1");
-				expect(updated?.title).toBe("Setup Handbook");
-				expect(updated?.type).toBe("guide");
-				expect(updated?.tags).toEqual(["setup", "guide"]);
-				expect(updated?.path).toBe("guides/doc-1 - Setup-Handbook.md");
-				expect(updated?.rawContent.trimEnd()).toBe("Keep this content");
-			} finally {
-				await safeCleanup(dir);
-			}
-		});
-
-		concurrentTest("should reject invalid document update inputs", async () => {
-			const { dir, core } = await setupDocProject();
-			try {
-				await core.createDocument({
-					id: "doc-1",
-					title: "Setup Guide",
-					type: "guide",
-					createdDate: "2025-06-08",
-					rawContent: "Content",
-				});
-
-				// All three rejections are independent and leave the store untouched.
-				const missing = await $`${CLI_COMMAND} doc update doc-404 --content "Nope"`.cwd(dir).nothrow().quiet();
-				const invalidType = await $`${CLI_COMMAND} doc update doc-1 --content "Nope" -t invalid`
-					.cwd(dir)
-					.nothrow()
-					.quiet();
-				const unsafePath = await $`${CLI_COMMAND} doc update doc-1 --content "Nope" -p ../outside`
-					.cwd(dir)
-					.nothrow()
-					.quiet();
-				expect(missing.exitCode).not.toBe(0);
-				expect(missing.stderr.toString()).toContain("Document not found: doc-404");
-
-				expect(invalidType.exitCode).not.toBe(0);
-				expect(invalidType.stderr.toString()).toContain(
-					"Document type must be one of: guide, reference, design, other.",
-				);
-
-				expect(unsafePath.exitCode).not.toBe(0);
-				expect(unsafePath.stderr.toString()).toContain("Document path cannot include traversal segments.");
-			} finally {
-				await safeCleanup(dir);
-			}
-		});
-
 		concurrentTest("should create and list decisions", async () => {
 			const { dir, core } = await setupDocProject();
 			try {
@@ -256,7 +94,7 @@ describe("CLI Integration", () => {
 					rawContent: "",
 				};
 				await core.createDecision(decision);
-				const decisions = await core.filesystem.listDecisions();
+				const decisions = await coreFileSystem(core).listDecisions();
 				expect(decisions).toHaveLength(1);
 				expect(decisions[0]?.title).toBe("Choose Stack");
 			} finally {
@@ -275,7 +113,7 @@ describe("CLI Integration", () => {
 				expect(stdout.trim()).toBe("Created decision decision-1");
 				expect(stdout.includes("[")).toBe(false);
 
-				const decisions = await core.filesystem.listDecisions();
+				const decisions = await coreFileSystem(core).listDecisions();
 				expect(decisions).toHaveLength(1);
 				expect(decisions[0]?.title).toBe("Choose Stack");
 			} finally {

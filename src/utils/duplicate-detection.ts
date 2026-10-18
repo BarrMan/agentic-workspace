@@ -6,7 +6,7 @@ export type DuplicateGroup = {
 	tasks: Task[];
 };
 
-/** Duplicate, missing-ID, and unreadable-file findings for documents or decisions. */
+/** Duplicate, missing-ID, and unreadable-file findings for decisions. */
 export type ContentIdentityIssues = {
 	duplicates: Array<{ id: string; paths: string[] }>;
 	missingIds: string[];
@@ -42,7 +42,6 @@ export function detectContentIdentityIssues(
 }
 
 export type ContentIdentityReport = {
-	documents: ContentIdentityIssues;
 	decisions: ContentIdentityIssues;
 };
 
@@ -58,9 +57,8 @@ export function hasDraftIdentityFindings(findings: DraftIdentityFindings): boole
 }
 
 export function hasContentIdentityIssues(report: ContentIdentityReport): boolean {
-	return [report.documents, report.decisions].some(
-		(issues) => issues.duplicates.length > 0 || issues.missingIds.length > 0 || issues.unreadable.length > 0,
-	);
+	const issues = report.decisions;
+	return issues.duplicates.length > 0 || issues.missingIds.length > 0 || issues.unreadable.length > 0;
 }
 
 export function detectDuplicateTaskIds(tasks: Task[]): DuplicateGroup[] {

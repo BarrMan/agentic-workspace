@@ -1,6 +1,6 @@
 import { basename, dirname } from "node:path";
 import { DEFAULT_DONE_STATUS, DEFAULT_STATUSES } from "../constants/index.ts";
-import type { DraftFileReference, FileSystem } from "../file-system/operations.ts";
+import type { DraftFileReference } from "../file-system/operations.ts";
 import { removeTaskWorktree } from "../git/task-worktree.ts";
 import type { TaskWorktreeSessionCleanup } from "../git/task-worktree-cleanup.ts";
 import type { Task, TaskUpdateInput } from "../types/index.ts";
@@ -8,6 +8,7 @@ import { formatStoredDate } from "../utils/date.ts";
 import { withoutVacatedTaskLinks } from "../utils/task-links.ts";
 import { getTerminalStatus, isTerminalStatus } from "../utils/terminal-status.ts";
 import type { VacatedTaskResult } from "./agentic-workspace.ts";
+import type { Storage } from "./storage.ts";
 import type { ProjectTaskMutations } from "./task-mutation-service.ts";
 import type { TaskReadOptions } from "./task-query-workflow.ts";
 import { markVacatedTaskMoved, type VacatedTaskReferenceService } from "./vacated-task-reference-service.ts";
@@ -29,7 +30,7 @@ export interface TaskEditLifecycleResult {
 /** Owns task and draft transitions, including vacated-ID cleanup. */
 export class TaskLifecycleService {
 	constructor(
-		private readonly filesystem: FileSystem,
+		private readonly storage: Storage,
 		private readonly mutations: ProjectTaskMutations,
 		private readonly vacatedTaskReferences: VacatedTaskReferenceService,
 		private readonly cleanupTaskSessions?: TaskWorktreeSessionCleanup,
@@ -44,8 +45,8 @@ export class TaskLifecycleService {
 		}
 
 		const canonicalStatus = await this.mutations.requireCanonicalStatus(targetStatus);
-		return await this.filesystem.withDraftLock(reference, async () => {
-			const current = await this.filesystem.draftReferenceFromPath(reference.filePath);
+		return await this.storage.withDraftLock(reference, async () => {
+			const current = await this.storage.draftReferenceFromPath(reference.filePath);
 			const draft = current.task;
 			draft.id = reference.canonicalId;
 			const { mutated } = await this.mutations.applyTaskUpdateInput(
@@ -60,10 +61,10 @@ export class TaskLifecycleService {
 			if (mutated || current.task.status !== canonicalStatus) draft.updatedDate = formatStoredDate();
 
 			// Persist to the selected draft container before the filesystem transition moves it.
-			await this.filesystem.saveDraft(draft);
-			const existingTaskIds = new Set((await this.filesystem.listTasks()).map((task) => task.id));
+			await this.storage.saveDraft(draft);
+			const existingTaskIds = new Set((await this.storage.loadTasks()).map((task) => task.id));
 			if (
-				!(await this.filesystem.promoteDraft(
+				!(await this.storage.promoteDraft(
 					reference.canonicalId,
 					async (promoted) => {
 						await this.mutations.applyTaskUpdateInput(
@@ -77,7 +78,7 @@ export class TaskLifecycleService {
 			) {
 				throw new Error(`Could not promote draft ${reference.canonicalId}.`);
 			}
-			const promoted = (await this.filesystem.listTasks()).find((task) => !existingTaskIds.has(task.id));
+			const promoted = (await this.storage.loadTasks()).find((task) => !existingTaskIds.has(task.id));
 			if (!promoted) throw new Error(`Promoted task for draft ${reference.canonicalId} could not be loaded.`);
 			await this.remapTaskSessionIdentity?.(reference.canonicalId, promoted.id);
 			return promoted;
@@ -107,10 +108,10 @@ export class TaskLifecycleService {
 
 			// Save the edited record in its existing task container; demoteTask moves that
 			// complete container, including artifacts and sidecar, and assigns its new ID.
-			await this.filesystem.saveTask(vacating);
-			const existingDraftIds = new Set((await this.filesystem.listDrafts()).map((draft) => draft.id));
+			await this.storage.saveTask(vacating);
+			const existingDraftIds = new Set((await this.storage.loadDrafts()).map((draft) => draft.id));
 			if (
-				!(await this.filesystem.demoteTask(current.id, undefined, async (demoted) => {
+				!(await this.storage.demoteTask(current.id, undefined, async (demoted) => {
 					await this.mutations.applyTaskUpdateInput(
 						demoted,
 						{ dependencies: demoted.dependencies },
@@ -128,7 +129,7 @@ export class TaskLifecycleService {
 			} catch (error) {
 				throw markVacatedTaskMoved(error, "demotionState", "cleanup");
 			}
-			const demotedDraft = (await this.filesystem.listDrafts()).find((draft) => !existingDraftIds.has(draft.id));
+			const demotedDraft = (await this.storage.loadDrafts()).find((draft) => !existingDraftIds.has(draft.id));
 			if (!demotedDraft) throw new Error(`Demoted draft for task ${current.id} could not be loaded.`);
 			await this.remapTaskSessionIdentity?.(current.id, demotedDraft.id);
 			return { task: demotedDraft, cleanedTaskIds };
@@ -141,13 +142,13 @@ export class TaskLifecycleService {
 		return await this.vacatedTaskReferences.withLockedCleanup(taskToArchive, taskToArchive.id, async (cleanup) => {
 			const current = await this.mutations.loadTaskForMutation(taskToArchive.id, options);
 			if (!current) return { success: false, cleanedTaskIds: [] };
-			const config = await this.filesystem.loadConfig();
+			const config = await this.storage.loadConfig();
 			const statuses = config?.statuses ?? [...DEFAULT_STATUSES];
 			if (isTerminalStatus(current.status, statuses)) {
 				throw new TaskArchiveStatusError(current.id, getTerminalStatus(statuses) ?? DEFAULT_DONE_STATUS);
 			}
 			if (!current.filePath) return { success: false, cleanedTaskIds: [] };
-			await this.filesystem.moveTaskContainer(current, await this.filesystem.getArchiveTasksDir(), true);
+			await this.storage.moveTaskToArchive(current);
 			try {
 				const { cleanedTaskIds } = await this.vacatedTaskReferences.write(cleanup);
 				return { success: true, cleanedTaskIds };
@@ -167,10 +168,10 @@ export class TaskLifecycleService {
 			if (current.filePath !== task.filePath)
 				throw new Error(`Task ${task.id} record path changed before deletion; retry the operation.`);
 			await this.cleanupTaskSessions?.(current.id);
-			await removeTaskWorktree(this.filesystem.rootDir, current);
+			await removeTaskWorktree(this.storage.projectRoot, current);
 			await this.forgetTaskSessions?.(current.id);
 			try {
-				await this.filesystem.deleteTaskContainer(current, true);
+				await this.storage.deleteTaskContainer(current, true);
 			} catch (error) {
 				if ((error as NodeJS.ErrnoException).code === "ENOENT") return { success: false, cleanedTaskIds: [] };
 				throw error;
@@ -185,10 +186,10 @@ export class TaskLifecycleService {
 	}
 
 	async promoteDraft(draftId: string): Promise<boolean> {
-		const existingTaskIds = new Set((await this.filesystem.listTasks()).map((task) => task.id));
-		const promoted = await this.filesystem.promoteDraft(draftId, undefined, () => this.mutations.generateNextId());
+		const existingTaskIds = new Set((await this.storage.loadTasks()).map((task) => task.id));
+		const promoted = await this.storage.promoteDraft(draftId, undefined, () => this.mutations.generateNextId());
 		if (!promoted) return false;
-		const task = (await this.filesystem.listTasks()).find((candidate) => !existingTaskIds.has(candidate.id));
+		const task = (await this.storage.loadTasks()).find((candidate) => !existingTaskIds.has(candidate.id));
 		if (task) await this.remapTaskSessionIdentity?.(draftId, task.id);
 		return true;
 	}
@@ -205,7 +206,7 @@ export class TaskLifecycleService {
 		try {
 			result = await this.vacatedTaskReferences.withLockedCleanup(task, task.id, async (cleanup) => {
 				const movedPaths: Array<{ previousPath: string; savedPath: string }> = [];
-				const success = await this.filesystem.demoteTask(task.id, (previousPath, savedPath) => {
+				const success = await this.storage.demoteTask(task.id, (previousPath, savedPath) => {
 					movedPaths.push({ previousPath, savedPath });
 				});
 				demotion.success = success;
@@ -233,27 +234,27 @@ export class TaskLifecycleService {
 		const task = await this.mutations.loadTaskForMutation(taskId, options);
 		if (!task) return false;
 		if (!task.filePath) return false;
-		return await this.filesystem.withTaskLock(task, async () => {
+		return await this.storage.withTaskLock(task, async () => {
 			const current = await this.mutations.loadTaskForMutation(task.id, options);
 			if (!current) return false;
 			if (!current.filePath) return false;
 			if (current.filePath !== task.filePath)
 				throw new Error(`Task ${task.id} record path changed before completion; retry the operation.`);
 			await this.cleanupTaskSessions?.(current.id);
-			await removeTaskWorktree(this.filesystem.rootDir, current);
-			if (!(await this.filesystem.completeTask(current.id, true))) return false;
+			await removeTaskWorktree(this.storage.projectRoot, current);
+			if (!(await this.storage.completeTask(current.id, true))) return false;
 			return true;
 		});
 	}
 
 	async archiveDraft(draftId: string): Promise<boolean> {
-		await this.filesystem.loadConfig();
-		const moved = await this.filesystem.archiveDraft(draftId);
+		await this.storage.loadConfig();
+		const moved = await this.storage.archiveDraft(draftId);
 		return moved !== null;
 	}
 
 	async getTerminalStatusTasksByAge(olderThanDays: number): Promise<Task[]> {
-		const [tasks, config] = await Promise.all([this.filesystem.listTasks(), this.filesystem.loadConfig()]);
+		const [tasks, config] = await Promise.all([this.storage.loadTasks(), this.storage.loadConfig()]);
 		const cutoff = new Date();
 		cutoff.setDate(cutoff.getDate() - olderThanDays);
 		const statuses = config?.statuses ?? [...DEFAULT_STATUSES];

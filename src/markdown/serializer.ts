@@ -1,9 +1,8 @@
-import type { Decision, Document, Milestone, Task } from "../types/index.ts";
+import type { Decision, Milestone, Task } from "../types/index.ts";
 import { stringifyFrontmatter } from "./frontmatter.ts";
 import {
 	DECISION_FRONTMATTER_FIELDS,
 	DECISION_FRONTMATTER_SCHEMA_VERSION,
-	DOCUMENT_FRONTMATTER_FIELDS,
 	MILESTONE_FRONTMATTER_FIELDS,
 	MILESTONE_FRONTMATTER_SCHEMA_VERSION,
 	TASK_FRONTMATTER_FIELDS,
@@ -127,17 +126,4 @@ export function serializeMilestone(milestone: Milestone, retained: Record<string
 	delete frontmatter[MILESTONE_FRONTMATTER_FIELDS.DUE_DATE];
 	if (milestone.dueDate) frontmatter[MILESTONE_FRONTMATTER_FIELDS.DUE_DATE] = milestone.dueDate;
 	return serializeRecord(milestone.rawContent, frontmatter);
-}
-
-export function serializeDocument(document: Document): string {
-	const frontmatter = {
-		[DOCUMENT_FRONTMATTER_FIELDS.ID]: document.id,
-		[DOCUMENT_FRONTMATTER_FIELDS.TITLE]: document.title,
-		[DOCUMENT_FRONTMATTER_FIELDS.TYPE]: document.type,
-		[DOCUMENT_FRONTMATTER_FIELDS.CREATED_DATE]: document.createdDate,
-		...(document.updatedDate && { [DOCUMENT_FRONTMATTER_FIELDS.UPDATED_DATE]: document.updatedDate }),
-		...(document.tags && document.tags.length > 0 && { [DOCUMENT_FRONTMATTER_FIELDS.TAGS]: document.tags }),
-	};
-
-	return stringifyFrontmatter(document.rawContent, frontmatter);
 }

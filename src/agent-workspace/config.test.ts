@@ -5,7 +5,7 @@ import { Core } from "../core/agentic-workspace.ts";
 import { Storage } from "../core/storage.ts";
 import { parseMarkdown, parseTask } from "../markdown/parser.ts";
 import { serializeTask } from "../markdown/serializer.ts";
-import { createUniqueTestDir, initializeTestProject, safeCleanup } from "../test/test-utils.ts";
+import { coreFileSystem, createUniqueTestDir, initializeTestProject, safeCleanup } from "../test/test-utils.ts";
 import {
 	Config,
 	getBuiltInAgentConfiguration,
@@ -28,9 +28,9 @@ let originalXdgConfigHome: string | undefined;
 let core: Core;
 
 async function saveProjectConfiguration(value: AgentConfiguration): Promise<void> {
-	const workspaceConfig = await core.filesystem.loadConfig();
-	await core.filesystem.saveConfig({
-		...(workspaceConfig ?? (await core.filesystem.parseConfig(""))),
+	const workspaceConfig = await coreFileSystem(core).loadConfig();
+	await coreFileSystem(core).saveConfig({
+		...(workspaceConfig ?? (await coreFileSystem(core).parseConfig(""))),
 		agentConfiguration: value,
 	});
 }
@@ -54,7 +54,7 @@ beforeEach(async () => {
 	originalXdgConfigHome = process.env.XDG_CONFIG_HOME;
 	process.env.XDG_CONFIG_HOME = join(testDir, "user-config");
 	core = new Core(testDir);
-	await core.filesystem.ensureAgenticWorkspaceStructure();
+	await coreFileSystem(core).ensureAgenticWorkspaceStructure();
 	await initializeTestProject(core, "Agent workspace config");
 });
 
@@ -73,7 +73,7 @@ describe("agent workspace configuration", () => {
 			sessions: { worktreePerTask: true, yoloMode: false },
 		});
 
-		const config = await Config.load(new Storage(core.filesystem));
+		const config = await Config.load(new Storage(coreFileSystem(core)));
 		expect(config.getConfig().presets.custom?.command).toBe("project-agent");
 		expect(config.sessionSettings.worktreePerTask).toBe(true);
 	});
@@ -83,7 +83,7 @@ describe("agent workspace configuration", () => {
 			...configuration(),
 			sessions: { worktreePerTask: true, yoloMode: true },
 		});
-		const config = await Config.load(new Storage(core.filesystem));
+		const config = await Config.load(new Storage(coreFileSystem(core)));
 		const merged = config.getConfig({ sessions: { worktreePerTask: false, yoloMode: false } });
 		expect(merged.sessions).toEqual({ worktreePerTask: false, yoloMode: false });
 		const customPreset = merged.presets.custom;
@@ -95,7 +95,7 @@ describe("agent workspace configuration", () => {
 
 	it("reloads changed project configuration", async () => {
 		await upsertAgentConfiguration(core, "project", configuration());
-		const config = await Config.load(new Storage(core.filesystem));
+		const config = await Config.load(new Storage(coreFileSystem(core)));
 		await upsertAgentConfiguration(core, "project", {
 			...configuration(),
 			presets: { custom: { command: "updated-agent", env: {}, prepare: "", bootstrap: "claude" } },
@@ -140,13 +140,13 @@ describe("agent workspace configuration", () => {
 			env: { CURRENT: "yes" },
 		});
 		await expect(resolveSessionPreset(core, { ...saved, preset: "removed" })).rejects.toThrow("Agent preset not found");
-		const task = await core.filesystem.loadTask(saved.taskId);
+		const task = await coreFileSystem(core).loadTask(saved.taskId);
 		if (!task) throw new Error("Missing configuration test task");
 		await core.updateTask({ ...task, agentConfiguration: undefined });
-		const savedConfig = await core.filesystem.loadConfig();
+		const savedConfig = await coreFileSystem(core).loadConfig();
 		if (savedConfig) {
 			delete savedConfig.agentConfiguration;
-			await core.filesystem.saveConfig(savedConfig);
+			await coreFileSystem(core).saveConfig(savedConfig);
 		}
 		expect((await resolveSessionPreset(core, saved)).command).toBe("custom-agent --run");
 	});
@@ -158,7 +158,7 @@ describe("agent workspace configuration", () => {
 		modes.order.push("custom");
 		modes.profiles.custom = { ...structuredClone(plan), name: "CUSTOM" };
 		await saveProjectConfiguration({ ...configuration(), modes });
-		const savedConfig = await core.filesystem.loadConfig();
+		const savedConfig = await coreFileSystem(core).loadConfig();
 		const loaded = await loadAgentConfiguration(core, "project");
 		if (!loaded?.modes) throw new Error("Missing loaded catalog");
 		expect(savedConfig?.agentConfiguration).toEqual({ ...configuration(), modes });
@@ -167,7 +167,7 @@ describe("agent workspace configuration", () => {
 			expect(effectiveModeTextColor(profile, id)).toBeUndefined();
 		await upsertAgentConfiguration(core, "project", loaded);
 		await initializeAgentConfiguration(core, "project");
-		expect((await core.filesystem.loadConfig())?.agentConfiguration).toEqual({ ...configuration(), modes });
+		expect((await coreFileSystem(core).loadConfig())?.agentConfiguration).toEqual({ ...configuration(), modes });
 	});
 
 	it("round-trips every supported named color and leaves custom Default omitted", async () => {
@@ -477,7 +477,7 @@ describe("agent workspace configuration", () => {
 				task.id,
 			),
 		).rejects.toThrow(/bootstrap is invalid/);
-		await expect(core.filesystem.loadTask(task.id)).rejects.toThrow(/bootstrap is invalid/);
+		await expect(coreFileSystem(core).loadTask(task.id)).rejects.toThrow(/bootstrap is invalid/);
 		expect(parseMarkdown(await readFile(task.filePath as string, "utf8")).frontmatter.agentConfiguration).toEqual(
 			stale,
 		);
@@ -550,7 +550,7 @@ describe("agent workspace configuration", () => {
 		await expect(loadAgentConfiguration(core, "card", task.id)).rejects.toThrow("must be an object");
 
 		await writeFile(task.filePath as string, content, "utf8");
-		const duplicatePath = join(core.filesystem.completedDir, task.id.toLowerCase(), "task.md");
+		const duplicatePath = join(coreFileSystem(core).completedDir, task.id.toLowerCase(), "task.md");
 		await mkdir(dirname(duplicatePath), { recursive: true });
 		await writeFile(duplicatePath, serializeTask({ ...task, title: "Duplicate" }), "utf8");
 		await expect(loadAgentConfiguration(core, "card", task.id)).rejects.toThrow("ambiguous");
@@ -568,7 +568,7 @@ describe("agent workspace configuration", () => {
 		existing.sessions = { worktreePerTask: true, yoloMode: false };
 		await saveProjectConfiguration(existing);
 		expect((await loadAgentConfiguration(core, "project"))?.modes).toBeUndefined();
-		expect((await core.filesystem.loadConfig())?.agentConfiguration).toEqual(existing);
+		expect((await coreFileSystem(core).loadConfig())?.agentConfiguration).toEqual(existing);
 
 		const initialized = await initializeAgentConfiguration(core, "project");
 		expect(initialized.modes?.order).toEqual(["plan", "build"]);

@@ -28,7 +28,7 @@ export class WorkspaceStateService {
 	}
 
 	async listTasks(): Promise<Task[]> {
-		return await this.core.filesystem.listTasks();
+		return await this.core.loadStoredTasks();
 	}
 
 	async listSessions(taskId: string, modeId?: ModeId): Promise<TaskSessions> {
@@ -104,7 +104,7 @@ export class WorkspaceStateService {
 	 */
 	private async ensureTaskInProgress(task: Task): Promise<string | undefined> {
 		try {
-			const config = await this.core.filesystem.loadConfig();
+			const config = await this.core.getStoredConfig();
 			const statuses = config?.statuses && config.statuses.length > 0 ? config.statuses : [...DEFAULT_STATUSES];
 			const target = resolveInProgressStatus(statuses);
 			// A task must never be nudged into the terminal column, even when a two-status configuration

@@ -5,7 +5,7 @@ import type { ShellExpression } from "bun";
 import { $ as shell } from "bun";
 import { runCli } from "../cli/register.ts";
 import { Core } from "../index.ts";
-import { createUniqueTestDir, initializeFilesystemTestProject, safeCleanup } from "./test-utils.ts";
+import { coreFileSystem, createUniqueTestDir, initializeFilesystemTestProject, safeCleanup } from "./test-utils.ts";
 
 const CLI_COMMAND = ["agentic-workspace"];
 function $(parts: TemplateStringsArray, ...values: ShellExpression[]) {
@@ -74,9 +74,9 @@ async function makeDir(): Promise<string> {
 async function initCustomPrefixProject(dir: string): Promise<Core> {
 	const core = new Core(dir);
 	await initializeFilesystemTestProject(core, "Custom Prefix ID Resolution");
-	const config = await core.filesystem.loadConfig();
+	const config = await coreFileSystem(core).loadConfig();
 	if (!config) throw new Error("Expected config to be loaded");
-	await core.filesystem.saveConfig({ ...config, prefixes: { ...config.prefixes, task: "BACK" } });
+	await coreFileSystem(core).saveConfig({ ...config, prefixes: { ...config.prefixes, task: "BACK" } });
 	return core;
 }
 
@@ -86,7 +86,7 @@ async function createTask(
 	title: string,
 	extra: { status?: string; parentTaskId?: string } = {},
 ): Promise<void> {
-	await core.filesystem.saveTask({
+	await coreFileSystem(core).saveTask({
 		id,
 		title,
 		status: extra.status ?? "To Do",

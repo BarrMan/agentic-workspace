@@ -63,11 +63,10 @@ export class SessionApplication {
 		const runner = new BunRunner();
 		this.store =
 			options.store ??
-			new SessionStore(core.filesystem.rootDir, runner, async (record) => await resolveSessionPreset(core, record), {
+			new SessionStore(core.projectRoot, runner, async (record) => await resolveSessionPreset(core, record), {
 				stateRoot: options.stateRoot,
 			});
-		this.harness =
-			options.harness ?? new Harness(core.filesystem.rootDir, new SessionProcess(runner, core.filesystem.rootDir));
+		this.harness = options.harness ?? new Harness(core.projectRoot, new SessionProcess(runner, core.projectRoot));
 		this.runtime = {
 			start: (context) => this.harness.launch(context),
 			resume: (providerSessionId, context) => this.harness.resume(providerSessionId, context),
@@ -198,7 +197,7 @@ export class SessionApplication {
 				if (!settings.autoResumeOnRestart)
 					throw new ExactResumeUnavailableError("auto-resume-disabled", record.nativeProvider, record.nativeSessionId);
 				const pathContext = record.pathContext ?? (await pathContextFor(this.core, taskRecord.id, record.cwd));
-				if (!sameRoot(pathContext.projectDir, this.core.filesystem.rootDir))
+				if (!sameRoot(pathContext.projectDir, this.core.projectRoot))
 					throw new Error(`Session ${record.id} has a mismatched canonical project root.`);
 				if (
 					!(await stat(pathContext.worktreeDir)
@@ -435,7 +434,7 @@ export class SessionApplication {
 	): Promise<T> {
 		const task = await this.core.loadTaskForMutation(taskId, { includeCrossBranch: false });
 		if (!task) throw new Error(`Task not found: ${taskId}`);
-		return await this.core.filesystem.withTaskLock(task, async () => {
+		return await this.core.withTaskLock(task, async () => {
 			const current = await this.core.loadTaskForMutation(taskId, { includeCrossBranch: false });
 			if (!current || current.filePath !== task.filePath)
 				throw new Error(`Task changed or no longer exists: ${taskId}`);

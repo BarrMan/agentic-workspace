@@ -9,7 +9,8 @@ import { Core } from "../../../index.ts";
 import { formatDuplicateTaskIdWarning } from "../../../utils/duplicate-detection.ts";
 import { LIST_WINDOW_OUTPUT_HELP, printListWindow, selectListWindow } from "../../../utils/list-window.ts";
 import type { ReadOutputMode, ReadOutputOptions } from "../../../utils/read-output-mode.ts";
-import { LOCAL_TASK_LOOKUP_HINT, taskIdsEqual } from "../../../utils/task-path.ts";
+import { taskIdsEqual } from "../../../utils/task-id.ts";
+import { LOCAL_TASK_LOOKUP_HINT } from "../../../utils/task-path.ts";
 import type { CliRuntime } from "../../runtime.ts";
 import { registerTaskArtifactCommands } from "../../task-artifact.ts";
 import { type CliReadOutput, getReadOutputMode, isPlainRequested, resolveListOutput } from "../read-output.ts";
@@ -45,7 +46,7 @@ async function printDuplicateIntegrityWarning(core: Core): Promise<boolean> {
 }
 
 async function loadLocalTaskView(core: Core, taskId: string) {
-	const localTasks = await core.filesystem.listTasks();
+	const localTasks = await core.loadStoredTasks();
 	const task = await core.getTaskWithSubtasks(taskId, localTasks, { includeCrossBranch: false });
 	if (!task) {
 		console.error(`Task ${taskId} not found. ${LOCAL_TASK_LOOKUP_HINT}`);
@@ -225,11 +226,7 @@ export function registerTaskCommands(program: Command, { runtime, readOutput }: 
 			const core = new Core(cwd);
 			const taskView = await loadLocalTaskView(core, taskId);
 			if (!taskView) return;
-			const repository = core.filesystem.taskArtifacts;
-			const [directory, entries] = await Promise.all([
-				repository.containerPath(taskView.task.id),
-				repository.list(taskView.task.id),
-			]);
+			const { directory, entries } = await core.listTaskArtifacts(taskView.task.id);
 			printTaskViewOutput(taskView.detail, cwd, outputMode, {
 				directory,
 				artifacts: entries.map(({ path, state, sha256, approvedAt, size, type }) => ({

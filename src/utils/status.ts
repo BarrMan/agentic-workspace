@@ -1,6 +1,6 @@
 import { DEFAULT_IN_PROGRESS_STATUS, DEFAULT_STATUSES } from "../constants/index.ts";
 
-type StatusConfigReader = { filesystem: { loadConfig(): Promise<{ statuses?: string[] } | null> } };
+type StatusConfigReader = { getStoredConfig(): Promise<{ statuses?: string[] } | null> };
 
 /**
  * The one status comparison key: trims and lowercases, preserving internal whitespace.
@@ -35,7 +35,7 @@ export function resolveInProgressStatus(statuses: readonly string[] | undefined)
  * Load valid statuses from project configuration.
  */
 export async function getValidStatuses(core: StatusConfigReader): Promise<string[]> {
-	const config = await core.filesystem.loadConfig();
+	const config = await core.getStoredConfig();
 	return config?.statuses && config.statuses.length > 0 ? config.statuses : [...DEFAULT_STATUSES];
 }
 

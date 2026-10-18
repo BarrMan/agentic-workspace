@@ -3,7 +3,7 @@ import { mkdir } from "node:fs/promises";
 import { Core } from "../core/agentic-workspace.ts";
 import { calculateNewOrdinal, DEFAULT_ORDINAL_STEP, resolveOrdinalConflicts } from "../core/reorder.ts";
 import type { Task } from "../types/index.ts";
-import { createUniqueTestDir, initializeFilesystemTestProject, safeCleanup } from "./test-utils.ts";
+import { coreFileSystem, createUniqueTestDir, initializeFilesystemTestProject, safeCleanup } from "./test-utils.ts";
 
 const item = (id: string, ordinal?: number) => ({ id, ordinal });
 
@@ -115,7 +115,7 @@ describe("Core.reorderTask", () => {
 
 		await core.updateTaskFromInput("task-1", { ordinal: 2000 });
 
-		const updatedTask = await core.filesystem.loadTask("task-1");
+		const updatedTask = await coreFileSystem(core).loadTask("task-1");
 		expect(updatedTask?.ordinal).toBe(2000);
 		expect(updatedTask?.updatedDate).toBe("2025-01-02 12:00");
 	});
@@ -125,7 +125,7 @@ describe("Core.reorderTask", () => {
 
 		await core.updateTaskFromInput("task-1", { ordinal: 2000 });
 
-		const updatedTask = await core.filesystem.loadTask("task-1");
+		const updatedTask = await coreFileSystem(core).loadTask("task-1");
 		expect(updatedTask?.ordinal).toBe(2000);
 		expect(updatedTask?.updatedDate).toBeUndefined();
 	});
@@ -139,7 +139,7 @@ describe("Core.reorderTask", () => {
 
 		await core.updateTaskFromInput("task-1", { ordinal: 2000, title: "Updated Task" });
 
-		const updatedTask = await core.filesystem.loadTask("task-1");
+		const updatedTask = await coreFileSystem(core).loadTask("task-1");
 		const now = new Date().toISOString().slice(0, 16).replace("T", " ");
 		expect(updatedTask?.title).toBe("Updated Task");
 		expect(updatedTask?.ordinal).toBe(2000);
@@ -159,8 +159,8 @@ describe("Core.reorderTask", () => {
 			["task-2", "To Do", 2000],
 		]);
 
-		const task1 = await core.filesystem.loadTask("task-1");
-		const task2 = await core.filesystem.loadTask("task-2");
+		const task1 = await coreFileSystem(core).loadTask("task-1");
+		const task2 = await coreFileSystem(core).loadTask("task-2");
 		expect(task1).not.toBeNull();
 		expect(task2).not.toBeNull();
 		if (!task1 || !task2) {
@@ -172,8 +172,8 @@ describe("Core.reorderTask", () => {
 			{ ...task2, ordinal: 4000 },
 		]);
 
-		const updatedTask1 = await core.filesystem.loadTask("task-1");
-		const updatedTask2 = await core.filesystem.loadTask("task-2");
+		const updatedTask1 = await coreFileSystem(core).loadTask("task-1");
+		const updatedTask2 = await coreFileSystem(core).loadTask("task-2");
 		expect(updatedTask1?.ordinal).toBe(3000);
 		expect(updatedTask1?.updatedDate).toBe("2025-01-02 12:00");
 		expect(updatedTask2?.ordinal).toBe(4000);
@@ -205,8 +205,8 @@ describe("Core.reorderTask", () => {
 		expect(result.updatedTask.ordinal).toBeLessThan(2000);
 		expect(result.changedTasks.map((task) => task.id)).toEqual(["TASK-3"]);
 
-		const task2 = await core.filesystem.loadTask("task-2");
-		const task3 = await core.filesystem.loadTask("task-3");
+		const task2 = await coreFileSystem(core).loadTask("task-2");
+		const task3 = await coreFileSystem(core).loadTask("task-3");
 		expect(task2?.ordinal).toBe(2000);
 		expect(task3?.updatedDate).toBe("2025-01-02 12:00");
 	});
@@ -226,9 +226,9 @@ describe("Core.reorderTask", () => {
 
 		expect(result.changedTasks.map((task) => task.id).sort()).toEqual(["TASK-2", "TASK-3"]);
 
-		const task1 = await core.filesystem.loadTask("task-1");
-		const task2 = await core.filesystem.loadTask("task-2");
-		const task3 = await core.filesystem.loadTask("task-3");
+		const task1 = await coreFileSystem(core).loadTask("task-1");
+		const task2 = await coreFileSystem(core).loadTask("task-2");
+		const task3 = await coreFileSystem(core).loadTask("task-3");
 		expect(task1?.ordinal).toBe(1000);
 		expect(task2?.ordinal).toBe(3000);
 		expect(task3?.ordinal).toBe(2000);
@@ -251,8 +251,8 @@ describe("Core.reorderTask", () => {
 		expect(result.updatedTask.ordinal).toBeGreaterThan(0);
 		expect(result.changedTasks.map((task) => task.id)).toContain("TASK-1");
 
-		const task2 = await core.filesystem.loadTask("task-2");
-		const task3 = await core.filesystem.loadTask("task-3");
+		const task2 = await coreFileSystem(core).loadTask("task-2");
+		const task3 = await coreFileSystem(core).loadTask("task-3");
 		expect(task2?.ordinal).toBe(1000);
 		expect(task3?.ordinal).toBe(2000);
 	});

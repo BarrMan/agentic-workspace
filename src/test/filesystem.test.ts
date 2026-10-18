@@ -4,7 +4,7 @@ import { mkdir, readdir, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { FileSystem } from "../file-system/operations.ts";
 import { serializeTask } from "../markdown/serializer.ts";
-import type { AgenticWorkspaceConfig, Decision, Document, Task } from "../types/index.ts";
+import type { AgenticWorkspaceConfig, Decision, Task } from "../types/index.ts";
 import { AmbiguousIdError } from "../utils/entity-id.ts";
 import { createUniqueTestDir, safeCleanup } from "./test-utils.ts";
 
@@ -29,9 +29,11 @@ describe("FileSystem", () => {
 				join(TEST_DIR, "agentic-workspace"),
 				join(TEST_DIR, "agentic-workspace", "tasks"),
 				join(TEST_DIR, "agentic-workspace", "drafts"),
+				join(TEST_DIR, "agentic-workspace", "completed"),
 				join(TEST_DIR, "agentic-workspace", "archive", "tasks"),
 				join(TEST_DIR, "agentic-workspace", "archive", "drafts"),
-				join(TEST_DIR, "agentic-workspace", "docs"),
+				join(TEST_DIR, "agentic-workspace", "milestones"),
+				join(TEST_DIR, "agentic-workspace", "archive", "milestones"),
 				join(TEST_DIR, "agentic-workspace", "decisions"),
 			];
 
@@ -52,7 +54,6 @@ describe("FileSystem", () => {
 				join(projectDir, "agentic-workspace", "archive", "drafts"),
 				join(projectDir, "agentic-workspace", "milestones"),
 				join(projectDir, "agentic-workspace", "archive", "milestones"),
-				join(projectDir, "agentic-workspace", "docs"),
 				join(projectDir, "agentic-workspace", "decisions"),
 			];
 
@@ -790,138 +791,6 @@ title: Broken Task
 		});
 	});
 
-	describe("document operations", () => {
-		const sampleDocument: Document = {
-			id: "doc-1",
-			title: "API Guide",
-			type: "guide",
-			createdDate: "2025-06-07",
-			updatedDate: "2025-06-08",
-			rawContent: "This is the API guide content.",
-			tags: ["api", "guide"],
-		};
-
-		it("should save a document", async () => {
-			await filesystem.saveDocument(sampleDocument);
-
-			// Check that file was created
-			const docsFiles = await readdir(filesystem.docsDir);
-			expect(docsFiles.some((f) => f.includes("API-Guide"))).toBe(true);
-		});
-
-		it("should save document without optional fields", async () => {
-			const minimalDoc: Document = {
-				id: "doc-2",
-				title: "Simple Doc",
-				type: "guide",
-				createdDate: "2025-06-07",
-				rawContent: "Simple content.",
-			};
-
-			await filesystem.saveDocument(minimalDoc);
-
-			const docsFiles = await readdir(filesystem.docsDir);
-			expect(docsFiles.some((f) => f.includes("Simple-Doc"))).toBe(true);
-		});
-
-		it("should sanitize document filenames", async () => {
-			await filesystem.saveDocument({
-				...sampleDocument,
-				id: "doc-9",
-				title: "Docs (Guide)! #1",
-			});
-
-			const docsFiles = await readdir(filesystem.docsDir);
-			expect(docsFiles).toContain("doc-9 - Docs-Guide-1.md");
-		});
-
-		it("removes the previous document file when the title changes", async () => {
-			await filesystem.saveDocument(sampleDocument);
-
-			await filesystem.saveDocument({
-				...sampleDocument,
-				title: "API Guide Updated",
-				rawContent: "Updated content",
-			});
-
-			const docFiles = await Array.fromAsync(
-				new Bun.Glob("doc-*.md").scan({ cwd: filesystem.docsDir, followSymlinks: true }),
-			);
-			expect(docFiles).toHaveLength(1);
-			expect(docFiles[0]).toBe("doc-1 - API-Guide-Updated.md");
-		});
-
-		it("should list documents", async () => {
-			await filesystem.saveDocument(sampleDocument);
-			const list = await filesystem.listDocuments();
-			expect(list.some((d) => d.id === sampleDocument.id)).toBe(true);
-		});
-
-		it("should include relative path metadata when listing documents", async () => {
-			await filesystem.saveDocument(
-				{
-					...sampleDocument,
-					id: "doc-3",
-					title: "Nested Guide",
-				},
-				"guides",
-			);
-
-			const docs = await filesystem.listDocuments();
-			const nested = docs.find((doc) => doc.id === "doc-3");
-			expect(nested?.path).toBe("guides/doc-3 - Nested-Guide.md");
-		});
-
-		it("rejects unsafe document paths", async () => {
-			await expect(
-				filesystem.saveDocument(
-					{
-						...sampleDocument,
-						id: "doc-4",
-					},
-					"../outside",
-				),
-			).rejects.toThrow("Document path cannot include traversal segments.");
-
-			await expect(
-				filesystem.saveDocument(
-					{
-						...sampleDocument,
-						id: "doc-5",
-					},
-					"/tmp/docs",
-				),
-			).rejects.toThrow("Document path must be relative");
-		});
-
-		it("should load documents using flexible ID formats", async () => {
-			await filesystem.saveDocument({
-				...sampleDocument,
-				id: "doc-7",
-				title: "Operations Reference",
-				rawContent: "Ops content",
-			});
-
-			const uppercase = await filesystem.loadDocument("DOC-7");
-			expect(uppercase.id).toBe("doc-7");
-
-			const zeroPadded = await filesystem.loadDocument("0007");
-			expect(zeroPadded.id).toBe("doc-7");
-
-			await filesystem.saveDocument({
-				...sampleDocument,
-				id: "DOC-0009",
-				title: "Padded Uppercase",
-				rawContent: "Content",
-			});
-
-			const canonicalFiles = await Array.fromAsync(
-				new Bun.Glob("doc-*.md").scan({ cwd: filesystem.docsDir, followSymlinks: true }),
-			);
-			expect(canonicalFiles.some((file) => file.startsWith("doc-0009"))).toBe(true);
-		});
-	});
-
 	describe("edge cases", () => {
 		it("should handle task with task- prefix in id", async () => {
 			const taskWithPrefix: Task = {
@@ -1183,29 +1052,6 @@ title: Broken Task
 			expect(decisionFiles).toContain("decision-punct - untitled.md");
 		});
 
-		it("names a document file with a placeholder title and still dedupes it on resave", async () => {
-			const document: Document = {
-				id: "doc-punct",
-				title: punctuationOnlyTitle,
-				type: "guide",
-				createdDate: "2025-06-07",
-				updatedDate: "2025-06-08",
-				rawContent: "Original content",
-				tags: [],
-			};
-
-			await filesystem.saveDocument(document);
-			expect(await readdir(filesystem.docsDir)).toContain("doc-punct - untitled.md");
-
-			// Document save dedup matches an existing file by splitting the basename on " - "
-			await filesystem.saveDocument({ ...document, rawContent: "Updated content" });
-
-			const docFiles = await Array.fromAsync(
-				new Bun.Glob("doc-*.md").scan({ cwd: filesystem.docsDir, followSymlinks: true }),
-			);
-			expect(docFiles).toEqual(["doc-punct - untitled.md"]);
-		});
-
 		it("publishes completed content mutations and supports unsubscribe", async () => {
 			const mutations: string[] = [];
 			const unsubscribe = filesystem.subscribeToContentMutations((mutation) => {
@@ -1221,13 +1067,6 @@ title: Broken Task
 				dependencies: [],
 				rawContent: "",
 			};
-			const document: Document = {
-				id: "doc-1",
-				title: "Published document",
-				type: "guide",
-				createdDate: "2025-01-01",
-				rawContent: "",
-			};
 			const decision: Decision = {
 				id: "decision-1",
 				title: "Published decision",
@@ -1240,17 +1079,15 @@ title: Broken Task
 			};
 
 			const taskPath = await filesystem.saveTask(task);
-			await filesystem.saveDocument(document);
 			await filesystem.saveDecision(decision);
 
 			expect(mutations).toEqual([
 				`task:${filesystem.agenticWorkspaceDir}`,
-				`document:${filesystem.agenticWorkspaceDir}`,
 				`decision:${filesystem.agenticWorkspaceDir}`,
 			]);
 			unsubscribe();
 			await filesystem.saveTask({ ...task, filePath: taskPath, title: "Unobserved task" });
-			expect(mutations).toHaveLength(3);
+			expect(mutations).toHaveLength(2);
 		});
 	});
 });

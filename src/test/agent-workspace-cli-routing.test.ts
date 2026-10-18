@@ -19,8 +19,9 @@ describe("agent-workspace CLI routing", () => {
 		registerAgentWorkspaceCommands(program, {
 			project: async () =>
 				({
-					filesystem: { rootDir: process.cwd(), agenticWorkspaceDir: join(process.cwd(), ".agentic-workspace") },
-				}) as Core,
+					projectRoot: process.cwd(),
+					workspaceDirectory: join(process.cwd(), ".agentic-workspace"),
+				}) as unknown as Core,
 		});
 		return program;
 	};

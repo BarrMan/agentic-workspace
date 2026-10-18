@@ -23,7 +23,7 @@ export function formatTaskCompletionBlockedMessage(taskId: string, terminalStatu
 }
 
 export async function completeTaskFromTui(core: Core, task: Task): Promise<CompleteTaskFromTuiResult> {
-	const config = await core.filesystem.loadConfig();
+	const config = await core.getStoredConfig();
 	const statuses = config?.statuses ?? [...DEFAULT_STATUSES];
 	const terminalStatus = getTerminalStatus(statuses) ?? "Done";
 

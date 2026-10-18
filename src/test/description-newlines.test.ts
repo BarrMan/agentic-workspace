@@ -3,7 +3,7 @@ import { mkdir } from "node:fs/promises";
 import { Writable } from "node:stream";
 import { runCli } from "../cli/register.ts";
 import { Core } from "../index.ts";
-import { createUniqueTestDir, initializeFilesystemTestProject, safeCleanup } from "./test-utils.ts";
+import { coreFileSystem, createUniqueTestDir, initializeFilesystemTestProject, safeCleanup } from "./test-utils.ts";
 
 let testDir: string;
 const description = "First line\nSecond line\n\nThird paragraph";
@@ -39,13 +39,13 @@ describe("CLI description newlines", () => {
 	it("stores literal newlines in description frontmatter on create and edit", async () => {
 		await cli(["task", "create", "Multi-line", "--description", description], testDir);
 		const core = new Core(testDir);
-		expect((await core.filesystem.loadTask("task-1"))?.description).toBe(description);
+		expect((await coreFileSystem(core).loadTask("task-1"))?.description).toBe(description);
 		await cli(["task", "edit", "TASK-1", "--description", "Replacement\ntext"], testDir);
-		expect((await core.filesystem.loadTask("task-1"))?.description).toBe("Replacement\ntext");
+		expect((await coreFileSystem(core).loadTask("task-1"))?.description).toBe("Replacement\ntext");
 	});
 
 	it("does not interpret escaped newline text", async () => {
 		await cli(["task", "create", "Literal", "--description", "First line\\nSecond line"], testDir);
-		expect((await new Core(testDir).filesystem.loadTask("task-1"))?.description).toBe("First line\\nSecond line");
+		expect((await coreFileSystem(new Core(testDir)).loadTask("task-1"))?.description).toBe("First line\\nSecond line");
 	});
 });

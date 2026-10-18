@@ -1,9 +1,7 @@
 import { z } from "zod";
-import { DOCUMENT_TYPE_VALUES } from "../types/index.ts";
 import { normalizeDueDate } from "../utils/due-date.ts";
 import {
 	DECISION_FRONTMATTER_FIELDS as DECISION_FIELD,
-	DOCUMENT_FRONTMATTER_FIELDS as DOCUMENT_FIELD,
 	FRONTMATTER_DATE_PATTERN,
 	MILESTONE_FRONTMATTER_FIELDS as MILESTONE_FIELD,
 } from "./schema.ts";
@@ -24,15 +22,6 @@ export const MILESTONE_FRONTMATTER_KEY_MAP = {
 	title: MILESTONE_FIELD.TITLE,
 	dueDate: MILESTONE_FIELD.DUE_DATE,
 	description: MILESTONE_FIELD.DESCRIPTION,
-} as const;
-
-export const DOCUMENT_FRONTMATTER_KEY_MAP = {
-	id: DOCUMENT_FIELD.ID,
-	title: DOCUMENT_FIELD.TITLE,
-	type: DOCUMENT_FIELD.TYPE,
-	createdDate: DOCUMENT_FIELD.CREATED_DATE,
-	updatedDate: DOCUMENT_FIELD.UPDATED_DATE,
-	tags: DOCUMENT_FIELD.TAGS,
 } as const;
 
 function textOrEmpty(value: unknown): string {
@@ -77,18 +66,5 @@ export const MilestoneFrontmatterSchema = z.object({
 	description: textFieldOrEmpty(MILESTONE_FIELD.DESCRIPTION),
 });
 
-export const DocumentFrontmatterSchema = z.object({
-	id: z.preprocess(textOrEmpty, z.string()),
-	title: z.preprocess(textOrEmpty, z.string()),
-	type: z.preprocess(
-		(value) => (value ? String(value) : "other"),
-		z.enum(DOCUMENT_TYPE_VALUES, { error: `type must be one of ${DOCUMENT_TYPE_VALUES.join(", ")}` }),
-	),
-	createdDate: dateFieldOrEmpty(DOCUMENT_FIELD.CREATED_DATE),
-	updatedDate: dateField(DOCUMENT_FIELD.UPDATED_DATE),
-	tags: z.preprocess((value) => (Array.isArray(value) ? value.map(String) : undefined), z.array(z.string()).optional()),
-});
-
 export type DecisionFrontmatterRecord = z.infer<typeof DecisionFrontmatterSchema>;
 export type MilestoneFrontmatterRecord = z.infer<typeof MilestoneFrontmatterSchema>;
-export type DocumentFrontmatterRecord = z.infer<typeof DocumentFrontmatterSchema>;

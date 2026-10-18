@@ -5,7 +5,7 @@
 // datetimes before, so stored records can still carry one and must keep their day. Tolerated
 // does not mean unchecked -- the time must still be a real time (00-23:00-59, optional 00-59
 // seconds) and the offset a real offset (up to +/-14:00, and only on the hour at 14) -- because
-// the CLI, MCP and web API all reach this, and discarding a malformed part is not a reason to
+// the CLI and web API all reach this, and discarding a malformed part is not a reason to
 // accept the value it came from.
 const DUE_DATE_PATTERN =
 	/^(\d{4})-(\d{2})-(\d{2})(?:[ T](?:[01]\d|2[0-3]):[0-5]\d(?::[0-5]\d(?:\.\d{1,9})?)?(?:Z|[+-](?:(?:0\d|1[0-3]):?[0-5]\d|14:?00))?)?$/;

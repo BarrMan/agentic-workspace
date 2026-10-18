@@ -14,14 +14,14 @@ export async function resolveCallingSession(
 	core: Core,
 	dependencies: CurrentModelDependencies = {},
 ): Promise<{ modeId: string; session: AgentSession }> {
-	const context = await (dependencies.context ?? readWorkspaceContext)({ rootDir: core.filesystem.rootDir });
+	const context = await (dependencies.context ?? readWorkspaceContext)({ rootDir: core.projectRoot });
 	const conversation = context?.conversation;
 	if (!conversation) throw new Error("A valid calling workspace conversation context is required.");
 	const state = dependencies.readSessions
 		? await dependencies.readSessions(conversation.taskId)
-		: await new SessionStore(core.filesystem.rootDir, new BunRunner(), (session) =>
-				resolveSessionPreset(core, session),
-			).read(conversation.taskId);
+		: await new SessionStore(core.projectRoot, new BunRunner(), (session) => resolveSessionPreset(core, session)).read(
+				conversation.taskId,
+			);
 	const owners = Object.entries(state.modes ?? {}).flatMap(([modeId, history]) =>
 		history.sessions
 			.filter((candidate) => candidate.id === conversation.sessionId)

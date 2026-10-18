@@ -6,6 +6,7 @@ import { Command } from "commander";
 import { loadProjectModeCatalog } from "../agent-workspace/config.ts";
 import { registerAgentWorkspaceCommands } from "../commands/agent-workspace.ts";
 import { registerContentCommands } from "../commands/content-commands.ts";
+import { configureHelpValues } from "../commands/help-schema.ts";
 import { registerSearchCommand } from "../commands/search.ts";
 import { findLocalDuplicateTaskIds } from "../core/duplicate-task-detection.ts";
 import { isConfigValueError } from "../file-system/operations.ts";
@@ -61,6 +62,12 @@ export async function runCli(
 	const originalBunOptions = process.env.BUN_OPTIONS;
 	if (originalBunOptions) delete process.env.BUN_OPTIONS;
 	const version = await getVersion();
+	try {
+		const helpRoot = await runtime.findProjectRoot();
+		configureHelpValues(helpRoot ? await new Core(helpRoot).getStoredConfig() : null);
+	} catch {
+		configureHelpValues(null);
+	}
 
 	async function requireProjectRoot(): Promise<string> {
 		return runtime.projectRoot();
@@ -95,7 +102,7 @@ export async function runCli(
 			let initialized = false;
 			try {
 				const root = await runtime.findProjectRoot();
-				initialized = Boolean(root && (await new Core(root).filesystem.loadConfig()));
+				initialized = Boolean(root && (await new Core(root).getStoredConfig()));
 			} catch (error) {
 				if (isConfigValueError(error)) {
 					console.error(error.message);

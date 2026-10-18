@@ -10,7 +10,7 @@ import { workspaceRequestDir } from "../agent-workspace/workspace-context.ts";
 import { Core } from "../core/agentic-workspace.ts";
 import type { Task } from "../types/index.ts";
 import { getTaskPath } from "../utils/task-path.ts";
-import { createUniqueTestDir, initializeFilesystemTestProject } from "./test-utils.ts";
+import { coreFileSystem, createUniqueTestDir, initializeFilesystemTestProject } from "./test-utils.ts";
 
 describe("Permanent task deletion", () => {
 	let testDir: string;
@@ -62,7 +62,7 @@ describe("Permanent task deletion", () => {
 		core = new Core(testDir);
 		await initializeFilesystemTestProject(core, "Delete task");
 		const { task } = await core.createTaskFromInput({ title: "Delete me" });
-		const taskPath = task.filePath ?? (await getTaskPath(task.id, { filesystem: core.filesystem }));
+		const taskPath = task.filePath ?? (await getTaskPath(task.id, core));
 		expect(taskPath).toBeTruthy();
 		expect(existsSync(taskPath as string)).toBe(true);
 
@@ -70,7 +70,7 @@ describe("Permanent task deletion", () => {
 
 		expect(result).toEqual({ success: true, cleanedTaskIds: [] });
 		expect(existsSync(taskPath as string)).toBe(false);
-		expect(await core.filesystem.loadTask(task.id)).toBeNull();
+		expect(await coreFileSystem(core).loadTask(task.id)).toBeNull();
 	});
 
 	it("purges uppercase stored session state through a lowercase padded task ID", async () => {
@@ -115,7 +115,7 @@ describe("Permanent task deletion", () => {
 		await expect(core.deleteTask(task.id)).rejects.toThrow(
 			"Could not inspect tmux instance for session native-running",
 		);
-		expect(await core.filesystem.loadTask(task.id)).not.toBeNull();
+		expect(await coreFileSystem(core).loadTask(task.id)).not.toBeNull();
 		expect((await store.read(task.id)).modes.build?.sessions.map(({ id }) => id)).toEqual(["native-running"]);
 	});
 
@@ -208,12 +208,12 @@ describe("Permanent task deletion", () => {
 		});
 		const providerData = join(testDir, "provider-conversation.json");
 		await Bun.write(providerData, "preserve provider data\n");
-		const taskPath = task.filePath ?? (await getTaskPath(task.id, { filesystem: core.filesystem }));
+		const taskPath = task.filePath ?? (await getTaskPath(task.id, core));
 		if (!taskPath) throw new Error("Expected deleted task path.");
 
 		await expect(core.deleteTask(task.id)).rejects.toThrow("expected exactly one pane");
 
-		expect(await core.filesystem.loadTask(task.id)).not.toBeNull();
+		expect(await coreFileSystem(core).loadTask(task.id)).not.toBeNull();
 		expect(existsSync(taskPath)).toBe(true);
 		const retained = await store.read(task.id);
 		expect(
@@ -261,19 +261,21 @@ describe("Permanent task deletion", () => {
 			throw new Error("forget preflight failed");
 		};
 		await expect(core.deleteTask(task.id)).rejects.toThrow("forget preflight failed");
-		expect(await core.filesystem.loadTask(task.id)).not.toBeNull();
+		expect(await coreFileSystem(core).loadTask(task.id)).not.toBeNull();
 		expect((await store.read(task.id)).modes.build?.sessions).toEqual([record]);
 		expect(await Bun.file(record.outputPath).text()).toBe("retained until task removal\n");
 
 		core.sessions.forgetTaskSessions = originalForget;
 		await observeSessionsDead(task.id);
-		const deleteContainer = core.filesystem.deleteTaskContainer.bind(core.filesystem);
-		core.filesystem.deleteTaskContainer = async (...args: Parameters<typeof core.filesystem.deleteTaskContainer>) => {
+		const deleteContainer = coreFileSystem(core).deleteTaskContainer.bind(coreFileSystem(core));
+		coreFileSystem(core).deleteTaskContainer = async (
+			...args: Parameters<ReturnType<typeof coreFileSystem>["deleteTaskContainer"]>
+		) => {
 			await deleteContainer(...args);
 			throw new Error("post-removal failure");
 		};
 		await expect(core.deleteTask(task.id)).rejects.toThrow("post-removal failure");
-		expect(await core.filesystem.loadTask(task.id)).toBeNull();
+		expect(await coreFileSystem(core).loadTask(task.id)).toBeNull();
 		expect(Object.values((await store.read(task.id)).modes).flatMap(({ sessions }) => sessions)).toEqual([]);
 		expect(existsSync(record.outputPath)).toBe(false);
 	});
@@ -282,7 +284,7 @@ describe("Permanent task deletion", () => {
 		core = new Core(testDir);
 		await initializeFilesystemTestProject(core, "Delete task");
 		const { task } = await core.createTaskFromInput({ title: "Await cleanup" });
-		const taskPath = task.filePath ?? (await getTaskPath(task.id, { filesystem: core.filesystem }));
+		const taskPath = task.filePath ?? (await getTaskPath(task.id, core));
 		const { promise, resolve } = Promise.withResolvers<void>();
 		let cleanupStarted = false;
 		core.sessions.forgetTaskSessions = async () => {
@@ -326,7 +328,7 @@ describe("Permanent task deletion", () => {
 		await observeSessionsDead(task.id);
 
 		await core.deleteTask(task.id);
-		expect(await core.filesystem.loadTask(task.id)).toBeNull();
+		expect(await coreFileSystem(core).loadTask(task.id)).toBeNull();
 		expect(Object.values((await store.read(task.id)).modes).flatMap(({ sessions }) => sessions)).toEqual([]);
 		expect(existsSync(join(taskDir, "stopped-session.log"))).toBe(false);
 		expect(existsSync(join(taskDir, "stopped-session.md"))).toBe(false);
@@ -360,7 +362,7 @@ describe("Permanent task deletion", () => {
 		});
 
 		await expect(core.sessions.purge(task.id)).rejects.toThrow("outside its task session directory");
-		expect(await core.filesystem.loadTask(task.id)).not.toBeNull();
+		expect(await coreFileSystem(core).loadTask(task.id)).not.toBeNull();
 		expect((await store.read(task.id)).modes.build?.sessions[0]?.bootstrapPath).toBe(sentinel);
 		expect(existsSync(outputPath)).toBe(true);
 		expect(existsSync(sentinel)).toBe(true);
@@ -398,8 +400,10 @@ describe("Permanent task deletion", () => {
 			});
 			await observeSessionsDead(task.id);
 			const enteredDelete = Promise.withResolvers<void>();
-			const deleteContainer = core.filesystem.deleteTaskContainer.bind(core.filesystem);
-			core.filesystem.deleteTaskContainer = async (...args: Parameters<typeof core.filesystem.deleteTaskContainer>) => {
+			const deleteContainer = coreFileSystem(core).deleteTaskContainer.bind(coreFileSystem(core));
+			coreFileSystem(core).deleteTaskContainer = async (
+				...args: Parameters<ReturnType<typeof coreFileSystem>["deleteTaskContainer"]>
+			) => {
 				enteredDelete.resolve();
 				await releaseDelete.promise;
 				await deleteContainer(...args);
@@ -503,7 +507,7 @@ describe("Permanent task deletion", () => {
 			history.activeSessionId = sessionId;
 		});
 		await expect(core.deleteTask(task.id)).rejects.toThrow("Could not inspect tmux instance");
-		expect(await core.filesystem.loadTask(task.id)).not.toBeNull();
+		expect(await coreFileSystem(core).loadTask(task.id)).not.toBeNull();
 		expect((await store.read(task.id)).modes.build?.sessions.map(({ id }) => id)).toEqual([sessionId]);
 	});
 
@@ -523,7 +527,7 @@ describe("Permanent task deletion", () => {
 
 		expect(result.success).toBe(true);
 		expect(result.cleanedTaskIds).toEqual(["TASK-2"]);
-		const updated = await core.filesystem.loadTask("task-2");
+		const updated = await coreFileSystem(core).loadTask("task-2");
 		expect(updated?.dependencies).toEqual([]);
 		expect(updated?.references).toEqual(["https://example.com/tasks/task-1"]);
 	});

@@ -6,6 +6,7 @@ import { Core } from "../core/agentic-workspace.ts";
 import { serializeTask } from "../markdown/serializer.ts";
 import type { Task } from "../types/index.ts";
 import { isValidTaskId, parseTaskId, taskIdsEqual } from "../utils/task-id.ts";
+import { coreFileSystem } from "./test-utils.ts";
 
 const TEST_DIR = join(tmpdir(), "agentic-workspace-id-gen-test");
 
@@ -49,7 +50,7 @@ describe("Task ID Generation with Archives", () => {
 		await core.archiveTask("task-5");
 
 		// Verify tasks directory has no active tasks
-		const activeTasks = await core.filesystem.listTasks();
+		const activeTasks = await coreFileSystem(core).listTasks();
 		expect(activeTasks.length).toBe(0);
 
 		// Archived canonical containers remain part of the task identity inventory.
@@ -57,7 +58,7 @@ describe("Task ID Generation with Archives", () => {
 		expect(result.task.id).toBe("TASK-6");
 
 		// Verify the task was created with correct ID
-		const newTask = (await core.filesystem.listArchivedTasks()).find((task) => task.id === "TASK-1");
+		const newTask = (await coreFileSystem(core).listArchivedTasks()).find((task) => task.id === "TASK-1");
 		expect(newTask?.title).toBe("Task 1");
 	});
 
@@ -74,7 +75,7 @@ describe("Task ID Generation with Archives", () => {
 		await core.completeTask("task-2");
 
 		// Keep task-3 active
-		const activeTasks = await core.filesystem.listTasks();
+		const activeTasks = await coreFileSystem(core).listTasks();
 		expect(activeTasks.length).toBe(1);
 		expect(activeTasks[0]?.id).toBe("TASK-3");
 
@@ -84,11 +85,11 @@ describe("Task ID Generation with Archives", () => {
 		expect(result.task.id).toBe("TASK-4");
 
 		// Verify archived task still exists
-		const archivedTasks = await core.filesystem.listArchivedTasks();
+		const archivedTasks = await coreFileSystem(core).listArchivedTasks();
 		expect(archivedTasks.some((t) => t.id === "TASK-1")).toBe(true);
 
 		// Verify completed task still exists
-		const completedTasks = await core.filesystem.listCompletedTasks();
+		const completedTasks = await coreFileSystem(core).listCompletedTasks();
 		expect(completedTasks.some((t) => t.id === "TASK-2")).toBe(true);
 	});
 
@@ -119,10 +120,10 @@ describe("Task ID Generation with Archives", () => {
 
 	it("should work with zero-padded IDs and reserve archived IDs", async () => {
 		// Update config to use zero-padded IDs
-		const config = await core.filesystem.loadConfig();
+		const config = await coreFileSystem(core).loadConfig();
 		if (config) {
 			config.zeroPaddedIds = 3;
-			await core.filesystem.saveConfig(config);
+			await coreFileSystem(core).saveConfig(config);
 		}
 
 		// Create and archive tasks with padding
@@ -139,10 +140,10 @@ describe("Task ID Generation with Archives", () => {
 
 	it("should not collide when zero padding is enabled after an unpadded task exists", async () => {
 		const first = await core.createTaskFromInput({ title: "Unpadded task" });
-		const config = await core.filesystem.loadConfig();
+		const config = await coreFileSystem(core).loadConfig();
 		if (config) {
 			config.zeroPaddedIds = 3;
-			await core.filesystem.saveConfig(config);
+			await coreFileSystem(core).saveConfig(config);
 		}
 
 		const second = await core.createTaskFromInput({ title: "Padded task" });
@@ -156,7 +157,7 @@ describe("Task ID Generation with Archives", () => {
 
 		// Simulate a lowercase stored subtask by directly writing to filesystem
 		// This represents a file created before the uppercase ID change
-		const tasksDir = core.filesystem.tasksDir;
+		const tasksDir = coreFileSystem(core).tasksDir;
 		const lowercaseSubtask: Task = {
 			id: "task-1.1", // Lowercase stored casing
 			title: "Historical Subtask",

@@ -24,7 +24,7 @@ export async function normalizeCliStatusList(
 }
 
 export async function normalizeCliPriority(core: Core, value: string): Promise<string | null> {
-	const config = await core.filesystem.loadConfig();
+	const config = await core.getStoredConfig();
 	const normalized = resolvePriorityValue(value, config);
 	if (normalized) return normalized;
 	console.error(`Invalid priority: ${value}. Valid values are: ${formatValidPriorityValues(config)}`);
@@ -37,7 +37,7 @@ export async function normalizeCliTaskTypes(
 	values: string[],
 	optionName: string,
 ): Promise<string[] | null> {
-	const config = await core.filesystem.loadConfig();
+	const config = await core.getStoredConfig();
 	const { values: canonicalTypes, invalid } = resolveTaskTypeValues(values, config);
 	if (invalid.length === 0) return canonicalTypes;
 	console.error(`Invalid ${optionName}: ${invalid.join(", ")}. Valid types are: ${formatValidTaskTypeValues(config)}`);
@@ -46,9 +46,9 @@ export async function normalizeCliTaskTypes(
 }
 
 export async function normalizeCliProjects(core: Core, values: string[], optionName: string): Promise<string[] | null> {
-	const config = await core.filesystem.loadConfig();
+	const config = await core.getStoredConfig();
 	if (getProjectValues(config).length === 0) {
-		console.error(noProjectsConfiguredMessage(core.filesystem.configFilePath));
+		console.error(noProjectsConfiguredMessage());
 		process.exitCode = 1;
 		return null;
 	}

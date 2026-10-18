@@ -5,7 +5,7 @@ import { AgentSessionService, type ProcessRunner, type TmuxServer } from "../age
 import type { AgentSession, TaskSessions } from "../agent-workspace/types.ts";
 import { Core } from "../core/agentic-workspace.ts";
 import { cleanupTaskWorktreeSessions, withoutSelectedModeForTask } from "../git/task-worktree-cleanup.ts";
-import { createUniqueTestDir, initializeFilesystemTestProject, safeCleanup } from "./test-utils.ts";
+import { coreFileSystem, createUniqueTestDir, initializeFilesystemTestProject, safeCleanup } from "./test-utils.ts";
 
 function session(id: string, status: AgentSession["status"], _modeId?: string): AgentSession {
 	return {
@@ -149,7 +149,7 @@ describe("all-mode task cleanup contract", () => {
 		try {
 			const core = new Core(root);
 			await initializeFilesystemTestProject(core, "All mode cleanup");
-			await core.filesystem.loadConfig();
+			await coreFileSystem(core).loadConfig();
 			const task = await core.createTaskFromInput({ title: "Lifecycle cleanup" });
 			const events: string[] = [];
 			const sessions = (
@@ -197,8 +197,8 @@ describe("all-mode task cleanup contract", () => {
 			};
 			const enteredMove = Promise.withResolvers<void>();
 			const releaseMove = Promise.withResolvers<void>();
-			const move = core.filesystem.completeTask.bind(core.filesystem);
-			core.filesystem.completeTask = async (id, alreadyLocked = false) => {
+			const move = coreFileSystem(core).completeTask.bind(coreFileSystem(core));
+			coreFileSystem(core).completeTask = async (id, alreadyLocked = false) => {
 				if (id === taskId) {
 					enteredMove.resolve();
 					await releaseMove.promise;
@@ -234,7 +234,7 @@ describe("all-mode task cleanup contract", () => {
 
 			releaseMove.resolve();
 			expect(await completing).toBe(true);
-			expect((await core.filesystem.listCompletedTasks()).some((task) => task.id === taskId)).toBe(true);
+			expect((await coreFileSystem(core).listCompletedTasks()).some((task) => task.id === taskId)).toBe(true);
 			expect(processCalls).toBe(0);
 		} finally {
 			await safeCleanup(root);

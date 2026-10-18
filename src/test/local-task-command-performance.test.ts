@@ -8,7 +8,7 @@ import { Core } from "../core/agentic-workspace.ts";
 import { serializeTask } from "../markdown/serializer.ts";
 import type { Task } from "../types/index.ts";
 import { AmbiguousTaskIdError } from "../utils/task-path.ts";
-import { createUniqueTestDir, initGitRepo, initializeTestProject, safeCleanup } from "./test-utils.ts";
+import { coreFileSystem, createUniqueTestDir, initGitRepo, initializeTestProject, safeCleanup } from "./test-utils.ts";
 
 async function cli(args: string[], cwd: string) {
 	const stdout: string[] = [];
@@ -51,23 +51,23 @@ async function setupLocalTaskProject(): Promise<{ dir: string; core: Core }> {
 	const core = new Core(dir);
 	await initializeTestProject(core, "Local task command performance");
 
-	const config = await core.filesystem.loadConfig();
+	const config = await coreFileSystem(core).loadConfig();
 	if (!config) throw new Error("Expected initialized config");
-	await core.filesystem.saveConfig({
+	await coreFileSystem(core).saveConfig({
 		...config,
 		checkActiveBranches: true,
 		remoteOperations: true,
 	});
 
-	await core.filesystem.saveTask(parentTask);
-	await core.filesystem.saveTask({
+	await coreFileSystem(core).saveTask(parentTask);
+	await coreFileSystem(core).saveTask({
 		...parentTask,
 		id: "TASK-1.1",
 		title: "Local child",
 		parentTaskId: parentTask.id,
 		description: "Child content",
 	});
-	await core.filesystem.saveTask({
+	await coreFileSystem(core).saveTask({
 		...parentTask,
 		id: "TASK-2",
 		title: "Unrelated local task",
@@ -108,7 +108,7 @@ describe("local task command performance boundaries", () => {
 	it("lists and searches working-copy tasks without loading branches", async () => {
 		const { dir, core } = await setupLocalTaskProject();
 		try {
-			await core.filesystem.saveTask({
+			await coreFileSystem(core).saveTask({
 				...parentTask,
 				id: "TASK-0007.0024",
 				title: "Padded task identity",
@@ -182,7 +182,7 @@ describe("local task command performance boundaries", () => {
 			await $`git add .`.cwd(dir).quiet();
 			await $`git commit -m ${"Commit working copy"}`.cwd(dir).quiet();
 			await $`git switch -c branch-only`.cwd(dir).quiet();
-			await core.filesystem.saveTask({
+			await coreFileSystem(core).saveTask({
 				...parentTask,
 				id: "TASK-99",
 				title: "Branch-only task",
@@ -208,9 +208,9 @@ describe("local task command performance boundaries", () => {
 			expect(listed.exitCode).toBe(0);
 			expect(listed.stdout).not.toContain("TASK-99");
 
-			expect(await core.filesystem.loadTask("TASK-99")).toBeNull();
-			expect(await core.filesystem.loadTask("TASK-99.1")).toBeNull();
-			expect((await core.filesystem.loadTask("TASK-1"))?.dependencies ?? []).toEqual([]);
+			expect(await coreFileSystem(core).loadTask("TASK-99")).toBeNull();
+			expect(await coreFileSystem(core).loadTask("TASK-99.1")).toBeNull();
+			expect((await coreFileSystem(core).loadTask("TASK-1"))?.dependencies ?? []).toEqual([]);
 		} finally {
 			await safeCleanup(dir);
 		}
@@ -261,7 +261,7 @@ describe("local task command performance boundaries", () => {
 				tripwires.restore();
 			}
 
-			expect((await core.filesystem.loadTask("TASK-1"))?.dependencies).toEqual(["TASK-2"]);
+			expect((await coreFileSystem(core).loadTask("TASK-1"))?.dependencies).toEqual(["TASK-2"]);
 		} finally {
 			await safeCleanup(dir);
 		}
@@ -270,9 +270,9 @@ describe("local task command performance boundaries", () => {
 	it("fails closed only when the exact parent and dependency IDs are duplicated", async () => {
 		const { dir, core } = await setupLocalTaskProject();
 		try {
-			await mkdir(join(core.filesystem.completedDir, "task-2"), { recursive: true });
+			await mkdir(join(coreFileSystem(core).completedDir, "task-2"), { recursive: true });
 			await Bun.write(
-				join(core.filesystem.completedDir, "task-2", "task.md"),
+				join(coreFileSystem(core).completedDir, "task-2", "task.md"),
 				serializeTask({
 					...parentTask,
 					id: "TASK-2",
@@ -293,8 +293,8 @@ describe("local task command performance boundaries", () => {
 				tripwires.restore();
 			}
 
-			expect((await core.filesystem.loadTask("TASK-1"))?.dependencies ?? []).toEqual([]);
-			expect(await core.filesystem.loadTask("TASK-2.1")).toBeNull();
+			expect((await coreFileSystem(core).loadTask("TASK-1"))?.dependencies ?? []).toEqual([]);
+			expect(await coreFileSystem(core).loadTask("TASK-2.1")).toBeNull();
 		} finally {
 			await safeCleanup(dir);
 		}
@@ -314,7 +314,7 @@ describe("local task command performance boundaries", () => {
 				);
 
 				expect(updated.title).toBe("Renamed locally");
-				expect((await core.filesystem.listTasks()).find((task) => task.id === parentTask.id)?.title).toBe(
+				expect((await coreFileSystem(core).listTasks()).find((task) => task.id === parentTask.id)?.title).toBe(
 					"Renamed locally",
 				);
 				tripwires.expectUntouched();
@@ -329,9 +329,9 @@ describe("local task command performance boundaries", () => {
 	it("resolves padded active and unpadded completed IDs independently without loading branches", async () => {
 		const { dir, core } = await setupLocalTaskProject();
 		try {
-			await mkdir(join(core.filesystem.completedDir, "task-01"), { recursive: true });
+			await mkdir(join(coreFileSystem(core).completedDir, "task-01"), { recursive: true });
 			await Bun.write(
-				join(core.filesystem.completedDir, "task-01", "task.md"),
+				join(coreFileSystem(core).completedDir, "task-01", "task.md"),
 				serializeTask({
 					...parentTask,
 					id: "TASK-01",
@@ -360,11 +360,11 @@ describe("local task command performance boundaries", () => {
 				tripwires.restore();
 			}
 
-			expect((await core.filesystem.listCompletedTasks()).find((task) => task.id === "TASK-01")?.title).toBe(
+			expect((await coreFileSystem(core).listCompletedTasks()).find((task) => task.id === "TASK-01")?.title).toBe(
 				"Completed collision",
 			);
 			expect(await core.generateNextId()).toBe("TASK-3");
-			expect((await core.filesystem.listTasks()).filter((task) => task.id === "TASK-1")).toHaveLength(1);
+			expect((await coreFileSystem(core).listTasks()).filter((task) => task.id === "TASK-1")).toHaveLength(1);
 		} finally {
 			await safeCleanup(dir);
 		}

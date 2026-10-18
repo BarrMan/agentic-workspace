@@ -54,13 +54,12 @@ import type { SessionHandoff, WorkspaceRequest } from "../../agent-workspace/wor
 import { readWorkspaceRequests } from "../../agent-workspace/workspace-context.ts";
 import { WorkspaceStateService } from "../../agent-workspace/workspace-state.ts";
 import type { Core } from "../../core/agentic-workspace.ts";
-import { createMilestoneIdentityResolver, milestoneKey } from "../../core/milestone-identity.ts";
+import { getMilestoneLabel } from "../../core/milestones.ts";
 import { loadTaskDetail, type TaskDetail } from "../../core/task-detail.ts";
 import type { AgenticWorkspaceConfig, Milestone, Task, TaskCreateInput, TaskUpdateInput } from "../../types/index.ts";
 import { formatAssignee } from "../../utils/assignee-filter.ts";
 import { copyToClipboard } from "../../utils/clipboard.ts";
 import { watchConfig } from "../../utils/config-watcher.ts";
-import { createMilestoneFilterValueResolver } from "../../utils/milestone-filter.ts";
 import { getPriorityOptions, getPriorityValues } from "../../utils/priority-config.ts";
 import { applyTaskFilters } from "../../utils/task-search.ts";
 import { sortByNewestFirst } from "../../utils/task-sorting.ts";
@@ -398,7 +397,6 @@ export class OpenTuiWorkspaceController {
 	#fullscreen = false;
 	#milestones: Milestone[] = [];
 	#archivedMilestones: Milestone[] = [];
-	#resolveMilestoneLabel = createMilestoneFilterValueResolver([]);
 	#config: AgenticWorkspaceConfig | null = null;
 	#notice: string | undefined;
 	#closed = false;
@@ -464,7 +462,7 @@ export class OpenTuiWorkspaceController {
 		const completion = this.#completion;
 		const viewState =
 			this.#options.viewStateStore ??
-			(await openViewStateStore(this.#core.filesystem.rootDir, defaultSharedState, {
+			(await openViewStateStore(this.#core.projectRoot, defaultSharedState, {
 				stateRoot: await this.#workspaceState.stateRoot,
 			}));
 		const ownsViewState = this.#options.viewStateStore === undefined;
@@ -477,9 +475,7 @@ export class OpenTuiWorkspaceController {
 		let groupStore: GroupStore | undefined = this.#options.groupStore;
 		if (groupStore === undefined) {
 			try {
-				const agenticWorkspaceDir =
-					this.#core.filesystem.agenticWorkspaceDir ?? join(this.#core.filesystem.rootDir, "agentic-workspace");
-				groupStore = await openGroupStore(this.#core.filesystem.rootDir, agenticWorkspaceDir);
+				groupStore = await openGroupStore(this.#core.projectRoot, this.#core.workspaceDirectory);
 			} catch {
 				groupStore = undefined; // group features degrade to no-op; never break the workspace
 			}
@@ -539,48 +535,43 @@ export class OpenTuiWorkspaceController {
 		const refresh = (): void => {
 			void this.#scheduleRefresh().catch(() => undefined);
 		};
-		const tasksDir = this.#core.filesystem.tasksDir;
-		if (typeof tasksDir === "string" && tasksDir.length > 0) {
-			try {
-				this.#taskWatcher = this.#runtime.watchTasks(
-					this.#core,
-					{
-						onTaskAdded: refresh,
-						onTaskChanged: refresh,
-						onArtifactChanged: ({ taskId }) => {
-							// Re-read artifact bytes and approval metadata from disk; artifact events do not
-							// alter task.md and must not be filtered through task-record reconciliation.
-							this.#notifyArtifactChanged(taskId);
-							refresh();
-						},
-						onTaskRemoved: async (taskId) => {
-							let error: unknown;
-							for (let attempt = 0; attempt < 2; attempt++) {
-								try {
-									await this.#finalTaskRemoval(taskId);
-									error = undefined;
-									break;
-								} catch (removalError) {
-									error = removalError;
-								} finally {
-									refresh();
-								}
-							}
-							if (error) throw error;
-						},
+		try {
+			this.#taskWatcher = this.#runtime.watchTasks(
+				this.#core,
+				{
+					onTaskAdded: refresh,
+					onTaskChanged: refresh,
+					onArtifactChanged: ({ taskId }) => {
+						// Re-read artifact bytes and approval metadata from disk; artifact events do not
+						// alter task.md and must not be filtered through task-record reconciliation.
+						this.#notifyArtifactChanged(taskId);
+						refresh();
 					},
-					[...this.#tasks.values()],
-				);
-			} catch (error) {
-				process.stderr.write(`Could not watch tasks for live updates: ${String(error)}\n`);
-			}
+					onTaskRemoved: async (taskId) => {
+						let error: unknown;
+						for (let attempt = 0; attempt < 2; attempt++) {
+							try {
+								await this.#finalTaskRemoval(taskId);
+								error = undefined;
+								break;
+							} catch (removalError) {
+								error = removalError;
+							} finally {
+								refresh();
+							}
+						}
+						if (error) throw error;
+					},
+				},
+				[...this.#tasks.values()],
+			);
+		} catch (error) {
+			process.stderr.write(`Could not watch tasks for live updates: ${String(error)}\n`);
 		}
-		if (typeof this.#core.filesystem.configFilePath === "string" && this.#core.filesystem.configFilePath.length > 0) {
-			try {
-				this.#configWatcher = this.#runtime.watchConfig(this.#core, { onConfigChanged: refresh });
-			} catch (error) {
-				process.stderr.write(`Could not watch config for live updates: ${String(error)}\n`);
-			}
+		try {
+			this.#configWatcher = this.#runtime.watchConfig(this.#core, { onConfigChanged: refresh });
+		} catch (error) {
+			process.stderr.write(`Could not watch config for live updates: ${String(error)}\n`);
 		}
 	}
 
@@ -996,7 +987,7 @@ export class OpenTuiWorkspaceController {
 				statuses,
 				taskTypes: snapshot.config?.types,
 				projects: snapshot.config?.projects,
-				resolveMilestoneLabel: (value) => this.#resolveMilestoneLabel(value),
+				resolveMilestoneLabel: (value) => getMilestoneLabel(value, this.#milestones),
 			});
 			const board = this.#board;
 			board.update(snapshot.boardTasks, statuses);
@@ -1063,8 +1054,8 @@ export class OpenTuiWorkspaceController {
 			modeProjectionByTask: (taskId) => snapshot.modeProjectionByTask.get(taskId),
 			taskArtifactPathsByTask: snapshot.taskArtifactPathsByTask,
 			taskArtifactApi: {
-				list: async (taskId) => this.#core.filesystem.taskArtifacts.list(taskId),
-				read: async (taskId, path) => this.#core.filesystem.taskArtifacts.read(taskId, path),
+				list: async (taskId) => (await this.#core.listTaskArtifacts(taskId)).entries,
+				read: async (taskId, path) => this.#core.readTaskArtifact(taskId, path),
 				subscribeArtifactChanges: (taskId, callback) => {
 					const key = taskId;
 					let listeners = this.#artifactChangeListeners.get(key);
@@ -1079,13 +1070,13 @@ export class OpenTuiWorkspaceController {
 					};
 				},
 				approveCurrentVersion: async (taskId, path, reviewedHash) => {
-					const status = await this.#core.filesystem.taskArtifacts.approveCurrentVersion(taskId, path, reviewedHash);
+					const status = await this.#core.approveTaskArtifactCurrentVersion(taskId, path, reviewedHash);
 					this.#notifyArtifactChanged(taskId);
 					void this.#scheduleRefresh();
 					return status;
 				},
 				revokeApproval: async (taskId, path) => {
-					const status = await this.#core.filesystem.taskArtifacts.revokeApproval(taskId, path);
+					const status = await this.#core.revokeTaskArtifactApproval(taskId, path);
 					this.#notifyArtifactChanged(taskId);
 					void this.#scheduleRefresh();
 					return status;
@@ -1126,7 +1117,7 @@ export class OpenTuiWorkspaceController {
 			onHistoryForward: () => this.#restoreNavigation("forward"),
 			taskDetails: snapshot.taskDetails,
 			taskDetailOptions: {
-				resolveMilestoneLabel: (milestone) => this.#resolveMilestoneLabel(milestone),
+				resolveMilestoneLabel: (milestone) => getMilestoneLabel(milestone, this.#milestones),
 				dateFormat: snapshot.config?.dateFormat,
 				configuredProjects: snapshot.config?.projects,
 			},
@@ -1170,20 +1161,17 @@ export class OpenTuiWorkspaceController {
 		// Refreshes rebuild this cache so task, mode, and durable session changes cannot leave stale row dots.
 		const [tasks, config, milestones, archivedMilestones] = await Promise.all([
 			this.#view === "board" ? this.#core.loadTasks() : this.#workspaceState.listTasks(),
-			this.#core.filesystem.loadConfig(),
+			this.#core.getStoredConfig(),
 			this.#core.loadMilestones(),
 			this.#core.loadArchivedMilestones(),
 		]);
 		this.#tasks = new Map(tasks.map((task) => [task.id, task]));
 		this.#milestones = milestones;
 		this.#archivedMilestones = archivedMilestones;
-		this.#resolveMilestoneLabel = createMilestoneFilterValueResolver([...milestones, ...archivedMilestones]);
-		const identity = createMilestoneIdentityResolver(milestones, archivedMilestones);
-		const visibleTasks = applyTaskFilters(tasks, taskFilterOptions(state.filters, "any", this.#resolveMilestoneLabel));
-		const archivedKeys = new Set(identity.collectArchivedKeys());
+		const visibleTasks = applyTaskFilters(tasks, taskFilterOptions(state.filters));
+		const archivedIds = new Set(archivedMilestones.map((milestone) => milestone.id));
 		const boardTasks = tasks.map((task) => {
-			const milestone = identity.resolveStorageInput(task.milestone ?? "");
-			return milestone && archivedKeys.has(milestoneKey(milestone)) ? { ...task, milestone: undefined } : task;
+			return task.milestone && archivedIds.has(task.milestone) ? { ...task, milestone: undefined } : task;
 		});
 		// While a locally chosen selection is still being persisted, the in-memory selection outranks the
 		// store: rapid navigation must settle on the newest keypress. Once every write has settled the
@@ -1250,9 +1238,7 @@ export class OpenTuiWorkspaceController {
 				let approved = false;
 				if (profile.approvalArtifact) {
 					try {
-						approved =
-							(await this.#core.filesystem.taskArtifacts.status(task.id, profile.approvalArtifact)).state ===
-							"approved";
+						approved = (await this.#core.taskArtifactStatus(task.id, profile.approvalArtifact)).state === "approved";
 					} catch {
 						approved = false;
 					}
@@ -1635,7 +1621,7 @@ export class OpenTuiWorkspaceController {
 		if (this.#closed || this.#requestPolling) return;
 		this.#requestPolling = true;
 		try {
-			for (const request of await readWorkspaceRequests(this.#core.filesystem.rootDir)) {
+			for (const request of await readWorkspaceRequests(this.#core.projectRoot)) {
 				if (this.#closed) return;
 				await this.#adoptRequest(request);
 			}
@@ -2474,16 +2460,13 @@ export class OpenTuiWorkspaceController {
 				milestone: uniqueValues([
 					...this.#milestones.map((milestone) => milestone.title),
 					...this.#archivedMilestones.map((milestone) => milestone.title),
-					...tasks.map((task) => task.milestone && this.#resolveMilestoneLabel(task.milestone)),
+					...tasks.map((task) => task.milestone && getMilestoneLabel(task.milestone, this.#milestones)),
 				]),
 			},
 			onApply: (filters) => {
 				if (this.#filterEditor === filter) this.#filterEditor = undefined;
 				const nextFilters = workspaceFilters(filters);
-				const visible = applyTaskFilters(
-					[...this.#tasks.values()],
-					taskFilterOptions(nextFilters, "any", this.#resolveMilestoneLabel),
-				);
+				const visible = applyTaskFilters([...this.#tasks.values()], taskFilterOptions(nextFilters));
 				const selectedTaskId = visible.find((task) => task.id === this.#selectedTaskId)?.id ?? visible[0]?.id;
 				this.#selectedTaskId = selectedTaskId;
 				this.#taskFirstVisible = 0;
@@ -2505,7 +2488,7 @@ export class OpenTuiWorkspaceController {
 		try {
 			const configuration = await getEditableAgentConfiguration(this.#core, "project");
 			if (this.#closed || this.#host !== host) return;
-			const rootDir = this.#core.filesystem.rootDir;
+			const rootDir = this.#core.projectRoot;
 			const sessionStore = new SessionStore(rootDir, new BunRunner(), (session) =>
 				resolveSessionPreset(this.#core, session),
 			);
@@ -2569,13 +2552,13 @@ export class OpenTuiWorkspaceController {
 						}),
 				},
 				viewState,
-				listTaskIds: async () => (await this.#core.filesystem.listTasks()).map((task) => task.id),
+				listTaskIds: async () => (await this.#core.loadStoredTasks()).map((task) => task.id),
 			});
 			await modeLifecycle.recover();
 			const allHistoricalTasks = await Promise.all([
-				this.#core.filesystem.listTasks(),
-				this.#core.filesystem.listCompletedTasks(),
-				this.#core.filesystem.listArchivedTasks(),
+				this.#core.loadStoredTasks(),
+				this.#core.loadCompletedTaskRecords(),
+				this.#core.loadArchivedTaskRecords(),
 			]);
 			const historicalTaskIds = [...new Map(allHistoricalTasks.flat().map((task) => [task.id, task])).values()];
 			const historicalModeCounts: Record<string, number> = {};
@@ -2631,7 +2614,7 @@ export class OpenTuiWorkspaceController {
 					}
 					Object.assign(effectiveEnv, preset.env);
 					const discoveryPreset = await resolveLaunchPreset(preset, {
-						cwd: this.#core.filesystem.rootDir,
+						cwd: this.#core.projectRoot,
 						env: effectiveEnv,
 					});
 					const adapter = agentFor(discoveryPreset.bootstrap);
@@ -2726,7 +2709,7 @@ export class OpenTuiWorkspaceController {
 	}
 
 	async #markTaskDone(task: Task): Promise<string> {
-		const config = await this.#core.filesystem.loadConfig();
+		const config = await this.#core.getStoredConfig();
 		const statuses = config?.statuses ?? [];
 		if (isTerminalStatus(task.status, statuses)) return `Task ${task.id} is already done.`;
 		if (task.branch) return `Cannot complete task from branch "${task.branch}".`;
@@ -2808,9 +2791,9 @@ export class OpenTuiWorkspaceController {
 
 	async #setHideEmptyColumns(hideEmpty: boolean): Promise<void> {
 		try {
-			const config = await this.#core.filesystem.loadConfig();
+			const config = await this.#core.getStoredConfig();
 			if (!config) throw new Error("No config found.");
-			await this.#core.filesystem.saveConfig({ ...config, hideEmptyColumns: hideEmpty });
+			await this.#core.saveWorkspaceConfig({ ...config, hideEmptyColumns: hideEmpty });
 			this.#notice = hideEmpty ? "Hidden empty columns" : "Showing empty columns";
 		} catch (error) {
 			this.#notice = `Could not update board: ${error instanceof Error ? error.message : "Unknown error"}`;

@@ -5,7 +5,7 @@ import { Writable } from "node:stream";
 import { $ } from "bun";
 import { runCli } from "../cli/register.ts";
 import { Core } from "../index.ts";
-import { createUniqueTestDir, initializeTestProject, safeCleanup } from "./test-utils.ts";
+import { coreFileSystem, createUniqueTestDir, initializeTestProject, safeCleanup } from "./test-utils.ts";
 
 let TEST_DIR: string;
 let REMOTE_DIR: string;
@@ -73,7 +73,7 @@ describe("next id across remote branches", () => {
 		const result = await runCliCommand(["task", "create", "Local Task"], LOCAL_DIR);
 		expect(result.stdout).toContain("Created task TASK-2");
 		const core = new Core(LOCAL_DIR);
-		const task = await core.filesystem.loadTask("task-2");
+		const task = await coreFileSystem(core).loadTask("task-2");
 		expect(task).not.toBeNull();
 	});
 });

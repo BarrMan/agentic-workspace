@@ -67,8 +67,8 @@ const draftEditTarget: EditCommandTarget = {
 	statuses: async () => [DRAFT_STATUS],
 	async resolve(core, idOrSelectedPath) {
 		if (isAbsolute(idOrSelectedPath)) {
-			const direct = await core.filesystem.draftReferenceFromPath(idOrSelectedPath);
-			const resolved = await core.filesystem.resolveDraftReference(direct.canonicalId);
+			const direct = await core.draftReferenceFromPath(idOrSelectedPath);
+			const resolved = await core.resolveDraftReference(direct.canonicalId);
 			if (!resolved || resolved.filePath !== idOrSelectedPath)
 				throw new AmbiguousIdError(
 					"Draft",
@@ -78,10 +78,10 @@ const draftEditTarget: EditCommandTarget = {
 				);
 			return { ...resolved.task, id: resolved.canonicalId, filePath: resolved.filePath };
 		}
-		const reference = await core.filesystem.resolveDraftReference(idOrSelectedPath);
+		const reference = await core.resolveDraftReference(idOrSelectedPath);
 		return reference ? { ...reference.task, id: reference.canonicalId, filePath: reference.filePath } : null;
 	},
-	listCandidates: (core) => core.filesystem.listHealthyDrafts(),
+	listCandidates: (core) => core.listHealthyDrafts(),
 	selectionValue: (candidate) => candidate.filePath ?? candidate.id,
 	update: (core, existing, input) => {
 		if (!existing.filePath) throw new Error(`Cannot update draft ${existing.id} without its file path.`);
@@ -124,7 +124,7 @@ async function runEditWizard(
 		process.exitCode = 1;
 		return;
 	}
-	const config = await core.filesystem.loadConfig();
+	const config = await core.getStoredConfig();
 	const wizardInput = await runTaskEditWizard({
 		task: existingTask,
 		statuses: await target.statuses(core),

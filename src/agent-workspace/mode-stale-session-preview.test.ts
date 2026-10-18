@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { TmuxCommandError } from "libtmux";
 import { Core } from "../core/agentic-workspace.ts";
-import { initializeTestProject } from "../test/test-utils.ts";
+import { coreFileSystem, initializeTestProject } from "../test/test-utils.ts";
 import { getDefaultModeCatalog, initializeAgentConfiguration, upsertAgentConfiguration } from "./config.ts";
 import * as processTree from "./process-tree.ts";
 import { SessionStore } from "./session-store.ts";
@@ -201,7 +201,7 @@ describe("stale persisted mode session preview", () => {
 		await initializeTestProject(core, "Stale mode session");
 		const createdTask = await core.createTaskFromInput({ title: "Stale session task", status: "To Do" });
 		const taskId = createdTask.task.id;
-		const task = await core.filesystem.loadTask(taskId);
+		const task = await coreFileSystem(core).loadTask(taskId);
 		expect(task?.id).toBe(taskId);
 		if (!task) throw new Error(`Expected task ${taskId} to be loaded`);
 		const opencode = join(root, "opencode-v1");
@@ -220,7 +220,7 @@ describe("stale persisted mode session preview", () => {
 		let service = new AgentSessionService(core, { runner: harness, tmuxServer: harness });
 		const store = new SessionStore(root, harness);
 		const sessionPaths = await store.paths(taskId);
-		const taskRoot = await core.filesystem.taskArtifacts.containerPath(taskId);
+		const taskRoot = await coreFileSystem(core).taskArtifacts.containerPath(taskId);
 		const stale: AgentSession = {
 			id: randomUUID(),
 			taskId,

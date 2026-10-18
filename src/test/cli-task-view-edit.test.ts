@@ -5,7 +5,7 @@ import { Writable } from "node:stream";
 import { $ as shell } from "bun";
 import { runCli } from "../cli/register.ts";
 import { Core } from "../index.ts";
-import { createUniqueTestDir, initializeTestProject, safeCleanup } from "./test-utils.ts";
+import { coreFileSystem, createUniqueTestDir, initializeTestProject, safeCleanup } from "./test-utils.ts";
 
 let testDir: string;
 let configHome: string;
@@ -103,7 +103,7 @@ describe("CLI task view and edit", () => {
 		await $`${[...cliCommand, "task", "edit", "TASK-1", "--title", "Updated", "--description", "Structured description"]}`
 			.cwd(testDir)
 			.quiet();
-		const task = await core.filesystem.loadTask("task-1");
+		const task = await coreFileSystem(core).loadTask("task-1");
 		expect(task).toMatchObject({
 			title: "Updated",
 			description: "Structured description",

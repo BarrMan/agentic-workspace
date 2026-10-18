@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { TmuxCommandError } from "libtmux";
 import { Core } from "../core/agentic-workspace.ts";
-import { initializeTestProject } from "../test/test-utils.ts";
+import { coreFileSystem, initializeTestProject } from "../test/test-utils.ts";
 import type { Agent } from "./agents/agent.ts";
 import { agentFor, builtInAgents, registerAgent } from "./agents/agents.ts";
 import { buildAgentResumeCommand } from "./bootstrap.ts";
@@ -1758,7 +1758,7 @@ describe("shared runtime session service", () => {
 			presets: { opencode: { command, env: {}, prepare: "", bootstrap: "opencode" } },
 		});
 		const runtime = new FakeRuntime();
-		const context: WorkspaceContext = { v: 2, paneId: "%parent", rootDir: core.filesystem.rootDir };
+		const context: WorkspaceContext = { v: 2, paneId: "%parent", rootDir: coreFileSystem(core).rootDir };
 		const service = new AgentSessionService(core, {
 			runner: runtime,
 			tmuxServer: runtime,
@@ -1789,7 +1789,7 @@ describe("shared runtime session service", () => {
 			presets: { "fake-pi": { command: "fake-agent", env: {}, prepare: "", bootstrap: "pi" } },
 		});
 		const runtime = new FakeRuntime();
-		const context: WorkspaceContext = { v: 2, paneId: "%parent", rootDir: core.filesystem.rootDir };
+		const context: WorkspaceContext = { v: 2, paneId: "%parent", rootDir: coreFileSystem(core).rootDir };
 		const service = new AgentSessionService(core, {
 			runner: runtime,
 			tmuxServer: runtime,
@@ -1835,7 +1835,7 @@ describe("shared runtime session service", () => {
 		context = {
 			v: 2,
 			paneId: parent.paneId,
-			rootDir: core.filesystem.rootDir,
+			rootDir: coreFileSystem(core).rootDir,
 			conversation: { taskId: parent.record.taskId, modeId: "plan", sessionId: parent.record.id },
 			...(parent.record.nativeSessionId ? { nativeSessionId: parent.record.nativeSessionId } : {}),
 		};
@@ -1846,7 +1846,7 @@ describe("shared runtime session service", () => {
 		context = {
 			v: 2,
 			paneId: child.paneId,
-			rootDir: core.filesystem.rootDir,
+			rootDir: coreFileSystem(core).rootDir,
 			conversation: { taskId: child.record.taskId, modeId: "build", sessionId: child.record.id },
 			...(child.record.nativeSessionId ? { nativeSessionId: child.record.nativeSessionId } : {}),
 		};

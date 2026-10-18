@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { Core } from "../core/agentic-workspace.ts";
 import { initializeProject } from "../core/init.ts";
 import type { AgenticWorkspaceConfig } from "../types/index.ts";
-import { createUniqueTestDir, initializeTestProject, safeCleanup } from "./test-utils.ts";
+import { coreFileSystem, createUniqueTestDir, initializeTestProject, safeCleanup } from "./test-utils.ts";
 
 describe("Enhanced init command", () => {
 	let tmpDir: string;
@@ -20,14 +20,14 @@ describe("Enhanced init command", () => {
 		const core = new Core(tmpDir);
 
 		// Check that no config exists initially
-		const initialConfig = await core.filesystem.loadConfig();
+		const initialConfig = await coreFileSystem(core).loadConfig();
 		expect(initialConfig).toBeNull();
 
 		// Initialize project
 		await initializeTestProject(core, "New Project");
 
 		// Verify config was created with defaults
-		const config = await core.filesystem.loadConfig();
+		const config = await coreFileSystem(core).loadConfig();
 		expect(config).toBeTruthy();
 		expect(config?.projectName).toBe("New Project");
 		expect(config?.statuses).toEqual(["To Do", "In Progress", "Done"]);
@@ -50,16 +50,15 @@ describe("Enhanced init command", () => {
 			prefixes: { task: "WORK" },
 		};
 
-		await core.filesystem.ensureAgenticWorkspaceStructure();
-		await core.filesystem.saveConfig(customConfig);
+		await coreFileSystem(core).ensureAgenticWorkspaceStructure();
+		await coreFileSystem(core).saveConfig(customConfig);
 
 		// Simulate re-initialization by loading existing config
-		const existingConfig = await core.filesystem.loadConfig();
+		const existingConfig = await coreFileSystem(core).loadConfig();
 		expect(existingConfig).toBeTruthy();
 
 		const result = await initializeProject(core, {
 			projectName: "Custom Project Updated",
-			integrationMode: "none",
 			existingConfig,
 			advancedConfig: { taskPrefix: "IGNORED" },
 		});
@@ -71,7 +70,7 @@ describe("Enhanced init command", () => {
 		expect(result.config.maxColumnWidth).toBe(30);
 		expect(result.config.prefixes?.task).toBe("WORK");
 
-		const reloaded = await core.filesystem.loadConfig();
+		const reloaded = await coreFileSystem(core).loadConfig();
 		expect(reloaded?.statuses).toEqual(["Backlog", "In Progress", "Review", "Done"]);
 		expect(reloaded?.labels).toEqual(["bug", "feature", "enhancement"]);
 		expect(reloaded?.dateFormat).toBe("dd/mm/yyyy");
@@ -91,47 +90,36 @@ describe("Enhanced init command", () => {
 			defaultReporter: "@bot",
 			includeDateTimeInDates: true,
 			onStatusChange: "echo changed",
-			mcp: {
-				http: {
-					host: "127.0.0.1",
-					port: 7777,
-					auth: { type: "none" },
-				},
-			},
 		};
 
-		await core.filesystem.ensureAgenticWorkspaceStructure();
-		await core.filesystem.saveConfig(initialConfig);
+		await coreFileSystem(core).ensureAgenticWorkspaceStructure();
+		await coreFileSystem(core).saveConfig(initialConfig);
 
-		const existingConfig = await core.filesystem.loadConfig();
+		const existingConfig = await coreFileSystem(core).loadConfig();
 		if (!existingConfig) throw new Error("Expected existing config");
 
 		await initializeProject(core, {
 			projectName: "Preserve Fields Project Updated",
-			integrationMode: "none",
 			existingConfig,
 		});
 
-		const reloaded = await core.filesystem.loadConfig();
+		const reloaded = await coreFileSystem(core).loadConfig();
 		expect(reloaded?.projectName).toBe("Preserve Fields Project Updated");
 		expect(reloaded?.defaultAssignee).toEqual(["@alex"]);
 		expect(reloaded?.defaultReporter).toBe("@bot");
 		expect(reloaded?.includeDateTimeInDates).toBe(true);
 		expect(reloaded?.onStatusChange).toBe("echo changed");
-		expect(reloaded?.mcp?.http?.host).toBe("127.0.0.1");
-		expect(reloaded?.mcp?.http?.port).toBe(7777);
 	});
 
 	test("initializeProject should reject reserved task prefixes", async () => {
-		for (const taskPrefix of ["draft", "DOC", "Decision"]) {
+		for (const taskPrefix of ["draft", "Decision"]) {
 			const core = new Core(tmpDir);
 			await expect(
 				initializeProject(core, {
 					projectName: "Reserved Prefix Init",
-					integrationMode: "none",
 					advancedConfig: { taskPrefix },
 				}),
-			).rejects.toThrow(/reserved for drafts, docs, or decisions/);
+			).rejects.toThrow(/reserved for drafts or decisions/);
 			expect(await Bun.file(join(tmpDir, "agentic-workspace", "config.yml")).exists()).toBe(false);
 		}
 	});
@@ -140,34 +128,31 @@ describe("Enhanced init command", () => {
 		const core = new Core(tmpDir);
 		await initializeProject(core, {
 			projectName: "Historical Reserved Prefix",
-			integrationMode: "none",
 			advancedConfig: { taskPrefix: "JIRA" },
 		});
-		const existingConfig = await core.filesystem.loadConfig();
+		const existingConfig = await coreFileSystem(core).loadConfig();
 		if (!existingConfig) throw new Error("Missing test config");
 		existingConfig.prefixes = { task: "draft" };
-		await core.filesystem.saveConfig(existingConfig);
+		await coreFileSystem(core).saveConfig(existingConfig);
 
 		const result = await initializeProject(core, {
 			projectName: "Historical Reserved Prefix",
-			integrationMode: "none",
 			existingConfig,
 			advancedConfig: { taskPrefix: "task" },
 		});
 
 		expect(result.config.prefixes?.task).toBe("draft");
-		const loadedConfig = await core.filesystem.loadConfig();
+		const loadedConfig = await coreFileSystem(core).loadConfig();
 		expect(loadedConfig?.prefixes?.task).toBe("draft");
 
 		// Re-init cannot introduce a reserved prefix either.
 		await expect(
 			initializeProject(core, {
 				projectName: "Historical Reserved Prefix",
-				integrationMode: "none",
 				existingConfig,
-				advancedConfig: { taskPrefix: "doc" },
+				advancedConfig: { taskPrefix: "decision" },
 			}),
-		).rejects.toThrow(/reserved for drafts, docs, or decisions/);
+		).rejects.toThrow(/reserved for drafts or decisions/);
 	});
 
 	test("initializeProject should use custom taskPrefix from advancedConfig", async () => {
@@ -176,7 +161,6 @@ describe("Enhanced init command", () => {
 		// Initialize project with custom prefix via initializeProject function
 		const result = await initializeProject(core, {
 			projectName: "JIRA Init Test",
-			integrationMode: "none",
 			advancedConfig: {
 				taskPrefix: "JIRA",
 			},
@@ -186,7 +170,7 @@ describe("Enhanced init command", () => {
 		expect(result.config.prefixes?.task).toBe("JIRA");
 
 		// Verify it was saved
-		const loadedConfig = await core.filesystem.loadConfig();
+		const loadedConfig = await coreFileSystem(core).loadConfig();
 		expect(loadedConfig?.prefixes?.task).toBe("JIRA");
 	});
 
@@ -196,20 +180,18 @@ describe("Enhanced init command", () => {
 		// First init with custom prefix
 		await initializeProject(core, {
 			projectName: "Re-Init Test",
-			integrationMode: "none",
 			advancedConfig: {
 				taskPrefix: "ISSUE",
 			},
 		});
 
 		// Verify initial prefix
-		const initialConfig = await core.filesystem.loadConfig();
+		const initialConfig = await coreFileSystem(core).loadConfig();
 		expect(initialConfig?.prefixes?.task).toBe("ISSUE");
 
 		// Re-initialize (simulating re-init with different taskPrefix - should be ignored)
 		const result = await initializeProject(core, {
 			projectName: "Re-Init Test Updated",
-			integrationMode: "none",
 			existingConfig: initialConfig,
 			advancedConfig: {
 				taskPrefix: "CHANGED", // This should be ignored since existingConfig has prefixes
@@ -226,7 +208,6 @@ describe("Enhanced init command", () => {
 		// Initialize without custom prefix
 		const result = await initializeProject(core, {
 			projectName: "Default Prefix Init",
-			integrationMode: "none",
 		});
 
 		expect(result.success).toBe(true);
@@ -239,7 +220,6 @@ describe("Enhanced init command", () => {
 		// Initialize with custom prefix
 		await initializeProject(core1, {
 			projectName: "Disk Persistence Test",
-			integrationMode: "none",
 			advancedConfig: {
 				taskPrefix: "PERSIST",
 			},
@@ -248,7 +228,7 @@ describe("Enhanced init command", () => {
 		// Create a NEW Core instance to bypass any in-memory cache
 		// This simulates what happens when a user runs a new command in a new process
 		const core2 = new Core(tmpDir);
-		const loadedConfig = await core2.filesystem.loadConfig();
+		const loadedConfig = await coreFileSystem(core2).loadConfig();
 
 		// This test would fail if prefixes aren't properly serialized/parsed from disk
 		expect(loadedConfig?.prefixes?.task).toBe("PERSIST");
@@ -261,12 +241,11 @@ describe("Enhanced init command", () => {
 			projectName: "Hidden AgenticWorkspace Init",
 			agenticWorkspaceDirectory: ".agentic-workspace",
 			agenticWorkspaceDirectorySource: ".agentic-workspace",
-			integrationMode: "none",
 		});
 
 		const configExists = await Bun.file(join(tmpDir, ".agentic-workspace", "config.yml")).exists();
 		expect(configExists).toBe(true);
-		expect(new Core(tmpDir).filesystem.agenticWorkspaceDirName).toBe(".agentic-workspace");
+		expect(coreFileSystem(new Core(tmpDir)).agenticWorkspaceDirName).toBe(".agentic-workspace");
 	});
 
 	test("initializeProject should honor .agentic-workspace source when agenticWorkspaceDirectory is omitted", async () => {
@@ -275,7 +254,6 @@ describe("Enhanced init command", () => {
 		await initializeProject(core, {
 			projectName: "Hidden AgenticWorkspace Source Only",
 			agenticWorkspaceDirectorySource: ".agentic-workspace",
-			integrationMode: "none",
 		});
 
 		expect(await Bun.file(join(tmpDir, ".agentic-workspace", "config.yml")).exists()).toBe(true);
@@ -289,20 +267,19 @@ describe("Enhanced init command", () => {
 			agenticWorkspaceDirectory: "planning/agentic-workspace-data",
 			agenticWorkspaceDirectorySource: "custom",
 			configLocation: "root",
-			integrationMode: "none",
 		});
 
 		const rootConfigPath = join(tmpDir, "agentic-workspace.config.yml");
 		const rootConfig = await Bun.file(rootConfigPath).text();
 		const configExists = await Bun.file(rootConfigPath).exists();
 		const freshCore = new Core(tmpDir);
-		const freshConfig = await freshCore.filesystem.loadConfig();
+		const freshConfig = await coreFileSystem(freshCore).loadConfig();
 
 		expect(configExists).toBe(true);
 		expect(rootConfig).toContain('agentic_workspace_directory: "planning/agentic-workspace-data"');
-		expect(freshCore.filesystem.agenticWorkspaceDirName).toBe("planning/agentic-workspace-data");
+		expect(coreFileSystem(freshCore).agenticWorkspaceDirName).toBe("planning/agentic-workspace-data");
 		expect(freshConfig?.projectName).toBe("Custom AgenticWorkspace Init");
-		expect(freshCore.filesystem.agenticWorkspaceDirName).toBe("planning/agentic-workspace-data");
+		expect(coreFileSystem(freshCore).agenticWorkspaceDirName).toBe("planning/agentic-workspace-data");
 	});
 
 	test("initializeProject should default custom agentic-workspace directories to root config when configLocation is omitted", async () => {
@@ -311,7 +288,6 @@ describe("Enhanced init command", () => {
 			projectName: "Custom AgenticWorkspace Default Root",
 			agenticWorkspaceDirectory: "planning/agentic-workspace-data",
 			agenticWorkspaceDirectorySource: "custom",
-			integrationMode: "none",
 		});
 
 		const rootConfigPath = join(tmpDir, "agentic-workspace.config.yml");
@@ -326,7 +302,6 @@ describe("Enhanced init command", () => {
 		await initializeProject(core, {
 			projectName: "Custom AgenticWorkspace Inferred Source",
 			agenticWorkspaceDirectory: "planning/agentic-workspace-data",
-			integrationMode: "none",
 		});
 
 		const rootConfigPath = join(tmpDir, "agentic-workspace.config.yml");
@@ -344,7 +319,6 @@ describe("Enhanced init command", () => {
 				agenticWorkspaceDirectory: "planning/agentic-workspace-data",
 				agenticWorkspaceDirectorySource: "custom",
 				configLocation: "folder",
-				integrationMode: "none",
 			}),
 		).rejects.toThrow("Custom AgenticWorkspace directories require root config discovery.");
 	});
@@ -356,7 +330,6 @@ describe("Enhanced init command", () => {
 				projectName: "Mismatched AgenticWorkspace Source",
 				agenticWorkspaceDirectory: "planning/agentic-workspace-data",
 				agenticWorkspaceDirectorySource: ".agentic-workspace",
-				integrationMode: "none",
 			}),
 		).rejects.toThrow("AgenticWorkspace directory source and directory value must agree.");
 	});

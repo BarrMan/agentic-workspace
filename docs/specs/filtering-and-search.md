@@ -2,7 +2,7 @@
 
 ## Overview
 
-Let users narrow the workspace task list and find records across project tasks, documents, and decision records.
+Let users narrow the workspace task list and find records across project tasks and decision records.
 
 ## Goals
 
@@ -53,23 +53,23 @@ Let users narrow the workspace task list and find records across project tasks, 
 
 ### IF-FS-002: Cross-record search scope and matching
 
-**Description:** Search spans tasks, documents, and decision records within the project directory. It uses case-insensitive literal matching over task ids, titles, descriptions, and assignees, and document and decision-record bodies.
+**Description:** Search spans tasks and decision records within the project directory. It uses case-insensitive literal matching over task ids, titles, descriptions, and assignees, and decision-record bodies.
 
 **Trigger:** User or integration submits cross-record search.
 
 **Preconditions:** A project directory is available.
 
 **Behavior:**
-1. Search tasks, documents, and decision records within the project directory.
-2. Match case-insensitively and literally over task ids, titles, descriptions, and assignees, and document and decision-record bodies.
+1. Search tasks and decision records within the project directory.
+2. Match case-insensitively and literally over task ids, titles, descriptions, and assignees, and decision-record bodies.
 
 **Outcome:** Matching project records are returned.
 
 **Failures:** Records outside the project scope are excluded.
 
 **Acceptance Criteria:**
-- [ ] IF-FS-002-AC-01: Search a project containing tasks, documents, and decision records and confirm all three record types are covered.
-- [ ] IF-FS-002-AC-02: Confirm matching checks task ids, titles, descriptions, assignees, and document/decision-record bodies.
+- [ ] IF-FS-002-AC-01: Search a project containing tasks and decision records and confirm both record types are covered.
+- [ ] IF-FS-002-AC-02: Confirm matching checks task ids, titles, descriptions, assignees, and decision-record bodies.
 - [ ] IF-FS-002-AC-03: Confirm matching is case-insensitive and literal.
 - [ ] IF-FS-002-AC-04: Confirm records outside the project directory are excluded.
 
@@ -146,7 +146,7 @@ Let users narrow the workspace task list and find records across project tasks, 
 
 **Action:** Apply, change, or clear task filters; submit a search query and supported archive/format options.
 
-**Response:** Show matching project tasks with an active-filter summary, or return matching tasks, documents, and decision records.
+**Response:** Show matching project tasks with an active-filter summary, or return matching tasks and decision records.
 
 **Feedback:** The interface provides filter clear/reset actions; searches use literal case-insensitive matching and return plain-text or JSON results.
 
@@ -158,7 +158,7 @@ Let users narrow the workspace task list and find records across project tasks, 
 
 **Inputs:** Search query, project directory, optional archived-record inclusion, and output format.
 
-**Outputs:** Matching tasks, documents, and decision records as plain-text or JSON.
+**Outputs:** Matching tasks and decision records as plain-text or JSON.
 
 **Failures:** No additional failure behavior is specified in this contract. Unsupported formats, regex, fuzzy ranking, and pagination are not supported.
 

@@ -7,7 +7,7 @@ import type { AgentConfiguration } from "../agent-workspace/types.ts";
 import { Core } from "../core/agentic-workspace.ts";
 import { CREATE_LOCK_ERROR_MESSAGE } from "../file-system/operations.ts";
 import type { Task } from "../types";
-import { initializeTestProject, withTimeout } from "./test-utils.ts";
+import { coreFileSystem, initializeTestProject, withTimeout } from "./test-utils.ts";
 
 type Deferred<T> = {
 	promise: Promise<T>;
@@ -45,10 +45,10 @@ describe("atomic task creation", () => {
 		const core = new Core(testDir);
 		await initializeTestProject(core, "Atomic Create Test", false);
 
-		const config = await core.filesystem.loadConfig();
+		const config = await coreFileSystem(core).loadConfig();
 		if (config) {
 			config.checkActiveBranches = false;
-			await core.filesystem.saveConfig(config);
+			await coreFileSystem(core).saveConfig(config);
 		}
 	});
 
@@ -74,7 +74,7 @@ describe("atomic task creation", () => {
 			title: "Task preset",
 			agentConfiguration: { ...configuration, selectedPreset: "second" },
 		});
-		expect((await core.filesystem.loadTask(inherited.task.id))?.agentConfiguration).toBeUndefined();
+		expect((await coreFileSystem(core).loadTask(inherited.task.id))?.agentConfiguration).toBeUndefined();
 		expect((await resolveAgentConfiguration(core, overridden.task.id)).config.selectedPreset).toBe("second");
 		await upsertAgentConfiguration(core, "project", { ...configuration, selectedPreset: "second" });
 		expect((await resolveAgentConfiguration(core, inherited.task.id)).config.selectedPreset).toBe("second");
@@ -92,8 +92,8 @@ describe("atomic task creation", () => {
 		let saveEntries = 0;
 
 		const patchSaveTask = (core: Core) => {
-			const original = core.filesystem.saveTask.bind(core.filesystem);
-			core.filesystem.saveTask = (async (task: Task): Promise<string> => {
+			const original = coreFileSystem(core).saveTask.bind(coreFileSystem(core));
+			coreFileSystem(core).saveTask = (async (task: Task): Promise<string> => {
 				saveEntries += 1;
 				if (task.title === "Alpha") {
 					firstEnteredSave.resolve();
@@ -103,7 +103,7 @@ describe("atomic task creation", () => {
 					secondEnteredSave.resolve();
 				}
 				return await original(task);
-			}) as typeof core.filesystem.saveTask;
+			}) as ReturnType<typeof coreFileSystem>["saveTask"];
 		};
 
 		patchSaveTask(first);
@@ -162,7 +162,7 @@ describe("atomic task creation", () => {
 			releaseFirstWrite.resolve();
 			await expectResolvesWithin(Promise.all([promoteA, promoteB]), 3_000, "both draft promotions should finish");
 
-			const tasks = await setup.filesystem.listTasks();
+			const tasks = await coreFileSystem(setup).listTasks();
 			expect(tasks.map((task) => task.id)).toEqual(["TASK-1", "TASK-2"]);
 			expect(tasks.map((task) => task.title)).toEqual(["Draft A", "Draft B"]);
 		} finally {
@@ -207,7 +207,7 @@ describe("atomic task creation", () => {
 			releaseFirstWrite.resolve();
 			await expectResolvesWithin(Promise.all([demoteA, demoteB]), 3_000, "both task demotions should finish");
 
-			const drafts = await setup.filesystem.listDrafts();
+			const drafts = await coreFileSystem(setup).listDrafts();
 			expect(drafts.map((draft) => draft.id)).toEqual(["DRAFT-1", "DRAFT-2"]);
 			expect(drafts.map((draft) => draft.title)).toEqual(["Task A", "Task B"]);
 		} finally {
@@ -237,10 +237,10 @@ describe("atomic task creation", () => {
 		}) as typeof Bun.write;
 
 		try {
-			const firstCreate = first.filesystem.createMilestone("Alpha Milestone");
+			const firstCreate = coreFileSystem(first).createMilestone("Alpha Milestone");
 			await expectResolvesWithin(firstEnteredWrite.promise, 250, "first milestone create should reach Bun.write");
 
-			const secondCreate = second.filesystem.createMilestone("Beta Milestone");
+			const secondCreate = coreFileSystem(second).createMilestone("Beta Milestone");
 			await Promise.resolve();
 			await Promise.resolve();
 			expect(writeEntries).toBe(1);
@@ -260,7 +260,7 @@ describe("atomic task creation", () => {
 		const lockEntered = createDeferred<void>();
 		const releaseLock = createDeferred<void>();
 
-		const heldLock = core.filesystem.withCreateLock(
+		const heldLock = coreFileSystem(core).withCreateLock(
 			async () => {
 				lockEntered.resolve();
 				await releaseLock.promise;
@@ -270,7 +270,7 @@ describe("atomic task creation", () => {
 		await lockEntered.promise;
 
 		await expect(
-			core.filesystem.withCreateLock(async () => undefined, {
+			coreFileSystem(core).withCreateLock(async () => undefined, {
 				timeoutMs: 100,
 				retryDelayMs: 25,
 				staleMs: 5_000,

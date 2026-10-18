@@ -442,7 +442,7 @@ describe("buildKanbanStatusGroups", () => {
 });
 
 describe("generateMilestoneGroupedBoard", () => {
-	it("groups milestone ID and title aliases into one section using file title", () => {
+	it("groups only identical stored milestone IDs", () => {
 		const tasks: Task[] = [
 			{
 				id: "task-1",
@@ -462,7 +462,7 @@ describe("generateMilestoneGroupedBoard", () => {
 				createdDate: "2026-01-01",
 				labels: [],
 				dependencies: [],
-				milestone: "Release 1.0",
+				milestone: "m-1",
 			},
 		];
 		const milestones: Milestone[] = [
@@ -472,10 +472,16 @@ describe("generateMilestoneGroupedBoard", () => {
 				description: "Milestone: Release 1.0",
 				rawContent: "## Description\n\nMilestone: Release 1.0",
 			},
+			{
+				id: "m-1",
+				title: "Release 1.0",
+				description: "Milestone: Release 1.0",
+				rawContent: "## Description\n\nMilestone: Release 1.0",
+			},
 		];
 
 		const board = generateMilestoneGroupedBoard(tasks, ["To Do"], milestones, "Test Project");
-		expect(board.match(/## Release 1\.0 \(\d+ tasks\)/g)?.length).toBe(1);
+		expect(board.match(/## Release 1\.0 \(1 tasks\)/g)?.length).toBe(2);
 		expect(board).toContain("**TASK-1** - By ID");
 		expect(board).toContain("**TASK-2** - By title");
 	});
@@ -497,7 +503,7 @@ describe("generateMilestoneGroupedBoard", () => {
 		expect(board).not.toContain("@, ");
 	});
 
-	it("keeps ambiguous reused milestone titles as separate sections", () => {
+	it("keeps milestones with reused titles grouped by exact ID", () => {
 		const tasks: Task[] = [
 			{
 				id: "task-1",
@@ -517,7 +523,7 @@ describe("generateMilestoneGroupedBoard", () => {
 				createdDate: "2026-01-01",
 				labels: [],
 				dependencies: [],
-				milestone: "Shared",
+				milestone: "m-0",
 			},
 		];
 		const milestones: Milestone[] = [
@@ -539,7 +545,7 @@ describe("generateMilestoneGroupedBoard", () => {
 		expect(board.match(/## Shared \(\d+ tasks\)/g)?.length).toBe(2);
 	});
 
-	it("uses canonical numeric aliases when raw IDs collide", () => {
+	it("does not treat numeric values as milestone ID aliases", () => {
 		const tasks: Task[] = [
 			{
 				id: "task-1",
@@ -568,7 +574,7 @@ describe("generateMilestoneGroupedBoard", () => {
 		];
 
 		const board = generateMilestoneGroupedBoard(tasks, ["To Do"], milestones, "Test Project");
-		expect(board).toContain("## Canonical (2 tasks)");
-		expect(board).not.toContain("## Historical (1 tasks)");
+		expect(board).toContain("## Canonical (1 tasks)");
+		expect(board).toContain("## Historical (1 tasks)");
 	});
 });

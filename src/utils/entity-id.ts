@@ -1,5 +1,6 @@
 /**
- * Shared identity rules for prefixed entity IDs (tasks, documents, decisions).
+ * Shared identity rules for decision IDs and the shared ambiguity error.
+ * Task IDs use task-id.ts and have different zero-padding semantics.
  *
  * Identity must fail closed: an ID with no addressable body never matches, and an ID that
  * matches more than one file raises {@link AmbiguousIdError} instead of picking a winner.
@@ -71,4 +72,27 @@ export function findUniqueEntityById<T extends { id: string }>(
 		);
 	}
 	return matches[0] ?? null;
+}
+
+const DECISION_PREFIX = "decision";
+
+type ContentIdentity = { id: string; title: string; path?: string };
+
+export function normalizeDecisionId(id: string): string {
+	return normalizeEntityId(DECISION_PREFIX, id);
+}
+
+/** Canonical lookup key, or null when the decision has no addressable ID. */
+export function decisionIdKey(id: string): string | null {
+	return entityIdKey(DECISION_PREFIX, id);
+}
+
+export function findDecisionById<T extends ContentIdentity>(decisions: readonly T[], id: string): T | null {
+	return findUniqueEntityById(
+		"Decision",
+		DECISION_PREFIX,
+		id,
+		decisions,
+		(decision) => decision.path ?? decision.title,
+	);
 }

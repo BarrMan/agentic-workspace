@@ -3,7 +3,7 @@ import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { Core } from "../core/agentic-workspace.ts";
 import { getTestCliCommand } from "./test-cli.ts";
-import { createUniqueTestDir, initializeFilesystemTestProject, safeCleanup } from "./test-utils.ts";
+import { coreFileSystem, createUniqueTestDir, initializeFilesystemTestProject, safeCleanup } from "./test-utils.ts";
 
 const roots: string[] = [];
 const CLI_COMMAND = getTestCliCommand();
@@ -38,7 +38,7 @@ describe("generic task artifact CLI contract", () => {
 			.quiet();
 		expect(initialTaskList.exitCode).toBe(0);
 		const initial = JSON.parse(initialTaskList.stdout.toString());
-		const expectedDirectory = await core.filesystem.taskArtifacts.containerPath(taskId);
+		const expectedDirectory = await coreFileSystem(core).taskArtifacts.containerPath(taskId);
 		expect(initial.directory).toBe(expectedDirectory);
 		expect(initial.artifacts).toEqual([]);
 

@@ -8,7 +8,6 @@ Link the issue or task this PR closes, e.g. `closes #123` or `closes task-29`.
 > - If no issue exists, open one first so maintainers and contributors can agree that the proposal fits the current project scope before implementation.
 > - All PRs must have an associated AgenticWorkspace task.
 > - If no task exists, create one first using: `agentic-workspace task create "Your task title"`
-> - Follow the [task guidelines](../src/guidelines/agent-guidelines.md) when creating tasks
 > - Tasks should be atomic, testable, and well-defined with clear acceptance criteria
 
 ## Task Checklist

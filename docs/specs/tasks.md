@@ -231,7 +231,7 @@ This contract defines task identity and data, project storage, artifacts, work c
 
 ### TASK-011: Artifact ownership and modes
 
-**Description:** Artifacts are user-managed files with arbitrary names and contents. Modes and approval follow the [mode contract](configuration.md#functional-requirements); artifact file tools operate independently of mode-specific document schemas and approval checks.
+**Description:** Artifacts are user-managed files with arbitrary names and contents. Modes and approval follow the [mode contract](configuration.md#functional-requirements); artifact file tools operate independently of mode configuration and approval checks.
 
 **Trigger:** The user operates on an artifact.
 
@@ -239,14 +239,14 @@ This contract defines task identity and data, project storage, artifacts, work c
 
 **Behavior:**
 1. Treat artifacts as user-managed arbitrary-name/content files.
-2. Follow the mode contract independently of mode-specific document schemas and approval checks.
+2. Follow the mode contract independently of artifact approval checks.
 
 **Outcome:** Artifact tools operate independently of those schemas and checks.
 
 **Failures:** None.
 
 **Acceptance Criteria:**
-- Arbitrary artifact names and contents are user-managed; mode behavior is independent of document schemas and approvals.
+- Arbitrary artifact names and contents are user-managed; mode behavior is independent of artifact approvals.
 
 ### TASK-012: Task worktrees
 
@@ -291,7 +291,7 @@ This contract defines task identity and data, project storage, artifacts, work c
 
 ### TASK-014: Milestones
 
-**Description:** Milestones support adding, renaming, listing, and archiving, with task-status counts and completion percentages. Renaming preserves task assignments. Removing a milestone clears or reassigns all matching task references, so retained tasks refer only to existing milestones or have no assignment.
+**Description:** Milestones support adding, renaming, listing, and archiving, with task-status counts and completion percentages. Tasks store the exact milestone ID; milestone titles are display-only. Renaming preserves task assignments. Removing a milestone clears or reassigns all matching task references, so retained tasks refer only to existing milestones or have no assignment.
 
 **Trigger:** The user adds, renames, lists, archives, or removes a milestone.
 
@@ -306,7 +306,7 @@ This contract defines task identity and data, project storage, artifacts, work c
 **Failures:** None.
 
 **Acceptance Criteria:**
-- Milestone operations and counts/percentages are available; rename preserves assignments and removal clears or reassigns references.
+- Milestone operations and counts/percentages are available; tasks store exact milestone IDs, titles are display-only, rename preserves assignments, and removal clears or reassigns references.
 
 ### TASK-015: Destructive task deletion
 
@@ -531,6 +531,7 @@ This contract defines task identity and data, project storage, artifacts, work c
 
 **Invariants:**
 - Retained tasks refer only to existing milestones or have no assignment.
+- Tasks store exact milestone IDs; titles are display-only and are not accepted as assignment aliases.
 
 ## User Interactions
 

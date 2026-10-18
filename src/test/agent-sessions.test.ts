@@ -18,7 +18,7 @@ import { type WorkspaceContext, workspaceRequestDir } from "../agent-workspace/w
 import { Core } from "../core/agentic-workspace.ts";
 import { ensureTaskWorktree, taskWorktreeExists, taskWorktreePath } from "../git/task-worktree.ts";
 import { registerPromptAgent } from "./agent-test-helpers.ts";
-import { createConcurrencyLimiter, initGitRepo, initializeTestProject } from "./test-utils.ts";
+import { coreFileSystem, createConcurrencyLimiter, initGitRepo, initializeTestProject } from "./test-utils.ts";
 import { isolatedTmuxServer, killTmuxServer, uniqueTmuxSocket } from "./tmux-test-server.ts";
 
 const processRows: processTree.ProcessRow[] = [];
@@ -908,18 +908,22 @@ describe.concurrent("AgentSessionService", () => {
 		});
 		const service = new AgentSessionService(core, { runner, tmuxServer: runner });
 		const session = await service.start("task-1");
-		const taskDir = await core.filesystem.taskArtifacts.containerPath(session.taskId);
-		expect(session.pathContext).toEqual({ projectDir: core.filesystem.rootDir, worktreeDir: session.cwd, taskDir });
+		const taskDir = await coreFileSystem(core).taskArtifacts.containerPath(session.taskId);
+		expect(session.pathContext).toEqual({
+			projectDir: coreFileSystem(core).rootDir,
+			worktreeDir: session.cwd,
+			taskDir,
+		});
 		const created = runner.actions.find((action) => action.type === "newSession");
 		expect(created?.options.environment?.PATH).toBe("/custom/bin");
-		expect(created?.options.environment?.AGENTIC_WORKSPACE_PROJECT_DIR).toBe(core.filesystem.rootDir);
+		expect(created?.options.environment?.AGENTIC_WORKSPACE_PROJECT_DIR).toBe(coreFileSystem(core).rootDir);
 		expect(created?.options.environment?.AGENTIC_WORKSPACE_WORKTREE_DIR).toBe(session.cwd);
 		expect(created?.options.environment?.AGENTIC_WORKSPACE_TASK_DIR).toBe(taskDir);
 		expect(created?.options.environment?.TASK_CONTEXT).toBe(taskDir);
 		const preparation = runner.processCommands.findIndex((args) => args[0] === "/bin/sh" && args[2] === prepareCommand);
 		expect(preparation).toBeGreaterThanOrEqual(0);
 		expect(runner.processOptions[preparation]?.env).toMatchObject({
-			AGENTIC_WORKSPACE_PROJECT_DIR: core.filesystem.rootDir,
+			AGENTIC_WORKSPACE_PROJECT_DIR: coreFileSystem(core).rootDir,
 			AGENTIC_WORKSPACE_WORKTREE_DIR: session.cwd,
 			AGENTIC_WORKSPACE_TASK_DIR: taskDir,
 			TASK_CONTEXT: taskDir,
@@ -1470,7 +1474,7 @@ describe.concurrent("AgentSessionService", () => {
 		const context: WorkspaceContext = {
 			v: 2,
 			paneId: "%workspace",
-			rootDir: core.filesystem.rootDir,
+			rootDir: coreFileSystem(core).rootDir,
 		};
 		const service = new AgentSessionService(core, {
 			runner,
@@ -1521,7 +1525,7 @@ describe.concurrent("AgentSessionService", () => {
 			{
 				v: 2,
 				paneId: "%workspace",
-				rootDir: core.filesystem.rootDir,
+				rootDir: coreFileSystem(core).rootDir,
 			},
 		);
 		await service.stop("task-1", pending.id);
@@ -1537,7 +1541,7 @@ describe.concurrent("AgentSessionService", () => {
 		const service = new AgentSessionService(core, {
 			runner,
 			tmuxServer: runner,
-			workspaceContext: async () => ({ v: 2, paneId: "%workspace", rootDir: core.filesystem.rootDir }),
+			workspaceContext: async () => ({ v: 2, paneId: "%workspace", rootDir: coreFileSystem(core).rootDir }),
 		});
 		const pending = await service.registerPendingSession(
 			"task-1",
@@ -1545,7 +1549,7 @@ describe.concurrent("AgentSessionService", () => {
 			{
 				v: 2,
 				paneId: "%workspace",
-				rootDir: core.filesystem.rootDir,
+				rootDir: coreFileSystem(core).rootDir,
 			},
 		);
 		const adopted = await service.prepareNativeSession("task-1", pending.id);
@@ -1563,7 +1567,7 @@ describe.concurrent("AgentSessionService", () => {
 		const service = new AgentSessionService(core, {
 			runner,
 			tmuxServer: runner,
-			workspaceContext: async () => ({ v: 2, paneId: "%workspace", rootDir: core.filesystem.rootDir }),
+			workspaceContext: async () => ({ v: 2, paneId: "%workspace", rootDir: coreFileSystem(core).rootDir }),
 		});
 		const pending = await service.registerPendingSession(
 			"task-1",
@@ -1571,7 +1575,7 @@ describe.concurrent("AgentSessionService", () => {
 			{
 				v: 2,
 				paneId: "%workspace",
-				rootDir: core.filesystem.rootDir,
+				rootDir: coreFileSystem(core).rootDir,
 			},
 		);
 		const adopted = await service.adoptPendingSession("task-1", pending.id);
@@ -1596,10 +1600,10 @@ describe.concurrent("AgentSessionService", () => {
 			{
 				v: 2,
 				paneId: "%foreign-workspace",
-				rootDir: core.filesystem.rootDir,
+				rootDir: coreFileSystem(core).rootDir,
 			},
 		);
-		await new SessionStore(core.filesystem.rootDir, new BunRunner()).mutateSession(
+		await new SessionStore(coreFileSystem(core).rootDir, new BunRunner()).mutateSession(
 			"TASK-1",
 			pending.id,
 			async (record) => {
@@ -1746,7 +1750,7 @@ describe.concurrent("AgentSessionService", () => {
 			workspaceContext: async () => ({
 				v: 2,
 				paneId: "%dead-workspace",
-				rootDir: core.filesystem.rootDir,
+				rootDir: coreFileSystem(core).rootDir,
 			}),
 		});
 		const pending = await service.registerPendingSession(

@@ -13,7 +13,7 @@ afterEach(async () => {
 });
 
 describe("MilestoneStore", () => {
-	it("does not guess between duplicate title matches while preserving exact ID lookup", async () => {
+	it("loads milestones by exact ID only", async () => {
 		const root = await mkdtemp(join(tmpdir(), "agentic-workspace-milestones-"));
 		directories.push(root);
 		const active = join(root, "milestones");
@@ -35,6 +35,7 @@ describe("MilestoneStore", () => {
 		});
 
 		expect(await store.load("Release")).toBeNull();
+		expect(await store.load("1")).toBeNull();
 		expect((await store.load("m-2"))?.title).toBe("Release");
 	});
 });

@@ -3,7 +3,7 @@ import { mkdir } from "node:fs/promises";
 import { $ } from "bun";
 import { Core } from "../core/agentic-workspace.ts";
 import type { Task } from "../types/index.ts";
-import { createUniqueTestDir, initGitRepo, initializeTestProject, safeCleanup } from "./test-utils.ts";
+import { coreFileSystem, createUniqueTestDir, initGitRepo, initializeTestProject, safeCleanup } from "./test-utils.ts";
 
 let TEST_DIR: string;
 let WORKTREE_DIR: string;
@@ -51,11 +51,11 @@ describe("worktree task refresh", () => {
 	it("refreshes the main-worktree task store after a linked-worktree create", async () => {
 		const setupCore = new Core(TEST_DIR);
 		await initializeTestProject(setupCore, "Worktree Refresh", true);
-		const config = await setupCore.filesystem.loadConfig();
+		const config = await coreFileSystem(setupCore).loadConfig();
 		if (!config) {
 			throw new Error("Expected initialized config");
 		}
-		await setupCore.filesystem.saveConfig({
+		await coreFileSystem(setupCore).saveConfig({
 			...config,
 			checkActiveBranches: true,
 			remoteOperations: false,

@@ -1,15 +1,17 @@
-import { readFileSync } from "node:fs";
-import { dirname, resolve } from "node:path";
 import type { Command } from "commander";
 import { DEFAULT_STATUSES, DRAFT_STATUS } from "../constants/index.ts";
-import { parseConfig } from "../file-system/config.ts";
 import type { AgenticWorkspaceConfig } from "../types/index.ts";
-import { resolveAgenticWorkspaceDirectory } from "../utils/agentic-workspace-directory.ts";
 import { getPriorityLabels } from "../utils/priority-config.ts";
 import { getProjectValues } from "../utils/project-config.ts";
-import { AGENTIC_WORKSPACE_CWD_ENV } from "../utils/runtime-cwd.ts";
 import { statusComparisonKey } from "../utils/status.ts";
 import { getTaskTypeValues } from "../utils/task-type-config.ts";
+
+let helpConfig: AgenticWorkspaceConfig | null = null;
+
+/** Install the config snapshot CLI help reads; help rendering stays synchronous. */
+export function configureHelpValues(config: AgenticWorkspaceConfig | null): void {
+	helpConfig = config;
+}
 
 export interface HelpField {
 	name: string;
@@ -83,31 +85,6 @@ export function addHelpSchema(command: Command, schema: HelpSchema): Command {
 	return command.addHelpText("after", () => renderHelpSchema(schema));
 }
 
-function readConfig(configPath: string): AgenticWorkspaceConfig | null {
-	try {
-		return parseConfig(readFileSync(configPath, "utf8"), configPath);
-	} catch {
-		return null;
-	}
-}
-
-function findAgenticWorkspaceConfigPathSync(startDir: string): string | null {
-	let current = startDir;
-	while (current !== dirname(current)) {
-		const resolution = resolveAgenticWorkspaceDirectory(current);
-		if (resolution.configPath) {
-			return resolution.configPath;
-		}
-		current = dirname(current);
-	}
-	return null;
-}
-
-function getRuntimeConfigStartDir(): string {
-	const override = process.env[AGENTIC_WORKSPACE_CWD_ENV]?.trim();
-	return override ? resolve(override) : process.cwd();
-}
-
 function includeDraftStatus(statuses: string[]): string[] {
 	const normalizedStatuses = normalizeStatusValues(statuses);
 	const hasDraft = normalizedStatuses.some(
@@ -122,8 +99,7 @@ function normalizeStatusValues(statuses: string[]): string[] {
 
 function getCliStatusValues(options?: { includeDraft?: boolean }): string[] {
 	let configuredStatuses: string[] = [...DEFAULT_STATUSES];
-	const configPath = findAgenticWorkspaceConfigPathSync(getRuntimeConfigStartDir());
-	const config = configPath ? readConfig(configPath) : null;
+	const config = helpConfig;
 	if (config && config.statuses.length > 0) configuredStatuses = config.statuses;
 
 	const normalizedStatuses = normalizeStatusValues(configuredStatuses);
@@ -131,27 +107,19 @@ function getCliStatusValues(options?: { includeDraft?: boolean }): string[] {
 }
 
 function getCliPriorityValues(): string[] {
-	const configPath = findAgenticWorkspaceConfigPathSync(getRuntimeConfigStartDir());
-	const config = configPath ? readConfig(configPath) : null;
-	return getPriorityLabels(config?.priorities);
+	return getPriorityLabels(helpConfig?.priorities);
 }
 
 export function getCliTaskTypeValues(): string[] {
-	const configPath = findAgenticWorkspaceConfigPathSync(getRuntimeConfigStartDir());
-	const config = configPath ? readConfig(configPath) : null;
-	return getTaskTypeValues(config?.types);
+	return getTaskTypeValues(helpConfig?.types);
 }
 
 function getCliProjectValues(): string[] {
-	const configPath = findAgenticWorkspaceConfigPathSync(getRuntimeConfigStartDir());
-	const config = configPath ? readConfig(configPath) : null;
-	return getProjectValues(config?.projects ?? []);
+	return getProjectValues(helpConfig?.projects ?? []);
 }
 
 function getCliTaskPrefix(): string {
-	const configPath = findAgenticWorkspaceConfigPathSync(getRuntimeConfigStartDir());
-	const config = configPath ? readConfig(configPath) : null;
-	return config?.prefixes?.task ?? "task";
+	return helpConfig?.prefixes?.task ?? "task";
 }
 
 function taskIdExample(body: string): string {

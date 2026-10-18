@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { Core } from "../core/agentic-workspace.ts";
 import { serializeTask } from "../markdown/serializer.ts";
 import { executeStatusCallback } from "../utils/status-callback.ts";
+import { coreFileSystem } from "./test-utils.ts";
 
 describe("Status Change Callbacks", () => {
 	describe("executeStatusCallback", () => {
@@ -131,7 +132,7 @@ onStatusChange: 'echo "$TASK_ID:$OLD_STATUS->$NEW_STATUS" > "${callbackOutputPat
 			});
 
 			// Invalidate config cache to ensure fresh read
-			core.filesystem.invalidateConfigCache();
+			coreFileSystem(core).invalidateConfigCache();
 
 			// Update status
 			await core.updateTaskFromInput(task.id, { status: "In Progress" });
@@ -280,7 +281,7 @@ onStatusChange: 'echo "$TASK_ID:$OLD_STATUS->$NEW_STATUS" >> "${callbackOutputPa
 			});
 
 			// Invalidate config cache
-			core.filesystem.invalidateConfigCache();
+			coreFileSystem(core).invalidateConfigCache();
 
 			// Reorder task to "In Progress" column (simulating board drag)
 			await core.reorderTask({

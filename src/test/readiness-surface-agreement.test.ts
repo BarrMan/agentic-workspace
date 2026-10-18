@@ -6,7 +6,7 @@ import { Core } from "../core/agentic-workspace.ts";
 import { type TaskCorpus, toTaskDetail, withReadiness } from "../core/task-detail.ts";
 import { searchJson } from "../formatters/json-output.ts";
 import { generateTaskDetailStyled } from "../ui/opentui/task-detail-content.ts";
-import { createUniqueTestDir, initializeFilesystemTestProject, safeCleanup } from "./test-utils.ts";
+import { coreFileSystem, createUniqueTestDir, initializeFilesystemTestProject, safeCleanup } from "./test-utils.ts";
 
 /**
  * Readiness is derived once in core, and every surface renders that one verdict. These tests pin
@@ -83,8 +83,8 @@ describe("readiness agreement across surfaces", () => {
 		// The corpus the interactive task list resolves against: the working copy it displays plus
 		// the completed records it loads alongside the milestone metadata.
 		tasks: await core.queryTasks({ includeCrossBranch: false }),
-		completedTasks: await core.filesystem.listCompletedTasks(),
-		statuses: (await core.filesystem.loadConfig())?.statuses,
+		completedTasks: await coreFileSystem(core).listCompletedTasks(),
+		statuses: (await coreFileSystem(core).loadConfig())?.statuses,
 	});
 
 	it("derives readiness for the interactive task corpus", async () => {
@@ -228,11 +228,7 @@ describe("search JSON readiness for a contested identity", () => {
 		// The two claimants genuinely differ: one waits on unfinished work, the other on nothing.
 		expect(rows.map((row) => row.isReady)).toEqual([false, true]);
 
-		const payload = searchJson(
-			rows.map((task) => ({ type: "task" as const, score: null, task })),
-			"/project",
-			"docs",
-		);
+		const payload = searchJson(rows.map((task) => ({ type: "task" as const, score: null, task })));
 		expect(payload.results.map((result) => (result.type === "task" ? result.data.isReady : null))).toEqual([
 			false,
 			true,

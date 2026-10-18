@@ -13,7 +13,7 @@ import { mountOpenTuiAgentSettings } from "../ui/opentui/agent-settings.ts";
 import { createWorkspaceFilters } from "../ui/opentui/workspace/state.ts";
 import { mountOpenTuiWorkspace, type OpenTuiWorkspaceOptions } from "../ui/opentui/workspace.ts";
 import { OpenTuiWorkspaceController } from "../ui/opentui/workspace-controller.ts";
-import { initializeFilesystemTestProject } from "./test-utils.ts";
+import { coreFileSystem, initializeFilesystemTestProject } from "./test-utils.ts";
 
 const RAW_PROMPT = "first line\n\n  indentation and {raw} placeholders\nlast line\n";
 const ARTIFACTS = [
@@ -55,7 +55,7 @@ describe("independent MAIN settings persistence through public input", () => {
 			modes,
 		};
 		await upsertAgentConfiguration(core, "project", configuration);
-		const path = core.filesystem.configFilePath;
+		const path = coreFileSystem(core).configFilePath;
 		const setup = await createTestRenderer({ width: 140, height: 42, kittyKeyboard: true, exitOnCtrlC: false });
 		cleanup.push(() => setup.renderer.destroy());
 		const root = new BoxRenderable(setup.renderer, { width: "100%", height: "100%", flexDirection: "column" });

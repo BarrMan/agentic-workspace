@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from "bun:test";
 import { Core } from "../core/agentic-workspace.ts";
 import { searchSnapshot } from "../core/search-service.ts";
 import type { Decision, Task, TaskSearchResult } from "../types/index.ts";
-import { createUniqueTestDir, safeCleanup } from "./test-utils.ts";
+import { coreFileSystem, createUniqueTestDir, safeCleanup } from "./test-utils.ts";
 
 const directories: string[] = [];
 
@@ -10,8 +10,8 @@ async function createProject(): Promise<Core> {
 	const root = createUniqueTestDir("snapshot-search");
 	directories.push(root);
 	const core = new Core(root);
-	await core.filesystem.ensureAgenticWorkspaceStructure();
-	await core.filesystem.saveConfig({
+	await coreFileSystem(core).ensureAgenticWorkspaceStructure();
+	await coreFileSystem(core).saveConfig({
 		projectName: "Snapshot search",
 		statuses: ["To Do", "Done"],
 		labels: [],
@@ -51,10 +51,10 @@ afterEach(async () => {
 describe("snapshot search", () => {
 	it("filters task metadata and ranks full-text matches", async () => {
 		const core = await createProject();
-		await core.filesystem.saveTask(
+		await coreFileSystem(core).saveTask(
 			task("TASK-1", "Needle query", "needle needle", { labels: ["web"], priority: "High" }),
 		);
-		await core.filesystem.saveTask(task("TASK-2", "Other", "needle", { labels: ["api"], priority: "Low" }));
+		await coreFileSystem(core).saveTask(task("TASK-2", "Other", "needle", { labels: ["api"], priority: "Low" }));
 
 		expect(titles(await core.searchPersistently({ query: "needle", types: ["task"] }))).toEqual([
 			"Needle query",
@@ -67,11 +67,11 @@ describe("snapshot search", () => {
 
 	it("applies global limits and reflects the next disk read", async () => {
 		const core = await createProject();
-		await core.filesystem.saveTask(task("TASK-1", "First", "needle"));
-		await core.filesystem.saveTask(task("TASK-2", "Second", "needle"));
+		await coreFileSystem(core).saveTask(task("TASK-1", "First", "needle"));
+		await coreFileSystem(core).saveTask(task("TASK-2", "Second", "needle"));
 		expect(titles(await core.searchPersistently({ query: "needle", types: ["task"], limit: 1 }))).toHaveLength(1);
 
-		await core.filesystem.saveTask(task("TASK-1", "Updated", "replacement"));
+		await coreFileSystem(core).saveTask(task("TASK-1", "Updated", "replacement"));
 		expect(titles(await core.searchPersistently({ query: "replacement", types: ["task"] }))).toEqual(["Updated"]);
 	});
 
@@ -99,8 +99,8 @@ describe("snapshot search", () => {
 
 	it("matches literal substrings case-insensitively without fuzzy ranking", async () => {
 		const core = await createProject();
-		await core.filesystem.saveTask(task("TASK-1", "Needle", "ordinary text"));
-		await core.filesystem.saveTask(task("TASK-2", "Needful", "ordinary text"));
+		await coreFileSystem(core).saveTask(task("TASK-1", "Needle", "ordinary text"));
+		await coreFileSystem(core).saveTask(task("TASK-2", "Needful", "ordinary text"));
 
 		expect(titles(await core.searchPersistently({ query: "NEEDLE", types: ["task"] }))).toEqual(["Needle"]);
 		expect(titles(await core.searchPersistently({ query: "needel", types: ["task"] }))).toEqual([]);
@@ -109,11 +109,11 @@ describe("snapshot search", () => {
 	it("keeps matching and empty-query results in supplied corpus order", () => {
 		const first = task("TASK-2", "needle first", "");
 		const second = task("TASK-1", "needle second", "");
-		const matches = searchSnapshot([first, second], [], [], { query: "NEEDLE", types: ["task"] });
-		const unfiltered = searchSnapshot([first, second], [], [], { query: "  ", types: ["task"] });
+		const matches = searchSnapshot([first, second], [], { query: "NEEDLE", types: ["task"] });
+		const unfiltered = searchSnapshot([first, second], [], { query: "  ", types: ["task"] });
 
 		expect(matches.map((result) => result.type === "task" && result.task.id)).toEqual(["TASK-2", "TASK-1"]);
 		expect(unfiltered.map((result) => result.type === "task" && result.task.id)).toEqual(["TASK-2", "TASK-1"]);
-		expect(searchSnapshot([], [], [], { query: "missing" })).toEqual([]);
+		expect(searchSnapshot([], [], { query: "missing" })).toEqual([]);
 	});
 });

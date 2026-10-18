@@ -150,7 +150,7 @@ None recorded in the [Workspace and board contract](specs/workspace-and-board.md
 
 #### Purpose
 
-Let users narrow the workspace task list and find records across project tasks, documents, and decision records.
+Let users narrow the workspace task list and find records across project tasks and decision records.
 
 #### Requirements
 

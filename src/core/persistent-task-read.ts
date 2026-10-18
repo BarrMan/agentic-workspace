@@ -1,37 +1,31 @@
 import { DEFAULT_INIT_CONFIG, DEFAULT_STATUSES } from "../constants/index.ts";
-import type { FileSystem } from "../file-system/operations.ts";
 import type { GitOperations } from "../git/operations.ts";
 import { TASK_SOURCE, type Task } from "../types/index.ts";
 import { AmbiguousTaskIdError } from "../utils/task-path.ts";
 import { createTaskSearchIndex } from "../utils/task-search.ts";
 import { TaskCollectionParentNotFoundError } from "./domain-errors.ts";
 import type { Storage } from "./storage.ts";
-import {
-	completedTaskIdentityRecord,
-	TaskIdentityIndex,
-	workingCopyTaskIdentityRecord,
-} from "./task-identity-index.ts";
-import { addSearchableArtifactText, BranchTaskLoader, type TaskCorpusSnapshot } from "./task-loader.ts";
+import { TaskIdentityIndex } from "./task-identity-index.ts";
+import { BranchTaskLoader, type TaskCorpusSnapshot } from "./task-loader.ts";
 import { filterTaskQueryResults, type TaskQueryOptions } from "./task-query-workflow.ts";
 
 /** A single persistent read. No subscriptions, session generations, retained indexes, or retries. */
 export class PersistentTaskRead {
 	constructor(
-		private readonly filesystem: FileSystem,
-		private readonly git: GitOperations,
 		private readonly storage: Storage,
+		private readonly git: GitOperations,
 	) {}
 
 	async load(includeCrossBranch = true): Promise<TaskCorpusSnapshot & { identityIndex: TaskIdentityIndex }> {
-		const config = await this.filesystem.loadConfig();
+		const config = await this.storage.loadConfig();
 		this.git.setConfig(config);
 		const branches = includeCrossBranch && config?.checkActiveBranches !== false && config?.filesystemOnly !== true;
 		const tips = branches
 			? await this.git.listRecentBranchTips(config?.activeBranchDays ?? DEFAULT_INIT_CONFIG.activeBranchDays)
 			: [];
 		const [activeTasks, completedTasks] = await Promise.all([
-			this.filesystem.listTasks(),
-			this.filesystem.listCompletedTasks(),
+			this.storage.loadTasks(),
+			this.storage.loadCompletedTasks(),
 		]);
 		const localTasks = activeTasks.map((task) => ({ ...task, source: TASK_SOURCE.LOCAL }));
 		const branchStateEntries = branches
@@ -41,7 +35,7 @@ export class PersistentTaskRead {
 						config,
 						localTasks,
 						true,
-						this.filesystem.agenticWorkspaceDirName,
+						this.storage.workspaceDirectoryName,
 						undefined,
 						tips.find((tip) => tip.current && !tip.name.startsWith("origin/"))?.name ??
 							(await this.git.getCurrentBranch()),
@@ -50,15 +44,11 @@ export class PersistentTaskRead {
 			: [];
 		const identityIndex = new TaskIdentityIndex(
 			[
-				...localTasks.map((task) => workingCopyTaskIdentityRecord(task, "task", task.filePath ?? task.id)),
-				...completedTasks.map((task) => completedTaskIdentityRecord(task, task.filePath ?? task.id)),
+				...localTasks.map((task) => this.storage.localTaskIdentityRecord(task)),
+				...completedTasks.map((task) => this.storage.localCompletedTaskIdentityRecord(task)),
 				...branchStateEntries,
 			],
-			{
-				repositoryRoot: branches ? await this.git.getRepositoryRoot() : null,
-				projectRoot: this.filesystem.rootDir,
-				agenticWorkspaceDirectory: this.filesystem.agenticWorkspaceDirName,
-			},
+			this.storage.taskIdentityContext(branches ? await this.git.getRepositoryRoot() : null),
 			config?.statuses ?? [...DEFAULT_STATUSES],
 			config?.taskResolutionStrategy ?? "most_progressed",
 		);
@@ -83,7 +73,7 @@ export class PersistentTaskRead {
 		if (result.status === "ambiguous") throw new AmbiguousTaskIdError(taskId, result.candidates);
 		if (result.status === "found") return result.task;
 		if (options.forMutation) return null;
-		return await this.filesystem.loadTask(taskId, { includeArchived: options.includeArchived });
+		return await this.storage.loadTask(taskId, { includeArchived: options.includeArchived });
 	}
 
 	async query(
@@ -99,7 +89,7 @@ export class PersistentTaskRead {
 			filters = { ...filters, parentTaskId: parent.task.id };
 		}
 		const sourceTasks = options.includeCrossBranch === false ? corpus.activeTasks : corpus.tasks;
-		const tasks = await addSearchableArtifactText(sourceTasks, this.filesystem.taskArtifacts);
+		const tasks = await this.storage.addSearchableArtifactText(sourceTasks);
 		const matches = options.query?.trim()
 			? createTaskSearchIndex(tasks).search({ query: options.query.trim() })
 			: tasks;

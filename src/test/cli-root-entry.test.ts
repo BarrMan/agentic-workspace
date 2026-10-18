@@ -157,7 +157,6 @@ describe("CLI root entry (bare run)", () => {
 		expect(out).toMatch(/Usage: .*agentic-workspace/);
 		expect(out).not.toContain("agentic-workspace init");
 		expect(out).not.toContain("agentic-workspace cleanup");
-		expect(out).not.toContain("agentic-workspace mcp");
 		expect(out).toContain("  workspace");
 		const taskHelp = await $`${CLI_COMMAND} task --help`.cwd(TEST_DIR).text();
 		expect(taskHelp).toContain("done");

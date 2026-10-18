@@ -15,6 +15,7 @@ import {
 } from "../markdown/parser.ts";
 import { serializeDecision, serializeMilestone, serializeTask } from "../markdown/serializer.ts";
 import type { Decision, Milestone, Task } from "../types/index.ts";
+import { coreFileSystem } from "./test-utils.ts";
 
 const task: Task = {
 	id: "TASK-1",
@@ -83,14 +84,14 @@ describe("task frontmatter storage", () => {
 		const root = await mkdtemp(join(tmpdir(), "agentic-workspace-task-approval-"));
 		const core = new Core(root);
 		try {
-			await core.filesystem.ensureAgenticWorkspaceStructure();
+			await coreFileSystem(core).ensureAgenticWorkspaceStructure();
 			await updateAgentConfiguration(core, "project", (configuration) => ({
 				...configuration,
 				modes: getDefaultModeCatalog(),
 			}));
-			await core.filesystem.saveTask(task);
+			await coreFileSystem(core).saveTask(task);
 			await Promise.all([core.setTaskModeApproval(task.id, "build"), core.setTaskModeApproval(task.id, "plan")]);
-			expect((await core.filesystem.loadTask(task.id))?.modeApprovals).toEqual({ build: true, plan: true });
+			expect((await coreFileSystem(core).loadTask(task.id))?.modeApprovals).toEqual({ build: true, plan: true });
 		} finally {
 			await rm(root, { recursive: true, force: true });
 		}
@@ -151,7 +152,6 @@ describe("task frontmatter storage", () => {
 		const decisionsDir = join(root, "decisions");
 		const repository = new ContentRepository({
 			decisionsDirectory: async () => decisionsDir,
-			documentsDirectory: async () => join(root, "documents"),
 			ensureDirectory: async (directory) => {
 				await mkdir(directory, { recursive: true });
 			},
@@ -191,9 +191,9 @@ describe("task frontmatter storage", () => {
 			rawContent: "",
 		};
 		try {
-			await core.filesystem.ensureAgenticWorkspaceStructure();
+			await coreFileSystem(core).ensureAgenticWorkspaceStructure();
 			await core.createDecision(decision);
-			await core.filesystem.saveDecision(decision, { stale_metadata: "discarded" });
+			await coreFileSystem(core).saveDecision(decision, { stale_metadata: "discarded" });
 			await core.updateDecisionFromContent(
 				"decision-1",
 				serializeDecision(
@@ -201,7 +201,7 @@ describe("task frontmatter storage", () => {
 					{ submitted_metadata: "kept" },
 				),
 			);
-			const saved = await readFile(join(core.filesystem.decisionsDir, "decision-1 - Choose.md"), "utf8");
+			const saved = await readFile(join(coreFileSystem(core).decisionsDir, "decision-1 - Choose.md"), "utf8");
 			expect(saved).toContain("submitted_metadata: kept");
 			expect(saved).not.toContain("stale_metadata:");
 		} finally {

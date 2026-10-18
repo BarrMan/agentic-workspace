@@ -17,7 +17,7 @@ Define configuration access and precedence, configurable modes and task-scoped a
 
 ### Out of Scope
 
-- An `init` command or setup wizard; prescribed mode sequences, required documents, or artifact-review gates; provider-owned configuration, data, or state changes.
+- An `init` command or setup wizard; prescribed mode sequences, required deliverables, or artifact-review gates; provider-owned configuration, data, or state changes.
 
 ## Actors
 
@@ -90,7 +90,7 @@ Define configuration access and precedence, configurable modes and task-scoped a
 
 ### CONFIG-004: Configurable mode catalogue
 
-**Description:** A mode catalogue is required for workspace startup. Modes are dynamic and configurable; users define modes and instructions, including whether a mode produces documents, and can add modes, rename labels, reorder modes, and select a default. Mode contents and outputs are user-defined.
+**Description:** A mode catalogue is required for workspace startup. Modes are dynamic and configurable; users define modes and instructions and can add modes, rename labels, reorder modes, and select a default. Mode contents and outputs are user-defined.
 
 **Trigger:** Workspace startup or user catalogue edits.
 
@@ -98,33 +98,33 @@ Define configuration access and precedence, configurable modes and task-scoped a
 
 **Behavior:**
 1. Load the catalogue.
-2. Support adding modes, renaming labels, reordering modes, defining prompts and optional documents, and selecting a default.
+2. Support adding modes, renaming labels, reordering modes, defining prompts and optional deliverables, and selecting a default.
 
 **Outcome:** The workspace uses the user-defined catalogue and selected default.
 
 **Failures:** Catalogue load failures fail startup and report the error (CONFIG-014).
 
 **Acceptance Criteria:**
-- [ ] Users can add modes, rename labels, reorder modes, define prompts and optional documents, and select a default.
+- [ ] Users can add modes, rename labels, reorder modes, define prompts and optional deliverables, and select a default.
 - [ ] The workspace requires its mode catalogue at startup.
 
 ### CONFIG-005: Modes are categories
 
-**Description:** Modes are categories, not a prescribed sequence; Plan, particular documents, and specific workflows are not required.
+**Description:** Modes are categories, not a prescribed sequence; Plan, particular deliverables, and specific workflows are not required.
 
 **Trigger:** User configures or uses a mode.
 
 **Preconditions:** A mode exists.
 
 **Behavior:**
-1. Permit user-defined mode categories without imposing a workflow or document set.
+1. Permit user-defined mode categories without imposing a workflow or deliverable set.
 
 **Outcome:** The user controls the workflow and mode contents.
 
 **Failures:** None.
 
 **Acceptance Criteria:**
-- [ ] A user-defined mode can be used without requiring Plan, specific documents, or a prescribed sequence.
+- [ ] A user-defined mode can be used without requiring Plan, specific deliverables, or a prescribed sequence.
 
 ### CONFIG-006: Task mode and session ownership
 
@@ -353,7 +353,7 @@ Define configuration access and precedence, configurable modes and task-scoped a
 
 **Invariants:**
 - A session's owning mode remains fixed; task selection does not change session execution.
-- Modes are user-defined categories without prescribed sequence or required document set.
+- Modes are user-defined categories without prescribed sequence or required deliverable set.
 
 ### Task/mode approval
 

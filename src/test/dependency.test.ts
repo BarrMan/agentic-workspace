@@ -5,8 +5,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Core } from "../core/agentic-workspace.ts";
 import type { Task } from "../types/index.ts";
-import { taskIdsEqual } from "../utils/task-path.ts";
-import { initializeFilesystemTestProject } from "./test-utils.ts";
+import { taskIdsEqual } from "../utils/task-id.ts";
+import { coreFileSystem, initializeFilesystemTestProject } from "./test-utils.ts";
 
 describe("Task Dependencies", () => {
 	let tempDir: string;
@@ -65,7 +65,7 @@ describe("Task Dependencies", () => {
 		await core.createTask(dependentTask);
 
 		// Verify the task was created with dependencies
-		const savedTask = await core.filesystem.loadTask("task-3");
+		const savedTask = await coreFileSystem(core).loadTask("task-3");
 		expect(savedTask).not.toBeNull();
 		expect(savedTask?.dependencies).toEqual(["task-1", "task-2"]);
 	});
@@ -113,7 +113,7 @@ describe("Task Dependencies", () => {
 		await core.updateTaskFromInput(task3.id, { dependencies: ["task-1", "task-2"] });
 
 		// Verify the dependencies were updated
-		const savedTask = await core.filesystem.loadTask("task-3");
+		const savedTask = await coreFileSystem(core).loadTask("task-3");
 		expect(savedTask).not.toBeNull();
 		expect(savedTask?.dependencies).toEqual(["TASK-1", "TASK-2"]);
 	});
@@ -153,7 +153,7 @@ describe("Task Dependencies", () => {
 		await core.createTask(task2);
 
 		// Verify the task was created with dependency on draft
-		const savedTask = await core.filesystem.loadTask("task-2");
+		const savedTask = await coreFileSystem(core).loadTask("task-2");
 		expect(savedTask).not.toBeNull();
 		expect(savedTask?.dependencies).toEqual(["task-1"]);
 	});
@@ -188,7 +188,7 @@ describe("Task Dependencies", () => {
 		await core.createTask(task);
 
 		// Load the task back and verify all fields
-		const loadedTask = await core.filesystem.loadTask("task-1");
+		const loadedTask = await coreFileSystem(core).loadTask("task-1");
 		expect(loadedTask).not.toBeNull();
 		expect(loadedTask?.id).toBe("TASK-1");
 		expect(loadedTask?.title).toBe("Task with multiple dependencies");
@@ -212,7 +212,7 @@ describe("Task Dependencies", () => {
 
 		await core.createTask(task);
 
-		const loadedTask = await core.filesystem.loadTask("task-1");
+		const loadedTask = await coreFileSystem(core).loadTask("task-1");
 		expect(loadedTask).not.toBeNull();
 		expect(loadedTask?.dependencies).toEqual([]);
 	});
@@ -273,9 +273,9 @@ describe("Task Dependencies", () => {
 		expect(archived.success).toBe(true);
 		expect(archived.cleanedTaskIds).toEqual(["TASK-2", "TASK-4", "TASK-3"]);
 
-		const updatedActive = await core.filesystem.loadTask("task-2");
-		const updatedChild = await core.filesystem.loadTask("task-4");
-		const completedTasks = await core.filesystem.listCompletedTasks();
+		const updatedActive = await coreFileSystem(core).loadTask("task-2");
+		const updatedChild = await coreFileSystem(core).loadTask("task-4");
+		const completedTasks = await coreFileSystem(core).listCompletedTasks();
 		const completed = completedTasks.find((task) => task.id === "TASK-3");
 
 		expect(updatedActive?.dependencies).toEqual([]);
@@ -285,13 +285,13 @@ describe("Task Dependencies", () => {
 	});
 
 	test("should sanitize archive links when archiving by full id with custom task prefix", async () => {
-		const config = await core.filesystem.loadConfig();
+		const config = await coreFileSystem(core).loadConfig();
 		expect(config).not.toBeNull();
 		if (!config) {
 			return;
 		}
 		config.prefixes = { task: "back" };
-		await core.filesystem.saveConfig(config);
+		await coreFileSystem(core).saveConfig(config);
 
 		const { task: archiveTarget } = await core.createTaskFromInput({
 			title: "Custom prefix target",
@@ -304,7 +304,7 @@ describe("Task Dependencies", () => {
 		const archived = await core.archiveTask(archiveTarget.id);
 		expect(archived.success).toBe(true);
 
-		const updatedDependent = await core.filesystem.loadTask(dependentTask.id);
+		const updatedDependent = await coreFileSystem(core).loadTask(dependentTask.id);
 		expect(updatedDependent?.dependencies).toEqual([]);
 	});
 
@@ -320,7 +320,7 @@ describe("Task Dependencies", () => {
 
 		const { task: edited } = await core.createTaskFromInput({ title: "Edited after completion" });
 		await core.updateTaskFromInput(edited.id, { dependencies: [predecessor.id] });
-		expect((await core.filesystem.loadTask(edited.id))?.dependencies).toEqual([predecessor.id]);
+		expect((await coreFileSystem(core).loadTask(edited.id))?.dependencies).toEqual([predecessor.id]);
 	});
 
 	test("accepts an archived task as a dependency at create and edit time", async () => {
@@ -336,7 +336,7 @@ describe("Task Dependencies", () => {
 		expect(created.dependencies).toEqual([predecessor.id]);
 
 		await core.updateTaskFromInput(edited.id, { dependencies: [predecessor.id] });
-		expect((await core.filesystem.loadTask(edited.id))?.dependencies).toEqual([predecessor.id]);
+		expect((await coreFileSystem(core).loadTask(edited.id))?.dependencies).toEqual([predecessor.id]);
 	});
 
 	test("re-editing the dependency list of a task whose predecessor completed keeps working", async () => {
@@ -351,7 +351,7 @@ describe("Task Dependencies", () => {
 
 		// --depends-on replaces the whole list, so the existing completed entry must revalidate too.
 		await core.updateTaskFromInput(dependent.id, { dependencies: [predecessor.id, other.id] });
-		expect((await core.filesystem.loadTask(dependent.id))?.dependencies).toEqual([predecessor.id, other.id]);
+		expect((await coreFileSystem(core).loadTask(dependent.id))?.dependencies).toEqual([predecessor.id, other.id]);
 	});
 
 	test("still accepts drafts and rejects unknown dependency IDs", async () => {
@@ -359,7 +359,7 @@ describe("Task Dependencies", () => {
 		const { task } = await core.createTaskFromInput({ title: "Dependent task" });
 
 		await core.updateTaskFromInput(task.id, { dependencies: [draft.id] });
-		expect((await core.filesystem.loadTask(task.id))?.dependencies).toEqual([draft.id]);
+		expect((await coreFileSystem(core).loadTask(task.id))?.dependencies).toEqual([draft.id]);
 
 		await expect(core.updateTaskFromInput(task.id, { dependencies: ["task-999"] })).rejects.toThrow(
 			"The following dependencies do not exist: task-999",
@@ -372,17 +372,17 @@ describe("Task Dependencies", () => {
 		expect(await core.completeTask(predecessor.id)).toBe(true);
 
 		// Recreate the completed task's file in the active tasks directory so two files claim its ID.
-		const completed = (await core.filesystem.listCompletedTasks()).find((task) => task.id === predecessor.id);
+		const completed = (await coreFileSystem(core).listCompletedTasks()).find((task) => task.id === predecessor.id);
 		expect(completed?.filePath).toBeDefined();
 		if (!completed?.filePath) return;
-		const duplicatePath = join(core.filesystem.tasksDir, "task-1", "task.md");
-		await mkdir(join(core.filesystem.tasksDir, "task-1"), { recursive: true });
+		const duplicatePath = join(coreFileSystem(core).tasksDir, "task-1", "task.md");
+		await mkdir(join(coreFileSystem(core).tasksDir, "task-1"), { recursive: true });
 		await Bun.write(duplicatePath, await Bun.file(completed.filePath).text());
 
 		await expect(core.updateTaskFromInput(dependent.id, { dependencies: [predecessor.id] })).rejects.toThrow(
 			/ambiguous/,
 		);
-		expect((await core.filesystem.loadTask(dependent.id))?.dependencies ?? []).toEqual([]);
+		expect((await coreFileSystem(core).loadTask(dependent.id))?.dependencies ?? []).toEqual([]);
 	});
 
 	test("should not sanitize draft dependencies when archiving", async () => {
@@ -417,7 +417,7 @@ describe("Task Dependencies", () => {
 		});
 		await core.archiveTask("task-1");
 
-		const draft = await core.filesystem.loadDraft("draft-1");
+		const draft = await coreFileSystem(core).loadDraft("draft-1");
 		expect(draft?.dependencies).toEqual(["TASK-1"]);
 	});
 });
@@ -454,7 +454,7 @@ describe("Self-referential and cyclic dependencies", () => {
 		await expect(core.updateTaskFromInput(task.id, { dependencies: [`${prefix}-00${digits}`] })).rejects.toThrow(
 			"The following dependencies do not exist",
 		);
-		expect((await core.filesystem.loadTask(task.id))?.dependencies ?? []).toEqual([]);
+		expect((await coreFileSystem(core).loadTask(task.id))?.dependencies ?? []).toEqual([]);
 	});
 
 	test("rejects a dependency that closes a two-task cycle, naming the path", async () => {
@@ -464,7 +464,7 @@ describe("Self-referential and cyclic dependencies", () => {
 		await expect(core.updateTaskFromInput(first.id, { addDependencies: [second.id] })).rejects.toThrow(
 			`These dependencies would create a cycle: ${first.id} -> ${second.id} -> ${first.id}`,
 		);
-		expect((await core.filesystem.loadTask(first.id))?.dependencies ?? []).toEqual([]);
+		expect((await coreFileSystem(core).loadTask(first.id))?.dependencies ?? []).toEqual([]);
 	});
 
 	test("rejects a dependency that closes a multi-hop cycle, naming the full path", async () => {
@@ -475,7 +475,7 @@ describe("Self-referential and cyclic dependencies", () => {
 		await expect(core.updateTaskFromInput(first.id, { dependencies: [third.id] })).rejects.toThrow(
 			`These dependencies would create a cycle: ${first.id} -> ${third.id} -> ${second.id} -> ${first.id}`,
 		);
-		expect((await core.filesystem.loadTask(first.id))?.dependencies ?? []).toEqual([]);
+		expect((await coreFileSystem(core).loadTask(first.id))?.dependencies ?? []).toEqual([]);
 	});
 
 	test("rejects a create whose allocated ID would close a cycle through a dangling reference", async () => {
@@ -494,7 +494,7 @@ describe("Self-referential and cyclic dependencies", () => {
 		await expect(core.createTaskFromInput({ title: "Closes the loop", dependencies: ["task-1"] })).rejects.toThrow(
 			"would create a cycle",
 		);
-		expect(await core.filesystem.loadTask("task-2")).toBeNull();
+		expect(await coreFileSystem(core).loadTask("task-2")).toBeNull();
 	});
 
 	test("repairing a stored cycle by replacing the dependency list succeeds", async () => {
@@ -513,7 +513,7 @@ describe("Self-referential and cyclic dependencies", () => {
 
 		// The stored record's own outgoing edges must not veto the repair that removes them.
 		await core.updateTaskFromInput("task-1", { dependencies: [other.id] });
-		expect((await core.filesystem.loadTask("task-1"))?.dependencies).toEqual([other.id]);
+		expect((await coreFileSystem(core).loadTask("task-1"))?.dependencies).toEqual([other.id]);
 
 		// A proposed list that is itself cyclic stays rejected.
 		await expect(core.updateTaskFromInput("task-1", { dependencies: ["task-2"] })).rejects.toThrow(
@@ -537,7 +537,7 @@ describe("Self-referential and cyclic dependencies", () => {
 		// traverse the contested identity, so the return path behind it must fail the edit closed.
 		await core.createTask({ ...record("task-3", "Contested", ["task-1"]), status: "Done" });
 		expect(await core.completeTask("task-3")).toBe(true);
-		const completed = (await core.filesystem.listCompletedTasks()).find((task) => taskIdsEqual(task.id, "task-3"));
+		const completed = (await coreFileSystem(core).listCompletedTasks()).find((task) => taskIdsEqual(task.id, "task-3"));
 		expect(completed?.filePath).toBeDefined();
 		if (!completed?.filePath) return;
 		await mkdir(join(tempDir, "agentic-workspace", "tasks", "task-3"), { recursive: true });
@@ -549,7 +549,7 @@ describe("Self-referential and cyclic dependencies", () => {
 		await expect(core.updateTaskFromInput("task-1", { dependencies: ["task-2"] })).rejects.toThrow(
 			"more than one record claims",
 		);
-		expect((await core.filesystem.loadTask("task-1"))?.dependencies ?? []).toEqual([]);
+		expect((await coreFileSystem(core).loadTask("task-1"))?.dependencies ?? []).toEqual([]);
 	});
 
 	test("rejects a promotion whose allocated ID would close a cycle through a dangling reference", async () => {
@@ -569,8 +569,8 @@ describe("Self-referential and cyclic dependencies", () => {
 		});
 
 		await expect(core.editTaskOrDraft(draft.id, { status: "To Do" })).rejects.toThrow("would create a cycle");
-		expect(await core.filesystem.loadDraft(draft.id)).not.toBeNull();
-		expect(await core.filesystem.loadTask("task-2")).toBeNull();
+		expect(await coreFileSystem(core).loadDraft(draft.id)).not.toBeNull();
+		expect(await coreFileSystem(core).loadTask("task-2")).toBeNull();
 	});
 
 	test("rejects a demotion whose allocated draft ID would close a cycle through a dangling reference", async () => {
@@ -590,8 +590,8 @@ describe("Self-referential and cyclic dependencies", () => {
 		});
 
 		await expect(core.updateTaskFromInput(demotee.id, { status: "Draft" })).rejects.toThrow("would create a cycle");
-		expect(await core.filesystem.loadTask(demotee.id)).not.toBeNull();
-		expect(await core.filesystem.loadDraft("draft-2")).toBeNull();
+		expect(await coreFileSystem(core).loadTask(demotee.id)).not.toBeNull();
+		expect(await coreFileSystem(core).loadDraft("draft-2")).toBeNull();
 	});
 
 	test("an explicit draft dependency does not resolve to the allocated task ID", async () => {
@@ -604,7 +604,7 @@ describe("Self-referential and cyclic dependencies", () => {
 	test("rejects a promotion whose dangling reference equals the allocated task ID", async () => {
 		// The reference resolves to nothing, so only the pre-resolution target check can catch it;
 		// writing the record under the allocated ID would store a direct self-dependency.
-		await core.filesystem.saveDraft({
+		await coreFileSystem(core).saveDraft({
 			id: "draft-1",
 			title: "Dangling reference to the next task ID",
 			status: "Draft",
@@ -615,8 +615,8 @@ describe("Self-referential and cyclic dependencies", () => {
 		});
 
 		await expect(core.editTaskOrDraft("draft-1", { status: "To Do" })).rejects.toThrow("cannot depend on itself");
-		expect(await core.filesystem.loadDraft("draft-1")).not.toBeNull();
-		expect(await core.filesystem.loadTask("task-1")).toBeNull();
+		expect(await coreFileSystem(core).loadDraft("draft-1")).not.toBeNull();
+		expect(await coreFileSystem(core).loadTask("task-1")).toBeNull();
 	});
 
 	test("rejects a demotion whose dangling reference equals the allocated draft ID", async () => {
@@ -631,8 +631,8 @@ describe("Self-referential and cyclic dependencies", () => {
 		});
 
 		await expect(core.updateTaskFromInput("task-1", { status: "Draft" })).rejects.toThrow("cannot depend on itself");
-		expect(await core.filesystem.loadTask("task-1")).not.toBeNull();
-		expect(await core.filesystem.loadDraft("draft-1")).toBeNull();
+		expect(await coreFileSystem(core).loadTask("task-1")).not.toBeNull();
+		expect(await coreFileSystem(core).loadDraft("draft-1")).toBeNull();
 	});
 
 	test("a stored self-dependency does not block adding an unrelated dependency", async () => {
@@ -649,6 +649,6 @@ describe("Self-referential and cyclic dependencies", () => {
 		await core.createTask(storedTask);
 
 		await core.updateTaskFromInput(storedTask.id, { addDependencies: [other.id] });
-		expect((await core.filesystem.loadTask(storedTask.id))?.dependencies).toEqual(["task-9", other.id]);
+		expect((await coreFileSystem(core).loadTask(storedTask.id))?.dependencies).toEqual(["task-9", other.id]);
 	});
 });

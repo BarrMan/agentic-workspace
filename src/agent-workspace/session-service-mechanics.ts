@@ -55,9 +55,9 @@ export async function pathContextForSession(
 ): Promise<AgentSessionPathContext> {
 	const saved = session.pathContext;
 	return {
-		projectDir: saved?.projectDir ?? core.filesystem.rootDir,
+		projectDir: saved?.projectDir ?? core.projectRoot,
 		worktreeDir: saved?.worktreeDir ?? session.cwd,
-		taskDir: saved?.taskDir ?? (await core.filesystem.taskArtifacts.containerPath(task.id)),
+		taskDir: saved?.taskDir ?? (await core.taskArtifactContainerPath(task.id)),
 	};
 }
 
@@ -69,7 +69,7 @@ export async function tagNativeSessionPane(
 	publish = true,
 ): Promise<void> {
 	const pathContext = await pathContextForSession(core, { id: session.taskId }, session);
-	if (!sameRoot(pathContext.projectDir, core.filesystem.rootDir))
+	if (!sameRoot(pathContext.projectDir, core.projectRoot))
 		throw new Error(`Session ${session.id} has a mismatched canonical project root.`);
 	const panes = await server.cmd("list-panes", [
 		"-t",
@@ -80,7 +80,7 @@ export async function tagNativeSessionPane(
 	const [rootDir, taskId, sessionId, observedPaneId, nativeSessionId, nativeProvider] =
 		panes.length === 1 ? (panes[0]?.split("\t") ?? []) : [];
 	if (
-		!sameRoot(rootDir ?? "", core.filesystem.rootDir) ||
+		!sameRoot(rootDir ?? "", core.projectRoot) ||
 		!taskIdsEqual(taskId ?? "", session.taskId) ||
 		sessionId !== session.id ||
 		observedPaneId !== paneId
@@ -225,7 +225,7 @@ export async function withTaskSessionAdmission<T>(
 	const task = await core.loadTaskForMutation(taskId, { includeCrossBranch: false });
 	if (!task || !task.filePath || task.source === TASK_SOURCE.REMOTE || task.source === TASK_SOURCE.LOCAL_BRANCH)
 		throw new Error(`Locally editable task not found: ${taskId}`);
-	return await core.filesystem.withTaskLock(task, async () => {
+	return await core.withTaskLock(task, async () => {
 		const current = await core.loadTaskForMutation(task.id, { includeCrossBranch: false });
 		if (
 			!current ||
@@ -346,7 +346,7 @@ export async function profileWithCurrentArtifacts(
 	taskId: string,
 	taskRoot: string,
 ): Promise<ModeProfile> {
-	const entries = await core.filesystem.taskArtifacts.list(taskId);
+	const { entries } = await core.listTaskArtifacts(taskId);
 	const existing = entries
 		.slice(0, 100)
 		.map(({ path }) => resolve(taskRoot, path))
@@ -374,9 +374,9 @@ export async function executionPresetWithEnvironment(
 
 export async function pathContextFor(core: Core, taskId: string, cwd: string): Promise<AgentSessionPathContext> {
 	return {
-		projectDir: core.filesystem.rootDir,
+		projectDir: core.projectRoot,
 		worktreeDir: cwd,
-		taskDir: await core.filesystem.taskArtifacts.containerPath(taskId),
+		taskDir: await core.taskArtifactContainerPath(taskId),
 	};
 }
 
@@ -386,10 +386,10 @@ export async function sessionCwdFor(
 	settings: SessionSettings,
 ): Promise<string> {
 	const enabled = settings.worktreePerTask || task.worktreePolicy === "enabled";
-	if (!enabled) return core.filesystem.rootDir;
-	const expectedPath = taskWorktreePath(core.filesystem.rootDir, task);
+	if (!enabled) return core.projectRoot;
+	const expectedPath = taskWorktreePath(core.projectRoot, task);
 	try {
-		const path = await ensureTaskWorktree(core.filesystem.rootDir, task);
+		const path = await ensureTaskWorktree(core.projectRoot, task);
 		if (path) return path;
 	} catch (error) {
 		throw new Error(
@@ -592,7 +592,7 @@ export async function stopClaimedSession(
 			history.activeSessionId = history.sessions.find((candidate) => candidate.id !== record.id)?.id ?? record.id;
 	});
 	if (current.nativeWorkspace) {
-		await deleteWorkspaceRequest(core.filesystem.rootDir, current.id);
-		await clearNativeSessionPaneTag(current, core.filesystem.rootDir, server);
+		await deleteWorkspaceRequest(core.projectRoot, current.id);
+		await clearNativeSessionPaneTag(current, core.projectRoot, server);
 	}
 }

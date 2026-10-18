@@ -4,8 +4,9 @@ import { dirname, join } from "node:path";
 import { Core } from "../core/agentic-workspace.ts";
 import { serializeTask } from "../markdown/serializer.ts";
 import type { Task } from "../types/index.ts";
-import { getTaskPath, taskIdsEqual } from "../utils/task-path.ts";
-import { createUniqueTestDir, initializeFilesystemTestProject, safeCleanup } from "./test-utils.ts";
+import { taskIdsEqual } from "../utils/task-id.ts";
+import { getTaskPath } from "../utils/task-path.ts";
+import { coreFileSystem, createUniqueTestDir, initializeFilesystemTestProject, safeCleanup } from "./test-utils.ts";
 
 async function writeTaskContainer(directory: string, id: string, title: string): Promise<string> {
 	const task: Task = {
@@ -32,9 +33,9 @@ describe("Task path utilities", () => {
 		await mkdir(TEST_DIR, { recursive: true });
 		core = new Core(TEST_DIR);
 		await initializeFilesystemTestProject(core, "Test Project");
-		await writeTaskContainer(core.filesystem.tasksDir, "TASK-123", "Test Task 123");
-		await writeTaskContainer(core.filesystem.tasksDir, "TASK-0001", "Padded One");
-		await writeTaskContainer(core.filesystem.tasksDir, "TASK-3.01", "Subtask Padded");
+		await writeTaskContainer(coreFileSystem(core).tasksDir, "TASK-123", "Test Task 123");
+		await writeTaskContainer(coreFileSystem(core).tasksDir, "TASK-0001", "Padded One");
+		await writeTaskContainer(coreFileSystem(core).tasksDir, "TASK-3.01", "Subtask Padded");
 	});
 
 	afterEach(async () => await safeCleanup(TEST_DIR));
@@ -46,13 +47,13 @@ describe("Task path utilities", () => {
 	});
 
 	it("constructs a path from an exact prefixed ID", async () => {
-		expect(await getTaskPath("TASK-123", core)).toBe(join(core.filesystem.tasksDir, "task-123", "task.md"));
-		expect(await getTaskPath("TASK-3.01", core)).toBe(join(core.filesystem.tasksDir, "task-3.01", "task.md"));
+		expect(await getTaskPath("TASK-123", core)).toBe(join(coreFileSystem(core).tasksDir, "task-123", "task.md"));
+		expect(await getTaskPath("TASK-3.01", core)).toBe(join(coreFileSystem(core).tasksDir, "task-3.01", "task.md"));
 	});
 
 	it("resolves case and surrounding-whitespace variants to the canonical container", async () => {
-		expect(await getTaskPath(" task-123 ", core)).toBe(join(core.filesystem.tasksDir, "task-123", "task.md"));
-		expect(await getTaskPath(" Task-3.01 ", core)).toBe(join(core.filesystem.tasksDir, "task-3.01", "task.md"));
+		expect(await getTaskPath(" task-123 ", core)).toBe(join(coreFileSystem(core).tasksDir, "task-123", "task.md"));
+		expect(await getTaskPath(" Task-3.01 ", core)).toBe(join(coreFileSystem(core).tasksDir, "task-3.01", "task.md"));
 	});
 
 	it("does not infer a prefix or discard padding", async () => {
@@ -63,14 +64,14 @@ describe("Task path utilities", () => {
 	});
 
 	it("does not search other containers for a case-variant ID", async () => {
-		await writeTaskContainer(core.filesystem.tasksDir, "BACK-12", "Variant");
-		expect(await getTaskPath("BACK-12", core)).toBe(join(core.filesystem.tasksDir, "back-12", "task.md"));
+		await writeTaskContainer(coreFileSystem(core).tasksDir, "BACK-12", "Variant");
+		expect(await getTaskPath("BACK-12", core)).toBe(join(coreFileSystem(core).tasksDir, "back-12", "task.md"));
 	});
 
 	it("ignores flat task records", async () => {
-		const flatPath = join(core.filesystem.tasksDir, "task-999 - Exact.md");
+		const flatPath = join(coreFileSystem(core).tasksDir, "task-999 - Exact.md");
 		await writeFile(flatPath, "# Exact");
-		expect((await core.filesystem.listTasks()).some((task) => task.id === "TASK-999")).toBe(false);
+		expect((await coreFileSystem(core).listTasks()).some((task) => task.id === "TASK-999")).toBe(false);
 		expect(await getTaskPath("TASK-999", core)).toBeNull();
 		expect(await Bun.file(flatPath).text()).toBe("# Exact");
 	});

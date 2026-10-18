@@ -13,7 +13,7 @@ import {
 	createTaskSearchIndex,
 	type TaskFilterOptions,
 } from "../utils/task-search.ts";
-import { createUniqueTestDir, initializeFilesystemTestProject, safeCleanup } from "./test-utils.ts";
+import { coreFileSystem, createUniqueTestDir, initializeFilesystemTestProject, safeCleanup } from "./test-utils.ts";
 
 const cliCommand = ["agentic-workspace"];
 
@@ -123,7 +123,7 @@ describe("cross-surface search parity", () => {
 	beforeEach(async () => {
 		TEST_DIR = createUniqueTestDir("task-search-parity");
 		core = new Core(TEST_DIR);
-		filesystem = core.filesystem;
+		filesystem = coreFileSystem(core);
 		await filesystem.ensureAgenticWorkspaceStructure();
 		for (const task of tasks) {
 			await filesystem.saveTask(task);
@@ -252,18 +252,17 @@ describe("filters mean the same thing with and without a query", () => {
 			dependencies: [],
 		},
 	];
-	const resolveMilestoneLabel = (milestone: string) => (milestone === "m-1" ? "Release 1" : "Release 2");
 	// Every task's title matches, so the query narrows nothing and only the filter can change the set.
 	const query = "checklist";
 
 	it("resolves a milestone title the same way with and without a query", () => {
-		const options = { milestone: "Release 1", resolveMilestoneLabel } as const;
+		const options = { milestone: "m-1" } as const;
 		expect(taskIds(applyTaskFilters(milestoneTasks, options))).toEqual(["task-10"]);
 		expect(taskIds(applyTaskFilters(milestoneTasks, { ...options, query }))).toEqual(["task-10"]);
 	});
 
 	it("keeps the no-milestone filter meaning the same with and without a query", () => {
-		const options = { milestone: NO_MILESTONE_FILTER_VALUE, resolveMilestoneLabel } as const;
+		const options = { milestone: NO_MILESTONE_FILTER_VALUE } as const;
 		expect(taskIds(applyTaskFilters(milestoneTasks, options))).toEqual(["task-12"]);
 		expect(taskIds(applyTaskFilters(milestoneTasks, { ...options, query }))).toEqual(["task-12"]);
 	});
@@ -304,7 +303,7 @@ describe("labelMatch semantics", () => {
 /**
  * Filters reach the shared predicate through several different call sites, and an argument dropped
  * at any one of them is invisible to a test that only exercises the predicate directly. These tests
- * drive the real CLI and MCP surfaces so the wiring itself is pinned.
+ * drive the real CLI surface so the wiring itself is pinned.
  */
 describe("filter wiring across surfaces", () => {
 	let testDir: string;
@@ -315,9 +314,9 @@ describe("filter wiring across surfaces", () => {
 		await mkdir(testDir, { recursive: true });
 		core = new Core(testDir);
 		await initializeFilesystemTestProject(core, "Filter Wiring");
-		const config = await core.filesystem.loadConfig();
+		const config = await coreFileSystem(core).loadConfig();
 		if (!config) throw new Error("Expected test config");
-		await core.filesystem.saveConfig({ ...config, projects: ["Web", "API"] });
+		await coreFileSystem(core).saveConfig({ ...config, projects: ["Web", "API"] });
 
 		await core.createTaskFromInput({
 			title: "Wiring both labels",

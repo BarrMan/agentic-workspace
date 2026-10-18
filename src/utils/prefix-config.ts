@@ -16,20 +16,15 @@ export const DEFAULT_TASK_PREFIX = DEFAULT_PREFIX_CONFIG.task;
 export const DRAFT_PREFIX = EntityType.Draft;
 
 /**
- * Hardcoded document prefix. Not configurable - always "doc".
- */
-const DOC_PREFIX = "doc";
-
-/**
  * Hardcoded decision prefix. Not configurable - always "decision".
  */
 const DECISION_PREFIX = "decision";
 
 /**
  * Prefixes owned by system entity types. A configurable task prefix matching one
- * of these collides with drafts, documents, or decisions and misroutes their IDs.
+ * of these collides with drafts or decisions and misroutes their IDs.
  */
-const RESERVED_TASK_PREFIXES = [DRAFT_PREFIX, DOC_PREFIX, DECISION_PREFIX];
+const RESERVED_TASK_PREFIXES = [DRAFT_PREFIX, DECISION_PREFIX];
 
 /**
  * Checks whether a candidate task prefix collides with a reserved system prefix (case-insensitive).
@@ -52,7 +47,7 @@ export function getTaskPrefixError(prefix: string): string | undefined {
 		return "Task prefix must contain only letters (a-z, A-Z).";
 	}
 	if (isReservedTaskPrefix(prefix)) {
-		return `Task prefix "${prefix}" is reserved for drafts, docs, or decisions. Choose a different prefix.`;
+		return `Task prefix "${prefix}" is reserved for drafts or decisions. Choose a different prefix.`;
 	}
 	return undefined;
 }
@@ -362,7 +357,6 @@ export function escapeRegex(str: string): string {
  * getPrefixForType(EntityType.Task) // => "task"
  * getPrefixForType(EntityType.Task, { prefixes: { task: "JIRA" } }) // => "JIRA"
  * getPrefixForType(EntityType.Draft) // => "draft"
- * getPrefixForType(EntityType.Document) // => "doc"
  * getPrefixForType(EntityType.Decision) // => "decision"
  */
 export function getPrefixForType(type: EntityType, config?: AgenticWorkspaceConfig): string {
@@ -371,8 +365,6 @@ export function getPrefixForType(type: EntityType, config?: AgenticWorkspaceConf
 			return config?.prefixes?.task ?? DEFAULT_PREFIX_CONFIG.task;
 		case EntityType.Draft:
 			return DRAFT_PREFIX;
-		case EntityType.Document:
-			return DOC_PREFIX;
 		case EntityType.Decision:
 			return DECISION_PREFIX;
 		default:

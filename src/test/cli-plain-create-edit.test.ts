@@ -3,7 +3,7 @@ import { mkdir } from "node:fs/promises";
 import { Writable } from "node:stream";
 import { runCli } from "../cli/register.ts";
 import { Core } from "../index.ts";
-import { createUniqueTestDir, initializeFilesystemTestProject, safeCleanup } from "./test-utils.ts";
+import { coreFileSystem, createUniqueTestDir, initializeFilesystemTestProject, safeCleanup } from "./test-utils.ts";
 
 let TEST_DIR: string;
 const cliCommand = ["agentic-workspace"];
@@ -79,9 +79,9 @@ describe("CLI task create/edit descriptions", () => {
 	it("creates and edits a task description", async () => {
 		await $`${cliCommand} task create "Example" --description "Hello"`.cwd(TEST_DIR).quiet();
 		const core = new Core(TEST_DIR);
-		expect((await core.filesystem.loadTask("task-1"))?.description).toBe("Hello");
+		expect((await coreFileSystem(core).loadTask("task-1"))?.description).toBe("Hello");
 
 		await $`${cliCommand} task edit task-1 --description "Updated description"`.cwd(TEST_DIR).quiet();
-		expect((await core.filesystem.loadTask("task-1"))?.description).toBe("Updated description");
+		expect((await coreFileSystem(core).loadTask("task-1"))?.description).toBe("Updated description");
 	});
 });

@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { $ } from "bun";
 import { Core } from "../core/agentic-workspace.ts";
 import type { AgenticWorkspaceConfig, Task } from "../types/index.ts";
-import { createUniqueTestDir, initGitRepo, initializeTestProject, safeCleanup } from "./test-utils.ts";
+import { coreFileSystem, createUniqueTestDir, initGitRepo, initializeTestProject, safeCleanup } from "./test-utils.ts";
 
 let TEST_DIR: string;
 
@@ -14,7 +14,7 @@ describe("Board Loading with checkActiveBranches", () => {
 	beforeEach(async () => {
 		TEST_DIR = createUniqueTestDir("test-board-loading");
 		core = new Core(TEST_DIR);
-		await core.filesystem.ensureAgenticWorkspaceStructure();
+		await coreFileSystem(core).ensureAgenticWorkspaceStructure();
 
 		// Initialize git repository for testing
 		initGitRepo(TEST_DIR);
@@ -76,14 +76,14 @@ describe("Board Loading with checkActiveBranches", () => {
 			await $`git checkout main`.cwd(TEST_DIR).quiet();
 
 			// Set activeBranchDays to 30 (should exclude the old branch)
-			const config = await core.filesystem.loadConfig();
+			const config = await coreFileSystem(core).loadConfig();
 			if (!config) throw new Error("Config not loaded");
 			const updatedConfig: AgenticWorkspaceConfig = {
 				...config,
 				checkActiveBranches: true,
 				activeBranchDays: 30,
 			};
-			await core.filesystem.saveConfig(updatedConfig);
+			await coreFileSystem(core).saveConfig(updatedConfig);
 
 			const tasks = await core.loadTasks();
 
@@ -110,8 +110,8 @@ describe("Board Loading with checkActiveBranches", () => {
 		await core.createTask(createTestTask("task-3"));
 		await $`git add .`.cwd(TEST_DIR).quiet();
 		await $`git commit -m "Add branch task"`.cwd(TEST_DIR).quiet();
-		const completedLegacyPath = join(core.filesystem.completedDir, "task-2", "task.md");
-		await mkdir(join(core.filesystem.completedDir, "task-2"), { recursive: true });
+		const completedLegacyPath = join(coreFileSystem(core).completedDir, "task-2", "task.md");
+		await mkdir(join(coreFileSystem(core).completedDir, "task-2"), { recursive: true });
 		await Bun.write(
 			completedLegacyPath,
 			"---\nid: TASK-2\ntitle: Historical\nstatus: Done\nassignee: []\ncreated_date: '2026-10-01'\nlabels: []\ndependencies: []\n---\n",
@@ -146,7 +146,7 @@ describe("Board Loading with checkActiveBranches", () => {
 				milestones: [],
 				dateFormat: "yyyy-mm-dd",
 			};
-			await core.filesystem.saveConfig(minimalConfig);
+			await coreFileSystem(core).saveConfig(minimalConfig);
 
 			// Create a task to ensure we have something to load
 			await core.createTask({
@@ -183,9 +183,9 @@ describe("Board Loading with checkActiveBranches", () => {
 			await $`git checkout main`.cwd(TEST_DIR).quiet();
 
 			// 3. Disable checkActiveBranches
-			const config = await core.filesystem.loadConfig();
+			const config = await coreFileSystem(core).loadConfig();
 			if (!config) throw new Error("Config not loaded");
-			await core.filesystem.saveConfig({
+			await coreFileSystem(core).saveConfig({
 				...config,
 				checkActiveBranches: false,
 			});

@@ -56,7 +56,7 @@ AgenticWorkspace brings project work, configurable agent-assisted work, and reta
 
 **Value:** People and integrations use the same project-scoped organization without requiring a particular development workflow.
 
-The workspace supports tasks, optional task content, and project documents, including decision records, without prescribing deliverables.
+The workspace supports tasks, optional task content, and decision records without prescribing deliverables.
 
 ### Configurable agent-assisted work
 
@@ -89,7 +89,7 @@ The workspace supports tasks, optional task content, and project documents, incl
 - Organize project-scoped work in a project directory, with or without Git.
 - Support configurable agent-assisted work and live interaction within the user's chosen workflow.
 - Retain conversations so users can continue them across execution changes.
-- Support optional task content and project documents, including decision records, while preserving direct user access and prescribing no deliverables.
+- Support optional task content and decision records while preserving direct user access and prescribing no deliverables.
 - Make workspace operations available to people and selectively to agents and external applications.
 - Wrap agent harnesses without managing provider-owned configuration, data, or state.
 

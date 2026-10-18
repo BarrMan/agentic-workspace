@@ -3,7 +3,7 @@ import { Core } from "../core/agentic-workspace.ts";
 import { parseTask } from "../markdown/parser.ts";
 import { serializeTask } from "../markdown/serializer.ts";
 import type { Task } from "../types/index.ts";
-import { createUniqueTestDir, initializeFilesystemTestProject, safeCleanup } from "./test-utils.ts";
+import { coreFileSystem, createUniqueTestDir, initializeFilesystemTestProject, safeCleanup } from "./test-utils.ts";
 
 let TEST_DIR: string;
 
@@ -36,24 +36,24 @@ describe("task project field", () => {
 
 		it("should allow creating tasks without a project when unconfigured", async () => {
 			const { task } = await core.createTaskFromInput({ title: "Untagged task" });
-			const loaded = await core.filesystem.loadTask(task.id);
+			const loaded = await coreFileSystem(core).loadTask(task.id);
 			expect(loaded?.project).toBeUndefined();
 		});
 	});
 
 	describe("persistence round-trip", () => {
 		beforeEach(async () => {
-			const config = await core.filesystem.loadConfig();
+			const config = await coreFileSystem(core).loadConfig();
 			if (!config) throw new Error("Config not found");
 			config.projects = ["web", "api", "mobile"];
-			await core.filesystem.saveConfig(config);
+			await coreFileSystem(core).saveConfig(config);
 		});
 
 		it("should persist project on create and read it back", async () => {
 			const { task } = await core.createTaskFromInput({ title: "Web task", project: "web" });
 			expect(task.project).toBe("web");
 
-			const loaded = await core.filesystem.loadTask(task.id);
+			const loaded = await coreFileSystem(core).loadTask(task.id);
 			expect(loaded?.project).toBe("web");
 		});
 
@@ -61,12 +61,12 @@ describe("task project field", () => {
 			const { task } = await core.createTaskFromInput({ title: "Web task", project: "web" });
 
 			await core.updateTaskFromInput(task.id, { project: "api" });
-			let loaded = await core.filesystem.loadTask(task.id);
+			let loaded = await coreFileSystem(core).loadTask(task.id);
 			expect(loaded?.project).toBe("api");
 			expect(loaded?.updatedDate).toBeDefined();
 
 			await core.updateTaskFromInput(task.id, { project: "" });
-			loaded = await core.filesystem.loadTask(task.id);
+			loaded = await coreFileSystem(core).loadTask(task.id);
 			expect(loaded?.project).toBeUndefined();
 		});
 
@@ -95,10 +95,10 @@ describe("task project field", () => {
 
 	describe("validation", () => {
 		beforeEach(async () => {
-			const config = await core.filesystem.loadConfig();
+			const config = await coreFileSystem(core).loadConfig();
 			if (!config) throw new Error("Config not found");
 			config.projects = ["web", "api"];
-			await core.filesystem.saveConfig(config);
+			await coreFileSystem(core).saveConfig(config);
 		});
 
 		it("should reject unknown project on create with allowed values in the error", async () => {
@@ -115,10 +115,10 @@ describe("task project field", () => {
 
 	describe("config override", () => {
 		it("should validate against configured projects and preserve configured casing", async () => {
-			const config = await core.filesystem.loadConfig();
+			const config = await coreFileSystem(core).loadConfig();
 			if (!config) throw new Error("Config not found");
 			config.projects = ["Web", "API"];
-			await core.filesystem.saveConfig(config);
+			await coreFileSystem(core).saveConfig(config);
 
 			const { task } = await core.createTaskFromInput({ title: "Custom project", project: "api" });
 			expect(task.project).toBe("API");
@@ -129,32 +129,32 @@ describe("task project field", () => {
 		});
 
 		it("should round-trip the projects config key", async () => {
-			const config = await core.filesystem.loadConfig();
+			const config = await coreFileSystem(core).loadConfig();
 			if (!config) throw new Error("Config not found");
 			config.projects = ["web", "api"];
-			await core.filesystem.saveConfig(config);
+			await coreFileSystem(core).saveConfig(config);
 
-			const reloaded = await new Core(TEST_DIR).filesystem.loadConfig();
+			const reloaded = await coreFileSystem(new Core(TEST_DIR)).loadConfig();
 			expect(reloaded?.projects).toEqual(["web", "api"]);
 		});
 
 		it("should leave projects undefined when the config key is absent", async () => {
-			const config = await core.filesystem.loadConfig();
+			const config = await coreFileSystem(core).loadConfig();
 			expect(config?.projects).toBeUndefined();
 		});
 	});
 
 	describe("back-compat for unassigned-project tasks", () => {
 		it("should not write a project key for tasks without a project", async () => {
-			const config = await core.filesystem.loadConfig();
+			const config = await coreFileSystem(core).loadConfig();
 			if (!config) throw new Error("Config not found");
 			config.projects = ["web"];
-			await core.filesystem.saveConfig(config);
+			await coreFileSystem(core).saveConfig(config);
 
 			const { task } = await core.createTaskFromInput({ title: "Untagged task" });
 			await core.updateTaskFromInput(task.id, { title: "Still untagged" });
 
-			const loaded = await core.filesystem.loadTask(task.id);
+			const loaded = await coreFileSystem(core).loadTask(task.id);
 			if (!loaded) throw new Error("Task not found");
 			expect(loaded.project).toBeUndefined();
 			expect(serializeTask(loaded)).not.toContain("project:");

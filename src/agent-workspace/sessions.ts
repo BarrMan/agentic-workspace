@@ -240,18 +240,13 @@ export class AgentSessionService {
 			this.exec = transport.exec;
 		}
 		this.store = new SessionStore(
-			this.core.filesystem.rootDir,
+			this.core.projectRoot,
 			this.runner,
 			(session) => resolveSessionPreset(this.core, session),
 			{ stateRoot: options.stateRoot },
 		);
-		this.process = new SessionProcess(
-			this.runner,
-			this.core.filesystem.rootDir,
-			this.server,
-			() => this.store.stateRoot,
-		);
-		const rootDir = this.core.filesystem.rootDir;
+		this.process = new SessionProcess(this.runner, this.core.projectRoot, this.server, () => this.store.stateRoot);
+		const rootDir = this.core.projectRoot;
 		this.lifecycle = new ModeLifecycleService({
 			journalDirectory: join(rootDir, ".agentic-workspace", "agent-workspace"),
 			configuration: {
@@ -278,16 +273,15 @@ export class AgentSessionService {
 			},
 			listTaskIds: async () => {
 				const [active, drafts, completed, archived] = await Promise.all([
-					this.core.filesystem.listTasks(),
-					this.core.filesystem.listDrafts(),
-					this.core.filesystem.listCompletedTasks(),
-					this.core.filesystem.listArchivedTasks(),
+					this.core.loadStoredTasks(),
+					this.core.loadDraftRecords(),
+					this.core.loadCompletedTaskRecords(),
+					this.core.loadArchivedTaskRecords(),
 				]);
 				return [...new Set([...active, ...drafts, ...completed, ...archived].map((task) => task.id))];
 			},
 		});
-		this.readContext =
-			options.workspaceContext ?? (() => readWorkspaceContext({ rootDir: this.core.filesystem.rootDir }));
+		this.readContext = options.workspaceContext ?? (() => readWorkspaceContext({ rootDir: this.core.projectRoot }));
 	}
 
 	/** Delete an empty project mode through the journaled lifecycle. */
@@ -407,7 +401,7 @@ export class AgentSessionService {
 				throw new Error(`Cannot purge task ${taskId}: session sidecar is outside its task session directory.`);
 		}
 		for (const session of sessions) {
-			await deleteWorkspaceRequest(this.core.filesystem.rootDir, session.id);
+			await deleteWorkspaceRequest(this.core.projectRoot, session.id);
 			await removeFile(session.outputPath);
 			await removeFile(session.bootstrapPath);
 		}
@@ -427,15 +421,15 @@ export class AgentSessionService {
 			throw new Error(
 				`Cannot forget task ${task.id}: its session directory is not directly under the selected state root.`,
 			);
-		const requestDir = workspaceRequestDir(this.core.filesystem.rootDir);
+		const requestDir = workspaceRequestDir(this.core.projectRoot);
 		const [canonicalStateRoot, canonicalTaskDir, canonicalProjectRoot, canonicalRequestDir] = await Promise.all([
 			canonicalDirectoryTarget(stateRoot),
 			canonicalDirectoryTarget(paths.taskDir),
-			realpath(this.core.filesystem.rootDir),
+			realpath(this.core.projectRoot),
 			canonicalDirectoryTarget(requestDir),
 		]);
 		if (
-			resolve(stateRoot) === join(resolve(this.core.filesystem.rootDir), ".agentic-workspace") &&
+			resolve(stateRoot) === join(resolve(this.core.projectRoot), ".agentic-workspace") &&
 			canonicalStateRoot !== join(canonicalProjectRoot, ".agentic-workspace")
 		)
 			throw new Error(`Cannot forget task ${task.id}: the project state root is redirected.`);
@@ -527,7 +521,7 @@ export class AgentSessionService {
 					throw new Error(`Agent session ${session.id} is ${session.status}. Stop it first, or delete with --force.`);
 				await this.process.kill(session);
 			}
-			await deleteWorkspaceRequest(this.core.filesystem.rootDir, session.id);
+			await deleteWorkspaceRequest(this.core.projectRoot, session.id);
 			await this.store.remove(task.id, session.id);
 			await Promise.all([removeFile(session.outputPath), removeFile(session.bootstrapPath)]);
 		});
@@ -637,7 +631,7 @@ export class AgentSessionService {
 				if (findSessionMode(claimed.modes, selectedId) !== modeId)
 					throw new Error(`Agent session not found in its owning mode: ${selectedId}`);
 				record = { ...this.modeSession(claimed.modes[modeId]!, selectedId) };
-				request = (await readWorkspaceRequests(this.core.filesystem.rootDir)).find(
+				request = (await readWorkspaceRequests(this.core.projectRoot)).find(
 					(candidate) => taskIdsEqual(candidate.taskId, task.id) && candidate.sessionId === record.id,
 				);
 				if (request?.handoff) {
@@ -659,7 +653,7 @@ export class AgentSessionService {
 					throw new Error(`Session ${record.id} belongs to provider ${record.nativeProvider}, not ${nativeProvider}.`);
 				const receipt = await this.store.readNativeSessionIdCandidate(task.id, record.id);
 				settings = resolveSessionSettings((await this.launchConfiguration(task.id)).config);
-				if (!sameRoot(pathContext.projectDir, this.core.filesystem.rootDir))
+				if (!sameRoot(pathContext.projectDir, this.core.projectRoot))
 					throw new Error(`Session ${record.id} has a mismatched canonical project root.`);
 				if (!(await isDirectory(pathContext.worktreeDir)))
 					throw new Error(`Session ${record.id} working directory is missing: ${pathContext.worktreeDir}`);
@@ -678,7 +672,7 @@ export class AgentSessionService {
 					await tagNativeSessionPane(this.core, this.server, observed, paneId);
 					launched = true;
 					if (request?.handoff) await this.finalizeHandoffLocked(task.id, observed, request.handoff);
-					if (queuedRequest) await deleteWorkspaceRequest(this.core.filesystem.rootDir, record.id);
+					if (queuedRequest) await deleteWorkspaceRequest(this.core.projectRoot, record.id);
 					return {
 						attachment: {
 							record: observed,
@@ -741,7 +735,7 @@ export class AgentSessionService {
 			});
 			launched = true;
 			if (request?.handoff) await this.finalizeHandoffLocked(task.id, attachment.record, request.handoff);
-			if (request) await deleteWorkspaceRequest(this.core.filesystem.rootDir, record.id);
+			if (request) await deleteWorkspaceRequest(this.core.projectRoot, record.id);
 			return { attachment, modeId };
 		} catch (error) {
 			if (!launched && request?.handoff && queuedRecord) {
@@ -930,7 +924,7 @@ export class AgentSessionService {
 				this.touch(current, timestamp());
 			});
 			if (!directReservation && options.action !== "launch-queued")
-				await deleteWorkspaceRequest(this.core.filesystem.rootDir, next.id);
+				await deleteWorkspaceRequest(this.core.projectRoot, next.id);
 			next.status = AGENT_SESSION_STATUS.RUNNING;
 			if (directReservation) {
 				this.touch(next, timestamp());
@@ -1025,7 +1019,7 @@ export class AgentSessionService {
 				session.ownerPid = undefined;
 			},
 		);
-		if (finished) await clearNativeSessionPaneTag(origin.record, this.core.filesystem.rootDir, this.server);
+		if (finished) await clearNativeSessionPaneTag(origin.record, this.core.projectRoot, this.server);
 	}
 
 	private async finishNativeSessionRecord(expected: AgentSession, error?: string): Promise<void> {
@@ -1192,7 +1186,7 @@ export class AgentSessionService {
 			allowRunningActive: options.replace,
 		});
 		try {
-			await writeWorkspaceRequest(this.core.filesystem.rootDir, {
+			await writeWorkspaceRequest(this.core.projectRoot, {
 				taskId: task.id,
 				sessionId: pending.id,
 				pid: process.pid,
@@ -1215,7 +1209,7 @@ export class AgentSessionService {
 				history.sessions = history.sessions.filter((candidate) => candidate.id !== pending.id);
 				if (history.activeSessionId === pending.id) history.activeSessionId = priorActiveSessionId;
 			});
-			await deleteWorkspaceRequest(this.core.filesystem.rootDir, pending.id);
+			await deleteWorkspaceRequest(this.core.projectRoot, pending.id);
 			throw error;
 		}
 		return pending;
@@ -1223,10 +1217,7 @@ export class AgentSessionService {
 
 	private async withLifecycleAdmission<T>(operation: () => Promise<T>): Promise<T> {
 		await this.lifecycle.recover();
-		return await withModeLifecycleGate(
-			join(this.core.filesystem.rootDir, ".agentic-workspace", "agent-workspace"),
-			operation,
-		);
+		return await withModeLifecycleGate(join(this.core.projectRoot, ".agentic-workspace", "agent-workspace"), operation);
 	}
 
 	private async reserveSession(
@@ -1687,7 +1678,7 @@ export class AgentSessionService {
 
 	private async hasQueuedWorkspaceRequest(session: AgentSession): Promise<boolean> {
 		if (session.status !== AGENT_SESSION_STATUS.STARTING) return false;
-		return (await readWorkspaceRequests(this.core.filesystem.rootDir)).some(
+		return (await readWorkspaceRequests(this.core.projectRoot)).some(
 			(request) => taskIdsEqual(request.taskId, session.taskId) && request.sessionId === session.id,
 		);
 	}

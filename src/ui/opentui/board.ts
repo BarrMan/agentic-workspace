@@ -9,7 +9,6 @@ import {
 	TextAttributes,
 	TextRenderable,
 } from "@opentui/core";
-import { createMilestoneIdentityResolver } from "../../core/milestone-identity.ts";
 import { getMilestoneLabel } from "../../core/milestones.ts";
 import type { Milestone, Task } from "../../types/index.ts";
 import { formatAssignee } from "../../utils/assignee-filter.ts";
@@ -116,12 +115,11 @@ function boardRows(board: Board, props: OpenTuiBoardProps): BoardRow[] {
 		return rows;
 	}
 	const milestones = [...(props.milestones ?? [])];
-	const identity = createMilestoneIdentityResolver(milestones);
 	const groups = new Map<string, { label: string; columns: Task[][] }>();
 	for (const [column, lane] of lanes.entries()) {
 		for (const task of lane.tasks) {
-			const milestone = identity.canonicalize(task.milestone);
-			const key = milestone.toLowerCase();
+			const milestone = task.milestone?.trim() ?? "";
+			const key = milestone;
 			let group = groups.get(key);
 			if (!group) {
 				group = {
@@ -133,7 +131,7 @@ function boardRows(board: Board, props: OpenTuiBoardProps): BoardRow[] {
 			group.columns[column]?.push(task);
 		}
 	}
-	const orderedKeys = new Set(["", ...milestones.map((milestone) => milestone.id.toLowerCase()), ...groups.keys()]);
+	const orderedKeys = new Set(["", ...milestones.map((milestone) => milestone.id), ...groups.keys()]);
 	for (const key of orderedKeys) {
 		const group = groups.get(key);
 		if (!group) continue;

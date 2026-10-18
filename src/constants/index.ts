@@ -20,8 +20,6 @@ export const DEFAULT_DIRECTORIES = {
 	ARCHIVE_DRAFTS: "archive/drafts",
 	/** Archived milestones directory */
 	ARCHIVE_MILESTONES: "archive/milestones",
-	/** Documentation directory */
-	DOCS: "docs",
 	/** Decision logs directory */
 	DECISIONS: "decisions",
 	/** Milestones directory */
@@ -86,5 +84,3 @@ export const DEFAULT_FRESH_INIT_POLICY = {
 
 /** Runtime fallback retained for config files that omit a resolution strategy. */
 export const DEFAULT_RUNTIME_TASK_RESOLUTION_STRATEGY = "most_progressed";
-
-export * from "../guidelines/index.ts";

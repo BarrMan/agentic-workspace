@@ -3,7 +3,7 @@ import { mkdir } from "node:fs/promises";
 import { Core } from "../core/agentic-workspace.ts";
 import { toTaskDetail } from "../core/task-detail.ts";
 import { formatTaskPlainText } from "../formatters/task-plain-text.ts";
-import { createUniqueTestDir, initializeFilesystemTestProject, safeCleanup } from "./test-utils.ts";
+import { coreFileSystem, createUniqueTestDir, initializeFilesystemTestProject, safeCleanup } from "./test-utils.ts";
 
 describe("opaque task body integration", () => {
 	let testDir: string;
@@ -33,7 +33,7 @@ describe("opaque task body integration", () => {
 			rawContent: "## Example\n\n- [~] This is free-form body text.",
 		});
 
-		const task = await core.filesystem.loadTask("task-1");
+		const task = await coreFileSystem(core).loadTask("task-1");
 		if (!task) throw new Error("Expected created task");
 		expect(task.rawContent).toContain("- [~] This is free-form body text.");
 		expect(task.description).toBe("Stored description");

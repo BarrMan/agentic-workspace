@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { SessionStore } from "../agent-workspace/session-store.ts";
 import type { AgentSession } from "../agent-workspace/types.ts";
 import { Core } from "../core/agentic-workspace.ts";
-import { initializeTestProject } from "./test-utils.ts";
+import { coreFileSystem, initializeTestProject } from "./test-utils.ts";
 
 const roots: string[] = [];
 afterEach(async () => await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true }))));
@@ -87,7 +87,7 @@ describe("MAIN task runtime identity remap contract", () => {
 		const originalPlan = structuredClone(plan);
 		const originalBuild = structuredClone(build);
 		await core.promoteDraft(draft.id);
-		const promoted = (await core.filesystem.listTasks()).find(({ title }) => title === "Remap me");
+		const promoted = (await coreFileSystem(core).listTasks()).find(({ title }) => title === "Remap me");
 		expect(promoted).toBeDefined();
 		if (!promoted) return;
 		expect(promoted.id).not.toBe(draft.id);
@@ -109,7 +109,7 @@ describe("MAIN task runtime identity remap contract", () => {
 		expect(Object.values((await store.read(draft.id)).modes).flatMap(({ sessions }) => sessions)).toEqual([]);
 
 		await core.demoteTask(promoted.id);
-		const demoted = (await core.filesystem.listDrafts()).find(({ title }) => title === "Remap me");
+		const demoted = (await coreFileSystem(core).listDrafts()).find(({ title }) => title === "Remap me");
 		expect(demoted).toBeDefined();
 		if (!demoted) return;
 		migrated = await store.read(demoted.id);

@@ -1,8 +1,14 @@
 # ADR-0004: Document and decision identity
 
-**Status:** Accepted  
-**Date:** 2026-10-18  
+**Status:** Superseded in part by [ADR-0005](0005-project-document-removal.md)
+
+**Date:** 2026-10-18
+
 **Supersedes:** None
+
+> **Supersession note:** [ADR-0005](0005-project-document-removal.md) removes the
+> project-document provisions of this decision. The decision-record identity rules
+> below remain in force.
 
 ## Purpose
 
@@ -12,7 +18,7 @@ Fix the identity rule for project documents and decision records so persistence,
 
 **Components:** Storage and content persistence.
 
-**Contracts:** Storage owns persisted path shape and record formats; see [Storage](../blueprints/storage.md). Document and decision operations are defined by [IF-API-008](../specs/supported-integration-operations.md#if-api-008-manage-project-documents) and [IF-API-009](../specs/supported-integration-operations.md#if-api-009-manage-decision-records).
+**Contracts:** Storage owns persisted path shape and record formats; see [Storage](../blueprints/storage.md). Project-document operations are removed ([ADR-0005](0005-project-document-removal.md)); decision-record operations are defined by [IF-API-009](../specs/supported-integration-operations.md#if-api-009-manage-decision-records).
 
 ## Decision
 

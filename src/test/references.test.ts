@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { mkdir } from "node:fs/promises";
 import { Core } from "../core/agentic-workspace.ts";
-import { createUniqueTestDir, initializeFilesystemTestProject, safeCleanup } from "./test-utils.ts";
+import { coreFileSystem, createUniqueTestDir, initializeFilesystemTestProject, safeCleanup } from "./test-utils.ts";
 
 let TEST_DIR: string;
 
@@ -100,7 +100,7 @@ describe("Task References", () => {
 			expect(archived.success).toBe(true);
 
 			const updatedActive = await core.loadTaskById(activeTask.id);
-			const completedTasks = await core.filesystem.listCompletedTasks();
+			const completedTasks = await coreFileSystem(core).listCompletedTasks();
 			const updatedCompleted = completedTasks.find((task) => task.id === completedTask.id);
 
 			expect(updatedActive?.references).toEqual([

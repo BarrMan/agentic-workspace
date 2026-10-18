@@ -13,16 +13,11 @@ export type NormalizedBoardFilters = Omit<BoardSharedFilters, "excludeStatus" | 
 
 export class Filter {
 	private state: NormalizedBoardFilters;
-	private readonly resolveMilestoneLabel: ((milestone: string) => string) | undefined;
 	private readonly options: { taskTypes?: string[]; projects?: string[] };
 
-	constructor(
-		filters: Partial<BoardSharedFilters> = {},
-		options: { taskTypes?: string[]; projects?: string[]; resolveMilestoneLabel?: (milestone: string) => string } = {},
-	) {
+	constructor(filters: Partial<BoardSharedFilters> = {}, options: { taskTypes?: string[]; projects?: string[] } = {}) {
 		this.options = { taskTypes: options.taskTypes, projects: options.projects };
 		this.state = normalizeBoardFilters(filters, options);
-		this.resolveMilestoneLabel = options.resolveMilestoneLabel;
 	}
 
 	get value(): Readonly<NormalizedBoardFilters> {
@@ -72,7 +67,6 @@ export class Filter {
 						labels: filters.labelFilter,
 						labelMatch: filters.labelMatch,
 						milestone: filters.milestoneFilter || undefined,
-						resolveMilestoneLabel: this.resolveMilestoneLabel,
 					},
 					createTaskSearchIndex(corpus),
 				)
@@ -83,7 +77,7 @@ export class Filter {
 
 function normalizeBoardFilters(
 	filters: Partial<BoardSharedFilters>,
-	options: { taskTypes?: string[]; projects?: string[]; resolveMilestoneLabel?: (milestone: string) => string },
+	options: { taskTypes?: string[]; projects?: string[] },
 ): NormalizedBoardFilters {
 	const labelMatch: LabelMatchMode = filters.labelMatch ?? "any";
 	return {

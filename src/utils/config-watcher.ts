@@ -160,5 +160,5 @@ export function watchConfigFile(filesystem: FileSystem, callbacks: ConfigWatcher
 }
 
 export function watchConfig(core: Core, callbacks: ConfigWatcherCallbacks): ConfigWatcherHandle {
-	return watchConfigFile(core.filesystem, callbacks);
+	return core.watchConfig(callbacks);
 }

@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Core } from "../core/agentic-workspace.ts";
 import { serializeTask } from "../markdown/serializer.ts";
+import { coreFileSystem } from "../test/test-utils.ts";
 import type { Task } from "../types/index.ts";
 import {
 	getBuiltInAgentConfiguration,
@@ -50,7 +51,7 @@ describe("mode lifecycle deletion contract", () => {
 		const root = await mkdtemp(join(tmpdir(), "agentic-workspace-mode-container-deletion-"));
 		roots.push(root);
 		const core = new Core(root);
-		const filesystem = core.filesystem;
+		const filesystem = coreFileSystem(core);
 		await filesystem.ensureAgenticWorkspaceStructure();
 		const modes = getDefaultModeCatalog();
 		const plan = modes.profiles.plan;

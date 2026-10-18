@@ -87,6 +87,6 @@ export function formatValidProjectValues(configOrProjects?: ProjectConfig): stri
 	return getProjectValues(configOrProjects).join(", ");
 }
 
-export function noProjectsConfiguredMessage(configFilePath: string): string {
-	return `No projects are configured. Add a 'projects:' list to ${configFilePath}.`;
+export function noProjectsConfiguredMessage(configFilePath?: string): string {
+	return `No projects are configured. Add a 'projects:' list to ${configFilePath ?? "the project config file"}.`;
 }

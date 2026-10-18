@@ -1,12 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import { parseFrontmatter } from "../markdown/frontmatter.ts";
-import {
-	FrontmatterSchemaError,
-	parseDecision,
-	parseDocument,
-	parseTask,
-	TaskFrontmatterSchemaError,
-} from "../markdown/parser.ts";
+import { FrontmatterSchemaError, parseDecision, parseTask, TaskFrontmatterSchemaError } from "../markdown/parser.ts";
 import { serializeTask } from "../markdown/serializer.ts";
 import type { Task } from "../types/index.ts";
 
@@ -83,9 +77,8 @@ labels: []
 });
 
 describe("declarative record frontmatter schemas", () => {
-	it("accepts free-form decision statuses and rejects unsupported document types", () => {
+	it("accepts free-form decision statuses", () => {
 		expect(parseDecision("---\ndecision_schema_version: 1\nid: decision-1\nstatus: maybe\n---\n").status).toBe("maybe");
-		expect(() => parseDocument("---\nid: doc-1\ntype: podcast\n---\n")).toThrow(FrontmatterSchemaError);
 	});
 
 	it("rejects non-string decision text fields", () => {

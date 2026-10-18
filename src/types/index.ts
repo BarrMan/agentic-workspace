@@ -26,7 +26,7 @@ export type TaskSource = (typeof TASK_SOURCE)[keyof typeof TASK_SOURCE];
 /**
  * How a multi-label filter is combined. Interactive multi-select pickers use "any" so adding a
  * label widens the result set; callers that pass an explicitly typed label list (the CLI
- * `--labels` flag and the MCP `labels` argument) use "all" so every listed label is required.
+ * `--labels` flag) use "all" so every listed label is required.
  */
 export type LabelMatchMode = "any" | "all";
 
@@ -37,7 +37,6 @@ export type LabelMatchMode = "any" | "all";
 export enum EntityType {
 	Task = "task",
 	Draft = "draft",
-	Document = "document",
 	Decision = "decision",
 }
 
@@ -220,41 +219,7 @@ export interface Milestone {
 	readonly rawContent: string; // Raw markdown content without frontmatter
 }
 
-export const DOCUMENT_TYPE_VALUES = ["guide", "reference", "design", "other"] as const;
-export type DocumentType = (typeof DOCUMENT_TYPE_VALUES)[number];
-
-export interface Document {
-	id: string;
-	title: string;
-	type: DocumentType;
-	createdDate: string;
-	updatedDate?: string;
-	rawContent: string; // Raw markdown content without frontmatter
-	tags?: string[];
-	// Web UI specific fields
-	name?: string;
-	path?: string;
-	lastModified?: string;
-}
-
-export interface DocumentCreateInput {
-	title: string;
-	content?: string;
-	type?: Document["type"];
-	path?: string;
-	tags?: string[];
-}
-
-export interface DocumentUpdateInput {
-	id: string;
-	content: string;
-	title?: string;
-	type?: Document["type"];
-	path?: string | null;
-	tags?: string[];
-}
-
-export type SearchResultType = "task" | "document" | "decision";
+export type SearchResultType = "task" | "decision";
 
 export type SearchPriorityFilter = string;
 
@@ -292,13 +257,6 @@ export interface TaskSearchResult {
 	matches?: SearchMatch[];
 }
 
-export interface DocumentSearchResult {
-	type: "document";
-	score: number | null;
-	document: Document;
-	matches?: SearchMatch[];
-}
-
 export interface DecisionSearchResult {
 	type: "decision";
 	score: number | null;
@@ -306,7 +264,7 @@ export interface DecisionSearchResult {
 	matches?: SearchMatch[];
 }
 
-export type SearchResult = TaskSearchResult | DocumentSearchResult | DecisionSearchResult;
+export type SearchResult = TaskSearchResult | DecisionSearchResult;
 
 /**
  * Configuration for ID prefixes used in task files.
@@ -357,25 +315,6 @@ export interface AgenticWorkspaceConfig {
 	onStatusChange?: string;
 	/** ID prefix configuration for tasks and drafts. Defaults to { task: "task", draft: "draft" } */
 	prefixes?: PrefixConfig;
-	mcp?: {
-		http?: {
-			host?: string;
-			port?: number;
-			auth?: {
-				type?: "bearer" | "basic" | "none";
-				token?: string;
-				username?: string;
-				password?: string;
-			};
-			cors?: {
-				origin?: string | string[];
-				credentials?: boolean;
-			};
-			enableDnsRebindingProtection?: boolean;
-			allowedHosts?: string[];
-			allowedOrigins?: string[];
-		};
-	};
 }
 
 export interface ParsedMarkdown {

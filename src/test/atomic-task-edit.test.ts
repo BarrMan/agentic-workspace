@@ -5,7 +5,13 @@ import { Core } from "../core/agentic-workspace.ts";
 import { isTaskLockError, taskLockErrorMessage } from "../file-system/operations.ts";
 import type { Task } from "../types/index.ts";
 import { getTestCliCommand } from "./test-cli.ts";
-import { createUniqueTestDir, initializeFilesystemTestProject, safeCleanup, withTimeout } from "./test-utils.ts";
+import {
+	coreFileSystem,
+	createUniqueTestDir,
+	initializeFilesystemTestProject,
+	safeCleanup,
+	withTimeout,
+} from "./test-utils.ts";
 
 const CLI_COMMAND = getTestCliCommand();
 const CONTENDED_ID = "TASK-1";
@@ -44,13 +50,13 @@ describe("atomic task editing", () => {
 
 	async function createContendedTask(): Promise<Task> {
 		await setup.createTaskFromInput({ title: "Shared Task" });
-		const task = await setup.filesystem.loadTask(CONTENDED_ID);
+		const task = await coreFileSystem(setup).loadTask(CONTENDED_ID);
 		if (!task) throw new Error(`${CONTENDED_ID} missing during test setup`);
 		return task;
 	}
 
 	async function finalLabels(): Promise<string[]> {
-		const task = await setup.filesystem.loadTask(CONTENDED_ID);
+		const task = await coreFileSystem(setup).loadTask(CONTENDED_ID);
 		return [...(task?.labels ?? [])].sort();
 	}
 
@@ -84,12 +90,12 @@ describe("atomic task editing", () => {
 	it("never silently loses an edit that races a demotion to Draft", async () => {
 		await createContendedTask();
 
-		// Demotion is reachable with status "Draft" from the web PUT and MCP task_edit. Holding
+		// Demotion is reachable with status "Draft" from the web PUT. Holding
 		// the create lock parks the demote inside its draft-id allocation, the window where an
 		// unprotected demote used to apply its own pre-lock snapshot over a concurrent edit.
 		const createLockEntered = createDeferred<void>();
 		const releaseCreateLock = createDeferred<void>();
-		const heldCreateLock = setup.filesystem.withCreateLock(async () => {
+		const heldCreateLock = coreFileSystem(setup).withCreateLock(async () => {
 			createLockEntered.resolve();
 			await releaseCreateLock.promise;
 		});
@@ -98,11 +104,11 @@ describe("atomic task editing", () => {
 		const demoter = new Core(testDir);
 		const editor = new Core(testDir);
 		const demoteReachedCreateLock = createDeferred<void>();
-		const originalWithCreateLock = demoter.filesystem.withCreateLock.bind(demoter.filesystem);
-		demoter.filesystem.withCreateLock = (async <T>(fn: () => Promise<T>): Promise<T> => {
+		const originalWithCreateLock = coreFileSystem(demoter).withCreateLock.bind(coreFileSystem(demoter));
+		coreFileSystem(demoter).withCreateLock = (async <T>(fn: () => Promise<T>): Promise<T> => {
 			demoteReachedCreateLock.resolve();
 			return await originalWithCreateLock(fn);
-		}) as typeof demoter.filesystem.withCreateLock;
+		}) as ReturnType<typeof coreFileSystem>["withCreateLock"];
 
 		try {
 			const demotion = demoter.updateTaskFromInput(CONTENDED_ID, { status: "Draft" });
@@ -116,7 +122,7 @@ describe("atomic task editing", () => {
 			await heldCreateLock;
 			await demotion;
 
-			const draft = await setup.filesystem.loadDraft("DRAFT-1");
+			const draft = await coreFileSystem(setup).loadDraft("DRAFT-1");
 			expect(draft?.status).toBe("Draft");
 			if (editOutcome === null) {
 				// If the edit was told it succeeded, the demoted draft must carry it.
@@ -137,19 +143,18 @@ describe("atomic task editing", () => {
 		const task = await createContendedTask();
 		const lockEntered = createDeferred<void>();
 		const releaseLock = createDeferred<void>();
-		const heldLock = setup.filesystem.withTaskLock(task, async () => {
+		const heldLock = coreFileSystem(setup).withTaskLock(task, async () => {
 			lockEntered.resolve();
 			await releaseLock.promise;
 		});
 		await withTimeout(lockEntered.promise, "the lock to be held", 5_000);
 
-		// MCP task_edit with status "Draft" calls demoteTaskWithUpdates directly, skipping
 		// updateTaskFromInput, so the lock has to live in the demote itself.
 		const other = new Core(testDir);
 		try {
 			await expect(other.editTaskOrDraft(CONTENDED_ID, { status: "Draft" })).rejects.toThrow(CONTENTION_MESSAGE);
-			expect(await setup.filesystem.loadTask(CONTENDED_ID)).not.toBeNull();
-			expect(await setup.filesystem.listDrafts()).toEqual([]);
+			expect(await coreFileSystem(setup).loadTask(CONTENDED_ID)).not.toBeNull();
+			expect(await coreFileSystem(setup).listDrafts()).toEqual([]);
 		} finally {
 			releaseLock.resolve();
 			await heldLock;
@@ -160,7 +165,7 @@ describe("atomic task editing", () => {
 		const task = await createContendedTask();
 		const lockEntered = createDeferred<void>();
 		const releaseLock = createDeferred<void>();
-		const heldLock = setup.filesystem.withTaskLock(task, async () => {
+		const heldLock = coreFileSystem(setup).withTaskLock(task, async () => {
 			lockEntered.resolve();
 			await releaseLock.promise;
 		});
@@ -169,8 +174,8 @@ describe("atomic task editing", () => {
 		const other = new Core(testDir);
 		try {
 			await expect(other.demoteTask(CONTENDED_ID)).rejects.toThrow(CONTENTION_MESSAGE);
-			expect(await setup.filesystem.loadTask(CONTENDED_ID)).not.toBeNull();
-			expect(await setup.filesystem.listDrafts()).toEqual([]);
+			expect(await coreFileSystem(setup).loadTask(CONTENDED_ID)).not.toBeNull();
+			expect(await coreFileSystem(setup).listDrafts()).toEqual([]);
 		} finally {
 			releaseLock.resolve();
 			await heldLock;
@@ -191,8 +196,8 @@ describe("atomic task editing", () => {
 		} finally {
 		}
 
-		expect((await setup.filesystem.loadTask("TASK-1"))?.labels ?? []).toEqual(["alpha"]);
-		expect((await setup.filesystem.loadTask("TASK-2"))?.labels ?? []).toEqual(["beta"]);
+		expect((await coreFileSystem(setup).loadTask("TASK-1"))?.labels ?? []).toEqual(["alpha"]);
+		expect((await coreFileSystem(setup).loadTask("TASK-2"))?.labels ?? []).toEqual(["beta"]);
 	});
 
 	it("blocks a second process while the first holds the lock", async () => {
@@ -201,7 +206,7 @@ describe("atomic task editing", () => {
 		const releaseLock = createDeferred<void>();
 
 		// The lock lives on the filesystem, so a completely separate agentic-workspace process sees it.
-		const heldLock = setup.filesystem.withTaskLock(task, async () => {
+		const heldLock = coreFileSystem(setup).withTaskLock(task, async () => {
 			lockEntered.resolve();
 			await releaseLock.promise;
 		});
@@ -212,7 +217,7 @@ describe("atomic task editing", () => {
 			const blocked = await blockedOperation;
 			expect(blocked.exitCode).not.toBe(0);
 			expect(`${blocked.stderr.toString()}${blocked.stdout.toString()}`).toContain(CONTENTION_MESSAGE);
-			expect((await setup.filesystem.loadTask(CONTENDED_ID))?.title).toBe("Shared Task");
+			expect((await coreFileSystem(setup).loadTask(CONTENDED_ID))?.title).toBe("Shared Task");
 		} finally {
 			releaseLock.resolve();
 			await heldLock;
@@ -222,7 +227,7 @@ describe("atomic task editing", () => {
 		// Once the holder is done the same command succeeds, so nothing is left wedged.
 		const retried = await $`${CLI_COMMAND} task edit ${CONTENDED_ID} --title retried`.cwd(testDir).quiet().nothrow();
 		expect(retried.exitCode).toBe(0);
-		expect((await setup.filesystem.loadTask(CONTENDED_ID))?.title).toBe("retried");
+		expect((await coreFileSystem(setup).loadTask(CONTENDED_ID))?.title).toBe("retried");
 	});
 
 	it("survives parallel CLI processes editing the same task", async () => {
@@ -243,7 +248,7 @@ describe("atomic task editing", () => {
 			expect(`${result.stderr.toString()}${result.stdout.toString()}`).toContain(taskLockErrorMessage(sharedId));
 		}
 
-		const shared = await setup.filesystem.loadTask(sharedId);
+		const shared = await coreFileSystem(setup).loadTask(sharedId);
 		expect(shared).toBeDefined();
 		expect(succeeded).toContain(shared?.title ?? "");
 	}, 60_000);

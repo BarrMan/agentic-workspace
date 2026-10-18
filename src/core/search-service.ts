@@ -1,4 +1,4 @@
-import type { Decision, Document, SearchOptions, SearchResult, SearchResultType, Task } from "../types/index.ts";
+import type { Decision, SearchOptions, SearchResult, SearchResultType, Task } from "../types/index.ts";
 import {
 	buildTaskSearchFields,
 	createTaskFilterMatcher,
@@ -21,21 +21,15 @@ interface TaskSearchEntity extends BaseSearchEntity {
 	readonly task: Task;
 }
 
-interface DocumentSearchEntity extends BaseSearchEntity {
-	readonly type: "document";
-	readonly document: Document;
-}
-
 interface DecisionSearchEntity extends BaseSearchEntity {
 	readonly type: "decision";
 	readonly decision: Decision;
 }
 
-type SearchEntity = TaskSearchEntity | DocumentSearchEntity | DecisionSearchEntity;
+type SearchEntity = TaskSearchEntity | DecisionSearchEntity;
 
 function mapResult(entity: SearchEntity): SearchResult {
 	if (entity.type === "task") return { type: "task", score: null, task: entity.task };
-	if (entity.type === "document") return { type: "document", score: null, document: entity.document };
 	return { type: "decision", score: null, decision: entity.decision };
 }
 
@@ -44,24 +38,11 @@ function matchesQuery(entity: SearchEntity, query: string): boolean {
 }
 
 /** Searches one supplied corpus without retaining or subscribing to it. */
-export function searchSnapshot(
-	tasks: Task[],
-	documents: Document[],
-	decisions: Decision[],
-	options: SearchOptions,
-): SearchResult[] {
+export function searchSnapshot(tasks: Task[], decisions: Decision[], options: SearchOptions): SearchResult[] {
 	const taskEntities: TaskSearchEntity[] = tasks.map((task) => ({
 		...buildTaskSearchFields(task),
 		type: "task",
 		task,
-	}));
-	const documentEntities: DocumentSearchEntity[] = documents.map((document) => ({
-		...EMPTY_TASK_SEARCH_FIELDS,
-		id: document.id,
-		type: "document",
-		title: document.title,
-		bodyText: document.rawContent ?? "",
-		document,
 	}));
 	const decisionEntities: DecisionSearchEntity[] = decisions.map((decision) => ({
 		...EMPTY_TASK_SEARCH_FIELDS,
@@ -74,11 +55,11 @@ export function searchSnapshot(
 		decision,
 	}));
 	const { query = "", limit, types, filters } = options;
-	const allowedTypes = new Set<SearchResultType>(types?.length ? types : ["task", "document", "decision"]);
+	const allowedTypes = new Set<SearchResultType>(types?.length ? types : ["task", "decision"]);
 	const matchesTaskFilters = createTaskFilterMatcher(filters ?? {});
 	const allowed = (entity: SearchEntity) =>
 		allowedTypes.has(entity.type) && (entity.type !== "task" || matchesTaskFilters(entity.task));
-	const collection = [...taskEntities, ...documentEntities, ...decisionEntities];
+	const collection = [...taskEntities, ...decisionEntities];
 	const trimmedQuery = query.trim();
 	if (!trimmedQuery) {
 		const results: SearchResult[] = [];

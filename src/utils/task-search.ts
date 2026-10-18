@@ -1,7 +1,7 @@
 /**
  * Task search: the single owner of the searchable-text builder, the Fuse configuration, and the
  * task filter predicates. Every surface that searches or filters tasks (the CLI, the TUI views,
- * the MCP adapter, the web API, and the cross-branch SearchService) goes through this module so
+ * the web API and the cross-branch SearchService) goes through this module so
  * the same query and the same filters mean the same thing everywhere.
  *
  * Callers still decide which corpus to search: the local working copy or the cross-branch store.
@@ -10,12 +10,7 @@
 import type { LabelMatchMode, Task } from "../types/index.ts";
 import { assigneeComparisonKey } from "./assignee-filter.ts";
 import { labelComparisonKey } from "./label-filter.ts";
-import {
-	createMilestoneFilterMatcher,
-	createMilestoneFilterValueResolver,
-	type MilestoneFilterValueResolver,
-	NO_MILESTONE_FILTER_VALUE,
-} from "./milestone-filter.ts";
+import { createMilestoneFilterMatcher, NO_MILESTONE_FILTER_VALUE } from "./milestone-filter.ts";
 import { matchesModifiedFileFilters, normalizeModifiedFileFilters } from "./modified-files.ts";
 import { normalizePriorityValue } from "./priority-config.ts";
 import { matchesProjectFilter } from "./project-config.ts";
@@ -51,7 +46,6 @@ export interface TaskFilterOptions {
 	modifiedFiles?: string | string[];
 	parentTaskId?: string;
 	milestone?: string;
-	resolveMilestoneLabel?: (milestone: string) => string;
 }
 
 export interface TaskSearchIndex {
@@ -60,7 +54,7 @@ export interface TaskSearchIndex {
 
 /**
  * Build the searchable text for one task. Labels and assignees are part of the searchable text on
- * every surface, so `--search backend` finds a task labelled `backend` from the CLI, the MCP
+ * every surface, so `--search backend` finds a task labelled `backend` from the CLI
  * adapter, and the web API alike.
  */
 export function buildTaskSearchBodyText(task: TaskWithSearchableArtifacts): string {
@@ -113,37 +107,21 @@ function addSetCheck(
 	if (values.size > 0) checks.push(matches);
 }
 
-function addMilestoneCheck(checks: Array<(task: Task) => boolean>, options: TaskFilterOptions, corpus: Task[]): void {
+function addMilestoneCheck(checks: Array<(task: Task) => boolean>, options: TaskFilterOptions): void {
 	const milestone = options.milestone?.trim().toLowerCase();
 	if (!milestone) return;
 	if (milestone === NO_MILESTONE_FILTER_VALUE) {
 		checks.push((task) => !task.milestone?.trim());
 		return;
 	}
-	const resolveLabel = options.resolveMilestoneLabel;
-	if (!resolveLabel || "resolveExactId" in resolveLabel) {
-		const matchesMilestone = createMilestoneFilterMatcher(
-			options.milestone as string,
-			corpus.map((task) => task.milestone ?? ""),
-			(resolveLabel as MilestoneFilterValueResolver | undefined) ?? createMilestoneFilterValueResolver([]),
-		);
-		checks.push((task) => matchesMilestone(task.milestone ?? ""));
-		return;
-	}
-	checks.push(
-		(task) =>
-			Boolean(task.milestone) &&
-			resolveLabel(task.milestone as string)
-				.trim()
-				.toLowerCase() === milestone,
-	);
+	const matchesMilestone = createMilestoneFilterMatcher(options.milestone as string);
+	checks.push((task) => matchesMilestone(task.milestone ?? ""));
 }
 
 /**
- * Build the shared task predicate. `corpus` is the full task list the milestone matcher compares
- * against, so a milestone filter resolves the same way no matter which tasks survive other filters.
+ * Build the shared task predicate used by search and filtering.
  */
-export function createTaskFilterMatcher(options: TaskFilterOptions, corpus: Task[] = []): (task: Task) => boolean {
+export function createTaskFilterMatcher(options: TaskFilterOptions): (task: Task) => boolean {
 	const checks: Array<(task: Task) => boolean> = [];
 
 	const wantedStatuses = normalizeStatusSet(options.status);
@@ -205,7 +183,7 @@ export function createTaskFilterMatcher(options: TaskFilterOptions, corpus: Task
 		checks.push((task) => Boolean(task.parentTaskId) && taskIdsEqual(parentFilter, task.parentTaskId as string));
 	}
 
-	addMilestoneCheck(checks, options, corpus);
+	addMilestoneCheck(checks, options);
 
 	return (task) => checks.every((check) => check(task));
 }
@@ -224,7 +202,7 @@ export function createTaskSearchIndex(tasks: Task[]): TaskSearchIndex {
 				? entries.filter((entry) => matchesTaskSearchFields(entry.fields, query)).map((entry) => entry.task)
 				: entries.map((entry) => entry.task);
 
-			const matches = createTaskFilterMatcher(options, tasks);
+			const matches = createTaskFilterMatcher(options);
 			return matched.filter(matches);
 		},
 	};
@@ -234,6 +212,6 @@ export function applyTaskFilters(tasks: Task[], options: TaskFilterOptions, inde
 	if (options.query?.trim()) {
 		return (index ?? createTaskSearchIndex(tasks)).search(options);
 	}
-	const matches = createTaskFilterMatcher(options, tasks);
+	const matches = createTaskFilterMatcher(options);
 	return tasks.filter(matches);
 }

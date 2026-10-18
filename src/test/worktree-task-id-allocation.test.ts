@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { $ } from "bun";
 import { Core } from "../core/agentic-workspace.ts";
 import type { Task } from "../types/index.ts";
-import { createUniqueTestDir, initGitRepo, initializeTestProject, safeCleanup } from "./test-utils.ts";
+import { coreFileSystem, createUniqueTestDir, initGitRepo, initializeTestProject, safeCleanup } from "./test-utils.ts";
 
 type Deferred<T> = {
 	promise: Promise<T>;
@@ -60,7 +60,7 @@ describe("task ID allocation across git worktrees", () => {
 		const mainTask = await mainCore.createTaskFromInput({ title: "Main task" });
 
 		expect(mainTask.task.id).toBe("TASK-2");
-		expect(await mainCore.filesystem.loadTask("task-2")).not.toBeNull();
+		expect(await coreFileSystem(mainCore).loadTask("task-2")).not.toBeNull();
 	});
 
 	it("allocates promoted draft task IDs after uncommitted sibling worktree tasks", async () => {
@@ -76,7 +76,7 @@ describe("task ID allocation across git worktrees", () => {
 		const promoted = await mainCore.promoteDraft("draft-1");
 
 		expect(promoted).toBe(true);
-		const promotedTask = await mainCore.filesystem.loadTask("task-2");
+		const promotedTask = await coreFileSystem(mainCore).loadTask("task-2");
 		expect(promotedTask?.title).toBe("Draft to promote");
 	});
 
@@ -92,15 +92,15 @@ describe("task ID allocation across git worktrees", () => {
 		let saveEntries = 0;
 
 		const patchSaveTask = (core: Core) => {
-			const original = core.filesystem.saveTask.bind(core.filesystem);
-			core.filesystem.saveTask = (async (task: Task): Promise<string> => {
+			const original = coreFileSystem(core).saveTask.bind(coreFileSystem(core));
+			coreFileSystem(core).saveTask = (async (task: Task): Promise<string> => {
 				saveEntries += 1;
 				if (task.title === "Alpha") {
 					firstEnteredSave.resolve();
 					await releaseFirstSave.promise;
 				}
 				return await original(task);
-			}) as typeof core.filesystem.saveTask;
+			}) as ReturnType<typeof coreFileSystem>["saveTask"];
 		};
 
 		patchSaveTask(first);
@@ -125,11 +125,13 @@ describe("task ID allocation across git worktrees", () => {
 		testDir = createUniqueTestDir("worktree-prefix-id");
 		const mainRepo = await createRepository(testDir, "Worktree Prefix ID Test");
 		const mainCore = new Core(mainRepo);
-		const config = await mainCore.filesystem.loadConfig();
+		const config = await coreFileSystem(mainCore).loadConfig();
 		if (!config) throw new Error("Expected initialized config");
 		config.prefixes = { task: "OPS" };
-		await mainCore.filesystem.saveConfig(config);
-		const repoRoot = await mainCore.git.stageAgenticWorkspaceDirectory(mainCore.filesystem.agenticWorkspaceDirName);
+		await coreFileSystem(mainCore).saveConfig(config);
+		const repoRoot = await mainCore.git.stageAgenticWorkspaceDirectory(
+			coreFileSystem(mainCore).agenticWorkspaceDirName,
+		);
 		await mainCore.git.commitChanges("test: set custom task prefix", repoRoot);
 
 		const sibling = await addWorktree(mainRepo, testDir, "feature-prefix");
@@ -147,13 +149,13 @@ describe("task ID allocation across git worktrees", () => {
 		const core = new Core(mainRepo);
 		const counterPath = join(mainRepo, ".git", "agentic-workspace", "task-counter.json");
 		const allocate = async (prefix: string, ids: string[]) =>
-			await core.withCreateLock(() => core.filesystem.allocateTaskId(prefix, undefined, async () => ids));
+			await core.withCreateLock(() => coreFileSystem(core).allocateTaskId(prefix, undefined, async () => ids));
 
 		expect(await allocate("OPS", ["OPS-7", "OPS-7.1"])).toBe("OPS-8");
 		const restartedCore = new Core(mainRepo);
 		await expect(
 			restartedCore.withCreateLock(() =>
-				restartedCore.filesystem.allocateTaskId("OPS", undefined, async () => {
+				coreFileSystem(restartedCore).allocateTaskId("OPS", undefined, async () => {
 					throw new Error("persisted counter should skip bootstrap");
 				}),
 			),
@@ -161,17 +163,17 @@ describe("task ID allocation across git worktrees", () => {
 		const persisted = JSON.parse(await readFile(counterPath, "utf8"));
 		expect(persisted).toEqual({ OPS: { next: 10 } });
 
-		const occupiedContainer = await core.filesystem.taskArtifacts.containerPath("ops-10", "tasks");
+		const occupiedContainer = await coreFileSystem(core).taskArtifacts.containerPath("ops-10", "tasks");
 		await mkdir(occupiedContainer, { recursive: true });
 		expect(await allocate("OPS", [])).toBe("OPS-11");
 		expect(await stat(occupiedContainer).then(() => true)).toBe(true);
 
-		await expect(core.withCreateLock(() => core.filesystem.allocateTaskId("PAD", 3, async () => []))).resolves.toBe(
-			"PAD-001",
-		);
-		await expect(core.withCreateLock(() => core.filesystem.allocateTaskId("PAD", 3, async () => []))).resolves.toBe(
-			"PAD-002",
-		);
+		await expect(
+			core.withCreateLock(() => coreFileSystem(core).allocateTaskId("PAD", 3, async () => [])),
+		).resolves.toBe("PAD-001");
+		await expect(
+			core.withCreateLock(() => coreFileSystem(core).allocateTaskId("PAD", 3, async () => [])),
+		).resolves.toBe("PAD-002");
 	});
 
 	it("skips IDs in completed storage and persists the consumed number", async () => {
@@ -181,10 +183,10 @@ describe("task ID allocation across git worktrees", () => {
 		const counterPath = join(mainRepo, ".git", "agentic-workspace", "task-counter.json");
 		await mkdir(join(mainRepo, ".git", "agentic-workspace"), { recursive: true });
 		await writeFile(counterPath, JSON.stringify({ OPS: { next: 1 } }));
-		await mkdir(await core.filesystem.taskArtifacts.containerPath("ops-1", "completed"), { recursive: true });
+		await mkdir(await coreFileSystem(core).taskArtifacts.containerPath("ops-1", "completed"), { recursive: true });
 
 		await expect(
-			core.withCreateLock(() => core.filesystem.allocateTaskId("OPS", undefined, async () => [])),
+			core.withCreateLock(() => coreFileSystem(core).allocateTaskId("OPS", undefined, async () => [])),
 		).resolves.toBe("OPS-2");
 		expect(JSON.parse(await readFile(counterPath, "utf8"))).toEqual({ OPS: { next: 3 } });
 	});
@@ -196,10 +198,10 @@ describe("task ID allocation across git worktrees", () => {
 		const counterPath = join(mainRepo, ".git", "agentic-workspace", "task-counter.json");
 		await mkdir(join(mainRepo, ".git", "agentic-workspace"), { recursive: true });
 		await writeFile(counterPath, JSON.stringify({ OPS: { next: 1 } }));
-		await mkdir(await core.filesystem.taskArtifacts.containerPath("ops-1", "archive/tasks"), { recursive: true });
+		await mkdir(await coreFileSystem(core).taskArtifacts.containerPath("ops-1", "archive/tasks"), { recursive: true });
 
 		await expect(
-			core.withCreateLock(() => core.filesystem.allocateTaskId("OPS", undefined, async () => [])),
+			core.withCreateLock(() => coreFileSystem(core).allocateTaskId("OPS", undefined, async () => [])),
 		).resolves.toBe("OPS-2");
 	});
 });

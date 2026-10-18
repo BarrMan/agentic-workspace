@@ -1,7 +1,7 @@
 import { type FSWatcher, watch } from "node:fs";
 import { stat } from "node:fs/promises";
 import { basename, dirname } from "node:path";
-import type { Core } from "../core/agentic-workspace.ts";
+import type { Storage } from "../core/storage.ts";
 import { resolveMainWorktreeRoot } from "../git/main-worktree.ts";
 import type { Task } from "../types/index.ts";
 import { isValidTaskId, taskIdsEqual } from "./task-id.ts";
@@ -122,10 +122,10 @@ async function readTaskFileSnapshot(tasksDir: string): Promise<TaskFileSnapshot>
 	}
 }
 
-async function classifyTaskRead(core: Core, taskId: string, tasksDir: string): Promise<TaskReadResult> {
+async function classifyTaskRead(storage: Storage, taskId: string, tasksDir: string): Promise<TaskReadResult> {
 	let task: Task | null;
 	try {
-		task = await core.filesystem.loadTask(taskId);
+		task = await storage.loadTask(taskId);
 	} catch {
 		return { kind: "retry" };
 	}
@@ -191,13 +191,13 @@ async function reconcileReadResult(
 }
 
 async function readDirectoryTasks(
-	core: Core,
+	storage: Storage,
 	tasksDir: string,
 ): Promise<{ taskFileIds: Set<string>; tasks: Task[] } | null> {
 	const snapshot = await readTaskFileSnapshot(tasksDir);
 	if (snapshot.state === "incomplete") return null;
 	try {
-		return { taskFileIds: snapshot.taskIds, tasks: await core.filesystem.listTasks() };
+		return { taskFileIds: snapshot.taskIds, tasks: await storage.loadTasks() };
 	} catch {
 		return null;
 	}
@@ -234,12 +234,12 @@ function scheduleMissingTasks(
  * A single filesystem event is reconciled until task content is stable or absence is
  * confirmed, because atomic writes can make the event visible before the file is.
  */
-export function watchTasks(
-	core: Core,
+export function watchTaskRecords(
+	storage: Storage,
 	callbacks: TaskWatcherCallbacks,
 	initialTasks: readonly Task[] = [],
 ): { stop: () => void } {
-	const tasksDir = core.filesystem.tasksDir;
+	const tasksDir = storage.taskRecordsDirectory;
 	const reconciliations = new Map(
 		initialTasks.filter((task) => !task.branch).map((task) => [task.id.toUpperCase(), createReconciliation(task)]),
 	);
@@ -270,7 +270,7 @@ export function watchTasks(
 			await delay(attempt === 0 ? TASK_SETTLE_DELAY_MS : TASK_RETRY_DELAY_MS);
 			if (stopped || eventGeneration !== state.generation) return;
 
-			const result = await classifyTaskRead(core, taskId, tasksDir);
+			const result = await classifyTaskRead(storage, taskId, tasksDir);
 			const resolution = await reconcileReadResult(
 				result,
 				attempt,
@@ -315,7 +315,7 @@ export function watchTasks(
 				await delay(attempt === 0 ? TASK_SETTLE_DELAY_MS : TASK_RETRY_DELAY_MS);
 				if (stopped || eventGeneration !== directoryGeneration) return;
 
-				const directoryTasks = await readDirectoryTasks(core, tasksDir);
+				const directoryTasks = await readDirectoryTasks(storage, tasksDir);
 				if (!directoryTasks) continue;
 				taskFileIds = directoryTasks.taskFileIds;
 				visibleTaskIds.clear();
@@ -339,10 +339,10 @@ export function watchTasks(
 	};
 	const watcher: FSWatcher = watch(tasksDir, { recursive: true }, handleWatchEvent);
 	let canonicalWatcher: FSWatcher | undefined;
-	void resolveMainWorktreeRoot(core.filesystem.rootDir)
+	void resolveMainWorktreeRoot(storage.projectRoot)
 		.then((mainRoot) => {
 			if (stopped || !mainRoot) return;
-			const relativeAgenticWorkspace = tasksDir.slice(core.filesystem.rootDir.length).replace(/^[/\\]+/, "");
+			const relativeAgenticWorkspace = tasksDir.slice(storage.projectRoot.length).replace(/^[/\\]+/, "");
 			const canonicalTasksDir = `${mainRoot}/${relativeAgenticWorkspace}`;
 			if (canonicalTasksDir === tasksDir) return;
 			try {
@@ -371,4 +371,13 @@ export function watchTasks(
 			} catch {}
 		},
 	};
+}
+
+/** Controller-owned subscription, kept for callers that already hold a Core. */
+export function watchTasks(
+	core: import("../core/agentic-workspace.ts").Core,
+	callbacks: TaskWatcherCallbacks,
+	initialTasks: readonly Task[] = [],
+): { stop: () => void } {
+	return core.watchTasks(callbacks, initialTasks);
 }

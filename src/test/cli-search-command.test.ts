@@ -3,7 +3,7 @@ import { mkdir } from "node:fs/promises";
 import { Writable } from "node:stream";
 import { runCli } from "../cli/register.ts";
 import { Core } from "../index.ts";
-import { createUniqueTestDir, initializeFilesystemTestProject, safeCleanup } from "./test-utils.ts";
+import { coreFileSystem, createUniqueTestDir, initializeFilesystemTestProject, safeCleanup } from "./test-utils.ts";
 
 let TEST_DIR: string;
 const cliCommand = ["agentic-workspace"];
@@ -103,15 +103,7 @@ describe("CLI search command", () => {
 			modifiedFiles: ["src/core/search-service.ts"],
 		});
 
-		await core.filesystem.saveDocument({
-			id: "doc-1",
-			title: "Search Architecture Notes",
-			type: "guide",
-			createdDate: "2025-09-18",
-			rawContent: "# Search Architecture Notes\nCentral search design",
-		});
-
-		await core.filesystem.saveDecision({
+		await coreFileSystem(core).saveDecision({
 			id: "decision-1",
 			title: "Adopt centralized search",
 			date: "2025-09-18",
@@ -127,15 +119,13 @@ describe("CLI search command", () => {
 		await safeCleanup(TEST_DIR);
 	});
 
-	it("returns matching tasks, documents, and decisions in plain output", async () => {
+	it("returns matching tasks and decisions in plain output", async () => {
 		const result = await $`${cliCommand} search central --plain`.cwd(TEST_DIR).quiet();
 
 		expect(result.exitCode).toBe(0);
 		const stdout = result.stdout.toString();
 		expect(stdout).toContain("Tasks:");
 		expect(stdout).toContain("TASK-1 - Central search integration");
-		expect(stdout).toContain("Documents:");
-		expect(stdout).toContain("doc-1 - Search Architecture Notes");
 		expect(stdout).toContain("Decisions:");
 		expect(stdout).toContain("decision-1 - Adopt centralized search");
 	});
@@ -182,6 +172,5 @@ describe("CLI search command", () => {
 		const filterStdout = filterResult.stdout.toString();
 		expect(filterStdout).toContain("TASK-2 - High priority follow-up");
 		expect(filterStdout).not.toContain("TASK-1 - Central search integration");
-		expect(filterStdout).not.toContain("Documents:");
 	});
 });

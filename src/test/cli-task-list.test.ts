@@ -5,7 +5,7 @@ import type { ShellExpression } from "bun";
 import { $ as shell } from "bun";
 import { runCli } from "../cli/register.ts";
 import { Core } from "../index.ts";
-import { createUniqueTestDir, initializeTestProject, safeCleanup } from "./test-utils.ts";
+import { coreFileSystem, createUniqueTestDir, initializeTestProject, safeCleanup } from "./test-utils.ts";
 
 let TEST_DIR: string;
 const CLI_COMMAND = ["agentic-workspace"];
@@ -147,7 +147,7 @@ describe("CLI Integration", () => {
 				rawContent: "Third test task",
 			});
 
-			const tasks = await core.filesystem.listTasks();
+			const tasks = await coreFileSystem(core).listTasks();
 			expect(tasks).toHaveLength(3);
 
 			// Verify tasks are grouped correctly by status
@@ -164,7 +164,7 @@ describe("CLI Integration", () => {
 			const core = new Core(TEST_DIR);
 
 			// Load and verify default config status order
-			const config = await core.filesystem.loadConfig();
+			const config = await coreFileSystem(core).loadConfig();
 			expect(config?.statuses).toEqual(["To Do", "In Progress", "Done"]);
 		});
 	});

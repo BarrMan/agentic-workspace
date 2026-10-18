@@ -3,8 +3,8 @@ import { mkdir } from "node:fs/promises";
 import { Writable } from "node:stream";
 import { runCli } from "../cli/register.ts";
 import { Core } from "../core/agentic-workspace.ts";
-import type { Decision, Document, Task } from "../types";
-import { createUniqueTestDir, initializeFilesystemTestProject, safeCleanup } from "./test-utils.ts";
+import type { Decision, Task } from "../types";
+import { coreFileSystem, createUniqueTestDir, initializeFilesystemTestProject, safeCleanup } from "./test-utils.ts";
 
 let TEST_DIR: string;
 
@@ -61,30 +61,9 @@ describe("CLI ID Incrementing Behavior", () => {
 		expect(result.exitCode).toBe(0);
 		expect(result.stdout.toString()).toContain("Created task TASK-2");
 
-		const task2 = await core.filesystem.loadTask("task-2");
+		const task2 = await coreFileSystem(core).loadTask("task-2");
 		expect(task2).toBeDefined();
 		expect(task2?.title).toBe("Second Task");
-	});
-
-	test("should increment document IDs correctly", async () => {
-		const doc1: Document = {
-			id: "doc-1",
-			title: "First Doc",
-			type: "other",
-			createdDate: "",
-			rawContent: "",
-		};
-		await core.createDocument(doc1);
-
-		const result = await runCommand(["doc", "create", "Second Doc"]);
-
-		expect(result.exitCode).toBe(0);
-		expect(result.stdout.toString()).toContain("Created document doc-2");
-
-		const docs = await core.filesystem.listDocuments();
-		const doc2 = docs.find((d) => d.id === "doc-2");
-		expect(doc2).toBeDefined();
-		expect(doc2?.title).toBe("Second Doc");
 	});
 
 	test("should increment decision IDs correctly", async () => {
@@ -105,7 +84,7 @@ describe("CLI ID Incrementing Behavior", () => {
 		expect(result.exitCode).toBe(0);
 		expect(result.stdout.toString()).toContain("Created decision decision-2");
 
-		const decision2 = await core.filesystem.loadDecision("decision-2");
+		const decision2 = await coreFileSystem(core).loadDecision("decision-2");
 		expect(decision2).not.toBeNull();
 		expect(decision2?.title).toBe("Second Decision");
 	});

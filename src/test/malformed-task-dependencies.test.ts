@@ -5,7 +5,7 @@ import { Writable } from "node:stream";
 import { runCli } from "../cli/register.ts";
 import { Core } from "../core/agentic-workspace.ts";
 import { parseTask } from "../markdown/parser.ts";
-import { createUniqueTestDir, initializeFilesystemTestProject, safeCleanup } from "./test-utils.ts";
+import { coreFileSystem, createUniqueTestDir, initializeFilesystemTestProject, safeCleanup } from "./test-utils.ts";
 
 async function cli(args: string[], cwd: string) {
 	const stdout: string[] = [];
@@ -84,7 +84,7 @@ describe("malformed dependencies cannot be rewritten by unrelated edits", () => 
 		await mkdir(testDir, { recursive: true });
 		core = new Core(testDir);
 		await initializeFilesystemTestProject(core, "Malformed dependencies");
-		taskPath = join(core.filesystem.tasksDir, "task-2", "task.md");
+		taskPath = join(coreFileSystem(core).tasksDir, "task-2", "task.md");
 	});
 
 	afterEach(async () => {
@@ -94,7 +94,7 @@ describe("malformed dependencies cannot be rewritten by unrelated edits", () => 
 	it.each(malformedDependencies)("CLI rejects a %s without changing source bytes", async (_label, dependencies) => {
 		const original = taskMarkdown(dependencies);
 		await Bun.write(taskPath, original);
-		const filenames = await readdir(core.filesystem.tasksDir);
+		const filenames = await readdir(coreFileSystem(core).tasksDir);
 
 		const edited = await cli(["task", "edit", "TASK-2", "--title", "dependent v2"], testDir);
 
@@ -103,7 +103,7 @@ describe("malformed dependencies cannot be rewritten by unrelated edits", () => 
 		expect(edited.stderr.toString()).not.toContain("not found");
 		expect(edited.stdout.toString()).not.toContain("Updated task");
 		expect(await Bun.file(taskPath).text()).toBe(original);
-		expect(await readdir(core.filesystem.tasksDir)).toEqual(filenames);
+		expect(await readdir(coreFileSystem(core).tasksDir)).toEqual(filenames);
 	});
 
 	it.each([
@@ -138,16 +138,19 @@ describe("malformed dependencies cannot be rewritten by unrelated edits", () => 
 	it("skips malformed corpus records while explicit loads and their mutations stay strict", async () => {
 		const original = taskMarkdown(malformedDependencies[0][1]);
 		await Bun.write(taskPath, original);
-		await Bun.write(join(core.filesystem.tasksDir, "task-1", "task.md"), taskMarkdown("dependencies: []", "TASK-1"));
+		await Bun.write(
+			join(coreFileSystem(core).tasksDir, "task-1", "task.md"),
+			taskMarkdown("dependencies: []", "TASK-1"),
+		);
 
-		expect((await core.filesystem.listTasks()).map((task) => task.id)).toEqual(["TASK-1"]);
-		await expect(core.filesystem.loadTask("TASK-2")).rejects.toThrow("Invalid dependencies in task TASK-2");
+		expect((await coreFileSystem(core).listTasks()).map((task) => task.id)).toEqual(["TASK-1"]);
+		await expect(coreFileSystem(core).loadTask("TASK-2")).rejects.toThrow("Invalid dependencies in task TASK-2");
 		await expect(core.loadTaskById("TASK-2", { includeCrossBranch: false })).rejects.toThrow(
 			"Invalid dependencies in task TASK-2",
 		);
 		await expect(core.getTask("TASK-2")).rejects.toThrow("Invalid dependencies in task TASK-2");
 		await core.updateTaskFromInput("TASK-1", { title: "Healthy edit" }, { includeCrossBranch: false });
-		expect((await core.filesystem.loadTask("TASK-1"))?.title).toBe("Healthy edit");
+		expect((await coreFileSystem(core).loadTask("TASK-1"))?.title).toBe("Healthy edit");
 		expect(await Bun.file(taskPath).text()).toBe(original);
 	});
 
@@ -157,7 +160,7 @@ describe("malformed dependencies cannot be rewritten by unrelated edits", () => 
 
 		expect(edited.exitCode).toBe(0);
 		expect(edited.stdout.toString()).toContain("Updated task TASK-2");
-		const task = await core.filesystem.loadTask("TASK-2");
+		const task = await coreFileSystem(core).loadTask("TASK-2");
 		expect(task?.title).toBe("dependent v2");
 		expect(task?.dependencies).toEqual(["task-001", "BACK-2.3", "4"]);
 	});

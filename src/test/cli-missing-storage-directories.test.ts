@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { Writable } from "node:stream";
 import { runCli } from "../cli/register.ts";
 import { Core } from "../core/agentic-workspace.ts";
-import { createUniqueTestDir, initializeFilesystemTestProject, safeCleanup } from "./test-utils.ts";
+import { coreFileSystem, createUniqueTestDir, initializeFilesystemTestProject, safeCleanup } from "./test-utils.ts";
 
 const cliCommand = ["agentic-workspace"];
 
@@ -90,7 +90,7 @@ describe("CLI mutations with missing storage directories", () => {
 			.quiet();
 		expect(result.exitCode).toBe(0);
 		expect(result.stdout.toString()).toContain("Created decision decision-1");
-		const decision = await core.filesystem.loadDecision("decision-1");
+		const decision = await coreFileSystem(core).loadDecision("decision-1");
 		expect(decision?.title).toBe("First decision");
 		expect(decision?.status).toBe("accepted");
 	});

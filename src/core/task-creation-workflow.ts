@@ -1,10 +1,8 @@
 import { FALLBACK_STATUS } from "../constants/index.ts";
 import { EntityType, type Task, type TaskCreateInput } from "../types/index.ts";
 import { formatStoredDate } from "../utils/date.ts";
-import { validateDependencies } from "../utils/task-builders.ts";
 import type { Core } from "./agentic-workspace.ts";
 import { buildCreatedTask, generatedTaskTitle, prepareTaskCreationInput } from "./task-creation-input.ts";
-import { readFileIfPresent } from "./task-creation-transaction.ts";
 
 /** Owns one allocation and write transaction against a Core project session. */
 export class TaskCreationService {
@@ -22,7 +20,7 @@ export class TaskCreationService {
 		const type = await this.core.normalizeTaskType(input.type);
 		const project = await this.core.normalizeProject(input.project);
 		const createdDate = formatStoredDate();
-		const config = await this.core.filesystem.loadConfig();
+		const config = await this.core.getStoredConfig();
 		const configSnapshot = await this.core.getConfig();
 		const worktreePolicy = configSnapshot.sessionSettings.worktreePerTask ? "enabled" : "disabled";
 
@@ -32,7 +30,7 @@ export class TaskCreationService {
 				: undefined;
 			const id = await this.core.generateNextId(prepared.isDraft ? EntityType.Draft : EntityType.Task, parentTaskId);
 			const titledInput = prepared.title ? prepared : { ...prepared, title: generatedTaskTitle(id) };
-			const { valid, invalid } = await validateDependencies(prepared.dependencies, this.core.filesystem, {
+			const { valid, invalid } = await this.core.validateTaskDependencies(prepared.dependencies, {
 				id,
 				title: titledInput.title,
 				status: prepared.isDraft ? "Draft" : status || config?.defaultStatus || FALLBACK_STATUS,
@@ -55,15 +53,7 @@ export class TaskCreationService {
 			});
 			if (!prepared.isDraft) task.worktreePolicy = worktreePolicy;
 			const filePath = await this.core.writePreparedTask(task, prepared.isDraft);
-			return {
-				task,
-				write: {
-					filePath,
-					createdContent: (await readFileIfPresent(filePath))!,
-					previousPath: null,
-					previousContent: null,
-				},
-			};
+			return { task, write: await this.core.prepareCreatedTaskWrite(filePath) };
 		});
 
 		try {

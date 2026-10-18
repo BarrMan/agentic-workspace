@@ -1,6 +1,5 @@
 import type { LabelMatchMode, Milestone, Task } from "../../../types/index.ts";
 import { collectAvailableLabels } from "../../../utils/label-filter.ts";
-import { createMilestoneFilterValueResolver } from "../../../utils/milestone-filter.ts";
 import { getPriorityOptions } from "../../../utils/priority-config.ts";
 import { getProjectValues, resolveProjectValues } from "../../../utils/project-config.ts";
 import { getTaskTypeValues, resolveTaskTypeValues } from "../../../utils/task-type-config.ts";
@@ -41,7 +40,6 @@ export function normalizeBoardSessionConfiguration(
 ) {
 	const configuredTaskTypes = getTaskTypeValues(options?.types);
 	const configuredProjects = getProjectValues(options?.projects);
-	const resolveMilestoneLabel = createMilestoneFilterValueResolver(options?.milestoneEntities ?? []);
 
 	return {
 		configuredWorkflowStatuses: [...statuses],
@@ -51,8 +49,7 @@ export function normalizeBoardSessionConfiguration(
 		sharedFilters: normalizeBoardSharedFilters(options?.filters, configuredTaskTypes, configuredProjects),
 		configuredLabels: collectAvailableLabels(tasks, options?.availableLabels ?? []),
 		priorityOptions: getPriorityOptions(options?.priorities),
-		availableMilestones: collectBoardMilestoneLabels(options?.availableMilestones ?? [], tasks, resolveMilestoneLabel),
-		resolveMilestoneLabel,
+		availableMilestones: collectBoardMilestoneLabels(options?.availableMilestones ?? [], tasks),
 	};
 }
 
@@ -85,18 +82,13 @@ function normalizeBoardSharedFilters(
 	};
 }
 
-export function collectBoardMilestoneLabels(
-	availableMilestones: string[],
-	tasks: Task[],
-	resolveMilestoneLabel: (milestone: string) => string,
-): string[] {
+export function collectBoardMilestoneLabels(availableMilestones: string[], tasks: Task[]): string[] {
 	return Array.from(
 		new Set([
 			...availableMilestones,
 			...tasks
 				.map((task) => task.milestone?.trim())
-				.filter((milestone): milestone is string => Boolean(milestone && milestone.length > 0))
-				.map((milestone) => resolveMilestoneLabel(milestone)),
+				.filter((milestone): milestone is string => Boolean(milestone && milestone.length > 0)),
 		]),
 	).sort((a, b) => a.localeCompare(b));
 }
