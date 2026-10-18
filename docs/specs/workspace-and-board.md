@@ -38,7 +38,9 @@ Let users inspect and organize project tasks in a grouped workspace list or a st
 
 **Behavior:**
 1. Display tasks in the selected grouped-list or board view.
-2. Allow switching between views without losing task organization.
+2. Allow switching between views without losing task organization or selected task identity; switching views does not change session lifecycle.
+3. Selecting a task changes only its selected-task presentation and never starts or resumes a session.
+4. Filtering, searching, and changing visible groups change the visible task set and reconcile selection; they never start, resume, or stop sessions.
 
 **Outcome:** The selected view displays project tasks.
 
@@ -47,6 +49,9 @@ Let users inspect and organize project tasks in a grouped workspace list or a st
 **Acceptance Criteria:**
 - [ ] IF-WB-001-AC-01: Open workspace and confirm project tasks are shown in grouped-list view.
 - [ ] IF-WB-001-AC-02: Switch to board and confirm project tasks are shown in status columns; switch back successfully.
+- [ ] IF-WB-001-AC-03: Select a task and confirm selection changes its presentation only, without starting or resuming a session.
+- [ ] IF-WB-001-AC-04: Switch views and confirm selected task identity is preserved and session lifecycle is unchanged.
+- [ ] IF-WB-001-AC-05: Filter, search, or change visible groups and confirm the visible task set and selection are reconciled without changing any session lifecycle.
 
 ### IF-WB-002: Nested groups
 
@@ -128,7 +133,7 @@ Let users inspect and organize project tasks in a grouped workspace list or a st
 
 ### IF-WB-006: Workspace actions
 
-**Description:** Users can preview, cancel, and commit board moves; assign/unassign groups; expand/collapse groups; copy a task ID; choose retained sessions; and show an agent terminal fullscreen. Interactive task surfaces expose task creation, editing, and archival actions.
+**Description:** Users can preview, cancel, and commit board moves; assign/unassign groups; expand/collapse groups; copy a task ID; choose retained sessions; and show an agent terminal fullscreen. Choosing a retained session follows the [session interaction contract](session-interaction-and-feedback.md). Interactive task surfaces expose task creation, editing, and archival actions.
 
 **Trigger:** User invokes an action on a board, group, task, or agent terminal.
 
@@ -210,9 +215,14 @@ Let users inspect and organize project tasks in a grouped workspace list or a st
 | From | Trigger | To | Required Behavior |
 |---|---|---|---|
 | Either workspace view | User switches view | Other view | Display tasks in selected view without losing organization. |
+| Either workspace view | User selects a task | Same view with selected task presentation | Update the selected-task presentation only; do not start or resume a session. |
+| Either workspace view | User filters, searches, or changes visible groups | Updated visible task set | Reconcile selection with the visible task set without changing session lifecycle. |
 
 **Invariants:**
 - Switching views preserves task organization.
+- Switching views preserves selected task identity and does not change session lifecycle.
+- Task selection changes selected-task presentation only and never starts or resumes a session.
+- Filtering, searching, and changing visible groups reconcile selection with the visible task set and never start, resume, or stop a session.
 
 ### Board move
 

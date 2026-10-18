@@ -2,7 +2,7 @@
 
 ## Overview
 
-Let users inspect the selected task's session, safely attach to or resume it, and understand the selected session's identity, execution context, and state.
+Let users inspect the selected task's session, safely attach to a live session or explicitly resume a stopped one, and understand its identity, execution context, and state.
 
 ## Goals
 
@@ -32,42 +32,44 @@ Let users inspect the selected task's session, safely attach to or resume it, an
 
 ### IF-SI-001: Select and attach to a session
 
-**Description:** Selecting a task shows the active session for its selected mode. Selecting a running session only attaches: it sends no input and changes no control state.
+**Description:** Selecting a task shows the session for its selected mode. Selecting a running or parked session only attaches/switches the presentation to its live pane; it sends no input and changes no control state.
 
-**Trigger:** The user selects a task with a running session in the selected mode.
+**Trigger:** The user selects a task with a running or parked session in the selected mode.
 
-**Preconditions:** The task has a running session.
+**Preconditions:** The task has a running or parked session.
 
 **Behavior:**
-1. Show the active session for the selected mode.
-2. Attach the user to the running session without sending input or changing control.
+1. Show the selected-mode session.
+2. Attach/switch the presentation to the live pane without starting, resuming, sending input, or changing control state.
 
-**Outcome:** The user is attached to the running session, with its input and control state unchanged by selection.
+**Outcome:** The user sees the live pane for the running or parked session, with input and control state unchanged by selection.
 
 **Failures:** None specified. Generic error handling follows [CONVENTIONS](../CONVENTIONS.md#error-handling).
 
 **Acceptance Criteria:**
-- [ ] IF-SI-001-AC-01: Select a running session and confirm it attaches without sending input or changing control.
+- [ ] IF-SI-001-AC-01: Select a running or parked session and confirm presentation switches to its live pane without starting/resuming, sending input, or changing control.
 
 ### IF-SI-002: Start or resume a session
 
-**Description:** Resuming a stopped session follows the [exact-conversation contract](sessions.md#session-013-stop-while-retaining-identity). A starting session remains unavailable until provider initialization and identity establishment, plus supported acknowledgment of initial instruction submission (not an answer).
+**Description:** Start or resume occurs only after an explicit user action. Parked sessions are live and need no resume. Resuming a stopped session follows the [exact-conversation contract](sessions.md#session-014-resume-the-exact-conversation). Each action makes exactly one attempt; failure remains visible and is not retried. A starting session remains unavailable until provider initialization and identity establishment, plus supported acknowledgment of initial instruction submission (not an answer).
 
-**Trigger:** The user invokes start for a mode with no session, or resume for an ended/stopped session.
+**Trigger:** The user explicitly invokes the create-session/resume keybinding or CLI operation.
 
 **Preconditions:** The selected task and mode are available.
 
 **Behavior:**
 1. Keep a starting session unavailable until provider initialization, identity establishment, and supported acknowledgment of initial-instruction submission (not an answer) are complete.
-2. Resume a stopped session according to the exact-conversation contract.
+2. Make exactly one start or resume attempt for this action; resume a stopped session according to the exact-conversation contract. A parked session is already live and is not resumed.
+3. On failure, show the failure and do not retry unless the user takes another explicit action.
 
-**Outcome:** A starting session remains unavailable until startup completion; a resumed session follows the exact-conversation contract.
+**Outcome:** A starting session remains unavailable until startup completion; a resumed session follows the exact-conversation contract; failures remain visible without retry.
 
-**Failures:** A session that has not met all startup-completion conditions remains unavailable.
+**Failures:** A session that has not met all startup-completion conditions remains unavailable. A failed attempt remains failed and visible; another attempt requires another explicit user action.
 
 **Acceptance Criteria:**
 - [ ] IF-SI-002-AC-01: Start a session and confirm it remains unavailable until all startup-completion conditions are met.
-- [ ] IF-SI-002-AC-02: Select a stopped session and confirm resume follows the exact-conversation contract.
+- [ ] IF-SI-002-AC-02: Explicitly resume a stopped session and confirm resume follows the exact-conversation contract.
+- [ ] IF-SI-002-AC-03: Confirm start/resume occurs only from an explicit action, makes one attempt, and a failure is visible without retry; parked sessions do not require resume.
 
 ### IF-SI-003: Identify the selected session and execution context
 
@@ -108,22 +110,23 @@ Let users inspect the selected task's session, safely attach to or resume it, an
 
 ### IF-SI-005: Present the ended-session state
 
-**Description:** If a session has ended, the body prompts resume and identifies the session-picker shortcut.
+**Description:** If a session is stopped/ended, the body immediately prompts explicit resume and identifies the session-picker/start shortcut; selection never resumes it.
 
 **Trigger:** The application displays a task whose session has ended.
 
 **Preconditions:** The selected session has ended.
 
 **Behavior:**
-1. Show a resume prompt in the body.
-2. Identify the session-picker shortcut.
+1. Immediately show a resume prompt in the body.
+2. Identify the session-picker/start shortcut.
+3. Do not resume the session automatically.
 
-**Outcome:** The user sees that the session ended and can identify the resume and picker actions.
+**Outcome:** The user sees that the session is stopped and can identify the explicit resume and picker/start actions.
 
 **Failures:** None specified.
 
 **Acceptance Criteria:**
-- [ ] IF-SI-005-AC-01: Launch with an ended session and confirm the resume prompt and session-picker shortcut appear without a keypress.
+- [ ] IF-SI-005-AC-01: Select or launch with a stopped/ended session and confirm the resume prompt and session-picker/start shortcut appear immediately without a keypress or automatic resume.
 
 ### IF-SI-006: Show initial session states on startup
 
@@ -166,29 +169,35 @@ Let users inspect the selected task's session, safely attach to or resume it, an
 
 ### Task session lifecycle
 
+**Terminology:** Running means a live session actively processing. Parked means a loaded session with a live harness, process, and terminal pane but no active turn; selecting it switches presentation to that live pane and does not resume or restart it. Stopped means no harness, process, or pane; use requires explicit resume of the exact retained conversation. Starting means startup is in progress and unavailable until ready; it is never presented as running. Unknown means current evidence is insufficient and is never inferred as running or stopped. Activity indication is separate from lifecycle state: selection or observation updates the task-row session indication, not the selected-session lifecycle.
+
 **States:**
 
 | State | Meaning |
 |---|---|
 | No session | The selected mode has no session; the body identifies this and the footer offers the start shortcut. |
 | Starting session | Startup is in progress; the session remains unavailable until startup completion. |
-| Running session | The session is active and may be selected for observational attachment. |
-| Stopped session | The session can be resumed according to the exact-conversation contract. |
-| Ended session | The body prompts resume and identifies the session-picker shortcut. |
+| Running | A live session actively processing. |
+| Parked | A loaded session with a live harness, process, and pane but no active turn. |
+| Stopped | No harness, process, or pane; explicit exact-conversation resume is required before use. |
+| Starting | Startup is in progress; unavailable until ready and never presented as running. |
+| Unknown | Current evidence is insufficient; never inferred as running or stopped. |
 
 **Transitions:**
 
 | From | Trigger | To | Required Behavior |
 |---|---|---|---|
-| Task selection | User selects a task | Selected task's active session for selected mode, or no session | Show the active session for the selected mode; if absent, show the no-session state. |
-| Running session | User selects session | Attached running session | Attach only; send no input and change no control state. |
+| Task selection | User selects a task | Selected task's session for selected mode, or no session | Show the selected-mode session; selection never starts or resumes it. |
+| Running or parked session | User selects session | Live pane presented | Attach/switch only; send no input and change no control state. |
 | No session | User starts session | Starting session | Keep the session unavailable until startup completion. |
-| Stopped session | User resumes session | Resumed session | Follow the [exact-conversation contract](sessions.md#session-013-stop-while-retaining-identity). |
-| Ended session | User selects task/session | Ended session presentation | Prompt resume and identify the session-picker shortcut. |
+| Stopped session | User explicitly resumes session | Starting/resumed session | Make one attempt and follow the [exact-conversation contract](sessions.md#session-014-resume-the-exact-conversation); do not retry on failure. |
+| Stopped session | User selects task/session | Stopped presentation | Immediately prompt resume and identify the session-picker/start shortcut; do not resume. |
 
 **Invariants:**
-- Selecting a running session is observational and does not submit input or change control.
+- Selecting a running or parked session only switches to its live pane; it does not start/resume, submit input, or change control.
+- No selection automatically starts or resumes a session; each start/resume attempt requires an explicit action and is attempted once.
 - A starting session is unavailable until startup completion.
+- Unknown evidence never authorizes a running or stopped claim.
 
 ### Task-row activity indicator
 
@@ -214,9 +223,9 @@ Let users inspect the selected task's session, safely attach to or resume it, an
 
 **Context:** The user selects a task and its selected-mode session.
 
-**Action:** Select or attach to a running session, start or resume a session, and inspect session identity, execution context, and activity.
+**Action:** Select a task/session; explicitly start a new session or resume a stopped session; inspect session identity, execution context, and activity.
 
-**Response:** Show the selected session or the appropriate no-session/ended-session presentation; attach without sending input or changing control; keep a starting session unavailable until startup completes.
+**Response:** Selecting a running or parked session switches to its live pane only, without input or control changes. Selecting a stopped session immediately shows the resume prompt and session-picker/start shortcut without resuming. Start/resume occurs only on explicit action, once per action; keep a starting session unavailable until startup completes and show failures without retry.
 
 **Feedback:** Identify the start or session-picker shortcut as applicable and show the task-row activity dot only when observed activity exists for an active session in the selected mode.
 
@@ -256,9 +265,11 @@ Let users inspect the selected task's session, safely attach to or resume it, an
 | Condition | Required Behavior |
 |---|---|
 | The selected mode has no session at startup. | Immediately show the no-session body and start shortcut without requiring a keypress. |
-| The selected session has ended. | Immediately show the resume prompt and session-picker shortcut without requiring a keypress. |
+| The selected session is stopped/ended. | Immediately show the resume prompt and session-picker/start shortcut without requiring a keypress; do not resume automatically. |
 | A session is starting but startup completion conditions are not all met. | Keep the session unavailable. |
-| A running session is selected. | Attach only; send no input and do not change control. |
+| A running or parked session is selected. | Switch to its live pane only; do not start/resume, send input, or change control. |
+| Start or resume fails. | Show the failed attempt; do not retry unless the user explicitly acts again. |
+| Session evidence is uncertain. | Show Unknown; do not infer running or stopped. |
 | There is no activity evidence or no active session for the selected mode. | Show no activity dot. |
 | A saved historical lifecycle label conflicts with observed activity. | Use observed activity, not the saved label, for the dot. |
 

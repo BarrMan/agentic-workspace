@@ -57,5 +57,5 @@ Concrete models provide a single owner for domain rules, while application coord
 ## References
 
 - [BLUEPRINT: component ownership and dependency direction](../BLUEPRINT.md#component-ownership) — current logical contract.
-- [BLUEPRINT: mutation and concurrency boundary](../BLUEPRINT.md#authoritative-mutation-and-publication) — current durable coordination algorithm.
+- [BLUEPRINT: mutation and concurrency boundary](../blueprints/controller.md#update-task) — current durable coordination algorithm.
 - [SPEC](../SPEC.md) — current product behavior.

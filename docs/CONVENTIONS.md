@@ -1,6 +1,6 @@
 # Engineering Conventions
 
-This document owns repeatable coding, organization, and verification practices. [BLUEPRINT](BLUEPRINT.md) owns structural constraints and interfaces; [SPEC](SPEC.md) and its linked [specs](specs/) own behavior; [PRODUCT](PRODUCT.md) owns scope. [ADRs](adr/README.md) record approved technical decisions and their rationale. [AGENTS](../AGENTS.md) owns contributor workflow and runnable-handoff requirements.
+This document owns repeatable coding, organization, and verification practices. [BLUEPRINT](BLUEPRINT.md) owns structural constraints and boundaries; [SPEC](SPEC.md) and its linked [specs](specs/) own behavior; [PRODUCT](PRODUCT.md) owns scope. [ADRs](adr/README.md) record approved technical decisions and their rationale. [AGENTS](../AGENTS.md) owns contributor workflow and runnable-handoff requirements.
 
 ## Naming
 
@@ -18,7 +18,7 @@ This document owns repeatable coding, organization, and verification practices. 
 - Use the repository's strict TypeScript settings in [tsconfig.json](../tsconfig.json), including checked indexed access, explicit overrides, and unused-symbol checks. Use type-only imports when only a type is needed.
 - Let [biome.json](../biome.json) define formatting and lint rules; do not maintain a second style configuration in prose.
 - Put changes with the owning feature/module and reuse its existing types and helpers. Keep code in the owning feature or domain directory under `src/`; keep focused tests beside the implementation and shared test helpers under `src/test/`.
-- Follow [BLUEPRINT](BLUEPRINT.md) for provider isolation, rendering and orchestration boundaries, dependency direction, interface ownership, module boundaries, and public interfaces.
+- Follow [BLUEPRINT](BLUEPRINT.md) for provider isolation, rendering and orchestration boundaries, dependency direction, boundary ownership, module boundaries, and public contracts.
 
 ## Error Handling
 

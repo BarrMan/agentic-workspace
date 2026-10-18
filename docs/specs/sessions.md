@@ -50,14 +50,14 @@ Sessions let users launch and continue agent conversations attached to tasks, ob
 
 ### SESSION-002: Report observed runtime state
 
-**Description:** Runtime state distinguishes running, idle, and stopped sessions, with permission requests indicated separately.
+**Description:** Runtime state distinguishes running, idle, stopped, and unknown sessions, with permission requests indicated separately. Stored state alone never establishes liveness.
 
 **Trigger:** The workspace observes a session's runtime state.
 
 **Preconditions:** Current runtime evidence may or may not establish liveness and activity.
 
 **Behavior:**
-1. Distinguish running, idle, and stopped sessions and indicate permission requests separately.
+1. Distinguish running, idle, stopped, and unknown sessions and indicate permission requests separately.
 2. If current liveness cannot be established, report unknown or unavailable; an old record alone proves neither running nor stopped.
 3. Do not stop an agent or declare it stopped on uncertain evidence.
 
@@ -70,21 +70,21 @@ Sessions let users launch and continue agent conversations attached to tasks, ob
 
 ### SESSION-003: Refresh runtime observations
 
-**Description:** The workspace checks every task every 30 seconds to refresh observed runtime state.
+**Description:** The workspace observes every task every 30 seconds to update observed runtime state and indications. Observation never starts, resumes, stops, or retries a session.
 
 **Trigger:** The 30-second refresh interval elapses.
 
 **Preconditions:** Tasks are available to the workspace.
 
 **Behavior:**
-1. Check every task every 30 seconds and refresh its observed runtime state.
+1. Observe every task every 30 seconds and update observed runtime state and indications only; do not start, resume, stop, or retry a session.
 
-**Outcome:** Runtime observations are refreshed for every task at the specified interval.
+**Outcome:** Observed runtime state and indications are updated for every task at the specified interval without lifecycle actions.
 
 **Failures:** None.
 
 **Acceptance Criteria:**
-- [ ] The workspace refreshes observed runtime state for every task every 30 seconds.
+- [ ] Every task is observed every 30 seconds; observation updates runtime state/indications only and never starts, resumes, stops, or retries a session.
 
 ### SESSION-004: Start consistently across surfaces
 
@@ -330,24 +330,24 @@ Sessions let users launch and continue agent conversations attached to tasks, ob
 
 ### SESSION-016: Handoff to a successor
 
-**Description:** Handoff creates a distinct successor session.
+**Description:** Handoff creates a distinct successor session owned by this app instance.
 
 **Trigger:** The user requests handoff to a distinct successor session.
 
-**Preconditions:** A predecessor is eligible for retirement only when it belongs to the workspace.
+**Preconditions:** A predecessor is eligible for retirement only when it belongs to this app instance.
 
 **Behavior:**
-1. Start and durably publish the successor, establishing that it is running, before ending an eligible predecessor.
+1. Start and durably publish the successor, establishing that it is running, before ending an eligible predecessor owned by this app instance.
 2. If a step fails or is interrupted, report the error and completed effects.
 3. Keep the predecessor intact if successor creation fails; keep a successfully published successor if predecessor retirement fails.
 4. The only rollback is creation-publication rollback defined in SESSION-009/010.
 
-**Outcome:** The successor is confirmed before retiring an eligible workspace-owned predecessor; an external predecessor is not ended.
+**Outcome:** The successor is confirmed before retiring an eligible predecessor owned by this app instance.
 
 **Failures:** Successor creation failure leaves the predecessor intact; predecessor retirement failure leaves the successfully published successor running. Report errors and completed effects.
 
 **Acceptance Criteria:**
-- [ ] Handoff creates a distinct successor, retires only workspace-owned predecessors after durable running confirmation, preserves predecessor on successor failure and successor on predecessor-retirement failure, with no rollback beyond SESSION-009/010.
+- [ ] Handoff creates a distinct successor, retires only predecessors owned by this app instance after durable running confirmation, preserves predecessor on successor failure and successor on predecessor-retirement failure, with no rollback beyond SESSION-009/010.
 
 ### SESSION-017: Display the live terminal
 
@@ -368,30 +368,34 @@ Sessions let users launch and continue agent conversations attached to tasks, ob
 **Acceptance Criteria:**
 - [ ] The live terminal is seeded from the current screen and updated while running; conversation history and ask operation remain separate from terminal capture.
 
-### SESSION-018: Detach without stopping agents
+### SESSION-018: Stop sessions when the app closes
 
-**Description:** Leaving the workspace detaches the client and keeps agents running.
+**Description:** Normal app close stops every session; all harness processes and terminal panes are gone. On reopen, every session is stopped and must be resumed explicitly. Detaching alone never stops execution. A crash is not a normal close and cleanup cannot be guaranteed; on reopen, current evidence decides liveness and stored state never proves running.
 
-**Trigger:** The user leaves the workspace or the app crashes while connected to a session.
+**Trigger:** The user closes the app, or the app reopens after a crash.
 
-**Preconditions:** A session may be running independently of the workspace client.
+**Preconditions:** Sessions may be running when the app closes or crashes.
 
 **Behavior:**
-1. Detach the client without stopping agents on departure or app crash.
-2. Report stopped only after observing that the agent is no longer running.
+1. On normal app close, stop every session and ensure all harness processes and terminal panes are gone.
+2. On reopen after normal close, treat all sessions as stopped; each requires explicit exact-conversation resume before use.
+3. Detaching alone never stops execution.
+4. A crash does not guarantee cleanup. On reopen after a crash, establish liveness only from current evidence; stored state never proves running, and uncertain evidence is unknown.
 
-**Outcome:** Client lifetime does not determine agent lifetime; stopped is reported only from observation.
+**Outcome:** Normal app close leaves no session runtime; after reopen all sessions require explicit resume. After a crash, only current evidence determines reported liveness.
 
-**Failures:** If liveness cannot be established, report unknown/unavailable under SESSION-002.
+**Failures:** If close cleanup or post-crash liveness cannot be established, report the failure or unknown/unavailable under SESSION-002; never claim stopped or running from uncertain or stored evidence.
 
 **Acceptance Criteria:**
-- [ ] Workspace departure and app crash detach without stopping agents; stopped is reported only after observation establishes not running.
+- [ ] Normal app close stops every session and leaves no harness process or terminal pane; on reopen each is stopped and requires explicit exact-conversation resume.
+- [ ] Detach alone does not stop execution.
+- [ ] After a crash, cleanup is not assumed; current evidence alone determines liveness and stored state never proves running.
 
 ### SESSION-019: Settle terminal input on close or deletion
 
-**Description:** On workspace close or task deletion, terminal input already in flight is allowed up to two seconds to land.
+**Description:** On app close or task deletion, terminal input already in flight is allowed up to two seconds to land before session shutdown completes.
 
-**Trigger:** The workspace closes or a task is deleted while terminal input is queued or in flight.
+**Trigger:** The app closes or a task is deleted while terminal input is queued or in flight.
 
 **Preconditions:** Terminal input may have been dispatched or remain queued.
 
@@ -429,15 +433,29 @@ Sessions let users launch and continue agent conversations attached to tasks, ob
 
 ## States and Transitions
 
+### Loaded session states
+
+**States:**
+
+| State | Meaning |
+|---|---|
+| Running | A live session actively processing. |
+| Parked | A loaded session with a live harness, process, and terminal pane, but no active turn. Selecting it switches presentation to its live pane; it is not resumed or restarted. |
+| Stopped | No harness, process, or pane. The session must be explicitly resumed as the exact retained conversation before use. |
+| Starting | Startup is in progress; the session is unavailable until usable and is never presented as running. |
+| Unknown | Current evidence is insufficient; never infer running or stopped. |
+
+Parked is a loaded runtime state, distinct from stopped. Activity indications are separate from lifecycle state: selecting or observing a session updates the task-row session indication, not the selected-session lifecycle.
+
 ### Observed runtime state
 
 **States:**
 
 | State | Meaning |
 |---|---|
-| Running | Current observation establishes that the agent is running. |
+| Running | Current observation establishes that the agent is running and actively processing. |
 | Idle | Current observation establishes an idle session; eligible for soft-limit stopping. |
-| Stopped | Observation establishes that the agent is no longer running. |
+| Stopped | Current evidence establishes that the agent is no longer running. |
 | Unknown/unavailable | Current liveness or activity cannot be established; this never authorizes a stop or a stopped claim. |
 | Permission request | Reported separately from running/idle/stopped activity and protected from automatic stopping. |
 
@@ -450,6 +468,10 @@ Sessions let users launch and continue agent conversations attached to tasks, ob
 
 **Invariants:**
 - Session identity is distinct from observed runtime state; unknown/unavailable evidence never authorizes stopping or declaring stopped.
+- No session is automatically resumed or started. Each explicit user action makes exactly one attempt; failure remains visible and requires another explicit action to retry.
+- Selecting a running or parked session only switches presentation to its live pane; it sends no input and changes no control state.
+- Normal app close stops every session and leaves no harness process or terminal pane; park is not stop.
+- Uncertain evidence never authorizes stopping or a stopped claim.
 
 ### Session creation and handoff
 
@@ -461,7 +483,7 @@ Sessions let users launch and continue agent conversations attached to tasks, ob
 | Ready | Initialization, identity, accepted initial delivery, and durable publication are established. |
 | Creation failed | Creation did not succeed; only final durable publication failure rolls back the provisional relationship. |
 | Handoff successor confirmed | The distinct successor is durably published and confirmed running. |
-| Handoff settled | An eligible workspace-owned predecessor is retired only after successor confirmation; an external predecessor is not ended. |
+| Handoff settled | An eligible predecessor owned by this app instance is retired only after successor confirmation. |
 
 **Transitions:**
 
@@ -472,7 +494,7 @@ Sessions let users launch and continue agent conversations attached to tasks, ob
 | Provisional creation | Startup/readiness or initial-delivery failure | Creation failed | Fail and report creation; retain tracking for any execution that may still be running and do not roll back the relationship. |
 | Provisional creation | Final durable publication fails | Creation failed | Stop the new execution and roll back its provisional relationship; retain tracking if it may still be running. |
 | Successor creation | Successor is durably published and confirmed running | Handoff successor confirmed | Keep the predecessor intact until this confirmation. |
-| Handoff successor confirmed | Handoff retires an eligible workspace-owned predecessor | Handoff settled | Retire only after confirmation; preserve the successor if predecessor retirement fails. |
+| Handoff successor confirmed | Handoff retires an eligible predecessor owned by this app instance | Handoff settled | Retire only after confirmation; preserve the successor if predecessor retirement fails. |
 
 **Invariants:**
 - Creation readiness requires provider initialization, established identity, accepted initial delivery, and durable publication.
@@ -485,9 +507,9 @@ Sessions let users launch and continue agent conversations attached to tasks, ob
 
 **Context:** The user works with a task and selected mode through the CLI or workspace.
 
-**Action:** Start, observe, stop, resume, hand off, attach to, detach from, or delete a session; provide terminal input where supported.
+**Action:** Explicitly start or resume, observe, stop, hand off, attach to, detach from, or delete a session; provide terminal input where supported; close the app.
 
-**Response:** Create one session for the selected mode, coordinate unfinished task status before startup, and show readiness only after required initialization, identity, accepted initial delivery, and durable publication. Report observed runtime and terminal state, preserve exact conversation identity on resume, and apply the specified lifecycle outcomes.
+**Response:** Create one session for the selected mode only on explicit start; coordinate unfinished task status before startup and show readiness only after required initialization, identity, accepted initial delivery, and durable publication. Resume stopped sessions only on explicit action and continue the exact conversation. Selecting a parked session switches to its live pane without resuming. Each start/resume action makes one attempt, with visible failure and no automatic retry. Detaching alone does not stop execution. Normal app close stops every session and leaves no harness process or terminal pane; after reopen all sessions require explicit resume.
 
 **Feedback:** Report operation errors and completed effects truthfully; show unknown/unavailable when liveness cannot be established, and explain when exact resume is impossible.
 
@@ -507,7 +529,7 @@ Sessions let users launch and continue agent conversations attached to tasks, ob
 
 ### Performance
 
-- Refresh observed runtime state for every task every 30 seconds.
+- Observe every task every 30 seconds; observation updates runtime state and indications only and never starts, resumes, stops, or retries a session.
 
 ### Reliability
 
@@ -529,6 +551,12 @@ Sessions let users launch and continue agent conversations attached to tasks, ob
 | Condition | Required Behavior |
 |---|---|
 | Current liveness cannot be established | Report unknown/unavailable; do not infer running or stopped from an old record, and do not stop the agent. |
+| A session is parked | Keep its live runtime; selection switches presentation only and does not resume or restart it. |
+| A session is stopped | Require explicit resume of the exact retained conversation before use. |
+| A session is starting | Keep it unavailable and never present it as running. |
+| A start or resume attempt fails | Keep the failure visible and do not retry without another explicit user action. |
+| The app closes normally | Stop all sessions; no harness process or terminal pane remains, and sessions require explicit resume after reopen. |
+| The app crashes | Do not assume cleanup; establish liveness after reopen only from current evidence, never stored state. |
 | Task cannot be moved to its configured in-progress status | Fail the start and show an error before reservation or startup. |
 | Startup or initial instruction delivery fails | Fail creation, report the error and completed effects, and preserve tracking for any execution that may remain active; startup/readiness failures may require cleanup. |
 | Final durable publication fails after startup | Fail creation, stop the new execution, and roll back its provisional relationship; report errors and completed effects, and preserve tracking for any execution that may remain active. |

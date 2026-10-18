@@ -1,0 +1,123 @@
+# Task
+
+Part of [BLUEPRINT](../BLUEPRINT.md). Task owns task-local mode selection and session relationships. It does not perform I/O or start execution. Session is defined in [Session](session.md).
+
+## Type
+
+```ts
+type Task = {
+  id: TaskId
+  details: TaskDetails
+  configInputs: ConfigInputs
+  selectedModeId: ModeId
+  modes: Map<ModeId, ModeSessions>
+  worktree: Worktree | null
+  approval: Approval
+  newSession: SessionFactory
+}
+
+type ModeSessions = {
+  sessions: Session[]
+  activeSessionId: SessionId | null
+}
+```
+
+## Derived State
+
+```ts
+get Task.activeSession() {
+  history = this.modes.get(this.selectedModeId)
+  if (!history) return null
+  return history.sessions.find(session => session.id === history.activeSessionId) ?? null
+}
+```
+
+## Operations
+
+```ts
+Task.apply(change) {
+  Object.assign(this.details, change)             // schema validation happened before the Controller call
+}
+
+Task.createSession(modeId) {
+  history = this.modes.get(modeId) ?? { sessions: [], activeSessionId: null }
+  this.modes.set(modeId, history)
+
+  session = this.newSession(this.id, modeId)      // factory binds the Session runtime
+  history.sessions.push(session)
+  history.activeSessionId = session.id
+  this.selectedModeId = modeId
+  return session
+}
+
+Task.removeSession(session) {
+  history = this.modes.get(session.modeId)
+  index = history.sessions.findIndex(item => item === session)
+
+  if (index < 0) return
+
+  history.sessions.splice(index, 1)
+
+  if (history.activeSessionId == session.id) {
+    history.activeSessionId = history.sessions[0]?.id ?? null
+  }
+}
+
+Task.selectSession(modeId, sessionId) {
+  history = this.modes.get(modeId)
+  history.activeSessionId = sessionId
+  this.selectedModeId = modeId
+}
+
+Task.findSession(sessionId) {
+  for (history of this.modes.values()) {
+    session = history.sessions.find(item => item.id === sessionId)
+    if (session) return session
+  }
+
+  return null
+}
+
+Task.fromRecord(record, newSession) {
+  task = new Task(record)
+  task.newSession = newSession
+  task.modes = new Map()
+
+  for (modeRecord of record.sessions) {
+    task.modes.set(modeRecord.modeId, {
+      sessions: modeRecord.sessions.map(sessionRecord => newSession(task.id, modeRecord.modeId, sessionRecord)),
+      activeSessionId: modeRecord.activeSessionId,
+    })
+  }
+
+  return task
+}
+
+Task.serialize() {
+  return {
+    id: this.id,
+    details: this.details,
+    configInputs: this.configInputs,
+    selectedModeId: this.selectedModeId,
+    worktree: this.worktree,
+    approval: this.approval,
+  }
+}
+
+Task.serializeSessions() {
+  return [...this.modes.entries()].map(([modeId, history]) => ({
+    modeId,
+    sessions: history.sessions.map(session => session.record()),
+    activeSessionId: history.activeSessionId,
+  }))
+}
+```
+
+## Invariants
+
+- Task model mutations are synchronous and free of I/O.
+- Task never starts or stops execution; it creates Session records and receives Session operations from Controller.
+- Selection is Task and Controller state, not a preference.
+- A nonempty history's active ID names a retained member; an empty history has no active ID.
+- Sessions never move between modes.
+- Removing a mode requires an empty history.

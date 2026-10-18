@@ -17,11 +17,14 @@ The task-list width and details/preview proportions above are approved qualitati
 - Task loading/refresh failure, save failure, and externally removed selection need visible feedback.
 - Session absent for selected mode: explain there is no session in that mode; offer the normal start action.
 - Starting: unavailable until usable; do not present as running.
-- Running: show live terminal; selecting it attaches without sending input or changing control.
-- Ended: prompt to resume and identify the session-picker shortcut.
-- Unknown/unavailable liveness: do not infer running or ended from stored labels.
+- Running: show the live terminal; selecting it attaches without sending input or changing control.
+- Parked: the live preview pane is retained; selecting a parked session switches the preview to that session without resuming it.
+- Stopped: show a prompt to resume and identify the session-picker/start shortcut; resume requires an explicit user action and never happens automatically.
+- Unknown/unavailable liveness: do not infer running or stopped from stored labels.
+- Starting, running, parked, and stopped are distinct lifecycle states. Starting is unavailable until usable; it is never presented as running.
 - Permission request and activity error must remain distinguishable.
-- Active-session dots appear on selected and unselected task rows; no active session means no dot. Selection remains visible when focus moves elsewhere.
+- Task-row activity indications appear on selected and unselected rows only when there is observed activity evidence; lifecycle state alone does not determine the indication. Selection remains visible when focus moves elsewhere.
+- Selecting a task updates the task-list highlight, details region, and preview region together. Activity evidence updates only the task-row indication and session header, leaving the list, details, and preview content and position unchanged.
 - Navigation preserves the viewport while selection remains visible, scrolling only enough when it crosses an edge. Refreshing selection preserves the viewport; status, filter, and view changes reset it.
 - `g`/`G` select the first/last filtered task within the active status tab; `Home`/`End` remain available. Empty panes are safe; editable fields and focused agent terminals keep their input.
 
@@ -29,7 +32,7 @@ The task-list width and details/preview proportions above are approved qualitati
 
 Keyboard/focus behavior follows SPEC and the active shortcut configuration. `Tab` changes the selected mode for the selected task; session execution remains unchanged. `f` shows the same retained terminal fullscreen with a bottom row reserved for the visible `Ctrl+Q` exit hint; `Ctrl+Q` and `Ctrl+C` return to navigation without forwarding an interrupt. Navigation `Ctrl+C` exits; `q` never exits. At narrow sizes, shrink the task region below its 35-cell cap and preserve selected-task identity and essential footer actions. Exact minimum dimensions, wrapping/truncation policy, and collapse threshold remain undecided.
 
-The task-list pane is toggled with `Shift+[`, without restarting the selected agent. Start applies to the selected mode only.
+The task-list pane is toggled with `Shift+[`, without restarting the selected agent. Start applies to the selected mode only and requires an explicit action; each action makes one attempt, with visible failure and no automatic retry. Closing the app stops every session and removes its harness, process, and pane; reopening shows sessions as stopped until explicitly resumed. Detaching the terminal alone does not stop a session.
 
 ## Open Questions
 

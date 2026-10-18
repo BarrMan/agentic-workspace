@@ -1,6 +1,6 @@
 # Documentation map
 
-The project contracts are authoritative and are the single source of truth for their concerns: PRODUCT, SPEC and its linked `specs/`, BLUEPRINT and its detailed `architecture/` pages, CONVENTIONS, DESIGN-SYSTEM, `screens/`, and ADRs. Each concern has one owning contract.
+The project contracts are authoritative and are the single source of truth for their concerns: PRODUCT, SPEC and its linked `specs/`, BLUEPRINT and its detailed `blueprints/` pages, CONVENTIONS, DESIGN-SYSTEM, `screens/`, and ADRs. Each concern has one owning contract.
 
 ## Durable documents
 
@@ -8,7 +8,7 @@ The project contracts are authoritative and are the single source of truth for t
 |---|---|---|
 | Understanding the product's purpose or scope | [PRODUCT](PRODUCT.md) | Users, goals, scope and non-goals. |
 | Changing a feature, API or failure/recovery behavior | [SPEC](SPEC.md) and its linked feature contracts | Supported behavior, scenarios, constraints and acceptance criteria. |
-| Changing logical architecture, ownership, interfaces or operation contracts | [BLUEPRINT](BLUEPRINT.md) and [`architecture/`](architecture/) | Structural boundaries and meaningful operations, properties, and events, including their inputs, results, preconditions, and failure contracts. Detailed component pages are parts of this contract. |
+| Changing logical architecture, ownership, boundaries, or operation contracts | [BLUEPRINT](BLUEPRINT.md) and [`blueprints/`](blueprints/) | Structural boundaries and meaningful operations, properties, and events, including their inputs, results, preconditions, and failure contracts. Detailed component pages are parts of this contract. |
 | Changing a particular screen | [Screen index](screens/README.md) | Screen contents, ordering, states, focus, actions and terminal-size behavior. |
 | Reusing or adding visual/interaction patterns | [DESIGN-SYSTEM](DESIGN-SYSTEM.md) | Shared palette, spacing, headers, footers, dialogs and component patterns. |
 | Writing code or tests | [CONVENTIONS](CONVENTIONS.md) | Repeatable engineering and organization practices. |

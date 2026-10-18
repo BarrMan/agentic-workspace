@@ -9,11 +9,11 @@ AgenticWorkspace organizes project tasks, configurable agent work, retained conv
 | Feature | Description | Contract |
 |---|---|---|
 | Tasks and storage | Task model, dependencies, deterministic storage and relocation, artifacts, worktrees, completion, milestones, and task deletion. | [Tasks and storage](specs/tasks.md) |
-| Sessions | Session identity, observation, launch, exact resume, handoff, running-session limit, terminal lifetime, and session deletion. | [Sessions](specs/sessions.md) |
+| Sessions | Session identity and observation; running, parked, and stopped states; explicit start/resume, app-close lifecycle, handoff, running-session limit, terminal lifetime, and session deletion. | [Sessions](specs/sessions.md) |
 | Configuration and modes | TUI settings, precedence, dynamic modes, task/mode approval, presets, permissions, models, and mode deletion. | [Configuration and modes](specs/configuration.md) |
 | Workspace and board | Browse and organize project tasks through grouped-list and status-column views. | [Workspace and board](specs/workspace-and-board.md) |
 | Filtering and search | Filter workspace tasks and search across project records. | [Filtering and search](specs/filtering-and-search.md) |
-| Session interaction and feedback | Select, observe, start, resume, and identify task sessions in the workspace. | [Session interaction and feedback](specs/session-interaction-and-feedback.md) |
+| Session interaction and feedback | Select and observe sessions; attach to running or parked sessions without changing them, and explicitly start or resume stopped sessions. | [Session interaction and feedback](specs/session-interaction-and-feedback.md) |
 | Supported Integration Operations | Use the explicitly supported selective CLI operations. | [Supported Integration Operations](specs/supported-integration-operations.md) |
 
 ## Feature Contracts
@@ -54,7 +54,7 @@ None recorded in the [Tasks and storage contract](specs/tasks.md).
 
 #### Purpose
 
-Define creation, observation, continuation, handoff, live terminal interaction, and deletion of retained agent conversations.
+Define session states, creation, observation, explicit exact-conversation resume, app-close lifecycle, handoff, live terminal interaction, and deletion of retained agent conversations.
 
 #### Requirements
 
@@ -182,7 +182,7 @@ None recorded in the [Filtering and search contract](specs/filtering-and-search.
 
 #### Purpose
 
-Let users inspect the selected task's session, safely attach to or resume it, and understand the selected session's identity, execution context, and state.
+Let users inspect a task's session, attach to its live pane when running or parked without changing it, explicitly resume stopped sessions, and understand session identity, execution context, and state.
 
 #### Requirements
 
