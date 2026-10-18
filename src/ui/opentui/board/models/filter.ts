@@ -68,7 +68,7 @@ export class Filter {
 						labelMatch: filters.labelMatch,
 						milestone: filters.milestoneFilter || undefined,
 					},
-					createTaskSearchIndex(corpus),
+					filters.searchQuery.trim() ? createTaskSearchIndex(corpus) : undefined,
 				)
 			: corpus;
 		return filters.limit === undefined ? matching : matching.slice(0, filters.limit);

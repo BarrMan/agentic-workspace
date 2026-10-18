@@ -428,7 +428,7 @@ title: Broken Task
 			await filesystem.saveTask(sampleTask);
 
 			const demoted = await filesystem.demoteTask("task-1");
-			expect(demoted).toBe(true);
+			expect(demoted).toBe("DRAFT-1");
 
 			// Task should be removed from tasks directory
 			const tasksFiles = await readdir(join(TEST_DIR, "agentic-workspace", "tasks"));
@@ -543,7 +543,7 @@ title: Broken Task
 			await filesystem.saveDraft(sampleDraft);
 
 			const promoted = await filesystem.promoteDraft("draft-1");
-			expect(promoted).toBe(true);
+			expect(promoted).toBe("TASK-1");
 
 			// Draft should be removed from drafts directory
 			const draftsFiles = await readdir(join(TEST_DIR, "agentic-workspace", "drafts"));
@@ -573,7 +573,7 @@ title: Broken Task
 			await filesystem.saveDraft(sampleDraft);
 
 			const promoted = await filesystem.promoteDraft("draft-1");
-			expect(promoted).toBe(true);
+			expect(promoted).toBe("TASK-1");
 
 			const promotedTask = await filesystem.loadTask("task-1");
 			expect(promotedTask?.id).toBe("TASK-1");
@@ -589,13 +589,13 @@ title: Broken Task
 			});
 
 			const demoted = await filesystem.demoteTask("task-1");
-			expect(demoted).toBe(true);
+			expect(demoted).toBe("DRAFT-1");
 
 			const draft = await filesystem.loadDraft("draft-1");
 			expect(draft?.status).toBe("In Progress");
 
 			const promoted = await filesystem.promoteDraft("draft-1");
-			expect(promoted).toBe(true);
+			expect(promoted).toBe("TASK-1");
 
 			const promotedTask = await filesystem.loadTask("task-1");
 			expect(promotedTask?.id).toBe("TASK-1");
@@ -618,7 +618,7 @@ title: Broken Task
 			await filesystem.saveDraft(sampleDraft);
 
 			const promoted = await filesystem.promoteDraft("draft-1");
-			expect(promoted).toBe(true);
+			expect(promoted).toBe("JIRA-1");
 
 			// Draft should be removed
 			const draftsFiles = await readdir(join(TEST_DIR, "agentic-workspace", "drafts"));
@@ -664,7 +664,7 @@ title: Broken Task
 			// Create and promote a draft
 			await filesystem.saveDraft(sampleDraft);
 			const promoted = await filesystem.promoteDraft("draft-1");
-			expect(promoted).toBe(true);
+			expect(promoted).toBe("TASK-2");
 
 			// BUG: Currently returns TASK-1 because promoteDraft only checks active tasks
 			// Expected: Should return TASK-2 to avoid collision with completed task

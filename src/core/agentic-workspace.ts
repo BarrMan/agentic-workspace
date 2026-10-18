@@ -268,8 +268,7 @@ export class Core {
 	}
 
 	async queryTasks(options: TaskQueryOptions = {}): Promise<Task[]> {
-		const tasks = await this.persistentReads.query(options);
-		return await this.storage.addSearchableArtifactText(tasks);
+		return await this.persistentReads.query(options);
 	}
 
 	/** Shared validation for collection surfaces before applying a prepared task graph. */
@@ -626,6 +625,19 @@ export class Core {
 		for (const task of tasks) await this.updateTask(task);
 	}
 
+	private async writeBoardMoveTasksBulk(tasks: Task[]): Promise<void> {
+		await this.storage.withTaskLocks(tasks, async () => {
+			for (const planned of tasks) {
+				const current = await this.storage.loadTask(planned.id, { includeArchived: true });
+				if (!current) throw new Error(`Task not found while applying board move: ${planned.id}`);
+				current.status = planned.status;
+				current.ordinal = planned.ordinal;
+				current.milestone = planned.milestone;
+				await this.updateTask(current);
+			}
+		});
+	}
+
 	async updateTasksBulk(tasks: Task[]): Promise<void> {
 		await this.storage.withTaskLocks(tasks, async () => await this.writeTasksBulk(tasks));
 	}
@@ -731,7 +743,7 @@ export class Core {
 		);
 
 		if (changedTasks.length > 0) {
-			await this.updateTasksBulk(changedTasks);
+			await this.writeBoardMoveTasksBulk(changedTasks);
 		}
 
 		return { updatedTask, changedTasks };
@@ -755,7 +767,7 @@ export class Core {
 		const plan = await this.planTasksToStatus(params, targetStatus);
 
 		if (plan.changedTasks.length > 0) {
-			await this.updateTasksBulk(plan.changedTasks);
+			await this.writeBoardMoveTasksBulk(plan.changedTasks);
 		}
 
 		return plan;

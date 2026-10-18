@@ -286,6 +286,13 @@ describe("real WorkspaceController Settings persistence", () => {
 		expect(f.setup.captureCharFrame()).toContain("Color: brightgreen");
 		const before = await f.json();
 		expect(before.modes?.profiles.plan?.prompt).toBe("Original prompt");
+		await upsertAgentConfiguration(f.core, "project", {
+			...before,
+			presets: {
+				...before.presets,
+				concurrent: { command: "concurrent {prompt}", bootstrap: "claude", env: {}, prepare: "" },
+			},
+		});
 		save(f.setup);
 		await f.saved();
 		const raw = await f.json();
@@ -304,6 +311,7 @@ describe("real WorkspaceController Settings persistence", () => {
 			prepare: "kept",
 			bootstrap: "claude",
 		});
+		expect(raw.presets.concurrent?.command).toBe("concurrent {prompt}");
 		expect(raw.sessions).toEqual({ worktreePerTask: true, yoloMode: true, autoResumeOnRestart: true });
 		expect(await loadAgentConfiguration(f.core, "project")).toEqual(raw);
 		await f.open();

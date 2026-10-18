@@ -1,4 +1,3 @@
-import { basename, dirname } from "node:path";
 import { DEFAULT_DONE_STATUS, DEFAULT_STATUSES } from "../constants/index.ts";
 import type { DraftFileReference } from "../file-system/operations.ts";
 import { removeTaskWorktree } from "../git/task-worktree.ts";
@@ -62,23 +61,21 @@ export class TaskLifecycleService {
 
 			// Persist to the selected draft container before the filesystem transition moves it.
 			await this.storage.saveDraft(draft);
-			const existingTaskIds = new Set((await this.storage.loadTasks()).map((task) => task.id));
-			if (
-				!(await this.storage.promoteDraft(
-					reference.canonicalId,
-					async (promoted) => {
-						await this.mutations.applyTaskUpdateInput(
-							promoted,
-							{ dependencies: promoted.dependencies },
-							async () => promoted.status,
-						);
-					},
-					() => this.mutations.generateNextId(),
-				))
-			) {
+			const promotedId = await this.storage.promoteDraft(
+				reference.canonicalId,
+				async (promoted) => {
+					await this.mutations.applyTaskUpdateInput(
+						promoted,
+						{ dependencies: promoted.dependencies },
+						async () => promoted.status,
+					);
+				},
+				() => this.mutations.generateNextId(),
+			);
+			if (!promotedId) {
 				throw new Error(`Could not promote draft ${reference.canonicalId}.`);
 			}
-			const promoted = (await this.storage.loadTasks()).find((task) => !existingTaskIds.has(task.id));
+			const promoted = await this.storage.loadTask(promotedId);
 			if (!promoted) throw new Error(`Promoted task for draft ${reference.canonicalId} could not be loaded.`);
 			await this.remapTaskSessionIdentity?.(reference.canonicalId, promoted.id);
 			return promoted;
@@ -109,16 +106,14 @@ export class TaskLifecycleService {
 			// Save the edited record in its existing task container; demoteTask moves that
 			// complete container, including artifacts and sidecar, and assigns its new ID.
 			await this.storage.saveTask(vacating);
-			const existingDraftIds = new Set((await this.storage.loadDrafts()).map((draft) => draft.id));
-			if (
-				!(await this.storage.demoteTask(current.id, undefined, async (demoted) => {
-					await this.mutations.applyTaskUpdateInput(
-						demoted,
-						{ dependencies: demoted.dependencies },
-						async () => demoted.status,
-					);
-				}))
-			) {
+			const demotedId = await this.storage.demoteTask(current.id, undefined, async (demoted) => {
+				await this.mutations.applyTaskUpdateInput(
+					demoted,
+					{ dependencies: demoted.dependencies },
+					async () => demoted.status,
+				);
+			});
+			if (!demotedId) {
 				throw new Error(`Could not demote task ${current.id}.`);
 			}
 
@@ -129,7 +124,7 @@ export class TaskLifecycleService {
 			} catch (error) {
 				throw markVacatedTaskMoved(error, "demotionState", "cleanup");
 			}
-			const demotedDraft = (await this.storage.loadDrafts()).find((draft) => !existingDraftIds.has(draft.id));
+			const demotedDraft = await this.storage.loadDraft(demotedId);
 			if (!demotedDraft) throw new Error(`Demoted draft for task ${current.id} could not be loaded.`);
 			await this.remapTaskSessionIdentity?.(current.id, demotedDraft.id);
 			return { task: demotedDraft, cleanedTaskIds };
@@ -186,11 +181,9 @@ export class TaskLifecycleService {
 	}
 
 	async promoteDraft(draftId: string): Promise<boolean> {
-		const existingTaskIds = new Set((await this.storage.loadTasks()).map((task) => task.id));
-		const promoted = await this.storage.promoteDraft(draftId, undefined, () => this.mutations.generateNextId());
-		if (!promoted) return false;
-		const task = (await this.storage.loadTasks()).find((candidate) => !existingTaskIds.has(candidate.id));
-		if (task) await this.remapTaskSessionIdentity?.(draftId, task.id);
+		const promotedId = await this.storage.promoteDraft(draftId, undefined, () => this.mutations.generateNextId());
+		if (!promotedId) return false;
+		await this.remapTaskSessionIdentity?.(draftId, promotedId);
 		return true;
 	}
 
@@ -206,13 +199,13 @@ export class TaskLifecycleService {
 		try {
 			result = await this.vacatedTaskReferences.withLockedCleanup(task, task.id, async (cleanup) => {
 				const movedPaths: Array<{ previousPath: string; savedPath: string }> = [];
-				const success = await this.storage.demoteTask(task.id, (previousPath, savedPath) => {
+				const demotedId = await this.storage.demoteTask(task.id, (previousPath, savedPath) => {
 					movedPaths.push({ previousPath, savedPath });
 				});
+				const success = demotedId !== null;
 				demotion.success = success;
 				demotion.moved = movedPaths[0];
-				if (success && movedPaths[0])
-					await this.remapTaskSessionIdentity?.(task.id, basename(dirname(movedPaths[0].savedPath)));
+				if (success) await this.remapTaskSessionIdentity?.(task.id, demotedId);
 				if (success) {
 					try {
 						const written = await this.vacatedTaskReferences.write(cleanup);

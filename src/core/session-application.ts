@@ -75,6 +75,30 @@ export class SessionApplication {
 		};
 	}
 
+	private persistExecutionExit(session: Session, modeId: ModeId): void {
+		const key = this.key(session.record.taskId, session.id);
+		const unsubscribe = session.subscribe((event) => {
+			if (event.kind !== "execution-exit") return;
+			unsubscribe();
+			void this.store
+				.mutate(event.record.taskId, async (state) => {
+					if (this.executions.get(key) !== session) return;
+					const captured = this.capturedTasks.get(key);
+					if (!captured) throw new Error(`Missing captured task configuration for session ${session.id}.`);
+					const task = await this.hydrateFromState(
+						captured.task,
+						captured.profiles,
+						captured.configuration,
+						state,
+						session,
+					);
+					task.updateSessionRecord(modeId, { ...event.record });
+					this.writeTask(task, state);
+				})
+				.catch((error) => console.error(`Could not persist exited session ${session.id}:`, error));
+		});
+	}
+
 	/** Compatibility entry point for operations not yet represented by this vertical slice. */
 	get compatibility() {
 		return this.core.sessions;
@@ -142,6 +166,7 @@ export class SessionApplication {
 				const launch = this.launchContext(session.record, selectedMode, resolved, preset, launchProfile);
 				const captured: CapturedLaunch = { preset, launch };
 				this.executions.set(this.key(taskId, session.id), session);
+				this.persistExecutionExit(session, selectedMode);
 				release = await this.store.claimSession(taskId, session.id);
 				await session.start({
 					context: captured.launch,
@@ -246,6 +271,7 @@ export class SessionApplication {
 					configuration: resolved,
 				});
 				this.executions.set(this.key(taskId, sessionId), session);
+				this.persistExecutionExit(session, modeId);
 				this.executionIds.delete(this.key(taskId, sessionId));
 				await session.resume({
 					context: launch,

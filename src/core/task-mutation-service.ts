@@ -43,7 +43,6 @@ function buildUpdatedDateComparableTask(task: Task): Record<string, unknown> {
 		priority: task.priority,
 		type: task.type,
 		project: task.project,
-		onStatusChange: task.onStatusChange,
 	};
 }
 
@@ -262,7 +261,7 @@ export class ProjectTaskMutations {
 
 	private async executeStatusChangeCallback(task: Task, oldStatus: string, newStatus: string): Promise<void> {
 		const config = await this.storage.loadConfig();
-		const command = task.onStatusChange ?? config?.onStatusChange;
+		const command = process.env.AGENTIC_WORKSPACE_ALLOW_STATUS_HOOK === "1" ? config?.onStatusChange : undefined;
 		if (!command) return;
 		try {
 			const result = await executeStatusCallback({

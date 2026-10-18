@@ -1,4 +1,4 @@
-import { mkdir, readFile, rename, unlink, writeFile } from "node:fs/promises";
+import { chmod, mkdir, readFile, rename, stat, unlink, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import lockfile from "proper-lockfile";
@@ -209,10 +209,14 @@ async function writeRootConfiguration(path: string, config: AgentConfiguration):
 	let temporaryPath: string | undefined;
 	try {
 		temporaryPath = `${path}.${process.pid}.${Date.now()}.tmp`;
+		const existingMode = await stat(path)
+			.then((info) => info.mode & 0o777)
+			.catch(() => undefined);
 		const existing = await readFile(path, "utf8").catch(() => "");
 		const workspaceConfig = parseConfig(existing, path);
 		workspaceConfig.agentConfiguration = config;
-		await writeFile(temporaryPath, serializeConfig(workspaceConfig), "utf8");
+		await writeFile(temporaryPath, serializeConfig(workspaceConfig), { encoding: "utf8", mode: 0o600 });
+		if (existingMode !== undefined) await chmod(temporaryPath, existingMode);
 		await rename(temporaryPath, path);
 	} finally {
 		if (temporaryPath) await unlink(temporaryPath).catch(() => undefined);

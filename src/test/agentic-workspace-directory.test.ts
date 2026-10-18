@@ -2,7 +2,10 @@ import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { mkdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { resolveAgenticWorkspaceDirectory } from "../utils/agentic-workspace-directory.ts";
+import {
+	normalizeProjectAgenticWorkspaceDirectory,
+	resolveAgenticWorkspaceDirectory,
+} from "../utils/agentic-workspace-directory.ts";
 
 describe("resolveAgenticWorkspaceDirectory", () => {
 	let testDir: string;
@@ -88,5 +91,26 @@ describe("resolveAgenticWorkspaceDirectory", () => {
 		expect(resolution.configSource).toBe("folder");
 		expect(resolution.agenticWorkspaceDir).toBe(".agentic-workspace");
 		expect(resolution.configPath).toBe(join(testDir, ".agentic-workspace", "config.yml"));
+	});
+
+	it("rejects parent segments after converting Windows separators", () => {
+		expect(normalizeProjectAgenticWorkspaceDirectory(String.raw`foo\..\..\etc`)).toBeNull();
+		expect(normalizeProjectAgenticWorkspaceDirectory("foo/../bar")).toBeNull();
+		expect(normalizeProjectAgenticWorkspaceDirectory("planning/data")).toBe("planning/data");
+	});
+
+	it("rejects a workspace symlink that resolves outside the project", async () => {
+		const outside = join(testDir, "..", `agentic-workspace-outside-${Date.now()}`);
+		await mkdir(outside, { recursive: true });
+		try {
+			await Bun.write(
+				join(testDir, "agentic-workspace.config.yml"),
+				"project_name: Test\nagentic_workspace_directory: linked\n",
+			);
+			await Bun.spawn(["ln", "-s", outside, join(testDir, "linked")]).exited;
+			expect(resolveAgenticWorkspaceDirectory(testDir).agenticWorkspaceDir).toBeNull();
+		} finally {
+			await rm(outside, { recursive: true, force: true });
+		}
 	});
 });

@@ -1024,7 +1024,10 @@ export class OpenTuiWorkspaceController {
 				onFilterRequest: () => this.#openFilterEditor(),
 				onTaskCreate: () => this.#openTaskComposer(),
 				onTaskAction: (task, action) => {
-					void this.#handleTaskAction(task.id, action);
+					void this.#handleTaskAction(task.id, action).catch((error: unknown) => {
+						this.#notice = `Could not ${action} ${task.id}: ${error instanceof Error ? error.message : "Unknown error"}`;
+						void this.#scheduleRefresh().catch(() => undefined);
+					});
 				},
 				onHideEmptyToggle: (hideEmpty) => {
 					void this.#setHideEmptyColumns(hideEmpty);
@@ -1135,7 +1138,10 @@ export class OpenTuiWorkspaceController {
 				this.#agentFocused = focused;
 			},
 			onTaskAction: (entry, action) => {
-				void this.#handleTaskAction(entry.id, action);
+				void this.#handleTaskAction(entry.id, action).catch((error: unknown) => {
+					this.#notice = `Could not ${action} ${entry.id}: ${error instanceof Error ? error.message : "Unknown error"}`;
+					void this.#scheduleRefresh().catch(() => undefined);
+				});
 			},
 			onTaskCreate: () => this.#openTaskComposer(),
 			onNewGroup: () => void this.#openGroupComposer(),
@@ -2571,9 +2577,42 @@ export class OpenTuiWorkspaceController {
 			let pendingModeMoves: readonly { fromModeId: string; toModeId: string }[] = [];
 			const saveConfiguration = async (next: typeof configuration): Promise<void> => {
 				await updateAgentConfiguration(this.#core, "project", (current) => {
-					if (!pendingModeMoves.length) return { ...current, ...next };
+					const applyChanges = (opened: unknown, edited: unknown, latest: unknown): unknown => {
+						if (JSON.stringify(opened) === JSON.stringify(edited)) return latest;
+						if (
+							opened &&
+							edited &&
+							latest &&
+							typeof opened === "object" &&
+							typeof edited === "object" &&
+							typeof latest === "object" &&
+							!Array.isArray(opened) &&
+							!Array.isArray(edited) &&
+							!Array.isArray(latest)
+						) {
+							const result = { ...(latest as Record<string, unknown>) };
+							for (const key of new Set([...Object.keys(opened), ...Object.keys(edited)])) {
+								if (
+									JSON.stringify((opened as Record<string, unknown>)[key]) ===
+									JSON.stringify((edited as Record<string, unknown>)[key])
+								)
+									continue;
+								if (!Object.hasOwn(edited, key)) delete result[key];
+								else
+									result[key] = applyChanges(
+										(opened as Record<string, unknown>)[key],
+										(edited as Record<string, unknown>)[key],
+										result[key],
+									);
+							}
+							return result;
+						}
+						return edited;
+					};
+					const changed = applyChanges(configuration, next, current) as typeof configuration;
+					if (!pendingModeMoves.length) return { ...current, ...changed };
 					const latestCatalog = current.modes;
-					const editedCatalog = next.modes;
+					const editedCatalog = changed.modes;
 					if (!latestCatalog || !editedCatalog) throw new Error("Project mode catalog is unavailable.");
 					const deleted = new Set(pendingModeMoves.map((move) => move.fromModeId));
 					const profiles = { ...latestCatalog.profiles };
@@ -2588,7 +2627,7 @@ export class OpenTuiWorkspaceController {
 						: latestCatalog.defaultModeId;
 					if (!Object.hasOwn(profiles, defaultModeId))
 						throw new Error("Mode deletion did not leave a valid default mode.");
-					return { ...current, ...next, modes: { ...editedCatalog, profiles, order, defaultModeId } };
+					return { ...current, ...changed, modes: { ...editedCatalog, profiles, order, defaultModeId } };
 				});
 				this.#notice = "Saved project agent settings";
 			};
@@ -2680,13 +2719,12 @@ export class OpenTuiWorkspaceController {
 			this.#openTaskEditor(taskId);
 			return;
 		}
-		const task = await this.#core.getTask(taskId);
-		if (!task) {
-			this.#notice = `Task ${taskId} no longer exists.`;
-			void this.#scheduleRefresh();
-			return;
-		}
 		try {
+			const task = await this.#core.getTask(taskId);
+			if (!task) {
+				this.#notice = `Task ${taskId} no longer exists.`;
+				return;
+			}
 			if (action === "copy") {
 				this.#notice = (await copyToClipboard(task.id)) ? `Copied ${task.id}` : `Could not copy ${task.id}`;
 				return;

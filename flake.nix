@@ -91,7 +91,7 @@
               mkdir -p "$out/lib/agentic-workspace"
               cp -R dist/nix/. "$out/lib/agentic-workspace/"
               makeWrapper ${bunRuntime}/bin/bun "$out/bin/agentic-workspace" \
-                --add-flags "$out/lib/agentic-workspace/cli.js" \
+                --add-flags "$out/lib/agentic-workspace/index.js" \
                 --set AGENTIC_WORKSPACE_BUNDLE_ASSET_DIR "$out/lib/agentic-workspace"
 
               runHook postInstall
@@ -124,9 +124,9 @@
                   exit 1
                 fi
 
-                test "$(BUN_JSC_useJIT=false qemu-x86_64 -cpu IvyBridge ${bunRuntime}/bin/bun "$out/lib/agentic-workspace/cli.js" --version)" = "$version"
+                test "$(BUN_JSC_useJIT=false qemu-x86_64 -cpu IvyBridge ${bunRuntime}/bin/bun "$out/lib/agentic-workspace/index.js" --version)" = "$version"
                 BUN_JSC_useJIT=false qemu-x86_64 -cpu IvyBridge \
-                  ${bunRuntime}/bin/bun "$out/lib/agentic-workspace/cli.js" --help >/dev/null
+                  ${bunRuntime}/bin/bun "$out/lib/agentic-workspace/index.js" --help >/dev/null
               ''}
 
               runHook postInstallCheck

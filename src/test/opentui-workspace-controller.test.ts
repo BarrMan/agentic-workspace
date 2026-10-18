@@ -199,6 +199,13 @@ function composerCore(agenticWorkspaceDir: string, created: Task): Core {
 		`agent_configuration: ${JSON.stringify({ ...getBuiltInAgentConfiguration(), modes: getDefaultModeCatalog() })}\n`,
 	);
 	return {
+		getStoredConfig: async () => ({
+			projectName: "Roadmap",
+			statuses: ["To Do", "In Progress", "Done"],
+			agentConfiguration: projectConfiguration(),
+		}),
+		watchTasks: () => ({ stop() {} }),
+		watchConfig: () => ({ stop() {} }),
 		loadTasks: async () => [],
 		loadMilestones: async () => [],
 		loadArchivedMilestones: async () => [],
@@ -456,6 +463,16 @@ function core(projectName = "Roadmap", tasks: Task[] = []): Core {
 		`agent_configuration: ${JSON.stringify(projectConfiguration())}\n`,
 	);
 	return {
+		projectRoot,
+		workspaceDirectory: agenticWorkspaceDir,
+		getStoredConfig: async () => ({
+			projectName,
+			statuses: ["To Do", "In Progress", "Done"],
+			agentConfiguration: projectConfiguration(),
+		}),
+		watchTasks: () => ({ stop() {} }),
+		watchConfig: () => ({ stop() {} }),
+		getTask: async (id: string) => tasks.find((candidate) => candidate.id === id),
 		loadTasks: async () => tasks,
 		loadMilestones: async () => [],
 		loadArchivedMilestones: async () => [],
@@ -480,6 +497,16 @@ function coreWithRoot(rootDir: string, projectName = "Roadmap", tasks: Task[] = 
 		`agent_configuration: ${JSON.stringify(projectConfiguration())}\n`,
 	);
 	return {
+		projectRoot: rootDir,
+		workspaceDirectory: agenticWorkspaceDir,
+		getStoredConfig: async () => ({
+			projectName,
+			statuses: ["To Do", "In Progress", "Done"],
+			agentConfiguration: projectConfiguration(),
+		}),
+		watchTasks: () => ({ stop() {} }),
+		watchConfig: () => ({ stop() {} }),
+		getTask: async (id: string) => tasks.find((candidate) => candidate.id === id),
 		loadTasks: async () => tasks,
 		loadMilestones: async () => [],
 		loadArchivedMilestones: async () => [],
@@ -585,6 +612,15 @@ function actionCore(
 		`agent_configuration: ${JSON.stringify({ ...getBuiltInAgentConfiguration(), modes: getDefaultModeCatalog() })}\n`,
 	);
 	return {
+		projectRoot,
+		workspaceDirectory: agenticWorkspaceDir,
+		getStoredConfig: async () => ({
+			projectName: "Roadmap",
+			statuses: ["To Do", "In Progress", "Done"],
+			agentConfiguration: projectConfiguration(),
+		}),
+		watchTasks: () => ({ stop() {} }),
+		watchConfig: () => ({ stop() {} }),
 		getTask: async (id: string) => tasks.find((task) => task.id === id),
 		loadTasks: async () => tasks,
 		loadMilestones: async () => [],
@@ -3677,6 +3713,32 @@ describe("OpenTuiWorkspaceController", () => {
 		}
 	});
 
+	it("surfaces a task-read rejection without rejecting the fire-and-forget action", async () => {
+		const tasks = [task("TASK-1")];
+		const recorder = new MountRecorder();
+		const core = actionCore(tasks);
+		(core as unknown as { getTask: () => Promise<never> }).getTask = async () => {
+			throw new Error("task read failed");
+		};
+		const controller = createController(core, {
+			viewStateStore: new MemoryViewStateStore(state({ selectedTaskId: "TASK-1" })),
+			workspaceState: workspaceState(tasks, async (id) => taskSessions(id, false)),
+			runtime: createRuntime(recorder),
+		});
+		const running = controller.run();
+		try {
+			const mounted = await recorder.next(0);
+			const entry = mounted.tasks[0];
+			if (!entry) throw new Error("Expected task entry.");
+			mounted.onTaskAction?.(entry, "done");
+			await waitUntil(() => recorder.options.at(-1)?.notice === "Could not done TASK-1: task read failed");
+			expect(recorder.options.at(-1)?.notice).toContain("task read failed");
+		} finally {
+			controller.destroy();
+			await running;
+		}
+	});
+
 	it("deletes the selected task only after confirmation without a second session purge", async () => {
 		const tasks = [task("TASK-1")];
 		const recorder = new MountRecorder();
@@ -4170,6 +4232,13 @@ describe("OpenTuiWorkspaceController", () => {
 			parkSession: async () => {},
 		} as unknown as WorkspaceStateService;
 		const handoffCore = {
+			getStoredConfig: async () => ({
+				projectName: "Roadmap",
+				statuses: ["To Do", "In Progress", "Done"],
+				agentConfiguration: projectConfiguration(),
+			}),
+			watchTasks: () => ({ stop() {} }),
+			watchConfig: () => ({ stop() {} }),
 			loadTasks: async () => tasks,
 			loadMilestones: async () => [],
 			loadArchivedMilestones: async () => [],
@@ -4488,6 +4557,13 @@ describe("OpenTuiWorkspaceController", () => {
 			parkSession: async () => {},
 		} as unknown as WorkspaceStateService;
 		const handoffCore = {
+			getStoredConfig: async () => ({
+				projectName: "Roadmap",
+				statuses: ["To Do", "In Progress", "Done"],
+				agentConfiguration: projectConfiguration(),
+			}),
+			watchTasks: () => ({ stop() {} }),
+			watchConfig: () => ({ stop() {} }),
 			loadTasks: async () => tasks,
 			loadMilestones: async () => [],
 			loadArchivedMilestones: async () => [],

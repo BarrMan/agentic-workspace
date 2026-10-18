@@ -70,7 +70,6 @@ async function makeProject() {
 		branch: "secret-branch",
 		rawContent: "internal markdown",
 		source: "local",
-		onStatusChange: "echo secret",
 	});
 
 	createdDirs.push(TEST_DIR);

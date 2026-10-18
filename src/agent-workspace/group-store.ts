@@ -1,4 +1,4 @@
-import { mkdir } from "node:fs/promises";
+import { mkdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { LockOwner } from "../file-system/lock-owner.ts";
 import { writeFileAtomic } from "./session-store.ts";
@@ -70,14 +70,18 @@ function parseMembership(value: unknown): GroupMembership {
 	return membership;
 }
 
-/** Returns undefined for anything unreadable or malformed — the caller degrades, never throws. */
-function parseState(raw: string): GroupState | undefined {
+function parseState(raw: string): GroupState {
+	const parsed: unknown = JSON.parse(raw);
+	if (!isRecord(parsed)) throw new Error("Invalid workspace group state.");
+	return { groups: parseGroups(parsed.groups), membership: parseMembership(parsed.membership) };
+}
+
+async function readStateFile(path: string): Promise<GroupState | undefined> {
 	try {
-		const parsed: unknown = JSON.parse(raw);
-		if (!isRecord(parsed)) return undefined;
-		return { groups: parseGroups(parsed.groups), membership: parseMembership(parsed.membership) };
-	} catch {
-		return undefined;
+		return parseState(await readFile(path, "utf8"));
+	} catch (error) {
+		if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
+		throw error;
 	}
 }
 
@@ -107,7 +111,7 @@ class GroupStoreImpl implements GroupStore {
 		await this.seed();
 		this.stateWatcher = startStateStoreWatcher(
 			this.path,
-			() => void this.recheck(),
+			() => void this.recheck().catch(() => undefined),
 			() => this.closed,
 		);
 	}
@@ -184,12 +188,7 @@ class GroupStoreImpl implements GroupStore {
 	}
 
 	private async readState(): Promise<GroupState | undefined> {
-		try {
-			return parseState(await Bun.file(this.path).text());
-		} catch {
-			// Missing, unreadable, or torn: the caller falls back to what it already knows.
-			return undefined;
-		}
+		return await readStateFile(this.path);
 	}
 
 	private async writeState(state: GroupState): Promise<void> {

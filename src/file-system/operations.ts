@@ -961,15 +961,15 @@ export class FileSystem {
 		draftId: string,
 		validateAllocatedTask?: (task: Task) => Promise<void>,
 		allocateTaskId?: () => Promise<string>,
-	): Promise<boolean> {
+	): Promise<string | null> {
 		const sourcePath = await this.resolveDraftFilePath(draftId);
-		if (!sourcePath) return false;
+		if (!sourcePath) return null;
 
 		let validationError: unknown;
 		try {
 			return await this.withCreateLock(async () => {
 				const draft = await this.loadDraftFromFile(sourcePath);
-				if (!draft) return false;
+				if (!draft) return null;
 				const sourceContainer = dirname(sourcePath);
 				if (basename(sourceContainer).toLowerCase() !== draft.id.toLowerCase())
 					throw new Error(`Draft ${draft.id} container identity mismatch; refusing to promote it.`);
@@ -1014,7 +1014,7 @@ export class FileSystem {
 				await this.ensureDirectoryExists(dirname(targetContainer));
 				await rename(sourceContainer, targetContainer);
 				try {
-					await Bun.write(promotedTask.filePath as string, content);
+					await this.writeFileAtomically(promotedTask.filePath as string, content);
 				} catch (error) {
 					await rename(targetContainer, sourceContainer);
 					throw error;
@@ -1026,12 +1026,12 @@ export class FileSystem {
 					taskId: promotedTask.id,
 					filePath: promotedTask.filePath as string,
 				});
-				return true;
+				return promotedTask.id;
 			});
 		} catch (error) {
 			if (error === validationError) throw error;
 			if (isCreateLockError(error) || isAmbiguousTaskIdError(error)) throw error;
-			return false;
+			return null;
 		}
 	}
 
@@ -1039,10 +1039,10 @@ export class FileSystem {
 		taskId: string,
 		onMoved?: (fromPath: string, toPath: string) => void,
 		validateAllocatedDraft?: (draft: Task) => Promise<void>,
-	): Promise<boolean> {
+	): Promise<string | null> {
 		return await this.withCreateLock(async () => {
 			const task = await this.loadTask(taskId);
-			if (!task?.filePath) return false;
+			if (!task?.filePath) return null;
 			const sourcePath = resolve(task.filePath);
 			const sourceContainer = dirname(sourcePath);
 			if (basename(sourceContainer).toLowerCase() !== taskIdKey(task.id).toLowerCase())
@@ -1075,7 +1075,7 @@ export class FileSystem {
 			await this.ensureDirectoryExists(dirname(targetContainer));
 			await rename(sourceContainer, targetContainer);
 			try {
-				await Bun.write(demotedDraft.filePath as string, content);
+				await this.writeFileAtomically(demotedDraft.filePath as string, content);
 			} catch (error) {
 				await rename(targetContainer, sourceContainer);
 				throw error;
@@ -1089,7 +1089,7 @@ export class FileSystem {
 				taskId: demotedDraft.id,
 				filePath: toPath,
 			});
-			return true;
+			return demotedDraft.id;
 		});
 	}
 
@@ -1145,8 +1145,26 @@ export class FileSystem {
 			await this.ensureDirectoryExists(dirname(container));
 			await mkdir(container, { recursive: false });
 		}
-		await Bun.write(filepath, content);
+		await this.writeFileAtomically(filepath, content);
 		return filepath;
+	}
+
+	private async writeFileAtomically(filepath: string, content: string): Promise<void> {
+		const temporaryPath = `${filepath}.${process.pid}.${Date.now()}.tmp`;
+		try {
+			await writeFile(temporaryPath, content, { flag: "wx" });
+			await rename(temporaryPath, filepath);
+		} catch (error) {
+			try {
+				await unlink(temporaryPath);
+			} catch (cleanupError) {
+				if ((cleanupError as NodeJS.ErrnoException).code !== "ENOENT")
+					throw new Error(`Atomic write failed and temporary-file cleanup failed for ${temporaryPath}.`, {
+						cause: new AggregateError([error, cleanupError]),
+					});
+			}
+			throw error;
+		}
 	}
 
 	async loadDraft(draftId: string): Promise<Task | null> {
@@ -1481,11 +1499,7 @@ export class FileSystem {
 	}
 
 	private async ensureDirectoryExists(dirPath: string): Promise<void> {
-		try {
-			await mkdir(dirPath, { recursive: true });
-		} catch (_error) {
-			// Directory creation failed, ignore
-		}
+		await mkdir(dirPath, { recursive: true });
 	}
 
 	parseConfig(content: string): AgenticWorkspaceConfig {

@@ -190,7 +190,7 @@ export class Storage {
 		draftId: string,
 		validateAllocatedTask?: (task: Task) => Promise<void>,
 		allocateTaskId?: () => Promise<string>,
-	): Promise<boolean> {
+	): Promise<string | null> {
 		return await this.filesystem.promoteDraft(draftId, validateAllocatedTask, allocateTaskId);
 	}
 
@@ -198,7 +198,7 @@ export class Storage {
 		taskId: string,
 		onMoved?: (fromPath: string, toPath: string) => void,
 		validateAllocatedDraft?: (draft: Task) => Promise<void>,
-	): Promise<boolean> {
+	): Promise<string | null> {
 		return await this.filesystem.demoteTask(taskId, onMoved, validateAllocatedDraft);
 	}
 

@@ -887,7 +887,7 @@ export class AgentSessionService {
 						error: undefined,
 						endedAt: undefined,
 					};
-			delete next.nativeSessionId; // identity is owned by publishNativeIdentity, not the record shape
+			if (intent.kind === "new") delete next.nativeSessionId;
 			if (options.action === "launch-new") delete next.resumeProbeFailed;
 			// A fresh launch discards any previous conversation's receipt before dispatch so a deferred
 			// report can never re-deliver it.

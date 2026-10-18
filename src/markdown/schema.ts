@@ -20,7 +20,6 @@ export const TASK_FRONTMATTER_FIELDS = {
 	TYPE: "type",
 	PROJECT: "project",
 	ORDINAL: "ordinal",
-	ON_STATUS_CHANGE: "onStatusChange",
 	AGENT_CONFIGURATION: "agentConfiguration",
 	MODE_APPROVALS: "mode_approvals",
 	WORKTREE_POLICY: "worktree_policy",

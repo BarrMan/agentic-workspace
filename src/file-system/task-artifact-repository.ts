@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import type { Dirent } from "node:fs";
 import type { FileHandle } from "node:fs/promises";
-import { lstat, mkdir, open, readdir, readFile, realpath, rename, rm, writeFile } from "node:fs/promises";
+import { lstat, mkdir, open, readdir, readFile, realpath, rename, rm, stat, utimes, writeFile } from "node:fs/promises";
 import { basename, dirname, isAbsolute, relative, resolve, sep } from "node:path";
 import type { ArtifactApprovalSidecar, ArtifactStatus } from "../agent-workspace/types.ts";
 import { resolveMainWorktreeRoot } from "../git/main-worktree.ts";
@@ -12,6 +12,8 @@ const SIDECAR = ".artifacts.json";
 const SIDECAR_LOCK = ".artifacts.json.lock";
 const TASK_RECORD = "task.md";
 const HASH = /^[a-f0-9]{64}$/;
+const MAX_ARTIFACT_INSPECTION_BYTES = 128 * 1024;
+type ArtifactLockOwner = { token?: string; pid?: number };
 export const TASK_CONTAINER_LOCATIONS = ["tasks", "drafts", "completed", "archive/tasks", "archive/drafts"] as const;
 export type TaskContainerLocation = (typeof TASK_CONTAINER_LOCATIONS)[number];
 
@@ -399,7 +401,17 @@ export class TaskArtifactRepository {
 					continue;
 				}
 				if (!entry.isFile()) continue;
-				const bytes = await readFile(resolve(directory, entry.name));
+				const target = resolve(directory, entry.name);
+				const info = await stat(target);
+				const handle = await open(target, "r");
+				let bytes: Uint8Array;
+				try {
+					const buffer = new Uint8Array(Math.min(info.size, MAX_ARTIFACT_INSPECTION_BYTES));
+					const { bytesRead } = await handle.read(buffer, 0, buffer.byteLength, 0);
+					bytes = buffer.subarray(0, bytesRead);
+				} finally {
+					await handle.close();
+				}
 				let text = !bytes.includes(0);
 				if (text && bytes.length) {
 					try {
@@ -408,9 +420,14 @@ export class TaskArtifactRepository {
 						text = false;
 					}
 				}
+				const sha256 = info.size <= MAX_ARTIFACT_INSPECTION_BYTES ? fingerprint(bytes) : undefined;
+				const approval = Object.hasOwn(sidecar.approvals, path) ? sidecar.approvals[path] : undefined;
 				results.push({
-					...(await this.statusAt(taskId, path, sidecar, location)),
-					size: bytes.byteLength,
+					path,
+					state: sha256 && approval?.sha256 === sha256 ? "approved" : "draft",
+					...(sha256 ? { sha256 } : {}),
+					...(sha256 && approval?.sha256 === sha256 ? { approvedAt: approval.approvedAt } : {}),
+					size: info.size,
 					type: text ? "text" : "binary",
 				});
 			}
@@ -453,27 +470,55 @@ export class TaskArtifactRepository {
 
 	private async withMetadataLock<T>(directory: string, run: () => Promise<T>): Promise<T> {
 		const lockPath = resolve(directory, SIDECAR_LOCK);
+		const token = crypto.randomUUID();
 		let handle: FileHandle | undefined;
 		for (let attempt = 0; attempt < 200; attempt++) {
 			try {
 				handle = await open(lockPath, "wx");
+				await handle.writeFile(JSON.stringify({ token, pid: process.pid }));
 				break;
 			} catch (error) {
 				if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
-				const lockInfo = await lstat(lockPath).catch(() => null);
-				if (lockInfo && Date.now() - lockInfo.mtimeMs > 60_000) {
-					await rm(lockPath, { force: true });
-					continue;
+				const contents = await readFile(lockPath, "utf8").catch(() => "");
+				let owner: ArtifactLockOwner | null = null;
+				try {
+					owner = JSON.parse(contents || "null") as ArtifactLockOwner | null;
+				} catch {
+					// Leave an unrecognized lock untouched.
+				}
+				if (owner?.token && Number.isSafeInteger(owner.pid) && (await lstat(lockPath).catch(() => null))) {
+					let alive = true;
+					try {
+						process.kill(owner.pid as number, 0);
+					} catch (probeError) {
+						alive = (probeError as NodeJS.ErrnoException).code !== "ESRCH";
+					}
+					if (!alive && (await readFile(lockPath, "utf8").catch(() => "")) === contents) {
+						await rm(lockPath, { force: true });
+						continue;
+					}
 				}
 				await Bun.sleep(10);
 			}
 		}
 		if (!handle) throw new Error("Timed out waiting for task artifact metadata lock.");
+		const refresh = setInterval(() => {
+			const now = new Date();
+			void utimes(lockPath, now, now).catch(() => {});
+		}, 10_000);
 		try {
 			return await run();
 		} finally {
+			clearInterval(refresh);
+			const contents = await readFile(lockPath, "utf8").catch(() => "");
 			await handle.close();
-			await rm(lockPath, { force: true });
+			let stillOwner = false;
+			try {
+				stillOwner = (JSON.parse(contents || "null") as { token?: string } | null)?.token === token;
+			} catch {
+				// Ownership cannot be established, so leave the lock in place.
+			}
+			if (stillOwner) await rm(lockPath, { force: true });
 		}
 	}
 

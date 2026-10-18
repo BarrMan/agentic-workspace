@@ -1,7 +1,8 @@
-import { afterEach, beforeEach, describe, expect, it } from "bun:test";
+import { afterEach, beforeEach, describe, expect, it, spyOn } from "bun:test";
+import * as fsPromises from "node:fs/promises";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { resolveAgentConfiguration, upsertAgentConfiguration } from "../agent-workspace/config.ts";
 import type { AgentConfiguration } from "../agent-workspace/types.ts";
 import { Core } from "../core/agentic-workspace.ts";
@@ -135,10 +136,10 @@ describe("atomic task creation", () => {
 		const firstEnteredWrite = createDeferred<void>();
 		const releaseFirstWrite = createDeferred<void>();
 		let writeEntries = 0;
-		const originalWrite = Bun.write;
+		const originalWrite = fsPromises.writeFile;
 		const tasksPathPrefix = `${testDir}/agentic-workspace/tasks/`.replace(/\\/g, "/");
 
-		Bun.write = (async (...args: Parameters<typeof Bun.write>) => {
+		const writeSpy = spyOn(fsPromises, "writeFile").mockImplementation(async (...args) => {
 			const targetPath = String(args[0]).replace(/\\/g, "/");
 			if (targetPath.includes(tasksPathPrefix)) {
 				writeEntries += 1;
@@ -148,11 +149,15 @@ describe("atomic task creation", () => {
 				}
 			}
 			return await originalWrite(...args);
-		}) as typeof Bun.write;
+		});
 
 		try {
 			const promoteA = first.promoteDraft("draft-1");
-			await expectResolvesWithin(firstEnteredWrite.promise, 250, "first draft promotion should reach Bun.write");
+			await expectResolvesWithin(
+				firstEnteredWrite.promise,
+				250,
+				"first draft promotion should reach temporary-file write",
+			);
 
 			const promoteB = second.promoteDraft("draft-2");
 			await Promise.resolve();
@@ -166,7 +171,7 @@ describe("atomic task creation", () => {
 			expect(tasks.map((task) => task.id)).toEqual(["TASK-1", "TASK-2"]);
 			expect(tasks.map((task) => task.title)).toEqual(["Draft A", "Draft B"]);
 		} finally {
-			Bun.write = originalWrite;
+			writeSpy.mockRestore();
 		}
 	});
 
@@ -180,10 +185,10 @@ describe("atomic task creation", () => {
 		const firstEnteredWrite = createDeferred<void>();
 		const releaseFirstWrite = createDeferred<void>();
 		let writeEntries = 0;
-		const originalWrite = Bun.write;
+		const originalWrite = fsPromises.writeFile;
 		const draftsPathPrefix = `${testDir}/agentic-workspace/drafts/`.replace(/\\/g, "/");
 
-		Bun.write = (async (...args: Parameters<typeof Bun.write>) => {
+		const writeSpy = spyOn(fsPromises, "writeFile").mockImplementation(async (...args) => {
 			const targetPath = String(args[0]).replace(/\\/g, "/");
 			if (targetPath.includes(draftsPathPrefix)) {
 				writeEntries += 1;
@@ -193,11 +198,15 @@ describe("atomic task creation", () => {
 				}
 			}
 			return await originalWrite(...args);
-		}) as typeof Bun.write;
+		});
 
 		try {
 			const demoteA = first.demoteTask("task-1");
-			await expectResolvesWithin(firstEnteredWrite.promise, 250, "first task demotion should reach Bun.write");
+			await expectResolvesWithin(
+				firstEnteredWrite.promise,
+				250,
+				"first task demotion should reach temporary-file write",
+			);
 
 			const demoteB = second.demoteTask("task-2");
 			await Promise.resolve();
@@ -211,7 +220,7 @@ describe("atomic task creation", () => {
 			expect(drafts.map((draft) => draft.id)).toEqual(["DRAFT-1", "DRAFT-2"]);
 			expect(drafts.map((draft) => draft.title)).toEqual(["Task A", "Task B"]);
 		} finally {
-			Bun.write = originalWrite;
+			writeSpy.mockRestore();
 		}
 	});
 
@@ -221,10 +230,10 @@ describe("atomic task creation", () => {
 		const firstEnteredWrite = createDeferred<void>();
 		const releaseFirstWrite = createDeferred<void>();
 		let writeEntries = 0;
-		const originalWrite = Bun.write;
+		const originalWrite = fsPromises.writeFile;
 		const milestonePathPrefix = `${testDir}/agentic-workspace/milestones/`.replace(/\\/g, "/");
 
-		Bun.write = (async (...args: Parameters<typeof Bun.write>) => {
+		const writeSpy = spyOn(fsPromises, "writeFile").mockImplementation(async (...args) => {
 			const targetPath = String(args[0]).replace(/\\/g, "/");
 			if (targetPath.includes(milestonePathPrefix)) {
 				writeEntries += 1;
@@ -234,11 +243,15 @@ describe("atomic task creation", () => {
 				}
 			}
 			return await originalWrite(...args);
-		}) as typeof Bun.write;
+		});
 
 		try {
 			const firstCreate = coreFileSystem(first).createMilestone("Alpha Milestone");
-			await expectResolvesWithin(firstEnteredWrite.promise, 250, "first milestone create should reach Bun.write");
+			await expectResolvesWithin(
+				firstEnteredWrite.promise,
+				250,
+				"first milestone create should reach temporary-file write",
+			);
 
 			const secondCreate = coreFileSystem(second).createMilestone("Beta Milestone");
 			await Promise.resolve();
@@ -251,8 +264,97 @@ describe("atomic task creation", () => {
 			expect(new Set([createdA.id, createdB.id]).size).toBe(2);
 			expect([createdA.id, createdB.id].sort()).toEqual(["m-0", "m-1"]);
 		} finally {
-			Bun.write = originalWrite;
+			writeSpy.mockRestore();
 		}
+	});
+
+	it("serializes milestone rename and archive with milestone creation and refuses archive collisions", async () => {
+		const creator = new Core(testDir);
+		const mutator = new Core(testDir);
+		const milestone = await coreFileSystem(creator).createMilestone("Locked milestone");
+		const lockEntered = createDeferred<void>();
+		const releaseLock = createDeferred<void>();
+		const heldLock = coreFileSystem(creator).withCreateLock(async () => {
+			lockEntered.resolve();
+			await releaseLock.promise;
+		});
+		await lockEntered.promise;
+
+		const requestEnteredLock = createDeferred<void>();
+		const fs = coreFileSystem(mutator);
+		const originalWithCreateLock = fs.withCreateLock.bind(fs);
+		fs.withCreateLock = (async <T>(operation: () => Promise<T>): Promise<T> => {
+			requestEnteredLock.resolve();
+			return await originalWithCreateLock(operation);
+		}) as ReturnType<typeof coreFileSystem>["withCreateLock"];
+		let renameFinished = false;
+		const rename = fs.renameMilestone(milestone.id, "Renamed while locked").then((result) => {
+			renameFinished = true;
+			return result;
+		});
+		await requestEnteredLock.promise;
+		await Promise.resolve();
+		await Promise.resolve();
+		expect(renameFinished).toBe(false);
+		releaseLock.resolve();
+		await heldLock;
+		expect((await rename).success).toBe(true);
+
+		const renamedPath = await fs.getMilestoneFilePath(milestone.id);
+		if (!renamedPath) throw new Error("Renamed milestone missing");
+		const archive = join(testDir, "agentic-workspace", "archive", "milestones", basename(renamedPath));
+		await Bun.write(archive, "existing archive must survive");
+		const archiveResult = await fs.archiveMilestone(milestone.id);
+		expect(archiveResult.success).toBe(false);
+		expect(await Bun.file(renamedPath).exists()).toBe(true);
+		expect(await Bun.file(archive).text()).toBe("existing archive must survive");
+		await rm(archive);
+
+		const archiveLockEntered = createDeferred<void>();
+		const releaseArchiveLock = createDeferred<void>();
+		const heldArchiveLock = coreFileSystem(creator).withCreateLock(async () => {
+			archiveLockEntered.resolve();
+			await releaseArchiveLock.promise;
+		});
+		await archiveLockEntered.promise;
+		const archiveRequestEntered = createDeferred<void>();
+		fs.withCreateLock = (async <T>(operation: () => Promise<T>): Promise<T> => {
+			archiveRequestEntered.resolve();
+			return await originalWithCreateLock(operation);
+		}) as ReturnType<typeof coreFileSystem>["withCreateLock"];
+		let archiveFinished = false;
+		const archiveMilestone = fs.archiveMilestone(milestone.id).then((result) => {
+			archiveFinished = true;
+			return result;
+		});
+		await archiveRequestEntered.promise;
+		await Promise.resolve();
+		await Promise.resolve();
+		expect(archiveFinished).toBe(false);
+		releaseArchiveLock.resolve();
+		await heldArchiveLock;
+		expect((await archiveMilestone).success).toBe(true);
+	});
+
+	it("preserves the original milestone when an atomic rename write fails", async () => {
+		const core = new Core(testDir);
+		const fs = coreFileSystem(core);
+		const milestone = await fs.createMilestone("Rename failure source");
+		const sourcePath = await fs.getMilestoneFilePath(milestone.id);
+		if (!sourcePath) throw new Error("Created milestone missing");
+		const originalContent = await Bun.file(sourcePath).text();
+		const realWriteFile = fsPromises.writeFile;
+		const writeSpy = spyOn(fsPromises, "writeFile").mockImplementation(async (path, ...args) => {
+			if (String(path).endsWith(".tmp")) throw new Error("injected atomic write failure");
+			return await realWriteFile(path, ...args);
+		});
+		try {
+			expect((await fs.renameMilestone(milestone.id, "Rename failure target")).success).toBe(false);
+		} finally {
+			writeSpy.mockRestore();
+		}
+		expect(await Bun.file(sourcePath).text()).toBe(originalContent);
+		expect(await fs.getMilestoneFilePath(milestone.id)).toBe(sourcePath);
 	});
 
 	it("returns a user-facing error when the create lock times out", async () => {

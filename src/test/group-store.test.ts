@@ -80,14 +80,14 @@ describe("openGroupStore", () => {
 		expect(JSON.parse(raw)).toEqual({ groups: sampleState().groups, membership: sampleState().membership });
 	});
 
-	it("3. degrades to empty state when the file is invalid JSON", async () => {
+	it("3. rejects corrupt JSON without replacing the file", async () => {
 		const root = await makeRoot("corrupt");
 		const agenticWorkspaceDir = agenticWorkspaceOf(root);
 		await mkdir(agenticWorkspaceDir, { recursive: true });
 		await writeFile(groupsFileOf(root), "{ this is not json", "utf8");
 
-		const store = await open(root);
-		expect(store.current).toEqual({ groups: [], membership: {} });
+		await expect(openGroupStore(root, agenticWorkspaceDir)).rejects.toThrow();
+		expect(await readFile(groupsFileOf(root), "utf8")).toBe("{ this is not json");
 	});
 
 	it("4. drops invalid group entries and non-string memberships instead of throwing", async () => {

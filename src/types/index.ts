@@ -75,8 +75,6 @@ export interface Task {
 	// Metadata fields
 	lastModified?: Date;
 	source?: TaskSource;
-	/** Optional per-task callback command to run on status change (overrides global config) */
-	onStatusChange?: string;
 	agentConfiguration?: AgentConfiguration;
 	modeApprovals?: Record<string, Approval>;
 }

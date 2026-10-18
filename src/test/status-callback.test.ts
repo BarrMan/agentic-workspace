@@ -90,8 +90,10 @@ describe("Status Change Callbacks", () => {
 		let core: Core;
 		let callbackOutputFile: string;
 		let callbackOutputPath: string;
+		let previousHookOptIn: string | undefined;
 
 		beforeEach(async () => {
+			previousHookOptIn = process.env.AGENTIC_WORKSPACE_ALLOW_STATUS_HOOK;
 			testDir = join(tmpdir(), `agentic-workspace-callback-test-${Date.now()}`);
 			await mkdir(testDir, { recursive: true });
 			await mkdir(join(testDir, "agentic-workspace", "tasks"), { recursive: true });
@@ -103,10 +105,13 @@ describe("Status Change Callbacks", () => {
 		});
 
 		afterEach(async () => {
+			if (previousHookOptIn === undefined) delete process.env.AGENTIC_WORKSPACE_ALLOW_STATUS_HOOK;
+			else process.env.AGENTIC_WORKSPACE_ALLOW_STATUS_HOOK = previousHookOptIn;
 			await rm(testDir, { recursive: true, force: true });
 		});
 
 		test("triggers global callback on status change", async () => {
+			process.env.AGENTIC_WORKSPACE_ALLOW_STATUS_HOOK = "1";
 			// Create config with onStatusChange
 			const configContent = `projectName: Test
 statuses:
@@ -142,7 +147,8 @@ onStatusChange: 'echo "$TASK_ID:$OLD_STATUS->$NEW_STATUS" > "${callbackOutputPat
 			expect(output.trim()).toBe(`${task.id}:To Do->In Progress`);
 		});
 
-		test("per-task callback overrides global callback", async () => {
+		test("ignores legacy per-task callback and runs opted-in project callback", async () => {
+			process.env.AGENTIC_WORKSPACE_ALLOW_STATUS_HOOK = "1";
 			// Create config with global onStatusChange
 			const configContent = `projectName: Test
 statuses:
@@ -160,26 +166,34 @@ onStatusChange: 'echo "global" > "${callbackOutputPath}"'
 			// Create a task with per-task callback
 			const taskContent = serializeTask({
 				id: "TASK-1",
-				title: "Task with custom callback",
+				title: "Task with legacy callback",
 				status: "To Do",
 				assignee: [],
 				createdDate: "2025-01-01",
 				labels: [],
 				dependencies: [],
-				onStatusChange: `echo "per-task:$NEW_STATUS" > "${callbackOutputPath}"`,
-			});
+			}).replace("---\n", `---\nonStatusChange: 'echo legacy > "${callbackOutputPath}"'\n`);
 			await mkdir(join(testDir, "agentic-workspace", "tasks", "task-1"), { recursive: true });
 			await writeFile(join(testDir, "agentic-workspace", "tasks", "task-1", "task.md"), taskContent);
 
 			// Update status
 			await core.updateTaskFromInput("task-1", { status: "Done" });
 
-			// Check per-task callback was executed (not global)
+			// Legacy task frontmatter cannot override the project-level command.
 			const output = await Bun.file(callbackOutputFile).text();
-			expect(output.trim()).toBe("per-task:Done");
+			expect(output.trim()).toBe("global");
+		});
+
+		test("does not execute a project hook without explicit opt-in", async () => {
+			const config = `projectName: Test\nstatuses: [To Do, Done]\nonStatusChange: 'echo executed > "${callbackOutputPath}"'\n`;
+			await writeFile(join(testDir, "agentic-workspace", "config.yml"), config);
+			const { task } = await core.createTaskFromInput({ title: "Opt-in gate", status: "To Do" });
+			await core.updateTaskFromInput(task.id, { status: "Done" });
+			expect(await Bun.file(callbackOutputFile).exists()).toBe(false);
 		});
 
 		test("no callback when status unchanged", async () => {
+			process.env.AGENTIC_WORKSPACE_ALLOW_STATUS_HOOK = "1";
 			// Create config with onStatusChange
 			const configContent = `projectName: Test
 statuses:
@@ -234,6 +248,7 @@ checkActiveBranches: false
 		});
 
 		test("callback failure does not block status change", async () => {
+			process.env.AGENTIC_WORKSPACE_ALLOW_STATUS_HOOK = "1";
 			// Create config with failing callback
 			const configContent = `projectName: Test
 statuses:
@@ -260,6 +275,7 @@ onStatusChange: 'exit 1'
 		});
 
 		test("triggers callback when reorderTask changes status", async () => {
+			process.env.AGENTIC_WORKSPACE_ALLOW_STATUS_HOOK = "1";
 			// Create config with onStatusChange
 			const configContent = `projectName: Test
 statuses:

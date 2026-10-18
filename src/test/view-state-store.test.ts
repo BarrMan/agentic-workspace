@@ -395,7 +395,7 @@ describe("openViewStateStore", () => {
 		expect(observer.current.label).toBe("after-close");
 	});
 
-	it("12. degrades to the default state when the state file is corrupt", async () => {
+	it("12. rejects corrupt state without replacing the file", async () => {
 		const root = await makeRoot("corrupt");
 		const seed = await open(root);
 		await seed.update((state) => ({ ...state, label: "good" }));
@@ -403,14 +403,12 @@ describe("openViewStateStore", () => {
 
 		await writeFile(statePath, "{ this is not json", "utf8");
 
-		// A store opened on top of unreadable state falls back to createDefault().
-		const opened = await open(root);
-		expect(opened.current).toEqual(defaultState());
+		await expect(openViewStateStore(root, defaultState)).rejects.toThrow();
+		expect(await readFile(statePath, "utf8")).toBe("{ this is not json");
 
-		// An already-open store degrades rather than throwing out of recheck().
-		await seed.update((state) => ({ ...state, label: "still-good" }));
 		await writeFile(statePath, "\u0000 not json either", "utf8");
-		await expect(seed.recheck()).resolves.toBeUndefined();
+		await expect(seed.recheck()).rejects.toThrow();
+		expect(await readFile(statePath, "utf8")).toBe("\u0000 not json either");
 	});
 
 	it("13. recheck() is safe to call repeatedly when nothing changed", async () => {

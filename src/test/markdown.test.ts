@@ -361,7 +361,6 @@ describe("Markdown Serializer", () => {
 				type: "feature",
 				project: "cli",
 				ordinal: 0,
-				onStatusChange: "bun test",
 			});
 
 			const frontmatter = parseFrontmatter(result).data;
@@ -387,7 +386,6 @@ describe("Markdown Serializer", () => {
 				"type",
 				"project",
 				"ordinal",
-				"onStatusChange",
 			]);
 			expect(result).toContain("created_date: '2026-09-29'");
 			expect(result).toContain("due_date: '2026-10-01'");

@@ -45,11 +45,6 @@ const taskFrontmatterFields: readonly TaskFrontmatterField[] = [
 	{ key: TASK_FRONTMATTER_FIELDS.PROJECT, property: "project", mode: TASK_FRONTMATTER_FIELD_MODE.TRUTHY },
 	{ key: TASK_FRONTMATTER_FIELDS.ORDINAL, property: "ordinal", mode: TASK_FRONTMATTER_FIELD_MODE.DEFINED },
 	{
-		key: TASK_FRONTMATTER_FIELDS.ON_STATUS_CHANGE,
-		property: "onStatusChange",
-		mode: TASK_FRONTMATTER_FIELD_MODE.TRUTHY,
-	},
-	{
 		key: TASK_FRONTMATTER_FIELDS.AGENT_CONFIGURATION,
 		property: "agentConfiguration",
 		mode: TASK_FRONTMATTER_FIELD_MODE.TRUTHY,

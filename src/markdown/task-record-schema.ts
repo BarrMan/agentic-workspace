@@ -25,7 +25,6 @@ export const TASK_FRONTMATTER_KEY_MAP = {
 	type: FIELD.TYPE,
 	project: FIELD.PROJECT,
 	ordinal: FIELD.ORDINAL,
-	onStatusChange: FIELD.ON_STATUS_CHANGE,
 	agentConfiguration: FIELD.AGENT_CONFIGURATION,
 	modeApprovals: FIELD.MODE_APPROVALS,
 	worktreePolicy: FIELD.WORKTREE_POLICY,
@@ -125,7 +124,6 @@ export const TaskFrontmatterSchema = z.object({
 		(value) => (value === undefined || value === null || value === "" ? undefined : Number(value)),
 		z.number().finite().nonnegative().optional(),
 	),
-	onStatusChange: optionalString,
 	agentConfiguration: AgentConfigurationSchema.optional(),
 	modeApprovals,
 	worktreePolicy: z.preprocess(

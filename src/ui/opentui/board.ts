@@ -13,6 +13,7 @@ import { getMilestoneLabel } from "../../core/milestones.ts";
 import type { Milestone, Task } from "../../types/index.ts";
 import { formatAssignee } from "../../utils/assignee-filter.ts";
 import type { Board, BoardMoveCommit } from "./board/models/board.ts";
+import type { Lane } from "./board/models/lane.ts";
 import { mountOpenTuiHelpOverlay, type OpenTuiHelpOverlayMount } from "./filters.ts";
 import {
 	createKeybindings,
@@ -100,8 +101,7 @@ function pad(value: string, width: number): string {
 
 type BoardRow = { label: string } | { tasks: (Task | undefined)[] };
 
-function boardRows(board: Board, props: OpenTuiBoardProps): BoardRow[] {
-	const lanes = board.lanes;
+function boardRows(board: Board, props: OpenTuiBoardProps, lanes: readonly Lane[]): BoardRow[] {
 	const rows: BoardRow[] = [];
 	const appendTasks = (columns: readonly Task[][]): void => {
 		const count = Math.max(0, ...columns.map((tasks) => tasks.length));
@@ -249,7 +249,7 @@ export function mountOpenTuiBoard(
 		if (activeColumn >= firstColumn + columnCount) firstColumn = activeColumn - columnCount + 1;
 		const width = Math.max(1, Math.floor((terminalWidth - COLUMN_GAP.length * (columnCount - 1)) / columnCount));
 		const visibleLanes = lanes.slice(firstColumn, firstColumn + columnCount);
-		const rows = boardRows(props.board, props);
+		const rows = boardRows(props.board, props, lanes);
 		const visibleRows = Math.max(1, (root.height || renderer.height) - BOARD_ROWS - footerLines.length);
 		const activeRow = rows.findIndex((row) => "tasks" in row && row.tasks.some((task) => task?.id === activeId));
 		firstRow = Math.max(0, Math.min(firstRow, rows.length - visibleRows));
@@ -311,8 +311,9 @@ export function mountOpenTuiBoard(
 		if (props.board.move) return props.board.moveInsertion(delta < 0 ? "up" : "down");
 		const lane = props.board.selectedLane;
 		if (!lane || lane.tasks.length === 0) return false;
-		const column = props.board.lanes.findIndex((candidate) => candidate.status === lane.status);
-		const tasks = boardRows(props.board, props).flatMap((row) => {
+		const lanes = props.board.lanes;
+		const column = lanes.findIndex((candidate) => candidate.status === lane.status);
+		const tasks = boardRows(props.board, props, lanes).flatMap((row) => {
 			const task = "tasks" in row ? row.tasks[column] : undefined;
 			return task ? [task] : [];
 		});

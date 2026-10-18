@@ -122,9 +122,27 @@ async function setup() {
 		detailsVisible: true,
 		selectedModeByTask: {} as Record<string, string>,
 	};
+	const projectConfig = {
+		projectName: "Test",
+		agentConfiguration: {
+			selectedPreset: "opencode",
+			presets: {
+				opencode: {
+					command: "opencode",
+					env: {},
+					prepare: "",
+					bootstrap: "opencode",
+					resumeFlag: "--session",
+				},
+			},
+			modes,
+		},
+	};
 	const controller = new OpenTuiWorkspaceController(
 		{
 			loadTasks: async () => [task],
+			getStoredConfig: async () => projectConfig,
+			taskArtifactStatus: async (taskId: string, path: string) => await repository.status(taskId, path),
 			loadMilestones: async () => [],
 			loadArchivedMilestones: async () => [],
 			loadTaskSnapshot: async () => ({

@@ -1,5 +1,5 @@
-import { readFileSync, statSync } from "node:fs";
-import { join, normalize } from "node:path";
+import { readFileSync, realpathSync, statSync } from "node:fs";
+import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { DEFAULT_DIRECTORIES, DEFAULT_FILES } from "../constants/index.ts";
 
 export const AGENTIC_WORKSPACE_DIRECTORY_SOURCE = {
@@ -49,6 +49,30 @@ function fileExists(path: string): boolean {
 	}
 }
 
+function containedByProject(projectRoot: string, path: string): boolean {
+	try {
+		const root = realpathSync(projectRoot);
+		let ancestor = resolve(path);
+		const missing: string[] = [];
+		while (true) {
+			try {
+				ancestor = realpathSync(ancestor);
+				break;
+			} catch {
+				const parent = dirname(ancestor);
+				if (parent === ancestor) return false;
+				missing.unshift(ancestor.slice(parent.length + (parent.endsWith(sep) ? 0 : 1)));
+				ancestor = parent;
+			}
+		}
+		const resolved = join(ancestor, ...missing);
+		const fromRoot = relative(root, resolved);
+		return fromRoot === "" || (!isAbsolute(fromRoot) && fromRoot !== ".." && !fromRoot.startsWith(`..${sep}`));
+	} catch {
+		return false;
+	}
+}
+
 function parseAgenticWorkspaceConfigMetadata(content: string): AgenticWorkspaceConfigMetadata {
 	const parsed: unknown = Bun.YAML.parse(content);
 	if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
@@ -77,11 +101,11 @@ function readRootAgenticWorkspaceConfigMetadata(rootConfigPath: string): Agentic
 
 function resolveFolderConfigPath(agenticWorkspacePath: string): string | null {
 	const primary = join(agenticWorkspacePath, DEFAULT_FILES.CONFIG);
-	if (fileExists(primary)) {
+	if (fileExists(primary) && containedByProject(dirname(agenticWorkspacePath), primary)) {
 		return primary;
 	}
 	const alternate = join(agenticWorkspacePath, DEFAULT_FILES.CONFIG_YAML);
-	return fileExists(alternate) ? alternate : null;
+	return fileExists(alternate) && containedByProject(dirname(agenticWorkspacePath), alternate) ? alternate : null;
 }
 
 function resolveBuiltInAgenticWorkspaceDirectory(projectRoot: string): {
@@ -95,7 +119,7 @@ function resolveBuiltInAgenticWorkspaceDirectory(projectRoot: string): {
 		{ name: DEFAULT_DIRECTORIES.HIDDEN_AGENTIC_WORKSPACE, source: AGENTIC_WORKSPACE_DIRECTORY_SOURCE.HIDDEN },
 	].map(({ name, source }) => {
 		const agenticWorkspacePath = join(projectRoot, name);
-		const exists = directoryExists(agenticWorkspacePath);
+		const exists = directoryExists(agenticWorkspacePath) && containedByProject(projectRoot, agenticWorkspacePath);
 		return {
 			agenticWorkspaceDir: name,
 			agenticWorkspacePath,
@@ -112,9 +136,33 @@ export function resolveAgenticWorkspaceDirectoryFromRootConfig(
 	agenticWorkspaceDirectory: string | null | undefined,
 ): AgenticWorkspaceDirectoryResolution {
 	const rootConfigPath = join(projectRoot, DEFAULT_FILES.ROOT_CONFIG);
+	if (!containedByProject(projectRoot, rootConfigPath)) {
+		return {
+			projectRoot,
+			agenticWorkspaceDir: null,
+			agenticWorkspacePath: null,
+			source: null,
+			configPath: null,
+			configSource: null,
+			rootConfigPath,
+			rootConfigExists: false,
+		};
+	}
 	const configuredAgenticWorkspaceDir = normalizeProjectAgenticWorkspaceDirectory(agenticWorkspaceDirectory);
 	if (configuredAgenticWorkspaceDir) {
 		const configuredAgenticWorkspacePath = join(projectRoot, configuredAgenticWorkspaceDir);
+		if (!containedByProject(projectRoot, configuredAgenticWorkspacePath)) {
+			return {
+				projectRoot,
+				agenticWorkspaceDir: null,
+				agenticWorkspacePath: null,
+				source: null,
+				configPath: null,
+				configSource: null,
+				rootConfigPath,
+				rootConfigExists: true,
+			};
+		}
 		const configuredSource: AgenticWorkspaceDirectorySource =
 			configuredAgenticWorkspaceDir === DEFAULT_DIRECTORIES.AGENTIC_WORKSPACE
 				? AGENTIC_WORKSPACE_DIRECTORY_SOURCE.DEFAULT
@@ -168,11 +216,10 @@ export function normalizeProjectAgenticWorkspaceDirectory(value: string | null |
 		return null;
 	}
 
-	const normalized = normalize(trimmed).replace(/\\/g, "/").replace(/\/+$/g, "");
+	const slashNormalized = trimmed.replace(/\\/g, "/");
+	if (slashNormalized.split("/").includes("..")) return null;
+	const normalized = slashNormalized.replace(/\/+$/g, "");
 	if (!normalized || normalized === ".") {
-		return null;
-	}
-	if (normalized === ".." || normalized.startsWith("../")) {
 		return null;
 	}
 	return normalized;
@@ -180,6 +227,18 @@ export function normalizeProjectAgenticWorkspaceDirectory(value: string | null |
 
 export function resolveAgenticWorkspaceDirectory(projectRoot: string): AgenticWorkspaceDirectoryResolution {
 	const rootConfigPath = join(projectRoot, DEFAULT_FILES.ROOT_CONFIG);
+	if (!containedByProject(projectRoot, rootConfigPath)) {
+		return {
+			projectRoot,
+			agenticWorkspaceDir: null,
+			agenticWorkspacePath: null,
+			source: null,
+			configPath: null,
+			configSource: null,
+			rootConfigPath,
+			rootConfigExists: false,
+		};
+	}
 	const rootConfigExists = fileExists(rootConfigPath);
 
 	if (rootConfigExists) {

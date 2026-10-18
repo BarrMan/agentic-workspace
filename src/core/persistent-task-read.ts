@@ -89,10 +89,9 @@ export class PersistentTaskRead {
 			filters = { ...filters, parentTaskId: parent.task.id };
 		}
 		const sourceTasks = options.includeCrossBranch === false ? corpus.activeTasks : corpus.tasks;
-		const tasks = await this.storage.addSearchableArtifactText(sourceTasks);
-		const matches = options.query?.trim()
-			? createTaskSearchIndex(tasks).search({ query: options.query.trim() })
-			: tasks;
+		const query = options.query?.trim();
+		const tasks = query ? await this.storage.addSearchableArtifactText(sourceTasks) : sourceTasks;
+		const matches = query ? createTaskSearchIndex(tasks).search({ query }) : tasks;
 		return filterTaskQueryResults(matches, { ...options, filters }, this.storage);
 	}
 }

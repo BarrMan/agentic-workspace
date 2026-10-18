@@ -7,12 +7,12 @@ import {
 	TmuxCommandError,
 	TmuxTransportError,
 } from "libtmux";
-import { captureProcessOutput } from "../process/capture.ts";
 import { taskIdsEqual } from "../utils/task-id.ts";
 import type { SessionIntent } from "./agents/agent.ts";
 import { cleanupPreparedLaunchResources, type PreparedLaunchResources } from "./completion-supervisor-resources.ts";
 import { createTmuxExec } from "./live/tmux/exec.ts";
 import type { TmuxExec } from "./live/tmux/types.ts";
+import { terminateProcessTree } from "./process-tree.ts";
 import { type PreparedAgentLaunch, preflightAgentLaunch, prepareAgentLaunch } from "./session-launch.ts";
 import { resolveProjectStateRoot } from "./session-store.ts";
 import { fail, type SessionCommandResult } from "./session-utils.ts";
@@ -40,6 +40,7 @@ type ProcessOptions = {
 	stdin?: string;
 	inherit?: boolean;
 	timeoutMs?: number;
+	signal?: AbortSignal;
 };
 
 export interface ProcessRunner {
@@ -58,22 +59,75 @@ export class BunRunner implements ProcessRunner {
 					: new TextEncoder().encode(options.stdin),
 			stdout: options.inherit ? "inherit" : "pipe",
 			stderr: options.inherit ? "inherit" : "pipe",
+			detached: !options.inherit,
 		});
 		if (options.inherit) return { exitCode: await child.exited, stdout: "", stderr: "" };
 		let timer: ReturnType<typeof setTimeout> | undefined;
 		let timedOut = false;
-		try {
-			if (options.timeoutMs !== undefined) {
-				timer = setTimeout(() => {
-					timedOut = true;
-					child.kill(9);
-				}, options.timeoutMs);
+		let stdout = "";
+		let stderr = "";
+		const drain = async (stream: ReadableStream<Uint8Array> | null | undefined, append: (value: string) => void) => {
+			if (!stream) return;
+			const reader = stream.getReader();
+			const decoder = new TextDecoder();
+			try {
+				while (true) {
+					const { done, value } = await reader.read();
+					if (done) break;
+					append(decoder.decode(value, { stream: true }));
+				}
+				append(decoder.decode());
+			} catch {
+				// The process group may close the pipe during timeout cleanup.
 			}
-			const output = await captureProcessOutput(child);
-			if (timedOut) return { exitCode: 124, stdout: output.stdout, stderr: output.stderr, timedOut: true };
-			return output;
+		};
+		const output = Promise.all([
+			drain(child.stdout, (chunk) => (stdout += chunk)),
+			drain(child.stderr, (chunk) => (stderr += chunk)),
+			child.exited,
+		] as const);
+		const terminate = () => {
+			try {
+				process.kill(-child.pid, "SIGKILL");
+			} catch {
+				/* The process group may already be gone. */
+			}
+		};
+		let onAbort: (() => void) | undefined;
+		try {
+			const interrupted = new Promise<"timeout" | "abort">((resolve) => {
+				if (options.timeoutMs !== undefined)
+					timer = setTimeout(() => {
+						timedOut = true;
+						terminate();
+						resolve("timeout");
+					}, options.timeoutMs);
+				if (options.signal?.aborted) {
+					terminate();
+					resolve("abort");
+				} else if (options.signal) {
+					onAbort = () => {
+						terminate();
+						resolve("abort");
+					};
+					options.signal.addEventListener("abort", onAbort, { once: true });
+				}
+			});
+			const result = await Promise.race([
+				output.then(([, , exitCode]) => ({ kind: "exit" as const, exitCode })),
+				interrupted.then((kind) => ({ kind })),
+			]);
+			if (result.kind !== "exit")
+				return {
+					exitCode: result.kind === "timeout" ? 124 : 130,
+					stdout,
+					stderr,
+					...(timedOut ? { timedOut: true } : {}),
+				};
+			return { exitCode: result.exitCode, stdout, stderr };
 		} finally {
 			if (timer !== undefined) clearTimeout(timer);
+			if (onAbort) options.signal?.removeEventListener("abort", onAbort);
 		}
 	}
 }
@@ -411,6 +465,9 @@ export class SessionProcess {
 		const pane = paneId ? await this.paneById(paneId) : undefined;
 		if (paneId && !pane) throw new Error(`Owned pane ${paneId} disappeared during stop for session ${session.id}.`);
 		const resources = (pane && (await this.launchResources(pane.id))) ?? this.launches.get(session.id)?.resources;
+		const panePid = pane
+			? Number.parseInt(firstLine(await this.server.cmd("display-message", ["-p", "-t", pane.id, "#{pane_pid}"])), 10)
+			: undefined;
 		if (resources) await this.validateLaunchResources(session, resources, true);
 		if (resources) await this.validateLaunchResources(session, resources, false);
 		if (pane) {
@@ -425,6 +482,11 @@ export class SessionProcess {
 						errorResult(error),
 					);
 			}
+		}
+		if (panePid && Number.isSafeInteger(panePid)) {
+			const outcome = await terminateProcessTree(panePid);
+			if (outcome === "survivor")
+				throw new Error(`Could not prove agent process tree stopped for session ${session.id} (${outcome}).`);
 		}
 		this.launches.delete(session.id);
 	}

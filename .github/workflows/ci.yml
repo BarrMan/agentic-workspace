@@ -21,6 +21,7 @@ jobs:
       matrix:
         include:
           - os: ubuntu-latest
+            test_profile: full
             test_workers: 2
             test_files: ''
           - os: macos-latest

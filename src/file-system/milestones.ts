@@ -1,4 +1,4 @@
-import { mkdir, rename } from "node:fs/promises";
+import { mkdir, rename, stat, unlink, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { FrontmatterSchemaError, parseMarkdown, parseMilestone } from "../markdown/parser.ts";
 import { serializeMilestone } from "../markdown/serializer.ts";
@@ -25,6 +25,33 @@ function filename(id: string, title: string): string {
 		.replace(/\s+/g, "-")
 		.toLowerCase()
 		.slice(0, 50)}.md`;
+}
+
+async function writeAtomically(filepath: string, content: string): Promise<void> {
+	const temporaryPath = `${filepath}.${process.pid}.${Date.now()}.tmp`;
+	try {
+		await writeFile(temporaryPath, content, { flag: "wx" });
+		await rename(temporaryPath, filepath);
+	} catch (error) {
+		try {
+			await unlink(temporaryPath);
+		} catch (cleanupError) {
+			if ((cleanupError as NodeJS.ErrnoException).code !== "ENOENT")
+				throw new Error(`Atomic milestone write failed and temporary-file cleanup failed for ${temporaryPath}.`, {
+					cause: new AggregateError([error, cleanupError]),
+				});
+		}
+		throw error;
+	}
+}
+
+async function assertAbsent(filepath: string): Promise<void> {
+	try {
+		await stat(filepath);
+		throw new Error(`Milestone destination already exists: ${filepath}`);
+	} catch (error) {
+		if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+	}
 }
 
 export class MilestoneStore {
@@ -59,14 +86,12 @@ export class MilestoneStore {
 	private async restoreRename(
 		sourcePath: string | undefined,
 		targetPath: string | undefined,
-		original: string | undefined,
 		moved: boolean,
 	): Promise<void> {
 		try {
 			if (moved && sourcePath && targetPath && sourcePath !== targetPath) {
 				await rename(targetPath, sourcePath);
-				if (original) await Bun.write(sourcePath, original);
-			} else if (original) await Bun.write(sourcePath ?? targetPath ?? "", original);
+			}
 		} catch {
 			/* Preserve the original failure. */
 		}
@@ -149,7 +174,7 @@ export class MilestoneStore {
 				description: description || `Milestone: ${title}`,
 				rawContent: "",
 			});
-			await Bun.write(join(active, filename(id, title)), content);
+			await writeAtomically(join(active, filename(id, title)), content);
 			return parseMilestone(content);
 		});
 	}
@@ -158,61 +183,69 @@ export class MilestoneStore {
 		const normalizedTitle = title.trim();
 		if (!normalizedTitle) return { success: false };
 		const normalizedDueDate = dueDate === null ? undefined : normalizeDueDate(dueDate, "Due date");
-		let sourcePath: string | undefined;
-		let targetPath: string | undefined;
-		let original: string | undefined;
-		let moved = false;
-		try {
-			const found = await this.find(identifier);
-			if (!found) return { success: false };
-			sourcePath = found.filepath;
-			targetPath = join(await this.directory("active"), filename(found.milestone.id, normalizedTitle));
-			original = found.content;
-			const content = serializeMilestone(
-				{
-					...found.milestone,
-					title: normalizedTitle,
-					dueDate: dueDate === undefined ? found.milestone.dueDate : normalizedDueDate,
-					description:
-						found.milestone.description === `Milestone: ${found.milestone.title}`
-							? `Milestone: ${normalizedTitle}`
-							: found.milestone.description,
-				},
-				parseMarkdown(found.content).frontmatter,
-			);
-			if (sourcePath !== targetPath) {
-				if (await Bun.file(targetPath).exists()) return { success: false };
-				await rename(sourcePath, targetPath);
-				moved = true;
+		return await this.context.withCreateLock(async () => {
+			let sourcePath: string | undefined;
+			let targetPath: string | undefined;
+			let moved = false;
+			try {
+				const found = await this.find(identifier);
+				if (!found) return { success: false };
+				sourcePath = found.filepath;
+				targetPath = join(await this.directory("active"), filename(found.milestone.id, normalizedTitle));
+				const content = serializeMilestone(
+					{
+						...found.milestone,
+						title: normalizedTitle,
+						dueDate: dueDate === undefined ? found.milestone.dueDate : normalizedDueDate,
+						description:
+							found.milestone.description === `Milestone: ${found.milestone.title}`
+								? `Milestone: ${normalizedTitle}`
+								: found.milestone.description,
+					},
+					parseMarkdown(found.content).frontmatter,
+				);
+				if (sourcePath !== targetPath) {
+					try {
+						await stat(targetPath);
+						return { success: false };
+					} catch (error) {
+						if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+					}
+					await rename(sourcePath, targetPath);
+					moved = true;
+				}
+				await writeAtomically(targetPath, content);
+				return {
+					success: true,
+					sourcePath,
+					targetPath,
+					milestone: parseMilestone(content),
+					previousTitle: found.milestone.title,
+					previousDueDate: found.milestone.dueDate,
+				};
+			} catch (error) {
+				await this.restoreRename(sourcePath, targetPath, moved);
+				if (error instanceof FrontmatterSchemaError) throw error;
+				return { success: false };
 			}
-			await Bun.write(targetPath, content);
-			return {
-				success: true,
-				sourcePath,
-				targetPath,
-				milestone: parseMilestone(content),
-				previousTitle: found.milestone.title,
-				previousDueDate: found.milestone.dueDate,
-			};
-		} catch (error) {
-			await this.restoreRename(sourcePath, targetPath, original, moved);
-			if (error instanceof FrontmatterSchemaError) throw error;
-			return { success: false };
-		}
+		});
 	}
 
 	async archive(identifier: string) {
 		if (!identifier.trim()) return { success: false };
-		try {
-			const found = await this.find(identifier);
-			if (!found) return { success: false };
-			const targetPath = join(await this.directory("archived"), found.file);
-			await this.context.ensureDirectory(dirname(targetPath));
-			await rename(found.filepath, targetPath);
-			return { success: true, sourcePath: found.filepath, targetPath, milestone: found.milestone };
-		} catch (error) {
-			if (error instanceof FrontmatterSchemaError) throw error;
-			return { success: false };
-		}
+		return await this.context.withCreateLock(async () => {
+			try {
+				const found = await this.find(identifier);
+				if (!found) return { success: false };
+				const targetPath = join(await this.directory("archived"), found.file);
+				await this.context.ensureDirectory(dirname(targetPath));
+				await assertAbsent(targetPath);
+				await rename(found.filepath, targetPath);
+				return { success: true, sourcePath: found.filepath, targetPath, milestone: found.milestone };
+			} catch (error) {
+				if (error instanceof FrontmatterSchemaError) throw error;
+				return { success: false };
+			}
+		});
 	}
 }

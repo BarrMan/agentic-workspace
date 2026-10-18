@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { constants } from "node:fs";
-import { access, lstat, mkdir, realpath, stat } from "node:fs/promises";
+import { access, lstat, mkdir, readFile, realpath, stat } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { LockOwner } from "../file-system/lock-owner.ts";
 import { type ProjectStateRootOptions, resolveProjectStateRoot, writeFileAtomic } from "./session-store.ts";
@@ -43,17 +43,13 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 	return typeof value === "object" && value !== null;
 }
 
-/** Returns undefined for anything unreadable or malformed — the caller degrades, never throws. */
-function parseEnvelope<T extends object>(raw: string): ViewStateEnvelope<T> | undefined {
-	try {
-		const parsed: unknown = JSON.parse(raw);
-		if (!isRecord(parsed) || !isRecord(parsed.state)) return undefined;
-		if (typeof parsed.rev !== "number" || !Number.isFinite(parsed.rev)) return undefined;
-		if (typeof parsed.origin !== "string") return undefined;
-		return { rev: parsed.rev, origin: parsed.origin, state: parsed.state as T };
-	} catch {
-		return undefined;
-	}
+function parseEnvelope<T extends object>(raw: string): ViewStateEnvelope<T> {
+	const parsed: unknown = JSON.parse(raw);
+	if (!isRecord(parsed) || !isRecord(parsed.state)) throw new Error("Invalid workspace view state.");
+	if (typeof parsed.rev !== "number" || !Number.isFinite(parsed.rev))
+		throw new Error("Invalid workspace view-state revision.");
+	if (typeof parsed.origin !== "string") throw new Error("Invalid workspace view-state origin.");
+	return { rev: parsed.rev, origin: parsed.origin, state: parsed.state as T };
 }
 
 async function writableDirectory(path: string): Promise<boolean> {
@@ -136,7 +132,7 @@ class ViewStateStoreImpl<T extends object> implements ViewStateStore<T> {
 		await this.seed();
 		this.stateWatcher = startStateStoreWatcher(
 			this.path,
-			() => void this.recheck(),
+			() => void this.recheck().catch(() => undefined),
 			() => this.closed,
 		);
 	}
@@ -212,10 +208,10 @@ class ViewStateStoreImpl<T extends object> implements ViewStateStore<T> {
 
 	private async readEnvelope(): Promise<ViewStateEnvelope<T> | undefined> {
 		try {
-			return parseEnvelope<T>(await Bun.file(this.path).text());
-		} catch {
-			// Missing, unreadable, or torn: the caller falls back to what it already knows.
-			return undefined;
+			return parseEnvelope<T>(await readFile(this.path, "utf8"));
+		} catch (error) {
+			if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
+			throw error;
 		}
 	}
 

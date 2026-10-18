@@ -58,6 +58,18 @@ async function expectArtifacts(id: string, location: string): Promise<void> {
 }
 
 describe("MAIN task-container lifecycle contract", () => {
+	it("returns the exact allocated IDs from filesystem promotion and demotion", async () => {
+		const { task: draft } = await core.createTaskFromInput({
+			title: "Exact transition ID",
+			status: "Draft",
+			rawContent: "draft",
+		});
+		const promotedId = await coreFileSystem(core).promoteDraft(draft.id);
+		expect(promotedId).toBe("TASK-1");
+		const demotedId = await coreFileSystem(core).demoteTask(promotedId!);
+		expect(demotedId).toBe("DRAFT-1");
+	});
+
 	it("moves the complete task container through archive and completed storage", async () => {
 		await core.createTask(task("task-1", "Move me"));
 		await addArtifacts("task-1");
