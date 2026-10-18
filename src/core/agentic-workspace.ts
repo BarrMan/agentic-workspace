@@ -1077,7 +1077,8 @@ export class Core {
 	async archiveMilestone(
 		identifier: string,
 	): Promise<{ success: boolean; sourcePath?: string; targetPath?: string; milestone?: Milestone }> {
-		return await this.projectContent.archiveMilestone(identifier);
+		await this.filesystem.loadConfig();
+		return await this.filesystem.archiveMilestone(identifier);
 	}
 
 	async renameMilestone(
@@ -1092,7 +1093,8 @@ export class Core {
 		previousTitle?: string;
 		previousDueDate?: string;
 	}> {
-		return await this.projectContent.renameMilestone(identifier, title, dueDate);
+		await this.filesystem.loadConfig();
+		return await this.filesystem.renameMilestone(identifier, title, dueDate);
 	}
 
 	async completeTask(taskId: string, options: TaskReadOptions = {}): Promise<boolean> {

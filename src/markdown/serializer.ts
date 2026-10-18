@@ -88,21 +88,14 @@ function taskFrontmatter(task: Task, retained: Record<string, unknown> = {}): Re
 	return frontmatter;
 }
 
-function serializeMarkdownRecord(content: string, frontmatter: Record<string, unknown>): string {
-	return stringifyFrontmatter(content, frontmatter);
-}
-
-function serializeOpaqueRecord(content: string, frontmatter: Record<string, unknown>): string {
-	let serialized = serializeMarkdownRecord(content, frontmatter);
-	if (!content.startsWith("\n") && serialized.startsWith("\n")) serialized = serialized.slice(1);
-	if (!content.endsWith("\n") && serialized.endsWith("\n")) serialized = serialized.slice(0, -1);
-	return serialized;
+function serializeRecord(content: string, frontmatter: Record<string, unknown>): string {
+	const serialized = stringifyFrontmatter(content, frontmatter);
+	return content.endsWith("\n") || !serialized.endsWith("\n") ? serialized : serialized.slice(0, -1);
 }
 
 export function serializeTask(task: Task, retainedFrontmatter?: Record<string, unknown>): string {
 	const rawContent = task.rawContent ?? "";
-	const serialized = serializeMarkdownRecord(rawContent, taskFrontmatter(task, retainedFrontmatter));
-	return rawContent.endsWith("\n") || !serialized.endsWith("\n") ? serialized : serialized.slice(0, -1);
+	return serializeRecord(rawContent, taskFrontmatter(task, retainedFrontmatter));
 }
 
 export function serializeDecision(decision: Decision, retained: Record<string, unknown> = {}): string {
@@ -120,7 +113,7 @@ export function serializeDecision(decision: Decision, retained: Record<string, u
 	delete frontmatter[DECISION_FRONTMATTER_FIELDS.ALTERNATIVES];
 	if (decision.alternatives !== undefined)
 		frontmatter[DECISION_FRONTMATTER_FIELDS.ALTERNATIVES] = decision.alternatives;
-	return serializeOpaqueRecord(decision.rawContent, frontmatter);
+	return serializeRecord(decision.rawContent, frontmatter);
 }
 
 export function serializeMilestone(milestone: Milestone, retained: Record<string, unknown> = {}): string {
@@ -133,7 +126,7 @@ export function serializeMilestone(milestone: Milestone, retained: Record<string
 	};
 	delete frontmatter[MILESTONE_FRONTMATTER_FIELDS.DUE_DATE];
 	if (milestone.dueDate) frontmatter[MILESTONE_FRONTMATTER_FIELDS.DUE_DATE] = milestone.dueDate;
-	return serializeOpaqueRecord(milestone.rawContent, frontmatter);
+	return serializeRecord(milestone.rawContent, frontmatter);
 }
 
 export function serializeDocument(document: Document): string {
@@ -146,5 +139,5 @@ export function serializeDocument(document: Document): string {
 		...(document.tags && document.tags.length > 0 && { [DOCUMENT_FRONTMATTER_FIELDS.TAGS]: document.tags }),
 	};
 
-	return serializeMarkdownRecord(document.rawContent, frontmatter);
+	return stringifyFrontmatter(document.rawContent, frontmatter);
 }

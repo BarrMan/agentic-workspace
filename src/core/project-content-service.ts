@@ -1,14 +1,7 @@
 import { join } from "node:path";
 import { parseFrontmatter } from "../markdown/frontmatter.ts";
 import { DECISION_FRONTMATTER_FIELDS } from "../markdown/schema.ts";
-import type {
-	Decision,
-	Document,
-	DocumentCreateInput,
-	DocumentType,
-	DocumentUpdateInput,
-	Milestone,
-} from "../types/index.ts";
+import type { Decision, Document, DocumentCreateInput, DocumentType, DocumentUpdateInput } from "../types/index.ts";
 import { formatStoredDate } from "../utils/date.ts";
 import { findDocumentById, normalizeDocumentId } from "../utils/document-id.ts";
 import { getDocumentSubPathFromRelativePath, normalizeDocumentSubPath } from "../utils/document-path.ts";
@@ -132,30 +125,5 @@ export class ProjectContentService {
 				: normalizeDocumentSubPath(input.path),
 		);
 		return (await this.getDocument(existing.id)) ?? updated;
-	}
-
-	async archiveMilestone(
-		identifier: string,
-	): Promise<{ success: boolean; sourcePath?: string; targetPath?: string; milestone?: Milestone }> {
-		await this.core.filesystem.loadConfig();
-		const result = await this.core.filesystem.archiveMilestone(identifier);
-		return result;
-	}
-
-	async renameMilestone(
-		identifier: string,
-		title: string,
-		dueDate?: string | null,
-	): Promise<{
-		success: boolean;
-		sourcePath?: string;
-		targetPath?: string;
-		milestone?: Milestone;
-		previousTitle?: string;
-		previousDueDate?: string;
-	}> {
-		await this.core.filesystem.loadConfig();
-		const result = await this.core.filesystem.renameMilestone(identifier, title, dueDate);
-		return result;
 	}
 }

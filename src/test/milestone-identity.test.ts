@@ -65,10 +65,9 @@ describe("milestone identity resolver", () => {
 		expect(resolver.resolveStorageInput("Legacy release")).toBe("m-9");
 	});
 
-	it("does not fuzzy-match identity values", () => {
+	it("preserves unmatched storage values", () => {
 		const resolver = createMilestoneIdentityResolver([milestone("m-1", "Release 1")]);
 
-		expect(resolver.findActiveByAlias("Releas 1")).toBeUndefined();
 		expect(resolver.resolveStorageInput("Releas 1")).toBe("Releas 1");
 	});
 });

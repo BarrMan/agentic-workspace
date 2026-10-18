@@ -282,28 +282,6 @@ export class MilestoneIdentityResolver<T extends MilestoneIdentity = Milestone> 
 		return findIdIn(value, this.milestonesFor(scope));
 	}
 
-	/** Resolve an active milestone by ID alias first for ID-shaped input, title first otherwise. */
-	findActiveByAlias(value: string): T | undefined {
-		const normalized = normalizeMilestoneName(value);
-		const key = milestoneKey(normalized);
-		if (!key) return undefined;
-		const idMatch = findIdIn(normalized, this.activeMilestones);
-		const titleMatches = findTitleMatchesIn(normalized, this.activeMilestones);
-		const titleMatch = titleMatches.length === 1 ? titleMatches[0] : undefined;
-		return isMilestoneId(normalized) ? (idMatch ?? titleMatch) : (titleMatch ?? idMatch);
-	}
-
-	/** Match keys used by milestone rename/remove workflows. */
-	buildMatchKeys(value: string, milestones: readonly T[] = this.activeMilestones): Set<string> {
-		const keys = collectMilestoneAliasKeys(value);
-		if (findIdIn(value, milestones)) return keys;
-		const titleMatch = findUniqueTitleIn(value, milestones);
-		if (titleMatch) {
-			for (const key of collectMilestoneAliasKeys(titleMatch.id)) keys.add(key);
-		}
-		return keys;
-	}
-
 	/**
 	 * Storage resolution: active IDs outrank archived IDs, which outrank titles; an ambiguous
 	 * active title is preserved as-is rather than guessing.
@@ -397,22 +375,4 @@ export function createMilestoneIdentityResolver<T extends MilestoneIdentity = Mi
 	archivedMilestones: readonly T[] = [],
 ): MilestoneIdentityResolver<T> {
 	return new MilestoneIdentityResolver(activeMilestones, archivedMilestones);
-}
-
-export function findActiveMilestoneByAlias<T extends MilestoneIdentity>(
-	value: string,
-	milestones: readonly T[],
-): T | undefined {
-	return createMilestoneIdentityResolver(milestones).findActiveByAlias(value);
-}
-
-export function buildMilestoneMatchKeys<T extends MilestoneIdentity>(
-	value: string,
-	milestones: readonly T[],
-): Set<string> {
-	return createMilestoneIdentityResolver(milestones).buildMatchKeys(value, milestones);
-}
-
-export function keySetsIntersect(left: Set<string>, right: Set<string>): boolean {
-	return [...left].some((key) => right.has(key));
 }

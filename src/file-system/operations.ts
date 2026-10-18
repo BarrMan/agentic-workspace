@@ -61,11 +61,6 @@ export { isConfigValueError };
 const DEFAULT_CREATE_LOCK_TIMEOUT_MS = 30_000;
 const DEFAULT_CREATE_LOCK_RETRY_DELAY_MS = 100;
 const DEFAULT_CREATE_LOCK_STALE_MS = 10_000;
-interface ParsedTaskFile {
-	content: string;
-	task: Task;
-}
-
 const TASK_DIRECTORY = TASK_DIRECTORY_TYPES[0];
 const DRAFT_DIRECTORY = TASK_DIRECTORY_TYPES[1];
 const DRAFT_STATUS_KEY = DRAFT_STATUS.toLowerCase();
@@ -118,11 +113,6 @@ export function isTaskLockError(error: unknown): error is Error {
 	return isLockError(error, TASK_LOCK_ERROR_NAME, TASK_LOCK_ERROR_CODE);
 }
 
-/** Raises the shared fail-fast lock failure for contention detected outside an acquisition. */
-export function newTaskLockError(taskId: string): Error {
-	return taskLockError(taskLockErrorMessage(taskId));
-}
-
 export function taskLockErrorMessage(taskId: string): string {
 	return `Edit failed: ${taskId} is being modified by another process; retry if appropriate.`;
 }
@@ -167,9 +157,6 @@ export class FileSystem {
 	private readonly locks = new LockOwner();
 	private readonly layout = new ProjectLayout();
 	private readonly contentMutationListeners = new Set<ContentMutationListener>();
-	// Retained as private compatibility seams for focused cache tests; repository owns the state.
-	readonly parsedTaskFiles: Map<string, ParsedTaskFile>;
-	readonly taskFileReadGenerations: Map<string, number>;
 	get taskParseCacheEpoch() {
 		return this.taskRepository.epoch;
 	}
@@ -196,8 +183,6 @@ export class FileSystem {
 					? join(this.resolvedAgenticWorkspaceDir, DEFAULT_FILES.CONFIG)
 					: (resolution.configPath ?? join(this.resolvedAgenticWorkspaceDir, DEFAULT_FILES.CONFIG));
 		this.taskRepository = new TaskRepository();
-		this.parsedTaskFiles = this.taskRepository.parsedFiles;
-		this.taskFileReadGenerations = this.taskRepository.fileReadGenerations;
 		this.contentRepository = new ContentRepository({
 			decisionsDirectory: async () => await this.getDecisionsDir(),
 			documentsDirectory: async () => await this.getDocsDir(),
@@ -698,8 +683,7 @@ export class FileSystem {
 		return { id, filename, filePath };
 	}
 
-	private async existingTaskAtWritePath(filepath: string, preservesPath: boolean): Promise<Task | null> {
-		if (!preservesPath) return null;
+	private async existingTaskAtWritePath(filepath: string): Promise<Task | null> {
 		try {
 			return parseTask(await Bun.file(filepath).text());
 		} catch (error) {
@@ -720,7 +704,7 @@ export class FileSystem {
 		if (!root) throw new Error(`Task ${task.id} has a non-canonical storage path; refusing operation.`);
 		if (basename(container) !== taskIdKey(task.id).toLowerCase())
 			throw new Error(`Task ${task.id} record/container identity mismatch; refusing operation.`);
-		const record = await this.existingTaskAtWritePath(path, true);
+		const record = await this.existingTaskAtWritePath(path);
 		if (!record || !taskIdsEqual(record.id, task.id))
 			throw new Error(`Task ${task.id} record identity changed; refusing operation.`);
 		return { path, root: resolve(root), record };
@@ -857,10 +841,6 @@ export class FileSystem {
 				matches.map((task) => task.filePath ?? task.id),
 			);
 		return matches[0] ?? null;
-	}
-
-	async readParsedTaskFile(filepath: string, cacheEpoch = this.taskParseCacheEpoch): Promise<Task> {
-		return await this.taskRepository.readParsedFile(filepath, cacheEpoch);
 	}
 
 	async readTaskFiles(directory: string, files: string[], cacheEpoch = this.taskParseCacheEpoch): Promise<Task[]> {
@@ -1061,7 +1041,7 @@ export class FileSystem {
 						throw error;
 					}
 				}
-				const content = serializeTask(promotedTask, await this.retainedTaskFrontmatter(sourcePath, sourcePath));
+				const content = serializeTask(promotedTask, await this.retainedTaskFrontmatter(sourcePath));
 				await this.ensureDirectoryExists(dirname(targetContainer));
 				await rename(sourceContainer, targetContainer);
 				try {
@@ -1113,7 +1093,7 @@ export class FileSystem {
 			} catch (error) {
 				if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
 			}
-			const sourceTask = await this.existingTaskAtWritePath(sourcePath, true);
+			const sourceTask = await this.existingTaskAtWritePath(sourcePath);
 			if (!sourceTask || !taskIdsEqual(sourceTask.id, task.id))
 				throw new Error(`Task ${task.id} changed identity before it could be demoted.`);
 			const demotedDraft: Task = {
@@ -1122,7 +1102,7 @@ export class FileSystem {
 				filePath: join(targetContainer, "task.md"),
 			};
 			await validateAllocatedDraft?.(demotedDraft);
-			const content = serializeTask(demotedDraft, await this.retainedTaskFrontmatter(sourcePath, sourcePath));
+			const content = serializeTask(demotedDraft, await this.retainedTaskFrontmatter(sourcePath));
 			await this.ensureDirectoryExists(dirname(targetContainer));
 			await rename(sourceContainer, targetContainer);
 			try {
@@ -1485,66 +1465,6 @@ export class FileSystem {
 
 	async createMilestone(title: string, description?: string, dueDate?: string): Promise<Milestone> {
 		return this.milestones.create(title, description, dueDate);
-		/*
-		return await this.withCreateLock(async () => {
-			const milestonesDir = await this.getMilestonesDir();
-
-			// Ensure milestones directory exists
-			await mkdir(milestonesDir, { recursive: true });
-
-			// Find next available milestone ID
-			const archiveMilestonesDir = await this.getArchiveMilestonesDir();
-			await mkdir(archiveMilestonesDir, { recursive: true });
-			const [existingFiles, archivedFiles] = await Promise.all([
-				Array.fromAsync(new Bun.Glob("m-*.md").scan({ cwd: milestonesDir, followSymlinks: true })),
-				Array.fromAsync(new Bun.Glob("m-*.md").scan({ cwd: archiveMilestonesDir, followSymlinks: true })),
-			]);
-			const parseMilestoneId = async (dir: string, file: string): Promise<number | null> => {
-				if (file.toLowerCase() === "readme.md") {
-					return null;
-				}
-				const filepath = join(dir, file);
-				try {
-					const content = await Bun.file(filepath).text();
-					const parsed = parseMilestone(content);
-					const parsedIdMatch = parsed.id.match(/^m-(\d+)$/i);
-					if (parsedIdMatch?.[1]) {
-						return Number.parseInt(parsedIdMatch[1], 10);
-					}
-				} catch {
-					// Fall through to filename-based fallback.
-				}
-				const filenameIdMatch = file.match(/^m-(\d+)/i);
-				if (filenameIdMatch?.[1]) {
-					return Number.parseInt(filenameIdMatch[1], 10);
-				}
-				return null;
-			};
-			const existingIds = (
-				await Promise.all([
-					...existingFiles.map((file) => parseMilestoneId(milestonesDir, file)),
-					...archivedFiles.map((file) => parseMilestoneId(archiveMilestonesDir, file)),
-				])
-			).filter((id): id is number => typeof id === "number" && id >= 0);
-
-			const nextId = existingIds.length > 0 ? Math.max(...existingIds) + 1 : 0;
-			const id = `m-${nextId}`;
-
-			const filename = this.buildMilestoneFilename(id, title);
-			const content = this.serializeMilestoneContent(
-				id,
-				title,
-				`## Description
-
-${description || `Milestone: ${title}`}`,
-				normalizedDueDate,
-			);
-
-			const filepath = join(milestonesDir, filename);
-			await Bun.write(filepath, content);
-
-			return parseMilestone(content);
-		}); */
 	}
 
 	async renameMilestone(
@@ -1560,74 +1480,6 @@ ${description || `Milestone: ${title}`}`,
 		previousDueDate?: string;
 	}> {
 		return this.milestones.rename(identifier, title, dueDate);
-		/*
-		const normalizedTitle = title.trim();
-		if (!normalizedTitle) {
-			return { success: false };
-		}
-
-		const normalizedDueDate = dueDate === null ? undefined : normalizeDueDate(dueDate, "Due date");
-		let sourcePath: string | undefined;
-		let targetPath: string | undefined;
-		let movedFile = false;
-		let originalContent: string | undefined;
-
-		try {
-			const milestoneMatch = await this.findMilestoneFile(identifier, "active");
-			if (!milestoneMatch) {
-				return { success: false };
-			}
-
-			const { milestone } = milestoneMatch;
-			const milestonesDir = await this.getMilestonesDir();
-			const targetFilename = this.buildMilestoneFilename(milestone.id, normalizedTitle);
-			targetPath = join(milestonesDir, targetFilename);
-			sourcePath = milestoneMatch.filepath;
-			originalContent = milestoneMatch.content;
-			const nextRawContent = this.rewriteDefaultMilestoneDescription(
-				milestone.rawContent,
-				milestone.title,
-				normalizedTitle,
-			);
-			const nextDueDate = dueDate === undefined ? milestone.dueDate : normalizedDueDate;
-			const updatedContent = this.serializeMilestoneContent(milestone.id, normalizedTitle, nextRawContent, nextDueDate);
-
-			if (sourcePath !== targetPath) {
-				if (await Bun.file(targetPath).exists()) {
-					return { success: false };
-				}
-				await rename(sourcePath, targetPath);
-				movedFile = true;
-			}
-			await Bun.write(targetPath, updatedContent);
-
-			return {
-				success: true,
-				sourcePath,
-				targetPath,
-				milestone: parseMilestone(updatedContent),
-				previousTitle: milestone.title,
-				previousDueDate: milestone.dueDate,
-			};
-		} catch {
-			try {
-				if (movedFile && sourcePath && targetPath && sourcePath !== targetPath) {
-					await rename(targetPath, sourcePath);
-					if (originalContent) {
-						await Bun.write(sourcePath, originalContent);
-					}
-				} else if (originalContent) {
-					const restorePath = sourcePath ?? targetPath;
-					if (restorePath) {
-						await Bun.write(restorePath, originalContent);
-					}
-				}
-			} catch {
-				// Ignore rollback failures and surface operation failure to caller.
-			}
-			return { success: false };
-		}
-		*/
 	}
 
 	async archiveMilestone(identifier: string): Promise<{
@@ -1637,33 +1489,6 @@ ${description || `Milestone: ${title}`}`,
 		milestone?: Milestone;
 	}> {
 		return this.milestones.archive(identifier);
-		/*
-		const normalized = identifier.trim();
-		if (!normalized) {
-			return { success: false };
-		}
-
-		try {
-			const milestoneMatch = await this.findMilestoneFile(normalized, "active");
-			if (!milestoneMatch) {
-				return { success: false };
-			}
-
-			const archiveDir = await this.getArchiveMilestonesDir();
-			const targetPath = join(archiveDir, milestoneMatch.file);
-			await this.ensureDirectoryExists(dirname(targetPath));
-			await rename(milestoneMatch.filepath, targetPath);
-
-			return {
-				success: true,
-				sourcePath: milestoneMatch.filepath,
-				targetPath,
-				milestone: milestoneMatch.milestone,
-			};
-		} catch (_error) {
-			return { success: false };
-		}
-		*/
 	}
 
 	// Config operations

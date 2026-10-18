@@ -1,5 +1,5 @@
+import { createMilestoneIdentityResolver } from "../../../core/milestone-identity.ts";
 import type { Core } from "../../../index.ts";
-import { resolveMilestoneInputForStorage } from "../../../utils/milestone-storage.ts";
 
 export const TASK_SORT_FIELDS = ["priority", "id", "ordinal", "newest"];
 export const TASK_SORT_FIELD_LIST = TASK_SORT_FIELDS.join(", ");
@@ -27,5 +27,5 @@ export async function resolveCliMilestoneInput(core: Core, milestone: string): P
 		core.loadMilestones(),
 		core.loadArchivedMilestones(),
 	]);
-	return resolveMilestoneInputForStorage(milestone, activeMilestones, archivedMilestones);
+	return createMilestoneIdentityResolver(activeMilestones, archivedMilestones).resolveStorageInput(milestone);
 }

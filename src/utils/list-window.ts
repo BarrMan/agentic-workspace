@@ -133,23 +133,6 @@ export function selectListWindow<T>(items: readonly T[], window: ListWindow): Li
 	};
 }
 
-/**
- * Which `milestone list` sections one window prints. A section prints in every window that lists its
- * milestones. A section that lists none prints once, where it falls: Active in the first window and
- * Completed in the last. An empty list has a single window, which prints both.
- */
-export function milestoneSectionsInWindow(
-	page: ListPage<{ isCompleted: boolean }>,
-	activeCount: number,
-	listsCompleted: boolean,
-): { active: boolean; completed: boolean } {
-	const firstWindow = page.skip === 0 || page.total === 0;
-	return {
-		active: page.items.some((item) => !item.isCompleted) || (activeCount === 0 && firstWindow),
-		completed: page.items.some((item) => item.isCompleted) || (!listsCompleted && page.nextSkip === null),
-	};
-}
-
 function quoteShellArgument(argument: string): string {
 	return /^[\w@+:,./-]+$/.test(argument) ? argument : `'${argument.replaceAll("'", "'\\''")}'`;
 }

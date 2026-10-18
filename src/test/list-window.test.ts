@@ -5,7 +5,6 @@ import {
 	formatListWindowFooter,
 	type ListPage,
 	type ListWindow,
-	milestoneSectionsInWindow,
 	nextPageCommand,
 	parseListWindow,
 	selectListWindow,
@@ -124,29 +123,6 @@ describe("list windows", () => {
 			count: true,
 			forcesText: true,
 		});
-	});
-
-	it("prints each milestone section once, where it falls", () => {
-		const active = { isCompleted: false };
-		const completed = { isCompleted: true };
-		const sections = (items: { isCompleted: boolean }[], skip: number, maxCount: number, listsCompleted: boolean) => {
-			const activeCount = items.filter((item) => !item.isCompleted).length;
-			return milestoneSectionsInWindow(selectListWindow(items, windowOf(skip, maxCount)), activeCount, listsCompleted);
-		};
-
-		// Two active and one listed completed milestone, one per window.
-		const listed = [active, active, completed];
-		expect(sections(listed, 0, 1, true)).toEqual({ active: true, completed: false });
-		expect(sections(listed, 1, 1, true)).toEqual({ active: true, completed: false });
-		expect(sections(listed, 2, 1, true)).toEqual({ active: false, completed: true });
-		// Completed milestones collapsed: their section follows the last active milestone.
-		expect(sections([active, active], 0, 1, false)).toEqual({ active: true, completed: false });
-		expect(sections([active, active], 1, 1, false)).toEqual({ active: true, completed: true });
-		// No active milestones: the empty Active section opens the first window only.
-		expect(sections([completed, completed], 0, 1, true)).toEqual({ active: true, completed: true });
-		expect(sections([completed, completed], 1, 1, true)).toEqual({ active: false, completed: true });
-		// No milestones at all: the single window prints both empty sections, whatever it skips.
-		expect(sections([], 3, 1, false)).toEqual({ active: true, completed: true });
 	});
 
 	it("rejects invalid window values and count with JSON", () => {
