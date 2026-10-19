@@ -27,5 +27,3 @@ export const MilestoneFrontmatterSchema = z.object({
 	dueDate: z.unknown().transform((value) => normalizeDueDate(value, MILESTONE_FIELD.DUE_DATE)),
 	description: textFieldOrEmpty(MILESTONE_FIELD.DESCRIPTION),
 });
-
-export type MilestoneFrontmatterRecord = z.infer<typeof MilestoneFrontmatterSchema>;

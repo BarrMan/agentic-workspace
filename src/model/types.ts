@@ -81,48 +81,6 @@ export interface Task {
 
 export type Approval = true;
 
-/** The task data retained by browser collection views; task bodies are detail-only. */
-export interface TaskSummary {
-	id: string;
-	title: string;
-	status: TaskStatus;
-	assignee: string[];
-	reporter?: string;
-	createdDate: string;
-	updatedDate?: string;
-	dueDate?: string;
-	labels: string[];
-	milestone?: string;
-	dependencies: string[];
-	references?: string[];
-	documentation?: string[];
-	modifiedFiles?: string[];
-	parentTaskId?: string;
-	parentTaskTitle?: string;
-	subtasks?: string[];
-	subtaskSummaries?: Array<{ id: string; title: string }>;
-	priority?: string;
-	type?: string;
-	project?: string;
-	branch?: string;
-	ordinal?: number;
-	source?: Task["source"];
-	isReady: boolean;
-}
-
-export interface MilestoneBucket {
-	key: string;
-	label: string;
-	milestone?: string;
-	isNoMilestone: boolean;
-	isCompleted: boolean;
-	tasks: Task[];
-	statusCounts: Record<string, number>;
-	total: number;
-	doneCount: number;
-	progress: number;
-}
-
 /**
  * Check if a task is locally editable (not from a remote or other local branch)
  */

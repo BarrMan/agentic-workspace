@@ -9,6 +9,8 @@
 		"scripts/**/*.cjs",
 		"src/**/*.test.ts"
 	],
+	// .omp/ contains the external RTK host extension, not application source.
+	"ignorePatterns": [".omp/**"],
 	"typeAware": {
 		"enabled": true,
 		"projects": ["tsconfig.json"],

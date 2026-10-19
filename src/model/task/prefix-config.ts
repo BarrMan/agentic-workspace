@@ -12,7 +12,7 @@ import {
 /**
  * Default prefix configuration for tasks.
  */
-export const DEFAULT_PREFIX_CONFIG: PrefixConfig = {
+const DEFAULT_PREFIX_CONFIG: PrefixConfig = {
 	task: EntityType.Task,
 };
 

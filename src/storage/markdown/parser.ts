@@ -22,8 +22,6 @@ import {
 	TaskRecordSchema,
 } from "./task-record-schema.ts";
 
-export { MILESTONE_FRONTMATTER_SCHEMA_VERSION, TASK_FRONTMATTER_SCHEMA_VERSION } from "./schema.ts";
-
 export function parseMarkdown(content: string): ParsedMarkdown {
 	const parsed = parseFrontmatter(content);
 	return {

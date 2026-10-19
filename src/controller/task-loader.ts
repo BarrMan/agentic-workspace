@@ -377,11 +377,6 @@ export class BranchTaskLoader {
 
 	constructor(private readonly git: GitOperations) {}
 
-	clear(): void {
-		this.commitIndexCache.clear();
-		this.taskCache.clear();
-	}
-
 	/** Read current-layout, current-schema records only, even at historical commits. */
 	async loadPersistentTask(commit: string, path: string): Promise<Task | null> {
 		const id = getTaskContainerId(path);

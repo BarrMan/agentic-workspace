@@ -1,22 +1,8 @@
 import type { AgentBootstrap, AgentPreset } from "../model/session/types.ts";
-import { shellQuote } from "./agents/agent.ts";
 import { agentFor } from "./agents/agents.ts";
 
 export interface SessionBootstrapInput {
 	taskId: string;
-}
-
-export function filePrompt(bootstrapPath: string): string {
-	return `"$(cat -- ${shellQuote(bootstrapPath)})"`;
-}
-
-export function appendArguments(command: string, arguments_: string): string {
-	if (/[|;&\n]/.test(command)) {
-		throw new Error(
-			"Built-in agent commands must be an executable with flags, not a shell pipeline or compound command.",
-		);
-	}
-	return `${command} ${arguments_}`;
 }
 
 /**

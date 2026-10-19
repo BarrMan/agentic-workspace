@@ -21,5 +21,3 @@ export interface TaskEditArgs {
 	removeDocumentation?: string[];
 	modifiedFiles?: string[];
 }
-
-export type TaskEditRequest = TaskEditArgs & { id: string };

@@ -137,6 +137,3 @@ export const TaskRecordSchema = TaskFrontmatterSchema.extend({
 	dependencies,
 	rawContent: z.string(),
 });
-
-export type TaskFrontmatterRecord = z.infer<typeof TaskFrontmatterSchema>;
-export type TaskRecord = z.infer<typeof TaskRecordSchema>;

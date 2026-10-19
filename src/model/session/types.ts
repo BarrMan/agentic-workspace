@@ -5,14 +5,14 @@ export const AGENT_BOOTSTRAP_TYPES = ["opencode", "claude", "pi"] as const;
 export type AgentBootstrap = (typeof AGENT_BOOTSTRAP_TYPES)[number];
 
 /** Concrete OpenCode adapters are chosen at execution time, never configured directly. */
-export const INTERNAL_AGENT_BOOTSTRAP_TYPES = ["opencode-v1", "opencode-v2"] as const;
+const INTERNAL_AGENT_BOOTSTRAP_TYPES = ["opencode-v1", "opencode-v2"] as const;
 export type InternalAgentBootstrap = (typeof INTERNAL_AGENT_BOOTSTRAP_TYPES)[number];
 export type RuntimeAgentBootstrap = AgentBootstrap | InternalAgentBootstrap;
 
 export const NATIVE_AGENT_NAMESPACES = ["opencode", "claude", "pi"] as const;
 export type NativeAgentNamespace = (typeof NATIVE_AGENT_NAMESPACES)[number];
 
-export const AGENT_CONFIG_SCOPES = ["root", "project", "card"] as const;
+const AGENT_CONFIG_SCOPES = ["root", "project", "card"] as const;
 export type AgentConfigScope = (typeof AGENT_CONFIG_SCOPES)[number];
 
 export type ModeId = string;
@@ -70,29 +70,6 @@ export interface ArtifactStatus {
 	approvedAt?: string;
 }
 
-/** Phase 2 storage boundary; reviewedHash binds approval to the bytes actually shown to the user. */
-export interface TaskArtifactServiceContract {
-	containerPath(taskId: string): Promise<string>;
-	list(taskId: string): Promise<ArtifactStatus[]>;
-	read(taskId: string, relativePath: string): Promise<{ bytes: Uint8Array; status: ArtifactStatus }>;
-	write(taskId: string, relativePath: string, bytes: Uint8Array): Promise<ArtifactStatus>;
-	approveCurrentVersion(taskId: string, relativePath: string, reviewedHash: string): Promise<ArtifactStatus>;
-	revokeApproval(taskId: string, relativePath: string): Promise<ArtifactStatus>;
-}
-
-/** Optional adapter hooks: discovery/preparation are capabilities, not required for every adapter. */
-export interface AgentProfileCapabilities {
-	discoverModels?: (options: {
-		command: string;
-		env: Record<string, string>;
-		timeoutMs: number;
-	}) => Promise<Array<{ id: string; name?: string }>>;
-	prepareProfile?: (options: {
-		profile: ModeProfile;
-		preset: AgentPreset;
-	}) => Promise<{ command: string; env: Record<string, string> }>;
-}
-
 export interface AgentConversationContext {
 	taskId: string;
 	modeId: ModeId;
@@ -119,7 +96,7 @@ export type AgentSessionStatus = (typeof AGENT_SESSION_STATUS)[keyof typeof AGEN
  * (`[D2]`). The vocabulary mirrors AOE's hook status set plus the derived `starting`/`unknown`/
  * `stopped` values; there is deliberately no `Done`.
  */
-export const AGENT_ACTIVITY_STATUS = {
+const AGENT_ACTIVITY_STATUS = {
 	STARTING: "starting",
 	RUNNING: "running",
 	WAITING: "waiting",
@@ -133,7 +110,7 @@ export type AgentActivity = (typeof AGENT_ACTIVITY_STATUS)[keyof typeof AGENT_AC
 /**
  * The row indication shown for a task's active agent session, derived from activity events.
  */
-export const AGENT_INDICATION = {
+const AGENT_INDICATION = {
 	WORKING: "working",
 	PARKED: "parked",
 	WAITING: "waiting",
@@ -204,7 +181,7 @@ export interface SessionSettings {
 	autoResumeOnRestart?: boolean;
 }
 
-export const DEFAULT_SESSION_SETTINGS: SessionSettings = {
+const DEFAULT_SESSION_SETTINGS: SessionSettings = {
 	worktreePerTask: false,
 	yoloMode: false,
 	autoResumeOnRestart: true,

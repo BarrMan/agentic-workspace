@@ -7,7 +7,7 @@ import { LOCAL_TASK_LOOKUP_HINT } from "../../../model/task/task-path.ts";
 import type { Task } from "../../../model/types.ts";
 import type { TaskListRequest } from "./list-parse.ts";
 
-export async function resolveTaskListParent(core: Core, parentId: string, parentDisplayId: string): Promise<string> {
+async function resolveTaskListParent(core: Core, parentId: string, parentDisplayId: string): Promise<string> {
 	try {
 		const parent = await core.loadTaskById(parentId, { includeCrossBranch: false });
 		if (!parent) throw new Error(`Parent task ${parentDisplayId} not found. ${LOCAL_TASK_LOOKUP_HINT}`);

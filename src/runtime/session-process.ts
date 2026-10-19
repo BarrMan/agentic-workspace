@@ -21,7 +21,7 @@ import { type PreparedAgentLaunch, preflightAgentLaunch, prepareAgentLaunch } fr
 import { paneTitle } from "./tmux-pane-lookup.ts";
 
 const LAUNCH_PROBE_INTERVAL_MS = 25;
-export const LAUNCH_PROBE_DURATION_MS = 250;
+const LAUNCH_PROBE_DURATION_MS = 250;
 const TMUX_PLACEHOLDER_COMMAND = "exec sleep 2147483647";
 const PANE_OPTION_ROOT = "@agentic_workspace_root";
 const PANE_OPTION_TASK = "@agentic_workspace_task";
@@ -436,15 +436,6 @@ export class SessionProcess {
 		});
 	}
 
-	async promote(session: AgentSession): Promise<void> {
-		const pane = await this.findPaneHandle(session, { roles: [RETIRED_SESSION_ROLE] });
-		if (!pane) return;
-		await tmux(`Could not retag tmux session ${session.id}`, async () => {
-			await pane.setOption(PANE_OPTION_ROLE, LIVE_PREVIEW_ROLE);
-			await pane.setTitle(paneTitle(session.taskId, LIVE_PREVIEW_ROLE));
-		});
-	}
-
 	async kill(session: AgentSession): Promise<void> {
 		await this.killPane(session, [LIVE_PREVIEW_ROLE]);
 	}
@@ -613,10 +604,6 @@ export class SessionProcess {
 		} catch (error) {
 			throw fail(`Could not send input to session ${session.id}`, errorResult(error));
 		}
-	}
-
-	async output(session: AgentSession): Promise<string> {
-		return await Bun.file(session.outputPath).text();
 	}
 
 	async alive(session: AgentSession) {

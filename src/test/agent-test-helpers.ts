@@ -11,9 +11,8 @@ import type {
 	SessionIntent,
 	StatusHookInstallOptions,
 } from "../runtime/agents/agent.ts";
-import { shellQuote } from "../runtime/agents/agent.ts";
+import { filePrompt, shellQuote } from "../runtime/agents/agent.ts";
 import { registerAgent } from "../runtime/agents/agents.ts";
-import { filePrompt } from "../runtime/bootstrap.ts";
 import type { InstalledStatusHook } from "../runtime/status-hooks.ts";
 
 /**
@@ -25,7 +24,7 @@ import type { InstalledStatusHook } from "../runtime/status-hooks.ts";
  * built-in name because `AgentBootstrap` is now a closed set; every test file runs in its own
  * process, so overwriting a built-in there never leaks into another file.
  */
-export class PromptAgent implements Agent {
+class PromptAgent implements Agent {
 	readonly supported = true;
 	readonly hookBacked = false;
 	readonly prepareBeforeAsk = false;

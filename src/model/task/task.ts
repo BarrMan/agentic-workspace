@@ -202,15 +202,6 @@ export class Task {
 		this.task.modeApprovals = Object.keys(approvals).length ? approvals : undefined;
 	}
 
-	edit(changes: Partial<TaskRecord>): void {
-		if (!this.editable) throw new Error(`Task is not editable: ${this.id}`);
-		Object.assign(this.task, changes);
-	}
-
-	delete(): void {
-		/* Forgetting a task does not own runtime cleanup. */
-	}
-
 	serialize(): TaskRecord {
 		return structuredClone(this.task);
 	}
@@ -229,31 +220,4 @@ export class Task {
 /** Incarnation key: only fields fixed at reservation. Native/tmux provenance is mutable progress, not identity. */
 function sameIncarnation(left: AgentSession, right: Readonly<AgentSession>): boolean {
 	return left.id === right.id && taskIdsEqual(left.taskId, right.taskId) && left.createdAt === right.createdAt;
-}
-
-export function createTask(input: {
-	id: string;
-	title: string;
-	modes: Record<ModeId, ModeProfile>;
-	configuration: ResolvedAgentConfiguration;
-	createSession: TaskHydrationInput["createSession"];
-}): Task {
-	const now = new Date().toISOString();
-	const task: TaskRecord = {
-		id: input.id,
-		title: input.title,
-		status: "To Do",
-		assignee: [],
-		createdDate: now,
-		labels: [],
-		dependencies: [],
-	};
-	return new Task({
-		task,
-		modes: input.modes,
-		configuration: input.configuration,
-		sessionRecords: {},
-		selectedModeId: Object.keys(input.modes)[0] ?? "",
-		createSession: input.createSession,
-	});
 }

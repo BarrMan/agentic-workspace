@@ -4,6 +4,8 @@ import {
 	type Agent,
 	type AgentPreparation,
 	type AskCommandRequest,
+	appendArguments,
+	filePrompt,
 	type LaunchCommandRequest,
 	type LaunchOrigin,
 	type NativeIdentity,
@@ -14,7 +16,6 @@ import {
 	shellQuote,
 } from "../runtime/agents/agent.ts";
 import { builtInAgents, registerAgent } from "../runtime/agents/agents.ts";
-import { appendArguments, filePrompt } from "../runtime/bootstrap.ts";
 import type { InstalledStatusHook } from "../runtime/status-hooks.ts";
 
 /**
@@ -22,7 +23,7 @@ import type { InstalledStatusHook } from "../runtime/status-hooks.ts";
  * preset's exact placeholder handling and refusal messages so the affected unit tests keep their
  * original intent after the agent registry replaced the per-provider switch statements.
  */
-export class PromptInjectionAgent implements Agent {
+class PromptInjectionAgent implements Agent {
 	readonly supported = true;
 	readonly hookBacked = false;
 	readonly prepareBeforeAsk = false;

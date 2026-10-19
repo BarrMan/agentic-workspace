@@ -1,6 +1,5 @@
 import { realpath, stat } from "node:fs/promises";
 import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
-import { $ } from "bun";
 import { MILLISECONDS_PER_DAY } from "../../lib/time.ts";
 import { DEFAULT_DIRECTORIES } from "../../model/constants.ts";
 import type { AgenticWorkspaceConfig } from "../../model/types.ts";
@@ -113,25 +112,6 @@ export class GitOperations {
 		return await isGitRepository(cwd);
 	}
 
-	async addFile(filePath: string): Promise<void> {
-		const context = await this.getPathContext(filePath);
-		if (context) {
-			await this.execGit(["add", context.relativePath], { cwd: context.repoRoot });
-			return;
-		}
-		if (!(await this.isRepository())) {
-			return;
-		}
-
-		// Convert absolute paths to relative paths from project root to avoid Windows encoding issues
-		const relativePath = relative(this.projectRoot, filePath).replace(/\\/g, "/");
-		await this.execGit(["add", relativePath]);
-	}
-
-	async addFiles(filePaths: string[]): Promise<void> {
-		for (const filePath of filePaths) await this.addFile(filePath);
-	}
-
 	async commitChanges(message: string, repoRoot?: string | null): Promise<void> {
 		if (!(await this.isRepository(repoRoot ?? this.projectRoot))) {
 			return;
@@ -175,19 +155,6 @@ export class GitOperations {
 		if (!(await this.isRepository(repoRoot))) return null;
 		const relativePaths = await this.rebasePathsForRepo(filePaths, repoRoot);
 		return relativePaths.length > 0 ? { repoRoot, relativePaths } : null;
-	}
-
-	async getStatus(): Promise<string> {
-		if (!(await this.isRepository())) {
-			return "";
-		}
-		const { stdout } = await this.execGit(["status", "--porcelain"], { readOnly: true });
-		return stdout;
-	}
-
-	async isClean(): Promise<boolean> {
-		const status = await this.getStatus();
-		return status.trim() === "";
 	}
 
 	async getCurrentBranch(): Promise<string> {
@@ -326,49 +293,9 @@ export class GitOperations {
 		await this.execGit(["add", `${agenticWorkspaceDir}/`]);
 		return null;
 	}
-	async stageFileMove(fromPath: string, toPath: string): Promise<string | null> {
-		const toContext = await this.getPathContext(toPath);
-		const repoRoot = toContext?.repoRoot ?? this.projectRoot;
-		if (!(await this.isRepository(repoRoot))) {
-			return null;
-		}
-		const relativeFrom = await this.getRelativePathForRepo(fromPath, repoRoot);
-		const relativeTo = toContext?.relativePath ?? (await this.getRelativePathForRepo(toPath, repoRoot));
-
-		// Stage the deletion of the old file and addition of the new file
-		// Git will automatically detect this as a rename if the content is similar enough
-		try {
-			// First try to stage the removal of the old file (if it still exists)
-			await this.execGit(["add", "--all", relativeFrom ?? fromPath], { cwd: repoRoot });
-		} catch {
-			// If the old file doesn't exist, that's okay - it was already moved
-		}
-
-		// Always stage the new file location
-		await this.execGit(["add", relativeTo ?? toPath], { cwd: repoRoot });
-		return repoRoot === this.projectRoot ? null : repoRoot;
-	}
-
-	async listRemoteBranches(remote = "origin"): Promise<string[]> {
-		try {
-			// Fast-path: if no remotes, return empty
-			if (!(await this.hasAnyRemote())) return [];
-			const { stdout } = await this.execGit(["branch", "-r", "--format=%(refname:short)"], { readOnly: true });
-			return stdout
-				.split("\n")
-				.map((l) => l.trim())
-				.filter(Boolean)
-				.filter((branch) => branch.startsWith(`${remote}/`))
-				.map((branch) => branch.substring(`${remote}/`.length));
-		} catch {
-			// If remote doesn't exist or other error, return empty array
-			return [];
-		}
-	}
-
 	/**
 	 * List remote branches that have been active within the specified days
-	 * Much faster than listRemoteBranches for filtering old branches
+	 * Much faster than listing all remote branches for filtering old branches
 	 */
 	async listRecentRemoteBranches(daysAgo: number, remote = "origin"): Promise<string[]> {
 		try {
@@ -556,43 +483,6 @@ export class GitOperations {
 		}
 		const { stdout } = await this.execGit(branchLogArgs(ref, dir, since), { readOnly: true });
 		return parseBranchModificationLog(stdout);
-	}
-
-	async getFileLastModifiedBranch(filePath: string): Promise<string | null> {
-		if (!(await this.isRepository())) {
-			return null;
-		}
-		try {
-			// Get the hash of the last commit that touched the file
-			const { stdout: commitHash } = await this.execGit(["log", "-1", "--format=%H", "--", filePath], {
-				readOnly: true,
-			});
-			if (!commitHash) return null;
-
-			// Find all branches that contain this commit
-			const { stdout: branches } = await this.execGit([
-				"branch",
-				"-a",
-				"--contains",
-				commitHash.trim(),
-				"--format=%(refname:short)",
-			]);
-
-			if (!branches) return "main"; // Default to main if no specific branch found
-
-			// Prefer non-remote branches and 'main' or 'master'
-			const branchList = branches
-				.split("\n")
-				.map((b) => b.trim())
-				.filter(Boolean);
-			const mainBranch = branchList.find((b) => b === "main" || b === "master");
-			if (mainBranch) return mainBranch;
-
-			const nonRemote = branchList.find((b) => !b.startsWith("remotes/"));
-			return nonRemote || branchList[0] || "main";
-		} catch {
-			return null;
-		}
 	}
 
 	private async execGit(
@@ -790,13 +680,5 @@ export async function isGitRepository(projectRoot: string): Promise<boolean> {
 		return (await subprocess.exited) === 0;
 	} catch {
 		return false;
-	}
-}
-
-export async function initializeGitRepository(projectRoot: string): Promise<void> {
-	try {
-		await $`git init`.cwd(projectRoot).quiet();
-	} catch (error) {
-		throw new Error(`Failed to initialize git repository: ${error}`);
 	}
 }

@@ -2,12 +2,13 @@ import { randomUUID } from "node:crypto";
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { ModeProfile } from "../../model/session/types.ts";
-import { appendArguments, filePrompt } from "../bootstrap.ts";
 import type { InstalledStatusHook } from "../status-hooks.ts";
 import {
 	type Agent,
 	type AgentPreparation,
 	type AskCommandRequest,
+	appendArguments,
+	filePrompt,
 	type LaunchCommandRequest,
 	type LaunchOrigin,
 	type NativeIdentity,

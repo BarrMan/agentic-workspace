@@ -78,7 +78,7 @@ const sessionSettingsSchema = z.looseObject(
 	{ error: "sessions must be an object." },
 );
 
-export const ModeCatalogSchema = z
+const ModeCatalogSchema = z
 	.unknown()
 	.superRefine((value, ctx) => {
 		if (!value || typeof value !== "object" || Array.isArray(value)) {

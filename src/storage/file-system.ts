@@ -111,7 +111,7 @@ function sanitizeLockKey(value: string): string {
 	);
 }
 
-export function isCreateLockError(error: unknown): error is Error {
+function isCreateLockError(error: unknown): error is Error {
 	return isLockError(error, CREATE_LOCK_ERROR_NAME, CREATE_LOCK_ERROR_CODE);
 }
 
@@ -201,14 +201,6 @@ export class FileSystem {
 	get archiveTasksDir(): string {
 		return join(this.resolvedAgenticWorkspaceDir, DEFAULT_DIRECTORIES.ARCHIVE_TASKS);
 	}
-	get archiveMilestonesDir(): string {
-		return join(this.resolvedAgenticWorkspaceDir, DEFAULT_DIRECTORIES.ARCHIVE_MILESTONES);
-	}
-
-	get milestonesDir(): string {
-		return join(this.resolvedAgenticWorkspaceDir, DEFAULT_DIRECTORIES.MILESTONES);
-	}
-
 	get configFilePath(): string {
 		return this.resolvedConfigPath;
 	}
@@ -305,21 +297,6 @@ export class FileSystem {
 
 	private invalidateTaskParseCache(): void {
 		this.taskRepository.invalidate();
-	}
-
-	resolveAgenticWorkspaceDirectoryInfo() {
-		if (this.resolutionFrozen)
-			return {
-				projectRoot: this.projectRoot,
-				agenticWorkspaceDir: this.resolvedAgenticWorkspaceDirName,
-				agenticWorkspacePath: this.resolvedAgenticWorkspaceDir,
-				source: null,
-				configPath: this.resolvedConfigPath,
-				configSource: this.configSource,
-				rootConfigPath: join(this.agenticWorkspaceResolutionRoot, DEFAULT_FILES.ROOT_CONFIG),
-				rootConfigExists: this.configSource === "root",
-			};
-		return resolveAgenticWorkspaceDirectory(this.agenticWorkspaceResolutionRoot);
 	}
 
 	private async getTasksDir(): Promise<string> {
@@ -1395,10 +1372,6 @@ export class FileSystem {
 
 	async getMilestoneFilePath(identifier: string): Promise<string | null> {
 		return this.milestones.filePath(identifier);
-	}
-
-	async loadMilestone(id: string): Promise<Milestone | null> {
-		return this.milestones.load(id);
 	}
 
 	async createMilestone(title: string, description?: string, dueDate?: string): Promise<Milestone> {

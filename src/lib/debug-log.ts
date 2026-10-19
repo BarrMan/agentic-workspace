@@ -22,9 +22,6 @@
 
 import { appendFileSync } from "node:fs";
 
-/** Subsystem tags used at call sites. Kept open — a bare string is a valid subsystem. */
-export type DebugSubsystem = "http" | "tmux" | "session" | "store" | "worker" | "view" | "render" | "server";
-
 /** A key/value tail. Values must be cheap to stringify: primitives, small numbers, short strings. */
 export type DebugFields = Record<string, string | number | boolean | undefined | null>;
 
@@ -111,11 +108,6 @@ export function isEnabled(subsystem: string): boolean {
 	return resolved.all || resolved.subsystems.has(subsystem);
 }
 
-/** True when the extra payload level is on. Check this before doing expensive payload building. */
-export function isVerbose(): boolean {
-	return (config ?? resolve()).verbose;
-}
-
 /** Format a key/value tail. Only ever called after `isEnabled` has passed. */
 function formatFields(fields: DebugFields | undefined): string {
 	if (!fields) return "";
@@ -166,40 +158,4 @@ const counters = {
 /** Increment a counter. Called on paths that are hot even when logging is off. */
 export function count(kind: keyof typeof counters, by = 1): void {
 	counters[kind] += by;
-}
-
-/** A point-in-time snapshot. Cheap; safe to call from a request handler. */
-export function snapshot(): Readonly<Record<keyof typeof counters, number>> {
-	return { ...counters };
-}
-
-/** The cumulative tmux invocation count — the single number that proves per-switch tmux work. */
-export function tmuxCount(): number {
-	return counters.tmux;
-}
-
-/**
- * Time a tmux invocation and log it. Used at the single tmux choke point.
- *
- * Reads the clock unconditionally (two `Date.now()` calls is far below the cost of the tmux
- * subprocess it is measuring) so the always-on counter is always accurate; formatting and logging
- * stay behind the gate.
- */
-export function timeTmux(
-	site: string,
-	argv: readonly string[],
-	startedAt: number,
-	exitCode: number,
-	bytes: number,
-): void {
-	count("tmux");
-	const ms = Date.now() - startedAt;
-	count("tmuxMs", ms);
-	if (!isEnabled("tmux")) return;
-	debug("tmux", site, { cmd: argv[0] ?? "?", argc: argv.length - 1, exit: exitCode, bytes, ms });
-}
-
-/** Reset all counters. Test-only helper. */
-export function resetCounters(): void {
-	for (const key of Object.keys(counters) as (keyof typeof counters)[]) counters[key] = 0;
 }

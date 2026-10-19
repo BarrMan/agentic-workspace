@@ -163,6 +163,19 @@ export function shellQuote(value: string): string {
 	return `'${value.replaceAll("'", "'\"'\"'")}'`;
 }
 
+export function filePrompt(bootstrapPath: string): string {
+	return `"$(cat -- ${shellQuote(bootstrapPath)})"`;
+}
+
+export function appendArguments(command: string, arguments_: string): string {
+	if (/[|;&\n]/.test(command)) {
+		throw new Error(
+			"Built-in agent commands must be an executable with flags, not a shell pipeline or compound command.",
+		);
+	}
+	return `${command} ${arguments_}`;
+}
+
 /** Shared readiness receipt paths for adapters whose expected value is the native session ID. */
 export function readinessReceipts(
 	intent: SessionIntent,

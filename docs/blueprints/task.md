@@ -126,9 +126,26 @@ Task.serializeSessions() {
 }
 ```
 
+## Corpus Operations
+
+`Task` owns one record. Cross-record rules belong to the model classes that operate on a loaded corpus:
+
+```ts
+TaskOrdering.compareIds(a, b)                 // ID, ordinal, and priority ordering
+collection = new TaskCollection(tasks)
+collection.directSubtasks(task)               // parent and direct-subtask relationships
+collection.subtaskProgress(task, statuses)
+TaskSearchIndex.apply(tasks, filter)          // shared search and filter predicates
+validator = new DependencyValidator(store)
+await validator.validate(dependencies, target) // dependency existence and cycle rules
+```
+
+Searchable-field extraction, task-ID variants, status-set matching, and modified-file matching are private to `TaskSearchIndex`; they are not separate model surfaces. There is no separate statistics or status-ordering module.
+
 ## Invariants
 
 - Task model mutations are synchronous and free of I/O.
+- Status is the stored display string. Comparison uses `statusComparisonKey`; canonical lookup resolves against the configured status list; terminal status is derived from that list. A single status is not a class.
 - Task never starts or stops execution; it creates Session records and receives Session operations from Controller.
 - Selection is Task and Controller state, not a preference.
 - A nonempty history's active ID names a retained member; an empty history has no active ID.

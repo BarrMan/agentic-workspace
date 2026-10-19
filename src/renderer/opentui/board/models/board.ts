@@ -52,21 +52,8 @@ export class Board {
 		return operation ? { ...operation, selectedIds: [...operation.selectedIds] } : null;
 	}
 
-	/** A pending persistence action freezes move interactions until its result is reconciled. */
-	get isWritePending(): boolean {
-		return this.writePending;
-	}
-
 	get hideEmptyColumns(): boolean {
 		return this.hideEmpty;
-	}
-
-	get tasksSnapshot(): Task[] {
-		return [...this.tasks];
-	}
-
-	get statusesSnapshot(): string[] {
-		return [...this.statuses];
 	}
 
 	get lanes(): Lane[] {
@@ -103,25 +90,6 @@ export class Board {
 			this.moveOperation = null;
 		}
 		this.restoreSelection();
-	}
-
-	/** Merge persisted task snapshots into the latest unfiltered corpus, preserving its order. */
-	upsert(tasks: readonly Task[]): void {
-		const changed = new Map(tasks.map((task) => [task.id, task]));
-		const known = new Set(this.tasks.map((task) => task.id));
-		this.tasks = [
-			...this.tasks.map((task) => changed.get(task.id) ?? task),
-			...tasks.filter((task) => !known.has(task.id)),
-		];
-		this.restoreSelection();
-	}
-
-	beginWrite(): (() => void) | null {
-		if (this.writePending) return null;
-		this.writePending = true;
-		return () => {
-			this.writePending = false;
-		};
 	}
 
 	setHideEmptyColumns(value: boolean): void {

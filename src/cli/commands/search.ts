@@ -10,6 +10,7 @@ import {
 	type TaskSearchResult,
 } from "../../model/types.ts";
 import { printJson, type SearchResultInput, searchJson } from "../../renderer/formatters/json-output.ts";
+import { createMultiValueAccumulator } from "../features/task/edit-fields.ts";
 import { type ListWindow, type ListWindowOptions, printListWindow, selectListWindow } from "../list-window.ts";
 import type { ReadOutputMode, ReadOutputOptions } from "../read-output-mode.ts";
 import {
@@ -298,11 +299,4 @@ function formatScore(score: number | null): string {
 
 function isTaskSearchResult(result: SearchResult): result is TaskSearchResult {
 	return result.type === "task";
-}
-
-function createMultiValueAccumulator() {
-	return (value: string, previous: string | string[]) => [
-		...(Array.isArray(previous) ? previous : previous ? [previous] : []),
-		value,
-	];
 }

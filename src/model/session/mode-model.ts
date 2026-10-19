@@ -10,7 +10,7 @@ export interface CurrentModelDependencies {
 	readSessions?: (taskId: string) => Promise<Awaited<ReturnType<SessionStore["read"]>>>;
 }
 
-export async function resolveCallingSession(
+async function resolveCallingSession(
 	core: Core,
 	dependencies: CurrentModelDependencies = {},
 ): Promise<{ modeId: string; session: AgentSession }> {

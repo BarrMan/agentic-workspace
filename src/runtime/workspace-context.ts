@@ -11,7 +11,7 @@ import { createSessionTransport } from "./session-process.ts";
 /** The environment variable a workspace sets in its agent panes and the CLI reads back. */
 export const WORKSPACE_CONTEXT_ENV = "AGENTIC_WORKSPACE_WORKSPACE_CONTEXT";
 /** Current context protocol; history remains in its existing v2 format. */
-export const WORKSPACE_CONTEXT_VERSION = 2;
+const WORKSPACE_CONTEXT_VERSION = 2;
 
 export interface WorkspaceContext {
 	v: typeof WORKSPACE_CONTEXT_VERSION;
@@ -167,7 +167,7 @@ export function parseWorkspaceContext(raw: string): InheritedWorkspaceContext {
 }
 
 /** Only absence returns undefined. Present context is parsed synchronously without probes or writes. */
-export function readInheritedWorkspaceContext(
+function readInheritedWorkspaceContext(
 	env: Record<string, string | undefined> = process.env,
 ): InheritedWorkspaceContext | undefined {
 	const raw = env[WORKSPACE_CONTEXT_ENV];

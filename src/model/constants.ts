@@ -79,6 +79,3 @@ export const DEFAULT_FRESH_INIT_POLICY = {
 	maxColumnWidth: 20,
 	taskResolutionStrategy: "most_recent",
 } as const;
-
-/** Runtime fallback retained for config files that omit a resolution strategy. */
-export const DEFAULT_RUNTIME_TASK_RESOLUTION_STRATEGY = "most_progressed";

@@ -13,13 +13,6 @@ export interface DependencyStore {
 	loadTask(taskId: string): Promise<Task | null>;
 }
 
-export interface DependencyDefects {
-	/** Tasks that list themselves as a dependency, with the spelling the file records. */
-	selfDependencies: Array<{ taskId: string; dependency: string }>;
-	/** Each detected cycle as a dependency path, opening and closing on the same task. */
-	cycles: string[][];
-}
-
 interface DependencyCorpus {
 	tasks: Task[];
 	drafts: Task[];
@@ -99,28 +92,6 @@ export class DependencyValidator {
 		return { valid, invalid };
 	}
 
-	/**
-	 * Report the self-dependencies and dependency cycles already stored in the project. Validation
-	 * refuses to create these, so any found here predate it; the report names them for human repair
-	 * and changes nothing.
-	 *
-	 * Every record that can carry dependencies is checked as a root against the same corpus
-	 * validation resolves against, reusing the shared graph model per root. Each root contributes its
-	 * shortest cycle, and cycles are deduplicated as rotations of one member sequence, so one cycle is
-	 * one finding while distinct cycles sharing a task are all reported.
-	 */
-	async findDefects(): Promise<DependencyDefects> {
-		const corpus = await this.loadCorpus();
-		const graphCorpus = dependencyGraphCorpus(corpus);
-		const selfDependencies: DependencyDefects["selfDependencies"] = [];
-		const cycles: string[][] = [];
-		const seen = new Set<string>();
-		for (const task of [...corpus.tasks, ...corpus.drafts, ...corpus.completed]) {
-			this.collectDefects(task, graphCorpus, selfDependencies, cycles, seen);
-		}
-		return { selfDependencies, cycles };
-	}
-
 	private async validateInput(
 		dependency: string,
 		known: Task[],
@@ -151,23 +122,6 @@ export class DependencyValidator {
 		]);
 		return { tasks, drafts, completed, archived };
 	}
-
-	private collectDefects(
-		task: Task,
-		graphCorpus: { tasks: Task[]; completedTasks: Task[] },
-		selfDependencies: DependencyDefects["selfDependencies"],
-		cycles: string[][],
-		seen: Set<string>,
-	): void {
-		const dependencies = task.dependencies ?? [];
-		for (const dependency of dependencies)
-			if (taskIdsEqual(dependency, task.id)) selfDependencies.push({ taskId: task.id, dependency });
-		if (dependencies.length === 0) return;
-		const cycle = findCycleThroughRoot(buildDependencyGraph(task, graphCorpus));
-		if (!cycle || seen.has(cycleIdentity(cycle))) return;
-		seen.add(cycleIdentity(cycle));
-		cycles.push(cycle);
-	}
 }
 
 function resolveUniqueDependency(dependency: string, matches: Task[]): string | null {
@@ -192,10 +146,4 @@ function throwSelfDependency(target: Task, dependency: string): never {
 
 function dependencyGraphCorpus(corpus: DependencyCorpus): { tasks: Task[]; completedTasks: Task[] } {
 	return { tasks: [...corpus.tasks, ...corpus.drafts, ...corpus.archived], completedTasks: corpus.completed };
-}
-
-function cycleIdentity(cycle: string[]): string {
-	const members = cycle.slice(0, -1);
-	const start = members.reduce((lowest, member, index) => (member < (members[lowest] as string) ? index : lowest), 0);
-	return [...members.slice(start), ...members.slice(0, start)].join("\0");
 }

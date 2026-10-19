@@ -23,14 +23,14 @@ Controller is UI-agnostic: no keybindings, focus, layout, or terminal backend. O
 
 | Directory | Component | Owns |
 |---|---|---|
-| `model/` | Models | Task and Session records and behavior, identity, readiness, dependency graph, ordering, filters, configuration types, domain constants, and domain errors. No I/O. |
+| `model/` | Models | Task and Session records and behavior, identity, readiness, dependency graph and validation, ordering, search and filters, configuration types, domain constants, and domain errors. No I/O. |
 | `storage/` | Storage | Model-typed persistence, record codecs and schema validation, repositories, watchers, session/group/view state, and storage errors. |
 | `filesystem/` | Storage substrate | Filesystem operations, path resolution, atomic writes, locks, and git worktree access. |
 | `controller/` | Controller | The operation boundary and application workflows: task lifecycle, creation, mutation, queries, search, and initialization. |
 | `runtime/` | SessionRuntime | Harness adapters, agent presets, session process and tmux management, activity/status, and workspace context. |
-| `renderer/` | Renderer | OpenTUI screens, board, presentation formatters, and README/board rendering. |
+| `renderer/` | Renderer | OpenTUI screens, board, and presentation formatters. |
 | `cli/` | CLI | Command registration, feature modules, completions, and CLI-only parsing and output. |
-| `lib/` | none | Generic, domain-free helpers such as dates, slugs, process capture, and debug logging. It does not import application layers. |
+| `lib/` | none | Generic, domain-free helpers such as dates, slugs, POSIX path strings, regex escaping, comparison keys, process capture, and debug logging. It does not import application layers. |
 | `test/` | none | Shared fixtures and cross-cutting contract/integration tests. Focused tests sit beside their owner. |
 | `types/` | none | Ambient `.d.ts` declarations only. |
 

@@ -65,7 +65,7 @@ export interface SessionEvent {
 	readonly record: Immutable<AgentSession>;
 }
 
-export type Unsubscribe = () => void;
+type Unsubscribe = () => void;
 
 export class Session {
 	readonly id: string;
@@ -135,22 +135,6 @@ export class Session {
 		await this.emitUpdate(publication, "stop", record);
 	}
 
-	bindExecution(modeId: ModeId, execution: RunningExecution): void {
-		if (modeId !== this.modeId) throw new Error(`Session ${this.id} belongs to another mode`);
-		this.installExecution(execution);
-	}
-
-	async activate(publication: SessionPublication): Promise<void> {
-		const previous = this.currentRecord;
-		const record = {
-			...previous,
-			status: AGENT_SESSION_STATUS.RUNNING,
-		} as AgentSession;
-		delete record.error;
-		delete record.endedAt;
-		await this.emitUpdate(publication, "activate", record);
-	}
-
 	async park(publication: SessionPublication): Promise<void> {
 		const previous = this.currentRecord;
 		const record = {
@@ -176,16 +160,6 @@ export class Session {
 		delete record.ownerPid;
 		if (error === undefined) delete record.error;
 		await this.emitUpdate(publication, "finish", record);
-	}
-
-	async sendKey(key: string): Promise<void> {
-		if (!this.currentExecution) throw new Error(`Session ${this.id} has no running execution`);
-		await this.currentExecution.sendKey(key);
-	}
-
-	async inject(text: string): Promise<void> {
-		if (!this.currentExecution) throw new Error(`Session ${this.id} has no running execution`);
-		await this.currentExecution.input(text);
 	}
 
 	subscribe(listener: (event: SessionEvent) => void): Unsubscribe {

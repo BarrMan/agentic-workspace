@@ -188,21 +188,6 @@ export class TaskIdentityIndex {
 		}
 	}
 
-	withWorkingCopyCorpus(activeTasks: Task[], completedTasks: Task[]): TaskIdentityIndex {
-		const records = this.records.filter((record) => !record.workingCopy);
-		for (const task of activeTasks) {
-			records.push(workingCopyTaskIdentityRecord(task, "task", task.filePath ?? task.id));
-		}
-		for (const task of completedTasks) {
-			records.push(completedTaskIdentityRecord(task, task.filePath ?? task.id));
-		}
-		return new TaskIdentityIndex(records, this.context, this.statuses, this.resolutionStrategy);
-	}
-
-	withRecord(record: TaskIdentityRecord): TaskIdentityIndex {
-		return new TaskIdentityIndex([...this.records, record], this.context, this.statuses, this.resolutionStrategy);
-	}
-
 	private getGroups(taskId: string): TaskIdentityGroup[] {
 		return [...this.groups.values()].filter((group) => taskIdsEqual(group.id, taskId));
 	}

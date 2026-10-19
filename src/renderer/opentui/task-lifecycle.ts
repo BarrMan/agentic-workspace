@@ -4,7 +4,7 @@ import { formatDependencyCleanupMessage } from "../../model/task/dependency-grap
 import { getTerminalStatus, isTerminalStatus } from "../../model/task/terminal-status.ts";
 import type { Task } from "../../model/types.ts";
 
-export type CompleteTaskFromTuiResult =
+type CompleteTaskFromTuiResult =
 	| { success: true }
 	| { success: false; reason: "not-terminal"; terminalStatus: string }
 	| { success: false; reason: "failed" };
@@ -13,16 +13,16 @@ export type CompleteTaskFromTuiResult =
  * Transient TUI line for a finished archive: the confirmation, plus the shared cleanup report
  * when other records lost a reference to the archived ID.
  */
-export function formatTaskArchivedMessage(taskId: string, cleanedTaskIds: readonly string[]): string {
+function formatTaskArchivedMessage(taskId: string, cleanedTaskIds: readonly string[]): string {
 	const cleanup = formatDependencyCleanupMessage(taskId, cleanedTaskIds);
 	return `Archived ${taskId}${cleanup ? `. ${cleanup}` : ""}`;
 }
 
-export function formatTaskCompletionBlockedMessage(taskId: string, terminalStatus: string): string {
+function formatTaskCompletionBlockedMessage(taskId: string, terminalStatus: string): string {
 	return `Task ${taskId} is not ${terminalStatus}. Set status to "${terminalStatus}" before completing it.`;
 }
 
-export async function completeTaskFromTui(core: Core, task: Task): Promise<CompleteTaskFromTuiResult> {
+async function completeTaskFromTui(core: Core, task: Task): Promise<CompleteTaskFromTuiResult> {
 	const config = await core.getStoredConfig();
 	const statuses = config?.statuses ?? [...DEFAULT_STATUSES];
 	const terminalStatus = getTerminalStatus(statuses) ?? "Done";

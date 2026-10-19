@@ -64,10 +64,6 @@ export class ProjectTaskGraph {
 		};
 	}
 
-	getTaskListItem(task: Task): TaskListItem {
-		return this.prepare(task, this.readinessGraph);
-	}
-
 	resolveParentTask(taskId: string): Task {
 		const resolution = this.identityIndex?.resolveForRead(taskId);
 		if (resolution?.status === "ambiguous") throw new AmbiguousTaskIdError(taskId.toUpperCase(), resolution.candidates);

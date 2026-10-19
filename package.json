@@ -53,7 +53,7 @@
       "biome check --write --files-ignore-unknown=true"
     ],
     "*.json": [
-      "biome check --write --files-ignore-unknown=true"
+      "biome check --write --files-ignore-unknown=true --no-errors-on-unmatched"
     ],
     "src/**/*.{ts,tsx,js}": [
       "biome check --write --files-ignore-unknown=true"

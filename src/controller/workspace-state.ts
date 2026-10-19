@@ -135,9 +135,4 @@ export class WorkspaceStateService {
 	removeTaskSessions(taskId: string): Promise<void> {
 		return this.sessions.purge(taskId);
 	}
-
-	/** Forget associations for Core task deletion; caller holds its task/reference/admission boundary. */
-	forgetTaskSessions(taskId: string): Promise<void> {
-		return this.sessions.forgetTaskSessions(taskId);
-	}
 }

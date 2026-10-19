@@ -174,7 +174,7 @@ export function searchJson(results: SearchResultInput[], page?: ListPage<unknown
 	return { schemaVersion: 1, kind: "search" as const, results: publicResults, ...cutListJson(page) };
 }
 
-export function formatJson(value: unknown): string {
+function formatJson(value: unknown): string {
 	return `${JSON.stringify(value, null, 2)}\n`;
 }
 

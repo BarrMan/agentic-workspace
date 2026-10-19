@@ -1,6 +1,61 @@
+import { statusComparisonKey } from "../../../../model/task/status.ts";
 import { TaskOrdering } from "../../../../model/task/task-ordering.ts";
 import type { Task } from "../../../../model/types.ts";
-import { buildKanbanStatusGroups } from "../../../board.ts";
+
+function normalizeConfiguredStatuses(statuses: string[]): { ordered: string[]; canonicalByKey: Map<string, string> } {
+	const canonicalByKey = new Map<string, string>();
+	const ordered: string[] = [];
+	const seen = new Set<string>();
+
+	for (const status of statuses ?? []) {
+		if (typeof status !== "string") continue;
+		const trimmed = status.trim();
+		if (!trimmed) continue;
+		const key = statusComparisonKey(trimmed);
+		if (!canonicalByKey.has(key)) canonicalByKey.set(key, trimmed);
+		if (seen.has(key)) continue;
+		ordered.push(trimmed);
+		seen.add(key);
+	}
+
+	return { ordered, canonicalByKey };
+}
+
+function buildKanbanStatusGroups(
+	tasks: Task[],
+	statuses: string[],
+): { orderedStatuses: string[]; groupedTasks: Map<string, Task[]> } {
+	const { ordered: orderedConfiguredStatuses, canonicalByKey } = normalizeConfiguredStatuses(statuses);
+
+	const groupedTasks = new Map<string, Task[]>();
+	for (const status of orderedConfiguredStatuses) {
+		groupedTasks.set(status, []);
+	}
+
+	for (const task of tasks) {
+		const raw = (task.status ?? "").trim();
+		if (!raw) continue;
+		const key = statusComparisonKey(raw);
+		const canonical = canonicalByKey.get(key) ?? raw;
+		if (!canonicalByKey.has(key)) canonicalByKey.set(key, canonical);
+		if (!groupedTasks.has(canonical)) {
+			groupedTasks.set(canonical, []);
+		}
+		groupedTasks.get(canonical)?.push(task);
+	}
+
+	const orderedStatuses = [...orderedConfiguredStatuses];
+	const seen = new Set(orderedStatuses.map(statusComparisonKey));
+
+	for (const status of groupedTasks.keys()) {
+		const key = statusComparisonKey(status);
+		if (seen.has(key)) continue;
+		orderedStatuses.push(status);
+		seen.add(key);
+	}
+
+	return { orderedStatuses, groupedTasks };
+}
 
 export type ColumnData = {
 	status: string;

@@ -338,13 +338,6 @@ export class AgentSessionService {
 		return new Map(states.map((state) => [state.taskId, { ...state, sessions: allModeSessions(state) }]));
 	}
 
-	async reset(taskId: string): Promise<void> {
-		await withTaskSessionAdmission(this.core, taskId, async (task) => {
-			this.assertNoLiveSessions(task.id, await this.store.read(task.id));
-			await this.store.reset(task.id);
-		});
-	}
-
 	async purge(taskId: string): Promise<void> {
 		const task = await this.core.loadTaskById(taskId, { includeCrossBranch: false });
 		if (task)

@@ -18,7 +18,7 @@ import { BunRunner, missingPaneStderr, SessionProcess } from "./session-process.
 import { sessionActivityDir } from "./status-hooks.ts";
 import { workspaceContextInto } from "./workspace-context.ts";
 
-export type Unsubscribe = () => void;
+type Unsubscribe = () => void;
 
 export interface SessionLaunchContext {
 	readonly taskId: string;
@@ -74,19 +74,6 @@ export interface HarnessProvider {
 }
 
 export const PROVIDER_READINESS_DEADLINE_MS = 10_000;
-
-export interface ProviderReadinessFailureDiagnostic {
-	readonly provider: string;
-	readonly intent: "new" | "resume";
-	readonly workspaceTaskId: string;
-	readonly expectedNativeId: string | undefined;
-	readonly stage: {
-		readonly name: "initialized" | "prompt-accepted" | "resume-initialized";
-		readonly outcome: "missing" | "mismatched";
-	};
-	readonly elapsedMs: number;
-	readonly receiptPath: string;
-}
 
 export type ReadinessReceiptExpectation = ReadinessExpectation;
 

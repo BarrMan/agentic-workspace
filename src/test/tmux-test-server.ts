@@ -13,8 +13,6 @@ import { join } from "node:path";
 import { Server } from "libtmux";
 import { assertIsolatedSocket, killTmuxSocketPaneGroups, TEST_TMUX_SOCKET_PREFIX } from "./tmux-pane-groups.ts";
 
-export { assertIsolatedSocket, TEST_TMUX_SOCKET_PREFIX } from "./tmux-pane-groups.ts";
-
 /** Resolve the socket path using tmux's platform default or configured temporary directory. */
 export function tmuxSocketPath(socket: string): string | undefined {
 	const uid = process.getuid?.();
@@ -39,14 +37,14 @@ export function isolatedTmuxServer(socket: string): Server {
 }
 
 /** The argv a test teardown uses. Exposed so the guard test can assert the `-L` is always present. */
-export function killTmuxServerArgv(socket: string, tmuxBinary = Bun.which("tmux") as string): string[] {
+function killTmuxServerArgv(socket: string, tmuxBinary = Bun.which("tmux") as string): string[] {
 	assertIsolatedSocket(socket);
 	if (!tmuxBinary) throw new Error("tmux is not installed; cannot manage a test tmux server.");
 	return [tmuxBinary, "-f", "/dev/null", "-L", socket, "kill-server"];
 }
 
 /** Remove the socket file tmux leaves behind after `kill-server`. */
-export async function removeTmuxSocket(socket: string): Promise<void> {
+async function removeTmuxSocket(socket: string): Promise<void> {
 	assertIsolatedSocket(socket);
 	const socketPath = tmuxSocketPath(socket);
 	if (!socketPath) return;
@@ -66,15 +64,4 @@ export async function killTmuxServer(socket: string): Promise<void> {
 	const child = Bun.spawn(killTmuxServerArgv(socket), { stdout: "ignore", stderr: "ignore" });
 	await child.exited.catch(() => undefined);
 	await removeTmuxSocket(socket);
-}
-
-/**
- * Synchronous teardown for process-exit hooks, where only one tick is available: reap the pane
- * groups, then the server. The socket file is left behind because the exit path cannot await.
- */
-export function killTmuxServerSync(socket: string): void {
-	killTmuxSocketPaneGroups(socket);
-	const tmuxBinary = Bun.which("tmux") as string | undefined;
-	if (!tmuxBinary) return;
-	Bun.spawnSync(killTmuxServerArgv(socket, tmuxBinary), { stdout: "ignore", stderr: "ignore" });
 }

@@ -2,11 +2,6 @@ import { BoxRenderable, type CliRenderer, TextAttributes, TextRenderable } from 
 import type { ArtifactStatus } from "../../model/session/types.ts";
 import type { TaskArtifactEntry } from "../../storage/task-artifact-repository.ts";
 
-export type TaskArtifactReview = TaskArtifactEntry & {
-	/** Exact bytes represented by the displayed review. Binary entries omit this. */
-	text?: string;
-};
-
 export interface TaskArtifactViewApi {
 	list(taskId: string): Promise<TaskArtifactEntry[]>;
 	read(taskId: string, path: string): Promise<{ bytes: Uint8Array; status: ArtifactStatus }>;

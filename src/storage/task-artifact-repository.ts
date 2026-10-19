@@ -14,7 +14,7 @@ const TASK_RECORD = "task.md";
 const HASH = /^[a-f0-9]{64}$/;
 const MAX_ARTIFACT_INSPECTION_BYTES = 128 * 1024;
 type ArtifactLockOwner = { token?: string; pid?: number };
-export const TASK_CONTAINER_LOCATIONS = ["tasks", "drafts", "completed", "archive/tasks", "archive/drafts"] as const;
+const TASK_CONTAINER_LOCATIONS = ["tasks", "drafts", "completed", "archive/tasks", "archive/drafts"] as const;
 export type TaskContainerLocation = (typeof TASK_CONTAINER_LOCATIONS)[number];
 
 export function validateTaskArtifactPath(path: string): string {
@@ -225,19 +225,6 @@ export class TaskArtifactRepository {
 		}
 	}
 
-	async pathsForContext(
-		taskId: string,
-		declared: readonly string[] = [],
-		location?: TaskContainerLocation,
-	): Promise<{ taskDirectory: string; taskRecord: string; artifacts: string[] }> {
-		const taskDirectory = await this.containerPath(taskId, location);
-		return {
-			taskDirectory,
-			taskRecord: resolve(taskDirectory, TASK_RECORD),
-			artifacts: declared.map((path) => resolve(taskDirectory, "artifacts", validateTaskArtifactPath(path))),
-		};
-	}
-
 	private async artifactsDirectory(container: string, create = false): Promise<string> {
 		const directory = resolve(container, "artifacts");
 		try {
@@ -445,16 +432,6 @@ export class TaskArtifactRepository {
 		};
 		await visit(directory, "");
 		return results.sort((a, b) => a.path.localeCompare(b.path));
-	}
-
-	async searchableText(taskId: string, location?: TaskContainerLocation): Promise<string> {
-		const textArtifacts = (await this.list(taskId, location)).filter(
-			(entry) => entry.type === "text" && /\.(?:md|markdown|txt|text)$/i.test(entry.path),
-		);
-		const contents = await Promise.all(
-			textArtifacts.map(async ({ path }) => (await this.read(taskId, path, location)).bytes),
-		);
-		return contents.map((bytes) => new TextDecoder("utf-8", { fatal: true }).decode(bytes)).join("\n\n");
 	}
 
 	async read(

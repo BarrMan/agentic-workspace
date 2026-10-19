@@ -1,5 +1,4 @@
 export const TASK_SORT_FIELDS = ["priority", "id", "ordinal", "newest"];
-export const TASK_SORT_FIELD_LIST = TASK_SORT_FIELDS.join(", ");
 
 export function printMissingRequiredArgument(argumentName: string): void {
 	console.error(`error: missing required argument '${argumentName}'`);

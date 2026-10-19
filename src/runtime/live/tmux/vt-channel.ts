@@ -144,14 +144,7 @@ const buildUnsetOptionArgv = (target: string, name: string): readonly string[] =
 ];
 
 /** Single-quote for `/bin/sh -c`, which is what tmux runs the pipe command with. */
-export const shQuote = (value: string): string => `'${value.replaceAll("'", "'\\''")}'`;
-
-/** `-e NAME=VALUE` args for the four env vars a shared server's base env must not poison. */
-export const perSessionEnvArgs = (env: NodeJS.ProcessEnv = process.env): string[] =>
-	(["HOME", "SHELL", "PATH", "TERM"] as const).flatMap((name) => {
-		const value = env[name];
-		return typeof value === "string" && value.length > 0 ? ["-e", `${name}=${value}`] : [];
-	});
+const shQuote = (value: string): string => `'${value.replaceAll("'", "'\\''")}'`;
 
 /** Re-exec the public CLI without importing a source-only module from a bundle. */
 const buildForwarderCommand = (exePath: string, socketPath: string): string => {

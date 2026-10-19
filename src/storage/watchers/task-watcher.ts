@@ -88,7 +88,7 @@ function canonicalTask(task: Task): Task {
  * Re-reading the same task after a write yields the same signature, so consumers can
  * tell a real edit from a watcher echo.
  */
-export function taskContentSignature(task: Task): string {
+function taskContentSignature(task: Task): string {
 	const { branch: _branch, filePath: _filePath, lastModified: _lastModified, source: _source, ...content } = task;
 	return JSON.stringify({ ...content, id: task.id.toUpperCase() });
 }

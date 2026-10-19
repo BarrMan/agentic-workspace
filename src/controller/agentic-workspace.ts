@@ -59,7 +59,6 @@ interface MoveTaskPlacement {
 	readonly changedTasks: Task[];
 }
 
-export { TaskCollectionParentNotFoundError } from "../model/errors/task-collection.ts";
 export type { TaskReadOptions } from "./task-query-workflow.ts";
 
 export type TaskCollectionFilterInput = {
@@ -114,8 +113,6 @@ function normalizeTargetMilestone(targetMilestone: string | null | undefined): s
 	const trimmed = targetMilestone.trim();
 	return trimmed.length > 0 ? trimmed : undefined;
 }
-
-export { TaskArchiveStatusError } from "./errors/tasks.ts";
 
 export class Core {
 	readonly git: GitOperations;

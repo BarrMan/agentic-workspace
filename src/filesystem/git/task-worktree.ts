@@ -20,7 +20,7 @@ interface GitResult {
  * Root that holds task worktrees. Defaults to `~/.agentic-workspace`; the override exists so the test suite
  * (and sandboxed runs) never write into a developer's real home directory.
  */
-export function taskWorktreeRoot(): string {
+function taskWorktreeRoot(): string {
 	const override = process.env.AGENTIC_WORKSPACE_WORKTREE_HOME?.trim();
 	return override || join(homedir(), ".agentic-workspace");
 }
@@ -35,7 +35,7 @@ export function taskWorktreePath(projectRoot: string, task: WorktreeTaskRef): st
 	return join(taskWorktreeRoot(), project, `${title}-${taskIdKey(task.id)}`);
 }
 
-export function taskWorktreeBranch(taskId: string): string {
+function taskWorktreeBranch(taskId: string): string {
 	return `agentic-workspace/task/${taskIdKey(taskId)}`;
 }
 

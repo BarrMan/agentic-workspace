@@ -54,8 +54,6 @@ export function getActivityColor(activity: AgentActivity | undefined): string {
 			return "#f59e0b";
 		case "error":
 			return "red";
-		case "starting":
-		case "idle":
 		default:
 			return "#60a5fa";
 	}
@@ -75,8 +73,6 @@ export function getSelectedActivityColor(activity: AgentActivity | undefined): s
 			return "#92400e";
 		case "error":
 			return "#991b1b";
-		case "starting":
-		case "idle":
 		default:
 			return "#1e40af";
 	}
@@ -96,7 +92,6 @@ export function getIndicationColor(indication: AgentIndication): string {
 			return "red";
 		case "ended":
 			return "#9ca3af";
-		case "parked":
 		default:
 			return "#60a5fa";
 	}
@@ -116,19 +111,9 @@ export function getSelectedIndicationColor(indication: AgentIndication): string 
 			return "#991b1b";
 		case "ended":
 			return "#4b5563";
-		case "parked":
 		default:
 			return "#1e40af";
 	}
-}
-
-/**
- * Get just the icon for a status
- * @param status - The task status
- * @returns The icon for the status
- */
-export function getStatusIcon(status: string): string {
-	return getStatusStyle(status).icon;
 }
 
 /**

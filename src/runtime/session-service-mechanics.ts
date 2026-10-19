@@ -38,7 +38,7 @@ import {
 	workspaceContextInto,
 } from "./workspace-context.ts";
 
-export const NATIVE_SESSION_PANE_OPTION = "@agentic_workspace_native_session_id";
+const NATIVE_SESSION_PANE_OPTION = "@agentic_workspace_native_session_id";
 
 export function sameRoot(left: string, right: string): boolean {
 	try {
@@ -423,7 +423,7 @@ export async function createSessionRecord(
 	};
 }
 
-export function requireSessionRecord(state: SessionState, id: string): AgentSession {
+function requireSessionRecord(state: SessionState, id: string): AgentSession {
 	const session = Object.values(state.modes)
 		.flatMap((history) => history.sessions)
 		.find((candidate) => candidate.id === id);
@@ -441,7 +441,7 @@ export async function assertSessionIdentity(store: SessionStore, expected: Agent
 	assertSameSession(requireSessionRecord(await store.read(expected.taskId), expected.id), expected);
 }
 
-export async function ownedLaunchPaneState(
+async function ownedLaunchPaneState(
 	process: SessionProcess,
 	origin: LaunchOrigin,
 ): Promise<"owned" | "absent" | "replacement"> {

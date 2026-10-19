@@ -57,7 +57,7 @@ export function fail(prefix: string, result: Pick<SessionCommandResult, "stdout"
  * startup sweep can recognise its own sessions on the shared default server. It is also the token
  * grammar of the workspace ownership context.
  */
-export const AGENTIC_WORKSPACE_SESSION_NAME_PATTERN = /^agentic-workspace-[a-z0-9-]+-[0-9a-f]{8}$/;
+const AGENTIC_WORKSPACE_SESSION_NAME_PATTERN = /^agentic-workspace-[a-z0-9-]+-[0-9a-f]{8}$/;
 
 /** True when `name` is a tmux session name this project may own, kill, or reap. */
 export function isAgenticWorkspaceSessionName(name: string): boolean {
