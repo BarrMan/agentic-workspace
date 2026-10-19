@@ -43,7 +43,7 @@ describe("owned process primitives", () => {
 	});
 
 	it("rejects empty, malformed, and truncated process tables but accepts Linux kernel rows", () => {
-		for (const output of ["", row(10, 1, 10) + "\nmalformed", "12 1 12 501 S", "12 1 12 501 S not-a-start-time"])
+		for (const output of ["", `${row(10, 1, 10)}\nmalformed`, "12 1 12 501 S", "12 1 12 501 S not-a-start-time"])
 			expect(parseProcessTable(output)).toBeUndefined();
 		expect(table("1 0 0 0 S Mon Sep 23 09:03:11 2026", row(10, 1, 10))).toHaveLength(2);
 	});

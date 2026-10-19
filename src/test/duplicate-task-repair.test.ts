@@ -133,6 +133,27 @@ describe("duplicate task diagnosis", () => {
 		expect(await Promise.all([alphaPath, betaPath].map(async (path) => await Bun.file(path).text()))).toEqual(before);
 	});
 
+	it("checks duplicates on create but skips the collection scan for canonical updates", async () => {
+		await writeTask(coreFileSystem(core).tasksDir, makeTask("TASK-7", "Active"));
+		await writeTask(coreFileSystem(core).completedDir, makeTask("TASK-7", "Completed"));
+		await expect(coreFileSystem(core).saveTask(makeTask("TASK-7", "Replacement"))).rejects.toBeInstanceOf(
+			AmbiguousTaskIdError,
+		);
+
+		const taskPath = await coreFileSystem(core).saveTask(makeTask("TASK-8", "Update target"));
+		const filesystem = coreFileSystem(core);
+		const listTasks = spyOn(filesystem, "listTasks");
+		const listCompletedTasks = spyOn(filesystem, "listCompletedTasks");
+		try {
+			await filesystem.saveTask({ ...makeTask("TASK-8", "Updated"), filePath: taskPath });
+			expect(listTasks).not.toHaveBeenCalled();
+			expect(listCompletedTasks).not.toHaveBeenCalled();
+		} finally {
+			listTasks.mockRestore();
+			listCompletedTasks.mockRestore();
+		}
+	});
+
 	it("reports path-distinct cross-branch collisions", async () => {
 		initGitRepo(testDir, "main");
 		const config = await coreFileSystem(core).loadConfig();

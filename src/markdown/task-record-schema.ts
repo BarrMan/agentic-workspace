@@ -42,8 +42,8 @@ function textOrEmpty(value: unknown): string {
 	return String(value || "");
 }
 
-function optionalText(value: unknown): string | undefined {
-	return value ? String(value) : undefined;
+function optionalText(value: unknown): unknown {
+	return value === undefined || value === null || value === "" ? undefined : value;
 }
 
 function textList(value: unknown): string[] {
@@ -130,7 +130,7 @@ export const TaskFrontmatterSchema = z.object({
 		optionalText,
 		z.enum(["enabled", "disabled"], { error: "worktree_policy must be enabled or disabled" }).optional(),
 	),
-	description: z.string({ error: "description must be a string" }).optional(),
+	description: z.preprocess(optionalText, z.string({ error: "description must be a string" }).optional()),
 });
 
 export const TaskRecordSchema = TaskFrontmatterSchema.extend({

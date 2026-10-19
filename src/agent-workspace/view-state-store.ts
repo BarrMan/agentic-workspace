@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { constants } from "node:fs";
-import { access, lstat, mkdir, readFile, realpath, stat } from "node:fs/promises";
+import { access, lstat, mkdir, readFile, realpath, rename, stat } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { LockOwner } from "../file-system/lock-owner.ts";
 import { type ProjectStateRootOptions, resolveProjectStateRoot, writeFileAtomic } from "./session-store.ts";
@@ -25,6 +25,7 @@ export interface ViewStateStore<T extends object> {
 	readonly current: T;
 	/** Stable id of this process, stamped into every envelope it writes. */
 	readonly origin: string;
+	readonly recoveryNotice?: string;
 
 	/** Locked read-modify-write. No-ops when the patch produces no change. */
 	update(patch: (state: T) => T): Promise<void>;
@@ -107,10 +108,11 @@ class ViewStateStoreImpl<T extends object> implements ViewStateStore<T> {
 	private externalStateRoot?: string;
 	private stateWatcher?: StateStoreWatcher;
 	private closed = false;
+	private recoveredNotice?: string;
 
 	constructor(
 		private readonly rootDir: string,
-		private readonly createDefault: () => T,
+		createDefault: () => T,
 		private readonly options: ProjectStateRootOptions,
 	) {
 		this.state = createDefault();
@@ -118,6 +120,10 @@ class ViewStateStoreImpl<T extends object> implements ViewStateStore<T> {
 
 	get current(): T {
 		return this.state;
+	}
+
+	get recoveryNotice(): string | undefined {
+		return this.recoveredNotice;
 	}
 
 	async open(): Promise<void> {
@@ -151,11 +157,7 @@ class ViewStateStoreImpl<T extends object> implements ViewStateStore<T> {
 	 */
 	async update(patch: (state: T) => T): Promise<void> {
 		await this.withLock(async () => {
-			const base = (await this.readEnvelope()) ?? {
-				rev: 0,
-				origin: this.origin,
-				state: this.createDefault(),
-			};
+			const base = (await this.readEnvelope()) ?? { rev: this.rev, origin: this.origin, state: this.state };
 			const next = patch(base.state);
 			if (JSON.stringify(next) === JSON.stringify(base.state)) return;
 			const envelope: ViewStateEnvelope<T> = { rev: base.rev + 1, origin: this.origin, state: next };
@@ -182,13 +184,26 @@ class ViewStateStoreImpl<T extends object> implements ViewStateStore<T> {
 	/** Creates the file with the default state if no one else has written it yet. */
 	private async seed(): Promise<void> {
 		await this.withLock(async () => {
-			const disk = await this.readEnvelope();
+			let disk: ViewStateEnvelope<T> | undefined;
+			try {
+				disk = await this.readEnvelope();
+			} catch (error) {
+				const corrupt =
+					error instanceof SyntaxError ||
+					(error instanceof Error && error.message.startsWith("Invalid workspace view-state"));
+				if (!corrupt) throw error;
+				const corruptPath = `${this.path}.corrupt-${Date.now()}`;
+				await rename(this.path, corruptPath);
+				this.recoveredNotice = `Recovered corrupt workspace view state; moved it to ${corruptPath}`;
+			}
 			if (disk) {
 				this.state = disk.state;
 				this.rev = disk.rev;
 				return;
 			}
-			await this.writeEnvelope({ rev: 0, origin: this.origin, state: this.createDefault() });
+			const envelope = { rev: this.rev, origin: this.origin, state: this.state };
+			await this.writeEnvelope(envelope);
+			this.apply(envelope);
 		});
 	}
 

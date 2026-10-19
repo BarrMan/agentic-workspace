@@ -95,7 +95,7 @@ export function registerTaskCommands(program: Command, { runtime, readOutput }: 
 			const core = new Core(await requireProjectRoot());
 			const task = await core.loadTaskById(taskId, { includeCrossBranch: false });
 			if (!task) throw new Error(`Current task not found: ${taskId}`);
-			await core.updateTask({ ...task, status: DEFAULT_DONE_STATUS });
+			await core.updateTaskFromInput(task.id, { status: DEFAULT_DONE_STATUS });
 			process.stdout.write(`Marked task ${task.id} Done.\n`);
 		});
 	addHelpSchema(taskCmd.command("approve <taskId> <modeId>"), {

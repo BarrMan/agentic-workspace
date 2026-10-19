@@ -106,9 +106,10 @@ jobs:
         shell: bash
         run: |
           TAG="${GITHUB_REF##refs/tags/v}"
-          jq 'del(.devDependencies,.scripts.prepare,.scripts.preinstall,.type) |
+          jq 'del(.devDependencies,.scripts.prepare,.scripts.preinstall,.type,.module,.trustedDependencies) |
+              .dependencies = {} |
               .version = "'$TAG'" |
-              .bin = {agentic-workspace:"cli.js"} |
+              .bin = {"agentic-workspace":"cli.js"} |
               .files = ["cli.js","resolveBinary.cjs","postuninstall.cjs","package.json","README.md","LICENSE"] |
               .scripts = {"postuninstall": "node postuninstall.cjs"} |
               .repository = {"type":"git","url":"https://github.com/BarrMan/agentic-workspace"} |

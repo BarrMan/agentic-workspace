@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { mkdtemp, readdir, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { basename, join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import {
 	openViewStateStore,
 	type ViewStateEnvelope,
@@ -395,7 +395,7 @@ describe("openViewStateStore", () => {
 		expect(observer.current.label).toBe("after-close");
 	});
 
-	it("12. rejects corrupt state without replacing the file", async () => {
+	it("12. quarantines corrupt state and seeds defaults", async () => {
 		const root = await makeRoot("corrupt");
 		const seed = await open(root);
 		await seed.update((state) => ({ ...state, label: "good" }));
@@ -403,11 +403,17 @@ describe("openViewStateStore", () => {
 
 		await writeFile(statePath, "{ this is not json", "utf8");
 
-		await expect(openViewStateStore(root, defaultState)).rejects.toThrow();
-		expect(await readFile(statePath, "utf8")).toBe("{ this is not json");
+		const recovered = await openViewStateStore(root, defaultState);
+		expect(recovered.recoveryNotice).toContain("Recovered corrupt workspace view state");
+		expect(await readFile(statePath, "utf8")).not.toBe("{ this is not json");
+		const quarantinedPath = join(
+			dirname(statePath),
+			(await readdir(dirname(statePath))).find((name) => name.includes(".corrupt-")) ?? "",
+		);
+		expect(await readFile(quarantinedPath, "utf8")).toBe("{ this is not json");
 
 		await writeFile(statePath, "\u0000 not json either", "utf8");
-		await expect(seed.recheck()).rejects.toThrow();
+		await expect(recovered.recheck()).rejects.toThrow();
 		expect(await readFile(statePath, "utf8")).toBe("\u0000 not json either");
 	});
 

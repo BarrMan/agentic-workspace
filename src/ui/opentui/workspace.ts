@@ -747,7 +747,9 @@ export function mountOpenTuiWorkspace(
 		agentRegion.title = agentFocused ? " Live preview (active) " : " Live preview ";
 		if (agentFocused) {
 			taskList.blur();
-			agentMount?.focus();
+			// A controller-owned modal owns focus while it is open; a refresh must not take it.
+			const focused = renderer.currentFocusedRenderable;
+			if (!focused || surface.focused || surface.hasFocusedDescendant) agentMount?.focus();
 		} else {
 			agentMount?.blur();
 			// Restore pane focus after controller remounts without stealing modal focus.

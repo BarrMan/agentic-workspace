@@ -91,6 +91,7 @@ function project(configuration?: AgentConfiguration) {
 			`agent_configuration: ${JSON.stringify(configuration)}\n`,
 		);
 	const core = {
+		getStoredConfig: async () => ({ agentConfiguration: configuration }),
 		loadTasks: async () => [task],
 		loadMilestones: async () => [],
 		loadArchivedMilestones: async () => [],

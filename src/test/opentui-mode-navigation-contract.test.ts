@@ -48,6 +48,21 @@ function setup() {
 		})}\n`,
 	);
 	const core = {
+		getStoredConfig: async () => ({
+			agentConfiguration: {
+				selectedPreset: "opencode",
+				presets: {
+					opencode: {
+						command: "opencode",
+						env: {},
+						prepare: "",
+						bootstrap: "opencode",
+						resumeFlag: "--session",
+					},
+				},
+				modes,
+			},
+		}),
 		loadTasks: async () => [task],
 		loadMilestones: async () => [],
 		loadArchivedMilestones: async () => [],

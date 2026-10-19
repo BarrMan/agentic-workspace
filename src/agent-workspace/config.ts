@@ -223,6 +223,11 @@ async function writeRootConfiguration(path: string, config: AgentConfiguration):
 	}
 }
 
+async function writeProjectConfiguration(core: Core, config: AgenticWorkspaceConfig): Promise<void> {
+	await core.saveWorkspaceConfig(config);
+	await core.reloadConfiguration();
+}
+
 async function rootOrBuiltIn(core: Core): Promise<ResolvedAgentConfiguration> {
 	const config = await loadAgentConfiguration(core, "root");
 	return { scope: "root", config: config ?? clone(BUILT_IN_CONFIGURATION) };
@@ -350,8 +355,7 @@ async function updateAgentConfigurationInternal(
 				const initialized = clone(updater(clone(existing)));
 				assertAgentConfiguration(initialized);
 				const workspaceConfig = (await core.getStoredConfig()) ?? parseConfig("", path);
-				await core.saveWorkspaceConfig({ ...workspaceConfig, agentConfiguration: initialized });
-				await core.reloadConfiguration();
+				await writeProjectConfiguration(core, { ...workspaceConfig, agentConfiguration: initialized });
 				return initialized;
 			}
 			const base = existing ?? (await getEditableAgentConfiguration(core, scope, taskId));
@@ -360,9 +364,12 @@ async function updateAgentConfigurationInternal(
 			if (scope === "root") await writeRootConfiguration(path, next);
 			else {
 				const workspaceConfig = (await core.getStoredConfig()) ?? parseConfig("", path);
-				await core.saveWorkspaceConfig({ ...workspaceConfig, agentConfiguration: next } as AgenticWorkspaceConfig);
+				await writeProjectConfiguration(core, {
+					...workspaceConfig,
+					agentConfiguration: next,
+				} as AgenticWorkspaceConfig);
 			}
-			await core.reloadConfiguration();
+			if (scope === "root") await core.reloadConfiguration();
 			return next;
 		});
 	}

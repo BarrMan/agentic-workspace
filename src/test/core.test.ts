@@ -155,7 +155,7 @@ describe("Core", () => {
 			);
 		});
 
-		it("refreshes active and completed padded identities independently before mutation", async () => {
+		it("updates a resolved task without rescanning padded identities", async () => {
 			await core.createTask(sampleTask);
 			const activePath = (await coreFileSystem(core).loadTask(sampleTask.id))?.filePath;
 			if (!activePath) throw new Error("Expected active task path");
@@ -185,8 +185,8 @@ describe("Core", () => {
 				coreFileSystem(core).listCompletedTasks = originalListCompletedTasks;
 			}
 
-			expect(activeLoads).toBe(3);
-			expect(completedLoads).toBe(3);
+			expect(activeLoads).toBe(2);
+			expect(completedLoads).toBe(2);
 			expect(await Bun.file(activePath).text()).toContain("Updated active");
 			expect((await coreFileSystem(core).listCompletedTasks()).find((task) => task.id === "TASK-01")?.title).toBe(
 				"Completed collision",

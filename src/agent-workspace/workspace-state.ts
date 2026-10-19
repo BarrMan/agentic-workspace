@@ -112,12 +112,7 @@ export class WorkspaceStateService {
 			if (!target || target === getTerminalStatus(statuses)) return undefined;
 			if (isTerminalStatus(task.status, statuses)) return undefined;
 			if (task.status === target) return target;
-			const updated = await this.core.applyTaskUpdateInput(
-				task,
-				{ status: target },
-				async (status) => await this.core.requireCanonicalStatus(status),
-			);
-			if (updated.mutated) await this.core.updateTask(updated.task);
+			await this.core.updateTaskFromInput(task.id, { status: target });
 			return target;
 		} catch {
 			return undefined;

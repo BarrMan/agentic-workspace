@@ -81,7 +81,9 @@ async function readStateFile(path: string): Promise<GroupState | undefined> {
 		return parseState(await readFile(path, "utf8"));
 	} catch (error) {
 		if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
-		throw error;
+		throw new Error(
+			`Could not read workspace groups at ${path}: ${error instanceof Error ? error.message : String(error)}`,
+		);
 	}
 }
 
@@ -131,7 +133,7 @@ class GroupStoreImpl implements GroupStore {
 	async update(patch: (state: GroupState) => GroupState): Promise<void> {
 		await this.serialize(async () => {
 			await this.withLock(async () => {
-				const base = (await this.readState()) ?? emptyGroupState();
+				const base = (await this.readState()) ?? this.state;
 				const next = patch(base);
 				if (JSON.stringify(next) === JSON.stringify(base)) return;
 				await this.writeState(next);

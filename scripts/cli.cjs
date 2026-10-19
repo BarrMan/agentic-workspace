@@ -73,7 +73,8 @@ function main() {
 		if (arg === binaryPath) return false;
 		// Filter any accidental deep path to our platform package binary
 		try {
-			const pattern = /node_modules[/\\]agentic-workspace-(darwin|linux|windows)-[^/\\]+[/\\]agentic-workspace(\.exe)?$/i;
+			const pattern =
+				/node_modules[/\\]agentic-workspace-(darwin|linux|windows)-[^/\\]+[/\\]agentic-workspace(\.exe)?$/i;
 			return !pattern.test(arg);
 		} catch {
 			return true;

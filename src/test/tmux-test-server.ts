@@ -9,10 +9,19 @@
  */
 
 import { rm } from "node:fs/promises";
+import { join } from "node:path";
 import { Server } from "libtmux";
 import { assertIsolatedSocket, killTmuxSocketPaneGroups, TEST_TMUX_SOCKET_PREFIX } from "./tmux-pane-groups.ts";
 
 export { assertIsolatedSocket, TEST_TMUX_SOCKET_PREFIX } from "./tmux-pane-groups.ts";
+
+/** Resolve the socket path using tmux's platform default or configured temporary directory. */
+export function tmuxSocketPath(socket: string): string | undefined {
+	const uid = process.getuid?.();
+	if (uid === undefined) return undefined;
+	const base = process.env.TMUX_TMPDIR || (process.platform === "darwin" ? "/private/tmp" : "/tmp");
+	return join(base, `tmux-${uid}`, socket);
+}
 
 /** Reserve a unique socket label for one test. */
 export function uniqueTmuxSocket(label: string): string {
@@ -39,8 +48,9 @@ export function killTmuxServerArgv(socket: string, tmuxBinary = Bun.which("tmux"
 /** Remove the socket file tmux leaves behind after `kill-server`. */
 export async function removeTmuxSocket(socket: string): Promise<void> {
 	assertIsolatedSocket(socket);
-	if (process.getuid === undefined) return;
-	await rm(`/private/tmp/tmux-${process.getuid()}/${socket}`, { force: true });
+	const socketPath = tmuxSocketPath(socket);
+	if (!socketPath) return;
+	await rm(socketPath, { force: true });
 }
 
 /**

@@ -309,7 +309,7 @@ export class SessionProcess {
 	async launchPrepared(
 		session: AgentSession,
 		launch: PreparedAgentLaunch,
-		options: { includeDead?: boolean } = {},
+		options: { includeDead?: boolean; onDispatch?: () => void } = {},
 	): Promise<void> {
 		const pane = await this.pane(session, options);
 		if (!launch.resources) throw new Error(`Prepared launch ${session.id} has no resource inventory.`);
@@ -401,9 +401,11 @@ export class SessionProcess {
 	private async launchCommand(
 		session: AgentSession,
 		command: string,
-		options: { includeDead?: boolean } = {},
+		options: { includeDead?: boolean; onDispatch?: () => void } = {},
 	): Promise<void> {
 		const pane = await this.pane(session, options);
+		// Once respawn is invoked the placeholder is no longer safe to settle as a pre-dispatch failure.
+		options.onDispatch?.();
 		await tmux(`Could not launch agent session ${session.id}`, () =>
 			pane.respawn(`/bin/sh -lc ${quote(command)}`, { kill: true }),
 		);

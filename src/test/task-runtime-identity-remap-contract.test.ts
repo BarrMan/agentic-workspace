@@ -35,18 +35,33 @@ function session(taskId: string, _modeId: string, id: string, outputPath: string
 	};
 }
 
+function remappedSession(original: AgentSession, taskId: string, taskDir: string): AgentSession {
+	return {
+		...original,
+		taskId,
+		outputPath: join(taskDir, `${original.id}.log`),
+		bootstrapPath: join(taskDir, `${original.id}.md`),
+		pathContext: original.pathContext ? { ...original.pathContext, taskDir } : undefined,
+	};
+}
+
 describe("MAIN task runtime identity remap contract", () => {
 	it("treats key-equal remaps as no-ops and preserves the requested target spelling", async () => {
 		const root = await mkdtemp(join(tmpdir(), "task-runtime-identity-key-remap-"));
 		roots.push(root);
 		const store = new SessionStore(root, new NoProcess());
 		const sourceId = "draft-lowercase";
-		await store.mutateMode(sourceId, "plan", async (history) => {
-			const record = session(sourceId, "plan", "draft-session", join(root, "draft.log"), root);
-			history.sessions.push(record);
-			history.activeSessionId = record.id;
-		});
 		const sourcePaths = await store.paths(sourceId);
+		const outputPath = join(sourcePaths.taskDir, "draft-session.log");
+		const bootstrapPath = join(sourcePaths.taskDir, "draft-session.md");
+		await Bun.write(outputPath, "source output\n");
+		await Bun.write(bootstrapPath, "source bootstrap\n");
+		const original = session(sourceId, "plan", "draft-session", outputPath, sourcePaths.taskDir);
+		original.bootstrapPath = bootstrapPath;
+		await store.mutateMode(sourceId, "plan", async (history) => {
+			history.sessions.push(original);
+			history.activeSessionId = original.id;
+		});
 		const before = await readFile(sourcePaths.statePath, "utf8");
 
 		await store.remapTaskIdentity(sourceId, " DRAFT-LOWERCASE ");
@@ -55,8 +70,14 @@ describe("MAIN task runtime identity remap contract", () => {
 
 		await store.remapTaskIdentity(sourceId, "TASK-UPPERCASE");
 		const remapped = await store.read("TASK-UPPERCASE");
+		const destinationPaths = await store.paths("TASK-UPPERCASE");
+		const record = remapped.modes.plan?.sessions[0];
 		expect(remapped.taskId).toBe("TASK-UPPERCASE");
-		expect(remapped.modes.plan?.sessions[0]?.taskId).toBe("TASK-UPPERCASE");
+		expect(record).toEqual(remappedSession(original, "TASK-UPPERCASE", destinationPaths.taskDir));
+		expect(await Bun.file(outputPath).exists()).toBe(false);
+		expect(await Bun.file(bootstrapPath).exists()).toBe(false);
+		expect(await readFile(record!.outputPath, "utf8")).toBe("source output\n");
+		expect(await readFile(record!.bootstrapPath, "utf8")).toBe("source bootstrap\n");
 		expect(await Bun.file(sourcePaths.statePath).exists()).toBe(false);
 	});
 
@@ -68,14 +89,14 @@ describe("MAIN task runtime identity remap contract", () => {
 		const { task: draft } = await core.createTaskFromInput({ title: "Remap me", status: "Draft", rawContent: "draft" });
 		const store = new SessionStore(root, new NoProcess());
 		const runtimeDir = (await store.paths(draft.id)).taskDir;
-		const outputPath = join(runtimeDir, "session.log");
-		const bootstrapPath = join(runtimeDir, "session.md");
-		await Bun.write(outputPath, "actual session output\n");
-		await Bun.write(bootstrapPath, "actual bootstrap\n");
-		const plan = session(draft.id, "plan", randomUUID(), outputPath, runtimeDir);
-		plan.bootstrapPath = bootstrapPath;
-		const build = session(draft.id, "build", randomUUID(), outputPath, runtimeDir);
-		build.bootstrapPath = bootstrapPath;
+		const planId = randomUUID();
+		const buildId = randomUUID();
+		const plan = session(draft.id, "plan", planId, join(runtimeDir, `${planId}.log`), runtimeDir);
+		const build = session(draft.id, "build", buildId, join(runtimeDir, `${buildId}.log`), runtimeDir);
+		await Bun.write(plan.outputPath, "plan output\n");
+		await Bun.write(plan.bootstrapPath, "plan bootstrap\n");
+		await Bun.write(build.outputPath, "build output\n");
+		await Bun.write(build.bootstrapPath, "build bootstrap\n");
 		await store.mutateMode(draft.id, "plan", async (history) => {
 			history.sessions.push(plan);
 			history.activeSessionId = plan.id;
@@ -90,6 +111,7 @@ describe("MAIN task runtime identity remap contract", () => {
 		const promoted = (await coreFileSystem(core).listTasks()).find(({ title }) => title === "Remap me");
 		expect(promoted).toBeDefined();
 		if (!promoted) return;
+		const promotedDir = (await store.paths(promoted.id)).taskDir;
 		expect(promoted.id).not.toBe(draft.id);
 		let migrated = await store.read(promoted.id);
 		const promotedModes = migrated.modes;
@@ -98,20 +120,33 @@ describe("MAIN task runtime identity remap contract", () => {
 		const promotedBuild = promotedModes.build;
 		if (!promotedPlan?.sessions[0] || !promotedBuild?.sessions[0])
 			throw new Error("Promoted mode histories are incomplete");
-		expect(promotedPlan.sessions).toEqual([{ ...originalPlan, taskId: promoted.id }]);
-		expect(promotedBuild.sessions).toEqual([{ ...originalBuild, taskId: promoted.id }]);
+		expect(promotedPlan.sessions).toEqual([remappedSession(originalPlan, promoted.id, promotedDir)]);
+		expect(promotedBuild.sessions).toEqual([remappedSession(originalBuild, promoted.id, promotedDir)]);
 		expect(promotedPlan.activeSessionId).toBe(plan.id);
 		expect(promotedBuild.activeSessionId).toBe(build.id);
-		expect(promotedPlan.sessions[0]).toMatchObject({ cwd: runtimeDir, outputPath, bootstrapPath });
-		expect(promotedBuild.sessions[0]).toMatchObject({ cwd: runtimeDir, outputPath, bootstrapPath });
-		expect(await readFile(outputPath, "utf8")).toBe("actual session output\n");
-		expect(await readFile(bootstrapPath, "utf8")).toBe("actual bootstrap\n");
+		expect(promotedPlan.sessions[0]).toMatchObject({
+			cwd: runtimeDir,
+			outputPath: join(promotedDir, `${planId}.log`),
+			bootstrapPath: join(promotedDir, `${planId}.md`),
+			pathContext: { taskDir: promotedDir },
+		});
+		expect(promotedBuild.sessions[0]).toMatchObject({
+			cwd: runtimeDir,
+			outputPath: join(promotedDir, `${buildId}.log`),
+			bootstrapPath: join(promotedDir, `${buildId}.md`),
+			pathContext: { taskDir: promotedDir },
+		});
+		expect(await readFile(promotedPlan.sessions[0]!.outputPath, "utf8")).toBe("plan output\n");
+		expect(await readFile(promotedPlan.sessions[0]!.bootstrapPath, "utf8")).toBe("plan bootstrap\n");
+		expect(await readFile(promotedBuild.sessions[0]!.outputPath, "utf8")).toBe("build output\n");
+		expect(await readFile(promotedBuild.sessions[0]!.bootstrapPath, "utf8")).toBe("build bootstrap\n");
 		expect(Object.values((await store.read(draft.id)).modes).flatMap(({ sessions }) => sessions)).toEqual([]);
 
 		await core.demoteTask(promoted.id);
 		const demoted = (await coreFileSystem(core).listDrafts()).find(({ title }) => title === "Remap me");
 		expect(demoted).toBeDefined();
 		if (!demoted) return;
+		const demotedDir = (await store.paths(demoted.id)).taskDir;
 		migrated = await store.read(demoted.id);
 		const demotedModes = migrated.modes;
 		if (!demotedModes) throw new Error("Demoted mode histories are missing");
@@ -119,14 +154,26 @@ describe("MAIN task runtime identity remap contract", () => {
 		const demotedBuild = demotedModes.build;
 		if (!demotedPlan?.sessions[0] || !demotedBuild?.sessions[0])
 			throw new Error("Demoted mode histories are incomplete");
-		expect(demotedPlan.sessions).toEqual([{ ...originalPlan, taskId: migrated.taskId }]);
-		expect(demotedBuild.sessions).toEqual([{ ...originalBuild, taskId: migrated.taskId }]);
+		expect(demotedPlan.sessions).toEqual([remappedSession(originalPlan, migrated.taskId, demotedDir)]);
+		expect(demotedBuild.sessions).toEqual([remappedSession(originalBuild, migrated.taskId, demotedDir)]);
 		expect(demotedPlan.activeSessionId).toBe(plan.id);
 		expect(demotedBuild.activeSessionId).toBe(build.id);
-		expect(demotedPlan.sessions[0]).toMatchObject({ cwd: runtimeDir, outputPath, bootstrapPath });
-		expect(demotedBuild.sessions[0]).toMatchObject({ cwd: runtimeDir, outputPath, bootstrapPath });
-		expect(await readFile(outputPath, "utf8")).toBe("actual session output\n");
-		expect(await readFile(bootstrapPath, "utf8")).toBe("actual bootstrap\n");
+		expect(demotedPlan.sessions[0]).toMatchObject({
+			cwd: runtimeDir,
+			outputPath: join(demotedDir, `${planId}.log`),
+			bootstrapPath: join(demotedDir, `${planId}.md`),
+			pathContext: { taskDir: demotedDir },
+		});
+		expect(demotedBuild.sessions[0]).toMatchObject({
+			cwd: runtimeDir,
+			outputPath: join(demotedDir, `${buildId}.log`),
+			bootstrapPath: join(demotedDir, `${buildId}.md`),
+			pathContext: { taskDir: demotedDir },
+		});
+		expect(await readFile(demotedPlan.sessions[0]!.outputPath, "utf8")).toBe("plan output\n");
+		expect(await readFile(demotedPlan.sessions[0]!.bootstrapPath, "utf8")).toBe("plan bootstrap\n");
+		expect(await readFile(demotedBuild.sessions[0]!.outputPath, "utf8")).toBe("build output\n");
+		expect(await readFile(demotedBuild.sessions[0]!.bootstrapPath, "utf8")).toBe("build bootstrap\n");
 	});
 
 	it("does not create absent runtime state and refuses collisions or v1 state without changing either", async () => {
@@ -136,12 +183,34 @@ describe("MAIN task runtime identity remap contract", () => {
 		await store.remapTaskIdentity("TASK-ABSENT", "DRAFT-ABSENT");
 		await expect(store.paths("DRAFT-ABSENT").then(({ taskDir }) => Bun.file(taskDir).exists())).resolves.toBe(false);
 
+		const sourcePaths = await store.paths("TASK-SOURCE");
+		const sourceId = randomUUID();
+		const sourceSession = session(
+			"TASK-SOURCE",
+			"plan",
+			sourceId,
+			join(sourcePaths.taskDir, `${sourceId}.log`),
+			sourcePaths.taskDir,
+		);
+		await Bun.write(sourceSession.outputPath, "source collision output\n");
+		await Bun.write(sourceSession.bootstrapPath, "source collision bootstrap\n");
 		await store.mutateMode("TASK-SOURCE", "plan", async (history) => {
-			history.sessions.push(session("TASK-SOURCE", "plan", randomUUID(), join(root, "source.log"), root));
+			history.sessions.push(sourceSession);
 			history.activeSessionId = history.sessions.at(-1)?.id;
 		});
+		const targetPaths = await store.paths("TASK-TARGET");
+		const targetId = randomUUID();
+		const targetSession = session(
+			"TASK-TARGET",
+			"build",
+			targetId,
+			join(targetPaths.taskDir, `${targetId}.log`),
+			targetPaths.taskDir,
+		);
+		await Bun.write(targetSession.outputPath, "target output\n");
+		await Bun.write(targetSession.bootstrapPath, "target bootstrap\n");
 		await store.mutateMode("TASK-TARGET", "build", async (history) => {
-			history.sessions.push(session("TASK-TARGET", "build", randomUUID(), join(root, "target.log"), root));
+			history.sessions.push(targetSession);
 			history.activeSessionId = history.sessions.at(-1)?.id;
 		});
 		const sourceBefore = await store.read("TASK-SOURCE");
@@ -149,12 +218,16 @@ describe("MAIN task runtime identity remap contract", () => {
 		await expect(store.remapTaskIdentity("TASK-SOURCE", "TASK-TARGET")).rejects.toThrow(/refusing to merge/i);
 		expect(await store.read("TASK-SOURCE")).toEqual(sourceBefore);
 		expect(await store.read("TASK-TARGET")).toEqual(targetBefore);
+		expect(await readFile(sourceSession.outputPath, "utf8")).toBe("source collision output\n");
+		expect(await readFile(sourceSession.bootstrapPath, "utf8")).toBe("source collision bootstrap\n");
+		expect(await readFile(targetSession.outputPath, "utf8")).toBe("target output\n");
+		expect(await readFile(targetSession.bootstrapPath, "utf8")).toBe("target bootstrap\n");
 
-		const sourcePaths = await store.paths("TASK-V1");
-		await Bun.write(sourcePaths.statePath, JSON.stringify({ version: 1, taskId: "TASK-V1", sessions: [] }));
-		const beforeV1 = await readFile(sourcePaths.statePath, "utf8");
+		const v1Paths = await store.paths("TASK-V1");
+		await Bun.write(v1Paths.statePath, JSON.stringify({ version: 1, taskId: "TASK-V1", sessions: [] }));
+		const beforeV1 = await readFile(v1Paths.statePath, "utf8");
 		await expect(store.remapTaskIdentity("TASK-V1", "DRAFT-V1")).rejects.toThrow(/valid version 2 state/i);
-		expect(await readFile(sourcePaths.statePath, "utf8")).toBe(beforeV1);
+		expect(await readFile(v1Paths.statePath, "utf8")).toBe(beforeV1);
 	});
 
 	it("retries an exact installed destination after remap-phase failures without losing source or sidecars", async () => {
@@ -162,12 +235,21 @@ describe("MAIN task runtime identity remap contract", () => {
 			const root = await mkdtemp(join(tmpdir(), `task-runtime-remap-${phase}-`));
 			roots.push(root);
 			const store = new SessionStore(root, new NoProcess());
-			const source = session("TASK-SOURCE", "plan", randomUUID(), join(root, "runtime.log"), root);
+			const sourcePaths = await store.paths("TASK-SOURCE");
+			const sourceId = randomUUID();
+			const source = session(
+				"TASK-SOURCE",
+				"plan",
+				sourceId,
+				join(sourcePaths.taskDir, `${sourceId}.log`),
+				sourcePaths.taskDir,
+			);
 			await store.mutateMode("TASK-SOURCE", "plan", async (history) => {
 				history.sessions.push(source);
 				history.activeSessionId = source.id;
 			});
 			await Bun.write(source.outputPath, "sidecar bytes\n");
+			await Bun.write(source.bootstrapPath, "bootstrap bytes\n");
 			const oldPaths = await store.paths("TASK-SOURCE");
 			const newPaths = await store.paths("TASK-TARGET");
 			type Internals = {
@@ -210,8 +292,11 @@ describe("MAIN task runtime identity remap contract", () => {
 			expect(await Bun.file(newPaths.statePath).exists()).toBe(true);
 			await expect(store.remapTaskIdentity("TASK-SOURCE", "TASK-TARGET")).resolves.toBeUndefined();
 			expect(await Bun.file(oldPaths.statePath).exists()).toBe(false);
-			expect((await store.read("TASK-TARGET")).modes?.plan?.sessions[0]?.taskId).toBe("TASK-TARGET");
-			expect(await readFile(source.outputPath, "utf8")).toBe("sidecar bytes\n");
+			const remapped = (await store.read("TASK-TARGET")).modes?.plan?.sessions[0];
+			expect(remapped).toEqual(remappedSession(source, "TASK-TARGET", newPaths.taskDir));
+			expect(await Bun.file(source.outputPath).exists()).toBe(false);
+			expect(await readFile(remapped!.outputPath, "utf8")).toBe("sidecar bytes\n");
+			expect(await readFile(remapped!.bootstrapPath, "utf8")).toBe("bootstrap bytes\n");
 		}
 	});
 
@@ -219,10 +304,20 @@ describe("MAIN task runtime identity remap contract", () => {
 		const root = await mkdtemp(join(tmpdir(), "task-runtime-remap-release-"));
 		roots.push(root);
 		const store = new SessionStore(root, new NoProcess());
+		const sourcePaths = await store.paths("TASK-SOURCE");
+		const sourceId = randomUUID();
+		const owned = session(
+			"TASK-SOURCE",
+			"plan",
+			sourceId,
+			join(sourcePaths.taskDir, `${sourceId}.log`),
+			sourcePaths.taskDir,
+		);
+		await Bun.write(owned.outputPath, "owned output\n");
+		await Bun.write(owned.bootstrapPath, "owned bootstrap\n");
 		await store.mutateMode("TASK-SOURCE", "plan", async (history) => {
-			const source = session("TASK-SOURCE", "plan", randomUUID(), join(root, "runtime.log"), root);
-			history.sessions.push(source);
-			history.activeSessionId = source.id;
+			history.sessions.push(owned);
+			history.activeSessionId = owned.id;
 		});
 		type Internals = { acquireRemapLock(path: string): Promise<() => Promise<void>> };
 		const internals = store as unknown as Internals;

@@ -2813,6 +2813,8 @@ describe("OpenTuiWorkspaceController", () => {
 				expect(setup.captureCharFrame()).toContain("> 2026-10-06T00:00:00.000Z opencode stopped");
 				setup.mockInput.pressKey("r");
 				await waitUntil(() => setup.captureCharFrame().includes("Missing test session failed-resume"));
+				await drainTurns(10);
+				await setup.flush();
 				expect(setup.captureCharFrame()).toContain("Missing test session failed-resume");
 				expect(recorder.options.at(-1)?.liveAgent?.terminal).toBe(terminal);
 				expect(setup.captureCharFrame()).toContain("failed-resume");

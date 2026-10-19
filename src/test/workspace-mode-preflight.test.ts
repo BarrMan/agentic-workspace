@@ -18,6 +18,8 @@ it("rejects a mode-less project before acquiring stores or a terminal, without c
 	await writeFile(path, configuration);
 	let hosts = 0;
 	const core = {
+		projectRoot: root,
+		getStoredConfig: async () => ({ agentConfiguration: getBuiltInAgentConfiguration() }),
 		filesystem: {
 			rootDir: root,
 			agenticWorkspaceDir: root,

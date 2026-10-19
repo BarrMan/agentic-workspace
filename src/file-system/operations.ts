@@ -731,15 +731,17 @@ export class FileSystem {
 
 		if (existingTask && !taskIdsEqual(existingTask.id, task.id))
 			throw new Error(`Task identity mismatch: requested ${task.id}, stored record is ${existingTask.id}.`);
-		const [activeTasks, completedTasks] = await Promise.all([this.listTasks(), this.listCompletedTasks()]);
-		const duplicateMatches = [...activeTasks, ...completedTasks].filter((record) =>
-			taskIdsEqual(record.id, requestedId),
-		);
-		if (duplicateMatches.length > 1)
-			throw new AmbiguousTaskIdError(
-				requestedId,
-				duplicateMatches.map((record) => record.filePath ?? record.id),
+		if (!existingTask) {
+			const [activeTasks, completedTasks] = await Promise.all([this.listTasks(), this.listCompletedTasks()]);
+			const duplicateMatches = [...activeTasks, ...completedTasks].filter((record) =>
+				taskIdsEqual(record.id, requestedId),
 			);
+			if (duplicateMatches.length > 1)
+				throw new AmbiguousTaskIdError(
+					requestedId,
+					duplicateMatches.map((record) => record.filePath ?? record.id),
+				);
+		}
 		const exactParentTaskId = task.parentTaskId;
 		const normalizedTask = {
 			...task,
@@ -1185,7 +1187,13 @@ export class FileSystem {
 
 			const tasks: Task[] = [];
 			for (const file of taskFiles) {
-				tasks.push(await this.readDraftFile(join(draftsDir, file)));
+				try {
+					tasks.push(await this.readDraftFile(join(draftsDir, file)));
+				} catch (error) {
+					console.warn(
+						`Warning: Skipping invalid task draft ${join(draftsDir, file)}: ${error instanceof Error ? error.message : String(error)}`,
+					);
+				}
 			}
 
 			return sortByTaskId(tasks);
@@ -1479,7 +1487,21 @@ export class FileSystem {
 		}
 		const configPath = this.resolvedConfigPath;
 		const content = serializeConfig(normalizedConfig);
-		await Bun.write(configPath, content);
+		const temporaryPath = `${configPath}.${process.pid}.${Date.now()}.tmp`;
+		try {
+			await writeFile(temporaryPath, content, { flag: "wx" });
+			await rename(temporaryPath, configPath);
+		} catch (error) {
+			try {
+				await unlink(temporaryPath);
+			} catch (cleanupError) {
+				if ((cleanupError as NodeJS.ErrnoException).code !== "ENOENT")
+					throw new Error(`Config write failed and temporary-file cleanup failed for ${temporaryPath}.`, {
+						cause: new AggregateError([error, cleanupError]),
+					});
+			}
+			throw error;
+		}
 		this.cachedConfig = normalizedConfig;
 		this.cachedConfigSnapshot = { path: configPath, content };
 	}

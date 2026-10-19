@@ -58,6 +58,8 @@ jobs:
         if: matrix.test_profile == 'full'
       - run: bun run check
         if: matrix.test_profile == 'full'
+      - run: bun run check:fallow
+        if: matrix.test_profile == 'full'
       - name: Run tests
         run: |
           # Ubuntu owns complete behavioral coverage. macOS and Windows focus on OS-sensitive contracts.

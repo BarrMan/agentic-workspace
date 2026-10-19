@@ -72,6 +72,9 @@ function setup(groups: Groups, runtimeOverrides: Record<string, unknown> = {}) {
 		...runtimeOverrides,
 	} as never;
 	const core = {
+		getStoredConfig: async () => ({
+			agentConfiguration: { ...getBuiltInAgentConfiguration(), modes: getDefaultModeCatalog() },
+		}),
 		loadTasks: async () => tasks,
 		loadMilestones: async () => [],
 		loadArchivedMilestones: async () => [],

@@ -4,6 +4,7 @@ import { existsSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { killTmuxSocketPaneGroups } from "./tmux-pane-groups.ts";
+import { tmuxSocketPath } from "./tmux-test-server.ts";
 
 const testTmpDir = mkdtempSync(join(tmpdir(), "agentic-workspace-test-worker-"));
 process.env.TMPDIR = testTmpDir;
@@ -57,8 +58,8 @@ const socket = `agentic-workspace-test-suite-${process.pid.toString(36)}-${rando
 process.env.AGENTIC_WORKSPACE_TMUX_SOCKET = socket;
 afterAll(() => {
 	try {
-		const uid = process.getuid?.();
-		if (uid !== undefined && !existsSync(`/private/tmp/tmux-${uid}/${socket}`)) return;
+		const socketPath = tmuxSocketPath(socket);
+		if (socketPath && !existsSync(socketPath)) return;
 		const tmux = Bun.which("tmux");
 		if (!tmux) return;
 		killTmuxSocketPaneGroups(socket);

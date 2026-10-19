@@ -93,6 +93,16 @@ esac
 			history.activeSessionId = record.id;
 		});
 		const core = {
+			projectRoot: root,
+			withTaskLock: async (_task: unknown, operation: () => Promise<unknown>) => await operation(),
+			taskArtifactContainerPath: async (taskId: string) => join(root, "artifacts", taskId),
+			getStoredConfig: async () => ({
+				agentConfiguration: {
+					selectedPreset: "fixture",
+					presets: { fixture: { command: "pi", env: {}, prepare: "", bootstrap: "pi" } },
+				},
+			}),
+			getTask: async (taskId: string) => ({ id: taskId, agentConfiguration: undefined }),
 			filesystem: {
 				rootDir: root,
 				agenticWorkspaceDir: join(root, ".agentic-workspace"),

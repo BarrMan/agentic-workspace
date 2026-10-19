@@ -62,6 +62,7 @@ describe("final task removal mode state", () => {
 		const renderer = Object.assign(new EventEmitter(), { width: 120, height: 40 });
 		const host = { renderer, root: {}, async destroy() {} } as unknown as OpenTuiHost;
 		const core = {
+			getStoredConfig: async () => ({ agentConfiguration }),
 			loadTasks: async () => taskList,
 			loadMilestones: async () => [],
 			loadArchivedMilestones: async () => [],

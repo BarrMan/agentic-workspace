@@ -47,6 +47,7 @@ import {
 	type AgentSession,
 	type AgentSessionStatus,
 	activityToIndication,
+	resolveSessionSettings,
 	type TaskSessions,
 } from "../../agent-workspace/types.ts";
 import { openViewStateStore, type ViewStateStore } from "../../agent-workspace/view-state-store.ts";
@@ -472,14 +473,11 @@ export class OpenTuiWorkspaceController {
 		}
 		this.#viewState = viewState;
 		this.#ownsViewState = ownsViewState;
+		if (viewState.recoveryNotice) this.#notice = viewState.recoveryNotice;
 		let groupStore: GroupStore | undefined = this.#options.groupStore;
-		if (groupStore === undefined) {
-			try {
-				groupStore = await openGroupStore(this.#core.projectRoot, this.#core.workspaceDirectory);
-			} catch {
-				groupStore = undefined; // group features degrade to no-op; never break the workspace
-			}
-		}
+		const groupDirectory = this.#core.workspaceDirectory;
+		if (groupStore === undefined && groupDirectory !== undefined)
+			groupStore = await openGroupStore(this.#core.projectRoot, groupDirectory);
 		if (this.#closed) {
 			if (this.#options.groupStore === undefined) groupStore?.close();
 			return await completion;
@@ -1146,8 +1144,9 @@ export class OpenTuiWorkspaceController {
 			onTaskCreate: () => this.#openTaskComposer(),
 			onNewGroup: () => void this.#openGroupComposer(),
 			onGroupSelect: (entry) => this.#selectGroup(entry.id),
-			onGroupToggle: (groupId, direction) => void this.#toggleGroup(groupId, direction),
-			onGroupDelete: (entry) => void this.#deleteGroup(entry.id),
+			onGroupToggle: (groupId, direction) =>
+				void this.#toggleGroup(groupId, direction).catch((error) => this.#handleGroupActionError(error)),
+			onGroupDelete: (entry) => void this.#deleteGroup(entry.id).catch((error) => this.#handleGroupActionError(error)),
 			onFilterRequest: () => this.#openFilterEditor(),
 			onBoardRequest: () => this.#showBoard(),
 			onHelp: () => this.#openHelp(),
@@ -1458,6 +1457,7 @@ export class OpenTuiWorkspaceController {
 				if (localId && local?.terminal && !local.terminal.isDestroyed) {
 					this.#activeAgents.set(taskId, localId);
 					this.#agentFocused = true;
+					void this.#scheduleRefresh();
 					return;
 				}
 			}
@@ -2157,6 +2157,11 @@ export class OpenTuiWorkspaceController {
 		void this.#scheduleRefresh();
 	}
 
+	#handleGroupActionError(error: unknown): void {
+		this.#notice = error instanceof Error ? error.message : String(error);
+		void this.#scheduleRefresh().catch(() => undefined);
+	}
+
 	async #deleteGroup(groupId: string): Promise<void> {
 		const group = findGroup(this.#groupState.groups, groupId);
 		const host = this.#host;
@@ -2575,10 +2580,16 @@ export class OpenTuiWorkspaceController {
 				}
 			}
 			let pendingModeMoves: readonly { fromModeId: string; toModeId: string }[] = [];
+			const availablePresets = { ...getBuiltInAgentConfiguration().presets, ...configuration.presets };
+			const openedConfiguration = {
+				...configuration,
+				sessions: resolveSessionSettings(configuration),
+				presets: availablePresets,
+			};
 			const saveConfiguration = async (next: typeof configuration): Promise<void> => {
 				await updateAgentConfiguration(this.#core, "project", (current) => {
 					const applyChanges = (opened: unknown, edited: unknown, latest: unknown): unknown => {
-						if (JSON.stringify(opened) === JSON.stringify(edited)) return latest;
+						if (JSON.stringify(opened) === JSON.stringify(edited)) return latest === undefined ? edited : latest;
 						if (
 							opened &&
 							edited &&
@@ -2595,8 +2606,11 @@ export class OpenTuiWorkspaceController {
 								if (
 									JSON.stringify((opened as Record<string, unknown>)[key]) ===
 									JSON.stringify((edited as Record<string, unknown>)[key])
-								)
+								) {
+									if (!Object.hasOwn(result, key) && Object.hasOwn(edited, key))
+										result[key] = (edited as Record<string, unknown>)[key];
 									continue;
+								}
 								if (!Object.hasOwn(edited, key)) delete result[key];
 								else
 									result[key] = applyChanges(
@@ -2609,7 +2623,7 @@ export class OpenTuiWorkspaceController {
 						}
 						return edited;
 					};
-					const changed = applyChanges(configuration, next, current) as typeof configuration;
+					const changed = applyChanges(openedConfiguration, next, current) as typeof configuration;
 					if (!pendingModeMoves.length) return { ...current, ...changed };
 					const latestCatalog = current.modes;
 					const editedCatalog = changed.modes;
@@ -2631,7 +2645,6 @@ export class OpenTuiWorkspaceController {
 				});
 				this.#notice = "Saved project agent settings";
 			};
-			const availablePresets = { ...getBuiltInAgentConfiguration().presets, ...configuration.presets };
 			const settings = mountOpenTuiAgentSettings(host.renderer, host.root, {
 				configuration: {
 					...configuration,

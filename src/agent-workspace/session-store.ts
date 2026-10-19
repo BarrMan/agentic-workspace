@@ -639,10 +639,77 @@ export class SessionStore {
 			!taskIdsEqual(parsed.taskId, oldTaskId)
 		)
 			throw new Error(`Cannot remap session state for ${oldTaskId}; a valid version 2 state is required.`);
-		this.validate(parsed, oldTaskId);
+		const initialState = this.validate(parsed, oldTaskId);
+		const initialModes: SessionState["modes"] = {};
+		for (const [modeId, history] of Object.entries(initialState.modes)) {
+			initialModes[modeId] = {
+				...history,
+				sessions: history.sessions.map((session) => ({
+					...session,
+					taskId: newTaskId,
+					outputPath: join(newPaths.taskDir, `${session.id}.log`),
+					bootstrapPath: join(newPaths.taskDir, `${session.id}.md`),
+					...(session.pathContext ? { pathContext: { ...session.pathContext, taskDir: newPaths.taskDir } } : {}),
+				})),
+			};
+		}
+		const initialContent = `${JSON.stringify(
+			this.toVersioned({
+				version: 2,
+				taskId: newTaskId,
+				modes: initialModes,
+				...(initialState.worktreePath !== undefined ? { worktreePath: initialState.worktreePath } : {}),
+				...(initialState.hasSuccessfulSession !== undefined
+					? { hasSuccessfulSession: initialState.hasSuccessfulSession }
+					: {}),
+			}),
+			null,
+			"\t",
+		)}\n`;
+		for (const history of Object.values(initialState.modes)) {
+			for (const session of history.sessions) {
+				for (const [source, destination, suffix] of [
+					[session.outputPath, join(newPaths.taskDir, `${session.id}.log`), ".log"],
+					[session.bootstrapPath, join(newPaths.taskDir, `${session.id}.md`), ".md"],
+				] as const) {
+					if (resolve(source) !== resolve(join(oldPaths.taskDir, `${session.id}${suffix}`)))
+						throw new Error(`Cannot remap session ${session.id}; its sidecar path is not owned by ${oldTaskId}.`);
+					let sourceExists = true;
+					try {
+						const info = await lstat(source);
+						if (!info.isFile() || info.isSymbolicLink())
+							throw new Error(`Cannot remap non-regular session sidecar ${source}.`);
+					} catch (error) {
+						if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+						sourceExists = false;
+					}
+					try {
+						const info = await lstat(destination);
+						if (!info.isFile() || info.isSymbolicLink() || sourceExists)
+							throw new Error(`Session sidecar already exists at ${destination}.`);
+					} catch (error) {
+						if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+						if (!sourceExists) throw new Error(`Session sidecar is missing for ${session.id}.`);
+					}
+				}
+			}
+		}
+		try {
+			const existing = await Bun.file(newPaths.statePath).text();
+			if (existing !== initialContent)
+				throw new Error(`Session state already exists for task ${newTaskId}; refusing to merge unrelated state.`);
+		} catch (error) {
+			if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+		}
+		let createdDestinationDir = false;
+		try {
+			await lstat(newPaths.taskDir);
+		} catch (error) {
+			if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+			await mkdir(newPaths.taskDir, { recursive: true });
+			createdDestinationDir = true;
+		}
 
-		await mkdir(dirname(oldPaths.taskDir), { recursive: true });
-		await mkdir(newPaths.taskDir, { recursive: true });
 		// Acquire each state path once, in stable order. Never lock a shared parent directory.
 		const lockPaths = [oldPaths.statePath, newPaths.statePath].sort();
 		const releases: Array<() => Promise<void>> = [];
@@ -665,10 +732,58 @@ export class SessionStore {
 
 			const sourceState = this.validate(lockedParsed, oldTaskId);
 			const modes: SessionState["modes"] = {};
+			const sidecarMoves: Array<{ source: string; destination: string; sourceExists: boolean }> = [];
 			for (const [modeId, history] of Object.entries(sourceState.modes)) {
 				modes[modeId] = {
 					...history,
-					sessions: history.sessions.map((session) => ({ ...session, taskId: newTaskId })),
+					sessions: await Promise.all(
+						history.sessions.map(async (session) => {
+							const outputPath = join(newPaths.taskDir, `${session.id}.log`);
+							const bootstrapPath = join(newPaths.taskDir, `${session.id}.md`);
+							for (const [source, destination, expected] of [
+								[session.outputPath, outputPath, `${session.id}.log`],
+								[session.bootstrapPath, bootstrapPath, `${session.id}.md`],
+							] as const) {
+								if (resolve(source) !== resolve(join(oldPaths.taskDir, expected)))
+									throw new Error(`Cannot remap session ${session.id}; its sidecar path is not owned by ${oldTaskId}.`);
+								let sourceExists = true;
+								try {
+									const info = await lstat(source);
+									if (!info.isFile() || info.isSymbolicLink())
+										throw new Error(`Cannot remap non-regular session sidecar ${source}.`);
+								} catch (error) {
+									if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+									sourceExists = false;
+								}
+								if (!sourceExists) {
+									try {
+										const info = await lstat(destination);
+										if (!info.isFile() || info.isSymbolicLink())
+											throw new Error(`Session sidecar already exists at ${destination}.`);
+									} catch (destinationError) {
+										if ((destinationError as NodeJS.ErrnoException).code === "ENOENT")
+											throw new Error(`Session sidecar is missing for ${session.id}.`);
+										throw destinationError;
+									}
+								} else {
+									try {
+										await lstat(destination);
+										throw new Error(`Session sidecar already exists at ${destination}.`);
+									} catch (error) {
+										if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+									}
+								}
+								sidecarMoves.push({ source, destination, sourceExists });
+							}
+							return {
+								...session,
+								taskId: newTaskId,
+								outputPath,
+								bootstrapPath,
+								...(session.pathContext ? { pathContext: { ...session.pathContext, taskDir: newPaths.taskDir } } : {}),
+							};
+						}),
+					),
 				};
 			}
 			const strictState = this.toVersioned({
@@ -690,6 +805,8 @@ export class SessionStore {
 			} catch (error) {
 				if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
 			}
+			for (const { source, destination, sourceExists } of sidecarMoves)
+				if (sourceExists) await rename(source, destination);
 			if (!destinationExists) await this.installAndVerifyRemappedState(newPaths.statePath, remapped, newTaskId);
 			else await this.verifyRemappedState(newPaths.statePath, remapped, newTaskId);
 
@@ -707,6 +824,14 @@ export class SessionStore {
 					await release();
 				} catch (error) {
 					releaseErrors.push(error);
+				}
+			}
+			if (createdDestinationDir) {
+				try {
+					await rmdir(newPaths.taskDir);
+				} catch (error) {
+					if (!["ENOTEMPTY", "EEXIST", "ENOENT"].includes((error as NodeJS.ErrnoException).code ?? ""))
+						releaseErrors.push(error);
 				}
 			}
 		}

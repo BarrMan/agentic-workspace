@@ -45,6 +45,7 @@ function fixture(
 	);
 	const agentConfiguration = { ...getBuiltInAgentConfiguration(), modes: getDefaultModeCatalog() };
 	const core = {
+		getStoredConfig: async () => ({ agentConfiguration }),
 		loadTasks: async () => [task],
 		loadMilestones: async () => [],
 		loadArchivedMilestones: async () => [],
@@ -184,8 +185,8 @@ function fixture(
 		createWorkspaceAgent(_renderer: unknown, _host: unknown) {
 			return { write() {}, destroy() {}, isDestroyed: false };
 		},
-		watchTasks: () => () => {},
-		watchConfig: () => () => {},
+		watchTasks: () => ({ stop() {} }),
+		watchConfig: () => ({ stop() {} }),
 	} as never;
 	const store = {
 		current: { filters: createWorkspaceFilters(), detailsVisible: true },

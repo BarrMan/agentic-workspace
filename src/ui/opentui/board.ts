@@ -211,9 +211,11 @@ export function mountOpenTuiBoard(
 	const redraw = (): void => {
 		if (disposed) return;
 		const lanes = props.board.lanes;
+		const selectedLane = lanes.find((lane) => lane.status === selectionStatus);
+		const selectedTask = selectedLane?.selected;
 		const move = props.board.move;
-		const activeStatus = move?.targetStatus ?? props.board.selectedLane?.status;
-		const activeId = move?.highlightTaskId ?? move?.taskId ?? props.board.selectedTask?.id;
+		const activeStatus = move?.targetStatus ?? selectedLane?.status;
+		const activeId = move?.highlightTaskId ?? move?.taskId ?? selectedTask?.id;
 		const activeColumn = lanes.findIndex((lane) => lane.status === activeStatus);
 		const terminalWidth = Math.max(1, root.width || renderer.width);
 		const hints = move
@@ -227,7 +229,7 @@ export function mountOpenTuiBoard(
 			: [
 					`${formatShortcut(shortcutsConfig.board.quit)} Exit`,
 					`${formatShortcut(shortcutsConfig.board.createTask)} Create`,
-					...(props.board.selectedTask ? [`${formatShortcut(shortcutsConfig.board.editTask)} Edit`] : []),
+					...(selectedTask ? [`${formatShortcut(shortcutsConfig.board.editTask)} Edit`] : []),
 					`${formatShortcut(shortcutsConfig.board.filter)} Filter`,
 					`${formatShortcut(shortcutsConfig.board.previousColumn)}/${formatShortcut(shortcutsConfig.board.nextColumn)} Status`,
 					`${formatShortcut(shortcutsConfig.board.previousTask)}/${formatShortcut(shortcutsConfig.board.nextTask)} Tasks`,
@@ -282,7 +284,7 @@ export function mountOpenTuiBoard(
 		if (lanes.length === 0) chunks.push({ __isChunk: true, text: "\nNo board columns configured." });
 		else if (rows.length === 0) chunks.push({ __isChunk: true, text: "\nNo tasks match the current filters." });
 		boardText.content = new StyledText(chunks);
-		selectedText.content = props.notice || selectedTaskContent(props.board.selectedTask);
+		selectedText.content = props.notice || selectedTaskContent(selectedTask);
 		renderer.requestRender();
 	};
 	const notifySelectionChange = (): void => {

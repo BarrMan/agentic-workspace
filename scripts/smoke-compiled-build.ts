@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
@@ -17,7 +17,12 @@ for (const [key, value] of Object.entries(process.env)) {
 		fixtureEnv[key] = value;
 	}
 }
-for (const key of ["AGENTIC_WORKSPACE_CWD", "AGENTIC_WORKSPACE_WORKSPACE_CONTEXT", "AGENTIC_WORKSPACE_TASK_ID", "AGENTIC_WORKSPACE_TMUX_SOCKET"]) {
+for (const key of [
+	"AGENTIC_WORKSPACE_CWD",
+	"AGENTIC_WORKSPACE_WORKSPACE_CONTEXT",
+	"AGENTIC_WORKSPACE_TASK_ID",
+	"AGENTIC_WORKSPACE_TMUX_SOCKET",
+]) {
 	delete fixtureEnv[key];
 }
 
@@ -163,8 +168,24 @@ fixtureEnv.XDG_CONFIG_HOME = join(smokeRoot, ".config");
 await Bun.$`mkdir -p ${fixtureEnv.HOME} ${fixtureEnv.XDG_CONFIG_HOME}`;
 let smokeFailure: CapturedFailure | undefined;
 try {
-	await run([executable, "init", "Compiled Smoke", "--defaults", "--no-git", "--integration-mode", "none"], smokeRoot);
-
+	await mkdir(join(smokeRoot, "agentic-workspace"), { recursive: true });
+	await writeFile(
+		join(smokeRoot, "agentic-workspace", "config.yml"),
+		[
+			'project_name: "Compiled Smoke"',
+			'default_status: "To Do"',
+			'statuses: ["To Do", "Done"]',
+			"date_format: yyyy-mm-dd",
+			"max_column_width: 20",
+			"remote_operations: false",
+			"filesystem_only: false",
+			"check_active_branches: false",
+			"active_branch_days: 30",
+			'task_prefix: "task"',
+			"",
+		].join("\n"),
+	);
+	await run([executable, "task", "create", "Compiled Smoke"], smokeRoot);
 } catch (error) {
 	smokeFailure = { error };
 }

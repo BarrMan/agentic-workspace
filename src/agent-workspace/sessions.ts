@@ -1,5 +1,5 @@
 import { lstat, realpath, rm, rmdir, stat } from "node:fs/promises";
-import { basename, dirname, join, resolve, sep } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 import type { Core } from "../core/agentic-workspace.ts";
 import type { OwnedNativeSessionStops } from "../git/task-worktree-cleanup.ts";
 import { TASK_SOURCE, type Task } from "../types/index.ts";
@@ -394,18 +394,36 @@ export class AgentSessionService {
 		if (!task && !taskIdsEqual(state.taskId, taskId)) throw new Error(`Locally editable task not found: ${taskId}`);
 		const sessions = allModeSessions(state);
 		this.assertNoLiveSessions(task?.id ?? taskId, state);
-		const taskDir = resolve(paths.taskDir);
-		const sidecars = sessions.flatMap((session) => [session.outputPath, session.bootstrapPath]);
-		for (const sidecar of sidecars) {
-			if (!resolve(sidecar).startsWith(`${taskDir}${sep}`))
-				throw new Error(`Cannot purge task ${taskId}: session sidecar is outside its task session directory.`);
-		}
+		const canonicalTaskDir = await canonicalDirectoryTarget(paths.taskDir);
+		if (canonicalTaskDir !== join(await realpath(dirname(paths.taskDir)), basename(paths.taskDir)))
+			throw new Error(`Cannot purge task ${taskId}: its session directory resolves outside its canonical task path.`);
+		for (const session of sessions) await this.validateOwnedSessionSidecars(session, paths.taskDir, taskId);
 		for (const session of sessions) {
 			await deleteWorkspaceRequest(this.core.projectRoot, session.id);
-			await removeFile(session.outputPath);
-			await removeFile(session.bootstrapPath);
+			await removeOwnedPath(join(canonicalTaskDir, `${session.id}.log`));
+			await removeOwnedPath(join(canonicalTaskDir, `${session.id}.md`));
 		}
 		await this.store.removeTaskDir(task?.id ?? taskId);
+	}
+
+	private async validateOwnedSessionSidecars(session: AgentSession, taskDir: string, taskId: string): Promise<void> {
+		if (!/^[A-Za-z0-9._-]+$/.test(session.id)) throw new Error(`Session ${session.id} has an invalid identity.`);
+		for (const [path, suffix] of [
+			[session.outputPath, ".log"],
+			[session.bootstrapPath, ".md"],
+		] as const) {
+			if (resolve(path) !== resolve(join(taskDir, `${session.id}${suffix}`)))
+				throw new Error(
+					`Cannot purge task ${taskId}: session ${session.id} has an untrusted sidecar path outside its task session directory.`,
+				);
+			try {
+				const file = await lstat(path);
+				if (!file.isFile() || file.isSymbolicLink())
+					throw new Error(`Cannot purge task ${taskId}: session ${session.id} sidecar is not a regular owned file.`);
+			} catch (error) {
+				if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+			}
+		}
 	}
 
 	/**
@@ -453,7 +471,9 @@ export class AgentSessionService {
 				resolve(session.outputPath) !== resolve(join(paths.taskDir, `${session.id}.log`)) ||
 				resolve(session.bootstrapPath) !== resolve(join(paths.taskDir, `${session.id}.md`))
 			)
-				throw new Error(`Cannot forget task ${taskId}: session ${session.id} has an untrusted sidecar path.`);
+				throw new Error(
+					`Cannot forget task ${taskId}: session ${session.id} has an untrusted sidecar path outside its task session directory.`,
+				);
 		}
 		for (const session of sessions) {
 			await this.store.mutate(task.id, async (currentState) => {
@@ -820,7 +840,7 @@ export class AgentSessionService {
 		},
 	): Promise<SharedAgentAttachment> {
 		const resume = options.action === "resume";
-		const settleOnFailure = options.action !== "resume";
+		const settleOnFailure = true;
 		const { modeId, settings, directReservation } = options;
 		const currentProfile = options.preflight
 			? { preset: options.preflight.preset, profile: options.preflight.options.profile }
@@ -913,8 +933,7 @@ export class AgentSessionService {
 				...(next.nativeSessionId ? { nativeSessionId: next.nativeSessionId } : {}),
 			});
 			await this.assertSessionIdentity(next);
-			dispatchAttempted = true;
-			await this.process.launchPrepared(next, prepared);
+			await this.process.launchPrepared(next, prepared, { onDispatch: () => (dispatchAttempted = true) });
 			await this.reconcileDeferredIdentity(agent, origin);
 			await this.store.mutateSession(task.id, next.id, async (current) => {
 				assertSharedSameSession(current, next);
@@ -1472,8 +1491,13 @@ export class AgentSessionService {
 				const runtime = await this.process.nativeRuntimeClassification(session);
 				if (runtime.status === "uncertain")
 					throw new Error(`Cannot safely inspect session ${session.id}: ${runtime.reason}`);
-				if (session.status === AGENT_SESSION_STATUS.STARTING && runtime.status === "missing")
-					throw new Error(`can't find session: ${session.tmuxName}`);
+				if (session.status === AGENT_SESSION_STATUS.STARTING && runtime.status === "missing") {
+					if (!(await this.hasQueuedWorkspaceRequest(session)))
+						throw new Error(`can't find session: ${session.tmuxName}`);
+					await deleteWorkspaceRequest(this.core.projectRoot, session.id);
+					observations.push({ session, runtime });
+					continue;
+				}
 				observations.push({ session, runtime });
 			}
 			for (const { session, runtime } of observations) {

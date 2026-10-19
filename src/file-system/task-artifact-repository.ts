@@ -420,8 +420,9 @@ export class TaskArtifactRepository {
 						text = false;
 					}
 				}
-				const sha256 = info.size <= MAX_ARTIFACT_INSPECTION_BYTES ? fingerprint(bytes) : undefined;
 				const approval = Object.hasOwn(sidecar.approvals, path) ? sidecar.approvals[path] : undefined;
+				const sha256 =
+					info.size <= MAX_ARTIFACT_INSPECTION_BYTES || approval ? fingerprint(await readFile(target)) : undefined;
 				results.push({
 					path,
 					state: sha256 && approval?.sha256 === sha256 ? "approved" : "draft",
