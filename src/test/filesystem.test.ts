@@ -706,6 +706,16 @@ title: Broken Task
 			expect(loadedConfig).toEqual(sampleConfig);
 		});
 
+		it("should create config with mode 0600 and preserve its mode when saving", async () => {
+			const configPath = join(TEST_DIR, "agentic-workspace", "config.yml");
+			await filesystem.saveConfig(sampleConfig);
+			expect((await stat(configPath)).mode & 0o777).toBe(0o600);
+
+			await fsPromises.chmod(configPath, 0o640);
+			await filesystem.saveConfig({ ...sampleConfig, projectName: "Updated Project" });
+			expect((await stat(configPath)).mode & 0o777).toBe(0o640);
+		});
+
 		it("should return null for missing config", async () => {
 			// Create a fresh filesystem without any config
 			const freshFilesystem = new FileSystem(join(TEST_DIR, "fresh"));

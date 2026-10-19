@@ -41,7 +41,7 @@ const tasks: Task[] = ["T1", "T2"].map((id) => ({
 	dependencies: [],
 }));
 
-function setup(groups: Groups, runtimeOverrides: Record<string, unknown> = {}) {
+function setup(groups: Groups | undefined, runtimeOverrides: Record<string, unknown> = {}) {
 	const agenticWorkspaceDir = mkdtempSync(join(tmpdir(), "agentic-workspace-workspace-controller-groups-"));
 	roots.push(agenticWorkspaceDir);
 	writeFileSync(
@@ -72,6 +72,7 @@ function setup(groups: Groups, runtimeOverrides: Record<string, unknown> = {}) {
 		...runtimeOverrides,
 	} as never;
 	const core = {
+		workspaceDirectory: agenticWorkspaceDir,
 		getStoredConfig: async () => ({
 			agentConfiguration: { ...getBuiltInAgentConfiguration(), modes: getDefaultModeCatalog() },
 		}),
@@ -107,7 +108,7 @@ function setup(groups: Groups, runtimeOverrides: Record<string, unknown> = {}) {
 		liveSession: async () => undefined,
 	} as unknown as WorkspaceStateService;
 	const controller = new OpenTuiWorkspaceController(core, {
-		groupStore: groups,
+		...(groups ? { groupStore: groups } : {}),
 		workspaceState: workspace,
 		viewStateStore: {
 			current: { filters: createWorkspaceFilters(), detailsVisible: true },
@@ -123,6 +124,7 @@ function setup(groups: Groups, runtimeOverrides: Record<string, unknown> = {}) {
 	} as never);
 	return {
 		controller,
+		agenticWorkspaceDir,
 		get mounted() {
 			return mounted;
 		},
@@ -130,6 +132,21 @@ function setup(groups: Groups, runtimeOverrides: Record<string, unknown> = {}) {
 }
 
 describe("workspace controller group deletion", () => {
+	it("continues without groups and publishes the store error when group data is corrupt", async () => {
+		const workspace = setup(undefined);
+		writeFileSync(join(workspace.agenticWorkspaceDir, "groups.json"), "{");
+		const run = workspace.controller.run();
+		try {
+			while (!workspace.mounted) await Bun.sleep(1);
+			expect(workspace.mounted.notice).toContain("JSON");
+			expect(workspace.mounted.groups).toEqual([]);
+			expect(workspace.mounted.groupMembership).toEqual({});
+		} finally {
+			workspace.controller.destroy();
+			await run;
+		}
+	});
+
 	it("confirms empty groups and moves direct contents while preserving child order", async () => {
 		const emptyStore = new Groups({
 			groups: [{ id: "empty", name: "Empty", parentId: null, order: 0, collapsed: false }],

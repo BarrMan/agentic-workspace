@@ -1,5 +1,5 @@
 import { realpathSync } from "node:fs";
-import { mkdir, readdir, readFile, rename, rm, stat, unlink, writeFile } from "node:fs/promises";
+import { chmod, mkdir, readdir, readFile, rename, rm, stat, unlink, writeFile } from "node:fs/promises";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { DEFAULT_DIRECTORIES, DEFAULT_FILES, DRAFT_STATUS, FALLBACK_STATUS } from "../constants/index.ts";
 import { resolveMainWorktreeRootSync } from "../git/main-worktree.ts";
@@ -1489,7 +1489,14 @@ export class FileSystem {
 		const content = serializeConfig(normalizedConfig);
 		const temporaryPath = `${configPath}.${process.pid}.${Date.now()}.tmp`;
 		try {
+			let mode = 0o600;
+			try {
+				mode = (await stat(configPath)).mode & 0o7777;
+			} catch (error) {
+				if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+			}
 			await writeFile(temporaryPath, content, { flag: "wx" });
+			await chmod(temporaryPath, mode);
 			await rename(temporaryPath, configPath);
 		} catch (error) {
 			try {

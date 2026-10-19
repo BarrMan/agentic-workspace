@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import type { Dirent } from "node:fs";
+import { createReadStream, type Dirent } from "node:fs";
 import type { FileHandle } from "node:fs/promises";
 import { lstat, mkdir, open, readdir, readFile, realpath, rename, rm, stat, utimes, writeFile } from "node:fs/promises";
 import { basename, dirname, isAbsolute, relative, resolve, sep } from "node:path";
@@ -41,6 +41,12 @@ export function validateTaskArtifactPath(path: string): string {
 
 function fingerprint(bytes: Uint8Array): string {
 	return createHash("sha256").update(bytes).digest("hex");
+}
+
+async function fingerprintFile(path: string): Promise<string> {
+	const hash = createHash("sha256");
+	for await (const chunk of createReadStream(path)) hash.update(chunk);
+	return hash.digest("hex");
 }
 
 function emptyApprovals(): ArtifactApprovalSidecar["approvals"] {
@@ -422,7 +428,11 @@ export class TaskArtifactRepository {
 				}
 				const approval = Object.hasOwn(sidecar.approvals, path) ? sidecar.approvals[path] : undefined;
 				const sha256 =
-					info.size <= MAX_ARTIFACT_INSPECTION_BYTES || approval ? fingerprint(await readFile(target)) : undefined;
+					info.size <= MAX_ARTIFACT_INSPECTION_BYTES
+						? fingerprint(await readFile(target))
+						: approval
+							? await fingerprintFile(target)
+							: undefined;
 				results.push({
 					path,
 					state: sha256 && approval?.sha256 === sha256 ? "approved" : "draft",

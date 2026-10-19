@@ -639,68 +639,6 @@ export class SessionStore {
 			!taskIdsEqual(parsed.taskId, oldTaskId)
 		)
 			throw new Error(`Cannot remap session state for ${oldTaskId}; a valid version 2 state is required.`);
-		const initialState = this.validate(parsed, oldTaskId);
-		const initialModes: SessionState["modes"] = {};
-		for (const [modeId, history] of Object.entries(initialState.modes)) {
-			initialModes[modeId] = {
-				...history,
-				sessions: history.sessions.map((session) => ({
-					...session,
-					taskId: newTaskId,
-					outputPath: join(newPaths.taskDir, `${session.id}.log`),
-					bootstrapPath: join(newPaths.taskDir, `${session.id}.md`),
-					...(session.pathContext ? { pathContext: { ...session.pathContext, taskDir: newPaths.taskDir } } : {}),
-				})),
-			};
-		}
-		const initialContent = `${JSON.stringify(
-			this.toVersioned({
-				version: 2,
-				taskId: newTaskId,
-				modes: initialModes,
-				...(initialState.worktreePath !== undefined ? { worktreePath: initialState.worktreePath } : {}),
-				...(initialState.hasSuccessfulSession !== undefined
-					? { hasSuccessfulSession: initialState.hasSuccessfulSession }
-					: {}),
-			}),
-			null,
-			"\t",
-		)}\n`;
-		for (const history of Object.values(initialState.modes)) {
-			for (const session of history.sessions) {
-				for (const [source, destination, suffix] of [
-					[session.outputPath, join(newPaths.taskDir, `${session.id}.log`), ".log"],
-					[session.bootstrapPath, join(newPaths.taskDir, `${session.id}.md`), ".md"],
-				] as const) {
-					if (resolve(source) !== resolve(join(oldPaths.taskDir, `${session.id}${suffix}`)))
-						throw new Error(`Cannot remap session ${session.id}; its sidecar path is not owned by ${oldTaskId}.`);
-					let sourceExists = true;
-					try {
-						const info = await lstat(source);
-						if (!info.isFile() || info.isSymbolicLink())
-							throw new Error(`Cannot remap non-regular session sidecar ${source}.`);
-					} catch (error) {
-						if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
-						sourceExists = false;
-					}
-					try {
-						const info = await lstat(destination);
-						if (!info.isFile() || info.isSymbolicLink() || sourceExists)
-							throw new Error(`Session sidecar already exists at ${destination}.`);
-					} catch (error) {
-						if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
-						if (!sourceExists) throw new Error(`Session sidecar is missing for ${session.id}.`);
-					}
-				}
-			}
-		}
-		try {
-			const existing = await Bun.file(newPaths.statePath).text();
-			if (existing !== initialContent)
-				throw new Error(`Session state already exists for task ${newTaskId}; refusing to merge unrelated state.`);
-		} catch (error) {
-			if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
-		}
 		let createdDestinationDir = false;
 		try {
 			await lstat(newPaths.taskDir);
@@ -715,6 +653,7 @@ export class SessionStore {
 		const releases: Array<() => Promise<void>> = [];
 		const releaseErrors: unknown[] = [];
 		let operationError: unknown;
+		const renamedSidecars: Array<{ source: string; destination: string }> = [];
 		try {
 			for (const path of lockPaths) releases.push(await this.acquireRemapLock(path));
 
@@ -756,15 +695,16 @@ export class SessionStore {
 									sourceExists = false;
 								}
 								if (!sourceExists) {
+									let destinationExists = true;
 									try {
 										const info = await lstat(destination);
 										if (!info.isFile() || info.isSymbolicLink())
 											throw new Error(`Session sidecar already exists at ${destination}.`);
 									} catch (destinationError) {
-										if ((destinationError as NodeJS.ErrnoException).code === "ENOENT")
-											throw new Error(`Session sidecar is missing for ${session.id}.`);
-										throw destinationError;
+										if ((destinationError as NodeJS.ErrnoException).code !== "ENOENT") throw destinationError;
+										destinationExists = false;
 									}
+									if (destinationExists) sidecarMoves.push({ source, destination, sourceExists });
 								} else {
 									try {
 										await lstat(destination);
@@ -773,7 +713,7 @@ export class SessionStore {
 										if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
 									}
 								}
-								sidecarMoves.push({ source, destination, sourceExists });
+								if (sourceExists) sidecarMoves.push({ source, destination, sourceExists });
 							}
 							return {
 								...session,
@@ -805,10 +745,30 @@ export class SessionStore {
 			} catch (error) {
 				if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
 			}
-			for (const { source, destination, sourceExists } of sidecarMoves)
-				if (sourceExists) await rename(source, destination);
-			if (!destinationExists) await this.installAndVerifyRemappedState(newPaths.statePath, remapped, newTaskId);
-			else await this.verifyRemappedState(newPaths.statePath, remapped, newTaskId);
+			try {
+				for (const { source, destination, sourceExists } of sidecarMoves) {
+					if (!sourceExists) continue;
+					await rename(source, destination);
+					renamedSidecars.push({ source, destination });
+				}
+				if (!destinationExists) await this.installAndVerifyRemappedState(newPaths.statePath, remapped, newTaskId);
+				else await this.verifyRemappedState(newPaths.statePath, remapped, newTaskId);
+			} catch (error) {
+				const rollbackErrors: unknown[] = [];
+				for (const { source, destination } of renamedSidecars.reverse()) {
+					try {
+						await rename(destination, source);
+					} catch (rollbackError) {
+						rollbackErrors.push(rollbackError);
+					}
+				}
+				if (rollbackErrors.length)
+					throw new AggregateError(
+						[error, ...rollbackErrors],
+						"Session sidecar rollback failed after remap verification.",
+					);
+				throw error;
+			}
 
 			await this.unlinkRemappedSource(oldPaths.statePath);
 			// Runtime directories may contain native session logs and bootstrap files at absolute

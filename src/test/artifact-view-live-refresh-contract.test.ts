@@ -20,6 +20,28 @@ afterEach(async () => {
 });
 
 describe("artifact viewer live-refresh contract", () => {
+	it("lists an approved oversized artifact without buffering it all for hashing", async () => {
+		const root = await createUniqueTestDir("artifact-view-oversized-approved");
+		roots.push(root);
+		const agenticWorkspaceDir = join(root, ".agentic-workspace");
+		const container = join(agenticWorkspaceDir, "tasks", "back-23");
+		const artifactsDir = join(container, "artifacts");
+		await mkdir(artifactsDir, { recursive: true });
+		await writeFile(
+			join(container, "task.md"),
+			"---\ntask_schema_version: 3\nid: BACK-23\ntitle: Oversized artifact\nstatus: To Do\nassignee: []\ncreated_date: 2026-10-10\nlabels: []\ndependencies: []\n---\n\nTask body\n",
+		);
+		const content = Buffer.alloc(128 * 1024 + 1, 0x61);
+		await writeFile(join(artifactsDir, "large.bin"), content);
+		const repository = new TaskArtifactRepository({ agenticWorkspaceDirectory: agenticWorkspaceDir });
+		const current = await repository.status(taskId, "large.bin");
+		await repository.approveCurrentVersion(taskId, "large.bin", current.sha256!);
+
+		expect(await repository.list(taskId)).toContainEqual(
+			expect.objectContaining({ path: "large.bin", size: content.length, state: "approved", sha256: current.sha256 }),
+		);
+	});
+
 	it("reloads external same-size/same-mtime bytes and sidecar changes, then unsubscribes on close/dispose", async () => {
 		const root = await createUniqueTestDir("artifact-view-live-refresh");
 		roots.push(root);

@@ -9,8 +9,10 @@ import { Core } from "../../../index.ts";
 import { formatDuplicateTaskIdWarning } from "../../../utils/duplicate-detection.ts";
 import { LIST_WINDOW_OUTPUT_HELP, printListWindow, selectListWindow } from "../../../utils/list-window.ts";
 import type { ReadOutputMode, ReadOutputOptions } from "../../../utils/read-output-mode.ts";
+import { getCanonicalStatus, getValidStatuses } from "../../../utils/status.ts";
 import { taskIdsEqual } from "../../../utils/task-id.ts";
 import { LOCAL_TASK_LOOKUP_HINT } from "../../../utils/task-path.ts";
+import { getTerminalStatus } from "../../../utils/terminal-status.ts";
 import type { CliRuntime } from "../../runtime.ts";
 import { registerTaskArtifactCommands } from "../../task-artifact.ts";
 import { type CliReadOutput, getReadOutputMode, isPlainRequested, resolveListOutput } from "../read-output.ts";
@@ -95,7 +97,12 @@ export function registerTaskCommands(program: Command, { runtime, readOutput }: 
 			const core = new Core(await requireProjectRoot());
 			const task = await core.loadTaskById(taskId, { includeCrossBranch: false });
 			if (!task) throw new Error(`Current task not found: ${taskId}`);
-			await core.updateTaskFromInput(task.id, { status: DEFAULT_DONE_STATUS });
+			const validStatuses = await getValidStatuses(core);
+			const doneStatus =
+				(await getCanonicalStatus(DEFAULT_DONE_STATUS, core)) ??
+				getTerminalStatus(validStatuses) ??
+				DEFAULT_DONE_STATUS;
+			await core.updateTaskFromInput(task.id, { status: doneStatus });
 			process.stdout.write(`Marked task ${task.id} Done.\n`);
 		});
 	addHelpSchema(taskCmd.command("approve <taskId> <modeId>"), {

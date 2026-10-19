@@ -840,7 +840,6 @@ export class AgentSessionService {
 		},
 	): Promise<SharedAgentAttachment> {
 		const resume = options.action === "resume";
-		const settleOnFailure = true;
 		const { modeId, settings, directReservation } = options;
 		const currentProfile = options.preflight
 			? { preset: options.preflight.preset, profile: options.preflight.options.profile }
@@ -978,9 +977,9 @@ export class AgentSessionService {
 			if (!dispatchAttempted) {
 				await this.failBeforeDispatch(launchRecord, prepared, error, async () => {
 					if (directReservation) await this.failReservation(directReservation, error);
-					else if (settleOnFailure) await this.finishNativeSessionRecord(launchRecord, String(error));
+					else await this.finishNativeSessionRecord(launchRecord, String(error));
 				});
-			} else if (settleOnFailure) {
+			} else {
 				try {
 					await this.settleDispatchedLaunchFailure(launchRecord, error);
 				} catch (settlementError) {

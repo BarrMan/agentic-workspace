@@ -91,8 +91,14 @@ describe("CLI task mode approval", () => {
 
 	it("does not grant approval when marking a task done", async () => {
 		process.env.AGENTIC_WORKSPACE_TASK_ID = "TASK-1";
+		const core = new Core(testDir);
+		const config = await coreFileSystem(core).loadConfig();
+		if (!config) throw new Error("Test project config was not initialized");
+		await coreFileSystem(core).saveConfig({ ...config, statuses: ["Backlog", "Doing", "Shipped"] });
 		const result = await runTaskCommand(["task", "done"]);
 		expect(result.exitCode).toBe(0);
-		expect((await coreFileSystem(new Core(testDir)).loadTask("task-1"))?.modeApprovals ?? {}).toEqual({});
+		const task = await coreFileSystem(core).loadTask("task-1");
+		expect(task?.status).toBe("Shipped");
+		expect(task?.modeApprovals ?? {}).toEqual({});
 	});
 });

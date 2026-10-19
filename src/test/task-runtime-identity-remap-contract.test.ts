@@ -290,6 +290,10 @@ describe("MAIN task runtime identity remap contract", () => {
 			await expect(store.remapTaskIdentity("TASK-SOURCE", "TASK-TARGET")).rejects.toThrow(/injected/);
 			expect(await Bun.file(oldPaths.statePath).exists()).toBe(true);
 			expect(await Bun.file(newPaths.statePath).exists()).toBe(true);
+			if (phase !== "source-unlink") {
+				expect(await Bun.file(source.outputPath).exists()).toBe(true);
+				expect(await Bun.file(join(newPaths.taskDir, `${sourceId}.log`)).exists()).toBe(false);
+			}
 			await expect(store.remapTaskIdentity("TASK-SOURCE", "TASK-TARGET")).resolves.toBeUndefined();
 			expect(await Bun.file(oldPaths.statePath).exists()).toBe(false);
 			const remapped = (await store.read("TASK-TARGET")).modes?.plan?.sessions[0];
@@ -298,6 +302,37 @@ describe("MAIN task runtime identity remap contract", () => {
 			expect(await readFile(remapped!.outputPath, "utf8")).toBe("sidecar bytes\n");
 			expect(await readFile(remapped!.bootstrapPath, "utf8")).toBe("bootstrap bytes\n");
 		}
+	});
+
+	it("promotes a pending session record before its sidecars have been written", async () => {
+		const root = await mkdtemp(join(tmpdir(), "task-runtime-pending-remap-"));
+		roots.push(root);
+		const core = new Core(root);
+		await initializeTestProject(core, "Pending session remap");
+		const { task: draft } = await core.createTaskFromInput({
+			title: "Pending session",
+			status: "Draft",
+			rawContent: "draft",
+		});
+		const store = new SessionStore(root, new NoProcess());
+		const sourceDir = (await store.paths(draft.id)).taskDir;
+		const pending = session(draft.id, "plan", randomUUID(), join(sourceDir, "pending.log"), sourceDir);
+		pending.outputPath = join(sourceDir, `${pending.id}.log`);
+		pending.bootstrapPath = join(sourceDir, `${pending.id}.md`);
+		await store.mutateMode(draft.id, "plan", async (history) => {
+			history.sessions.push(pending);
+			history.activeSessionId = pending.id;
+		});
+
+		await core.promoteDraft(draft.id);
+		const promoted = (await coreFileSystem(core).listTasks()).find(({ title }) => title === "Pending session");
+		expect(promoted).toBeDefined();
+		if (!promoted) return;
+		const destinationDir = (await store.paths(promoted.id)).taskDir;
+		const migrated = (await store.read(promoted.id)).modes.plan?.sessions[0];
+		expect(migrated).toEqual(remappedSession(pending, promoted.id, destinationDir));
+		expect(await Bun.file(pending.outputPath).exists()).toBe(false);
+		expect(await Bun.file(pending.bootstrapPath).exists()).toBe(false);
 	});
 
 	it("attempts every acquired remap lock release when one release rejects", async () => {

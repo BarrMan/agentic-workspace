@@ -476,8 +476,13 @@ export class OpenTuiWorkspaceController {
 		if (viewState.recoveryNotice) this.#notice = viewState.recoveryNotice;
 		let groupStore: GroupStore | undefined = this.#options.groupStore;
 		const groupDirectory = this.#core.workspaceDirectory;
-		if (groupStore === undefined && groupDirectory !== undefined)
-			groupStore = await openGroupStore(this.#core.projectRoot, groupDirectory);
+		if (groupStore === undefined && groupDirectory !== undefined) {
+			try {
+				groupStore = await openGroupStore(this.#core.projectRoot, groupDirectory);
+			} catch (error) {
+				this.#notice = error instanceof Error ? error.message : String(error);
+			}
+		}
 		if (this.#closed) {
 			if (this.#options.groupStore === undefined) groupStore?.close();
 			return await completion;
