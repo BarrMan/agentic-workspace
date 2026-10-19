@@ -1,7 +1,6 @@
 import type { Core } from "../../../controller/agentic-workspace.ts";
 import { loadTaskDetail } from "../../../controller/task-detail.ts";
 import { parseClearableStringList, parseDelimitedStringList, toStringArray } from "../../../lib/string-list.ts";
-import { DRAFT_STATUS } from "../../../model/constants.ts";
 import { formatTaskPlainText } from "../../../renderer/formatters/task-plain-text.ts";
 import { validateTaskListFlags } from "./edit-list-options.ts";
 
@@ -34,7 +33,7 @@ export function buildTaskCreateInput(
 		(milestone) => ({
 			title,
 			description: options.description || options.desc ? String(options.description || options.desc) : undefined,
-			status: options.draft ? DRAFT_STATUS : options.status ? String(options.status) : undefined,
+			status: options.status ? String(options.status) : undefined,
 			dueDate: typeof options.dueDate === "string" ? options.dueDate : undefined,
 			assignee: parseClearableStringList(options.assignee),
 			labels: parseDelimitedStringList(options.labels),
@@ -55,7 +54,7 @@ export function buildTaskCreateInput(
 export async function createAndReportTask(
 	core: Core,
 	input: CreateInput,
-	options: { kind: "task" | "draft"; plain?: boolean; filePathOptional?: boolean },
+	options: { plain?: boolean; filePathOptional?: boolean },
 ): Promise<void> {
 	try {
 		const { task, filePath } = await core.createTaskFromInput(input);
@@ -63,7 +62,7 @@ export async function createAndReportTask(
 			console.log(formatTaskPlainText(await loadTaskDetail(core, task), { filePathOverride: filePath }));
 			return;
 		}
-		console.log(`Created ${options.kind} ${task.id}`);
+		console.log(`Created task ${task.id}`);
 		if (!options.filePathOptional || filePath) console.log(`File: ${filePath}`);
 	} catch (error) {
 		console.error(error instanceof Error ? error.message : String(error));

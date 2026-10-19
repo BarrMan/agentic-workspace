@@ -2,11 +2,11 @@ import { TextPrompt } from "@clack/core";
 import * as clack from "@clack/prompts";
 import picocolors from "picocolors";
 import { normalizeStringList } from "../../../lib/string-list.ts";
-import { DEFAULT_STATUSES, DRAFT_STATUS, FALLBACK_STATUS } from "../../../model/constants.ts";
+import { DEFAULT_STATUSES, FALLBACK_STATUS } from "../../../model/constants.ts";
 import { normalizeDueDate } from "../../../model/task/due-date.ts";
 import { getPriorityOptions, normalizePriorityValue } from "../../../model/task/priority-config.ts";
 import { getProjectValues, resolveProjectValue } from "../../../model/task/project-config.ts";
-import { findCanonicalStatus, statusComparisonKey } from "../../../model/task/status.ts";
+import { findCanonicalStatus } from "../../../model/task/status.ts";
 import { getTaskTypeValues, resolveTaskTypeValue } from "../../../model/task/task-type-config.ts";
 import type { Task, TaskCreateInput, TaskUpdateInput } from "../../../model/types.ts";
 import { TASK_FIELD_LABELS } from "../../../renderer/formatters/task-labels.ts";
@@ -88,10 +88,7 @@ function buildStatusPromptValues(params: { statuses: string[]; mode: "create" | 
 } {
 	const configuredStatuses = normalizeStringList(params.statuses) ?? [];
 	const baseStatuses = configuredStatuses.length > 0 ? configuredStatuses : [...DEFAULT_STATUSES];
-	const hasDraftStatus = baseStatuses.some(
-		(status) => statusComparisonKey(status) === statusComparisonKey(DRAFT_STATUS),
-	);
-	const selectableStatuses = hasDraftStatus ? baseStatuses : [DRAFT_STATUS, ...baseStatuses];
+	const selectableStatuses = baseStatuses;
 	const options: PromptChoice[] = selectableStatuses.map((status) => ({
 		label: status,
 		value: status,

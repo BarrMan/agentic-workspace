@@ -49,7 +49,7 @@ async function printDuplicateIntegrityWarning(core: Core): Promise<boolean> {
 
 async function loadLocalTaskView(core: Core, taskId: string) {
 	const localTasks = await core.loadStoredTasks();
-	const task = await core.getTaskWithSubtasks(taskId, localTasks, { includeCrossBranch: false });
+	const task = await core.getTaskWithSubtasks(taskId, localTasks, {});
 	if (!task) {
 		console.error(`Task ${taskId} not found. ${LOCAL_TASK_LOOKUP_HINT}`);
 		process.exitCode = 1;
@@ -95,7 +95,7 @@ export function registerTaskCommands(program: Command, { runtime, readOutput }: 
 			const taskId = process.env.AGENTIC_WORKSPACE_TASK_ID;
 			if (!taskId) throw new Error("No current task is available in this session.");
 			const core = new Core(await requireProjectRoot());
-			const task = await core.loadTaskById(taskId, { includeCrossBranch: false });
+			const task = await core.loadTaskById(taskId);
 			if (!task) throw new Error(`Current task not found: ${taskId}`);
 			const validStatuses = await getValidStatuses(core);
 			const doneStatus =

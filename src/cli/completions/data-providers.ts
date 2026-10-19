@@ -1,6 +1,6 @@
 import { type Core, createRuntimeCore } from "../../controller/agentic-workspace.ts";
+import { comparisonKey } from "../../lib/comparison-key.ts";
 import { DEFAULT_STATUSES } from "../../model/constants.ts";
-import { assigneeComparisonKey } from "../../model/task/assignee-filter.ts";
 import { labelComparisonKey } from "../../model/task/label-filter.ts";
 import type { AgenticWorkspaceConfig } from "../../model/types.ts";
 
@@ -72,7 +72,7 @@ export async function getAssignees(): Promise<string[]> {
 		const assignees = new Map<string, string>();
 		for (const task of tasks) {
 			for (const assignee of task.assignee) {
-				const key = assigneeComparisonKey(assignee);
+				const key = comparisonKey(assignee);
 				if (key && !assignees.has(key)) assignees.set(key, assignee);
 			}
 		}

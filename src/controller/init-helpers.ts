@@ -20,9 +20,7 @@ export interface InitializeProjectOptions {
 	configLocation?: "folder" | "root";
 	filesystemOnly?: boolean;
 	advancedConfig?: {
-		checkActiveBranches?: boolean;
 		remoteOperations?: boolean;
-		activeBranchDays?: number;
 		bypassGitHooks?: boolean;
 		zeroPaddedIds?: number;
 		defaultEditor?: string;
@@ -52,11 +50,8 @@ function resolveFreshConfig(projectName: string, taskPrefix?: string): AgenticWo
 		filesystemOnly: defaults.filesystemOnly,
 		remoteOperations: defaults.remoteOperations,
 		bypassGitHooks: defaults.bypassGitHooks,
-		checkActiveBranches: defaults.checkActiveBranches,
-		activeBranchDays: defaults.activeBranchDays,
 		defaultPort: defaults.defaultPort,
 		autoOpenBrowser: defaults.autoOpenBrowser,
-		taskResolutionStrategy: DEFAULT_FRESH_INIT_POLICY.taskResolutionStrategy,
 		prefixes: { task: taskPrefix || "task" },
 	};
 }
@@ -87,7 +82,6 @@ export function resolveInitializationConfig(options: InitializeProjectOptions): 
 	const advancedConfig = effectiveFilesystemOnly
 		? {
 				...options.advancedConfig,
-				checkActiveBranches: false,
 				remoteOperations: false,
 				bypassGitHooks: false,
 			}
@@ -101,9 +95,6 @@ export function resolveInitializationConfig(options: InitializeProjectOptions): 
 		filesystemOnly: effectiveFilesystemOnly || defaults.filesystemOnly,
 		remoteOperations: advancedConfig.remoteOperations ?? existingConfig?.remoteOperations ?? defaults.remoteOperations,
 		bypassGitHooks: advancedConfig.bypassGitHooks ?? existingConfig?.bypassGitHooks ?? defaults.bypassGitHooks,
-		checkActiveBranches:
-			advancedConfig.checkActiveBranches ?? existingConfig?.checkActiveBranches ?? defaults.checkActiveBranches,
-		activeBranchDays: advancedConfig.activeBranchDays ?? existingConfig?.activeBranchDays ?? defaults.activeBranchDays,
 		defaultPort: advancedConfig.defaultPort ?? existingConfig?.defaultPort ?? defaults.defaultPort,
 		autoOpenBrowser: advancedConfig.autoOpenBrowser ?? existingConfig?.autoOpenBrowser ?? defaults.autoOpenBrowser,
 		prefixes: existingConfig?.prefixes ?? freshConfig.prefixes,

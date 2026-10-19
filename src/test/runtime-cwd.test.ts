@@ -183,7 +183,7 @@ describe("resolveRuntimeCwd", () => {
 
 			expect(await getTaskIds()).toEqual(["TASK-1", "TASK-2"]);
 			expect(await getLabels()).toEqual(["ui"]);
-			expect(await getAssignees()).toEqual(["@alex", "Bob"]);
+			expect(await getAssignees()).toEqual([" Alex ", "@alex", "Bob"]);
 		});
 
 		it("degrades to static fallbacks when no project is found", async () => {

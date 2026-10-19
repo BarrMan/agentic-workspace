@@ -9,7 +9,7 @@ import type { TaskListRequest } from "./list-parse.ts";
 
 async function resolveTaskListParent(core: Core, parentId: string, parentDisplayId: string): Promise<string> {
 	try {
-		const parent = await core.loadTaskById(parentId, { includeCrossBranch: false });
+		const parent = await core.loadTaskById(parentId);
 		if (!parent) throw new Error(`Parent task ${parentDisplayId} not found. ${LOCAL_TASK_LOOKUP_HINT}`);
 		return parent.id;
 	} catch (error) {
@@ -25,7 +25,6 @@ export async function queryTaskList(core: Core, request: TaskListRequest, includ
 	const tasks = await core.queryTasks({
 		query: request.searchQuery || undefined,
 		filters: Object.keys(request.filters).length > 0 ? { ...request.filters, parentTaskId: parentId } : undefined,
-		includeCrossBranch: false,
 	});
 	const config = await core.getStoredConfig();
 	const narrow = <T extends Task>(rows: T[]): T[] => {

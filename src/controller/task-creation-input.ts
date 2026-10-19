@@ -2,13 +2,11 @@ import { normalizeStringList, parseDelimitedStringList } from "../lib/string-lis
 import { FALLBACK_STATUS } from "../model/constants.ts";
 import { normalizeAssignees } from "../model/task/assignee-filter.ts";
 import { normalizeDueDate } from "../model/task/due-date.ts";
-import { type AgenticWorkspaceConfig, EntityType, type Task, type TaskCreateInput } from "../model/types.ts";
+import type { AgenticWorkspaceConfig, Task, TaskCreateInput } from "../model/types.ts";
 
 export type PreparedTaskCreationInput = {
 	title: string;
-	isDraft: boolean;
 	requestedParentTaskId: string | undefined;
-	entityType: EntityType;
 	labels: string[];
 	assignees: string[];
 	dependencies: string[];
@@ -31,12 +29,9 @@ export function prepareTaskCreationInput(input: TaskCreateInput): PreparedTaskCr
 	) {
 		throw new Error("Ordinal must be a non-negative number.");
 	}
-	const isDraft = input.status?.trim().toLowerCase() === "draft";
 	return {
 		title: input.title.trim(),
-		isDraft,
 		requestedParentTaskId: input.parentTaskId?.trim(),
-		entityType: isDraft ? EntityType.Draft : EntityType.Task,
 		labels: normalizeStringList(input.labels) ?? [],
 		assignees: normalizeAssignees(normalizeStringList(input.assignee)),
 		dependencies: parseDelimitedStringList(input.dependencies) ?? [],
@@ -93,7 +88,7 @@ export function buildCreatedTask(
 	return {
 		id: resolved.id,
 		title: prepared.title,
-		status: prepared.isDraft ? "Draft" : resolved.status || config?.defaultStatus || FALLBACK_STATUS,
+		status: resolved.status || config?.defaultStatus || FALLBACK_STATUS,
 		assignee,
 		labels: prepared.labels,
 		dependencies: resolved.dependencies,

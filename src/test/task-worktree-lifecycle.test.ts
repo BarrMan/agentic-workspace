@@ -133,14 +133,6 @@ describe("task worktree lifecycle", () => {
 		expect(existsSync(taskWorktreePath(TEST_DIR, task))).toBe(false);
 	});
 
-	it("does not create a worktree for a draft", async () => {
-		const current = await setupCore({ worktreePerTask: true });
-		const { task } = await current.createTaskFromInput({ title: "Draft task", status: "Draft" });
-
-		expect(await taskWorktreeExists(TEST_DIR, task)).toBe(false);
-		expect(existsSync(taskWorktreePath(TEST_DIR, task))).toBe(false);
-	});
-
 	it("creates and uses the worktree at the first session cwd resolution", async () => {
 		const current = await setupCore({ worktreePerTask: true });
 		const task = newTask("TASK-1", "Finish the worktree lifecycle");
@@ -196,7 +188,7 @@ describe("task worktree lifecycle", () => {
 		expect(existsSync(originalPath)).toBe(true);
 
 		await current.updateTaskFromInput(task.id, { title: "Renamed after worktree" });
-		const renamed = (await current.loadTaskById(task.id, { includeCrossBranch: false })) as Task;
+		const renamed = (await current.loadTaskById(task.id)) as Task;
 		// The slug changed, so a path recomputation no longer matches the on-disk directory.
 		expect(taskWorktreePath(TEST_DIR, renamed)).not.toBe(originalPath);
 

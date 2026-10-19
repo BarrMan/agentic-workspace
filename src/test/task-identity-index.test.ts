@@ -1,5 +1,9 @@
 import { describe, expect, it } from "bun:test";
-import { TaskIdentityIndex, type TaskIdentityRecord } from "../model/task/task-identity-index.ts";
+import {
+	normalizeTaskLifecyclePath,
+	TaskIdentityIndex,
+	type TaskIdentityRecord,
+} from "../model/task/task-identity-index.ts";
 import type { Task } from "../model/types.ts";
 
 const context = {
@@ -21,10 +25,22 @@ function task(title: string, id = "BACK-1"): Task {
 }
 
 function index(records: TaskIdentityRecord[]): TaskIdentityIndex {
-	return new TaskIdentityIndex(records, context, ["To Do", "In Progress", "Done"], "most_progressed");
+	return new TaskIdentityIndex(records, context);
 }
 
 describe("TaskIdentityIndex", () => {
+	it("normalizes only paths contained in archive/completed lifecycle directories", () => {
+		expect(normalizeTaskLifecyclePath("agentic-workspace/archive/tasks/example.md", "agentic-workspace")).toBe(
+			"agentic-workspace/tasks/example.md",
+		);
+		expect(normalizeTaskLifecyclePath("agentic-workspace/completed/example.md", "agentic-workspace")).toBe(
+			"agentic-workspace/tasks/example.md",
+		);
+		expect(normalizeTaskLifecyclePath("agentic-workspace/archive/tasks-other/example.md", "agentic-workspace")).toBe(
+			"agentic-workspace/archive/tasks-other/example.md",
+		);
+	});
+
 	it("keeps the identity fingerprint stable when hydration moves between same-path branch records", () => {
 		const branchA: TaskIdentityRecord = {
 			id: "BACK-1",

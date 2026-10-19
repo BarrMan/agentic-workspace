@@ -71,15 +71,8 @@ export class VacatedTaskReferenceService {
 	}
 }
 
-export function markVacatedTaskMoved(
-	error: unknown,
-	state: "archiveState" | "demotionState",
-	demotionFailureCause?: "cleanup" | "commit",
-): Error {
+export function markVacatedTaskMoved(error: unknown, state: "archiveState"): Error {
 	const failure = error instanceof Error ? error : new Error(String(error));
 	(failure as Error & Record<string, unknown>)[state] = "moved";
-	if (state === "demotionState" && demotionFailureCause) {
-		(failure as Error & Record<string, unknown>).demotionFailureCause = demotionFailureCause;
-	}
 	return failure;
 }

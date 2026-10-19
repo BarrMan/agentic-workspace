@@ -1,12 +1,10 @@
 import { GitOperations } from "../filesystem/git/operations.ts";
 import { findAgenticWorkspaceRoot } from "../filesystem/paths/find-root.ts";
-import { formatStoredDate } from "../lib/date.ts";
 import { resolveRuntimeCwd } from "../lib/runtime-cwd.ts";
 import { DEFAULT_STATUSES, FALLBACK_STATUS } from "../model/constants.ts";
 import { TaskCollectionFilterError } from "../model/errors/task-collection.ts";
 import { AmbiguousTaskIdError } from "../model/errors/task-id.ts";
 import { DependencyValidator } from "../model/task/dependency-validator.ts";
-import type { DraftIdentityFindings } from "../model/task/duplicate-detection.ts";
 import { formatValidPriorityValues, resolvePriorityValue } from "../model/task/priority-config.ts";
 import { DEFAULT_ORDINAL_STEP, resolveOrdinalConflicts } from "../model/task/reorder.ts";
 import { formatValidStatuses, getCanonicalStatuses } from "../model/task/status.ts";
@@ -21,20 +19,16 @@ import {
 	type Milestone,
 	type SearchOptions,
 	type SearchResult,
-	TASK_DIRECTORY,
 	type Task,
 	type TaskCreateInput,
 	type TaskListFilter,
 	type TaskUpdateInput,
 } from "../model/types.ts";
-import { BunRunner } from "../runtime/session-process.ts";
 import { AgentSessionService } from "../runtime/sessions.ts";
 import { Config, resolveAgentConfiguration } from "../storage/config.ts";
-import { type DraftFileReference, FileSystem, isConfigValueError } from "../storage/file-system.ts";
-import { SessionStore } from "../storage/session-store.ts";
+import { FileSystem, isConfigValueError } from "../storage/file-system.ts";
 import { Storage } from "../storage/storage.ts";
-import type { BranchTaskStateEntry, CreatedTaskRollbackResult, CreatedTaskWrite } from "../storage/types.ts";
-import { openViewStateStore } from "../storage/view-state-store.ts";
+import type { CreatedTaskRollbackResult, CreatedTaskWrite } from "../storage/types.ts";
 import { type ConfigWatcherCallbacks, watchConfigFile } from "../storage/watchers/config-watcher.ts";
 import { type TaskWatcherCallbacks, watchTaskRecords } from "../storage/watchers/task-watcher.ts";
 import { planOrderedTaskPlacement } from "./ordered-task-move-planner.ts";
@@ -80,11 +74,6 @@ type TaskCollection = {
  */
 export interface VacatedTaskResult {
 	success: boolean;
-	cleanedTaskIds: string[];
-}
-
-interface TaskEditResult {
-	task: Task;
 	cleanedTaskIds: string[];
 }
 
@@ -161,31 +150,6 @@ export class Core {
 			this.taskMutations,
 			this.vacatedTaskReferences,
 			async (taskId, ownedStops) => await this.sessions.cleanupTaskWorktreeSessions(taskId, ownedStops),
-			async (oldTaskId, newTaskId) => {
-				const sessions = new SessionStore(this.storage.projectRoot, new BunRunner());
-				await sessions.remapTaskIdentity(oldTaskId, newTaskId);
-
-				const view = await openViewStateStore(this.storage.projectRoot, () => ({}), {
-					stateRoot: await sessions.stateRoot,
-				});
-				try {
-					await view.update((state) => {
-						const current = state as typeof state & { selectedModeByTask?: Record<string, unknown> };
-						const selected = current.selectedModeByTask;
-						if (!selected || !(oldTaskId in selected)) return state;
-						if (newTaskId in selected) {
-							throw new Error(
-								`Cannot remap selected mode from ${oldTaskId} to ${newTaskId}; a selection already exists for ${newTaskId}.`,
-							);
-						}
-						const selectedModeByTask = { ...selected, [newTaskId]: selected[oldTaskId] };
-						delete selectedModeByTask[oldTaskId];
-						return { ...state, selectedModeByTask };
-					});
-				} finally {
-					view.close();
-				}
-			},
 			async (taskId) => await this.sessions.forgetTaskSessions(taskId),
 		);
 	}
@@ -193,22 +157,16 @@ export class Core {
 	private async buildTaskIdentityIndex(
 		localTasks: Array<Task & { lastModified?: Date }>,
 		completedTasks: Task[],
-		branchRecords: BranchTaskStateEntry[],
-		statuses: string[],
-		resolutionStrategy: "most_recent" | "most_progressed",
 		repositoryRoot?: string | null,
 		git = this.git,
 	): Promise<TaskIdentityIndex> {
 		const records: TaskIdentityRecord[] = [];
 		for (const task of localTasks) records.push(this.storage.projectTaskIdentityRecord(task));
 		for (const task of completedTasks) records.push(this.storage.projectCompletedTaskIdentityRecord(task));
-		records.push(...branchRecords);
 
 		return new TaskIdentityIndex(
 			records,
 			this.storage.taskIdentityContext(repositoryRoot === undefined ? await git.getRepositoryRoot() : repositoryRoot),
-			statuses,
-			resolutionStrategy,
 		);
 	}
 
@@ -216,19 +174,10 @@ export class Core {
 		return await this.taskMutations.withCreateLock(fn);
 	}
 
-	/** Reports draft files whose numeric identities collide, whose frontmatter drifted from their filename, or that are unreadable. */
-	async diagnoseDraftIdentity(): Promise<DraftIdentityFindings> {
-		return this.storage.diagnoseDraftIdentity();
-	}
-
-	async resolveCreateOrdinal(inputOrdinal: number | undefined, isDraft: boolean): Promise<number | undefined> {
+	async resolveCreateOrdinal(inputOrdinal: number | undefined): Promise<number | undefined> {
 		if (typeof inputOrdinal === "number") {
 			return inputOrdinal;
 		}
-		if (isDraft) {
-			return undefined;
-		}
-
 		const tasks = await this.storage.loadTasks();
 		const ordinals = tasks
 			.map((task) => task.ordinal)
@@ -299,24 +248,18 @@ export class Core {
 	}
 
 	/** Loads one request-local Markdown/Git snapshot without retaining it on Core. */
-	async loadTaskSnapshot(
-		includeCrossBranch = true,
-	): Promise<TaskCorpusSnapshot & { identityIndex: TaskIdentityIndex }> {
-		return await this.persistentReads.load(includeCrossBranch);
+	async loadTaskSnapshot(): Promise<TaskCorpusSnapshot & { identityIndex: TaskIdentityIndex }> {
+		return await this.persistentReads.load();
 	}
 
 	async getTask(taskId: string, options: TaskReadOptions = {}): Promise<Task | null> {
 		return await this.persistentReads.get(taskId.toUpperCase(), {
-			includeCrossBranch: options.includeCrossBranch,
 			includeArchived: options.includeArchived,
 		});
 	}
 
 	async getTaskWithSubtasks(taskId: string, localTasks?: Task[], options: TaskReadOptions = {}): Promise<Task | null> {
-		const task =
-			options.includeCrossBranch === false
-				? await this.loadWorkingCopyTask(taskId, false, localTasks)
-				: await this.getTask(taskId, options);
+		const task = await this.getTask(taskId, options);
 		return task
 			? new TaskCollectionModel(localTasks ?? (await this.storage.loadTasks())).withSubtaskSummaries(task)
 			: null;
@@ -327,16 +270,9 @@ export class Core {
 	}
 
 	async buildWorkingCopyTaskIndex(activeTasks?: Task[]): Promise<TaskIdentityIndex> {
-		if (!activeTasks) return (await this.loadTaskSnapshot(false)).identityIndex;
-		const [completedTasks, config] = await Promise.all([this.storage.loadCompletedTasks(), this.storage.loadConfig()]);
-		return await this.buildTaskIdentityIndex(
-			activeTasks,
-			completedTasks,
-			[],
-			config?.statuses ?? [...DEFAULT_STATUSES],
-			config?.taskResolutionStrategy ?? "most_progressed",
-			null,
-		);
+		if (!activeTasks) return (await this.loadTaskSnapshot()).identityIndex;
+		const completedTasks = await this.storage.loadCompletedTasks();
+		return await this.buildTaskIdentityIndex(activeTasks, completedTasks, null);
 	}
 
 	async loadWorkingCopyTasks(includeCompleted = false): Promise<Task[]> {
@@ -381,13 +317,9 @@ export class Core {
 	/**
 	 * Generates the next ID for a given entity type.
 	 *
-	 * @param type - The entity type (Task, Draft). Defaults to Task.
-	 * @param parent - Optional parent ID for subtask generation (only applicable for tasks).
-	 * @returns The next available ID (e.g., "task-42", "draft-5")
-	 *
-	 * Folder scanning by type:
-	 * - Task: /tasks, /completed, cross-branch (if enabled), remote (if enabled)
-	 * - Draft: /drafts only
+	 * @param type - The entity type. Defaults to Task.
+	 * @param parent - Optional parent ID for subtask generation.
+	 * @returns The next available task ID.
 	 */
 	async generateNextId(type: EntityType = EntityType.Task, parent?: string): Promise<string> {
 		return await this.taskMutations.generateNextId(type, parent);
@@ -399,35 +331,17 @@ export class Core {
 	 *
 	 * This is used for ID generation to determine the next available ID.
 	 */
-	private async loadWorktreeTaskStateEntries(taskPrefix: string): Promise<BranchTaskStateEntry[]> {
-		const [repoRoot, worktreeRoots] = await Promise.all([this.git.getRepositoryRoot(), this.git.listWorktreePaths()]);
-		if (!repoRoot) return [];
-		return await this.storage.loadTaskStateEntries(repoRoot, worktreeRoots, taskPrefix);
-	}
-
 	private async getActiveAndCompletedTaskIds(): Promise<string[]> {
 		const snapshot = await this.loadTaskSnapshot();
 		const completedTasks = snapshot.completedTasks;
-		const config = snapshot.config;
-		const taskPrefix = config?.prefixes?.task ?? "task";
 		if (!snapshot.identityIndex) throw new Error("Task corpus identity index was not initialized");
 
 		// Same-repository worktrees share the task ID namespace even before their
 		// task files are committed, so include their filesystem state for allocation.
-		const [worktreeEntries, archivedTasks, drafts, occupiedDraftFileIds] = await Promise.all([
-			this.loadWorktreeTaskStateEntries(taskPrefix),
-			this.storage.loadArchivedTasks(),
-			this.storage.loadDrafts(),
-			this.storage.listOccupiedDraftFileIds(),
-		]);
+		const archivedTasks = await this.storage.loadArchivedTasks();
 		const occupiedIds = new Set(snapshot.identityIndex.getOccupiedIds());
 		for (const task of completedTasks) occupiedIds.add(task.id);
 		for (const task of archivedTasks) occupiedIds.add(task.id);
-		for (const draft of drafts) occupiedIds.add(draft.id);
-		for (const id of occupiedDraftFileIds) occupiedIds.add(id);
-		for (const entry of worktreeEntries) {
-			if (entry.type === TASK_DIRECTORY.TASK || entry.type === TASK_DIRECTORY.COMPLETED) occupiedIds.add(entry.id);
-		}
 		return [...occupiedIds];
 	}
 
@@ -435,7 +349,7 @@ export class Core {
 	 * Gets all existing IDs for a given entity type.
 	 * Used internally by generateNextId to determine the next available ID.
 	 *
-	 * Task allocation reserves identities across active, completed, archived, draft, and worktree records.
+	 * Task allocation reserves identities across active, completed, archived, and worktree records.
 	 */
 	async getExistingIdsForType(type: EntityType): Promise<string[]> {
 		switch (type) {
@@ -443,33 +357,17 @@ export class Core {
 				// Reserve the complete task identity inventory across stores and branches.
 				return this.getActiveAndCompletedTaskIds();
 			}
-			case EntityType.Draft: {
-				// Occupancy includes filename-derived ids: an unparsable file still reserves its
-				// numeric id, so allocation can never reuse what it cannot parse.
-				const [drafts, occupiedFileIds] = await Promise.all([
-					this.storage.loadDrafts(),
-					this.storage.listOccupiedDraftFileIds(),
-				]);
-				return [...drafts.map((d) => d.id), ...occupiedFileIds];
-			}
 			default:
 				return [];
 		}
 	}
 
-	async writePreparedTask(task: Task, isDraft: boolean): Promise<string> {
-		if (isDraft) {
-			task.status = "Draft";
-			return await this.storage.saveDraft(task);
-		}
-
+	async writePreparedTask(task: Task): Promise<string> {
 		return await this.storage.saveTask(task, { create: true });
 	}
 
-	async finalizeCreatedTask(task: Task, isDraft: boolean): Promise<Task | null> {
-		const savedTask = isDraft ? await this.storage.loadDraft(task.id) : await this.storage.loadTask(task.id);
-
-		return savedTask;
+	async finalizeCreatedTask(task: Task): Promise<Task | null> {
+		return await this.storage.loadTask(task.id);
 	}
 
 	async rollbackCreatedTask(write: CreatedTaskWrite): Promise<CreatedTaskRollbackResult> {
@@ -485,7 +383,7 @@ export class Core {
 	 * use, so one ID cannot be an acceptable parent for a child that no task command can then show.
 	 */
 	async resolveParentTaskIdForCreate(parentTaskId: string): Promise<string> {
-		const parentTask = await this.loadTaskById(parentTaskId, { includeCrossBranch: false });
+		const parentTask = await this.loadTaskById(parentTaskId);
 		if (!parentTask) {
 			throw new Error(
 				`Parent task ${parentTaskId} not found. ${LOCAL_TASK_LOOKUP_HINT} Use an existing task ID with --parent; use --milestone to assign a task to a milestone.`,
@@ -502,7 +400,7 @@ export class Core {
 		const config = await this.getConfig();
 		task.worktreePolicy = config.sessionSettings.worktreePerTask ? "enabled" : "disabled";
 
-		const filepath = await this.writePreparedTask(task, false);
+		const filepath = await this.writePreparedTask(task);
 		return filepath;
 	}
 
@@ -524,97 +422,7 @@ export class Core {
 	}
 
 	async updateTaskFromInput(taskId: string, input: TaskUpdateInput, options: TaskReadOptions = {}): Promise<Task> {
-		const requestedStatus = input.status?.trim().toLowerCase();
-		if (requestedStatus === "draft") {
-			// demoteTaskWithUpdates takes the task lock itself, so it must not be nested here.
-			const task = await this.loadTaskForMutation(taskId, options);
-			if (!task) throw new Error(`Task not found: ${taskId}`);
-			return (await this.demoteTaskWithUpdates(task, input, options)).task;
-		}
 		return await this.taskMutations.updateFromInput(taskId, input, options);
-	}
-
-	async updateDraft(task: Task): Promise<string> {
-		await this.storage.loadConfig();
-		// Drafts always keep status Draft
-		task.status = "Draft";
-		task.updatedDate = formatStoredDate();
-
-		const filepath = await this.storage.saveDraft(task);
-
-		return filepath;
-	}
-
-	async updateDraftFromInput(reference: DraftFileReference, input: TaskUpdateInput): Promise<Task> {
-		// Same discipline as task edits: acquire the namespaced per-file lock before the
-		// read-modify-write and re-read inside it, so a concurrent editor fails fast instead of
-		// losing its update. The reference's own file is the only thing touched; no id is ever
-		// re-resolved to a different path.
-		return await this.storage.withDraftLock(reference, async () => {
-			const current = await this.storage.draftReferenceFromPath(reference.filePath);
-			// Bind the mutated record to the selected file's own identity: a padded filename whose
-			// frontmatter carries an unpadded id must keep converging onto that one file instead of
-			// minting a second spelling of the same numeric id.
-			current.task.id = reference.canonicalId;
-
-			const { mutated } = await this.applyTaskUpdateInput(current.task, input, async (status) => {
-				if (status.trim().toLowerCase() !== "draft") {
-					throw new Error("Drafts must use status Draft.");
-				}
-				return "Draft";
-			});
-
-			if (!mutated) {
-				return current.task;
-			}
-
-			const savedPath = await this.updateDraft(current.task);
-			const refreshed = await this.storage.draftReferenceFromPath(savedPath);
-			return refreshed.task;
-		});
-	}
-
-	async editTaskOrDraft(
-		taskId: string,
-		input: TaskUpdateInput,
-		options: TaskReadOptions = {},
-	): Promise<TaskEditResult> {
-		const resolvedDraft = await this.storage.resolveDraftReference(taskId);
-		if (resolvedDraft) {
-			const requestedStatus = input.status?.trim();
-			const wantsDraft = requestedStatus?.toLowerCase() === "draft";
-			if (requestedStatus && !wantsDraft) {
-				return {
-					task: await this.promoteDraftWithUpdates(resolvedDraft, input),
-					cleanedTaskIds: [],
-				};
-			}
-			return { task: await this.updateDraftFromInput(resolvedDraft, input), cleanedTaskIds: [] };
-		}
-
-		if (input.status?.trim().toLowerCase() === "draft") {
-			const task = await this.loadTaskForMutation(taskId, options);
-			if (!task) throw new Error(`Task not found: ${taskId}`);
-			return await this.demoteTaskWithUpdates(task, input, options);
-		}
-
-		return { task: await this.updateTaskFromInput(taskId, input, options), cleanedTaskIds: [] };
-	}
-
-	private async promoteDraftWithUpdates(reference: DraftFileReference, input: TaskUpdateInput): Promise<Task> {
-		return await this.taskLifecycle.promoteDraftWithUpdates(reference, input);
-	}
-
-	// Demotion is a read-modify-write of the task file too, reached from both updateTaskFromInput
-	// and editTaskOrDraft, so it takes the task lock here rather than at each caller. Waiting on
-	// the create lock below happens while the task lock is held; the order is always task lock
-	// then create lock, never the reverse, so the two cannot deadlock.
-	private async demoteTaskWithUpdates(
-		task: Task,
-		input: TaskUpdateInput,
-		options: TaskReadOptions = {},
-	): Promise<TaskEditResult> {
-		return await this.taskLifecycle.demoteTaskWithUpdates(task, input, options);
 	}
 
 	async editTask(taskId: string, input: TaskUpdateInput, options: TaskReadOptions = {}): Promise<Task> {
@@ -967,25 +775,11 @@ export class Core {
 		return await this.taskLifecycle.getTerminalStatusTasksByAge(olderThanDays);
 	}
 
-	async archiveDraft(draftId: string): Promise<boolean> {
-		return await this.taskLifecycle.archiveDraft(draftId);
-	}
-
-	async promoteDraft(draftId: string): Promise<boolean> {
-		return await this.taskLifecycle.promoteDraft(draftId);
-	}
-
-	async demoteTask(taskId: string, options: TaskReadOptions = {}): Promise<VacatedTaskResult> {
-		return await this.taskLifecycle.demoteTask(taskId, options);
-	}
-
 	/**
 	 * Load and process all tasks with the same logic as CLI overview
 	 * This method extracts the common task loading logic for reuse
 	 */
-	async loadAllTasksForStatistics(
-		progressCallback?: (msg: string) => void,
-	): Promise<{ tasks: Task[]; drafts: Task[]; statuses: string[]; priorities: string[] }> {
+	async loadAllTasksForStatistics(): Promise<{ tasks: Task[]; statuses: string[]; priorities: string[] }> {
 		const snapshot = await this.loadTaskSnapshot();
 		const config = snapshot.config;
 		const statuses = (config?.statuses || DEFAULT_STATUSES) as string[];
@@ -993,11 +787,7 @@ export class Core {
 		if (!snapshot.identityIndex) throw new Error("Task corpus identity index was not initialized");
 		const tasks = snapshot.identityIndex.getTasks(true);
 
-		// Load drafts
-		progressCallback?.("Loading drafts...");
-		const drafts = await this.storage.loadDrafts();
-
-		return { tasks, drafts, statuses: statuses as string[], priorities };
+		return { tasks, statuses: statuses as string[], priorities };
 	}
 
 	async loadTasks(
@@ -1031,22 +821,6 @@ export class Core {
 
 	async findTaskRecordPath(taskId: string): Promise<string | null> {
 		return await this.storage.findTaskRecordPath(taskId);
-	}
-
-	async listHealthyDrafts(): Promise<Task[]> {
-		return await this.storage.loadHealthyDrafts();
-	}
-
-	async loadDraftRecords(): Promise<Task[]> {
-		return await this.storage.loadDrafts();
-	}
-
-	async draftReferenceFromPath(filePath: string): Promise<DraftFileReference & { task: Task }> {
-		return await this.storage.draftReferenceFromPath(filePath);
-	}
-
-	async resolveDraftReference(draftId: string): Promise<(DraftFileReference & { task: Task }) | null> {
-		return await this.storage.resolveDraftReference(draftId);
 	}
 
 	async loadCompletedTaskRecords(): Promise<Task[]> {

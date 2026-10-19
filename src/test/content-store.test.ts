@@ -24,7 +24,6 @@ async function createProject(name: string): Promise<{ core: Core; filesystem: Fi
 		milestones: [],
 		dateFormat: "YYYY-MM-DD",
 		remoteOperations: false,
-		checkActiveBranches: false,
 	});
 	return { core, filesystem: new FileSystem(root) };
 }
@@ -37,10 +36,10 @@ describe("persistent task reads", () => {
 	it("reads disk changes on the next snapshot without retaining a corpus", async () => {
 		const { core, filesystem } = await createProject("persistent-task-read");
 		await filesystem.saveTask(task("TASK-1", "Before"));
-		expect((await core.loadTaskSnapshot(false)).tasks.map((entry) => entry.title)).toEqual(["Before"]);
+		expect((await core.loadTaskSnapshot()).tasks.map((entry) => entry.title)).toEqual(["Before"]);
 
 		await filesystem.saveTask(task("TASK-1", "After"));
-		expect((await core.loadTaskSnapshot(false)).tasks.map((entry) => entry.title)).toEqual(["After"]);
+		expect((await core.loadTaskSnapshot()).tasks.map((entry) => entry.title)).toEqual(["After"]);
 	});
 
 	it("reads distinct padded task identities from their own containers", async () => {

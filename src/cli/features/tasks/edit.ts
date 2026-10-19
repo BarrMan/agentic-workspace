@@ -50,10 +50,10 @@ const taskEditTarget: EditCommandTarget = {
 	label: "Task",
 	pluralLabel: "tasks",
 	statuses: (core) => getValidStatuses(core),
-	resolve: (core, id) => core.loadTaskById(id.toUpperCase(), { includeCrossBranch: false }),
-	listCandidates: (core) => core.queryTasks({ includeCrossBranch: false }),
+	resolve: (core, id) => core.loadTaskById(id.toUpperCase()),
+	listCandidates: (core) => core.queryTasks({}),
 	selectionValue: (candidate) => candidate.id,
-	update: (core, existing, input) => core.editTask(existing.id, input, { includeCrossBranch: false }),
+	update: (core, existing, input) => core.editTask(existing.id, input, {}),
 	notFoundMessage: (id) => `Task ${id} not found. ${LOCAL_TASK_LOOKUP_HINT}`,
 };
 

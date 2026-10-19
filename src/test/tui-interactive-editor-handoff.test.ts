@@ -57,7 +57,6 @@ async function runLiveRefreshScenario(): Promise<{ title: string; transcriptPath
 	await initializeTestProject(core, "Interactive live refresh");
 	const config = await coreFileSystem(core).loadConfig();
 	if (!config) throw new Error("Failed to load live refresh config");
-	await coreFileSystem(core).saveConfig({ ...config, remoteOperations: false, checkActiveBranches: false });
 	await core.createTask({
 		id: "task-1",
 		title: "before-refresh",

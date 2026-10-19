@@ -3,7 +3,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Core } from "../controller/agentic-workspace.ts";
-import { isValidTaskId, parseTaskId, taskIdsEqual } from "../model/task/task-id.ts";
+import { parseTaskId, taskIdsEqual } from "../model/task/task-id.ts";
 import type { Task } from "../model/types.ts";
 import { serializeTask } from "../storage/markdown/serializer.ts";
 import { coreFileSystem } from "./test-utils.ts";
@@ -14,7 +14,6 @@ describe("shared task ID grammar", () => {
 	it("parses numeric segments without conflating stored casing or zero padding", () => {
 		expect(parseTaskId("BACK-01.2", "back")).toEqual({ prefix: "BACK", segments: ["01", "2"] });
 		expect(parseTaskId("BACK-1x", "back")).toBeNull();
-		expect(isValidTaskId("BACK-01.2")).toBe(true);
 		expect(taskIdsEqual("back-01", "BACK-01")).toBe(true);
 		expect(taskIdsEqual("BACK-01", "BACK-1")).toBe(false);
 	});

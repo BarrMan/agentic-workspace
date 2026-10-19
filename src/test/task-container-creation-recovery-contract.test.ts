@@ -17,7 +17,7 @@ describe("task container creation recovery contract", () => {
 		const { dir, core } = await setup();
 		try {
 			const finalize = core.finalizeCreatedTask.bind(core);
-			core.finalizeCreatedTask = async (_task, _isDraft) => {
+			core.finalizeCreatedTask = async (_task) => {
 				throw new Error("injected finalize failure");
 			};
 			await expect(core.createTaskFromInput({ title: "Recover task", status: "To Do" })).rejects.toThrow(
@@ -32,26 +32,6 @@ describe("task container creation recovery contract", () => {
 			const { task } = await core.createTaskFromInput({ title: "Recover task", status: "To Do" });
 			expect(task.id).toBe("TASK-2");
 			expect((await coreFileSystem(core).listTasks()).filter((item) => item.id === task.id)).toHaveLength(1);
-		} finally {
-			await safeCleanup(dir);
-		}
-	});
-
-	it("preserves concurrent user artifacts when a draft finalize fails", async () => {
-		const { dir, core } = await setup();
-		try {
-			core.finalizeCreatedTask = async (_task, _isDraft) => {
-				const container = join(dir, "agentic-workspace", "drafts", "draft-1");
-				await writeFile(join(container, "notes.txt"), "user-owned bytes");
-				throw new Error("injected finalize failure");
-			};
-			await expect(core.createTaskFromInput({ title: "Recover draft", status: "Draft" })).rejects.toThrow(
-				"injected finalize failure",
-			);
-			const container = join(dir, "agentic-workspace", "drafts", "draft-1");
-			expect(await Bun.file(join(container, "task.md")).exists()).toBe(false);
-			expect(await readFile(join(container, "notes.txt"), "utf8")).toBe("user-owned bytes");
-			expect(await readdir(container)).toEqual(["notes.txt"]);
 		} finally {
 			await safeCleanup(dir);
 		}

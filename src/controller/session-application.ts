@@ -459,10 +459,10 @@ export class SessionApplication {
 		taskId: string,
 		operation: (task: NonNullable<Awaited<ReturnType<Core["loadTaskForMutation"]>>>) => Promise<T>,
 	): Promise<T> {
-		const task = await this.core.loadTaskForMutation(taskId, { includeCrossBranch: false });
+		const task = await this.core.loadTaskForMutation(taskId);
 		if (!task) throw new Error(`Task not found: ${taskId}`);
 		return await this.core.withTaskLock(task, async () => {
-			const current = await this.core.loadTaskForMutation(taskId, { includeCrossBranch: false });
+			const current = await this.core.loadTaskForMutation(taskId);
 			if (!current || current.filePath !== task.filePath)
 				throw new Error(`Task changed or no longer exists: ${taskId}`);
 			return await operation(current);

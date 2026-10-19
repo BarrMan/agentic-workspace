@@ -4,7 +4,7 @@ Purpose: inspect a task and create or edit its supported fields. Product rules: 
 
 ## Contents and order
 
-Task detail presents task identity and available information: description, status, type, priority, milestone, labels, and dependencies/readiness, with selected-mode session context where relevant. Tasks have no draft lifecycle, due date, or separate project field. The project directory is the scope. Due date remains removed.
+Task detail presents task identity and available information: description, status, type, priority, milestone, labels, and dependencies/readiness, with selected-mode session context where relevant. Tasks have no due date or separate project field. The project directory is the scope. Due date remains removed.
 
 Creation and editing forms use the supported task fields; do not expose removed fields. Option fields render as a one-line `◀ value ▶` cycler; Left/Up selects the previous value and Right/Down the next, wrapping at either end. The create form includes title, description, status, type, priority, agent preset, worktree-per-task, and YOLO. The edit form includes title, description, type, and priority. Exact field order, required-field markers, and detail-pane ordering are unresolved.
 

@@ -594,7 +594,7 @@ function actionCore(
 	tasks: Task[],
 	handlers: {
 		editTask?: (id: string, input: { status: string }) => void;
-		deleteTask?: (id: string, options: { includeCrossBranch: false }) => void | Promise<void>;
+		deleteTask?: (id: string, options: {}) => void | Promise<void>;
 	} = {},
 ): Core {
 	const projectRoot = mkdtempSync(join(tmpdir(), "workspace-controller-actions-"));
@@ -623,7 +623,7 @@ function actionCore(
 			handlers.editTask?.(id, input);
 			return tasks.find((task) => task.id === id);
 		},
-		deleteTask: async (id: string, options: { includeCrossBranch: false }) => {
+		deleteTask: async (id: string, options: {}) => {
 			await handlers.deleteTask?.(id, options);
 			return { success: true, cleanedTaskIds: [] };
 		},

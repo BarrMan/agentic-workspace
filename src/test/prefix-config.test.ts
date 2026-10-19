@@ -8,16 +8,14 @@ import {
 	getPrefixForType,
 	getTaskPrefixError,
 	hasPrefix,
-	isReservedTaskPrefix,
 } from "../model/task/prefix-config.ts";
-import { canonicalTaskIdKey, canonicalTaskIdSegments } from "../model/task/task-id.ts";
 import { type AgenticWorkspaceConfig, EntityType } from "../model/types.ts";
 
 describe("prefix-config", () => {
 	describe("extractIdBody", () => {
 		test("extracts body from prefixed ID", () => {
 			expect(extractIdBody("task-123", "task")).toBe("123");
-			expect(extractIdBody("draft-456", "draft")).toBe("456");
+			expect(extractIdBody("jira-456", "jira")).toBe("456");
 		});
 
 		test("handles hierarchical IDs", () => {
@@ -26,7 +24,7 @@ describe("prefix-config", () => {
 
 		test("returns original if no prefix match", () => {
 			expect(extractIdBody("123", "task")).toBe("123");
-			expect(extractIdBody("draft-123", "task")).toBe("draft-123");
+			expect(extractIdBody("JIRA-123", "task")).toBe("JIRA-123");
 		});
 
 		test("is case-insensitive for prefix", () => {
@@ -60,7 +58,7 @@ describe("prefix-config", () => {
 
 		test("does not match wrong prefix", () => {
 			const regex = buildIdRegex("task");
-			expect("draft-123".match(regex)).toBeFalsy();
+			expect("JIRA-123".match(regex)).toBeFalsy();
 		});
 
 		test("works with custom prefixes", () => {
@@ -78,7 +76,7 @@ describe("prefix-config", () => {
 	describe("hasPrefix", () => {
 		test("returns true for matching prefix", () => {
 			expect(hasPrefix("task-123", "task")).toBe(true);
-			expect(hasPrefix("draft-456", "draft")).toBe(true);
+			expect(hasPrefix("JIRA-456", "JIRA")).toBe(true);
 		});
 
 		test("is case-insensitive", () => {
@@ -87,7 +85,7 @@ describe("prefix-config", () => {
 		});
 
 		test("returns false for non-matching prefix", () => {
-			expect(hasPrefix("draft-123", "task")).toBe(false);
+			expect(hasPrefix("JIRA-123", "task")).toBe(false);
 			expect(hasPrefix("123", "task")).toBe(false);
 		});
 
@@ -122,7 +120,7 @@ describe("prefix-config", () => {
 		});
 
 		test("ignores IDs with wrong prefix", () => {
-			expect(generateNextId(["task-5", "draft-10", "task-3"], "task")).toBe("TASK-6");
+			expect(generateNextId(["task-5", "JIRA-10", "task-3"], "task")).toBe("TASK-6");
 		});
 
 		test("increments arbitrarily large IDs without scientific notation", () => {
@@ -157,26 +155,15 @@ describe("prefix-config", () => {
 			expect(generateNextSubtaskId(["task-5", "task-5.1"], "5", "task")).toBe("TASK-5.2");
 		});
 
-		test("increments huge subtasks and matches padded parent segments exactly", () => {
+		test("increments huge subtasks and matches parent segments exactly", () => {
 			expect(
 				generateNextSubtaskId(
-					["task-09007199254740992.999999999999999999999999999999999999999"],
+					["task-9007199254740992.999999999999999999999999999999999999999"],
 					"TASK-9007199254740992",
 					"task",
 				),
 			).toBe("TASK-9007199254740992.1000000000000000000000000000000000000000");
-		});
-	});
-
-	describe("canonical task ID keys", () => {
-		test("canonicalizes numeric segments without losing arbitrary precision", () => {
-			expect(canonicalTaskIdSegments(["000", "09007199254740992"])).toEqual(["0", "9007199254740992"]);
-			expect(canonicalTaskIdSegments(["1", "x"])).toBeNull();
-		});
-
-		test("folds case and leading zeros only for numeric task IDs", () => {
-			expect(canonicalTaskIdKey(" Draft-0005.02 ")).toBe("draft-5.2");
-			expect(canonicalTaskIdKey("Not-An-ID")).toBe("not-an-id");
+			expect(generateNextSubtaskId(["TASK-1.99", "TASK-01.4"], "TASK-01", "task")).toBe("TASK-01.5");
 		});
 	});
 
@@ -194,44 +181,9 @@ describe("prefix-config", () => {
 			const config = {} as AgenticWorkspaceConfig;
 			expect(getPrefixForType(EntityType.Task, config)).toBe("task");
 		});
-
-		test("returns hardcoded draft prefix (not configurable)", () => {
-			expect(getPrefixForType(EntityType.Draft)).toBe("draft");
-		});
-
-		test("draft prefix is always hardcoded regardless of config", () => {
-			const config = { prefixes: { task: "JIRA" } } as AgenticWorkspaceConfig;
-			// Draft prefix is hardcoded, not part of config
-			expect(getPrefixForType(EntityType.Draft, config)).toBe("draft");
-		});
-	});
-
-	describe("isReservedTaskPrefix", () => {
-		test("rejects prefixes matching the draft system prefix", () => {
-			expect(isReservedTaskPrefix("draft")).toBe(true);
-			expect(isReservedTaskPrefix("doc")).toBe(false);
-		});
-
-		test("is case-insensitive", () => {
-			expect(isReservedTaskPrefix("DRAFT")).toBe(true);
-			expect(isReservedTaskPrefix("Doc")).toBe(false);
-		});
-
-		test("allows non-reserved prefixes", () => {
-			expect(isReservedTaskPrefix("task")).toBe(false);
-			expect(isReservedTaskPrefix("JIRA")).toBe(false);
-			expect(isReservedTaskPrefix("documents")).toBe(false);
-		});
 	});
 
 	describe("getTaskPrefixError", () => {
-		test("rejects reserved prefixes with the init error used by the wizard and flag", () => {
-			expect(getTaskPrefixError("draft")).toBe(
-				'Task prefix "draft" is reserved for drafts. Choose a different prefix.',
-			);
-			expect(getTaskPrefixError("DOC")).toBeUndefined();
-		});
-
 		test("rejects non-letter prefixes", () => {
 			expect(getTaskPrefixError("task-1")).toBe("Task prefix must contain only letters (a-z, A-Z).");
 		});
@@ -246,10 +198,6 @@ describe("prefix-config", () => {
 			expect(getTaskPrefixError(" JIRA ")).toBe("Task prefix must contain only letters (a-z, A-Z).");
 			expect(getTaskPrefixError("JIRA ")).toBe("Task prefix must contain only letters (a-z, A-Z).");
 			expect(getTaskPrefixError("   ")).toBe("Task prefix must contain only letters (a-z, A-Z).");
-		});
-
-		test("still rejects a reserved prefix that is padded", () => {
-			expect(getTaskPrefixError(" draft ")).toBe("Task prefix must contain only letters (a-z, A-Z).");
 		});
 	});
 
@@ -266,8 +214,8 @@ describe("prefix-config", () => {
 			expect(extractAnyPrefix("JIRA-456")).toBe("jira");
 		});
 
-		test("extracts draft prefix", () => {
-			expect(extractAnyPrefix("draft-1")).toBe("draft");
+		test("extracts a custom prefix", () => {
+			expect(extractAnyPrefix("JIRA-1")).toBe("jira");
 		});
 
 		test("returns null for plain number", () => {

@@ -3,23 +3,16 @@ import type { AgentConfiguration } from "./session/types.ts";
 export type TaskStatus = string;
 export const TASK_DIRECTORY = {
 	TASK: "task",
-	DRAFT: "draft",
 	ARCHIVED: "archived",
 	COMPLETED: "completed",
 } as const;
-export const TASK_DIRECTORY_TYPES = [
-	TASK_DIRECTORY.TASK,
-	TASK_DIRECTORY.DRAFT,
-	TASK_DIRECTORY.ARCHIVED,
-	TASK_DIRECTORY.COMPLETED,
-] as const;
+export const TASK_DIRECTORY_TYPES = [TASK_DIRECTORY.TASK, TASK_DIRECTORY.ARCHIVED, TASK_DIRECTORY.COMPLETED] as const;
 export type TaskDirectoryType = (typeof TASK_DIRECTORY_TYPES)[number];
 
 export const TASK_SOURCE = {
 	LOCAL: "local",
 	REMOTE: "remote",
 	COMPLETED: "completed",
-	LOCAL_BRANCH: "local-branch",
 } as const;
 export type TaskSource = (typeof TASK_SOURCE)[keyof typeof TASK_SOURCE];
 
@@ -36,7 +29,6 @@ export type LabelMatchMode = "any" | "all";
  */
 export enum EntityType {
 	Task = "task",
-	Draft = "draft",
 }
 
 export interface Task {
@@ -82,7 +74,7 @@ export interface Task {
 export type Approval = true;
 
 /**
- * Check if a task is locally editable (not from a remote or other local branch)
+ * Check if a task is locally editable (not from a remote source)
  */
 export function isLocalEditableTask(task: Task): boolean {
 	return task.source === undefined || task.source === TASK_SOURCE.LOCAL || task.source === TASK_SOURCE.COMPLETED;
@@ -204,7 +196,6 @@ export type SearchResult = TaskSearchResult;
 /**
  * Configuration for ID prefixes used in task files.
  * Allows customization of task prefix (e.g., "JIRA-", "issue-", "bug-").
- * Note: Draft prefix is always "draft" and not configurable.
  */
 export interface PrefixConfig {
 	/** Prefix for task IDs (default: "task") - produces IDs like TASK-1, TASK-2 */
@@ -230,7 +221,6 @@ export interface AgenticWorkspaceConfig {
 	defaultStatus?: string;
 	dateFormat: string;
 	maxColumnWidth?: number;
-	taskResolutionStrategy?: "most_recent" | "most_progressed";
 	defaultEditor?: string;
 	autoOpenBrowser?: boolean;
 	defaultPort?: number;
@@ -242,13 +232,11 @@ export interface AgenticWorkspaceConfig {
 	zeroPaddedIds?: number;
 	includeDateTimeInDates?: boolean; // Whether to include time in new dates
 	bypassGitHooks?: boolean;
-	checkActiveBranches?: boolean; // Check task states across active branches (default: true)
-	activeBranchDays?: number; // How many days a branch is considered active (default: 30)
 	/** Project-relative AgenticWorkspace folder when config is stored at project root in agentic-workspace.config.yml. */
 	agenticWorkspaceDirectory?: string;
 	/** Global callback command to run on any task status change. Supports $TASK_ID, $OLD_STATUS, $NEW_STATUS, $TASK_TITLE variables. */
 	onStatusChange?: string;
-	/** ID prefix configuration for tasks and drafts. Defaults to { task: "task", draft: "draft" } */
+	/** ID prefix configuration for tasks. Defaults to { task: "task" } */
 	prefixes?: PrefixConfig;
 }
 

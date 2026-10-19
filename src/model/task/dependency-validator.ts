@@ -7,7 +7,6 @@ import { taskIdsEqual } from "./task-id.ts";
 /** The records dependency validation resolves dependencies against. */
 export interface DependencyStore {
 	listTasks(): Promise<Task[]>;
-	listDrafts(): Promise<Task[]>;
 	listCompletedTasks(): Promise<Task[]>;
 	listArchivedTasks(): Promise<Task[]>;
 	loadTask(taskId: string): Promise<Task | null>;
@@ -15,7 +14,6 @@ export interface DependencyStore {
 
 interface DependencyCorpus {
 	tasks: Task[];
-	drafts: Task[];
 	completed: Task[];
 	archived: Task[];
 }
@@ -23,7 +21,7 @@ interface DependencyCorpus {
 /**
  * Validate dependencies against the project corpus and report defects already stored in it.
  *
- * The corpus spans working-copy tasks, drafts, completed, and archived records: Done is the normal
+ * The corpus spans working-copy tasks, completed, and archived records: Done is the normal
  * end state of a predecessor, so a task whose target moved to completed/ or the archive must keep a
  * valid, editable dependency list. Only validation resolves these targets; readiness and graph
  * semantics are unchanged.
@@ -47,11 +45,9 @@ export class DependencyValidator {
 	 * When `target` names the task being created or edited, a dependency resolving to the target
 	 * itself is rejected in any spelling, and a dependency that would close a cycle through the
 	 * existing graph is rejected with the cycle path. An unresolved input is also checked against the
-	 * target before being reported as missing: creation, promotion, and demotion validate against an
-	 * identity allocated moments ago, which no corpus record claims, so a dangling reference to
+	 * target before being reported as missing: creation validates against an identity allocated
+	 * moments ago, which no corpus record claims, so a dangling reference to
 	 * exactly that ID would become a self-dependency the moment the record is written under it.
-	 * Resolution runs first so an input that names an existing record keeps naming it - a bare number
-	 * resolves to the draft or task that already claims it, not to the identity being allocated.
 	 */
 	async validate(dependencies: string[], target?: Task): Promise<{ valid: string[]; invalid: string[] }> {
 		const valid: string[] = [];
@@ -59,7 +55,7 @@ export class DependencyValidator {
 		if (dependencies.length === 0) return { valid, invalid };
 
 		const corpus = await this.loadCorpus();
-		const known = [...corpus.tasks, ...corpus.drafts, ...corpus.completed, ...corpus.archived];
+		const known = [...corpus.tasks, ...corpus.completed, ...corpus.archived];
 		for (const dependency of dependencies) {
 			await this.validateInput(dependency, known, target, valid, invalid);
 		}
@@ -114,13 +110,12 @@ export class DependencyValidator {
 	}
 
 	private async loadCorpus(): Promise<DependencyCorpus> {
-		const [tasks, drafts, completed, archived] = await Promise.all([
+		const [tasks, completed, archived] = await Promise.all([
 			this.store.listTasks(),
-			this.store.listDrafts(),
 			this.store.listCompletedTasks(),
 			this.store.listArchivedTasks(),
 		]);
-		return { tasks, drafts, completed, archived };
+		return { tasks, completed, archived };
 	}
 }
 
@@ -145,5 +140,5 @@ function throwSelfDependency(target: Task, dependency: string): never {
 }
 
 function dependencyGraphCorpus(corpus: DependencyCorpus): { tasks: Task[]; completedTasks: Task[] } {
-	return { tasks: [...corpus.tasks, ...corpus.drafts, ...corpus.archived], completedTasks: corpus.completed };
+	return { tasks: [...corpus.tasks, ...corpus.archived], completedTasks: corpus.completed };
 }

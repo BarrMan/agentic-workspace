@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { constants } from "node:fs";
 import { access, lstat, mkdir, readFile, realpath, rename, stat } from "node:fs/promises";
-import { dirname, join, resolve } from "node:path";
+import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { LockOwner } from "../filesystem/lock-owner.ts";
 import { type ProjectStateRootOptions, resolveProjectStateRoot, writeFileAtomic } from "./session-store.ts";
 import { type StateStoreWatcher, startStateStoreWatcher } from "./watchers/state-store-watcher.ts";
@@ -67,7 +67,8 @@ async function writableDirectory(path: string): Promise<boolean> {
 }
 
 async function canonicalViewLock(projectRoot: string): Promise<string | undefined> {
-	const canonical = join(projectRoot, "agentic-workspace", ".locks", "workspace-view-state");
+	const physicalProjectRoot = await realpath(projectRoot);
+	const canonical = join(physicalProjectRoot, "agentic-workspace", ".locks", "workspace-view-state");
 	let parent = dirname(canonical);
 	for (;;) {
 		let exists = false;
@@ -80,6 +81,10 @@ async function canonicalViewLock(projectRoot: string): Promise<string | undefine
 			if (exists || (error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
 		}
 		if (exists) {
+			const physicalParent = await realpath(parent);
+			const fromProject = relative(physicalProjectRoot, physicalParent);
+			if (fromProject === ".." || fromProject.startsWith(`..${sep}`) || isAbsolute(fromProject))
+				throw new Error(`View-state lock parent resolves outside the project root: ${parent}`);
 			if (await writableDirectory(parent)) return canonical;
 			break;
 		}

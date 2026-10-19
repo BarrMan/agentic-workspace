@@ -6,13 +6,6 @@ export type DuplicateGroup = {
 	tasks: Task[];
 };
 
-/** Duplicate, drifted, and unreadable findings for draft files. */
-export type DraftIdentityFindings = {
-	duplicates: Array<{ id: string; paths: string[] }>;
-	unreadable: string[];
-	drifted: Array<{ path: string; frontmatterId: string; filenameId: string }>;
-};
-
 export function detectDuplicateTaskIds(tasks: Task[]): DuplicateGroup[] {
 	const byId = new Map<string, Task[]>();
 	for (const task of tasks) {

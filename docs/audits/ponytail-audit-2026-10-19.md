@@ -132,15 +132,6 @@
 - **Fix:** Derive controls from `standardBun.passthru.sources` or assert the version, and matrix the Nix job over the advertised systems.
 - **If we skip it:** Nix builds break on updates, and platform regressions ship.
 
-### 15. One malformed draft hides all drafts
-
-`src/file-system/operations.ts:1181-1194`
-
-- **What this is:** `listDrafts` wraps the whole loop in one `try` and returns `[]` on any parse error.
-- **Problem:** One old or invalid draft makes `loadDraftRecords` and dependency checks see zero drafts.
-- **Fix:** Use per-file `try/catch`, like `listHealthyDrafts`, and warn on skips.
-- **If we skip it:** Drafts vanish from selection and users recreate duplicates.
-
 ### 16. Bare `description:` makes a task unparseable
 
 `src/markdown/task-record-schema.ts:133`

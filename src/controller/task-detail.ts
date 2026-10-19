@@ -28,17 +28,10 @@ export interface TaskCorpus {
 /**
  * Load the corpus a read may see.
  *
- * Without cross-branch records this is the working copy plus the completed corpus, which is what
- * every local task lookup already resolves against. With them, the working copy is still read as
- * written and the cross-branch store only contributes identities the working copy does not have:
- * the store resolves each identity to a single record, so merging the other way round would hide a
- * local ID that two files claim and quietly turn an ambiguous dependency into a resolved one.
+ * The corpus is loaded from the configured task store, shared by linked worktrees.
  */
-export async function loadTaskCorpus(
-	core: Core,
-	options: { includeCrossBranch: boolean } = { includeCrossBranch: false },
-): Promise<TaskCorpus> {
-	const snapshot = await core.loadTaskSnapshot(options.includeCrossBranch);
+export async function loadTaskCorpus(core: Core): Promise<TaskCorpus> {
+	const snapshot = await core.loadTaskSnapshot();
 	return {
 		tasks: snapshot.activeTasks.concat(
 			snapshot.tasks.filter((task) => !snapshot.activeTasks.some((local) => taskIdsEqual(local.id, task.id))),
@@ -104,12 +97,8 @@ function taskDetailGraphs(corpus: TaskCorpus) {
 }
 
 /** Load the corpus and attach the derived relationships, for a surface that reads per detail view. */
-export async function loadTaskDetail(
-	core: Core,
-	task: Task,
-	options: { includeCrossBranch: boolean } = { includeCrossBranch: false },
-): Promise<TaskDetail> {
-	return toTaskDetail(task, await loadTaskCorpus(core, options));
+export async function loadTaskDetail(core: Core, task: Task): Promise<TaskDetail> {
+	return toTaskDetail(task, await loadTaskCorpus(core));
 }
 
 /**
@@ -119,12 +108,8 @@ export async function loadTaskDetail(
  * a plain list read does not load. Call this only where the verdict is rendered or filtered on, so
  * output that never mentions readiness keeps reading exactly what it reads today.
  */
-export async function loadTaskListItems(
-	core: Core,
-	tasks: readonly Task[],
-	options: { includeCrossBranch: boolean } = { includeCrossBranch: false },
-): Promise<TaskListItem[]> {
-	return withReadiness(tasks, await loadTaskCorpus(core, options));
+export async function loadTaskListItems(core: Core, tasks: readonly Task[]): Promise<TaskListItem[]> {
+	return withReadiness(tasks, await loadTaskCorpus(core));
 }
 
 /**

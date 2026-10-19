@@ -183,9 +183,9 @@ describe("cross-surface search parity", () => {
 		const unassigned: Task = { ...otherTask, id: "task-3", title: "Unassigned", assignee: ["", "  "] };
 		await filesystem.saveTask(unassigned);
 		const corpus = [...tasks, unassigned];
-		expect(taskIds(TaskSearchIndex.apply(corpus, { assignee: [" Morgan ", "riley"] }))).toEqual(["task-1", "task-2"]);
+		expect(taskIds(TaskSearchIndex.apply(corpus, { assignee: [" @MORGAN ", "@riley"] }))).toEqual(["task-1", "task-2"]);
 		expect(taskIds(TaskSearchIndex.apply(corpus, { unassigned: true }))).toEqual(["task-3"]);
-		const assigned = (await core.searchPersistently({ types: ["task"], filters: { assignee: ["morgan", "@RILEY"] } }))
+		const assigned = (await core.searchPersistently({ types: ["task"], filters: { assignee: ["@morgan", "@RILEY"] } }))
 			.filter((result): result is TaskSearchResult => result.type === "task")
 			.map((result) => result.task.id)
 			.sort();
@@ -342,7 +342,7 @@ describe("filter wiring across surfaces", () => {
 		const expected = ["Wiring both labels"];
 
 		// Core.queryTasks backs `task list` and `GET /api/tasks`.
-		const coreTasks = await core.queryTasks({ filters: { project: "web" }, includeCrossBranch: false });
+		const coreTasks = await core.queryTasks({ filters: { project: "web" } });
 		expect(coreTasks.map((task) => task.title)).toEqual(expected);
 
 		const searchTitles = (await core.searchPersistently({ types: ["task"], filters: { project: "web" } }))
@@ -357,7 +357,7 @@ describe("filter wiring across surfaces", () => {
 	});
 
 	it("keeps OR semantics when several projects are requested", async () => {
-		const both = await core.queryTasks({ filters: { project: ["WEB", "api"] }, includeCrossBranch: false });
+		const both = await core.queryTasks({ filters: { project: ["WEB", "api"] } });
 		expect(both.map((task) => task.title).sort()).toEqual(["Wiring both labels", "Wiring one label"]);
 		// A task with no project never matches a non-empty project filter.
 		expect(both.some((task) => task.project === undefined)).toBe(false);
@@ -367,7 +367,6 @@ describe("filter wiring across surfaces", () => {
 		const matches = await core.queryTasks({
 			query: "Wiring",
 			filters: { project: "api" },
-			includeCrossBranch: false,
 		});
 
 		expect(matches.map((task) => task.title)).toEqual(["Wiring one label"]);

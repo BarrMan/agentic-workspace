@@ -26,29 +26,8 @@ export function taskIdRegex(prefix: string): RegExp {
 	return new RegExp(`^${escapeRegex(prefix)}-(${TASK_ID_BODY_PATTERN})`, "i");
 }
 
-export function canonicalTaskIdSegments(segments: readonly string[]): string[] | null {
-	if (!segments.every(isNumericTaskIdSegment)) return null;
-	return segments.map((segment) => segment.replace(/^0+/, "") || "0");
-}
-
-export function canonicalTaskIdKey(value: string): string {
-	const key = value.trim().toLowerCase();
-	const match = key.match(/^([a-z]+-)?(\d+(?:\.\d+)*)$/);
-	if (!match?.[2]) return key;
-	const segments = canonicalTaskIdSegments(match[2].split("."));
-	return segments ? `${match[1] ?? ""}${segments.join(".")}` : key;
-}
-
 export function isNumericTaskIdSegment(value: string): boolean {
 	return /^\d+$/.test(value);
-}
-
-export function isValidTaskId(value: string): boolean {
-	return parseTaskId(value) !== null;
-}
-
-export function isValidDraftId(value: string): boolean {
-	return /^DRAFT-[A-Z0-9]+$/i.test(value);
 }
 
 /**

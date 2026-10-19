@@ -7,8 +7,8 @@
  * Callers still decide which corpus to search: the local working copy or the cross-branch store.
  */
 
+import { comparisonKey } from "../../lib/comparison-key.ts";
 import type { LabelMatchMode, Task } from "../types.ts";
-import { assigneeComparisonKey } from "./assignee-filter.ts";
 import { matchesConfiguredFilter } from "./config-values.ts";
 import { labelComparisonKey } from "./label-filter.ts";
 import { normalizePriorityValue } from "./priority-config.ts";
@@ -137,13 +137,13 @@ export class TaskSearchIndex {
 			return Boolean(priority) && priorities.has(priority as string);
 		});
 
-		const assignees = new Set(toList(options.assignee).map(assigneeComparisonKey).filter(Boolean));
+		const assignees = new Set(toList(options.assignee).map(comparisonKey).filter(Boolean));
 		addSetCheck(checks, assignees, (task) =>
-			(task.assignee ?? []).some((value) => assignees.has(assigneeComparisonKey(value))),
+			(task.assignee ?? []).some((value) => assignees.has(comparisonKey(value))),
 		);
 
 		if (options.unassigned) {
-			checks.push((task) => !(task.assignee ?? []).some((value) => assigneeComparisonKey(value).length > 0));
+			checks.push((task) => !(task.assignee ?? []).some((value) => comparisonKey(value).length > 0));
 		}
 
 		const requiredLabels = toList(options.labels)

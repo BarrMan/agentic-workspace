@@ -8,16 +8,12 @@ export const DEFAULT_DIRECTORIES = {
 	HIDDEN_AGENTIC_WORKSPACE: ".agentic-workspace",
 	/** Active tasks directory */
 	TASKS: "tasks",
-	/** Draft tasks directory */
-	DRAFTS: "drafts",
 	/** Completed tasks directory */
 	COMPLETED: "completed",
 	/** Archive root directory */
 	ARCHIVE: "archive",
 	/** Archived tasks directory */
 	ARCHIVE_TASKS: "archive/tasks",
-	/** Archived drafts directory */
-	ARCHIVE_DRAFTS: "archive/drafts",
 	/** Archived milestones directory */
 	ARCHIVE_MILESTONES: "archive/milestones",
 	/** Milestones directory */
@@ -49,9 +45,6 @@ export const DEFAULT_STATUSES = [DEFAULT_TODO_STATUS, DEFAULT_IN_PROGRESS_STATUS
  */
 export const FALLBACK_STATUS = DEFAULT_TODO_STATUS;
 
-/** Status reserved for tasks stored as drafts. */
-export const DRAFT_STATUS = "Draft";
-
 /**
  * Default task types, used when no `types` are configured
  */
@@ -62,9 +55,7 @@ export const DEFAULT_TASK_TYPES = ["bug", "feature", "enhancement", "task", "cho
  * Shared between CLI and browser wizard to ensure consistent defaults.
  */
 export const DEFAULT_INIT_CONFIG = {
-	checkActiveBranches: true,
 	remoteOperations: true,
-	activeBranchDays: 30,
 	bypassGitHooks: false,
 	filesystemOnly: false,
 	zeroPaddedIds: undefined as number | undefined,
@@ -77,5 +68,4 @@ export const DEFAULT_INIT_CONFIG = {
 export const DEFAULT_FRESH_INIT_POLICY = {
 	dateFormat: "yyyy-mm-dd",
 	maxColumnWidth: 20,
-	taskResolutionStrategy: "most_recent",
 } as const;

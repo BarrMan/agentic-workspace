@@ -47,7 +47,7 @@ describe("mode lifecycle deletion contract", () => {
 		await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
 	});
 
-	it("public mode deletion enumerates active, draft, completed, and archived tasks through the production service", async () => {
+	it("public mode deletion enumerates active, completed, and archived tasks through the production service", async () => {
 		const root = await mkdtemp(join(tmpdir(), "agentic-workspace-mode-container-deletion-"));
 		roots.push(root);
 		const core = new Core(root);
@@ -64,7 +64,6 @@ describe("mode lifecycle deletion contract", () => {
 		const store = new SessionStore(root, new BunRunner());
 		const containers = [
 			{ id: "ACTIVE-1", directory: filesystem.tasksDir, kind: "container" },
-			{ id: "DRAFT-1", directory: await filesystem.getDraftsDir(), kind: "container" },
 			{ id: "DONE-1", directory: filesystem.completedDir, kind: "container" },
 			{ id: "ARCHIVE-1", directory: filesystem.archiveTasksDir, kind: "container" },
 		];

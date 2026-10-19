@@ -13,12 +13,18 @@ import { spawnSync } from "node:child_process";
 
 export type OwnedProcess = {
 	readonly pid: number;
+	readonly comm: string;
 	readonly started: string;
 	readonly uid: number;
 	readonly parent?: { readonly pid: number; readonly started: string };
 };
 
-export type ProcessRow = OwnedProcess & { readonly ppid: number; readonly pgid: number; readonly stat: string };
+export type ProcessRow = Omit<OwnedProcess, "comm"> & {
+	readonly comm?: string;
+	readonly ppid: number;
+	readonly pgid: number;
+	readonly stat: string;
+};
 
 const LSTART =
 	/^(?:Sun|Mon|Tue|Wed|Thu|Fri|Sat)\s+(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+\d{1,2}\s+\d{2}:\d{2}:\d{2}\s+\d{4}$/;
@@ -35,7 +41,13 @@ export const parseProcessTable = (output: string): readonly ProcessRow[] | undef
 		if (!match) return undefined;
 		const [pid, ppid, pgid, uid] = match.slice(1, 5).map(Number);
 		const stat = match[5];
-		const rawStarted = match[6]?.trim();
+		const remainder = match[6]?.trim() ?? "";
+		const startIndex = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
+			.map((day) => remainder.indexOf(`${day} `))
+			.filter((index) => index >= 0)
+			.sort((a, b) => a - b)[0];
+		const comm = startIndex === undefined ? undefined : remainder.slice(0, startIndex).trim();
+		const rawStarted = startIndex === undefined ? undefined : remainder.slice(startIndex).trim();
 		const started = rawStarted ? normalizeStarted(rawStarted) : undefined;
 		if (
 			![pid, ppid, pgid, uid].every(Number.isSafeInteger) ||
@@ -44,19 +56,20 @@ export const parseProcessTable = (output: string): readonly ProcessRow[] | undef
 			pgid! < 0 ||
 			uid! < -2 ||
 			!stat ||
+			!comm ||
 			!started ||
 			!LSTART.test(started) ||
 			seen.has(pid!)
 		)
 			return undefined;
 		seen.add(pid!);
-		rows.push({ pid: pid!, ppid: ppid!, pgid: pgid!, uid: uid!, stat, started });
+		rows.push({ pid: pid!, ppid: ppid!, pgid: pgid!, uid: uid!, stat, comm, started });
 	}
 	return rows.length ? rows : undefined;
 };
 
 export const readProcessTable = (timeoutMs = 2_000): readonly ProcessRow[] | undefined => {
-	const result = spawnSync("ps", ["-axo", "pid=,ppid=,pgid=,uid=,stat=,lstart="], {
+	const result = spawnSync("ps", ["-axo", "pid=,ppid=,pgid=,uid=,stat=,comm=,lstart="], {
 		encoding: "utf8",
 		timeout: Math.max(1, Math.min(2_000, timeoutMs)),
 		env: { ...process.env, LC_ALL: "C" },
@@ -68,7 +81,7 @@ export const readProcessTable = (timeoutMs = 2_000): readonly ProcessRow[] | und
 
 const live = (row: ProcessRow): boolean => !row.stat.startsWith("Z");
 const sameOwnedIdentity = (row: ProcessRow | undefined, owner: OwnedProcess): boolean =>
-	!!row && live(row) && normalizeStarted(row.started) === normalizeStarted(owner.started);
+	!!row && live(row) && row.pid === owner.pid && row.comm === owner.comm;
 
 /** Capture live descendants with a fully observed ancestry to the exact live pane root. */
 export const captureOwnedDescendants = (
@@ -107,6 +120,7 @@ export const captureOwnedDescendants = (
 			const parent = byPid.get(row.ppid);
 			owned.set(row.pid, {
 				pid: row.pid,
+				comm: row.comm ?? "",
 				started: row.started,
 				uid: row.uid,
 				parent: parent && { pid: parent.pid, started: parent.started },
@@ -201,9 +215,9 @@ export const terminateOwnedDescendants = async (
 				break;
 			}
 			const row = fresh.find((candidate) => candidate.pid === p.pid);
-			if (!sameOwnedIdentity(row, p) || row?.uid !== p.uid) continue;
+			if (!sameOwnedIdentity(row, p)) continue;
 			if (Date.now() >= deadline) return "unknown";
-			// The positive PID's start-time and UID are checked in the immediately preceding synchronous probe.
+			// PID plus process name is the available ownership identity at the signal boundary.
 			try {
 				if (termAt === undefined) {
 					signal(p.pid, "SIGTERM");

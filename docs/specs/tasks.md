@@ -16,7 +16,7 @@ This contract defines task identity and data, project storage, artifacts, work c
 
 ### Out of Scope
 
-- Provider-owned configuration, data, or state management; duplicate-record repair; draft promotion; and automatic gating of launch or completion by dependencies.
+- Provider-owned configuration, data, or state management; duplicate-record repair; and automatic gating of launch or completion by dependencies.
 
 ## Actors
 

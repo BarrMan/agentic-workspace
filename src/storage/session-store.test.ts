@@ -76,14 +76,14 @@ describe("SessionStore", () => {
 		expect(persisted.modes.build.sessions[0]).toMatchObject({ taskId: "TASK-01", status: "parked", error: "updated" });
 	});
 
-	it("preserves lowercase draft spelling for empty state and subsequent mutations", async () => {
-		const root = await mkdtemp(join(tmpdir(), "agentic-workspace-session-lowercase-draft-"));
+	it("preserves lowercase task-ID spelling for empty state and subsequent mutations", async () => {
+		const root = await mkdtemp(join(tmpdir(), "agentic-workspace-session-lowercase-id-"));
 		directories.push(root);
 		const store = new SessionStore(root, new FakeRunner());
-		await store.mutate("draft-abc", async () => undefined);
-		expect((await store.read("DRAFT-ABC")).taskId).toBe("draft-abc");
-		await store.mutate(" DRAFT-ABC ", async () => undefined);
-		expect(JSON.parse(await Bun.file((await store.paths("draft-abc")).statePath).text()).taskId).toBe("draft-abc");
+		await store.mutate("jira-abc", async () => undefined);
+		expect((await store.read("JIRA-ABC")).taskId).toBe("jira-abc");
+		await store.mutate(" JIRA-ABC ", async () => undefined);
+		expect(JSON.parse(await Bun.file((await store.paths("jira-abc")).statePath).text()).taskId).toBe("jira-abc");
 	});
 
 	it("serializes task mutations and rejects malformed durable state", async () => {

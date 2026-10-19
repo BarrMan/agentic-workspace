@@ -247,9 +247,7 @@ async function populateCorpus(root: string, options: Options): Promise<Corpus> {
 		projectName: "Task loading benchmark",
 		advancedConfig: {
 			bypassGitHooks: true,
-			checkActiveBranches: true,
 			remoteOperations: true,
-			activeBranchDays: 36500,
 		},
 	});
 

@@ -82,7 +82,7 @@ describe("readiness agreement across surfaces", () => {
 	const tuiCorpus = async (): Promise<TaskCorpus> => ({
 		// The corpus the interactive task list resolves against: the working copy it displays plus
 		// the completed records it loads alongside the milestone metadata.
-		tasks: await core.queryTasks({ includeCrossBranch: false }),
+		tasks: await core.queryTasks({}),
 		completedTasks: await coreFileSystem(core).listCompletedTasks(),
 		statuses: (await coreFileSystem(core).loadConfig())?.statuses,
 	});

@@ -40,7 +40,6 @@ beforeEach(async () => {
 		milestones: [],
 		dateFormat: "YYYY-MM-DD",
 		remoteOperations: false,
-		checkActiveBranches: false,
 	});
 });
 

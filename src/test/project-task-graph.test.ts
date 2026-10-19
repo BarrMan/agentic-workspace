@@ -86,8 +86,6 @@ describe("ProjectTaskGraph", () => {
 				},
 			],
 			{ repositoryRoot: null, projectRoot: "/project", agenticWorkspaceDirectory: "agentic-workspace" },
-			["To Do", "Done"],
-			"most_progressed",
 		);
 		const graph = new ProjectTaskGraph({
 			tasks: [local],
@@ -111,8 +109,6 @@ describe("ProjectTaskGraph", () => {
 				workingCopyTaskIdentityRecord(second, "task", "agentic-workspace/tasks/task-1-copy.md"),
 			],
 			{ repositoryRoot: null, projectRoot: "/project", agenticWorkspaceDirectory: "agentic-workspace" },
-			["To Do", "Done"],
-			"most_progressed",
 		);
 		const graph = new ProjectTaskGraph({
 			tasks: [first, second],

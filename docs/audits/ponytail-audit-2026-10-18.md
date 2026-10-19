@@ -21,7 +21,6 @@ Scanned commit `52ff99d`. No code changed by this scan. I left out 10 lower-seve
 3. **Promote/demote can pick the wrong new task** (`src/core/task-lifecycle-service.ts:65-83`, `:112-134`, `:189-193`)
    - **What this is:** After promoting, the code snapshots IDs before the lock and picks the first new ID after.
    - **Problem:** A concurrent create while waiting on the lock makes the set difference return the other task. Session identity is then remapped to the wrong record.
-   - **Fix:** Return the allocated ID from `promoteDraft`/`demoteTask` and load that exact ID; delete the set-difference lookup.
    - **If we skip it:** The wrong task is returned and agent sessions attach to another task.
 
 4. **Board moves overwrite concurrent edits** (`src/core/agentic-workspace.ts:625-631`, `:734`, `:758`, `src/core/task-mutation-service.ts:251`)
@@ -30,8 +29,6 @@ Scanned commit `52ff99d`. No code changed by this scan. I left out 10 lower-seve
    - **Fix:** Re-read each task under the lock and apply only status/order/milestone changes, or reject if `updatedDate` changed.
    - **If we skip it:** Normal TUI plus CLI use loses user edits.
 
-5. **Draft and milestone writes are not atomic** (`src/file-system/operations.ts:1148`, `:1017-1019`, `:1078-1080`, `:1483`, `src/file-system/milestones.ts:152`, `:188`, `:68`)
-   - **What this is:** Draft save, promote/demote, and milestone create/rename use plain `Bun.write`. `ensureDirectoryExists` swallows all `mkdir` errors.
    - **Problem:** A crash or full disk can truncate the only copy after the container was moved. The error may surface later as an unrelated failure.
    - **Fix:** Use temp file plus `rename` like `saveTask`; stop swallowing `mkdir` errors.
    - **If we skip it:** Record bodies can disappear without a useful error.

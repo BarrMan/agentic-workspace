@@ -1,15 +1,19 @@
 import { describe, expect, it } from "bun:test";
-import { assigneeComparisonKey, formatAssignee, normalizeAssignees } from "../model/task/assignee-filter.ts";
+import { formatAssignee, normalizeAssignees } from "../model/task/assignee-filter.ts";
 
 describe("assignee identity", () => {
-	it("compares optional @, casing, and surrounding whitespace equally", () => {
-		expect(assigneeComparisonKey("@Alice")).toBe(assigneeComparisonKey("alice"));
-		expect(assigneeComparisonKey("@Alice")).toBe(assigneeComparisonKey(" @ALICE "));
+	it("deduplicates by case-insensitive trimmed identity, preserving first display spelling", () => {
+		expect(normalizeAssignees([" Alice ", "alice", "ALICE"])).toEqual(["Alice"]);
 	});
 
-	it("collapses internal whitespace and deduplicates while preserving first spelling", () => {
-		expect(assigneeComparisonKey("  @Alice   Smith  ")).toBe("alice smith");
-		expect(normalizeAssignees([" @Alice  Smith ", "alice smith", "", "   ", "Bob"])).toEqual(["@Alice  Smith", "Bob"]);
+	it("preserves leading @ and internal whitespace as identity differences", () => {
+		expect(normalizeAssignees([" @Alice  Smith ", "@alice  smith", "@Alice Smith", "Alice  Smith", "Bob"])).toEqual([
+			"@Alice  Smith",
+			"@Alice Smith",
+			"Alice  Smith",
+			"Bob",
+		]);
+		expect(normalizeAssignees(["", "   "])).toEqual([]);
 	});
 
 	it("formats only non-blank names with one leading @", () => {

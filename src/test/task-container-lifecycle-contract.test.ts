@@ -58,18 +58,6 @@ async function expectArtifacts(id: string, location: string): Promise<void> {
 }
 
 describe("MAIN task-container lifecycle contract", () => {
-	it("returns the exact allocated IDs from filesystem promotion and demotion", async () => {
-		const { task: draft } = await core.createTaskFromInput({
-			title: "Exact transition ID",
-			status: "Draft",
-			rawContent: "draft",
-		});
-		const promotedId = await coreFileSystem(core).promoteDraft(draft.id);
-		expect(promotedId).toBe("TASK-1");
-		const demotedId = await coreFileSystem(core).demoteTask(promotedId!);
-		expect(demotedId).toBe("DRAFT-1");
-	});
-
 	it("moves the complete task container through archive and completed storage", async () => {
 		await core.createTask(task("task-1", "Move me"));
 		await addArtifacts("task-1");
@@ -88,27 +76,6 @@ describe("MAIN task-container lifecycle contract", () => {
 		);
 	});
 
-	it("promotes and demotes by moving the whole container while preserving artifact-relative paths and approvals", async () => {
-		const { task: draft } = await core.createTaskFromInput({
-			title: "Draft container",
-			status: "Draft",
-			rawContent: "draft",
-		});
-		await addArtifacts(draft.id);
-		const draftContainer = container("drafts", draft.id);
-		expect(await core.promoteDraft(draft.id)).toBe(true);
-		const promoted = (await coreFileSystem(core).listTasks()).find((item) => item.title === "Draft container");
-		expect(promoted).toBeDefined();
-		if (!promoted) return;
-		await expectArtifacts(promoted.id, "tasks");
-		expect(await Bun.file(join(draftContainer, "artifacts", "design", "plan.md")).exists()).toBe(false);
-
-		expect((await core.demoteTask(promoted.id)).success).toBe(true);
-		const demoted = (await coreFileSystem(core).listDrafts()).find((item) => item.title === "Draft container");
-		expect(demoted).toBeDefined();
-		if (demoted) await expectArtifacts(demoted.id, "drafts");
-	});
-
 	it("keeps the container stable on title changes and refuses an archive destination collision without merging or losing either container", async () => {
 		await core.createTask(task("task-1", "Before"));
 		await addArtifacts("task-1");
@@ -124,26 +91,6 @@ describe("MAIN task-container lifecycle contract", () => {
 		await expect(core.archiveTask("task-1")).rejects.toThrow();
 		expect(await readFile(join(original, "artifacts", "design", "plan.md"), "utf8")).toBe("the plan\n");
 		expect(await readFile(join(target, "collision", "target-only.txt"), "utf8")).toBe("keep target");
-	});
-
-	it("carries artifacts through demotion and promotion IDs without leaking them when the vacated task ID is reused", async () => {
-		await core.createTask(task("task-2", "Keep sequence ahead"));
-		await core.createTask(task("task-1", "Change identity"));
-		await addArtifacts("task-1");
-		expect((await core.demoteTask("task-1")).success).toBe(true);
-		const draft = (await coreFileSystem(core).listDrafts()).find((item) => item.title === "Change identity");
-		expect(draft).toBeDefined();
-		if (!draft) return;
-		await expectArtifacts(draft.id, "drafts");
-		expect(await core.promoteDraft(draft.id)).toBe(true);
-		const promoted = (await coreFileSystem(core).listTasks()).find((item) => item.title === "Change identity");
-		expect(promoted).toBeDefined();
-		if (!promoted) return;
-		await expectArtifacts(promoted.id, "tasks");
-
-		await core.createTask(task("task-1", "Reused old ID"));
-		const repository = coreFileSystem(core).taskArtifacts;
-		expect((await repository.list("task-1")).map(({ path }) => path)).toEqual([]);
 	});
 
 	it("deletes the task record and its complete container", async () => {

@@ -132,7 +132,7 @@ describe("session preparation mechanics", () => {
 		await initializeTestProject(core, "Resume mechanics");
 		await core.createTaskFromInput({ title: "Resume task", status: "To Do" });
 		const taskId = "TASK-1";
-		const task = await core.loadTaskById(taskId, { includeCrossBranch: false, includeArchived: true });
+		const task = await core.loadTaskById(taskId, { includeArchived: true });
 		if (!task) throw new Error("Test task could not be loaded");
 		const store = new SessionStore(root, { run: async () => ({ exitCode: 0, stdout: "", stderr: "" }) });
 		const record: AgentSession = {

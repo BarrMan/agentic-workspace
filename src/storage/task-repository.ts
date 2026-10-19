@@ -1,7 +1,7 @@
 import type { Dirent } from "node:fs";
 import { access, readdir } from "node:fs/promises";
 import { basename, dirname, join, resolve } from "node:path";
-import { isValidTaskId, taskIdsEqual } from "../model/task/task-id.ts";
+import { taskIdsEqual } from "../model/task/task-id.ts";
 import type { Task } from "../model/types.ts";
 import { parseTask } from "./markdown/parser.ts";
 
@@ -125,7 +125,7 @@ export class TaskRepository {
 				}
 				const containerName = basename(file) === "task.md" ? dirname(file) : null;
 				if (containerName !== null) {
-					if (!isValidTaskId(containerName.toUpperCase()) || !taskIdsEqual(parsed.id, containerName)) continue;
+					if (!taskIdsEqual(parsed.id, containerName)) continue;
 				}
 				tasks[index] = { ...parsed, filePath: filepath };
 			}
@@ -146,7 +146,6 @@ export class TaskRepository {
 		const candidates = await Promise.all(
 			entries.map(async (entry) => {
 				if (!entry.isDirectory()) return null;
-				if (!isValidTaskId(entry.name.toUpperCase())) return null;
 				try {
 					await access(join(directory, entry.name, "task.md"));
 					return join(entry.name, "task.md");

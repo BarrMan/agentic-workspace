@@ -22,7 +22,6 @@ async function createTask(
 	const input = await buildTaskCreateInput(title, options, async (value) => value);
 	if (!input) return;
 	await createAndReportTask(core, input, {
-		kind: "task",
 		plain: isPlainRequested(options, readOutput),
 	});
 }
@@ -31,7 +30,7 @@ export function registerTaskCreate(taskCmd: Command, runtime: CliRuntime, readOu
 	addHelpSchema(taskCmd.command("create <title>"), {
 		required: [{ name: "title", type: "String", description: "Task title" }],
 		optional: [{ name: "description", type: "Markdown", description: "Task outcome and context" }],
-		writes: "Creates a task or draft markdown file through AgenticWorkspace",
+		writes: "Creates a task markdown file through AgenticWorkspace",
 		output: "Created task details; use --plain for text output",
 		examples: ['agentic-workspace task create "Fix session expiry" --description "Ensure sessions expire"'],
 	})

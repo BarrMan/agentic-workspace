@@ -113,22 +113,21 @@ describe("Status Change Callbacks", () => {
 		test("triggers global callback on status change", async () => {
 			process.env.AGENTIC_WORKSPACE_ALLOW_STATUS_HOOK = "1";
 			// Create config with onStatusChange
-			const configContent = `projectName: Test
+			const configContent = `project_name: Test
 statuses:
   - To Do
   - In Progress
   - Done
 labels: []
 milestones: []
-dateFormat: yyyy-mm-dd
-checkActiveBranches: false
-onStatusChange: 'echo "$TASK_ID:$OLD_STATUS->$NEW_STATUS" > "${callbackOutputPath}"'
+date_format: yyyy-mm-dd
+on_status_change: 'echo "$TASK_ID:$OLD_STATUS->$NEW_STATUS" > "${callbackOutputPath}"'
 `;
 			await writeFile(join(testDir, "agentic-workspace", "config.yml"), configContent);
 
 			// Verify config was written correctly
 			const writtenConfig = await Bun.file(join(testDir, "agentic-workspace", "config.yml")).text();
-			expect(writtenConfig).toContain("onStatusChange");
+			expect(writtenConfig).toContain("on_status_change");
 
 			// Create a task
 			const { task } = await core.createTaskFromInput({
@@ -150,16 +149,15 @@ onStatusChange: 'echo "$TASK_ID:$OLD_STATUS->$NEW_STATUS" > "${callbackOutputPat
 		test("ignores legacy per-task callback and runs opted-in project callback", async () => {
 			process.env.AGENTIC_WORKSPACE_ALLOW_STATUS_HOOK = "1";
 			// Create config with global onStatusChange
-			const configContent = `projectName: Test
+			const configContent = `project_name: Test
 statuses:
   - To Do
   - In Progress
   - Done
 labels: []
 milestones: []
-dateFormat: yyyy-mm-dd
-checkActiveBranches: false
-onStatusChange: 'echo "global" > "${callbackOutputPath}"'
+date_format: yyyy-mm-dd
+on_status_change: 'echo "global" > "${callbackOutputPath}"'
 `;
 			await writeFile(join(testDir, "agentic-workspace", "config.yml"), configContent);
 
@@ -185,7 +183,7 @@ onStatusChange: 'echo "global" > "${callbackOutputPath}"'
 		});
 
 		test("does not execute a project hook without explicit opt-in", async () => {
-			const config = `projectName: Test\nstatuses: [To Do, Done]\nonStatusChange: 'echo executed > "${callbackOutputPath}"'\n`;
+			const config = `project_name: Test\nstatuses: [To Do, Done]\non_status_change: 'echo executed > "${callbackOutputPath}"'\n`;
 			await writeFile(join(testDir, "agentic-workspace", "config.yml"), config);
 			const { task } = await core.createTaskFromInput({ title: "Opt-in gate", status: "To Do" });
 			await core.updateTaskFromInput(task.id, { status: "Done" });
@@ -195,16 +193,15 @@ onStatusChange: 'echo "global" > "${callbackOutputPath}"'
 		test("no callback when status unchanged", async () => {
 			process.env.AGENTIC_WORKSPACE_ALLOW_STATUS_HOOK = "1";
 			// Create config with onStatusChange
-			const configContent = `projectName: Test
+			const configContent = `project_name: Test
 statuses:
   - To Do
   - In Progress
   - Done
 labels: []
 milestones: []
-dateFormat: yyyy-mm-dd
-checkActiveBranches: false
-onStatusChange: 'echo "callback-ran" > "${callbackOutputPath}"'
+date_format: yyyy-mm-dd
+on_status_change: 'echo "callback-ran" > "${callbackOutputPath}"'
 `;
 			await writeFile(join(testDir, "agentic-workspace", "config.yml"), configContent);
 
@@ -224,15 +221,14 @@ onStatusChange: 'echo "callback-ran" > "${callbackOutputPath}"'
 
 		test("no callback when no callback configured", async () => {
 			// Create config without onStatusChange
-			const configContent = `projectName: Test
+			const configContent = `project_name: Test
 statuses:
   - To Do
   - In Progress
   - Done
 labels: []
 milestones: []
-dateFormat: yyyy-mm-dd
-checkActiveBranches: false
+date_format: yyyy-mm-dd
 `;
 			await writeFile(join(testDir, "agentic-workspace", "config.yml"), configContent);
 
@@ -250,16 +246,15 @@ checkActiveBranches: false
 		test("callback failure does not block status change", async () => {
 			process.env.AGENTIC_WORKSPACE_ALLOW_STATUS_HOOK = "1";
 			// Create config with failing callback
-			const configContent = `projectName: Test
+			const configContent = `project_name: Test
 statuses:
   - To Do
   - In Progress
   - Done
 labels: []
 milestones: []
-dateFormat: yyyy-mm-dd
-checkActiveBranches: false
-onStatusChange: 'exit 1'
+date_format: yyyy-mm-dd
+on_status_change: 'exit 1'
 `;
 			await writeFile(join(testDir, "agentic-workspace", "config.yml"), configContent);
 
@@ -277,16 +272,15 @@ onStatusChange: 'exit 1'
 		test("triggers callback when reorderTask changes status", async () => {
 			process.env.AGENTIC_WORKSPACE_ALLOW_STATUS_HOOK = "1";
 			// Create config with onStatusChange
-			const configContent = `projectName: Test
+			const configContent = `project_name: Test
 statuses:
   - To Do
   - In Progress
   - Done
 labels: []
 milestones: []
-dateFormat: yyyy-mm-dd
-checkActiveBranches: false
-onStatusChange: 'echo "$TASK_ID:$OLD_STATUS->$NEW_STATUS" >> "${callbackOutputPath}"'
+date_format: yyyy-mm-dd
+on_status_change: 'echo "$TASK_ID:$OLD_STATUS->$NEW_STATUS" >> "${callbackOutputPath}"'
 `;
 			await writeFile(join(testDir, "agentic-workspace", "config.yml"), configContent);
 

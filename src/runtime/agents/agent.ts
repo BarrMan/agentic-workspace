@@ -77,7 +77,7 @@ export interface PreparationResources {
 	skillPath: string; // <directory>/skills/agentic-workspace-task-management/SKILL.md
 	statusDir?: string;
 	sessionId?: string;
-	env: Record<string, string>; // mutable launch environment (already has FORBIDDEN_ENV stripped)
+	env: Record<string, string>; // mutable launch environment (inherited values are preserved)
 	title?: string;
 	profile: ModeProfile;
 	repositoryRoot?: string;

@@ -48,7 +48,6 @@ describe("atomic task creation", () => {
 
 		const config = await coreFileSystem(core).loadConfig();
 		if (config) {
-			config.checkActiveBranches = false;
 			await coreFileSystem(core).saveConfig(config);
 		}
 	});
@@ -124,104 +123,6 @@ describe("atomic task creation", () => {
 
 		expect(new Set([createdA.task.id, createdB.task.id]).size).toBe(2);
 		expect([createdA.task.id, createdB.task.id].sort()).toEqual(["TASK-1", "TASK-2"]);
-	});
-
-	it("assigns unique ids when two draft promotions race", async () => {
-		const setup = new Core(testDir);
-		await setup.createTaskFromInput({ title: "Draft A", status: "Draft" });
-		await setup.createTaskFromInput({ title: "Draft B", status: "Draft" });
-
-		const first = new Core(testDir);
-		const second = new Core(testDir);
-		const firstEnteredWrite = createDeferred<void>();
-		const releaseFirstWrite = createDeferred<void>();
-		let writeEntries = 0;
-		const originalWrite = fsPromises.writeFile;
-		const tasksPathPrefix = `${testDir}/agentic-workspace/tasks/`.replace(/\\/g, "/");
-
-		const writeSpy = spyOn(fsPromises, "writeFile").mockImplementation(async (...args) => {
-			const targetPath = String(args[0]).replace(/\\/g, "/");
-			if (targetPath.includes(tasksPathPrefix)) {
-				writeEntries += 1;
-				if (String(args[1]).includes("Draft A")) {
-					firstEnteredWrite.resolve();
-					await releaseFirstWrite.promise;
-				}
-			}
-			return await originalWrite(...args);
-		});
-
-		try {
-			const promoteA = first.promoteDraft("draft-1");
-			await expectResolvesWithin(
-				firstEnteredWrite.promise,
-				250,
-				"first draft promotion should reach temporary-file write",
-			);
-
-			const promoteB = second.promoteDraft("draft-2");
-			await Promise.resolve();
-			await Promise.resolve();
-			expect(writeEntries).toBe(1);
-
-			releaseFirstWrite.resolve();
-			await expectResolvesWithin(Promise.all([promoteA, promoteB]), 3_000, "both draft promotions should finish");
-
-			const tasks = await coreFileSystem(setup).listTasks();
-			expect(tasks.map((task) => task.id)).toEqual(["TASK-1", "TASK-2"]);
-			expect(tasks.map((task) => task.title)).toEqual(["Draft A", "Draft B"]);
-		} finally {
-			writeSpy.mockRestore();
-		}
-	});
-
-	it("assigns unique ids when two task demotions race", async () => {
-		const setup = new Core(testDir);
-		await setup.createTaskFromInput({ title: "Task A" });
-		await setup.createTaskFromInput({ title: "Task B" });
-
-		const first = new Core(testDir);
-		const second = new Core(testDir);
-		const firstEnteredWrite = createDeferred<void>();
-		const releaseFirstWrite = createDeferred<void>();
-		let writeEntries = 0;
-		const originalWrite = fsPromises.writeFile;
-		const draftsPathPrefix = `${testDir}/agentic-workspace/drafts/`.replace(/\\/g, "/");
-
-		const writeSpy = spyOn(fsPromises, "writeFile").mockImplementation(async (...args) => {
-			const targetPath = String(args[0]).replace(/\\/g, "/");
-			if (targetPath.includes(draftsPathPrefix)) {
-				writeEntries += 1;
-				if (String(args[1]).includes("Task A")) {
-					firstEnteredWrite.resolve();
-					await releaseFirstWrite.promise;
-				}
-			}
-			return await originalWrite(...args);
-		});
-
-		try {
-			const demoteA = first.demoteTask("task-1");
-			await expectResolvesWithin(
-				firstEnteredWrite.promise,
-				250,
-				"first task demotion should reach temporary-file write",
-			);
-
-			const demoteB = second.demoteTask("task-2");
-			await Promise.resolve();
-			await Promise.resolve();
-			expect(writeEntries).toBe(1);
-
-			releaseFirstWrite.resolve();
-			await expectResolvesWithin(Promise.all([demoteA, demoteB]), 3_000, "both task demotions should finish");
-
-			const drafts = await coreFileSystem(setup).listDrafts();
-			expect(drafts.map((draft) => draft.id)).toEqual(["DRAFT-1", "DRAFT-2"]);
-			expect(drafts.map((draft) => draft.title)).toEqual(["Task A", "Task B"]);
-		} finally {
-			writeSpy.mockRestore();
-		}
 	});
 
 	it("assigns unique ids when two milestone creations race", async () => {

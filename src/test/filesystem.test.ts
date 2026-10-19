@@ -2,7 +2,6 @@ import { afterEach, beforeEach, describe, expect, it, spyOn } from "bun:test";
 import * as fsPromises from "node:fs/promises";
 import { mkdir, readdir, stat } from "node:fs/promises";
 import { join } from "node:path";
-import { AmbiguousIdError } from "../model/errors/entity-id.ts";
 import type { AgenticWorkspaceConfig, Task } from "../model/types.ts";
 import { FileSystem } from "../storage/file-system.ts";
 import { serializeTask } from "../storage/markdown/serializer.ts";
@@ -28,10 +27,8 @@ describe("FileSystem", () => {
 			const expectedDirs = [
 				join(TEST_DIR, "agentic-workspace"),
 				join(TEST_DIR, "agentic-workspace", "tasks"),
-				join(TEST_DIR, "agentic-workspace", "drafts"),
 				join(TEST_DIR, "agentic-workspace", "completed"),
 				join(TEST_DIR, "agentic-workspace", "archive", "tasks"),
-				join(TEST_DIR, "agentic-workspace", "archive", "drafts"),
 				join(TEST_DIR, "agentic-workspace", "milestones"),
 				join(TEST_DIR, "agentic-workspace", "archive", "milestones"),
 			];
@@ -47,10 +44,8 @@ describe("FileSystem", () => {
 			const expectedDirs = [
 				join(projectDir, "agentic-workspace"),
 				join(projectDir, "agentic-workspace", "tasks"),
-				join(projectDir, "agentic-workspace", "drafts"),
 				join(projectDir, "agentic-workspace", "completed"),
 				join(projectDir, "agentic-workspace", "archive", "tasks"),
-				join(projectDir, "agentic-workspace", "archive", "drafts"),
 				join(projectDir, "agentic-workspace", "milestones"),
 				join(projectDir, "agentic-workspace", "archive", "milestones"),
 			];
@@ -141,11 +136,12 @@ describe("FileSystem", () => {
 			expect(loadedTask?.description).toBe(sampleTask.description);
 		});
 
-		it("rejects alphanumeric task IDs on save", async () => {
-			await expect(filesystem.saveTask({ ...sampleTask, id: "TASK-PREFIXED" })).rejects.toThrow("Invalid task ID");
-			await expect(filesystem.saveTask({ ...sampleTask, parentTaskId: "TASK-PREFIXED" })).rejects.toThrow(
-				"Invalid parent task ID",
-			);
+		it("stores task IDs without validating generated-ID syntax", async () => {
+			await filesystem.saveTask({ ...sampleTask, id: "TASK-PREFIXED", parentTaskId: "TASK-PARENT" });
+			expect(await filesystem.loadTask("TASK-PREFIXED")).toMatchObject({
+				id: "TASK-PREFIXED",
+				parentTaskId: "TASK-PARENT",
+			});
 		});
 
 		it("preserves unknown frontmatter and opaque body when saving an existing task", async () => {
@@ -422,269 +418,6 @@ title: Broken Task
 			// Check that file exists in archive
 			const archiveFiles = await readdir(join(TEST_DIR, "agentic-workspace", "archive", "tasks"));
 			expect(archiveFiles.some((f) => f.startsWith("task-1"))).toBe(true);
-		});
-
-		it("should demote a task to drafts with new draft- ID", async () => {
-			await filesystem.saveTask(sampleTask);
-
-			const demoted = await filesystem.demoteTask("task-1");
-			expect(demoted).toBe("DRAFT-1");
-
-			// Task should be removed from tasks directory
-			const tasksFiles = await readdir(join(TEST_DIR, "agentic-workspace", "tasks"));
-			expect(tasksFiles.some((f) => f.startsWith("task-1"))).toBe(false);
-
-			// Draft should exist with new draft- ID
-			const draftsFiles = await readdir(join(TEST_DIR, "agentic-workspace", "drafts"));
-			expect(draftsFiles.some((f) => f.startsWith("draft-1"))).toBe(true);
-
-			// Verify the demoted draft can be loaded and has correct ID
-			const demotedDraft = await filesystem.loadDraft("draft-1");
-			expect(demotedDraft?.id).toBe("DRAFT-1");
-			expect(demotedDraft?.title).toBe(sampleTask.title);
-		});
-	});
-
-	describe("draft operations", () => {
-		// Drafts now use DRAFT-X id format and draft-x filename prefix
-		const sampleDraft: Task = {
-			id: "draft-1",
-			title: "Draft Task",
-			status: "Draft",
-			assignee: [],
-			createdDate: "2025-06-07",
-			labels: [],
-			dependencies: [],
-			description: "Draft description",
-		};
-
-		it("should save and load a draft", async () => {
-			await filesystem.saveDraft(sampleDraft);
-
-			const loaded = await filesystem.loadDraft("draft-1");
-			expect(loaded?.id).toBe("DRAFT-1"); // IDs are normalized to uppercase
-			expect(loaded?.title).toBe(sampleDraft.title);
-		});
-
-		it("preserves unknown frontmatter and opaque body when saving an existing draft", async () => {
-			await filesystem.saveDraft({
-				...sampleDraft,
-				dueDate: "2026-10-01",
-				rawContent: "## Free-form\n\nThis body stays literal.",
-			});
-			const loaded = await filesystem.loadDraft("draft-1");
-			if (!loaded?.filePath) throw new Error("Saved draft was not found");
-			const filepath = loaded.filePath;
-			const original = await Bun.file(filepath).text();
-			await Bun.write(
-				filepath,
-				original.replace("task_schema_version: 3", "task_schema_version: 3\ncustom_owner: platform"),
-			);
-			const updated = await filesystem.loadDraft("draft-1");
-			if (!updated) throw new Error("Saved draft was not found");
-
-			await filesystem.saveDraft({ ...updated, dueDate: undefined, title: "Renamed Draft" });
-
-			const saved = await Bun.file(join(await filesystem.getDraftsDir(), "draft-1", "task.md")).text();
-			expect(saved).toContain("custom_owner: platform");
-			expect(saved).not.toContain("due_date:");
-			expect((await filesystem.loadDraft("draft-1"))?.rawContent).toBe("## Free-form\n\nThis body stays literal.");
-		});
-
-		it("rejects padded canonical draft twins without changing either draft record", async () => {
-			const draftsDir = await filesystem.getDraftsDir();
-			await mkdir(join(draftsDir, "draft-1"), { recursive: true });
-			await mkdir(join(draftsDir, "draft-001"), { recursive: true });
-			await Bun.write(join(draftsDir, "draft-1", "task.md"), serializeTask(sampleDraft));
-			await Bun.write(
-				join(draftsDir, "draft-001", "task.md"),
-				serializeTask({
-					id: "DRAFT-001",
-					title: "Twin",
-					status: "Draft",
-					assignee: [],
-					createdDate: "2026-08-24 10:00",
-					labels: [],
-					dependencies: [],
-				}),
-			);
-
-			await expect(filesystem.loadDraft("DRAFT-1")).rejects.toBeInstanceOf(AmbiguousIdError);
-			expect(await Bun.file(join(draftsDir, "draft-1", "task.md")).exists()).toBe(true);
-			const files = (await readdir(draftsDir)).sort();
-			expect(files).toEqual(["draft-001", "draft-1"]);
-			expect(await Bun.file(join(draftsDir, "draft-001", "task.md")).text()).toContain("Twin");
-		});
-
-		it("discovers drafts only from directory containers", async () => {
-			const draftsDir = await filesystem.getDraftsDir();
-			const flatPath = join(draftsDir, "draft-1 - Historical.md");
-			await Bun.write(flatPath, serializeTask(sampleDraft));
-
-			expect(await filesystem.listDrafts()).toEqual([]);
-			await expect(filesystem.draftReferenceFromPath(flatPath)).rejects.toThrow(/Invalid draft path/i);
-		});
-
-		it("should list all drafts", async () => {
-			await filesystem.saveDraft(sampleDraft);
-			await filesystem.saveDraft({ ...sampleDraft, id: "draft-2", title: "Second" });
-
-			const drafts = await filesystem.listDrafts();
-			expect(drafts.map((d) => d.id).sort()).toEqual(["DRAFT-1", "DRAFT-2"]);
-		});
-
-		it("uses the hardcoded draft prefix when config has no prefixes", async () => {
-			const path = await filesystem.saveDraft({ ...sampleDraft, id: "1" });
-			expect(path.endsWith(join("draft-1", "task.md"))).toBe(true);
-			expect((await filesystem.loadDraft("1"))?.id).toBe("DRAFT-1");
-		});
-
-		it("should promote a draft to tasks with new task- ID", async () => {
-			await filesystem.saveDraft(sampleDraft);
-
-			const promoted = await filesystem.promoteDraft("draft-1");
-			expect(promoted).toBe("TASK-1");
-
-			// Draft should be removed from drafts directory
-			const draftsFiles = await readdir(join(TEST_DIR, "agentic-workspace", "drafts"));
-			expect(draftsFiles.some((f) => f.startsWith("draft-1"))).toBe(false);
-
-			// Task should exist with new task- ID
-			const tasksFiles = await readdir(join(TEST_DIR, "agentic-workspace", "tasks"));
-			expect(tasksFiles.some((f) => f.startsWith("task-1"))).toBe(true);
-
-			// Verify the promoted task can be loaded and has correct ID
-			const promotedTask = await filesystem.loadTask("task-1");
-			expect(promotedTask?.id).toBe("TASK-1");
-			expect(promotedTask?.title).toBe(sampleDraft.title);
-			expect(promotedTask?.status).toBe("To Do");
-		});
-
-		it("should promote a draft to the configured default status", async () => {
-			const customConfig: AgenticWorkspaceConfig = {
-				projectName: "Custom Default Status Project",
-				defaultStatus: "Ready",
-				statuses: ["Ready", "In Progress", "Done"],
-				labels: [],
-				milestones: [],
-				dateFormat: "yyyy-MM-dd",
-			};
-			await filesystem.saveConfig(customConfig);
-			await filesystem.saveDraft(sampleDraft);
-
-			const promoted = await filesystem.promoteDraft("draft-1");
-			expect(promoted).toBe("TASK-1");
-
-			const promotedTask = await filesystem.loadTask("task-1");
-			expect(promotedTask?.id).toBe("TASK-1");
-			expect(promotedTask?.status).toBe("Ready");
-		});
-
-		it("should preserve a non-draft status when promoting a demoted task", async () => {
-			await filesystem.saveTask({
-				...sampleDraft,
-				id: "task-1",
-				title: "Demoted Task",
-				status: "In Progress",
-			});
-
-			const demoted = await filesystem.demoteTask("task-1");
-			expect(demoted).toBe("DRAFT-1");
-
-			const draft = await filesystem.loadDraft("draft-1");
-			expect(draft?.status).toBe("In Progress");
-
-			const promoted = await filesystem.promoteDraft("draft-1");
-			expect(promoted).toBe("TASK-1");
-
-			const promotedTask = await filesystem.loadTask("task-1");
-			expect(promotedTask?.id).toBe("TASK-1");
-			expect(promotedTask?.status).toBe("In Progress");
-		});
-
-		it("should promote draft with custom task prefix", async () => {
-			// Configure custom task prefix
-			const customConfig: AgenticWorkspaceConfig = {
-				projectName: "Custom Prefix Project",
-				statuses: ["To Do", "In Progress", "Done"],
-				labels: [],
-				milestones: [],
-				dateFormat: "yyyy-MM-dd",
-				prefixes: {
-					task: "JIRA",
-				},
-			};
-			await filesystem.saveConfig(customConfig);
-			await filesystem.saveDraft(sampleDraft);
-
-			const promoted = await filesystem.promoteDraft("draft-1");
-			expect(promoted).toBe("JIRA-1");
-
-			// Draft should be removed
-			const draftsFiles = await readdir(join(TEST_DIR, "agentic-workspace", "drafts"));
-			expect(draftsFiles.some((f) => f.startsWith("draft-1"))).toBe(false);
-
-			// Task should exist with custom JIRA- prefix
-			const tasksFiles = await readdir(join(TEST_DIR, "agentic-workspace", "tasks"));
-			expect(tasksFiles.some((f) => f.startsWith("jira-1"))).toBe(true);
-
-			// Verify the promoted task can be loaded with the custom prefix
-			const promotedTask = await filesystem.loadTask("jira-1");
-			expect(promotedTask?.id).toBe("JIRA-1");
-			expect(promotedTask?.title).toBe(sampleDraft.title);
-		});
-
-		it("should not reuse completed task IDs when promoting draft", async () => {
-			// Create a completed task directly in the completed directory
-			// This simulates a task that was created and completed before the draft
-			const completedDir = join(TEST_DIR, "agentic-workspace", "completed");
-			await mkdir(completedDir, { recursive: true });
-
-			const completedTask: Task = {
-				id: "TASK-1",
-				title: "Completed Task",
-				status: "Done",
-				assignee: [],
-				createdDate: "2025-01-01",
-				labels: [],
-				dependencies: [],
-			};
-			const content = serializeTask(completedTask);
-			await Bun.write(join(completedDir, "task-1", "task.md"), content);
-
-			// Verify no active tasks exist
-			const activeTasks = await filesystem.listTasks();
-			expect(activeTasks.length).toBe(0);
-
-			// Verify completed task exists
-			const completedTasks = await filesystem.listCompletedTasks();
-			expect(completedTasks.length).toBe(1);
-			expect(completedTasks[0]?.id).toBe("TASK-1");
-
-			// Create and promote a draft
-			await filesystem.saveDraft(sampleDraft);
-			const promoted = await filesystem.promoteDraft("draft-1");
-			expect(promoted).toBe("TASK-2");
-
-			// BUG: Currently returns TASK-1 because promoteDraft only checks active tasks
-			// Expected: Should return TASK-2 to avoid collision with completed task
-			const promotedTask = await filesystem.loadTask("task-2");
-			expect(promotedTask?.id).toBe("TASK-2");
-			expect(promotedTask?.title).toBe(sampleDraft.title);
-		});
-
-		it("should archive a draft", async () => {
-			await filesystem.saveDraft(sampleDraft);
-
-			const archived = await filesystem.archiveDraft("draft-1");
-			expect(archived?.sourcePath).toContain(join("agentic-workspace", "drafts", "draft-1", "task.md"));
-			expect(archived?.targetPath).toContain(join("agentic-workspace", "archive", "drafts", "draft-1", "task.md"));
-
-			const draft = await filesystem.loadDraft("draft-1");
-			expect(draft).toBeNull();
-
-			const files = await readdir(join(TEST_DIR, "agentic-workspace", "archive", "drafts"));
-			expect(files).toContain("draft-1");
 		});
 	});
 
@@ -965,24 +698,6 @@ title: Broken Task
 			expect(filename).toBeDefined();
 			expect(filename).toBe("task-993");
 			expect(await Bun.file(join(filesystem.tasksDir, filename!, "task.md")).exists()).toBe(true);
-		});
-
-		it("names a draft file with a placeholder title", async () => {
-			await filesystem.saveDraft({
-				id: "draft-punct",
-				title: punctuationOnlyTitle,
-				status: "Draft",
-				assignee: [],
-				createdDate: "2025-06-07",
-				labels: [],
-				dependencies: [],
-				description: "Punctuation-only title",
-			});
-
-			const draftsDir = await filesystem.getDraftsDir();
-			const draftFiles = await readdir(draftsDir);
-			expect(draftFiles).toContain("draft-punct");
-			expect(await Bun.file(join(draftsDir, "draft-punct", "task.md")).exists()).toBe(true);
 		});
 
 		it("publishes completed content mutations and supports unsubscribe", async () => {

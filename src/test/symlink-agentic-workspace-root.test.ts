@@ -39,7 +39,6 @@ describe("Symlinked agentic-workspace root", () => {
 
 	itWithFixture("creates tasks when agentic-workspace root is a symlink", async ({ repoDir, agenticWorkspaceDir }) => {
 		await mkdir(join(agenticWorkspaceDir, "tasks"), { recursive: true });
-		await mkdir(join(agenticWorkspaceDir, "drafts"), { recursive: true });
 		await writeFile(
 			join(agenticWorkspaceDir, "config.yml"),
 			`project_name: "Symlink Root"
@@ -56,7 +55,7 @@ statuses: ["To Do", "In Progress", "Done"]
 		expect(await Bun.file(taskFile).exists()).toBe(true);
 		expect(task.id).toBe("TASK-1");
 
-		const tasks = await core.queryTasks({ includeCrossBranch: false });
+		const tasks = await core.queryTasks({});
 		expect(tasks).toHaveLength(1);
 		expect(tasks[0]?.id).toBe("TASK-1");
 	});

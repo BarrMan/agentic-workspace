@@ -112,8 +112,7 @@ export class ProjectTaskMutations {
 		return generateNextId(allIds, prefix, config?.zeroPaddedIds);
 	}
 
-	async loadTaskForMutation(taskId: string, options: TaskReadOptions = {}): Promise<Task | null> {
-		if (options.includeCrossBranch === false) return await this.loadWorkingCopyTask(taskId, true);
+	async loadTaskForMutation(taskId: string, _options: TaskReadOptions = {}): Promise<Task | null> {
 		const task = await this.loadTask(taskId, true);
 		if (task?.source === "completed") return null;
 		const resolved = task ?? (await this.storage.loadTask(taskId, { includeArchived: true }));
@@ -212,24 +211,13 @@ export class ProjectTaskMutations {
 	}
 
 	private async getExistingIdsForType(type: EntityType): Promise<string[]> {
-		switch (type) {
-			case EntityType.Task:
-				return await this.occupiedTaskIds();
-			case EntityType.Draft: {
-				const [drafts, occupied] = await Promise.all([
-					this.storage.loadDrafts(),
-					this.storage.listOccupiedDraftFileIds(),
-				]);
-				return [...drafts.map((draft) => draft.id), ...occupied];
-			}
-		}
+		return type === EntityType.Task ? await this.occupiedTaskIds() : [];
 	}
 
 	private async buildWorkingCopyTaskIndex(activeTasks?: Task[]): Promise<TaskIdentityIndex> {
-		const [active, completed, config] = await Promise.all([
+		const [active, completed] = await Promise.all([
 			activeTasks ? Promise.resolve(activeTasks) : this.storage.loadTasks(),
 			this.storage.loadCompletedTasks(),
-			this.storage.loadConfig(),
 		]);
 		return new TaskIdentityIndex(
 			[
@@ -237,8 +225,6 @@ export class ProjectTaskMutations {
 				...completed.map((task) => this.storage.projectCompletedTaskIdentityRecord(task)),
 			],
 			this.storage.taskIdentityContext(null),
-			config?.statuses ?? ["To Do", "In Progress", "Done"],
-			config?.taskResolutionStrategy ?? "most_progressed",
 		);
 	}
 

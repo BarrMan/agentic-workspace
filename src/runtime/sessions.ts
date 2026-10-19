@@ -1,5 +1,5 @@
 import { lstat, realpath, rm, rmdir, stat } from "node:fs/promises";
-import { basename, dirname, join, resolve } from "node:path";
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import type { Core } from "../controller/agentic-workspace.ts";
 import type { OwnedNativeSessionStops } from "../filesystem/git/task-worktree-cleanup.ts";
 import { debug, isEnabled } from "../lib/debug-log.ts";
@@ -23,7 +23,7 @@ import {
 	type SessionSettings,
 	type TaskSessions,
 } from "../model/session/types.ts";
-import { isValidTaskId, taskIdsEqual } from "../model/task/task-id.ts";
+import { taskIdsEqual } from "../model/task/task-id.ts";
 import { TASK_SOURCE, type Task } from "../model/types.ts";
 import {
 	getEditableAgentConfiguration,
@@ -172,6 +172,11 @@ async function canonicalDirectoryTarget(path: string): Promise<string> {
 	}
 }
 
+function isContainedPath(root: string, target: string): boolean {
+	const fromRoot = relative(root, target);
+	return fromRoot !== ".." && !fromRoot.startsWith(`..${sep}`) && !isAbsolute(fromRoot);
+}
+
 /** Durable task-scoped tmux sessions. State operations are short; terminals never run while a state lock is held. */
 export class AgentSessionService {
 	private readonly runner: ProcessRunner;
@@ -244,13 +249,12 @@ export class AgentSessionService {
 				},
 			},
 			listTaskIds: async () => {
-				const [active, drafts, completed, archived] = await Promise.all([
+				const [active, completed, archived] = await Promise.all([
 					this.core.loadStoredTasks(),
-					this.core.loadDraftRecords(),
 					this.core.loadCompletedTaskRecords(),
 					this.core.loadArchivedTaskRecords(),
 				]);
-				return [...new Set([...active, ...drafts, ...completed, ...archived].map((task) => task.id))];
+				return [...new Set([...active, ...completed, ...archived].map((task) => task.id))];
 			},
 		});
 		this.readContext = options.workspaceContext ?? (() => readWorkspaceContext({ rootDir: this.core.projectRoot }));
@@ -339,7 +343,7 @@ export class AgentSessionService {
 	}
 
 	async purge(taskId: string): Promise<void> {
-		const task = await this.core.loadTaskById(taskId, { includeCrossBranch: false });
+		const task = await this.core.loadTaskById(taskId);
 		if (task)
 			return await withTaskSessionAdmission(
 				this.core,
@@ -350,9 +354,7 @@ export class AgentSessionService {
 	}
 
 	private async purgeTaskSessions(taskId: string, task?: Task): Promise<void> {
-		if (task && (task.source === TASK_SOURCE.REMOTE || task.source === TASK_SOURCE.LOCAL_BRANCH))
-			throw new Error(`Locally editable task not found: ${taskId}`);
-		if (!task && !isValidTaskId(taskId.trim())) throw new Error(`Locally editable task not found: ${taskId}`);
+		if (task && task.source === TASK_SOURCE.REMOTE) throw new Error(`Locally editable task not found: ${taskId}`);
 		const paths = await this.store.paths(taskId);
 		if (!task && !(await Bun.file(paths.statePath).exists())) return;
 		const state = await this.store.read(task?.id ?? taskId);
@@ -360,7 +362,11 @@ export class AgentSessionService {
 		const sessions = allModeSessions(state);
 		this.assertNoLiveSessions(task?.id ?? taskId, state);
 		const canonicalTaskDir = await canonicalDirectoryTarget(paths.taskDir);
-		if (canonicalTaskDir !== join(await realpath(dirname(paths.taskDir)), basename(paths.taskDir)))
+		const physicalTaskParent = await realpath(dirname(paths.taskDir));
+		if (
+			!isContainedPath(physicalTaskParent, canonicalTaskDir) ||
+			relative(physicalTaskParent, canonicalTaskDir) !== basename(paths.taskDir)
+		)
 			throw new Error(`Cannot purge task ${taskId}: its session directory resolves outside its canonical task path.`);
 		for (const session of sessions) await this.validateOwnedSessionSidecars(session, paths.taskDir, taskId);
 		for (const session of sessions) {
@@ -416,9 +422,16 @@ export class AgentSessionService {
 			canonicalStateRoot !== join(canonicalProjectRoot, ".agentic-workspace")
 		)
 			throw new Error(`Cannot forget task ${task.id}: the project state root is redirected.`);
-		if (canonicalTaskDir !== join(canonicalStateRoot, basename(paths.taskDir)))
+		if (
+			!isContainedPath(canonicalStateRoot, canonicalTaskDir) ||
+			relative(canonicalStateRoot, canonicalTaskDir) !== basename(paths.taskDir)
+		)
 			throw new Error(`Cannot forget task ${task.id}: its session directory resolves outside its canonical task path.`);
-		if (canonicalRequestDir !== join(canonicalProjectRoot, ".agentic-workspace", "agent-requests"))
+		const canonicalRequestRoot = join(canonicalProjectRoot, ".agentic-workspace");
+		if (
+			!isContainedPath(canonicalRequestRoot, canonicalRequestDir) ||
+			relative(canonicalRequestRoot, canonicalRequestDir) !== "agent-requests"
+		)
 			throw new Error(`Cannot forget task ${task.id}: its workspace request directory is redirected.`);
 		try {
 			const stateFile = await lstat(paths.statePath);
@@ -1746,9 +1759,8 @@ export class AgentSessionService {
 	 * setting is on and the worktree already exists; otherwise the session stays at the project root.
 	 */
 	private async requireTask(taskId: string) {
-		const task = await this.core.loadTaskById(taskId, { includeCrossBranch: false, includeArchived: true });
-		if (!task || task.source === TASK_SOURCE.REMOTE || task.source === TASK_SOURCE.LOCAL_BRANCH)
-			throw new Error(`Locally editable task not found: ${taskId}`);
+		const task = await this.core.loadTaskById(taskId, { includeArchived: true });
+		if (!task || task.source === TASK_SOURCE.REMOTE) throw new Error(`Locally editable task not found: ${taskId}`);
 		return task;
 	}
 

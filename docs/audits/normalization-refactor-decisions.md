@@ -19,10 +19,8 @@ The refactor applied the behavior-preserving actions from the audit:
 
 | Item | Why it remained unchanged |
 |---|---|
-| Cross-branch discovery removal | This is a contract-level feature removal, not a normalization refactor. It changes loader behavior, configuration and tests, and needs an explicit product decision plus a data-preservation plan. |
-| Draft promotion/demotion removal | TASK-002 excludes the feature, but stored-draft handling is unresolved. Removing individual identity helpers would silently change collision and lock behavior before the data policy is decided. |
+| Cross-branch task discovery | Approved contract-alignment deletion executed: branch enumeration, Git-blob hydration, discovery configuration, and related tests were removed. |
 | `taskIdKey` and padded task IDs | Padding is part of task identity: `TASK-01` and `TASK-1` are different tasks. Delegating to numeric canonicalization would merge distinct IDs. |
-| Draft and task identity equality | Draft identity has legacy compatibility rules that are not task equality. Sharing one key would change existing draft lookup and collision behavior. |
 | Clearable-list parsing vs sanitization | Omitted input, explicit `[]`, and blank-only values deliberately produce different results. `parseClearableStringList` and `sanitizeClearableStringArray` operate at different stages and must not be merged. |
 | Status equality, lookup, and comparison keys | Lookup collapses all whitespace; equality preserves internal whitespace. The synchronous lookup was consolidated, but the distinct comparison keys remain because they answer different questions. |
 | Assignee and label equality | Assignee equality removes one leading `@` and collapses internal whitespace; label and generic comparison keys do not. These names document different domain rules. |

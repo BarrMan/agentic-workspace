@@ -1,13 +1,7 @@
 import { describe, expect, it } from "bun:test";
-import { isValidTaskId, taskIdKey, taskIdsEqual } from "../model/task/task-id.ts";
+import { taskIdKey, taskIdsEqual } from "../model/task/task-id.ts";
 
 describe("exact task IDs", () => {
-	it("accepts only prefixed numeric IDs with optional dotted segments", () => {
-		for (const id of ["TASK-1", "BACK-001.02", "TASK-9007199254740992.2"]) expect(isValidTaskId(id)).toBe(true);
-		for (const id of ["1", "TASK-PREFIXED", "TASK-1-EXTRA", "TASK-1/2", "TASK-1.2x"])
-			expect(isValidTaskId(id)).toBe(false);
-	});
-
 	it("compares task IDs case-insensitively without numeric normalization", () => {
 		expect(taskIdsEqual("TASK-1.2", "TASK-1.2")).toBe(true);
 		expect(taskIdsEqual("TASK-1", "task-1")).toBe(true);

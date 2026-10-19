@@ -41,28 +41,18 @@ describe("manual Git control", () => {
 		await expectUserGitState();
 	});
 
-	it("persists task and draft transitions without committing or altering the index", async () => {
+	it("persists task transitions without committing or altering the index", async () => {
 		const { task } = await core.createTaskFromInput({ title: "Task" });
 		await core.updateTaskFromInput(task.id, { title: "Renamed", description: "Edited" });
 		expect((await coreFileSystem(core).loadTask(task.id))?.description).toBe("Edited");
 		await core.moveTasksToStatus({ taskIds: [task.id], targetStatus: "In Progress" });
 		expect((await coreFileSystem(core).loadTask(task.id))?.status).toBe("In Progress");
-		expect((await core.demoteTask(task.id)).success).toBe(true);
-		const draft = (await coreFileSystem(core).listDrafts())[0];
-		expect(draft).toBeDefined();
-		if (!draft) throw new Error("Expected a demoted draft");
-		await core.updateDraft({ ...draft, title: "Edited draft" });
-		expect(await core.promoteDraft(draft.id)).toBe(true);
-		const promoted = (await coreFileSystem(core).listTasks())[0];
-		if (!promoted) throw new Error("Expected a promoted task");
-		expect((await core.archiveTask(promoted.id)).success).toBe(true);
-		expect((await core.deleteTask(promoted.id)).success).toBe(true);
+		expect((await core.archiveTask(task.id)).success).toBe(true);
+		expect((await core.deleteTask(task.id)).success).toBe(true);
 		const disposable = await core.createTaskFromInput({ title: "Disposable" });
 		expect((await core.deleteTask(disposable.task.id)).success).toBe(true);
 		const completed = await core.createTaskFromInput({ title: "Finished", status: "Done" });
 		expect(await core.completeTask(completed.task.id)).toBe(true);
-		const archivedDraft = await core.createTaskFromInput({ title: "Archived draft", status: "Draft" });
-		expect(await core.archiveDraft(archivedDraft.task.id)).toBe(true);
 		await expectUserGitState();
 	});
 });

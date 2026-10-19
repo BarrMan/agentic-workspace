@@ -1,4 +1,4 @@
-import { describe, expect, it, spyOn } from "bun:test";
+import { describe, expect, it } from "bun:test";
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { Writable } from "node:stream";
@@ -55,7 +55,6 @@ async function setupLocalTaskProject(): Promise<{ dir: string; core: Core }> {
 	if (!config) throw new Error("Expected initialized config");
 	await coreFileSystem(core).saveConfig({
 		...config,
-		checkActiveBranches: true,
 		remoteOperations: true,
 	});
 
@@ -77,32 +76,6 @@ async function setupLocalTaskProject(): Promise<{ dir: string; core: Core }> {
 	return { dir, core };
 }
 
-function installCrossBranchTripwires(coreUnderTest: Core) {
-	const error = new Error("Local task command crossed the branch-loading boundary");
-	const loadTasks = spyOn(coreUnderTest, "loadTasks").mockRejectedValue(error);
-	const fetch = spyOn(coreUnderTest.git, "fetch").mockRejectedValue(error);
-	const listRecentBranchTips = spyOn(coreUnderTest.git, "listRecentBranchTips").mockRejectedValue(error);
-	const listRecentBranches = spyOn(coreUnderTest.git, "listRecentBranches").mockRejectedValue(error);
-	const getRepositoryRoot = spyOn(coreUnderTest.git, "getRepositoryRoot").mockRejectedValue(error);
-
-	return {
-		expectUntouched() {
-			expect(loadTasks).toHaveBeenCalledTimes(0);
-			expect(fetch).toHaveBeenCalledTimes(0);
-			expect(listRecentBranchTips).toHaveBeenCalledTimes(0);
-			expect(listRecentBranches).toHaveBeenCalledTimes(0);
-			expect(getRepositoryRoot).toHaveBeenCalledTimes(0);
-		},
-		restore() {
-			loadTasks.mockRestore();
-			fetch.mockRestore();
-			listRecentBranchTips.mockRestore();
-			listRecentBranches.mockRestore();
-			getRepositoryRoot.mockRestore();
-		},
-	};
-}
-
 // Every case owns an isolated working copy.
 describe("local task command performance boundaries", () => {
 	it("lists and searches working-copy tasks without loading branches", async () => {
@@ -114,25 +87,17 @@ describe("local task command performance boundaries", () => {
 				title: "Padded task identity",
 				description: "No matching search content",
 			});
-			const tripwires = installCrossBranchTripwires(core);
-			try {
-				const listed = await core.queryTasks({ includeCrossBranch: false });
-				const searched = await core.queryTasks({
-					query: "local-search-token",
-					includeCrossBranch: false,
-				});
-				const searchedByPaddedSegment = await core.queryTasks({
-					query: "7",
-					includeCrossBranch: false,
-				});
+			const listed = await core.queryTasks({});
+			const searched = await core.queryTasks({
+				query: "local-search-token",
+			});
+			const searchedByPaddedSegment = await core.queryTasks({
+				query: "7",
+			});
 
-				expect(listed.map((task) => task.id).sort()).toEqual(["TASK-0007.0024", "TASK-1", "TASK-1.1", "TASK-2"]);
-				expect(searched.map((task) => task.id)).toEqual(["TASK-1"]);
-				expect(searchedByPaddedSegment.map((task) => task.id)).toContain("TASK-0007.0024");
-				tripwires.expectUntouched();
-			} finally {
-				tripwires.restore();
-			}
+			expect(listed.map((task) => task.id).sort()).toEqual(["TASK-0007.0024", "TASK-1", "TASK-1.1", "TASK-2"]);
+			expect(searched.map((task) => task.id)).toEqual(["TASK-1"]);
+			expect(searchedByPaddedSegment.map((task) => task.id)).toContain("TASK-0007.0024");
 		} finally {
 			await safeCleanup(dir);
 		}
@@ -141,36 +106,21 @@ describe("local task command performance boundaries", () => {
 	it("loads one working-copy task and its subtasks without loading branches", async () => {
 		const { dir, core } = await setupLocalTaskProject();
 		try {
-			const tripwires = installCrossBranchTripwires(core);
-			try {
-				const loaded = await core.loadTaskById(parentTask.id, { includeCrossBranch: false });
-				const withSubtasks = await core.getTaskWithSubtasks(parentTask.id, undefined, {
-					includeCrossBranch: false,
-				});
+			const loaded = await core.loadTaskById(parentTask.id, {});
+			const withSubtasks = await core.getTaskWithSubtasks(parentTask.id, undefined, {});
 
-				expect(loaded?.title).toBe(parentTask.title);
-				expect(withSubtasks?.subtaskSummaries).toEqual([{ id: "TASK-1.1", title: "Local child" }]);
-				tripwires.expectUntouched();
-			} finally {
-				tripwires.restore();
-			}
+			expect(loaded?.title).toBe(parentTask.title);
+			expect(withSubtasks?.subtaskSummaries).toEqual([{ id: "TASK-1.1", title: "Local child" }]);
 		} finally {
 			await safeCleanup(dir);
 		}
 	});
 
-	it("archives, completes, and demotes working-copy tasks without loading branches", async () => {
+	it("archives and completes working-copy tasks without loading branches", async () => {
 		const { dir, core } = await setupLocalTaskProject();
 		try {
-			const tripwires = installCrossBranchTripwires(core);
-			try {
-				expect((await core.archiveTask("TASK-1", { includeCrossBranch: false })).success).toBe(true);
-				expect(await core.completeTask("TASK-1.1", { includeCrossBranch: false })).toBe(true);
-				expect((await core.demoteTask("TASK-2", { includeCrossBranch: false })).success).toBe(true);
-				tripwires.expectUntouched();
-			} finally {
-				tripwires.restore();
-			}
+			expect((await core.archiveTask("TASK-1", {})).success).toBe(true);
+			expect(await core.completeTask("TASK-1.1", {})).toBe(true);
 		} finally {
 			await safeCleanup(dir);
 		}
@@ -219,17 +169,11 @@ describe("local task command performance boundaries", () => {
 	it("resolves a create parent from the working copy without loading branches", async () => {
 		const { dir, core } = await setupLocalTaskProject();
 		try {
-			const tripwires = installCrossBranchTripwires(core);
-			try {
-				await expect(
-					core.createTaskFromInput({ title: "Child of a missing parent", parentTaskId: "TASK-99" }),
-				).rejects.toThrow("Parent task TASK-99 not found.");
-				// The parent is rejected before an ID is allocated, which is the only step that may
-				// legitimately look beyond the working copy.
-				tripwires.expectUntouched();
-			} finally {
-				tripwires.restore();
-			}
+			await expect(
+				core.createTaskFromInput({ title: "Child of a missing parent", parentTaskId: "TASK-99" }),
+			).rejects.toThrow("Parent task TASK-99 not found.");
+			// The parent is rejected before an ID is allocated, which is the only step that may
+			// legitimately look beyond the working copy.
 
 			const child = await core.createTaskFromInput({ title: "Child of a local parent", parentTaskId: "TASK-1" });
 			expect(child.task.id).toBe("TASK-1.2");
@@ -242,24 +186,12 @@ describe("local task command performance boundaries", () => {
 	it("validates dependencies against the working copy without loading branches", async () => {
 		const { dir, core } = await setupLocalTaskProject();
 		try {
-			const tripwires = installCrossBranchTripwires(core);
-			try {
-				const updated = await core.updateTaskFromInput(
-					"TASK-1",
-					{ addDependencies: ["TASK-2"] },
-					{
-						includeCrossBranch: false,
-					},
-				);
-				expect(updated.dependencies).toEqual(["TASK-2"]);
+			const updated = await core.updateTaskFromInput("TASK-1", { addDependencies: ["TASK-2"] }, {});
+			expect(updated.dependencies).toEqual(["TASK-2"]);
 
-				await expect(
-					core.updateTaskFromInput("TASK-1", { dependencies: ["TASK-99"] }, { includeCrossBranch: false }),
-				).rejects.toThrow("The following dependencies do not exist: TASK-99");
-				tripwires.expectUntouched();
-			} finally {
-				tripwires.restore();
-			}
+			await expect(core.updateTaskFromInput("TASK-1", { dependencies: ["TASK-99"] }, {})).rejects.toThrow(
+				"The following dependencies do not exist: TASK-99",
+			);
 
 			expect((await coreFileSystem(core).loadTask("TASK-1"))?.dependencies).toEqual(["TASK-2"]);
 		} finally {
@@ -280,18 +212,12 @@ describe("local task command performance boundaries", () => {
 					status: "Done",
 				}),
 			);
-			const tripwires = installCrossBranchTripwires(core);
-			try {
-				await expect(
-					core.createTaskFromInput({ title: "Child of an ambiguous parent", parentTaskId: "TASK-2" }),
-				).rejects.toBeInstanceOf(AmbiguousTaskIdError);
-				await expect(
-					core.updateTaskFromInput("TASK-1", { addDependencies: ["TASK-2"] }, { includeCrossBranch: false }),
-				).rejects.toBeInstanceOf(AmbiguousTaskIdError);
-				tripwires.expectUntouched();
-			} finally {
-				tripwires.restore();
-			}
+			await expect(
+				core.createTaskFromInput({ title: "Child of an ambiguous parent", parentTaskId: "TASK-2" }),
+			).rejects.toBeInstanceOf(AmbiguousTaskIdError);
+			await expect(core.updateTaskFromInput("TASK-1", { addDependencies: ["TASK-2"] }, {})).rejects.toBeInstanceOf(
+				AmbiguousTaskIdError,
+			);
 
 			expect((await coreFileSystem(core).loadTask("TASK-1"))?.dependencies ?? []).toEqual([]);
 			expect(await coreFileSystem(core).loadTask("TASK-2.1")).toBeNull();
@@ -303,24 +229,12 @@ describe("local task command performance boundaries", () => {
 	it("edits a working-copy task without loading branches", async () => {
 		const { dir, core } = await setupLocalTaskProject();
 		try {
-			const tripwires = installCrossBranchTripwires(core);
-			try {
-				const updated = await core.updateTaskFromInput(
-					parentTask.id,
-					{ title: "Renamed locally" },
-					{
-						includeCrossBranch: false,
-					},
-				);
+			const updated = await core.updateTaskFromInput(parentTask.id, { title: "Renamed locally" }, {});
 
-				expect(updated.title).toBe("Renamed locally");
-				expect((await coreFileSystem(core).listTasks()).find((task) => task.id === parentTask.id)?.title).toBe(
-					"Renamed locally",
-				);
-				tripwires.expectUntouched();
-			} finally {
-				tripwires.restore();
-			}
+			expect(updated.title).toBe("Renamed locally");
+			expect((await coreFileSystem(core).listTasks()).find((task) => task.id === parentTask.id)?.title).toBe(
+				"Renamed locally",
+			);
 		} finally {
 			await safeCleanup(dir);
 		}
@@ -339,26 +253,12 @@ describe("local task command performance boundaries", () => {
 					status: "Done",
 				}),
 			);
-			const tripwires = installCrossBranchTripwires(core);
-			try {
-				expect((await core.loadTaskById(parentTask.id, { includeCrossBranch: false }))?.id).toBe("TASK-1");
-				expect((await core.loadTaskById("TASK-01", { includeCrossBranch: false }))?.id).toBe("TASK-01");
-				expect((await core.getTaskWithSubtasks(parentTask.id, undefined, { includeCrossBranch: false }))?.id).toBe(
-					"TASK-1",
-				);
-				expect(
-					(
-						await core.updateTaskFromInput(
-							parentTask.id,
-							{ title: "Updated unpadded identity" },
-							{ includeCrossBranch: false },
-						)
-					).title,
-				).toBe("Updated unpadded identity");
-				tripwires.expectUntouched();
-			} finally {
-				tripwires.restore();
-			}
+			expect((await core.loadTaskById(parentTask.id, {}))?.id).toBe("TASK-1");
+			expect((await core.loadTaskById("TASK-01", {}))?.id).toBe("TASK-01");
+			expect((await core.getTaskWithSubtasks(parentTask.id, undefined, {}))?.id).toBe("TASK-1");
+			expect((await core.updateTaskFromInput(parentTask.id, { title: "Updated unpadded identity" }, {})).title).toBe(
+				"Updated unpadded identity",
+			);
 
 			expect((await coreFileSystem(core).listCompletedTasks()).find((task) => task.id === "TASK-01")?.title).toBe(
 				"Completed collision",

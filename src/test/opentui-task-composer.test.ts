@@ -194,7 +194,7 @@ describe("openTUI task composer", () => {
 			expect(setup.captureCharFrame()).toContain("◀ Done ▶");
 			setup.mockInput.pressArrow("right");
 			await setup.flush();
-			expect(setup.captureCharFrame()).toContain("◀ Draft ▶");
+			expect(setup.captureCharFrame()).toContain("◀ To Do ▶");
 			setup.mockInput.pressArrow("left");
 			await setup.flush();
 			expect(setup.captureCharFrame()).toContain("◀ Done ▶");
@@ -204,11 +204,11 @@ describe("openTUI task composer", () => {
 			setup.mockInput.pressArrow("right");
 			setup.mockInput.pressArrow("right");
 			await setup.flush();
-			expect(setup.captureCharFrame()).toContain("◀ Draft ▶");
+			expect(setup.captureCharFrame()).toContain("◀ To Do ▶");
 			setup.mockInput.pressKey("s", { ctrl: true });
 			await setup.flush();
 			expect(inputs).toHaveLength(1);
-			expect(inputs[0]?.status).toBe("Draft");
+			expect(inputs[0]?.status).toBe("To Do");
 		} finally {
 			mount.dispose();
 		}

@@ -1,4 +1,4 @@
-import { isAbsolute, relative } from "node:path";
+import { isAbsolute, join, normalize, relative, sep } from "node:path";
 import { DEFAULT_DIRECTORIES } from "../constants.ts";
 import { TASK_SOURCE, type Task, type TaskDirectoryType } from "../types.ts";
 import { taskIdKey, taskIdsEqual } from "./task-id.ts";
@@ -56,24 +56,29 @@ export type TaskIdentityResolution =
 	| { status: "not-found" };
 
 function toPosixPath(path: string): string {
-	return path.replaceAll("\\", "/").replace(/^\.\//, "");
+	const normalized = normalize(path);
+	return sep === "/" ? normalized : normalized.split(sep).join("/");
 }
 
 function joinPosix(...parts: string[]): string {
-	return parts
-		.map((part) => toPosixPath(part).replace(/^\/+|\/+$/g, ""))
-		.filter(Boolean)
-		.join("/");
+	return toPosixPath(join(...parts));
+}
+
+function isWithinPath(root: string, candidate: string): boolean {
+	const fromRoot = relative(root, candidate);
+	return fromRoot === "" || (fromRoot !== ".." && !fromRoot.startsWith(`..${sep}`) && !isAbsolute(fromRoot));
 }
 
 export function normalizeTaskLifecyclePath(path: string, agenticWorkspaceDirectory: string): string {
+	const normalizedPath = toPosixPath(path);
+	const workspace = toPosixPath(agenticWorkspaceDirectory);
 	for (const lifecycleDirectory of [DEFAULT_DIRECTORIES.ARCHIVE_TASKS, DEFAULT_DIRECTORIES.COMPLETED]) {
-		const lifecyclePrefix = `${agenticWorkspaceDirectory}/${lifecycleDirectory}/`;
-		if (path.startsWith(lifecyclePrefix)) {
-			return `${agenticWorkspaceDirectory}/${DEFAULT_DIRECTORIES.TASKS}/${path.slice(lifecyclePrefix.length)}`;
-		}
+		const lifecycleRoot = joinPosix(workspace, lifecycleDirectory);
+		const remainder = relative(lifecycleRoot, normalizedPath);
+		if (remainder && remainder !== ".." && !remainder.startsWith(`..${sep}`) && !isAbsolute(remainder))
+			return joinPosix(workspace, DEFAULT_DIRECTORIES.TASKS, remainder);
 	}
-	return path;
+	return normalizedPath;
 }
 
 function normalizeRecordPath(record: TaskIdentityRecord, context: TaskIdentityPathContext): string {
@@ -96,8 +101,8 @@ function normalizeRecordPath(record: TaskIdentityRecord, context: TaskIdentityPa
 	const projectAgenticWorkspaceDirectory = toPosixPath(context.agenticWorkspaceDirectory);
 	if (
 		projectPrefix &&
-		(path === projectAgenticWorkspaceDirectory || path.startsWith(`${projectAgenticWorkspaceDirectory}/`)) &&
-		!(path === repositoryAgenticWorkspaceDirectory || path.startsWith(`${repositoryAgenticWorkspaceDirectory}/`))
+		isWithinPath(projectAgenticWorkspaceDirectory, path) &&
+		!isWithinPath(repositoryAgenticWorkspaceDirectory, path)
 	) {
 		path = joinPosix(projectPrefix, path);
 	}
@@ -117,8 +122,6 @@ function stateRank(type: TaskDirectoryType): number {
 			return 2;
 		case "archived":
 			return 1;
-		case "draft":
-			return 0;
 	}
 }
 
@@ -141,20 +144,11 @@ function selectLifecycleRecord(records: TaskIdentityRecord[]): TaskIdentityRecor
 	})[0];
 }
 
-function selectTaskRecord(
-	records: TaskIdentityRecord[],
-	statuses: string[],
-	strategy: "most_recent" | "most_progressed",
-): TaskIdentityRecord | undefined {
+function selectTaskRecord(records: TaskIdentityRecord[]): TaskIdentityRecord | undefined {
 	const candidates = records.filter((record) => record.task);
 	return [...candidates].sort((left, right) => {
 		if (Boolean(left.workingCopy) !== Boolean(right.workingCopy)) {
 			return left.workingCopy ? -1 : 1;
-		}
-		if (strategy === "most_progressed") {
-			const leftRank = Math.max(0, statuses.indexOf(left.task?.status ?? ""));
-			const rightRank = Math.max(0, statuses.indexOf(right.task?.status ?? ""));
-			if (leftRank !== rightRank) return rightRank - leftRank;
 		}
 		const timeDifference = right.lastModified.getTime() - left.lastModified.getTime();
 		if (timeDifference !== 0) return timeDifference;
@@ -173,8 +167,6 @@ export class TaskIdentityIndex {
 	constructor(
 		records: TaskIdentityRecord[],
 		private readonly context: TaskIdentityPathContext,
-		private readonly statuses: string[],
-		private readonly resolutionStrategy: "most_recent" | "most_progressed",
 	) {
 		this.records = records.slice();
 		for (const record of this.records) {
@@ -238,11 +230,7 @@ export class TaskIdentityIndex {
 			const lifecycle = selectLifecycleRecord(identity.records);
 			if (!lifecycle || (lifecycle.type !== "task" && lifecycle.type !== "completed")) continue;
 			if (lifecycle.type === "completed" && !includeCompleted) continue;
-			const selected = selectTaskRecord(
-				identity.records.filter((record) => record.type === lifecycle.type),
-				this.statuses,
-				this.resolutionStrategy,
-			);
+			const selected = selectTaskRecord(identity.records.filter((record) => record.type === lifecycle.type));
 			if (selected?.task)
 				tasks.push(
 					lifecycle.type === "completed" ? { ...selected.task, source: TASK_SOURCE.COMPLETED } : selected.task,

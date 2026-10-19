@@ -53,7 +53,7 @@ export async function getValidStatuses(core: StatusConfigReader): Promise<string
 /**
  * Find the canonical status (matching config casing) for a given input.
  * Loads configured statuses and matches case-insensitively and space-insensitively.
- * `allowedStatuses` narrows the match set (e.g. drafts, which only accept Draft).
+ * `allowedStatuses` narrows the match set.
  * Returns the canonical value or null if no match is found.
  *
  * Examples:

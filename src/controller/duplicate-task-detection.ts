@@ -1,21 +1,9 @@
-import { basename, dirname, sep } from "node:path";
+import { basename, dirname } from "node:path";
 import { type DuplicateGroup, detectDuplicateTaskIds } from "../model/task/duplicate-detection.ts";
-import { taskIdKey, taskIdsEqual } from "../model/task/task-id.ts";
+import { taskIdsEqual } from "../model/task/task-id.ts";
 import type { Task } from "../model/types.ts";
-import type { BranchTaskStateEntry } from "../storage/types.ts";
 import type { Core } from "./agentic-workspace.ts";
 import type { TaskCorpusSnapshot } from "./task-loader.ts";
-
-export interface CrossBranchDuplicateLocation {
-	branch: string;
-	path: string;
-	state: "active" | "completed";
-}
-
-export interface CrossBranchDuplicateFinding {
-	id: string;
-	locations: CrossBranchDuplicateLocation[];
-}
 
 function withLocation(task: Task, location: "active" | "completed", relativePath: (path: string) => string): Task {
 	return {
@@ -34,7 +22,7 @@ export async function findLocalDuplicateTaskIds(core: Core, snapshot?: TaskCorpu
 	let completedTasks: Task[] = snapshot?.completedTasks ?? [];
 	if (!snapshot) {
 		try {
-			const corpus = await core.loadTaskSnapshot(false);
+			const corpus = await core.loadTaskSnapshot();
 			activeTasks = corpus.activeTasks;
 			completedTasks = corpus.completedTasks;
 		} catch {
@@ -63,83 +51,4 @@ export async function findLocalDuplicateTaskIds(core: Core, snapshot?: TaskCorpu
 		if (!tasks.some((candidate) => candidate.filePath === task.filePath)) tasks.push(task);
 	}
 	return detectDuplicateTaskIds(tasks);
-}
-
-function logicalBranchTaskPath(path: string, id: string): string {
-	const filename = basename(path).toLowerCase();
-	const separatorIndex = filename.indexOf(" - ");
-	if (separatorIndex < 0) return path.toLowerCase().split(sep).join("/");
-	return `${id.toLowerCase()}${filename.slice(separatorIndex)}`;
-}
-
-function appendCurrentBranchEntries(
-	entries: BranchTaskStateEntry[],
-	tasks: Task[],
-	type: "task" | "completed",
-	branch: string,
-	relativePath: (path: string) => string,
-): void {
-	for (const task of tasks) {
-		if (!task.filePath) continue;
-		entries.push({
-			id: task.id,
-			type,
-			branch,
-			path: relativePath(task.filePath),
-			lastModified: task.updatedDate ? new Date(task.updatedDate) : new Date(0),
-		});
-	}
-}
-
-interface BranchEntryGroup {
-	id: string;
-	entries: BranchTaskStateEntry[];
-}
-
-function groupBranchEntries(entries: BranchTaskStateEntry[]): Map<string, BranchEntryGroup> {
-	const byId = new Map<string, BranchEntryGroup>();
-	for (const entry of entries) {
-		if (entry.type !== "task" && entry.type !== "completed") continue;
-		const key = taskIdKey(entry.id);
-		const group = byId.get(key);
-		if (group) group.entries.push(entry);
-		else byId.set(key, { id: entry.id, entries: [entry] });
-	}
-	return byId;
-}
-
-function classifyCrossBranchDuplicate(
-	id: string,
-	entries: BranchTaskStateEntry[],
-): CrossBranchDuplicateFinding | undefined {
-	const logicalPaths = new Set(entries.map((entry) => logicalBranchTaskPath(entry.path, entry.id)));
-	if (logicalPaths.size < 2 || new Set(entries.map((entry) => entry.branch)).size < 2) return undefined;
-	const locations = entries
-		.map((entry) => ({
-			branch: entry.branch,
-			path: entry.path.split(sep).join("/"),
-			state: entry.type === "completed" ? ("completed" as const) : ("active" as const),
-		}))
-		.sort((left, right) => `${left.branch}:${left.path}`.localeCompare(`${right.branch}:${right.path}`));
-	return { id, locations };
-}
-
-export async function findCrossBranchDuplicateTaskIds(
-	core: Core,
-	snapshot?: TaskCorpusSnapshot,
-): Promise<CrossBranchDuplicateFinding[]> {
-	const corpus = snapshot ?? (await core.loadTaskSnapshot());
-	const config = corpus.config ?? (await core.getStoredConfig());
-	if (config?.checkActiveBranches === false) return [];
-	const stateEntries: BranchTaskStateEntry[] = corpus.branchStateEntries?.slice() ?? [];
-	const current = (await core.git.getCurrentBranch()) ?? "current";
-	const relativePath = (path: string) => core.projectRelativePath(path);
-	appendCurrentBranchEntries(stateEntries, corpus.activeTasks, "task", current, relativePath);
-	appendCurrentBranchEntries(stateEntries, corpus.completedTasks, "completed", current, relativePath);
-	return [...groupBranchEntries(stateEntries).values()]
-		.flatMap(({ id, entries }) => {
-			const finding = classifyCrossBranchDuplicate(id, entries);
-			return finding ? [finding] : [];
-		})
-		.sort((left, right) => left.id.localeCompare(right.id, undefined, { numeric: true }));
 }

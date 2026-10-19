@@ -1,13 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, spyOn } from "bun:test";
-import { mkdir, unlink } from "node:fs/promises";
+import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
-import { $ } from "bun";
 import { Core } from "../controller/agentic-workspace.ts";
-import { findCrossBranchDuplicateTaskIds, findLocalDuplicateTaskIds } from "../controller/duplicate-task-detection.ts";
+import { findLocalDuplicateTaskIds } from "../controller/duplicate-task-detection.ts";
 import { AmbiguousTaskIdError } from "../model/errors/task-id.ts";
 import type { Task } from "../model/types.ts";
 import { serializeTask } from "../storage/markdown/serializer.ts";
-import { coreFileSystem, createUniqueTestDir, initGitRepo, safeCleanup } from "./test-utils.ts";
+import { coreFileSystem, createUniqueTestDir, safeCleanup } from "./test-utils.ts";
 
 let testDir: string;
 let core: Core;
@@ -44,7 +43,6 @@ beforeEach(async () => {
 		milestones: [],
 		dateFormat: "YYYY-MM-DD",
 		remoteOperations: false,
-		checkActiveBranches: false,
 	});
 });
 
@@ -152,29 +150,5 @@ describe("duplicate task diagnosis", () => {
 			listTasks.mockRestore();
 			listCompletedTasks.mockRestore();
 		}
-	});
-
-	it("reports path-distinct cross-branch collisions", async () => {
-		initGitRepo(testDir, "main");
-		const config = await coreFileSystem(core).loadConfig();
-		if (!config) throw new Error("Missing test config");
-		config.checkActiveBranches = true;
-		config.activeBranchDays = 30;
-		config.remoteOperations = false;
-		await coreFileSystem(core).saveConfig(config);
-		const alphaPath = await writeTask(coreFileSystem(core).tasksDir, makeTask("TASK-1", "Alpha"));
-		await $`git add .`.cwd(testDir).quiet();
-		await $`git commit -m "main task"`.cwd(testDir).quiet();
-		await $`git switch -c feature`.cwd(testDir).quiet();
-		await unlink(alphaPath);
-		await writeTask(coreFileSystem(core).completedDir, makeTask("task-1", "Beta"));
-		await $`git add -A`.cwd(testDir).quiet();
-		await $`git commit -m "feature task"`.cwd(testDir).quiet();
-		await $`git switch main`.cwd(testDir).quiet();
-
-		const findings = await findCrossBranchDuplicateTaskIds(core);
-		expect(findings).toHaveLength(1);
-		expect(findings[0]?.id).toBe("TASK-1");
-		expect(findings[0]?.locations.map((location) => location.branch).sort()).toEqual(["feature", "main"]);
 	});
 });

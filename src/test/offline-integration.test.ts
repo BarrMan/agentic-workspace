@@ -26,7 +26,6 @@ describe("Offline Integration Tests", () => {
 		const agenticWorkspaceDir = join(tempDir, "agentic-workspace");
 		await mkdir(agenticWorkspaceDir, { recursive: true });
 		await mkdir(join(agenticWorkspaceDir, "tasks"), { recursive: true });
-		await mkdir(join(agenticWorkspaceDir, "drafts"), { recursive: true });
 
 		// Create config with remote operations disabled
 		const config: AgenticWorkspaceConfig = {
@@ -81,7 +80,7 @@ remote_operations: false
 		expect(filepath).toContain("task-1");
 
 		// List tasks should work without remote operations
-		const tasks = await core.queryTasks({ includeCrossBranch: false });
+		const tasks = await core.queryTasks({});
 		expect(tasks).toHaveLength(1);
 		expect(tasks[0]?.id).toBe("TASK-1");
 		expect(tasks[0]?.title).toBe("Test task in offline mode");

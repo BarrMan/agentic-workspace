@@ -22,9 +22,7 @@ Usage: $(basename "$0") [--jobs N] [--keep-temp]
 
 Runs real parallel smoke tests against the local AgenticWorkspace CLI:
   1. concurrent task creation
-  2. concurrent draft promotion
-  3. concurrent task demotion
-  4. concurrent task editing (lost-write regression)
+  2. concurrent task editing (lost-write regression)
 
 Environment overrides:
   BUN_BIN            Bun executable to use (default: bun)
@@ -227,64 +225,12 @@ scenario_parallel_create() {
 	info "Scenario 1 passed"
 }
 
-scenario_parallel_promote() {
-	local repo_dir="${TMP_ROOT}/promote"
-
-	info "Scenario 2: concurrent draft promotion"
-	init_repo "${repo_dir}"
-
-	pushd "${repo_dir}" >/dev/null
-	run_cli draft create "Draft A" >/dev/null
-	run_cli draft create "Draft B" >/dev/null
-	popd >/dev/null
-
-	start_job "${repo_dir}" "promote-a" draft promote draft-1
-	start_job "${repo_dir}" "promote-b" draft promote draft-2
-	wait_for_jobs
-
-	assert_sequential_ids "${repo_dir}/agentic-workspace/tasks" "task" 2
-
-	local remaining_drafts=("${repo_dir}/agentic-workspace/drafts"/draft-*/task.md)
-	if [[ ${#remaining_drafts[@]} -ne 0 ]]; then
-		ls -la "${repo_dir}/agentic-workspace/drafts" >&2 || true
-		fail "Expected no remaining drafts after promotion"
-	fi
-
-	info "Scenario 2 passed"
-}
-
-scenario_parallel_demote() {
-	local repo_dir="${TMP_ROOT}/demote"
-
-	info "Scenario 3: concurrent task demotion"
-	init_repo "${repo_dir}"
-
-	pushd "${repo_dir}" >/dev/null
-	run_cli task create "Task A" >/dev/null
-	run_cli task create "Task B" >/dev/null
-	popd >/dev/null
-
-	start_job "${repo_dir}" "demote-a" task demote task-1
-	start_job "${repo_dir}" "demote-b" task demote task-2
-	wait_for_jobs
-
-	assert_sequential_ids "${repo_dir}/agentic-workspace/drafts" "draft" 2
-
-	local remaining_tasks=("${repo_dir}/agentic-workspace/tasks"/task-*/task.md)
-	if [[ ${#remaining_tasks[@]} -ne 0 ]]; then
-		ls -la "${repo_dir}/agentic-workspace/tasks" >&2 || true
-		fail "Expected no remaining tasks after demotion"
-	fi
-
-	info "Scenario 3 passed"
-}
-
 scenario_parallel_edit() {
 	local repo_dir="${TMP_ROOT}/edit"
 	local shared_id="task-1"
 	local i
 
-	info "Scenario 4: concurrent task editing (${JOB_COUNT} jobs)"
+	info "Scenario 2: concurrent task editing (${JOB_COUNT} jobs)"
 	init_repo "${repo_dir}"
 
 	pushd "${repo_dir}" >/dev/null
@@ -340,7 +286,7 @@ scenario_parallel_edit() {
 		fi
 	done
 
-	info "Scenario 4 passed (${JOB_COUNT} jobs, $(printf '%s' "${winners}" | grep -c .) succeeded)"
+	info "Scenario 2 passed (${JOB_COUNT} jobs, $(printf '%s' "${winners}" | grep -c .) succeeded)"
 }
 
 main() {
@@ -395,8 +341,6 @@ main() {
 	info "Using temp root: ${TMP_ROOT}"
 
 	scenario_parallel_create
-	scenario_parallel_promote
-	scenario_parallel_demote
 	scenario_parallel_edit
 
 	info "All parallel locking smoke tests passed"

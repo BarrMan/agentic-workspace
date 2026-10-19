@@ -106,16 +106,13 @@ describe("malformed dependencies cannot be rewritten by unrelated edits", () => 
 		expect(await readdir(coreFileSystem(core).tasksDir)).toEqual(filenames);
 	});
 
-	it.each([
-		false,
-		true,
-	])("shared mutation rejects malformed source with cross-branch reads=%s", async (includeCrossBranch) => {
+	it.each([false, true])("shared mutation rejects malformed source", async () => {
 		await Bun.write(taskPath, taskMarkdown("dependencies: [TASK-1]"));
 		expect((await core.getTask("TASK-2"))?.title).toBe("dependent");
 		const original = taskMarkdown(malformedDependencies[0][1]);
 		await Bun.write(taskPath, original);
 
-		await expect(core.updateTaskFromInput("TASK-2", { title: "dependent v2" }, { includeCrossBranch })).rejects.toThrow(
+		await expect(core.updateTaskFromInput("TASK-2", { title: "dependent v2" }, {})).rejects.toThrow(
 			"Invalid dependencies in task TASK-2",
 		);
 		expect(await Bun.file(taskPath).text()).toBe(original);
@@ -145,11 +142,9 @@ describe("malformed dependencies cannot be rewritten by unrelated edits", () => 
 
 		expect((await coreFileSystem(core).listTasks()).map((task) => task.id)).toEqual(["TASK-1"]);
 		await expect(coreFileSystem(core).loadTask("TASK-2")).rejects.toThrow("Invalid dependencies in task TASK-2");
-		await expect(core.loadTaskById("TASK-2", { includeCrossBranch: false })).rejects.toThrow(
-			"Invalid dependencies in task TASK-2",
-		);
+		await expect(core.loadTaskById("TASK-2")).rejects.toThrow("Invalid dependencies in task TASK-2");
 		await expect(core.getTask("TASK-2")).rejects.toThrow("Invalid dependencies in task TASK-2");
-		await core.updateTaskFromInput("TASK-1", { title: "Healthy edit" }, { includeCrossBranch: false });
+		await core.updateTaskFromInput("TASK-1", { title: "Healthy edit" }, {});
 		expect((await coreFileSystem(core).loadTask("TASK-1"))?.title).toBe("Healthy edit");
 		expect(await Bun.file(taskPath).text()).toBe(original);
 	});

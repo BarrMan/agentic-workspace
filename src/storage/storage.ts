@@ -1,10 +1,8 @@
-import { access, readdir, readFile, rmdir, stat, unlink, writeFile } from "node:fs/promises";
-import { dirname, isAbsolute, join, relative, sep } from "node:path";
-import { DEFAULT_DIRECTORIES } from "../model/constants.ts";
+import { access, readdir, readFile, rmdir, unlink, writeFile } from "node:fs/promises";
+import { dirname, join, relative, sep } from "node:path";
 import type { AgentConfiguration } from "../model/session/types.ts";
 import type { DependencyStore } from "../model/task/dependency-validator.ts";
-import { buildIdRegex } from "../model/task/prefix-config.ts";
-import { isValidTaskId, taskIdKey } from "../model/task/task-id.ts";
+import { taskIdKey } from "../model/task/task-id.ts";
 import {
 	completedTaskIdentityRecord,
 	type TaskIdentityRecord,
@@ -13,16 +11,15 @@ import {
 import {
 	type AgenticWorkspaceConfig,
 	type Milestone,
-	TASK_DIRECTORY,
 	TASK_SOURCE,
 	type Task,
 	type TaskListFilter,
 } from "../model/types.ts";
 import { addSearchableArtifactText } from "./artifact-text.ts";
 import { readRootConfiguration, rootConfigFilePath } from "./config.ts";
-import { type DraftFileReference, FileSystem, type FileSystemSelection } from "./file-system.ts";
+import { FileSystem, type FileSystemSelection } from "./file-system.ts";
 import { parseTask } from "./markdown/parser.ts";
-import type { BranchTaskStateEntry, CreatedTaskRollbackResult, CreatedTaskWrite } from "./types.ts";
+import type { CreatedTaskRollbackResult, CreatedTaskWrite } from "./types.ts";
 
 export interface ScannedTaskRecord {
 	location: "active" | "completed";
@@ -63,7 +60,6 @@ export class Storage {
 
 	async findTaskRecordPath(taskId: string): Promise<string | null> {
 		const canonicalId = taskIdKey(taskId);
-		if (!isValidTaskId(canonicalId)) return null;
 		const filepath = join(this.filesystem.tasksDir, canonicalId.toLowerCase(), "task.md");
 		try {
 			await access(filepath);
@@ -132,7 +128,6 @@ export class Storage {
 	get dependencyStore(): DependencyStore {
 		return {
 			listTasks: () => this.loadTasks(),
-			listDrafts: () => this.loadDrafts(),
 			listCompletedTasks: () => this.loadCompletedTasks(),
 			listArchivedTasks: () => this.loadArchivedTasks(),
 			loadTask: (taskId: string) => this.loadTask(taskId),
@@ -165,58 +160,6 @@ export class Storage {
 		return await this.filesystem.deleteTaskContainer(task, alreadyLocked);
 	}
 
-	async loadDrafts(): Promise<Task[]> {
-		return await this.filesystem.listDrafts();
-	}
-
-	async loadHealthyDrafts(): Promise<Task[]> {
-		return await this.filesystem.listHealthyDrafts();
-	}
-
-	async loadDraft(draftId: string): Promise<Task | null> {
-		return await this.filesystem.loadDraft(draftId);
-	}
-
-	async saveDraft(task: Task): Promise<string> {
-		return await this.filesystem.saveDraft(task);
-	}
-
-	async archiveDraft(draftId: string) {
-		return await this.filesystem.archiveDraft(draftId);
-	}
-
-	async promoteDraft(
-		draftId: string,
-		validateAllocatedTask?: (task: Task) => Promise<void>,
-		allocateTaskId?: () => Promise<string>,
-	): Promise<string | null> {
-		return await this.filesystem.promoteDraft(draftId, validateAllocatedTask, allocateTaskId);
-	}
-
-	async demoteTask(
-		taskId: string,
-		onMoved?: (fromPath: string, toPath: string) => void,
-		validateAllocatedDraft?: (draft: Task) => Promise<void>,
-	): Promise<string | null> {
-		return await this.filesystem.demoteTask(taskId, onMoved, validateAllocatedDraft);
-	}
-
-	async draftReferenceFromPath(filePath: string): Promise<DraftFileReference & { task: Task }> {
-		return await this.filesystem.draftReferenceFromPath(filePath);
-	}
-
-	async resolveDraftReference(draftId: string): Promise<(DraftFileReference & { task: Task }) | null> {
-		return await this.filesystem.resolveDraftReference(draftId);
-	}
-
-	async listOccupiedDraftFileIds(): Promise<string[]> {
-		return await this.filesystem.listOccupiedDraftFileIds();
-	}
-
-	diagnoseDraftIdentity() {
-		return this.filesystem.diagnoseDraftIdentity();
-	}
-
 	async withCreateLock<T>(fn: () => Promise<T>): Promise<T> {
 		return await this.filesystem.withCreateLock(fn);
 	}
@@ -227,10 +170,6 @@ export class Storage {
 
 	async withTaskLocks<T>(tasks: Array<Pick<Task, "id" | "filePath">>, fn: () => Promise<T>): Promise<T> {
 		return await this.filesystem.withTaskLocks(tasks, fn);
-	}
-
-	async withDraftLock<T>(reference: DraftFileReference, fn: () => Promise<T>): Promise<T> {
-		return await this.filesystem.withDraftLock(reference, fn);
 	}
 
 	async allocateTaskId(
@@ -248,65 +187,6 @@ export class Storage {
 
 	projectRelativePath(filePath: string): string {
 		return relative(this.filesystem.rootDir, filePath).split(sep).join("/");
-	}
-
-	async loadTaskStateEntries(
-		repositoryRoot: string,
-		worktreeRoots: string[],
-		taskPrefix: string,
-	): Promise<BranchTaskStateEntry[]> {
-		if (worktreeRoots.length === 0) return [];
-		const projectRelativePath = relative(repositoryRoot, this.filesystem.rootDir);
-		if (projectRelativePath.startsWith("..") || isAbsolute(projectRelativePath)) return [];
-		const agenticWorkspaceDir = this.workspaceDirectoryName;
-		const entries: BranchTaskStateEntry[] = [];
-		for (const worktreeRoot of worktreeRoots) {
-			const projectRoot = projectRelativePath ? join(worktreeRoot, projectRelativePath) : worktreeRoot;
-			entries.push(
-				...(await this.loadTaskStateEntriesFromWorktree(projectRoot, agenticWorkspaceDir, taskPrefix, worktreeRoot)),
-			);
-		}
-		return entries;
-	}
-
-	private async loadTaskStateEntriesFromWorktree(
-		projectRoot: string,
-		agenticWorkspaceDir: string,
-		taskPrefix: string,
-		worktreeRoot: string,
-	): Promise<BranchTaskStateEntry[]> {
-		const idRegex = buildIdRegex(taskPrefix);
-		const directories: Array<{ path: string; type: typeof TASK_DIRECTORY.TASK | typeof TASK_DIRECTORY.COMPLETED }> = [
-			{ path: join(projectRoot, agenticWorkspaceDir, DEFAULT_DIRECTORIES.TASKS), type: TASK_DIRECTORY.TASK },
-			{ path: join(projectRoot, agenticWorkspaceDir, DEFAULT_DIRECTORIES.COMPLETED), type: TASK_DIRECTORY.COMPLETED },
-		];
-		const entries: BranchTaskStateEntry[] = [];
-		for (const { path, type } of directories) {
-			let files: string[];
-			try {
-				files = await Array.fromAsync(new Bun.Glob("**/*").scan({ cwd: path, followSymlinks: true }));
-			} catch {
-				continue;
-			}
-			for (const file of files) {
-				const parts = file.replaceAll("\\", "/").split("/");
-				const recordName =
-					parts.length === 1 ? parts[0] : parts.length === 2 && parts[1] === "task.md" ? `${parts[0]}.md` : null;
-				if (!recordName) continue;
-				const match = recordName.match(idRegex);
-				if (!match?.[1]) continue;
-				const filePath = join(path, file);
-				const stats = await stat(filePath).catch(() => null);
-				entries.push({
-					id: `${taskPrefix.toUpperCase()}-${match[1].toUpperCase()}`,
-					type,
-					branch: `worktree:${worktreeRoot}`,
-					path: filePath,
-					lastModified: stats?.mtime ?? new Date(0),
-				});
-			}
-		}
-		return entries;
 	}
 
 	async scanTaskRecords(): Promise<ScannedTaskRecord[]> {

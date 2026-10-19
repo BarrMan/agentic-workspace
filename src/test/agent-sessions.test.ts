@@ -1286,7 +1286,7 @@ describe.concurrent("AgentSessionService", () => {
 		const session = await service.start("TASK-1");
 		expect(session.taskId).toBe("TASK-1");
 		expect((await service.list("task-1")).activeSessionId).toBe(session.id);
-		expect((await core.loadTaskById("task-1", { includeCrossBranch: false }))?.status).toBe("To Do");
+		expect((await core.loadTaskById("task-1"))?.status).toBe("To Do");
 		await expect(service.start("task-1")).rejects.toThrow("already has an active");
 		await service.stop("task-1");
 		expect(runner.actions.filter((action) => action.type === "kill").at(-1)).toEqual({ type: "kill", pane: "%1" });
@@ -1996,7 +1996,7 @@ describe.concurrent("AgentSessionService", () => {
 		expect(timedOut).toBe(false);
 		const command = shellRun(runner);
 		expect(command?.slice(0, 2)).toEqual(["/bin/sh", "-lc"]);
-		expect(command?.[2]).toContain("unset AGENTIC_WORKSPACE_CWD AGENTIC_WORKSPACE_TASK_ID");
+		expect(command?.[2]).not.toContain("unset AGENTIC_WORKSPACE_CWD AGENTIC_WORKSPACE_TASK_ID");
 		expect(command?.[2]).toContain("exec agent -p --resume");
 		expect(command?.[2]).toContain("native-prev");
 		expect(command?.[2]).toContain("what changed?");
@@ -2028,7 +2028,7 @@ describe.concurrent("AgentSessionService", () => {
 		expect(answer).toBe("named answer");
 		expect(timedOut).toBe(false);
 		expect(shellRun(runner)?.slice(0, 2)).toEqual(["/bin/sh", "-lc"]);
-		expect(shellRun(runner)?.[2]).toContain("unset AGENTIC_WORKSPACE_CWD AGENTIC_WORKSPACE_TASK_ID");
+		expect(shellRun(runner)?.[2]).not.toContain("unset AGENTIC_WORKSPACE_CWD AGENTIC_WORKSPACE_TASK_ID");
 		expect(shellRun(runner)?.[2]).toContain("exec agent -p --resume");
 		expect(shellRun(runner)?.[2]).toContain("native-older");
 		expect(shellRun(runner)?.[2]).toContain("hi");

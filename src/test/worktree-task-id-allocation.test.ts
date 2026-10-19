@@ -63,23 +63,6 @@ describe("task ID allocation across git worktrees", () => {
 		expect(await coreFileSystem(mainCore).loadTask("task-2")).not.toBeNull();
 	});
 
-	it("allocates promoted draft task IDs after uncommitted sibling worktree tasks", async () => {
-		testDir = createUniqueTestDir("worktree-promote-id");
-		const mainRepo = await createRepository(testDir, "Worktree Promote ID Test");
-		const sibling = await addWorktree(mainRepo, testDir, "feature-promote");
-
-		const siblingCore = new Core(sibling);
-		await siblingCore.createTaskFromInput({ title: "Sibling task" });
-
-		const mainCore = new Core(mainRepo);
-		await mainCore.createTaskFromInput({ title: "Draft to promote", status: "Draft" });
-		const promoted = await mainCore.promoteDraft("draft-1");
-
-		expect(promoted).toBe(true);
-		const promotedTask = await coreFileSystem(mainCore).loadTask("task-2");
-		expect(promotedTask?.title).toBe("Draft to promote");
-	});
-
 	it("uses the same create lock for concurrent task creation in sibling worktrees", async () => {
 		testDir = createUniqueTestDir("worktree-create-lock");
 		const mainRepo = await createRepository(testDir, "Worktree Create Lock Test");

@@ -82,11 +82,7 @@ export function serializeConfig(config: AgenticWorkspaceConfig): string {
 		...(typeof config.filesystemOnly === "boolean" ? [`filesystem_only: ${config.filesystemOnly}`] : []),
 		...(typeof config.zeroPaddedIds === "number" ? [`zero_padded_ids: ${config.zeroPaddedIds}`] : []),
 		...(typeof config.bypassGitHooks === "boolean" ? [`bypass_git_hooks: ${config.bypassGitHooks}`] : []),
-		...(typeof config.checkActiveBranches === "boolean"
-			? [`check_active_branches: ${config.checkActiveBranches}`]
-			: []),
-		...(typeof config.activeBranchDays === "number" ? [`active_branch_days: ${config.activeBranchDays}`] : []),
-		...(config.onStatusChange ? [`onStatusChange: '${config.onStatusChange}'`] : []),
+		...(config.onStatusChange ? [`on_status_change: '${config.onStatusChange}'`] : []),
 		...(config.prefixes?.task ? [`task_prefix: "${config.prefixes.task}"`] : []),
 		...(config.agenticWorkspaceDirectory ? [`agentic_workspace_directory: "${config.agenticWorkspaceDirectory}"`] : []),
 	];

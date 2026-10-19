@@ -10,8 +10,9 @@ import {
 
 const started = (second: number) => `Mon Jan 01 00:00:${String(second).padStart(2, "0")} 2024`;
 const row = (pid: number, ppid: number, second: number, uid = 501, pgid = pid, stat = "S") =>
-	`${pid} ${ppid} ${pgid} ${uid} ${stat} ${started(second)}`;
-const root: OwnedProcess = { pid: 10, started: started(10), uid: 501 };
+	`${pid} ${ppid} ${pgid} ${uid} ${stat} bun ${started(second)}`;
+const otherName = (pid: number, ppid: number, second: number) => `${pid} ${ppid} ${pid} 501 S other ${started(second)}`;
+const root: OwnedProcess = { pid: 10, comm: "bun", started: started(10), uid: 501 };
 const table = (...lines: string[]) => parseProcessTable(lines.join("\n"));
 const legacySpacing = (value: string) => value.replace(/ (\d{1,2}) /, "  $1 ");
 
@@ -41,18 +42,23 @@ describe("owned process primitives", () => {
 	});
 
 	it("rejects empty, malformed, and truncated process tables but accepts Linux kernel rows", () => {
-		for (const output of ["", `${row(10, 1, 10)}\nmalformed`, "12 1 12 501 S", "12 1 12 501 S not-a-start-time"])
+		for (const output of [
+			"",
+			`${row(10, 1, 10)}\nmalformed`,
+			"12 1 12 501 S bun",
+			"12 1 12 501 S bun not-a-start-time",
+		])
 			expect(parseProcessTable(output)).toBeUndefined();
-		expect(table("1 0 0 0 S Mon Sep 23 09:03:11 2026", row(10, 1, 10))).toHaveLength(2);
-		const spaced = parseProcessTable(`12 1 12 501 S ${legacySpacing(started(12))}`);
+		expect(table("1 0 0 0 S init Mon Sep 23 09:03:11 2026", row(10, 1, 10))).toHaveLength(2);
+		const spaced = parseProcessTable(`12 1 12 501 S bun ${legacySpacing(started(12))}`);
 		expect(spaced?.[0]?.started).toBe(started(12));
 	});
 
 	it("captures verified descendants, rejects recycled ancestry, and retains UID-changed identities", () => {
 		const rows = table(row(10, 1, 10), row(11, 10, 11), row(12, 10, 12, 502));
 		expect(captureOwnedDescendants(root, [], () => rows)?.map(({ pid }) => pid)).toEqual([11, 12]);
-		expect(captureOwnedDescendants({ ...root, started: started(9) }, [], () => rows)).toBeUndefined();
-		const prior = [{ pid: 11, started: started(11), uid: 501 }];
+		expect(captureOwnedDescendants({ ...root, comm: "other" }, [], () => rows)).toBeUndefined();
+		const prior = [{ pid: 11, comm: "bun", started: started(11), uid: 501 }];
 		expect(
 			captureOwnedDescendants(root, prior, () => table(row(11, 1, 11, 502), row(12, 11, 12, 502)))?.map(
 				({ pid }) => pid,
@@ -64,14 +70,20 @@ describe("owned process primitives", () => {
 	it("normalizes spaced root, parent, captured, and live-owner timestamps", () => {
 		const oldRoot = { ...root, started: legacySpacing(root.started) };
 		const saved = [
-			{ pid: 11, started: legacySpacing(started(11)), uid: 501, parent: { pid: 10, started: oldRoot.started } },
+			{
+				pid: 11,
+				comm: "bun",
+				started: legacySpacing(started(11)),
+				uid: 501,
+				parent: { pid: 10, started: oldRoot.started },
+			},
 		];
 		const observed = table(row(10, 1, 10), row(11, 10, 11), row(12, 11, 12));
 		expect(captureOwnedDescendants(oldRoot, saved, () => observed)?.map(({ pid }) => pid)).toEqual([11, 12]);
 	});
 
-	it("treats unknown final probes and UID changes as outstanding, not gone", async () => {
-		const owned = [{ pid: 11, started: started(11), uid: 501 }];
+	it("treats unknown probes and different process names as outstanding, not gone", async () => {
+		const owned = [{ pid: 11, comm: "bun", started: started(11), uid: 501 }];
 		let calls = 0;
 		const unknown = await terminateOwnedDescendants({
 			root,
@@ -89,12 +101,12 @@ describe("owned process primitives", () => {
 			checkpoint: () => {},
 			deadlineMs: 50,
 			graceMs: 0,
-			observe: () => table(row(11, 1, 11, 502)),
+			observe: () => table(otherName(11, 1, 11)),
 			signal: () => {
 				throw new Error("uid-mismatched process signaled");
 			},
 		});
-		expect(mismatch).toBe("survivor");
+		expect(mismatch).toBe("terminated");
 	});
 
 	it("checkpoints discoveries before signaling and does not signal after checkpoint failure or deadline", async () => {
@@ -149,8 +161,8 @@ describe("owned process primitives", () => {
 		expect(lateSignals).toEqual([]);
 	});
 
-	it("revalidates identity immediately before signaling and escalates TERM to KILL", async () => {
-		const owned = [{ pid: 11, started: started(11), uid: 501 }];
+	it("revalidates PID and process name immediately before signaling and escalates TERM to KILL", async () => {
+		const owned = [{ pid: 11, comm: "bun", started: started(11), uid: 501 }];
 		let probes = 0;
 		const signals: string[] = [];
 		const replacement = await terminateOwnedDescendants({
@@ -159,7 +171,7 @@ describe("owned process primitives", () => {
 			checkpoint: () => {},
 			deadlineMs: 100,
 			graceMs: 0,
-			observe: () => (++probes === 1 ? table(row(11, 1, 11)) : table(row(11, 1, 12))),
+			observe: () => (++probes === 1 ? table(row(11, 1, 11)) : table(otherName(11, 1, 12))),
 			signal: (_pid, sig) => signals.push(sig),
 		});
 		expect(replacement).toBe("terminated");
@@ -190,7 +202,7 @@ describe("owned process primitives", () => {
 		const events: string[] = [];
 		const outcome = await terminateOwnedDescendants({
 			root,
-			captured: [{ pid: 11, started: started(11), uid: 501 }],
+			captured: [{ pid: 11, comm: "bun", started: started(11), uid: 501 }],
 			checkpoint: (owned) => {
 				events.push(`checkpoint:${owned.map((p) => p.pid).join(",")}`);
 			},
@@ -201,7 +213,7 @@ describe("owned process primitives", () => {
 					? ++probes <= 1
 						? table(row(10, 1, 10), row(11, 10, 11))
 						: table(row(10, 1, 10), row(11, 10, 11), row(12, 11, 12))
-					: table("1 0 0 0 S Mon Sep 23 09:03:11 2026"),
+					: table("1 0 0 0 S init Mon Sep 23 09:03:11 2026"),
 			signal: (pid) => {
 				events.push(`signal:${pid}`);
 				if (pid === 11) alive = false;
@@ -213,7 +225,9 @@ describe("owned process primitives", () => {
 	});
 
 	it("discovers and terminates children of a restored, reparented ledger identity", async () => {
-		const captured = [{ pid: 11, started: started(11), uid: 501, parent: { pid: 10, started: started(10) } }];
+		const captured = [
+			{ pid: 11, comm: "bun", started: started(11), uid: 501, parent: { pid: 10, started: started(10) } },
+		];
 		const checkpoints: number[][] = [];
 		const signals: number[] = [];
 		let rows = table(row(11, 1, 11), row(12, 11, 12));
@@ -228,7 +242,7 @@ describe("owned process primitives", () => {
 			observe: () => rows,
 			signal: (pid, sig) => {
 				signals.push(pid);
-				if (sig === "SIGKILL") rows = table("1 0 0 0 S Mon Sep 23 09:03:11 2026");
+				if (sig === "SIGKILL") rows = table("1 0 0 0 S init Mon Sep 23 09:03:11 2026");
 			},
 		});
 		expect(outcome).toBe("terminated");
@@ -240,7 +254,7 @@ describe("owned process primitives", () => {
 		let probes = 0;
 		const result = await terminateOwnedDescendants({
 			root,
-			captured: [{ pid: 11, started: started(11), uid: 501 }],
+			captured: [{ pid: 11, comm: "bun", started: started(11), uid: 501 }],
 			checkpoint: () => {},
 			deadlineMs: 500,
 			graceMs: 0,
@@ -255,7 +269,7 @@ describe("owned process primitives", () => {
 		const signals: string[] = [];
 		const result = await terminateOwnedDescendants({
 			root,
-			captured: [{ pid: 11, started: started(11), uid: 501 }],
+			captured: [{ pid: 11, comm: "bun", started: started(11), uid: 501 }],
 			checkpoint: () => {},
 			deadlineMs: 100,
 			graceMs: 20,
@@ -268,14 +282,16 @@ describe("owned process primitives", () => {
 
 	it("settles a serialized restored ledger when the root and all captured descendants are absent", async () => {
 		const restored = JSON.parse(
-			JSON.stringify([{ pid: 11, started: started(11), uid: 501, parent: { pid: 10, started: started(10) } }]),
+			JSON.stringify([
+				{ pid: 11, comm: "bun", started: started(11), uid: 501, parent: { pid: 10, started: started(10) } },
+			]),
 		) as OwnedProcess[];
 		const result = await terminateOwnedDescendants({
 			root,
 			captured: restored,
 			checkpoint: () => {},
 			deadlineMs: 100,
-			observe: () => table("1 0 0 0 S Mon Sep 23 09:03:11 2026"),
+			observe: () => table("1 0 0 0 S init Mon Sep 23 09:03:11 2026"),
 			signal: () => {
 				throw new Error("absent ledger identity signaled");
 			},
@@ -286,7 +302,7 @@ describe("owned process primitives", () => {
 			captured: [],
 			checkpoint: () => {},
 			deadlineMs: 100,
-			observe: () => table("1 0 0 0 S Mon Sep 23 09:03:11 2026"),
+			observe: () => table("1 0 0 0 S init Mon Sep 23 09:03:11 2026"),
 			signal: () => {
 				throw new Error("unproven identity signaled");
 			},
@@ -332,7 +348,7 @@ describe("owned process primitives", () => {
 		const signals: string[] = [];
 		const result = await terminateOwnedDescendants({
 			root,
-			captured: [{ pid: 11, started: started(11), uid: 501 }],
+			captured: [{ pid: 11, comm: "bun", started: started(11), uid: 501 }],
 			checkpoint: () => {},
 			deadlineMs: 35,
 			graceMs: 100,
@@ -358,7 +374,7 @@ describe("owned process primitives", () => {
 			const output = await parent.stdout.getReader().read();
 			childPid = Number(new TextDecoder().decode(output.value).trim());
 			const observe = () => {
-				const ps = Bun.spawnSync(["ps", "-axo", "pid=,ppid=,pgid=,uid=,stat=,lstart="], {
+				const ps = Bun.spawnSync(["ps", "-axo", "pid=,ppid=,pgid=,uid=,stat=,comm=,lstart="], {
 					env: { ...process.env, LC_ALL: "C" },
 				});
 				return ps.exitCode === 0 ? parseProcessTable(ps.stdout.toString()) : undefined;
@@ -366,13 +382,19 @@ describe("owned process primitives", () => {
 			const before = observe();
 			const rootRow = before?.find((p) => p.pid === parent.pid);
 			const childRow = before?.find((p) => p.pid === childPid);
-			if (rootRow) fixtures.push({ pid: parent.pid, started: rootRow.started, uid: rootRow.uid });
-			if (childRow) fixtures.push({ pid: childPid, started: childRow.started, uid: childRow.uid });
+			if (rootRow) fixtures.push({ pid: parent.pid, comm: rootRow.comm!, started: rootRow.started, uid: rootRow.uid });
+			if (childRow)
+				fixtures.push({ pid: childPid, comm: childRow.comm!, started: childRow.started, uid: childRow.uid });
 			expect(rootRow).toBeDefined();
 			expect(childRow).toBeDefined();
 			assert(rootRow && childRow, "Fixture process identities are captured.");
 			expect(childRow.pgid).not.toBe(rootRow.pgid);
-			const ownedRoot: OwnedProcess = { pid: parent.pid, started: rootRow.started, uid: rootRow.uid };
+			const ownedRoot: OwnedProcess = {
+				pid: parent.pid,
+				comm: rootRow.comm!,
+				started: rootRow.started,
+				uid: rootRow.uid,
+			};
 			const acquired = captureOwnedDescendants(ownedRoot, [], observe)!;
 			fixtures.push(...acquired);
 			expect(acquired.some((p) => p.pid === childPid)).toBe(true);
@@ -401,7 +423,7 @@ describe("owned process primitives", () => {
 			}
 			parent.kill("SIGKILL");
 			for (const fixture of fixtures) {
-				const ps = Bun.spawnSync(["ps", "-p", String(fixture.pid), "-o", "pid=,ppid=,pgid=,uid=,stat=,lstart="], {
+				const ps = Bun.spawnSync(["ps", "-p", String(fixture.pid), "-o", "pid=,ppid=,pgid=,uid=,stat=,comm=,lstart="], {
 					env: { ...process.env, LC_ALL: "C" },
 				});
 				const current = parseProcessTable(ps.stdout.toString())?.[0];
@@ -430,9 +452,12 @@ describe("owned process primitives", () => {
 				const deadline = Date.now() + 5_000;
 				let exited = false;
 				while (Date.now() < deadline) {
-					const ps = Bun.spawnSync(["ps", "-p", String(fixture.pid), "-o", "pid=,ppid=,pgid=,uid=,stat=,lstart="], {
-						env: { ...process.env, LC_ALL: "C" },
-					});
+					const ps = Bun.spawnSync(
+						["ps", "-p", String(fixture.pid), "-o", "pid=,ppid=,pgid=,uid=,stat=,comm=,lstart="],
+						{
+							env: { ...process.env, LC_ALL: "C" },
+						},
+					);
 					const current = parseProcessTable(ps.stdout.toString())?.[0];
 					if (current?.started !== fixture.started || current.uid !== fixture.uid) {
 						exited = true;

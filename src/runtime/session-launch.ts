@@ -12,15 +12,6 @@ import { prepareHarnessEnvironment } from "./harness-environment.ts";
 import { STATUS_DIR_ENV, sessionActivityDir } from "./status-hooks.ts";
 import { AGENTIC_WORKSPACE_TASK_SKILL_FILE } from "./task-skill.ts";
 
-const FORBIDDEN_ENV = [
-	"AGENTIC_WORKSPACE_CWD",
-	"AGENTIC_WORKSPACE_TASK_ID",
-	"AGENTIC_WORKSPACE_SESSION_ID",
-	"AGENTIC_WORKSPACE_PROJECT_ROOT",
-	"TASK_ID",
-	"SESSION_ID",
-] as const;
-
 export interface PreparedAgentLaunch {
 	/** Execution-only adapter identity for activity probes. */
 	bootstrap?: RuntimeAgentBootstrap;
@@ -92,12 +83,6 @@ function warnEnvironment(text: string): void {
 	process.stderr.write(`warning: ${text}\n`);
 }
 
-function sanitizeLaunchEnvironment(environment: Record<string, string>): Record<string, string> {
-	const clean = { ...environment };
-	for (const name of FORBIDDEN_ENV) delete clean[name];
-	return clean;
-}
-
 async function launchEnvironment(
 	preset: AgentPreset,
 	paths: { projectDir: string; worktreeDir: string; taskDir: string },
@@ -107,12 +92,12 @@ async function launchEnvironment(
 		return await prepareHarnessEnvironment(preset.env, paths, {
 			onWarning: warnEnvironment,
 		});
-	return sanitizeLaunchEnvironment({
+	return {
 		...resolved,
 		AGENTIC_WORKSPACE_PROJECT_DIR: paths.projectDir,
 		AGENTIC_WORKSPACE_WORKTREE_DIR: paths.worktreeDir,
 		AGENTIC_WORKSPACE_TASK_DIR: paths.taskDir,
-	});
+	};
 }
 
 export async function preflightAgentLaunch(
@@ -229,17 +214,17 @@ export async function prepareAgentLaunchResources(
 			title: options.title,
 			preflightResult: adapterResult,
 		});
-		const preparedEnvironment = sanitizeLaunchEnvironment({
+		const preparedEnvironment = {
 			...prepared.env,
 			AGENTIC_WORKSPACE_PROJECT_DIR: projectDir,
 			AGENTIC_WORKSPACE_WORKTREE_DIR: options.cwd,
 			AGENTIC_WORKSPACE_TASK_DIR: taskDir,
-		});
+		};
 		// A shell-owned trap also cleans durable tmux agents after this CLI has exited.
 		// The trap removes only our mkdtemp directory, never any project or user-owned path.
 		const ownedPaths = [directory, ...(statusDir ? [statusDir] : [])];
 		const resources = await preparedLaunchResources(directory, statusDir);
-		const script = `unset ${FORBIDDEN_ENV.join(" ")}; trap ${quote(`rm -rf -- ${ownedPaths.map((path) => quote(path)).join(" ")}`)} EXIT; trap 'exit 129' HUP; trap 'exit 143' TERM; (${prepared.command})`;
+		const script = `trap ${quote(`rm -rf -- ${ownedPaths.map((path) => quote(path)).join(" ")}`)} EXIT; trap 'exit 129' HUP; trap 'exit 143' TERM; (${prepared.command})`;
 		return {
 			bootstrap: preset.bootstrap,
 			command: `/bin/sh -c ${quote(script)}`,
@@ -313,13 +298,13 @@ export async function prepareAgentAsk(
 			question: contextualQuestion,
 		});
 		return {
-			command: `/bin/sh -c ${quote(`unset ${FORBIDDEN_ENV.join(" ")}; exec ${command}`)}`,
-			env: sanitizeLaunchEnvironment({
+			command: `/bin/sh -c ${quote(`exec ${command}`)}`,
+			env: {
 				...prepared.env,
 				AGENTIC_WORKSPACE_PROJECT_DIR: roots.repositoryRoot,
 				AGENTIC_WORKSPACE_WORKTREE_DIR: worktreeDir,
 				AGENTIC_WORKSPACE_TASK_DIR: roots.taskRoot,
-			}),
+			},
 			cleanup,
 		};
 	} catch (error) {

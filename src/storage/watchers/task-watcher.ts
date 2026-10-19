@@ -2,7 +2,7 @@ import { type FSWatcher, watch } from "node:fs";
 import { stat } from "node:fs/promises";
 import { basename, dirname } from "node:path";
 import { resolveMainWorktreeRoot } from "../../filesystem/git/main-worktree.ts";
-import { isValidTaskId, taskIdsEqual } from "../../model/task/task-id.ts";
+import { taskIdsEqual } from "../../model/task/task-id.ts";
 import type { Task } from "../../model/types.ts";
 import type { Storage } from "../storage.ts";
 
@@ -47,7 +47,7 @@ function classifyTaskWatchEvent(eventType: string, filename: string | Buffer | n
 	const segments = fileName.split(/[\\/]/);
 	if (segments.length > 1) {
 		const [taskId, ...containerSegments] = segments;
-		if (containerSegments.join("/") === "task.md" && taskId && isValidTaskId(taskId)) return { kind: "record", taskId };
+		if (containerSegments.join("/") === "task.md" && taskId) return { kind: "record", taskId };
 		const artifactSegments = containerSegments[0] === "artifacts" ? containerSegments.slice(1) : containerSegments;
 		const path = artifactSegments.join("/");
 		if (
@@ -114,7 +114,7 @@ async function readTaskFileSnapshot(tasksDir: string): Promise<TaskFileSnapshot>
 		const taskIds = new Set<string>();
 		for (const file of canonicalFiles) {
 			const taskId = basename(dirname(file));
-			if (isValidTaskId(taskId)) taskIds.add(taskId.toUpperCase());
+			taskIds.add(taskId.toUpperCase());
 		}
 		return { state: "complete", taskIds };
 	} catch {

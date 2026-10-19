@@ -94,7 +94,7 @@ describe("subtask ordering consistency", () => {
 	it("agrees across every corpus reader", async () => {
 		expect((await core.loadTasks()).map((task) => task.id)).toEqual(EXPECTED_ORDER);
 		expect((await core.queryTasks()).map((task) => task.id)).toEqual(EXPECTED_ORDER);
-		expect((await core.queryTasks({ includeCrossBranch: false })).map((task) => task.id)).toEqual(EXPECTED_ORDER);
+		expect((await core.queryTasks({})).map((task) => task.id)).toEqual(EXPECTED_ORDER);
 		expect((await coreFileSystem(core).listTasks()).map((task) => task.id)).toEqual(EXPECTED_ORDER);
 	});
 

@@ -111,20 +111,7 @@ describe("Enhanced init command", () => {
 		expect(reloaded?.onStatusChange).toBe("echo changed");
 	});
 
-	test("initializeProject should reject reserved task prefixes", async () => {
-		for (const taskPrefix of ["draft"]) {
-			const core = new Core(tmpDir);
-			await expect(
-				initializeProject(core, {
-					projectName: "Reserved Prefix Init",
-					advancedConfig: { taskPrefix },
-				}),
-			).rejects.toThrow(/reserved for drafts/);
-			expect(await Bun.file(join(tmpDir, "agentic-workspace", "config.yml")).exists()).toBe(false);
-		}
-	});
-
-	test("initializeProject should preserve an existing reserved prefix on re-init", async () => {
+	test("initializeProject should preserve an existing configured task prefix on re-init", async () => {
 		const core = new Core(tmpDir);
 		await initializeProject(core, {
 			projectName: "Historical Reserved Prefix",
@@ -132,7 +119,7 @@ describe("Enhanced init command", () => {
 		});
 		const existingConfig = await coreFileSystem(core).loadConfig();
 		if (!existingConfig) throw new Error("Missing test config");
-		existingConfig.prefixes = { task: "draft" };
+		existingConfig.prefixes = { task: "OPS" };
 		await coreFileSystem(core).saveConfig(existingConfig);
 
 		const result = await initializeProject(core, {
@@ -141,9 +128,9 @@ describe("Enhanced init command", () => {
 			advancedConfig: { taskPrefix: "task" },
 		});
 
-		expect(result.config.prefixes?.task).toBe("draft");
+		expect(result.config.prefixes?.task).toBe("OPS");
 		const loadedConfig = await coreFileSystem(core).loadConfig();
-		expect(loadedConfig?.prefixes?.task).toBe("draft");
+		expect(loadedConfig?.prefixes?.task).toBe("OPS");
 	});
 
 	test("initializeProject should use custom taskPrefix from advancedConfig", async () => {

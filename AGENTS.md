@@ -15,12 +15,19 @@ Project documentation lives under `docs/`; the root `README.md` is the user entr
 ### Authority and decisions
 
 - **The contracts are the source of truth.** PRODUCT owns scope; SPEC and its `specs/` own behavior; BLUEPRINT and its `architecture/` pages own structure and operation contracts; CONVENTIONS owns engineering practice; DESIGN-SYSTEM and the screen specifications own presentation; ADRs own accepted significant decisions. Read the owning contract for the claim you are changing.
+- **Task-tracker entries are not contracts.** Implementation plans, alignment pages, task lists, handoffs, and any other work-item document — including entries labeled `TASK-n` — are tasks. They schedule work and may cite contracts; they never own or define behavior, scope, or a decision. A `TASK-n` identifier inside a SPEC feature contract is a requirement ID in that contract, not a tracker task. When a tracker entry and a contract disagree, the contract wins and the tracker entry is corrected.
 - Code, installed help, tests and screenshots establish implementation evidence; a discrepancy is an alignment issue, not permission to redefine the contract. Do not weaken runtime or execution-safety gates.
 - Each claim has one owning document. Link to that owner rather than copying its rules into other documents. ADRs preserve accepted technology and significant architecture decisions with their rationale; new significant decisions require approval, and accepted records remain preserved with explicit supersession.
 - Before asking about behavior, read the relevant contract and its failure/recovery scenarios. Ask only about an identified omission, contradiction or requested change. Investigate discoverable facts instead of asking the owner to research them.
 - Record accepted decisions in the owning contract. Unresolved policy is labeled in its owning contract rather than deferred to a non-contract document.
 - Apply the current approved contract in assignments and worker briefs. Scope limits do not justify keeping compatibility behavior; unresolved ownership or data-policy decisions must be escalated explicitly. Retain execution-safety gates until their requirements are folded and satisfied.
 - Non-contract material (questionnaires, research, handoffs, implementation plans, source audits) is supporting evidence, not authority. Before retiring any of it, account for its unique requirements, update inbound references, and fold any unresolved material into the owning contract or the task tracker.
+
+## No legacy code
+
+- Do not keep legacy code, compatibility shims, fallback aliases, deprecated config keys, migration paths, or dual-read/dual-write behavior. Remove the superseded path entirely.
+- Backward compatibility and legacy preservation are opt-in: implement them only when the user explicitly asks for them in the current request. A task tracker, audit, existing test, or "someone might rely on it" does not authorize preserving legacy behavior.
+- Code deletion is the default. Data is different: name any existing data that would be deleted or reinterpreted and get explicit approval before touching it.
 
 ## Dog-fooding: inspect the installed CLI for current behavior
 

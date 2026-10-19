@@ -57,7 +57,6 @@ describe("worktree task refresh", () => {
 		}
 		await coreFileSystem(setupCore).saveConfig({
 			...config,
-			checkActiveBranches: true,
 			remoteOperations: false,
 		});
 		await $`git add agentic-workspace/config.yml`.cwd(TEST_DIR).quiet();

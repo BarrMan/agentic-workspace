@@ -25,10 +25,10 @@ describe("parseTaskId", () => {
 	});
 
 	test("handles IDs with trailing numbers", () => {
-		expect(TaskOrdering.parseId("task-draft")).toEqual([0]);
-		expect(TaskOrdering.parseId("task-draft2")).toEqual([2]);
-		expect(TaskOrdering.parseId("task-draft10")).toEqual([10]);
-		expect(TaskOrdering.parseId("draft2")).toEqual([2]);
+		expect(TaskOrdering.parseId("task-mixed")).toEqual([0]);
+		expect(TaskOrdering.parseId("task-mixed2")).toEqual([2]);
+		expect(TaskOrdering.parseId("task-mixed10")).toEqual([10]);
+		expect(TaskOrdering.parseId("mixed2")).toEqual([2]);
 		expect(TaskOrdering.parseId("abc123")).toEqual([123]);
 	});
 });
@@ -57,9 +57,9 @@ describe("compareTaskIds", () => {
 	});
 
 	test("sorts IDs with trailing numbers", () => {
-		expect(TaskOrdering.compareIds("task-draft", "task-draft2")).toBeLessThan(0);
-		expect(TaskOrdering.compareIds("task-draft2", "task-draft10")).toBeLessThan(0);
-		expect(TaskOrdering.compareIds("task-draft10", "task-draft2")).toBeGreaterThan(0);
+		expect(TaskOrdering.compareIds("task-mixed", "task-mixed2")).toBeLessThan(0);
+		expect(TaskOrdering.compareIds("task-mixed2", "task-mixed10")).toBeLessThan(0);
+		expect(TaskOrdering.compareIds("task-mixed10", "task-mixed2")).toBeGreaterThan(0);
 	});
 
 	test("sorts distinct nonnumeric IDs deterministically", () => {

@@ -222,18 +222,12 @@ export async function withTaskSessionAdmission<T>(
 	taskId: string,
 	operation: (task: Task) => Promise<T>,
 ): Promise<T> {
-	const task = await core.loadTaskForMutation(taskId, { includeCrossBranch: false });
-	if (!task || !task.filePath || task.source === TASK_SOURCE.REMOTE || task.source === TASK_SOURCE.LOCAL_BRANCH)
+	const task = await core.loadTaskForMutation(taskId);
+	if (!task || !task.filePath || task.source === TASK_SOURCE.REMOTE)
 		throw new Error(`Locally editable task not found: ${taskId}`);
 	return await core.withTaskLock(task, async () => {
-		const current = await core.loadTaskForMutation(task.id, { includeCrossBranch: false });
-		if (
-			!current ||
-			!current.filePath ||
-			current.filePath !== task.filePath ||
-			current.source === TASK_SOURCE.REMOTE ||
-			current.source === TASK_SOURCE.LOCAL_BRANCH
-		)
+		const current = await core.loadTaskForMutation(task.id);
+		if (!current || !current.filePath || current.filePath !== task.filePath || current.source === TASK_SOURCE.REMOTE)
 			throw new Error(`Locally editable task changed or no longer exists: ${task.id}`);
 		return await operation(current);
 	});

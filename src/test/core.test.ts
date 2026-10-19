@@ -21,7 +21,6 @@ async function writeTaskFixture(path: string, task: Task): Promise<void> {
 	await Bun.write(path, serializeTask(task));
 }
 
-// Branch records are only visible inside the rolling activeBranchDays window,
 // so commit dates must stay relative to the test run, never absolute.
 function recentCommitDate(minutesAgo: number): string {
 	return new Date(Date.now() - minutesAgo * 60_000).toISOString();
@@ -88,9 +87,7 @@ describe("Core", () => {
 			}
 			await coreFileSystem(core).saveConfig({
 				...config,
-				checkActiveBranches: true,
 				remoteOperations: false,
-				taskResolutionStrategy: "most_progressed",
 				prefixes: { ...config.prefixes, task: "back" },
 			});
 
@@ -247,9 +244,7 @@ describe("Core", () => {
 			}
 			await coreFileSystem(core).saveConfig({
 				...config,
-				checkActiveBranches: true,
 				remoteOperations: false,
-				taskResolutionStrategy: "most_progressed",
 				prefixes: { ...config.prefixes, task: "back" },
 			});
 
@@ -279,9 +274,7 @@ describe("Core", () => {
 			}
 			await coreFileSystem(core).saveConfig({
 				...config,
-				checkActiveBranches: true,
 				remoteOperations: false,
-				taskResolutionStrategy: "most_progressed",
 				prefixes: { ...config.prefixes, task: "back" },
 			});
 
@@ -306,49 +299,11 @@ describe("Core", () => {
 			expect(await core.getTask("BACK-1")).toMatchObject({ id: "BACK-1", title: "Local task version" });
 		});
 
-		it("keeps branch-only padded ID variants distinct across paths", async () => {
-			const config = await coreFileSystem(core).loadConfig();
-			if (!config) {
-				throw new Error("Expected config to be loaded");
-			}
-			await coreFileSystem(core).saveConfig({
-				...config,
-				checkActiveBranches: true,
-				remoteOperations: false,
-				taskResolutionStrategy: "most_progressed",
-				prefixes: { ...config.prefixes, task: "back" },
-			});
-			await $`git add . && git commit -m "Configure branch task loading"`.cwd(TEST_DIR).quiet();
-
-			await $`git switch -c branch-task-one`.cwd(TEST_DIR).quiet();
-			await writeTaskFixture(join(coreFileSystem(core).tasksDir, "back-1", "task.md"), {
-				...sampleTask,
-				id: "BACK-1",
-				title: "Branch one",
-				status: "To Do",
-			});
-			await $`git add . && git commit -m "Add first branch task"`.cwd(TEST_DIR).quiet();
-
-			await $`git switch main && git switch -c branch-task-two`.cwd(TEST_DIR).quiet();
-			await writeTaskFixture(join(coreFileSystem(core).tasksDir, "back-001", "task.md"), {
-				...sampleTask,
-				id: "BACK-001",
-				title: "Branch two",
-				status: "Done",
-			});
-			await $`git add . && git commit -m "Add second branch task"`.cwd(TEST_DIR).quiet();
-			await $`git switch main`.cwd(TEST_DIR).quiet();
-
-			const branchTasks = await core.loadTasks();
-			expect(branchTasks.map((task) => task.id).sort()).toEqual(["BACK-001", "BACK-1"]);
-		});
-
 		it("refreshes branch identities before resolving a long-lived Core read", async () => {
 			const config = await coreFileSystem(core).loadConfig();
 			if (!config) throw new Error("Expected config to be loaded");
 			await coreFileSystem(core).saveConfig({
 				...config,
-				checkActiveBranches: true,
 				remoteOperations: false,
 				prefixes: { ...config.prefixes, task: "back" },
 			});
@@ -370,74 +325,6 @@ describe("Core", () => {
 			expect(await core.getTask("BACK-1")).toMatchObject({ id: "BACK-1", title: "Local identity" });
 		});
 
-		it("hydrates branch-only records whose canonical IDs normalize equal", async () => {
-			const config = await coreFileSystem(core).loadConfig();
-			if (!config) throw new Error("Expected config to be loaded");
-			await coreFileSystem(core).saveConfig({
-				...config,
-				checkActiveBranches: true,
-				remoteOperations: false,
-				prefixes: { ...config.prefixes, task: "back" },
-			});
-			await $`git add . && git commit -m "Configure branch identity loading"`.cwd(TEST_DIR).quiet();
-
-			await $`git switch -c exact-id-active`.cwd(TEST_DIR).quiet();
-			await writeTaskFixture(join(coreFileSystem(core).tasksDir, "back-1", "task.md"), {
-				...sampleTask,
-				id: "BACK-1",
-				title: "Active branch identity",
-			});
-			await $`git add . && git commit -m "Add active branch identity"`.cwd(TEST_DIR).quiet();
-
-			await $`git switch main && git switch -c exact-id-completed`.cwd(TEST_DIR).quiet();
-			await writeTaskFixture(join(coreFileSystem(core).completedDir, "back-001", "task.md"), {
-				...sampleTask,
-				id: "BACK-001",
-				title: "Completed branch identity",
-				status: "Done",
-			});
-			await $`git add . && git commit -m "Add completed branch identity"`.cwd(TEST_DIR).quiet();
-			await $`git switch main`.cwd(TEST_DIR).quiet();
-
-			const included = await core.loadTasks(undefined, undefined, { includeCompleted: true });
-			expect(included.map((task) => task.title).sort()).toEqual([
-				"Active branch identity",
-				"Completed branch identity",
-			]);
-			core.git.listRecentBranches = async () => {
-				throw new Error("Statistics must not use the retired local-branch loader");
-			};
-			core.git.listRecentRemoteBranches = async () => {
-				throw new Error("Statistics must not use the retired remote-branch loader");
-			};
-			const statistics = (await core.loadAllTasksForStatistics()).tasks;
-			expect(statistics.map((task) => task.title).sort()).toEqual([
-				"Active branch identity",
-				"Completed branch identity",
-			]);
-		});
-
-		it("loads other local branches while the current branch is unborn", async () => {
-			const currentConfig = await coreFileSystem(core).loadConfig();
-			if (!currentConfig) throw new Error("Expected config to be loaded");
-			const branchConfig = {
-				...currentConfig,
-				checkActiveBranches: true,
-				remoteOperations: false,
-			};
-			await coreFileSystem(core).saveConfig(branchConfig);
-			await $`git add . && git commit -m "Configure orphan branch loading"`.cwd(TEST_DIR).quiet();
-
-			await $`git switch -c feature/unborn-source`.cwd(TEST_DIR).quiet();
-			await coreFileSystem(core).saveTask({ ...sampleTask, id: "TASK-2", title: "Task on another branch" });
-			await $`git add . && git commit -m "Add branch-only task"`.cwd(TEST_DIR).quiet();
-			await $`git switch main && git switch --orphan blank`.cwd(TEST_DIR).quiet();
-			await coreFileSystem(core).ensureAgenticWorkspaceStructure();
-			await coreFileSystem(core).saveConfig(branchConfig);
-
-			expect((await core.loadTasks()).map((task) => task.title)).toEqual(["Task on another branch"]);
-		});
-
 		it("keeps padded active paths distinct when an archive snapshot is present", async () => {
 			const config = await coreFileSystem(core).loadConfig();
 			if (!config) {
@@ -445,7 +332,6 @@ describe("Core", () => {
 			}
 			await coreFileSystem(core).saveConfig({
 				...config,
-				checkActiveBranches: true,
 				remoteOperations: false,
 				prefixes: { ...config.prefixes, task: "back" },
 			});
@@ -484,38 +370,6 @@ describe("Core", () => {
 			expect(await core.getTask("BACK-1")).toMatchObject({ id: "BACK-1", title: "Local active path" });
 		});
 
-		it("keeps an ID occupied when equal-time branch records are active and archived", async () => {
-			const config = await coreFileSystem(core).loadConfig();
-			if (!config) {
-				throw new Error("Expected config to be loaded");
-			}
-			await coreFileSystem(core).saveConfig({
-				...config,
-				checkActiveBranches: true,
-				remoteOperations: false,
-				prefixes: { ...config.prefixes, task: "back" },
-			});
-			await $`git add . && git commit -m "Configure identity loading"`.cwd(TEST_DIR).quiet();
-
-			await $`git switch -c equal-time-states`.cwd(TEST_DIR).quiet();
-			await Bun.write(
-				join(coreFileSystem(core).archiveTasksDir, "back-1 - Archived-version.md"),
-				serializeTask({ ...sampleTask, id: "BACK-1", title: "Archived version" }),
-			);
-			await writeTaskFixture(join(coreFileSystem(core).tasksDir, "back-001", "task.md"), {
-				...sampleTask,
-				id: "BACK-001",
-				title: "Active version",
-			});
-			const commitDate = recentCommitDate(3);
-			await $`git add . && GIT_AUTHOR_DATE="${commitDate}" GIT_COMMITTER_DATE="${commitDate}" git commit -m "Add equal-time states"`
-				.cwd(TEST_DIR)
-				.quiet();
-			await $`git switch main`.cwd(TEST_DIR).quiet();
-
-			expect(await core.generateNextId()).toBe("BACK-2");
-		});
-
 		it("keeps active and completed identities at distinct paths when completed tasks are included", async () => {
 			const activePath = await coreFileSystem(core).saveTask({
 				...sampleTask,
@@ -551,7 +405,6 @@ describe("Core", () => {
 			}
 			await coreFileSystem(configuredCore).saveConfig({
 				...config,
-				checkActiveBranches: true,
 				remoteOperations: false,
 				prefixes: { ...config.prefixes, task: "back" },
 			});
@@ -599,14 +452,14 @@ describe("Core", () => {
 			expect(task?.source).toBe("local");
 		});
 
-		it("rejects unsupported alphanumeric task IDs", async () => {
+		it("loads a task whose ID is not in the generated grammar", async () => {
 			await mkdir(join(coreFileSystem(core).tasksDir, "task-prefixed"), { recursive: true });
 			await Bun.write(
 				join(coreFileSystem(core).tasksDir, "task-prefixed", "task.md"),
 				serializeTask({ ...sampleTask, id: "TASK-PREFIXED", title: "Historical task" }),
 			);
 
-			expect(await core.getTask("task-prefixed")).toBeNull();
+			expect((await core.getTask("task-prefixed"))?.id).toBe("TASK-PREFIXED");
 		});
 
 		it("resolves distinct padded task IDs from their own canonical containers", async () => {
@@ -870,37 +723,6 @@ describe("Core", () => {
 		});
 	});
 
-	describe("draft operations", () => {
-		beforeEach(async () => {
-			await initializeTestProject(core, "Draft Project");
-		});
-
-		it("should create draft without committing", async () => {
-			const { task: draft } = await core.createTaskFromInput({
-				title: "Draft Task",
-				status: "Draft",
-				description: "Draft task",
-			});
-
-			const loaded = await coreFileSystem(core).loadDraft(draft.id);
-			expect(loaded?.id).toBe("DRAFT-1");
-		});
-
-		it("should preserve draft metadata through the canonical create path", async () => {
-			const { task: draft } = await core.createTaskFromInput({
-				title: "Draft Array",
-				status: "Draft",
-				description: "Draft task",
-				assignee: ["@frank"],
-				labels: ["draft"],
-			});
-
-			const loaded = await coreFileSystem(core).loadDraft(draft.id);
-			expect(loaded?.assignee).toEqual(["@frank"]);
-			expect(loaded?.labels).toEqual(["draft"]);
-		});
-	});
-
 	describe("integration with config", () => {
 		it("should use custom default status from config", async () => {
 			// Initialize with custom config
@@ -960,7 +782,7 @@ describe("Core", () => {
 
 		// createTaskFromInput is the shared create path for every surface (CLI, wizard, TUI, Web),
 		// so applying defaultAssignee here is what keeps the surfaces consistent.
-		it("should apply defaultAssignee to tasks and drafts created without an assignee", async () => {
+		it("should apply defaultAssignee to tasks created without an assignee", async () => {
 			await initializeTestProject(core, "Default Assignee Project");
 			const config = await coreFileSystem(core).loadConfig();
 			if (!config) throw new Error("Expected config");
@@ -969,9 +791,6 @@ describe("Core", () => {
 
 			const { task } = await core.createTaskFromInput({ title: "Inherits default" });
 			expect(task.assignee).toEqual(["@alice", "@bob"]);
-
-			const { task: draft } = await core.createTaskFromInput({ title: "Draft inherits default", status: "Draft" });
-			expect(draft.assignee).toEqual(["@alice", "@bob"]);
 		});
 
 		it("should let an explicit assignee replace defaultAssignee entirely", async () => {
@@ -985,8 +804,7 @@ describe("Core", () => {
 			expect(task.assignee).toEqual(["@carol"]);
 		});
 
-		// An explicit empty list is how every surface says "unassigned": CLI/draft `-a ""`,
-		// The Web edit payload also reaches this method that way.
+		// An explicit empty list is how every surface says "unassigned"; the Web edit payload also reaches this method that way.
 		it("should let an explicit empty assignee override defaultAssignee", async () => {
 			await initializeTestProject(core, "Explicit Unassign Project");
 			const config = await coreFileSystem(core).loadConfig();
@@ -996,13 +814,6 @@ describe("Core", () => {
 
 			const { task } = await core.createTaskFromInput({ title: "Explicitly unassigned", assignee: [] });
 			expect(task.assignee).toEqual([]);
-
-			const { task: draft } = await core.createTaskFromInput({
-				title: "Explicitly unassigned draft",
-				status: "Draft",
-				assignee: [],
-			});
-			expect(draft.assignee).toEqual([]);
 		});
 
 		it("should leave new tasks unassigned when defaultAssignee is empty", async () => {

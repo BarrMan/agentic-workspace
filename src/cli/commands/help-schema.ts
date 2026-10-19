@@ -1,8 +1,7 @@
 import type { Command } from "commander";
-import { DEFAULT_STATUSES, DRAFT_STATUS } from "../../model/constants.ts";
+import { DEFAULT_STATUSES } from "../../model/constants.ts";
 import { getPriorityLabels } from "../../model/task/priority-config.ts";
 import { getProjectValues } from "../../model/task/project-config.ts";
-import { statusComparisonKey } from "../../model/task/status.ts";
 import { getTaskTypeValues } from "../../model/task/task-type-config.ts";
 import type { AgenticWorkspaceConfig } from "../../model/types.ts";
 
@@ -85,17 +84,12 @@ export function addHelpSchema(command: Command, schema: HelpSchema): Command {
 	return command.addHelpText("after", () => renderHelpSchema(schema));
 }
 
-function includeDraftStatus(statuses: string[]): string[] {
-	const hasDraft = statuses.some((status) => statusComparisonKey(status) === statusComparisonKey(DRAFT_STATUS));
-	return hasDraft ? statuses : [DRAFT_STATUS, ...statuses];
-}
-
-function getCliStatusValues(options?: { includeDraft?: boolean }): string[] {
+function getCliStatusValues(): string[] {
 	let configuredStatuses: string[] = [...DEFAULT_STATUSES];
 	const config = helpConfig;
 	if (config && config.statuses.length > 0) configuredStatuses = config.statuses;
 
-	return options?.includeDraft ? includeDraftStatus(configuredStatuses) : configuredStatuses;
+	return configuredStatuses;
 }
 
 function getCliPriorityValues(): string[] {
@@ -132,9 +126,9 @@ export function choiceType(values: readonly string[], options?: { multiple?: boo
 	return `${options?.multiple ? "one or more of" : "one of"}: ${values.join(", ")}`;
 }
 
-export function statusType(options?: { includeDraft?: boolean; multiple?: boolean }): string {
+export function statusType(options?: { multiple?: boolean }): string {
 	const cardinality = options?.multiple ? "one or more of" : "one of";
-	return `${cardinality} configured statuses: ${getCliStatusValues(options).join(", ")}`;
+	return `${cardinality} configured statuses: ${getCliStatusValues().join(", ")}`;
 }
 
 export function priorityType(): string {

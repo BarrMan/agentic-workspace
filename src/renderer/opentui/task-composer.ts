@@ -1,5 +1,4 @@
 import type { BoxRenderable, CliRenderer } from "@opentui/core";
-import { DRAFT_STATUS } from "../../model/constants.ts";
 import { type AgentConfiguration, resolveSessionSettings } from "../../model/session/types.ts";
 import { getPriorityOptions } from "../../model/task/priority-config.ts";
 import { getProjectValues } from "../../model/task/project-config.ts";
@@ -73,13 +72,13 @@ export type OpenTuiTaskComposerMount = {
 	dispose(): void;
 };
 
-function uniqueValues(values: readonly string[], excluded?: string): string[] {
+function uniqueValues(values: readonly string[]): string[] {
 	const result: string[] = [];
 	const seen = new Set<string>();
 	for (const value of values) {
 		const trimmed = String(value ?? "").trim();
 		const normalized = trimmed.toLowerCase();
-		if (!trimmed || normalized === excluded?.toLowerCase() || seen.has(normalized)) continue;
+		if (!trimmed || seen.has(normalized)) continue;
 		seen.add(normalized);
 		result.push(trimmed);
 	}
@@ -87,7 +86,7 @@ function uniqueValues(values: readonly string[], excluded?: string): string[] {
 }
 
 function workflowStatuses(statuses: readonly string[]): string[] {
-	const values = uniqueValues(statuses, DRAFT_STATUS);
+	const values = uniqueValues(statuses);
 	return values.length > 0 ? values : ["To Do"];
 }
 
@@ -117,7 +116,7 @@ function taskComposerFields(options: OpenTuiTaskComposerOptions): TaskComposerFi
 			kind: "select",
 			name: "status",
 			label: TASK_FIELD_LABELS.STATUS,
-			options: selectOptions([DRAFT_STATUS, ...statuses]),
+			options: selectOptions(statuses),
 			value: statuses[0],
 		},
 		{

@@ -64,7 +64,6 @@ const rawConfigSchema = z.object({
 	default_status: z.string().optional(),
 	date_format: dateFormat,
 	max_column_width: positiveInteger.optional(),
-	task_resolution_strategy: z.enum(["most_recent", "most_progressed"]).optional(),
 	default_editor: z.string().optional(),
 	auto_open_browser: boolean.optional(),
 	default_port: port.optional(),
@@ -73,28 +72,10 @@ const rawConfigSchema = z.object({
 	filesystem_only: boolean.optional(),
 	zero_padded_ids: nonNegativeInteger.optional(),
 	bypass_git_hooks: boolean.optional(),
-	check_active_branches: boolean.optional(),
-	active_branch_days: nonNegativeInteger.optional(),
 	agentic_workspace_directory: z.string().optional(),
 	on_status_change: z.string().optional(),
 	task_prefix: taskPrefix.optional(),
 });
-
-const ALIASES: ReadonlyArray<readonly [alias: string, key: string]> = [
-	["filesystemOnly", "filesystem_only"],
-	["agenticWorkspaceDirectory", "agentic_workspace_directory"],
-	["onStatusChange", "on_status_change"],
-];
-
-function normalizeAliases(value: unknown): unknown {
-	if (!value || typeof value !== "object" || Array.isArray(value)) return value;
-	const input = value as Record<string, unknown>;
-	const normalized = { ...input };
-	for (const [alias, key] of ALIASES) {
-		if (!Object.hasOwn(normalized, key) && Object.hasOwn(input, alias)) normalized[key] = input[alias];
-	}
-	return normalized;
-}
 
 function defaultAssignees(value: string[] | string | null | undefined): string[] | undefined {
 	if (value === null) return [];
@@ -104,7 +85,7 @@ function defaultAssignees(value: string[] | string | null | undefined): string[]
 	return normalizeAssignees(value);
 }
 
-export const AgenticWorkspaceConfigSchema = z.preprocess(normalizeAliases, rawConfigSchema).transform(
+export const AgenticWorkspaceConfigSchema = rawConfigSchema.transform(
 	(raw): AgenticWorkspaceConfig => ({
 		projectName: raw.project_name,
 		agentConfiguration: raw.agent_configuration as AgenticWorkspaceConfig["agentConfiguration"],
@@ -119,7 +100,6 @@ export const AgenticWorkspaceConfigSchema = z.preprocess(normalizeAliases, rawCo
 		defaultStatus: raw.default_status,
 		dateFormat: raw.date_format,
 		maxColumnWidth: raw.max_column_width,
-		taskResolutionStrategy: raw.task_resolution_strategy,
 		defaultEditor: raw.default_editor,
 		autoOpenBrowser: raw.auto_open_browser,
 		defaultPort: raw.default_port,
@@ -128,8 +108,6 @@ export const AgenticWorkspaceConfigSchema = z.preprocess(normalizeAliases, rawCo
 		filesystemOnly: raw.filesystem_only,
 		zeroPaddedIds: raw.zero_padded_ids,
 		bypassGitHooks: raw.bypass_git_hooks,
-		checkActiveBranches: raw.check_active_branches,
-		activeBranchDays: raw.active_branch_days,
 		onStatusChange: raw.on_status_change,
 		prefixes: raw.task_prefix ? { task: raw.task_prefix } : undefined,
 		agenticWorkspaceDirectory: raw.agentic_workspace_directory,

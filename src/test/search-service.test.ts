@@ -18,7 +18,6 @@ async function createProject(): Promise<Core> {
 		milestones: [],
 		dateFormat: "YYYY-MM-DD",
 		remoteOperations: false,
-		checkActiveBranches: false,
 	});
 	return core;
 }

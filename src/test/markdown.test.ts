@@ -323,7 +323,7 @@ describe("Markdown Serializer", () => {
 			const task: Task = {
 				id: "task-minimal",
 				title: "Minimal Task",
-				status: "Draft",
+				status: "Blocked",
 				assignee: [],
 				createdDate: "2025-06-03",
 				labels: [],

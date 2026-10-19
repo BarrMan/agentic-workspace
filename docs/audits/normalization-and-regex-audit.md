@@ -67,8 +67,6 @@ Summary: Inventory includes canonicalizers and resolution wrappers in the reques
 | `canonicalTaskIdSegments` (`task-id.ts:29`) | canonical numeric segments | task ID key and prefix logic | canonical ID components |
 | `canonicalTaskIdKey` (`task-id.ts:34`) | trim/lowercase ID, canonicalize segments | task ID key | canonical ID |
 | `taskIdKey` (`task-id.ts:59`) | delegates canonical ID key | storage and identity code | thin wrapper; repeated ID normalization |
-| `normalizeDraftId` (`task-path.ts:18`) | canonical draft prefix/ID format | filename extraction and storage | canonical draft ID |
-| `draftIdentityKey` (`task-path.ts:49`) | trim/lowercase then canonical segments | draft grouping/matching | canonical identity |
 | `normalizeTaskLifecyclePath` (`task-identity-index.ts:69`) | path slash/relative-root normalization to lifecycle-relative path | task loader line 147; identity index | canonical logical path |
 | `normalizeRecordPath` (`task-identity-index.ts:79`) | dispatch path through lifecycle normalization | index construction and fingerprint | thin wrapper; repeated path normalization |
 | `sanitizeLockKey` (`storage/file-system.ts:105`) | lowercase and unsafe-character replacement | lock acquisition lines 476,558 | filesystem-safe lock key; canonical |
@@ -83,7 +81,6 @@ Summary: Inventory includes canonicalizers and resolution wrappers in the reques
 | `normalizeStatusSet` (`model/task/task-search.ts:188`) | canonical status set from scalar/list | search filter | filter adapter |
 | `normalizeModifiedFileFilters` (`task-search.ts:197`) | trims/canonicalizes file filters and deduplicates | search filter | filter adapter |
 | `sanitizeLockKey` plus `canonicalTaskIdKey` | ID → canonical ID → safe lock key | storage lines 476,558 | repeated normalization chain |
-| `parseTaskId`, `isValidTaskId`, `isValidDraftId` | validation/parsing only | excluded | not normalization |
 
 ## Normalization — runtime, renderer, CLI boundary
 
@@ -537,9 +534,7 @@ Recurring duplication drove most of the count: `\s+` appears 4×, session/ID cha
 | 21 | `taskIdBody` | `/^[A-Za-z]+$/` | Confirm the part before `-` is an alphabetic prefix before slicing the body. | `idPrefix` slice. | `taskIdBody` → `task-ordering.ts:8`; `prefix-config.ts:73` (`extractIdBody`). | duplicate (letters-only test used in `prefix-config.ts:49` and `config-schema.ts:49`) |
 | 26 | `taskIdRegex` | ``new RegExp(`^${escapeRegex(prefix)}-(${TASK_ID_BODY_PATTERN})`, "i")`` | Build a per-prefix matcher that captures the dotted numeric body. | Prefix string. | `prefix-config.ts:89` (`buildIdRegex`). | keep (dynamic body capture) |
 | 31 | `canonicalTaskIdSegments` | `/^0+/` | Strip leading zeros from each numeric segment (`000` → `0`). | One numeric segment. | `canonicalTaskIdSegments` (31). | keep |
-| 36 | `canonicalTaskIdKey` | `/^([a-z]+-)?(\d+(?:\.\d+)*)$/` | Parse an optional lowercase prefix plus dotted numeric body for canonical comparison. | Lowercased, trimmed id. | `canonicalTaskIdKey` (36) → `file-system.ts:476` draft lock key. | keep |
 | 43 | `isNumericTaskIdSegment` | `/^\d+$/` | Predicate for one numeric segment. | Segment string. | `canonicalTaskIdSegments` (30). | keep |
-| 51 | `isValidDraftId` | `/^DRAFT-[A-Z0-9]+$/i` | Validate draft ids (`DRAFT-<alnum>`), case-insensitively. | Id string. | `task-artifact-repository.ts:121`; `file-system.ts:605,912,1066,1072`. | keep |
 
 ### `src/model/task/task-identity-index.ts`
 
@@ -553,12 +548,6 @@ Recurring duplication drove most of the count: `\s+` appears 4×, session/ID cha
 | Line | Owner | Pattern | Purpose | Input | Direct caller(s) | Signal |
 |---:|---|---|---|---|---|---|
 | 18 | `parseId` | `/(\d+)$/` | Fallback: extract a trailing number from a mixed/legacy id that is not fully numeric. | `taskIdBody(id) ?? id`. | `parseId` → `compareIds` (28, 29), ancestor checks (105, 106). | keep |
-
-### `src/model/task/task-path.ts`
-
-| Line | Owner | Pattern | Purpose | Input | Direct caller(s) | Signal |
-|---:|---|---|---|---|---|---|
-| 51 | `draftIdentityKey` | ``new RegExp(`^(?:${escapeRegex(DRAFT_PREFIX)}-)?(\\d+(?:\\.\\d+)*)$`)`` | Canonicalise a draft id: optional `DRAFT-` prefix, lowercase, zero-strip numeric segments. | Trimmed, lowercased draft id. | `findDuplicateDraftFilenameGroups` (66); `draftIdsEqual` (75). | duplicate (overlaps `canonicalTaskIdKey` in `task-id.ts:36`) |
 
 ### `src/storage/config-codec.ts`
 
@@ -576,15 +565,7 @@ Recurring duplication drove most of the count: `\s+` appears 4×, session/ID cha
 
 | Line | Owner | Pattern | Purpose | Input | Direct caller(s) | Signal |
 |---:|---|---|---|---|---|---|
-| 109 | `sanitizeLockKey` | `/[^a-z0-9._-]+/g` | Turn an id into a filesystem-safe lock key. | Canonical id / task id. | `withDraftLock` (476), `withEntityFileLock` (558). | keep |
 | 110 | `sanitizeLockKey` | `/^\.+/` | Remove leading dots so the lock key cannot look hidden or parent-like. | Sanitised key. | `sanitizeLockKey` (110). | keep |
-| 510 | `allocateTaskId` | ``new RegExp(`^${escapeRegex(canonicalPrefix)}-(\\d+)$`)`` | Find the highest existing top-level numeric id for a prefix to seed the counter. | `taskIdKey(id)` values and uppercase prefix. | `allocateTaskId` → `storage.ts:241`, draft promotion (945), `task-mutation-service.ts:105`. | keep (anchored top-level numeric, narrower than `taskIdRegex`) |
-| 1302 | `listOccupiedDraftFileIds` | `/^([A-Za-z]+-\d+(?:\.\d+)*)/` | Extract a leading task-style id from a draft filename or container directory name. | `basename` or `dirname` of a draft filename. | `listOccupiedDraftFileIds` → controller (421, 451), `task-mutation-service.ts:221`, `promoteDraft` (1010), `storage.ts:212`. | duplicate (`parseTaskId` parses the same grammar) |
-| 1473 | `private sanitizeFilename(filename: string): stri...` | `/[<>:"/\\\|?*]/g` | Replace path-unsafe characters in a draft filename title with `-`. | `task.title`. | `sanitizeFilename` → draft filename construction (607). | duplicate (`milestones.ts:25` uses the same unsafe set) |
-| 1475 | `private sanitizeFilename(filename: string): stri...` | `/['(),!@#$%^&+=\[\]{};]/g` | Strip noisy punctuation before whitespace normalisation. | `task.title`. | `sanitizeFilename` (607). | keep |
-| 1476 | `private sanitizeFilename(filename: string): stri...` | `/\s+/g` | Collapse whitespace runs to one hyphen. | `task.title`. | `sanitizeFilename` (607). | keep |
-| 1477 | `private sanitizeFilename(filename: string): stri...` | `/-+/g` | Collapse repeated hyphens. | `task.title`. | `sanitizeFilename` (607). | keep |
-| 1478 | `private sanitizeFilename(filename: string): stri...` | `/^-\|-$/g` | Trim leading/trailing hyphens. | `task.title`. | `sanitizeFilename` (607). | keep |
 
 ### `src/storage/markdown/schema.ts`
 
@@ -644,12 +625,11 @@ discovery aids rather than call graphs.
 - **Fix the ask preset flow before simplifying sanitization.** `prepareAgentAsk` discards the
   sanitized preflight preset and prepares the original again; this can restore Claude
   auto-approval flags.
-- **Do not merge task and draft identity keys.** The audit incorrectly says `taskIdKey`
-  delegates to numeric canonicalization. It deliberately preserves zero padding, as
-  TASK-003 requires.
+- **Do not merge task identity keys.** The audit incorrectly says `taskIdKey` delegates
+  to numeric canonicalization. It deliberately preserves zero padding, as TASK-003 requires.
 - **Delete superseded features rather than polishing their normalizers.** Cross-branch
-  discovery and draft promotion/demotion conflict with current task contracts; their removal
-  offers much larger savings than local regex changes.
+  discovery conflicts with current task contracts; its removal offers more savings than local
+  regex changes.
 - **Keep meaningful distinctions:** omitted versus cleared lists, configured spelling versus
   comparison keys, status lookup versus equality, and lexical paths versus filesystem
   ownership checks.
@@ -676,8 +656,7 @@ project.
 | Status lookup | **Merge duplicate lookup implementation** | Wizard and model implement the same lookup loop. Keep lookup and comparison keys distinct. |
 | Assignee/label/status keys | **Needed as-is** | Domain names document different equality rules and are explicitly required by CONVENTIONS. |
 | Renderer filters | **Keep boundaries; simplify exact-list implementation opportunistically** | Editor cleanup and configured-value resolution are different jobs, not interchangeable normalization passes. |
-| Task identity and locks | **Needed as-is for active task identity/safety** | Padding-preserving task equality, legacy draft equality, and filesystem-safe lock names are different operations. |
-| Draft identity machinery | **Delete through contract alignment** | TASK-002 excludes draft promotion/demotion. Do not merge obsolete draft semantics into task identity. |
+| Task identity and locks | **Needed as-is for active task identity/safety** | Padding-preserving task equality and filesystem-safe lock names are different operations. |
 | Branch/path normalization | **Delete branch-discovery machinery; retain necessary store/lifecycle path handling** | TASK-005 forbids cross-branch discovery. Local path wrappers also have materially different responsibilities. |
 | Process identity normalization | **Simplify; delete unused probes** | Normalize a parsed start time once; remove production exports used only by their own tests where no supported API requires them. |
 | Date, parsing, ownership and security validation | **Needed as-is** | Similar-looking regexes implement distinct grammars, output formats, or trust-boundary checks. |
@@ -719,7 +698,6 @@ project.
    detection.
 
 8. **The two filename sanitizers have different replacement behavior.**  
-   The draft sanitizer replaces unsafe characters with `-`; milestone naming removes them.
    Same character class does not mean equivalent transformation.
 
 9. **Several "string-method equivalents" are not useful simplifications.**  
@@ -872,21 +850,6 @@ affected loader/identity tests and configuration callers.
 - **Gate:** replace tests asserting superseded branch discovery with contract tests. Preserve
   records and unrelated worktrees; removing discovery does not authorize deleting their data.
 
-#### 10. Retire draft normalization with the draft feature—not by changing task equality
-
-**Files:** `src/model/task/task-path.ts`; `task-id.ts:34–40`; draft paths in
-`src/storage/file-system.ts`, `storage.ts`, and controller lifecycle/mutation code.
-
-- TASK-002 says direct task creation, without draft promotion/demotion.
-- Draft helpers still have production callers, including locks and duplicate detection. Remove
-  the full obsolete call path rather than substituting task helpers piecemeal.
-- **Reduction:** approximately **50–70 lines in the audited identity helpers alone**;
-  substantially more in the complete feature removal, not quantified here.
-- **Required tests:** direct creation and counter locking, exact padded IDs, collision
-  reporting, unsupported draft operations, preservation of existing on-disk material.
-- **Gate:** resolve stored-draft data handling explicitly before removal. Never silently
-  migrate, delete, or reinterpret it.
-
 ### Regex-specific disposition
 
 #### Truly repeated behavior worth consolidating
@@ -933,7 +896,6 @@ In particular:
 
 - `\p{Cc}` **test** for typed input and global **removal** for paste are different operations.
   Sharing a stateful global regex would be a regression.
-- Draft/milestone filename replacements differ.
 - Priority whitespace collapse, status whitespace removal and process-field splitting differ.
 - Date-only detection may repeat literally; sharing two short regexes across different
   date-format policies buys essentially nothing.
@@ -1025,7 +987,6 @@ Totals: 81 functions.
 | `taskIdKey` | `src/model/task/task-id.ts:59` | `function taskIdKey(value: string): string {` | src/filesystem/git/task-worktree.ts:5<br>src/filesystem/git/task-worktree.ts:35<br>src/filesystem/git/task-worktree.ts:39<br>src/filesystem/git/task-worktree.ts:89<br>src/storage/file-system.ts:19<br>src/storage/file-system.ts:513<br>src/storage/file-system.ts:558<br>src/storage/file-system.ts:575<br>+36 more |
 | `normalizeTaskLifecyclePath` | `src/model/task/task-identity-index.ts:69` | `function normalizeTaskLifecyclePath(path: string, agenticWorkspaceDirectory: string): string {` | src/controller/task-loader.ts:15<br>src/controller/task-loader.ts:147<br>src/model/task/task-identity-index.ts:105 |
 | `normalizeRecordPath` | `src/model/task/task-identity-index.ts:79` | `function normalizeRecordPath(record: TaskIdentityRecord, context: TaskIdentityPathContext): string {` | src/model/task/task-identity-index.ts:182<br>src/model/task/task-identity-index.ts:298 |
-| `normalizeDraftId` | `src/model/task/task-path.ts:18` | `function normalizeDraftId(draftId: string): string {` | src/storage/file-system.ts:26<br>src/storage/file-system.ts:603<br>src/storage/file-system.ts:1223<br>src/storage/file-system.ts:1236<br>src/storage/file-system.ts:1274<br>src/model/task/task-path.ts:42 |
 | `normalizeStatusSet` | `src/model/task/task-search.ts:188` | `function normalizeStatusSet(values: string \| string[] \| undefined): Set<string> {` | src/model/task/task-search.ts:115<br>src/model/task/task-search.ts:118 |
 | `normalizeModifiedFileFilters` | `src/model/task/task-search.ts:197` | `function normalizeModifiedFileFilters(value?: string \| string[]): string[] \| undefined {` | src/model/task/task-search.ts:164 |
 | `resolveTaskTypeValue` | `src/model/task/task-type-config.ts:21` | `function resolveTaskTypeValue(` | src/cli/features/tasks/wizard.ts:10<br>src/cli/features/tasks/wizard.ts:200<br>src/cli/features/tasks/wizard.ts:490<br>src/controller/task-mutation-service.ts:18<br>src/controller/task-mutation-service.ts:198 |
@@ -1052,7 +1013,6 @@ Totals: 81 functions.
 | `normalizeAliases` | `src/storage/config-schema.ts:89` | `function normalizeAliases(value: unknown): unknown {` | src/storage/config-schema.ts:107 |
 | `sanitizeLockKey` | `src/storage/file-system.ts:105` | `function sanitizeLockKey(value: string): string {` | src/storage/file-system.ts:476<br>src/storage/file-system.ts:558 |
 | `?` | `src/storage/file-system.ts:621` | `private async resolveCanonicalExistingRecord(` | src/types/raw.d.ts:1 |
-| `?` | `src/storage/file-system.ts:1470` | `private sanitizeFilename(filename: string): string {` | src/types/raw.d.ts:1 |
 | `?` | `src/storage/task-artifact-repository.ts:119` | `private canonicalId(taskId: string): string {` | src/types/raw.d.ts:1 |
 | `canonicalViewLock` | `src/storage/view-state-store.ts:69` | `async function canonicalViewLock(projectRoot: string): Promise<string \| undefined> {` | src/storage/view-state-store.ts:250 |
 | `canonicalTask` | `src/storage/watchers/task-watcher.ts:82` | `function canonicalTask(task: Task): Task {` | src/storage/watchers/task-watcher.ts:161 |
@@ -1246,7 +1206,6 @@ Totals: 159 sites, 108 distinct patterns, 59 files.
 | 31 | `canonicalTaskIdSegments` | `^0+` | `/^0+/` |
 | 36 | `canonicalTaskIdKey` | `^([a-z]+-)?(\d+(?:\.\d+)*)$` | `/^([a-z]+-)?(\d+(?:\.\d+)*)$/` |
 | 43 | `isNumericTaskIdSegment` | `^\d+$` | `/^\d+$/` |
-| 51 | `isValidDraftId` | `^DRAFT-[A-Z0-9]+$` | `/^DRAFT-[A-Z0-9]+$/i` |
 
 ### `src/model/task/task-identity-index.ts`
 
@@ -1260,12 +1219,6 @@ Totals: 159 sites, 108 distinct patterns, 59 files.
 | Line | Owner | Pattern | Source |
 |---:|---|---|---|
 | 18 | `parseId` | `(\d+)$` | `/(\d+)$/` |
-
-### `src/model/task/task-path.ts`
-
-| Line | Owner | Pattern | Source |
-|---:|---|---|---|
-| 51 | `draftIdentityKey` | `new RegExp(`^(?:${escapeRegex(DRAFT_PREFIX)}-)?(\\d+(?:\\.\\d+)*)$`)` | `new RegExp(`^(?:${escapeRegex(DRAFT_PREFIX)}-)?(\\d+(?:\\.\\d+)*)$`)` |
 
 ### `src/renderer/formatters/code-path.ts`
 
@@ -1468,12 +1421,6 @@ Totals: 159 sites, 108 distinct patterns, 59 files.
 | 109 | `sanitizeLockKey` | `[^a-z0-9._-]+` | `/[^a-z0-9._-]+/g` |
 | 110 | `sanitizeLockKey` | `^\.+` | `/^\.+/` |
 | 510 | `allocateTaskId` | `new RegExp(`^${escapeRegex(canonicalPrefix)}-(\\d+)$`)` | `new RegExp(`^${escapeRegex(canonicalPrefix)}-(\\d+)$`)` |
-| 1302 | `listOccupiedDraftFileIds` | `^([A-Za-z]+-\d+(?:\.\d+)*)` | `/^([A-Za-z]+-\d+(?:\.\d+)*)/` |
-| 1473 | `private sanitizeFilename(filename: string): stri` | `[<>:"/\\\|?*]` | `/[<>:"/\\\|?*]/g` |
-| 1475 | `private sanitizeFilename(filename: string): stri` | `['(),!@#$%^&+=\[\]{};]` | `/['(),!@#$%^&+=\[\]{};]/g` |
-| 1476 | `private sanitizeFilename(filename: string): stri` | `\s+` | `/\s+/g` |
-| 1477 | `private sanitizeFilename(filename: string): stri` | `-+` | `/-+/g` |
-| 1478 | `private sanitizeFilename(filename: string): stri` | `^-\|-$` | `/^-\|-$/g` |
 
 ### `src/storage/markdown/schema.ts`
 

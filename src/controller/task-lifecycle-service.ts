@@ -1,11 +1,8 @@
 import { removeTaskWorktree } from "../filesystem/git/task-worktree.ts";
 import type { TaskWorktreeSessionCleanup } from "../filesystem/git/task-worktree-cleanup.ts";
-import { formatStoredDate } from "../lib/date.ts";
 import { DEFAULT_DONE_STATUS, DEFAULT_STATUSES } from "../model/constants.ts";
-import { withoutVacatedTaskLinks } from "../model/task/task-links.ts";
 import { getTerminalStatus, isTerminalStatus } from "../model/task/terminal-status.ts";
-import type { Task, TaskUpdateInput } from "../model/types.ts";
-import type { DraftFileReference } from "../storage/file-system.ts";
+import type { Task } from "../model/types.ts";
 import type { Storage } from "../storage/storage.ts";
 import type { VacatedTaskResult } from "./agentic-workspace.ts";
 import { TaskArchiveStatusError } from "./errors/tasks.ts";
@@ -13,115 +10,15 @@ import type { ProjectTaskMutations } from "./task-mutation-service.ts";
 import type { TaskReadOptions } from "./task-query-workflow.ts";
 import { markVacatedTaskMoved, type VacatedTaskReferenceService } from "./vacated-task-reference-service.ts";
 
-export interface TaskEditLifecycleResult {
-	task: Task;
-	cleanedTaskIds: string[];
-}
-
-/** Owns task and draft transitions, including vacated-ID cleanup. */
+/** Owns task lifecycle transitions, including vacated-ID cleanup. */
 export class TaskLifecycleService {
 	constructor(
 		private readonly storage: Storage,
 		private readonly mutations: ProjectTaskMutations,
 		private readonly vacatedTaskReferences: VacatedTaskReferenceService,
 		private readonly cleanupTaskSessions?: TaskWorktreeSessionCleanup,
-		private readonly remapTaskSessionIdentity?: (oldTaskId: string, newTaskId: string) => Promise<void>,
 		private readonly forgetTaskSessions?: (taskId: string) => Promise<void>,
 	) {}
-
-	async promoteDraftWithUpdates(reference: DraftFileReference, input: TaskUpdateInput): Promise<Task> {
-		const targetStatus = input.status?.trim();
-		if (!targetStatus || targetStatus.toLowerCase() === "draft") {
-			throw new Error("Promoting a draft requires a non-draft status.");
-		}
-
-		const canonicalStatus = await this.mutations.requireCanonicalStatus(targetStatus);
-		return await this.storage.withDraftLock(reference, async () => {
-			const current = await this.storage.draftReferenceFromPath(reference.filePath);
-			const draft = current.task;
-			draft.id = reference.canonicalId;
-			const { mutated } = await this.mutations.applyTaskUpdateInput(
-				draft,
-				{ ...input, status: undefined },
-				async (status) => {
-					if (status.trim().toLowerCase() !== "draft") throw new Error("Drafts must use status Draft.");
-					return "Draft";
-				},
-			);
-			draft.status = canonicalStatus;
-			if (mutated || current.task.status !== canonicalStatus) draft.updatedDate = formatStoredDate();
-
-			// Persist to the selected draft container before the filesystem transition moves it.
-			await this.storage.saveDraft(draft);
-			const promotedId = await this.storage.promoteDraft(
-				reference.canonicalId,
-				async (promoted) => {
-					await this.mutations.applyTaskUpdateInput(
-						promoted,
-						{ dependencies: promoted.dependencies },
-						async () => promoted.status,
-					);
-				},
-				() => this.mutations.generateNextId(),
-			);
-			if (!promotedId) {
-				throw new Error(`Could not promote draft ${reference.canonicalId}.`);
-			}
-			const promoted = await this.storage.loadTask(promotedId);
-			if (!promoted) throw new Error(`Promoted task for draft ${reference.canonicalId} could not be loaded.`);
-			await this.remapTaskSessionIdentity?.(reference.canonicalId, promoted.id);
-			return promoted;
-		});
-	}
-
-	async demoteTaskWithUpdates(
-		task: Task,
-		input: TaskUpdateInput,
-		options: TaskReadOptions = {},
-	): Promise<TaskEditLifecycleResult> {
-		return await this.vacatedTaskReferences.withLockedCleanup(task, task.id, async (cleanup) => {
-			const current = await this.mutations.loadTaskForMutation(task.id, options);
-			if (!current) throw new Error(`Task not found: ${task.id}`);
-			const { mutated } = await this.mutations.applyTaskUpdateInput(
-				current,
-				{ ...input, status: undefined },
-				async (status) => {
-					return status.trim().toLowerCase() === "draft"
-						? "Draft"
-						: await this.mutations.requireCanonicalStatus(status);
-				},
-			);
-			const vacating = withoutVacatedTaskLinks(current, current.id) ?? current;
-			vacating.status = "Draft";
-			if (mutated || current.status !== "Draft") vacating.updatedDate = formatStoredDate();
-
-			// Save the edited record in its existing task container; demoteTask moves that
-			// complete container, including artifacts and sidecar, and assigns its new ID.
-			await this.storage.saveTask(vacating);
-			const demotedId = await this.storage.demoteTask(current.id, undefined, async (demoted) => {
-				await this.mutations.applyTaskUpdateInput(
-					demoted,
-					{ dependencies: demoted.dependencies },
-					async () => demoted.status,
-				);
-			});
-			if (!demotedId) {
-				throw new Error(`Could not demote task ${current.id}.`);
-			}
-
-			let cleanedTaskIds: string[] = [];
-			try {
-				const written = await this.vacatedTaskReferences.write(cleanup);
-				cleanedTaskIds = written.cleanedTaskIds;
-			} catch (error) {
-				throw markVacatedTaskMoved(error, "demotionState", "cleanup");
-			}
-			const demotedDraft = await this.storage.loadDraft(demotedId);
-			if (!demotedDraft) throw new Error(`Demoted draft for task ${current.id} could not be loaded.`);
-			await this.remapTaskSessionIdentity?.(current.id, demotedDraft.id);
-			return { task: demotedDraft, cleanedTaskIds };
-		});
-	}
 
 	async archive(taskId: string, options: TaskReadOptions = {}): Promise<VacatedTaskResult> {
 		const taskToArchive = await this.mutations.loadTaskForMutation(taskId, options);
@@ -172,49 +69,6 @@ export class TaskLifecycleService {
 		});
 	}
 
-	async promoteDraft(draftId: string): Promise<boolean> {
-		const promotedId = await this.storage.promoteDraft(draftId, undefined, () => this.mutations.generateNextId());
-		if (!promotedId) return false;
-		await this.remapTaskSessionIdentity?.(draftId, promotedId);
-		return true;
-	}
-
-	async demoteTask(taskId: string, options: TaskReadOptions = {}): Promise<VacatedTaskResult> {
-		const task = await this.mutations.loadTaskForMutation(taskId, options);
-		if (!task) return { success: false, cleanedTaskIds: [] };
-		const demotion = {
-			success: false,
-			moved: undefined as { previousPath: string; savedPath: string } | undefined,
-			cleanedTaskIds: [] as string[],
-		};
-		let result: typeof demotion;
-		try {
-			result = await this.vacatedTaskReferences.withLockedCleanup(task, task.id, async (cleanup) => {
-				const movedPaths: Array<{ previousPath: string; savedPath: string }> = [];
-				const demotedId = await this.storage.demoteTask(task.id, (previousPath, savedPath) => {
-					movedPaths.push({ previousPath, savedPath });
-				});
-				const success = demotedId !== null;
-				demotion.success = success;
-				demotion.moved = movedPaths[0];
-				if (success) await this.remapTaskSessionIdentity?.(task.id, demotedId);
-				if (success) {
-					try {
-						const written = await this.vacatedTaskReferences.write(cleanup);
-						demotion.cleanedTaskIds = written.cleanedTaskIds;
-					} catch (error) {
-						throw markVacatedTaskMoved(error, "demotionState", "cleanup");
-					}
-				}
-				return demotion;
-			});
-		} catch (error) {
-			if (demotion.success && demotion.moved) throw markVacatedTaskMoved(error, "demotionState");
-			throw error;
-		}
-		return { success: result.success, cleanedTaskIds: result.cleanedTaskIds };
-	}
-
 	async complete(taskId: string, options: TaskReadOptions = {}): Promise<boolean> {
 		const task = await this.mutations.loadTaskForMutation(taskId, options);
 		if (!task) return false;
@@ -230,12 +84,6 @@ export class TaskLifecycleService {
 			if (!(await this.storage.completeTask(current.id, true))) return false;
 			return true;
 		});
-	}
-
-	async archiveDraft(draftId: string): Promise<boolean> {
-		await this.storage.loadConfig();
-		const moved = await this.storage.archiveDraft(draftId);
-		return moved !== null;
 	}
 
 	async getTerminalStatusTasksByAge(olderThanDays: number): Promise<Task[]> {

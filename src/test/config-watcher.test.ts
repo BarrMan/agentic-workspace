@@ -18,7 +18,6 @@ const initialConfig: AgenticWorkspaceConfig = {
 	labels: ["web"],
 	dateFormat: "YYYY-MM-DD",
 	remoteOperations: false,
-	checkActiveBranches: true,
 	prefixes: { task: "BACK" },
 };
 
@@ -65,9 +64,7 @@ describe("config watcher", () => {
 
 	it("keeps the last valid config cached while stable unusable content waits for a valid replacement", async () => {
 		const canonicalContent = await Bun.file(coreFileSystem(core).configFilePath).text();
-		const stableContent = canonicalContent
-			.replace('project_name: "Config watcher"', 'project_name: "Stable config"')
-			.replace("check_active_branches: true", "check_active_branches: false");
+		const stableContent = canonicalContent.replace('project_name: "Config watcher"', 'project_name: "Stable config"');
 		const unusableContents = [
 			[
 				'project_name: "Partial"',
@@ -92,17 +89,16 @@ describe("config watcher", () => {
 				'statuses: ["To Do", "Done"]',
 				'labels: ["web"]',
 				"date_format: YYYY-MM-DD",
-				"check_active_branches: fals",
+				"auto_open_browser: fals",
 				'task_prefix: "BACK"',
 				"",
 			].join("\n"),
 			[
-				'project_name: "Malformed active days"',
+				'project_name: "Malformed port"',
 				'statuses: ["To Do", "Done"]',
 				'labels: ["web"]',
 				"date_format: YYYY-MM-DD",
-				"check_active_branches: true",
-				"active_branch_days: nope",
+				"default_port: nope",
 				'task_prefix: "BACK"',
 				"",
 			].join("\n"),
@@ -111,8 +107,6 @@ describe("config watcher", () => {
 				'statuses: ["To Do", "Done"]',
 				'labels: ["web"]',
 				"date_format: YYYY-MM-DD",
-				"check_active_branches: true",
-				"active_branch_days: 30",
 				'task_prefix: "BACK-2"',
 				"",
 			].join("\n"),
@@ -164,7 +158,6 @@ describe("config watcher", () => {
 				for (const cachedConfig of cachedConfigs) {
 					expect(cachedConfig?.projectName).toBe(initialConfig.projectName);
 					expect(cachedConfig?.statuses).toEqual(initialConfig.statuses);
-					expect(cachedConfig?.checkActiveBranches).toBe(true);
 					expect(cachedConfig?.prefixes?.task).toBe("BACK");
 				}
 				expect(published).toHaveLength(0);
@@ -174,7 +167,6 @@ describe("config watcher", () => {
 
 			const config = await withTimeout(publishedConfig, "stable config callback");
 			expect(config.projectName).toBe("Stable config");
-			expect(config.checkActiveBranches).toBe(false);
 			expect(config.prefixes?.task).toBe("BACK");
 			expect(published).toHaveLength(1);
 			expect((await coreFileSystem(core).loadConfig())?.projectName).toBe("Stable config");
@@ -407,7 +399,6 @@ describe("config watcher", () => {
 			await withTimeout(malformedPointerAttemptsExhausted, "malformed root pointer attempts");
 			expect(callbackCount).toBe(1);
 			expect((await rootFilesystem.loadConfig())?.projectName).toBe("Candidate");
-			expect((await rootFilesystem.loadConfig())?.checkActiveBranches).toBe(true);
 			expect(rootFilesystem.agenticWorkspaceDirName).toBe("custom/a");
 			expect(rootFilesystem.configFilePath).toBe(rootConfigPath);
 
@@ -453,7 +444,6 @@ describe("config watcher", () => {
 			const config = await withTimeout(publishedConfig, "prefix-only config callback");
 			expect(config.projectName).toBe(initialConfig.projectName);
 			expect(config.prefixes?.task).toBe("JIRA");
-			expect(config.checkActiveBranches).toBe(true);
 		} finally {
 			configWatcher.stop();
 		}

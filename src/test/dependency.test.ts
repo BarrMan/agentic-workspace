@@ -118,46 +118,6 @@ describe("Task Dependencies", () => {
 		expect(savedTask?.dependencies).toEqual(["TASK-1", "TASK-2"]);
 	});
 
-	test("should handle tasks with dependencies in drafts", async () => {
-		// Create a draft task
-		const draftTask: Task = {
-			id: "task-1",
-			title: "Draft Task",
-			status: "Draft",
-			assignee: [],
-			createdDate: "2024-01-01",
-			labels: [],
-			dependencies: [],
-			description: "Draft task",
-		};
-
-		await core.createTaskFromInput({
-			title: draftTask.title,
-			status: "Draft",
-			description: draftTask.description,
-			dependencies: draftTask.dependencies,
-		});
-
-		// Create task that depends on draft
-		const task2: Task = {
-			id: "task-2",
-			title: "Task depending on draft",
-			status: "To Do",
-			assignee: [],
-			createdDate: "2024-01-01",
-			labels: [],
-			dependencies: ["task-1"], // Depends on draft task
-			description: "Task depending on draft",
-		};
-
-		await core.createTask(task2);
-
-		// Verify the task was created with dependency on draft
-		const savedTask = await coreFileSystem(core).loadTask("task-2");
-		expect(savedTask).not.toBeNull();
-		expect(savedTask?.dependencies).toEqual(["task-1"]);
-	});
-
 	test("should serialize and deserialize dependencies correctly", async () => {
 		const task: Task = {
 			id: "task-1",
@@ -354,18 +314,6 @@ describe("Task Dependencies", () => {
 		expect((await coreFileSystem(core).loadTask(dependent.id))?.dependencies).toEqual([predecessor.id, other.id]);
 	});
 
-	test("still accepts drafts and rejects unknown dependency IDs", async () => {
-		const { task: draft } = await core.createTaskFromInput({ title: "Draft target", status: "Draft" });
-		const { task } = await core.createTaskFromInput({ title: "Dependent task" });
-
-		await core.updateTaskFromInput(task.id, { dependencies: [draft.id] });
-		expect((await coreFileSystem(core).loadTask(task.id))?.dependencies).toEqual([draft.id]);
-
-		await expect(core.updateTaskFromInput(task.id, { dependencies: ["task-999"] })).rejects.toThrow(
-			"The following dependencies do not exist: task-999",
-		);
-	});
-
 	test("fails closed when a completed task and an active file claim the same identity", async () => {
 		const { task: predecessor } = await core.createTaskFromInput({ title: "Predecessor", status: "Done" });
 		const { task: dependent } = await core.createTaskFromInput({ title: "Dependent" });
@@ -383,42 +331,6 @@ describe("Task Dependencies", () => {
 			/ambiguous/,
 		);
 		expect((await coreFileSystem(core).loadTask(dependent.id))?.dependencies ?? []).toEqual([]);
-	});
-
-	test("should not sanitize draft dependencies when archiving", async () => {
-		const archiveTarget: Task = {
-			id: "task-1",
-			title: "Archive target",
-			status: "To Do",
-			assignee: [],
-			createdDate: "2024-01-01",
-			labels: [],
-			dependencies: [],
-			description: "Task that will be archived",
-		};
-
-		const draftTask: Task = {
-			id: "draft-1",
-			title: "Draft dependent task",
-			status: "Draft",
-			assignee: [],
-			createdDate: "2024-01-01",
-			labels: [],
-			dependencies: ["task-1"],
-			description: "Draft should not be sanitized by archive cleanup",
-		};
-
-		await core.createTask(archiveTarget);
-		await core.createTaskFromInput({
-			title: draftTask.title,
-			status: "Draft",
-			description: draftTask.description,
-			dependencies: draftTask.dependencies,
-		});
-		await core.archiveTask("task-1");
-
-		const draft = await coreFileSystem(core).loadDraft("draft-1");
-		expect(draft?.dependencies).toEqual(["TASK-1"]);
 	});
 });
 
@@ -550,89 +462,6 @@ describe("Self-referential and cyclic dependencies", () => {
 			"more than one record claims",
 		);
 		expect((await coreFileSystem(core).loadTask("task-1"))?.dependencies ?? []).toEqual([]);
-	});
-
-	test("rejects a promotion whose allocated ID would close a cycle through a dangling reference", async () => {
-		await core.createTask({
-			id: "task-1",
-			title: "Dangling forward reference",
-			status: "To Do",
-			assignee: [],
-			createdDate: "2024-01-01",
-			labels: [],
-			dependencies: ["task-2"],
-		});
-		const { task: draft } = await core.createTaskFromInput({
-			title: "Promotes into the loop",
-			status: "Draft",
-			dependencies: ["task-1"],
-		});
-
-		await expect(core.editTaskOrDraft(draft.id, { status: "To Do" })).rejects.toThrow("would create a cycle");
-		expect(await coreFileSystem(core).loadDraft(draft.id)).not.toBeNull();
-		expect(await coreFileSystem(core).loadTask("task-2")).toBeNull();
-	});
-
-	test("rejects a demotion whose allocated draft ID would close a cycle through a dangling reference", async () => {
-		await core.createTaskFromInput({ title: "Existing draft", status: "Draft" });
-		await core.createTask({
-			id: "task-1",
-			title: "Dangling draft reference",
-			status: "To Do",
-			assignee: [],
-			createdDate: "2024-01-01",
-			labels: [],
-			dependencies: ["draft-2"],
-		});
-		const { task: demotee } = await core.createTaskFromInput({
-			title: "Demotes into the loop",
-			dependencies: ["task-1"],
-		});
-
-		await expect(core.updateTaskFromInput(demotee.id, { status: "Draft" })).rejects.toThrow("would create a cycle");
-		expect(await coreFileSystem(core).loadTask(demotee.id)).not.toBeNull();
-		expect(await coreFileSystem(core).loadDraft("draft-2")).toBeNull();
-	});
-
-	test("an explicit draft dependency does not resolve to the allocated task ID", async () => {
-		const { task: draft } = await core.createTaskFromInput({ title: "Existing draft", status: "Draft" });
-
-		const { task } = await core.createTaskFromInput({ title: "Depends on the draft", dependencies: [draft.id] });
-		expect(task.dependencies).toEqual([draft.id]);
-	});
-
-	test("rejects a promotion whose dangling reference equals the allocated task ID", async () => {
-		// The reference resolves to nothing, so only the pre-resolution target check can catch it;
-		// writing the record under the allocated ID would store a direct self-dependency.
-		await coreFileSystem(core).saveDraft({
-			id: "draft-1",
-			title: "Dangling reference to the next task ID",
-			status: "Draft",
-			assignee: [],
-			createdDate: "2024-01-01",
-			labels: [],
-			dependencies: ["task-1"],
-		});
-
-		await expect(core.editTaskOrDraft("draft-1", { status: "To Do" })).rejects.toThrow("cannot depend on itself");
-		expect(await coreFileSystem(core).loadDraft("draft-1")).not.toBeNull();
-		expect(await coreFileSystem(core).loadTask("task-1")).toBeNull();
-	});
-
-	test("rejects a demotion whose dangling reference equals the allocated draft ID", async () => {
-		await core.createTask({
-			id: "task-1",
-			title: "Dangling reference to the next draft ID",
-			status: "To Do",
-			assignee: [],
-			createdDate: "2024-01-01",
-			labels: [],
-			dependencies: ["draft-1"],
-		});
-
-		await expect(core.updateTaskFromInput("task-1", { status: "Draft" })).rejects.toThrow("cannot depend on itself");
-		expect(await coreFileSystem(core).loadTask("task-1")).not.toBeNull();
-		expect(await coreFileSystem(core).loadDraft("draft-1")).toBeNull();
 	});
 
 	test("a stored self-dependency does not block adding an unrelated dependency", async () => {

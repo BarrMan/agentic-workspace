@@ -2401,7 +2401,7 @@ export class OpenTuiWorkspaceController {
 				this.#notice = "No task fields changed.";
 				return;
 			}
-			await this.#core.updateTaskFromInput(taskId, inputTyped, { includeCrossBranch: false });
+			await this.#core.updateTaskFromInput(taskId, inputTyped, {});
 			this.#notice = `Saved ${taskId}`;
 		} catch (error) {
 			this.#notice = `Could not save task: ${error instanceof Error ? error.message : "Unknown error"}`;
@@ -2780,7 +2780,7 @@ export class OpenTuiWorkspaceController {
 		if (!confirmed) return "Delete cancelled";
 		this.#deletingTasks.add(task.id);
 		try {
-			const result = await this.#core.deleteTask(task.id, { includeCrossBranch: false });
+			const result = await this.#core.deleteTask(task.id, {});
 			if (!result.success) return `Could not delete ${task.id}`;
 			try {
 				await this.#finalTaskRemoval(task.id);

@@ -5,7 +5,7 @@ import { lstat, mkdir, open, readdir, readFile, realpath, rename, rm, stat, utim
 import { basename, dirname, isAbsolute, relative, resolve, sep } from "node:path";
 import { resolveMainWorktreeRoot } from "../filesystem/git/main-worktree.ts";
 import type { ArtifactApprovalSidecar, ArtifactStatus } from "../model/session/types.ts";
-import { isValidDraftId, isValidTaskId, taskIdKey, taskIdsEqual } from "../model/task/task-id.ts";
+import { taskIdKey, taskIdsEqual } from "../model/task/task-id.ts";
 import { parseTask } from "./markdown/parser.ts";
 
 const SIDECAR = ".artifacts.json";
@@ -14,7 +14,7 @@ const TASK_RECORD = "task.md";
 const HASH = /^[a-f0-9]{64}$/;
 const MAX_ARTIFACT_INSPECTION_BYTES = 128 * 1024;
 type ArtifactLockOwner = { token?: string; pid?: number };
-const TASK_CONTAINER_LOCATIONS = ["tasks", "drafts", "completed", "archive/tasks", "archive/drafts"] as const;
+const TASK_CONTAINER_LOCATIONS = ["tasks", "completed", "archive/tasks"] as const;
 export type TaskContainerLocation = (typeof TASK_CONTAINER_LOCATIONS)[number];
 
 export function validateTaskArtifactPath(path: string): string {
@@ -117,9 +117,7 @@ export class TaskArtifactRepository {
 	}
 
 	private canonicalId(taskId: string): string {
-		const canonical = taskIdKey(taskId);
-		if (!isValidTaskId(canonical) && !isValidDraftId(canonical)) throw new Error(`Invalid task ID: ${taskId}`);
-		return canonical;
+		return taskIdKey(taskId);
 	}
 
 	private async root(): Promise<string> {

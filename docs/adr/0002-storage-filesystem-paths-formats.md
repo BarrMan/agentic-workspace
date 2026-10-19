@@ -27,10 +27,8 @@ The root is the configured workspace-owned task-data location: `.agentic-workspa
 | Data | Path |
 |---|---|
 | Active task | `<root>/tasks/<lowercase-id>/task.md` |
-| Draft | `<root>/drafts/<lowercase-id>/task.md` |
 | Completed task | `<root>/completed/<lowercase-id>/task.md` |
 | Archived task | `<root>/archive/tasks/<lowercase-id>/task.md` |
-| Archived draft | `<root>/archive/drafts/<lowercase-id>/task.md` |
 | Task artifacts | `<task-container>/artifacts/` |
 | Milestone | `<root>/milestones/m-<id>.md` |
 | Archived milestone | `<root>/archive/milestones/m-<id>.md` |

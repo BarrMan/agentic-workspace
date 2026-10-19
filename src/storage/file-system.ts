@@ -1,6 +1,6 @@
 import { realpathSync } from "node:fs";
-import { chmod, mkdir, readdir, readFile, rename, rm, stat, unlink, writeFile } from "node:fs/promises";
-import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
+import { chmod, mkdir, readFile, rename, rm, stat, unlink, writeFile } from "node:fs/promises";
+import { basename, dirname, isAbsolute, join, resolve } from "node:path";
 import { resolveMainWorktreeRootSync } from "../filesystem/git/main-worktree.ts";
 import { type LockAttemptSettings, LockOwner } from "../filesystem/lock-owner.ts";
 import type { AgenticWorkspaceConfigSource } from "../filesystem/paths/agentic-workspace-directory.ts";
@@ -11,20 +11,10 @@ import {
 } from "../filesystem/paths/agentic-workspace-directory.ts";
 import { ProjectLayout } from "../filesystem/project-layout.ts";
 import { escapeRegex } from "../lib/regex.ts";
-import { DEFAULT_DIRECTORIES, DEFAULT_FILES, DRAFT_STATUS, FALLBACK_STATUS } from "../model/constants.ts";
-import { AmbiguousIdError, isAmbiguousIdError } from "../model/errors/entity-id.ts";
-import { AmbiguousTaskIdError, isAmbiguousTaskIdError } from "../model/errors/task-id.ts";
-import type { DraftIdentityFindings } from "../model/task/duplicate-detection.ts";
-import { DEFAULT_TASK_PREFIX, DRAFT_PREFIX, generateNextId } from "../model/task/prefix-config.ts";
-import { canonicalTaskIdKey, isValidDraftId, isValidTaskId, taskIdKey, taskIdsEqual } from "../model/task/task-id.ts";
-import { withoutVacatedTaskLinks } from "../model/task/task-links.ts";
+import { DEFAULT_DIRECTORIES, DEFAULT_FILES } from "../model/constants.ts";
+import { AmbiguousTaskIdError } from "../model/errors/task-id.ts";
+import { taskIdKey, taskIdsEqual } from "../model/task/task-id.ts";
 import { TaskOrdering } from "../model/task/task-ordering.ts";
-import {
-	draftIdsMatchLoosely,
-	extractDraftIdFromFilename,
-	findDuplicateDraftFilenameGroups,
-	normalizeDraftId,
-} from "../model/task/task-path.ts";
 import { TaskSearchIndex } from "../model/task/task-search.ts";
 import {
 	type AgenticWorkspaceConfig,
@@ -34,7 +24,6 @@ import {
 	type TaskListFilter,
 } from "../model/types.ts";
 import { isConfigValueError, parseConfig, serializeConfig } from "./config-codec.ts";
-import { DraftIdentityError, DraftParseError } from "./errors/drafts.ts";
 import { FrontmatterSchemaError, TaskDependenciesParseError } from "./errors/frontmatter.ts";
 import { parseMarkdown, parseTask } from "./markdown/parser.ts";
 import { serializeTask } from "./markdown/serializer.ts";
@@ -61,8 +50,6 @@ const DEFAULT_CREATE_LOCK_TIMEOUT_MS = 30_000;
 const DEFAULT_CREATE_LOCK_RETRY_DELAY_MS = 100;
 const DEFAULT_CREATE_LOCK_STALE_MS = 10_000;
 const TASK_DIRECTORY = TASK_DIRECTORY_TYPES[0];
-const DRAFT_DIRECTORY = TASK_DIRECTORY_TYPES[1];
-const DRAFT_STATUS_KEY = DRAFT_STATUS.toLowerCase();
 
 export type ContentMutation =
 	| { type: typeof TASK_DIRECTORY; root: string; taskId: string; filePath: string }
@@ -76,8 +63,7 @@ export type FileSystemSelection = {
 };
 
 const CREATE_LOCK_ERROR_CODE = "ECREATELOCK";
-export const CREATE_LOCK_ERROR_MESSAGE =
-	"Another task create/promote/demote operation is already in progress. Please try again.";
+export const CREATE_LOCK_ERROR_MESSAGE = "Another task creation operation is already in progress. Please try again.";
 
 const CREATE_LOCK_ERROR_NAME = "CreateLockError";
 const TASK_LOCK_ERROR_NAME = "TaskLockError";
@@ -121,15 +107,6 @@ export function isTaskLockError(error: unknown): error is Error {
 
 export function taskLockErrorMessage(taskId: string): string {
 	return `Edit failed: ${taskId} is being modified by another process; retry if appropriate.`;
-}
-
-/**
- * The only handle through which a draft may be read or mutated: the exact file plus the id
- * derived from that file's name. Nothing may re-resolve a draft id to a different path.
- */
-export interface DraftFileReference {
-	filePath: string;
-	canonicalId: string;
 }
 
 export class FileSystem {
@@ -304,11 +281,6 @@ export class FileSystem {
 		return join(agenticWorkspaceDir, DEFAULT_DIRECTORIES.TASKS);
 	}
 
-	async getDraftsDir(): Promise<string> {
-		const agenticWorkspaceDir = await this.getAgenticWorkspaceDir();
-		return join(agenticWorkspaceDir, DEFAULT_DIRECTORIES.DRAFTS);
-	}
-
 	async getArchiveTasksDir(): Promise<string> {
 		const agenticWorkspaceDir = await this.getAgenticWorkspaceDir();
 		return join(agenticWorkspaceDir, DEFAULT_DIRECTORIES.ARCHIVE_TASKS);
@@ -317,11 +289,6 @@ export class FileSystem {
 	private async getArchiveMilestonesDir(): Promise<string> {
 		const agenticWorkspaceDir = await this.getAgenticWorkspaceDir();
 		return join(agenticWorkspaceDir, DEFAULT_DIRECTORIES.ARCHIVE_MILESTONES);
-	}
-
-	private async getArchiveDraftsDir(): Promise<string> {
-		const agenticWorkspaceDir = await this.getAgenticWorkspaceDir();
-		return join(agenticWorkspaceDir, DEFAULT_DIRECTORIES.ARCHIVE_DRAFTS);
 	}
 
 	private async getMilestonesDir(): Promise<string> {
@@ -339,10 +306,8 @@ export class FileSystem {
 		const directories = [
 			agenticWorkspaceDir,
 			join(agenticWorkspaceDir, DEFAULT_DIRECTORIES.TASKS),
-			join(agenticWorkspaceDir, DEFAULT_DIRECTORIES.DRAFTS),
 			join(agenticWorkspaceDir, DEFAULT_DIRECTORIES.COMPLETED),
 			join(agenticWorkspaceDir, DEFAULT_DIRECTORIES.ARCHIVE_TASKS),
-			join(agenticWorkspaceDir, DEFAULT_DIRECTORIES.ARCHIVE_DRAFTS),
 			join(agenticWorkspaceDir, DEFAULT_DIRECTORIES.MILESTONES),
 			join(agenticWorkspaceDir, DEFAULT_DIRECTORIES.ARCHIVE_MILESTONES),
 		];
@@ -467,25 +432,6 @@ export class FileSystem {
 		return await this.withEntityFileLock(TASK_DIRECTORY, task.id, filePath, fn);
 	}
 
-	/**
-	 * Draft counterpart of the per-task lock. The lock key is namespaced by store so a project
-	 * whose task prefix is "draft" does not make an unrelated task contend with its draft twin,
-	 * while two editors of the same draft file still fail fast against each other.
-	 */
-	async withDraftLock<T>(reference: DraftFileReference, fn: () => Promise<T>): Promise<T> {
-		const lockKey = sanitizeLockKey(canonicalTaskIdKey(reference.canonicalId));
-		const locksDir = join(await this.getAgenticWorkspaceDir(), ".locks");
-		const targetPath = join(locksDir, `${DRAFT_DIRECTORY}-${lockKey}`);
-		await mkdir(targetPath, { recursive: true });
-		return await this.withLockTarget(
-			targetPath,
-			join(locksDir, `${DRAFT_DIRECTORY}-${lockKey}.lock`),
-			{ staleMs: DEFAULT_CREATE_LOCK_STALE_MS, retries: 0, retryDelayMs: 0 },
-			(error) => this.toTaskLockError(error, reference.canonicalId),
-			fn,
-		);
-	}
-
 	/** Counter shape: { "PREFIX": { "next": integer } }; callers hold the create lock. */
 	async allocateTaskId(
 		prefix: string,
@@ -550,7 +496,7 @@ export class FileSystem {
 	}
 
 	private async withEntityFileLock<T>(
-		scope: typeof TASK_DIRECTORY | typeof DRAFT_DIRECTORY,
+		scope: typeof TASK_DIRECTORY,
 		entityId: string,
 		filePath: string,
 		fn: () => Promise<T>,
@@ -596,16 +542,11 @@ export class FileSystem {
 	}
 
 	// Task operations
-	private async resolveTaskWriteTarget(
-		task: Task,
-		isDraft = false,
-	): Promise<{ id: string; filename: string; filePath: string }> {
-		const id = isDraft ? normalizeDraftId(task.id) : taskIdKey(task.id);
-		if (!isDraft && !isValidTaskId(id)) throw new Error(`Invalid task ID: ${task.id}`);
-		if (isDraft && !isValidDraftId(id)) throw new Error(`Invalid draft ID: ${task.id}`);
-		const directory = isDraft ? await this.getDraftsDir() : await this.getTasksDir();
-		const filename = isDraft ? `${id} - ${this.sanitizeFilename(task.title)}.md` : "task.md";
-		const filePath = isDraft ? join(directory, filename) : join(directory, id.toLowerCase(), filename);
+	private async resolveTaskWriteTarget(task: Task): Promise<{ id: string; filename: string; filePath: string }> {
+		const id = taskIdKey(task.id);
+		const directory = await this.getTasksDir();
+		const filename = "task.md";
+		const filePath = join(directory, id.toLowerCase(), filename);
 		return { id, filename, filePath };
 	}
 
@@ -649,9 +590,6 @@ export class FileSystem {
 	}
 
 	async saveTask(task: Task, options: { approvalMutation?: boolean; create?: boolean } = {}): Promise<string> {
-		if (task.parentTaskId && !isValidTaskId(taskIdKey(task.parentTaskId))) {
-			throw new Error(`Invalid parent task ID: ${task.parentTaskId}`);
-		}
 		const { id: requestedId } = await this.resolveTaskWriteTarget(task);
 		const normalizedId = requestedId.toLowerCase();
 		const roots = await Promise.all([this.getTasksDir(), this.getCompletedDir(), this.getArchiveTasksDir()]);
@@ -744,7 +682,6 @@ export class FileSystem {
 
 	async loadTask(taskId: string, options: { includeArchived?: boolean } = {}): Promise<Task | null> {
 		const canonicalId = taskIdKey(taskId);
-		if (!isValidTaskId(canonicalId)) return null;
 		const idDirectory = canonicalId.toLowerCase();
 		const directories = await Promise.all([
 			this.getTasksDir(),
@@ -880,477 +817,6 @@ export class FileSystem {
 		else await this.withTaskLock(task, remove);
 	}
 
-	async archiveDraft(draftId: string): Promise<{ sourcePath: string; targetPath: string } | null> {
-		const sourcePath = await this.resolveDraftFilePath(draftId);
-		if (!sourcePath) return null;
-		const sourceContainer = dirname(sourcePath);
-		const canonicalId = extractDraftIdFromFilename(basename(sourceContainer));
-		if (!canonicalId) return null;
-		const archiveDraftsDir = await this.getArchiveDraftsDir();
-		const targetContainer = await this.taskArtifacts.containerPath(canonicalId.toLowerCase(), "archive/drafts");
-
-		return await this.withDraftLock({ filePath: sourcePath, canonicalId }, async () => {
-			try {
-				await stat(targetContainer);
-				throw new Error(`Archived draft container ${targetContainer} already exists; refusing to merge artifacts.`);
-			} catch (error) {
-				if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
-			}
-			await this.ensureDirectoryExists(archiveDraftsDir);
-			await rename(sourceContainer, targetContainer);
-			return { sourcePath, targetPath: join(targetContainer, "task.md") };
-		});
-	}
-
-	/**
-	 * Parses one exact draft file path without identity validation; whole-file operations
-	 * (archive/promote) are bound by filename and must tolerate frontmatter drift.
-	 */
-	async loadDraftFromFile(filePath: string): Promise<Task | null> {
-		try {
-			const task = parseTask(await Bun.file(filePath).text());
-			if (!isValidDraftId(task.id)) return null;
-			return { ...task, id: task.id.toUpperCase(), filePath };
-		} catch {
-			return null;
-		}
-	}
-
-	async promoteDraft(
-		draftId: string,
-		validateAllocatedTask?: (task: Task) => Promise<void>,
-		allocateTaskId?: () => Promise<string>,
-	): Promise<string | null> {
-		const sourcePath = await this.resolveDraftFilePath(draftId);
-		if (!sourcePath) return null;
-
-		let validationError: unknown;
-		try {
-			return await this.withCreateLock(async () => {
-				const draft = await this.loadDraftFromFile(sourcePath);
-				if (!draft) return null;
-				const sourceContainer = dirname(sourcePath);
-				if (basename(sourceContainer).toLowerCase() !== draft.id.toLowerCase())
-					throw new Error(`Draft ${draft.id} container identity mismatch; refusing to promote it.`);
-
-				const config = await this.loadConfig();
-				const taskPrefix = config?.prefixes?.task ?? DEFAULT_TASK_PREFIX;
-				const [existingTasks, completedTasks, archivedTasks] = await Promise.all([
-					this.listTasks(),
-					this.listCompletedTasks(),
-					this.listArchivedTasks(),
-				]);
-				const newTaskId = allocateTaskId
-					? await allocateTaskId()
-					: await this.allocateTaskId(taskPrefix, config?.zeroPaddedIds, async () =>
-							[...existingTasks, ...completedTasks, ...archivedTasks].map((task) => task.id),
-						);
-				const targetContainer = await this.taskArtifacts.containerPath(newTaskId.toLowerCase(), "tasks");
-				try {
-					await stat(targetContainer);
-					throw new Error(`Task container ${targetContainer} already exists; refusing to merge draft artifacts.`);
-				} catch (error) {
-					if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
-				}
-				const promotedTask: Task = {
-					...draft,
-					id: newTaskId,
-					status:
-						!draft.status || draft.status.trim().toLowerCase() === DRAFT_STATUS_KEY
-							? config?.defaultStatus || FALLBACK_STATUS
-							: draft.status,
-					filePath: join(targetContainer, "task.md"),
-				};
-				if (validateAllocatedTask) {
-					try {
-						await validateAllocatedTask(promotedTask);
-					} catch (error) {
-						validationError = error;
-						throw error;
-					}
-				}
-				const content = serializeTask(promotedTask, await this.retainedTaskFrontmatter(sourcePath));
-				await this.ensureDirectoryExists(dirname(targetContainer));
-				await rename(sourceContainer, targetContainer);
-				try {
-					await this.writeFileAtomically(promotedTask.filePath as string, content);
-				} catch (error) {
-					await rename(targetContainer, sourceContainer);
-					throw error;
-				}
-				this.taskRepository.invalidate();
-				await this.publishContentMutation({
-					type: TASK_DIRECTORY,
-					root: resolve(this.agenticWorkspaceDir),
-					taskId: promotedTask.id,
-					filePath: promotedTask.filePath as string,
-				});
-				return promotedTask.id;
-			});
-		} catch (error) {
-			if (error === validationError) throw error;
-			if (isCreateLockError(error) || isAmbiguousTaskIdError(error)) throw error;
-			return null;
-		}
-	}
-
-	async demoteTask(
-		taskId: string,
-		onMoved?: (fromPath: string, toPath: string) => void,
-		validateAllocatedDraft?: (draft: Task) => Promise<void>,
-	): Promise<string | null> {
-		return await this.withCreateLock(async () => {
-			const task = await this.loadTask(taskId);
-			if (!task?.filePath) return null;
-			const sourcePath = resolve(task.filePath);
-			const sourceContainer = dirname(sourcePath);
-			if (basename(sourceContainer).toLowerCase() !== taskIdKey(task.id).toLowerCase())
-				throw new Error(`Task ${task.id} container identity mismatch; refusing to demote it.`);
-			const existingDrafts = await this.listDrafts();
-			const occupiedFileIds = await this.listOccupiedDraftFileIds();
-			const config = await this.loadConfig();
-			const newDraftId = generateNextId(
-				[...existingDrafts.map((draft) => draft.id), ...occupiedFileIds],
-				DRAFT_PREFIX,
-				config?.zeroPaddedIds,
-			);
-			const targetContainer = await this.taskArtifacts.containerPath(newDraftId.toLowerCase(), "drafts");
-			try {
-				await stat(targetContainer);
-				throw new Error(`Draft container ${targetContainer} already exists; refusing to merge task artifacts.`);
-			} catch (error) {
-				if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
-			}
-			const sourceTask = await this.existingTaskAtWritePath(sourcePath);
-			if (!sourceTask || !taskIdsEqual(sourceTask.id, task.id))
-				throw new Error(`Task ${task.id} changed identity before it could be demoted.`);
-			const demotedDraft: Task = {
-				...(withoutVacatedTaskLinks(task, task.id) ?? task),
-				id: newDraftId,
-				filePath: join(targetContainer, "task.md"),
-			};
-			await validateAllocatedDraft?.(demotedDraft);
-			const content = serializeTask(demotedDraft, await this.retainedTaskFrontmatter(sourcePath));
-			await this.ensureDirectoryExists(dirname(targetContainer));
-			await rename(sourceContainer, targetContainer);
-			try {
-				await this.writeFileAtomically(demotedDraft.filePath as string, content);
-			} catch (error) {
-				await rename(targetContainer, sourceContainer);
-				throw error;
-			}
-			this.taskRepository.invalidate();
-			const toPath = demotedDraft.filePath as string;
-			onMoved?.(sourcePath, toPath);
-			await this.publishContentMutation({
-				type: TASK_DIRECTORY,
-				root: resolve(this.agenticWorkspaceDir),
-				taskId: demotedDraft.id,
-				filePath: toPath,
-			});
-			return demotedDraft.id;
-		});
-	}
-
-	// Draft operations
-	private async listDraftFiles(draftsDir: string): Promise<string[]> {
-		const entries = await readdir(draftsDir, { withFileTypes: true });
-		return entries
-			.filter((entry) => entry.isDirectory())
-			.map((entry) => join(entry.name, "task.md"))
-			.sort();
-	}
-
-	private async readDraftFile(filepath: string): Promise<Task> {
-		const task = parseTask(await Bun.file(filepath).text());
-		if (!isValidDraftId(task.id)) throw new Error(`Invalid draft ID: ${task.id}`);
-		return { ...task, id: task.id.toUpperCase(), filePath: filepath };
-	}
-
-	async saveDraft(task: Task): Promise<string> {
-		const { id: canonicalId } = await this.resolveTaskWriteTarget(task, true);
-		if (!isValidDraftId(canonicalId)) throw new Error(`Invalid draft ID: ${task.id}`);
-		const containerId = canonicalId.toLowerCase();
-		const container = await this.taskArtifacts.containerPath(containerId, "drafts");
-		const filepath = join(container, "task.md");
-		const sourcePath = typeof task.filePath === "string" ? resolve(task.filePath) : undefined;
-		const sourceContainer = sourcePath && basename(sourcePath) === "task.md" ? dirname(sourcePath) : undefined;
-		const isExistingContainer = sourceContainer === container;
-
-		if (sourcePath && isExistingContainer) {
-			const existing = await this.loadDraftFromFile(filepath);
-			if (!existing || !draftIdsMatchLoosely(existing.id, canonicalId))
-				throw new Error(`Draft container identity mismatch for ${task.id}; refusing to overwrite it.`);
-		} else {
-			try {
-				await stat(container);
-				throw new Error(`Draft container ${container} already exists; refusing to merge or reuse its identity.`);
-			} catch (error) {
-				if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
-			}
-			const existingDrafts = await this.listDrafts();
-			if (existingDrafts.some((draft) => draftIdsMatchLoosely(draft.id, canonicalId)))
-				throw new Error(
-					`Draft ID ${canonicalId} is already in use; refusing to reuse its identity or merge artifacts.`,
-				);
-		}
-
-		const normalizedTask = { ...task, id: canonicalId, filePath: filepath };
-		const content = serializeTask(
-			normalizedTask,
-			await this.retainedTaskFrontmatter(isExistingContainer ? sourcePath : undefined),
-		);
-		if (!isExistingContainer) {
-			await this.ensureDirectoryExists(dirname(container));
-			await mkdir(container, { recursive: false });
-		}
-		await this.writeFileAtomically(filepath, content);
-		return filepath;
-	}
-
-	private async writeFileAtomically(filepath: string, content: string): Promise<void> {
-		const temporaryPath = `${filepath}.${process.pid}.${Date.now()}.tmp`;
-		try {
-			await writeFile(temporaryPath, content, { flag: "wx" });
-			await rename(temporaryPath, filepath);
-		} catch (error) {
-			try {
-				await unlink(temporaryPath);
-			} catch (cleanupError) {
-				if ((cleanupError as NodeJS.ErrnoException).code !== "ENOENT")
-					throw new Error(`Atomic write failed and temporary-file cleanup failed for ${temporaryPath}.`, {
-						cause: new AggregateError([error, cleanupError]),
-					});
-			}
-			throw error;
-		}
-	}
-
-	async loadDraft(draftId: string): Promise<Task | null> {
-		try {
-			const filePath = await this.resolveDraftFilePath(draftId);
-			if (!filePath) return null;
-			return await this.loadDraftFromFile(filePath);
-		} catch (error) {
-			if (isAmbiguousIdError(error)) throw error;
-			return null;
-		}
-	}
-
-	async listDrafts(): Promise<Task[]> {
-		try {
-			const draftsDir = await this.getDraftsDir();
-			const taskFiles = await this.listDraftFiles(draftsDir);
-
-			const tasks: Task[] = [];
-			for (const file of taskFiles) {
-				try {
-					tasks.push(await this.readDraftFile(join(draftsDir, file)));
-				} catch (error) {
-					console.warn(
-						`Warning: Skipping invalid task draft ${join(draftsDir, file)}: ${error instanceof Error ? error.message : String(error)}`,
-					);
-				}
-			}
-
-			return TaskOrdering.byId(tasks);
-		} catch {
-			return [];
-		}
-	}
-
-	/**
-	 * Lists drafts while skipping individual files that fail to parse, so one damaged
-	 * file cannot hide the healthy drafts from interactive selection.
-	 */
-	async listHealthyDrafts(): Promise<Task[]> {
-		try {
-			const draftsDir = await this.getDraftsDir();
-			const taskFiles = (await this.listDraftFiles(draftsDir)).sort();
-
-			const tasks: Task[] = [];
-			for (const file of taskFiles) {
-				try {
-					tasks.push(await this.readDraftFile(join(draftsDir, file)));
-				} catch {}
-			}
-
-			return TaskOrdering.byId(tasks);
-		} catch {
-			return [];
-		}
-	}
-
-	/**
-	 * The single validation authority for one draft file: parse it and require its frontmatter
-	 * id to agree with its filename under the loose matching rules. Throws with actionable
-	 * context when the file is damaged or its identity drifted.
-	 */
-	async draftReferenceFromPath(filePath: string): Promise<DraftFileReference & { task: Task }> {
-		const draftsDir = resolve(await this.getDraftsDir());
-		const absolutePath = resolve(filePath);
-		const relativePath = relative(draftsDir, absolutePath);
-		const parts = relativePath.split(sep);
-		const containerId = parts[0];
-		const isCanonicalContainer =
-			parts.length === 2 && parts[1] === "task.md" && !!containerId && containerId === containerId.toLowerCase();
-		if (!isCanonicalContainer) throw new Error(`Invalid draft path: ${filePath}. Drafts must be inside ${draftsDir}.`);
-
-		let realDraftsDir: string;
-		let realFilePath: string;
-		try {
-			realDraftsDir = (await Bun.file(draftsDir).exists()) ? realpathSync(draftsDir) : draftsDir;
-			realFilePath = realpathSync(absolutePath);
-		} catch {
-			throw new DraftParseError(basename(filePath));
-		}
-		const realRelativePath = relative(realDraftsDir, realFilePath);
-		if (realRelativePath.startsWith(`..${sep}`) || realRelativePath === ".." || isAbsolute(realRelativePath))
-			throw new Error(`Invalid draft path: ${filePath}. Draft path resolves outside ${draftsDir}.`);
-
-		const filename = basename(absolutePath);
-		let task: Task;
-		try {
-			task = parseTask(await Bun.file(realFilePath).text());
-		} catch {
-			throw new DraftParseError(filename);
-		}
-		const identityFilename = containerId!;
-		const canonicalId = extractDraftIdFromFilename(identityFilename);
-		if (
-			!canonicalId ||
-			!draftIdsMatchLoosely(task.id, identityFilename) ||
-			(isCanonicalContainer && !taskIdsEqual(normalizeDraftId(task.id), containerId))
-		) {
-			throw new DraftIdentityError(identityFilename, task.id, canonicalId);
-		}
-		return { filePath: absolutePath, canonicalId, task: { ...task, filePath: absolutePath } };
-	}
-
-	/**
-	 * Resolve a user-supplied draft id to a validated reference. Candidate filenames are matched
-	 * by exact prefix and loose numeric rules together, so duplicate numeric identities fail
-	 * closed; only the matched file is parsed.
-	 */
-	async resolveDraftReference(draftId: string): Promise<(DraftFileReference & { task: Task }) | null> {
-		const normalizedId = normalizeDraftId(draftId);
-		const draftsDir = await this.getDraftsDir();
-		let files: string[];
-		try {
-			files = await this.listDraftFiles(draftsDir);
-		} catch {
-			return null;
-		}
-		const candidates = files.filter((file) => {
-			const parts = file.split(sep);
-			const identityName = parts.length === 2 && parts[1] === "task.md" ? parts[0] : "";
-			return !!identityName && draftIdsMatchLoosely(normalizedId, identityName);
-		});
-		if (candidates.length > 1) {
-			throw new AmbiguousIdError(
-				"Draft",
-				normalizedId,
-				candidates,
-				"Rename one file to a distinct numeric id, then make its frontmatter agree.",
-			);
-		}
-		const candidate = candidates[0];
-		return candidate ? await this.draftReferenceFromPath(join(draftsDir, candidate)) : null;
-	}
-
-	/**
-	 * Filename-bound resolution for whole-file operations (archive, promote). These move or
-	 * delete the matched file itself, so frontmatter equivalence does not apply; duplicate
-	 * numeric identities still fail closed.
-	 */
-	async resolveDraftFilePath(draftId: string): Promise<string | null> {
-		const draftsDir = await this.getDraftsDir();
-		let files: string[];
-		try {
-			files = await this.listDraftFiles(draftsDir);
-		} catch {
-			return null;
-		}
-		const normalizedId = normalizeDraftId(draftId);
-		const candidates = files.filter((file) => {
-			const parts = file.split(sep);
-			const identityName = parts.length === 2 && parts[1] === "task.md" ? parts[0] : "";
-			return !!identityName && draftIdsMatchLoosely(normalizedId, identityName);
-		});
-		if (candidates.length > 1) {
-			throw new AmbiguousIdError(
-				"Draft",
-				normalizedId,
-				candidates,
-				"Rename one file to a distinct numeric id, then make its frontmatter agree.",
-			);
-		}
-		const filename = candidates[0];
-		return filename ? join(draftsDir, filename) : null;
-	}
-
-	/**
-	 * Numeric draft identities occupied on disk, derived from filenames: files that fail to
-	 * parse still reserve their id against future allocation.
-	 */
-	async listOccupiedDraftFileIds(): Promise<string[]> {
-		const filenames = await this.listDraftFilenames();
-		return filenames
-			.map((filename) => {
-				const containerRecord = basename(filename) === "task.md";
-				const identity = containerRecord ? dirname(filename) : filename;
-				const taskId = identity.match(/^([A-Za-z]+-\d+(?:\.\d+)*)/)?.[1];
-				return taskId ?? extractDraftIdFromFilename(filename);
-			})
-			.filter((id): id is string => id !== null);
-	}
-
-	async listDraftFilenames(unreadable?: string[]): Promise<string[]> {
-		const draftsDir = await this.getDraftsDir();
-		try {
-			const entries = await readdir(draftsDir, { withFileTypes: true });
-			return entries
-				.filter((entry) => entry.isDirectory())
-				.map((entry) => join(entry.name, "task.md"))
-				.sort();
-		} catch {
-			// A directory that cannot be scanned is a finding, not an empty store: surface it so
-			// Draft identities are never reported as healthy without having been checked.
-			unreadable?.push(draftsDir);
-			return [];
-		}
-	}
-
-	/**
-	 * Draft identity findings: duplicate numeric identities (filename-derived, so
-	 * unparsable files count), drifted frontmatter-vs-filename records, and unreadable files.
-	 */
-	async diagnoseDraftIdentity(): Promise<DraftIdentityFindings> {
-		const unreadableDirectories: string[] = [];
-		const filenames = await this.listDraftFilenames(unreadableDirectories);
-		const duplicates = findDuplicateDraftFilenameGroups(filenames).map((paths) => ({
-			id: extractDraftIdFromFilename(paths[0] ?? "") ?? "",
-			paths,
-		}));
-		const draftsDir = await this.getDraftsDir();
-		const unreadable: string[] = [...unreadableDirectories];
-		const drifted: Array<{ path: string; frontmatterId: string; filenameId: string }> = [];
-		for (const filename of filenames) {
-			let parsed: Task | null;
-			try {
-				parsed = parseTask(await Bun.file(join(draftsDir, filename)).text());
-			} catch {
-				unreadable.push(filename);
-				continue;
-			}
-			const declaredId = extractDraftIdFromFilename(filename);
-			if (!parsed || !declaredId || !draftIdsMatchLoosely(parsed.id, filename)) {
-				drifted.push({ path: filename, frontmatterId: parsed.id, filenameId: declaredId ?? "(unreadable)" });
-			}
-		}
-		return { duplicates, unreadable, drifted };
-	}
-
 	subscribeToContentMutations(listener: ContentMutationListener): () => void {
 		this.contentMutationListeners.add(listener);
 		return () => this.contentMutationListeners.delete(listener);
@@ -1467,19 +933,6 @@ export class FileSystem {
 	}
 
 	// Utility methods
-	private sanitizeFilename(filename: string): string {
-		// Remove path-unsafe characters, then strip noisy punctuation before normalizing whitespace
-		const sanitized = filename
-			.replace(/[<>:"/\\|?*]/g, "-")
-			// biome-ignore lint/complexity/noUselessEscapeInRegex: we need explicit escapes inside the character class
-			.replace(/['(),!@#$%^&+=\[\]{};]/g, "")
-			.replace(/\s+/g, "-")
-			.replace(/-+/g, "-")
-			.replace(/^-|-$/g, "");
-		// A punctuation-only title sanitizes to nothing; fall back so filenames keep the "<id> - <title>.md" shape
-		return sanitized || "untitled";
-	}
-
 	private async ensureDirectoryExists(dirPath: string): Promise<void> {
 		await mkdir(dirPath, { recursive: true });
 	}

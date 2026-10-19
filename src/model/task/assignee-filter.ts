@@ -1,13 +1,11 @@
-export function assigneeComparisonKey(value: string): string {
-	return value.trim().replace(/^@/, "").trim().replace(/\s+/g, " ").toLowerCase();
-}
+import { comparisonKey } from "../../lib/comparison-key.ts";
 
 export function normalizeAssignees(values: string[] | undefined): string[] {
 	if (!values) return [];
 	const seen = new Set<string>();
 	return values.reduce<string[]>((normalized, value) => {
 		const display = value.trim();
-		const key = assigneeComparisonKey(display);
+		const key = comparisonKey(display);
 		if (key && !seen.has(key)) {
 			seen.add(key);
 			normalized.push(display);

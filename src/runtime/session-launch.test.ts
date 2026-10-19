@@ -190,7 +190,7 @@ describe("session-local agent launch", () => {
 		}
 	});
 
-	it("merges process-scoped OpenCode skills without leaking task environment or changing user settings", async () => {
+	it("merges process-scoped OpenCode skills without changing inherited environment or user settings", async () => {
 		const { root, bootstrapPath } = await fixture();
 		const original =
 			'{"model":"user/model","skills":{"paths":["/user/skills"],"urls":["https://example.test/skills"]}}';
@@ -224,16 +224,11 @@ describe("session-local agent launch", () => {
 				expect(skillPath.startsWith(`${root}/`)).toBe(false);
 				expect(await readFile(skillPath, "utf8")).toContain(`\n${AGENTIC_WORKSPACE_TASK_SKILL}`);
 				expect(launch.env.CUSTOM_SETTING).toBe("keep");
-				for (const name of [
-					"AGENTIC_WORKSPACE_CWD",
-					"AGENTIC_WORKSPACE_TASK_ID",
-					"AGENTIC_WORKSPACE_SESSION_ID",
-					"AGENTIC_WORKSPACE_PROJECT_ROOT",
-					"TASK_ID",
-					"SESSION_ID",
-				]) {
-					expect(launch.env[name]).toBeUndefined();
-				}
+				expect(launch.env).toMatchObject({
+					AGENTIC_WORKSPACE_CWD: "/wrong",
+					AGENTIC_WORKSPACE_TASK_ID: "WRONG",
+					TASK_ID: "WRONG",
+				});
 				expect(configured.env.OPENCODE_CONFIG_CONTENT).toBe(original);
 				expect(launch.identity?.id).toBe("ses_existing");
 			} finally {
@@ -288,7 +283,15 @@ describe("session-local agent launch", () => {
 				expect(captured.args.at(-1)).toBe(prompt);
 				expect(captured.args.slice(-3, -1)).toEqual(["--session-id", launch.identity?.id]);
 				expect(captured.skill).toContain(AGENTIC_WORKSPACE_TASK_SKILL);
-				expect(captured.env).toEqual({ custom: "safe ' $(false)" });
+				expect(captured.env).toEqual({
+					cwd: "/wrong",
+					task: "inherited-wrong",
+					session: "inherited-wrong",
+					root: "/wrong",
+					taskId: "inherited-wrong",
+					sessionId: "inherited-wrong",
+					custom: "safe ' $(false)",
+				});
 				expect(existsSync(marker)).toBe(false);
 				expect(existsSync(captured.args[captured.args.indexOf("--plugin-dir") + 1])).toBe(false);
 			} finally {
@@ -317,6 +320,7 @@ describe("session-local agent launch", () => {
 						VALUE: "$SHOULD_NOT_EXPAND",
 						AGENTIC_WORKSPACE_PROJECT_DIR: "/untrusted",
 						AGENTIC_WORKSPACE_CWD: "/historical",
+						AGENTIC_WORKSPACE_TASK_ID: "TASK-1",
 					},
 				},
 			);
@@ -325,7 +329,8 @@ describe("session-local agent launch", () => {
 				expect(launch.env.AGENTIC_WORKSPACE_PROJECT_DIR).toBe(projectDir);
 				expect(launch.env.AGENTIC_WORKSPACE_WORKTREE_DIR).toBe(root);
 				expect(launch.env.AGENTIC_WORKSPACE_TASK_DIR).toBe(taskDir);
-				expect(launch.env.AGENTIC_WORKSPACE_CWD).toBeUndefined();
+				expect(launch.env.AGENTIC_WORKSPACE_CWD).toBe("/historical");
+				expect(launch.env.AGENTIC_WORKSPACE_TASK_ID).toBe("TASK-1");
 			} finally {
 				await launch.cleanup();
 			}
@@ -341,7 +346,7 @@ describe("session-local agent launch", () => {
 				expect(ask.env.AGENTIC_WORKSPACE_PROJECT_DIR).toBe(projectDir);
 				expect(ask.env.AGENTIC_WORKSPACE_WORKTREE_DIR).toBe(root);
 				expect(ask.env.AGENTIC_WORKSPACE_TASK_DIR).toBe(taskDir);
-				expect(ask.command).toContain("unset AGENTIC_WORKSPACE_CWD AGENTIC_WORKSPACE_TASK_ID");
+				expect(ask.command).not.toContain("unset ");
 			} finally {
 				await ask.cleanup();
 			}

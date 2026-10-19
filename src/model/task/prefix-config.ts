@@ -1,13 +1,6 @@
 import { escapeRegex } from "../../lib/regex.ts";
 import { type AgenticWorkspaceConfig, EntityType, type PrefixConfig } from "../types.ts";
-import {
-	canonicalTaskIdSegments,
-	isNumericTaskIdSegment,
-	parseTaskId,
-	taskIdBody,
-	taskIdKey,
-	taskIdRegex,
-} from "./task-id.ts";
+import { isNumericTaskIdSegment, parseTaskId, taskIdBody, taskIdKey, taskIdRegex } from "./task-id.ts";
 
 /**
  * Default prefix configuration for tasks.
@@ -17,24 +10,6 @@ const DEFAULT_PREFIX_CONFIG: PrefixConfig = {
 };
 
 export const DEFAULT_TASK_PREFIX = DEFAULT_PREFIX_CONFIG.task;
-
-/**
- * Hardcoded draft prefix. Not configurable - always "draft".
- */
-export const DRAFT_PREFIX = EntityType.Draft;
-
-/**
- * Prefixes owned by system entity types. A configurable task prefix matching one
- * of these collides with drafts and misroutes their IDs.
- */
-const RESERVED_TASK_PREFIXES: readonly string[] = [DRAFT_PREFIX];
-
-/**
- * Checks whether a candidate task prefix collides with a reserved system prefix (case-insensitive).
- */
-export function isReservedTaskPrefix(prefix: string): boolean {
-	return RESERVED_TASK_PREFIXES.includes(prefix.trim().toLowerCase());
-}
 
 /**
  * Init-time task prefix validation. Empty input is allowed (the default prefix is used).
@@ -48,9 +23,6 @@ export function getTaskPrefixError(prefix: string): string | undefined {
 	}
 	if (!/^[a-zA-Z]+$/.test(prefix)) {
 		return "Task prefix must contain only letters (a-z, A-Z).";
-	}
-	if (isReservedTaskPrefix(prefix)) {
-		return `Task prefix "${prefix}" is reserved for drafts. Choose a different prefix.`;
 	}
 	return undefined;
 }
@@ -99,7 +71,7 @@ export function buildIdRegex(prefix: string): RegExp {
  * @example
  * hasPrefix("task-123", "task") // => true
  * hasPrefix("TASK-123", "task") // => true (case-insensitive)
- * hasPrefix("draft-1", "task") // => false
+ * hasPrefix("JIRA-1", "task") // => false
  */
 export function hasPrefix(id: string, prefix: string): boolean {
 	const pattern = new RegExp(`^${escapeRegex(prefix)}-`, "i");
@@ -185,12 +157,11 @@ export function generateNextSubtaskId(
 	const normalizedParent = hasPrefix(parentKey, prefix) ? parentKey : `${prefix.toUpperCase()}-${parentKey}`;
 	const parentBody = extractIdBody(normalizedParent, prefix);
 	const parentSegments = parentBody.split(".");
-	const canonicalParentSegments = canonicalTaskIdSegments(parentSegments);
 
 	let max = 0n;
 
 	for (const id of existingIds) {
-		const candidate = subtaskSequenceNumber(id, prefix, parentSegments, canonicalParentSegments, parentBody);
+		const candidate = subtaskSequenceNumber(id, prefix, parentSegments, parentBody);
 		if (candidate !== null && candidate > max) max = candidate;
 	}
 
@@ -207,39 +178,23 @@ function subtaskSequenceNumber(
 	id: string,
 	prefix: string,
 	parentSegments: string[],
-	canonicalParentSegments: string[] | null,
 	parentBody: string,
 ): bigint | null {
 	const bodySegments = extractIdBody(id, prefix).split(".");
 	if (bodySegments.length <= parentSegments.length) return null;
 	const candidateParentSegments = bodySegments.slice(0, parentSegments.length);
-	if (
-		!subtaskParentMatches(
-			canonicalParentSegments,
-			canonicalTaskIdSegments(candidateParentSegments),
-			candidateParentSegments,
-			parentBody,
-		)
-	)
-		return null;
+	if (!subtaskParentMatches(candidateParentSegments, parentBody)) return null;
 	const sequence = bodySegments[parentSegments.length];
 	return sequence && isNumericTaskIdSegment(sequence) ? BigInt(sequence) : null;
 }
 
-function subtaskParentMatches(
-	canonicalParent: string[] | null,
-	canonicalCandidate: string[] | null,
-	candidateSegments: string[],
-	parentBody: string,
-): boolean {
-	if (canonicalParent && canonicalCandidate)
-		return canonicalParent.every((segment, index) => segment === canonicalCandidate[index]);
+function subtaskParentMatches(candidateSegments: string[], parentBody: string): boolean {
 	return candidateSegments.join(".").toLowerCase() === parentBody.toLowerCase();
 }
 
 /**
  * Gets the prefix for a given entity type.
- * Only tasks have configurable prefixes (via config); other types use hardcoded prefixes.
+ * Tasks use the configured prefix when present, or the built-in task prefix.
  *
  * @param type - The entity type
  * @param config - Optional AgenticWorkspace config (only used for Task type)
@@ -248,14 +203,11 @@ function subtaskParentMatches(
  * @example
  * getPrefixForType(EntityType.Task) // => "task"
  * getPrefixForType(EntityType.Task, { prefixes: { task: "JIRA" } }) // => "JIRA"
- * getPrefixForType(EntityType.Draft) // => "draft"
  */
 export function getPrefixForType(type: EntityType, config?: AgenticWorkspaceConfig): string {
 	switch (type) {
 		case EntityType.Task:
 			return config?.prefixes?.task ?? DEFAULT_PREFIX_CONFIG.task;
-		case EntityType.Draft:
-			return DRAFT_PREFIX;
 		default:
 			return type;
 	}

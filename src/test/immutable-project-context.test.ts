@@ -21,7 +21,6 @@ describe("immutable Core project binding", () => {
 			milestones: [],
 			dateFormat: "YYYY-MM-DD",
 			remoteOperations: false,
-			checkActiveBranches: false,
 		};
 		const rootConfig = (agenticWorkspaceDirectory: string) =>
 			[
@@ -99,7 +98,6 @@ describe("immutable Core project binding", () => {
 			milestones: [],
 			dateFormat: "YYYY-MM-DD",
 			remoteOperations: true,
-			checkActiveBranches: true,
 		});
 		await filesystem.saveTask({
 			id: "task-1",
@@ -115,7 +113,7 @@ describe("immutable Core project binding", () => {
 			throw new Error("local read must not discover branches");
 		};
 
-		expect((await core.getTask("TASK-1", { includeCrossBranch: false }))?.title).toBe("Local");
-		expect(await core.getTask("TASK-2", { includeCrossBranch: false })).toBeNull();
+		expect((await core.getTask("TASK-1", {}))?.title).toBe("Local");
+		expect(await core.getTask("TASK-2", {})).toBeNull();
 	});
 });

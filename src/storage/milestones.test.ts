@@ -46,8 +46,11 @@ describe("filesystem config parsing", () => {
 		expect(config.defaultAssignee).toEqual(["@alex"]);
 	});
 
-	it("deduplicates default assignee identities while preserving first spelling", () => {
-		const config = parseConfig('default_assignee: ["@Alice", "alice", " Bob "]\n', "/tmp/agentic-workspace/config.yml");
-		expect(config.defaultAssignee).toEqual(["@Alice", "Bob"]);
+	it("deduplicates default assignees by trimmed case-insensitive identity", () => {
+		const config = parseConfig(
+			'default_assignee: ["@Alice", "@alice", "alice", " Bob "]\n',
+			"/tmp/agentic-workspace/config.yml",
+		);
+		expect(config.defaultAssignee).toEqual(["@Alice", "alice", "Bob"]);
 	});
 });

@@ -22,7 +22,7 @@ Status meanings: `unknown` = not fully evidenced; `gap` = demonstrated mismatch;
 | Checklist item | Evidence / exception | Status |
 |---|---|---|
 | Detail identity, description, status, type, priority, milestone, labels, dependencies/readiness, selected-mode session context | Exact detail ordering is unspecified; source/test evidence not yet mapped per field | unknown |
-| Create fields: title, description, status, type, priority, agent preset, worktree-per-task, YOLO; edit: title, description, type, priority | No removed fields (draft, due date, separate project) may be exposed | unknown |
+| Create fields: title, description, status, type, priority, agent preset, worktree-per-task, YOLO; edit: title, description, type, priority | No removed fields (due date, separate project) may be exposed | unknown |
 | Option cycler uses one-line `◀ value ▶`; arrows wrap; keyboard focus stays in form | Exact order/required markers unspecified | unknown |
 | Save/cancel and failure preserve unsaved form values; empty optional differs from unavailable/error | Failure-path evidence not established | unknown |
 | Short/narrow terminal navigation, fitting controls, clipping/wrapping/scrolling | Exact minimum dimensions and policies unspecified | unknown |
