@@ -3,7 +3,6 @@ import { formatUtcDateForDisplay, type UtcDateDisplayOptions } from "../../lib/u
 import { formatAssignee } from "../../model/task/assignee-filter.ts";
 import { formatPriorityLabel } from "../../model/task/priority-config.ts";
 import { TaskOrdering } from "../../model/task/task-ordering.ts";
-import { transformCodePathsPlain } from "./code-path.ts";
 import { formatDependencyGraphLines } from "./dependency-graph-text.ts";
 import type { TaskArtifactProjection } from "./json-output.ts";
 import { formatStatusWithIcon } from "./status-icon.ts";
@@ -86,7 +85,7 @@ function pushTaskMetadata(lines: string[], task: TaskDetail): void {
 }
 
 function pushSection(lines: string[], title: string, content: string, trailingBlank = true): void {
-	lines.push(title, "-".repeat(50), transformCodePathsPlain(content));
+	lines.push(title, "-".repeat(50), content);
 	if (trailingBlank) lines.push("");
 }
 

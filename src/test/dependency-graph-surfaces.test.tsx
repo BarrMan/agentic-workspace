@@ -1,8 +1,8 @@
 import { describe, expect, it } from "bun:test";
-import { parseColor, type StyledText } from "@opentui/core";
+import { parseColor, StyledText } from "@opentui/core";
 import { toTaskDetail } from "../controller/task-detail.ts";
 import type { Task } from "../model/types.ts";
-import { generateTaskDetailStyled } from "../renderer/opentui/task-detail-content.ts";
+import { generateTaskDetailSections } from "../renderer/opentui/task-detail-content.ts";
 
 const STATUSES = ["To Do", "In Progress", "Done"] as const;
 
@@ -23,7 +23,12 @@ type DetailChunk = StyledText["chunks"][number];
 // a plain record. The viewer only renders what it was given.
 function detailStyled(task: Task, asDetail: boolean): StyledText {
 	const given = asDetail ? toTaskDetail(task, { tasks: CORPUS, completedTasks: [], statuses: STATUSES }) : task;
-	return generateTaskDetailStyled(given);
+	const sections = generateTaskDetailSections(given);
+	return new StyledText([
+		...sections.beforeDescription.chunks,
+		{ __isChunk: true, text: sections.description },
+		...sections.afterDescription.chunks,
+	]);
 }
 
 function detailBody(task: Task, asDetail: boolean): string {
@@ -73,8 +78,8 @@ describe("OpenTUI dependency graph section", () => {
 		const styled = makeTask("BACK-7", "Style {red-fg}accent{/} braces");
 		const root = makeTask("BACK-8", "Root", ["BACK-7"]);
 		const detail = toTaskDetail(root, { tasks: [root, styled], completedTasks: [], statuses: STATUSES });
-		const body = generateTaskDetailStyled(detail)
-			.chunks.map((chunk) => chunk.text)
+		const body = generateTaskDetailSections(detail)
+			.beforeDescription.chunks.map((chunk) => chunk.text)
 			.join("");
 
 		expect(body).toContain("BACK-7 - Style {red-fg}accent{/} braces [To Do]");
@@ -91,8 +96,8 @@ describe("OpenTUI dependency graph section", () => {
 		const detail = toTaskDetail(isolated, { tasks: [isolated], completedTasks: [], statuses: STATUSES });
 
 		expect(
-			generateTaskDetailStyled(detail)
-				.chunks.map((chunk) => chunk.text)
+			generateTaskDetailSections(detail)
+				.beforeDescription.chunks.map((chunk) => chunk.text)
 				.join(""),
 		).not.toContain("Dependency Graph");
 	});

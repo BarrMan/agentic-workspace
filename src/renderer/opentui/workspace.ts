@@ -3,13 +3,16 @@ import {
 	bg,
 	bold,
 	type CliRenderer,
+	CodeRenderable,
 	type EmbeddedTerminalRenderable,
 	fg,
 	type KeyEvent,
+	MarkdownRenderable,
 	type MouseEvent,
 	type PasteEvent,
 	parseColor,
 	StyledText,
+	SyntaxStyle,
 	strikethrough,
 	TextAttributes,
 	TextRenderable,
@@ -34,7 +37,19 @@ import {
 } from "./keybindings.ts";
 import { renderModeRowLabel } from "./mode-row-label.ts";
 import { TaskArtifactView, type TaskArtifactViewApi } from "./task-artifact-view.ts";
-import { generateTaskDetailStyled, type TaskDetailStyledOptions } from "./task-detail-content.ts";
+import { generateTaskDetailSections, type TaskDetailStyledOptions } from "./task-detail-content.ts";
+
+const TASK_DESCRIPTION_STYLE = SyntaxStyle.fromStyles({
+	default: { fg: "#e5e5e5" },
+	"markup.heading": { fg: "cyan", bold: true },
+	"markup.strong": { fg: "brightWhite", bold: true },
+	"markup.italic": { fg: "cyan", italic: true },
+	"markup.raw": { fg: "yellow" },
+	"markup.raw.block": { fg: "#e5e5e5" },
+	"markup.link.label": { fg: "cyan", underline: true },
+	"markup.link.url": { fg: "blue", underline: true },
+	"markup.list": { fg: "blue" },
+});
 
 const artifactViewShortcut = shortcutsConfig.workspace.openArtifacts;
 const artifactCloseShortcut = shortcutsConfig.taskViewer.escape;
@@ -197,7 +212,7 @@ export type OpenTuiWorkspaceOptions = OpenTuiWorkspaceCallbacks & {
 	readonly notice?: string;
 	/** Rich detail per task id, precomputed by the controller from the full task corpus. */
 	readonly taskDetails?: ReadonlyMap<string, TaskDetail>;
-	/** Rendering options for {@link generateTaskDetailStyled}. */
+	/** Rendering options for task detail sections. */
 	readonly taskDetailOptions?: TaskDetailStyledOptions;
 	/** Canonical artifact repository adapter; when provided, Ctrl+Shift+O opens the selected task's artifacts. */
 	readonly taskArtifactApi?: TaskArtifactViewApi;
@@ -233,7 +248,6 @@ function taskDetails(task: OpenTuiWorkspaceTaskEntry | undefined): string {
 		assignees.length ? `Assignees: ${assignees.join(", ")}` : undefined,
 		task.labels?.length ? `Labels: ${task.labels.join(", ")}` : undefined,
 		"",
-		task.description?.trim() || "No description.",
 	];
 	return fields.filter((field): field is string => field !== undefined).join("\n");
 }
@@ -419,6 +433,7 @@ export function mountOpenTuiWorkspace(
 		width: "100%",
 		height: "30%",
 		flexShrink: 0,
+		flexDirection: "column",
 		border: true,
 		title: " Details ",
 		borderColor: "gray",
@@ -427,7 +442,41 @@ export function mountOpenTuiWorkspace(
 	});
 	const detailText = new TextRenderable(renderer, {
 		width: "100%",
+		height: "auto",
+		wrapMode: "word",
+		overflow: "hidden",
+		fg: "#e5e5e5",
+		bg: "#111111",
+	});
+	const detailMarkdown = new MarkdownRenderable(renderer, {
+		width: "100%",
 		height: "100%",
+		overflow: "hidden",
+		content: "",
+		syntaxStyle: TASK_DESCRIPTION_STYLE,
+		streaming: true,
+		renderNode: (token, context) => {
+			if (token.type !== "code") return undefined;
+			const renderable = context.defaultRender();
+			if (renderable instanceof CodeRenderable) {
+				renderable.drawUnstyledText = true;
+				renderable.streaming = false;
+			}
+			return renderable;
+		},
+		fg: "#e5e5e5",
+		bg: "#111111",
+	});
+	const descriptionViewport = new BoxRenderable(renderer, {
+		width: "100%",
+		flexGrow: 1,
+		flexBasis: 0,
+		minHeight: 0,
+		overflow: "hidden",
+	});
+	const detailAfterText = new TextRenderable(renderer, {
+		width: "100%",
+		height: "auto",
 		wrapMode: "word",
 		overflow: "hidden",
 		fg: "#e5e5e5",
@@ -492,6 +541,9 @@ export function mountOpenTuiWorkspace(
 	taskViewport.add(taskText);
 	taskList.add(taskViewport);
 	detailRegion.add(detailText);
+	detailRegion.add(descriptionViewport);
+	detailRegion.add(detailAfterText);
+	descriptionViewport.add(detailMarkdown);
 	const mountArtifactView = (taskId: string): void => {
 		if (!opts.taskArtifactApi) return;
 		if (!artifactView) {
@@ -516,6 +568,8 @@ export function mountOpenTuiWorkspace(
 		artifactView.setOpen(true);
 		artifactView.root.visible = true;
 		detailText.visible = false;
+		detailMarkdown.visible = false;
+		detailAfterText.visible = false;
 		redraw();
 	};
 	agentPlaceholder.add(agentText);
@@ -654,12 +708,21 @@ export function mountOpenTuiWorkspace(
 			}
 		}
 		detailText.visible = !artifactViewOpen;
+		detailMarkdown.visible = !artifactViewOpen;
+		detailAfterText.visible = !artifactViewOpen;
 		if (!task) {
 			detailText.content = "No task selected.";
+			detailMarkdown.content = "";
+			detailAfterText.content = "";
 		} else if (selectedDetail) {
-			detailText.content = generateTaskDetailStyled(selectedDetail, opts.taskDetailOptions ?? {});
+			const sections = generateTaskDetailSections(selectedDetail, opts.taskDetailOptions ?? {});
+			detailText.content = sections.beforeDescription;
+			detailMarkdown.content = sections.description;
+			detailAfterText.content = sections.afterDescription;
 		} else {
-			detailText.content = t`${bold(fg("blue")(task.id))} - ${task.title}\n${taskDetails(task)}`;
+			detailText.content = t`${bold(fg("blue")(task.id))} - ${task.title}\n${taskDetails(task)}\nDescription:`;
+			detailMarkdown.content = task.description?.trim() || "No description.";
+			detailAfterText.content = "";
 		}
 		const session = selectedSession();
 		const liveAgent = opts.liveAgent?.taskId === selectedTask()?.id ? opts.liveAgent : undefined;

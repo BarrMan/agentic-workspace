@@ -37,15 +37,20 @@ const richTask: Task = {
 	references: ["https://example.com/spec", "docs/design.md"],
 	documentation: ["https://example.com/docs"],
 	modifiedFiles: ["src/a.ts"],
-	description: "A rich description mentioning `src/cli.ts`.",
+	description: "A **rich** description mentioning `src/cli.ts`.",
 	priority: "high",
 	type: "feature",
 	project: "alpha",
 };
 
 const entries: OpenTuiWorkspaceTaskEntry[] = [
-	{ id: richTask.id, title: richTask.title, status: richTask.status },
-	{ id: dependencyTask.id, title: dependencyTask.title, status: dependencyTask.status },
+	{ id: richTask.id, title: richTask.title, status: richTask.status, description: richTask.description },
+	{
+		id: dependencyTask.id,
+		title: dependencyTask.title,
+		status: dependencyTask.status,
+		description: "Fallback description",
+	},
 ];
 
 describe("native workspace rich detail", () => {
@@ -99,6 +104,20 @@ describe("native workspace rich detail", () => {
 		}
 	});
 
+	test("renders fenced code text in a complete Markdown description", async () => {
+		const setup = await createTestRenderer({ width: 120, height: 80, exitOnCtrlC: false });
+		renderers.push(setup);
+		const mount = mountOpenTuiWorkspace(setup.renderer, attachParent(setup), {
+			tasks: [{ id: "BACK-1", title: "Code task", status: "Todo", description: "```ts\nconst visible = true;\n```" }],
+		});
+		try {
+			await setup.flush();
+			expect(setup.captureCharFrame()).toContain("const visible = true;");
+		} finally {
+			mount.dispose();
+		}
+	});
+
 	test("keeps the selected task's detail in sync when selection changes", async () => {
 		const setup = await createTestRenderer({ width: 120, height: 120, exitOnCtrlC: false });
 		renderers.push(setup);
@@ -114,11 +133,36 @@ describe("native workspace rich detail", () => {
 		try {
 			await setup.flush();
 			expect(setup.captureCharFrame()).toContain("Rich task");
+			expect(setup.captureCharFrame()).toContain("rich description mentioning");
 			setup.mockInput.pressArrow("down");
 			await setup.flush();
 			const frame = setup.captureCharFrame();
 			expect(frame).toContain("Dependency task");
+			expect(frame).toContain("Fallback description");
+			expect(frame).not.toContain("rich description mentioning");
 			expect(frame).not.toContain("Acceptance Criteria");
+		} finally {
+			mount.dispose();
+		}
+	});
+
+	test("clips long Markdown and safely shows an empty description after switching tasks", async () => {
+		const setup = await createTestRenderer({ width: 120, height: 40, exitOnCtrlC: false });
+		renderers.push(setup);
+		const mount = mountOpenTuiWorkspace(setup.renderer, attachParent(setup), {
+			tasks: [
+				{ id: "BACK-1", title: "Long task", status: "Todo", description: "long description ".repeat(20_000) },
+				{ id: "BACK-2", title: "Empty task", status: "Todo", description: "" },
+			],
+		});
+		try {
+			await setup.flush();
+			expect(setup.captureCharFrame()).toContain("Long task");
+			expect(setup.captureCharFrame()).toContain("long description");
+			setup.mockInput.pressArrow("down");
+			await setup.flush();
+			expect(setup.captureCharFrame()).toContain("Empty task");
+			expect(setup.captureCharFrame()).toContain("No description.");
 		} finally {
 			mount.dispose();
 		}

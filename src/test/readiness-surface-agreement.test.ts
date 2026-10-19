@@ -5,7 +5,7 @@ import { runCli } from "../cli/register.ts";
 import { Core } from "../controller/agentic-workspace.ts";
 import { type TaskCorpus, toTaskDetail, withReadiness } from "../controller/task-detail.ts";
 import { searchJson } from "../renderer/formatters/json-output.ts";
-import { generateTaskDetailStyled } from "../renderer/opentui/task-detail-content.ts";
+import { generateTaskDetailSections } from "../renderer/opentui/task-detail-content.ts";
 import { coreFileSystem, createUniqueTestDir, initializeFilesystemTestProject, safeCleanup } from "./test-utils.ts";
 
 /**
@@ -142,8 +142,8 @@ describe("readiness agreement across surfaces", () => {
 		// And the line the interactive detail pane renders comes from that same derived field.
 		const blocked = corpus.tasks.find((task) => task.id === "TASK-4");
 		if (!blocked) throw new Error("Expected TASK-4 in the interactive corpus");
-		const styledBlockedDetail = generateTaskDetailStyled(toTaskDetail(blocked, corpus));
-		expect(styledBlockedDetail.chunks.map((chunk) => chunk.text).join("")).toContain("● Blocked by TASK-3");
+		const blockedDetail = generateTaskDetailSections(toTaskDetail(blocked, corpus));
+		expect(blockedDetail.beforeDescription.chunks.map((chunk) => chunk.text).join("")).toContain("● Blocked by TASK-3");
 	});
 
 	it("does not treat a padded claimant as the dependency identity", async () => {

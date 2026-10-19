@@ -4,7 +4,6 @@ import { formatAssignee } from "../../model/task/assignee-filter.ts";
 import { formatPriorityLabel, normalizePriorityValue } from "../../model/task/priority-config.ts";
 import { formatReadinessBlockers } from "../../model/task/readiness.ts";
 import type { Task } from "../../model/types.ts";
-import { extractCodePaths } from "../formatters/code-path.ts";
 import { type DependencyGraphEntry, formatDependencyGraphEntries } from "../formatters/dependency-graph-text.ts";
 import { formatStatusWithIcon, getStatusColor } from "../formatters/status-icon.ts";
 import { TASK_FIELD_LABELS } from "../formatters/task-labels.ts";
@@ -60,42 +59,6 @@ function projectBadge(project: string): DetailChunk {
 
 function taskTypeBadge(taskType: string): DetailChunk {
 	return fg("magenta")(`[${taskType}]`);
-}
-
-/** The styled twin of `styleCodePath`: a backticked path recedes in gray. */
-function codePathChunk(path: string): DetailChunk {
-	return fg("gray")(`\`${path}\``);
-}
-
-function transformCodePathLine(line: string): DetailChunk[][] {
-	const codePaths = extractCodePaths(line);
-	if (codePaths.length === 0) return [[literal(line)]];
-
-	const lineWithoutPaths = line.replace(/`[^`]+`/g, "").trim();
-	if (codePaths.length === 1 && lineWithoutPaths.length < 10) {
-		const path = codePaths[0] as string;
-		const backticked = `\`${path}\``;
-		const index = line.indexOf(backticked);
-		if (index >= 0) {
-			return [[literal(line.slice(0, index)), codePathChunk(path), literal(line.slice(index + backticked.length))]];
-		}
-	}
-
-	let content = line;
-	const extracted: DetailChunk[][] = [];
-	for (const path of codePaths) {
-		const backticked = `\`${path}\``;
-		if (!content.includes(backticked)) continue;
-		content = content.replace(backticked, " ").replace(/\s+/g, " ").trim();
-		extracted.push([codePathChunk(path)]);
-	}
-	return [...(content ? [[literal(content)]] : []), ...extracted];
-}
-
-/** The styled twin of `transformCodePaths`, returning one entry per rendered line. */
-function transformCodePathsStyled(text: string): DetailChunk[][] {
-	if (!text) return [];
-	return text.split("\n").flatMap(transformCodePathLine);
 }
 
 function headerLine(task: Task | TaskDetail): DetailChunk[] {
@@ -220,15 +183,6 @@ function dependencyEntryLine(entry: DependencyGraphEntry): DetailChunk[] {
 	return chunks;
 }
 
-function textSection(lines: DetailChunk[][], sectionHeading: string, value: string | undefined, empty?: string): void {
-	const trimmed = value?.trim();
-	if (!trimmed && !empty) return;
-	lines.push([heading(sectionHeading, 2)]);
-	if (trimmed) lines.push(...transformCodePathsStyled(trimmed));
-	else if (empty) lines.push([fg("gray")(empty)]);
-	lines.push([]);
-}
-
 function referenceSection(lines: DetailChunk[][], sectionHeading: string, values: string[] | undefined): void {
 	if (!values?.length) return;
 	lines.push([heading(sectionHeading, 2)]);
@@ -253,15 +207,21 @@ function renderLines(lines: DetailChunk[][]): DetailChunk[] {
  * previous `generateDetailContent`; it emits the same sections in the same order, including id + title,
  * so a caller must not prepend its own header.
  */
-export function generateTaskDetailStyled(task: Task | TaskDetail, options: TaskDetailStyledOptions = {}): StyledText {
+export function generateTaskDetailSections(
+	task: Task | TaskDetail,
+	options: TaskDetailStyledOptions = {},
+): { beforeDescription: StyledText; description: string; afterDescription: StyledText } {
 	const lines: DetailChunk[][] = [headerLine(task)];
 	if (task.branch) lines.push(readOnlyLine(task.branch));
 	lines.push([heading("Details", 2)], ...metadataLines(task, options), []);
 	const graph = taskDependencyGraph(task);
 	const graphLines = graph ? formatDependencyGraphEntries(graph).map(dependencyEntryLine) : [];
 	if (graphLines.length > 0) lines.push([heading("Dependency Graph", 2)], ...graphLines, []);
-	textSection(lines, TASK_FIELD_LABELS.DESCRIPTION, task.description, "No description provided");
-	referenceSection(lines, TASK_FIELD_LABELS.REFERENCES, task.references);
-	referenceSection(lines, "Documentation", task.documentation);
-	return new StyledText(renderLines(lines));
+	lines.push([heading(TASK_FIELD_LABELS.DESCRIPTION, 2)]);
+	const beforeDescription = new StyledText(renderLines(lines));
+	const description = task.description?.trim() || "No description provided";
+	const afterLines: DetailChunk[][] = [];
+	referenceSection(afterLines, TASK_FIELD_LABELS.REFERENCES, task.references);
+	referenceSection(afterLines, "Documentation", task.documentation);
+	return { beforeDescription, description, afterDescription: new StyledText(renderLines(afterLines)) };
 }

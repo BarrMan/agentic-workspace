@@ -221,4 +221,33 @@ describe("OpenTUI keybinding adapter", () => {
 		expect(matchesShortcut(shortcutsConfig.workspace.newGroup, keyEvent("g"))).toBe(false);
 		expect(formatShortcut(shortcutsConfig.workspace.newGroup)).toContain(`${metaModifierLabel()}+G`);
 	});
+
+	it("normalizes recorded keys for matching and display", () => {
+		const cases = [
+			{ event: keyEvent("G"), recorded: { key: "g", shift: true }, label: "Shift+G" },
+			{ event: keyEvent(" "), recorded: { key: "space" }, label: "Space" },
+			{ event: keyEvent("return"), recorded: { key: "return" }, label: "Enter" },
+			{ event: keyEvent("{"), recorded: { key: "[", shift: true }, label: "Shift+[" },
+		] as const;
+		for (const [index, testCase] of cases.entries()) {
+			const shortcut = { id: `test.recording.${index}`, keys: [] };
+			const recorded = shortcutKeyFromEvent(testCase.event);
+			expect(recorded).toEqual(testCase.recorded);
+			expect(
+				formatShortcut(shortcut, { [shortcut.id]: { sequence: [recorded as NonNullable<typeof recorded>] } }),
+			).toBe(testCase.label);
+			expect(matchesShortcut(shortcut, testCase.event, { [shortcut.id]: { sequence: [testCase.recorded] } })).toBe(
+				true,
+			);
+		}
+	});
+
+	it("matches literal override key names without parsing binding syntax", () => {
+		const shortcut = { id: "test.literal", keys: [] };
+		for (const name of ["😀", "unknown", "ctrl+x"] as const) {
+			const overrides = { [shortcut.id]: { sequence: [{ key: name }] } };
+			expect(matchesShortcut(shortcut, keyEvent(name), overrides)).toBe(true);
+			expect(matchesShortcut(shortcut, keyEvent(name, { ctrl: true }), overrides)).toBe(false);
+		}
+	});
 });

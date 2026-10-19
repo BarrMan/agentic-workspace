@@ -1,4 +1,6 @@
 import type { KeyEvent } from "@opentui/core";
+import { Keymap, type KeymapEvent, type KeymapHost, type KeyStrokeInput } from "@opentui/keymap";
+import { registerDefaultKeys } from "@opentui/keymap/addons";
 import {
 	formatKey,
 	formatKeymap,
@@ -6,8 +8,38 @@ import {
 	type KeymapContext,
 	keymapKeys,
 	metaModifierLabel,
+	uiKeymap,
 } from "./keymap.ts";
 import { charFromBaseCode, optionBaseKey } from "./option-compose.ts";
+
+const keymapTarget = {};
+const keymapHost: KeymapHost<typeof keymapTarget> = {
+	metadata: {
+		platform: "unknown",
+		primaryModifier: "unknown",
+		modifiers: { ctrl: "supported", shift: "supported", meta: "supported", super: "supported", hyper: "supported" },
+	},
+	rootTarget: keymapTarget,
+	isDestroyed: false,
+	getFocusedTarget: () => keymapTarget,
+	getParentTarget: () => null,
+	isTargetDestroyed: () => false,
+	onKeyPress: () => () => undefined,
+	onKeyRelease: () => () => undefined,
+	onFocusChange: () => () => undefined,
+	onTargetDestroy: () => () => undefined,
+	createCommandEvent: (): KeymapEvent => ({
+		name: "",
+		ctrl: false,
+		shift: false,
+		meta: false,
+		preventDefault: () => undefined,
+		stopPropagation: () => undefined,
+		propagationStopped: false,
+	}),
+};
+const keymap = new Keymap(keymapHost);
+registerDefaultKeys(keymap);
 
 /** One key combination accepted by an OpenTUI shortcut. Modifiers match exactly. */
 export type ShortcutKey = Readonly<{
@@ -307,27 +339,68 @@ export function shortcutHelpItems(surface: "workspace" | "board" | "taskViewer")
 	}));
 }
 
-/** Normalize terminal aliases without conflating distinct modifier chords. */
-function normalizedKey(key: ShortcutKey): ShortcutKey {
-	const name = key.key.toLowerCase();
-	if (key.key.length === 1 && key.key !== name) return { ...key, key: name, shift: true };
-	if (name === "return") return { ...key, key: "enter" };
-	if (name === " ") return { ...key, key: "space" };
-	if (name === "{") return { ...key, key: "[", shift: true };
-	return { ...key, key: name };
+function normalizeShortcutKey(key: ShortcutKey): ShortcutKey {
+	const lowercase = key.key.toLowerCase();
+	const uppercaseCharacter = key.key.length === 1 && key.key !== lowercase;
+	const brace = key.key === "{";
+	return {
+		key: key.key === "enter" || key.key === "return" ? "return" : key.key === " " ? "space" : brace ? "[" : lowercase,
+		...(key.ctrl ? { ctrl: true } : {}),
+		...(key.shift || uppercaseCharacter || brace ? { shift: true } : {}),
+		...(key.meta ? { meta: true } : {}),
+		...(key.super ? { super: true } : {}),
+		...(key.hyper ? { hyper: true } : {}),
+	};
+}
+
+function toKeyStroke(key: ShortcutKey): KeyStrokeInput {
+	const normalized = normalizeShortcutKey(key);
+	return {
+		name: normalized.key,
+		...(normalized.ctrl ? { ctrl: true } : {}),
+		...(normalized.shift ? { shift: true } : {}),
+		...(normalized.meta ? { meta: true } : {}),
+		...(normalized.super ? { super: true } : {}),
+		...(normalized.hyper ? { hyper: true } : {}),
+	};
+}
+
+const matcherCache = new Map<string, ReturnType<Keymap<typeof keymapTarget>["createKeyMatcher"]>>();
+
+function matcherFor(key: ShortcutKey): ReturnType<Keymap<typeof keymapTarget>["createKeyMatcher"]> {
+	const stroke = toKeyStroke(key);
+	const cacheKey = JSON.stringify(stroke);
+	let matcher = matcherCache.get(cacheKey);
+	if (!matcher) {
+		try {
+			matcher = keymap.createKeyMatcher(stroke);
+		} catch {
+			matcher = (event) => {
+				if (!event || typeof event !== "object" || !("name" in event)) return false;
+				const literalEvent = event as KeyStrokeInput;
+				return (
+					literalEvent.name === stroke.name &&
+					Boolean(literalEvent.ctrl) === Boolean(stroke.ctrl) &&
+					Boolean(literalEvent.shift) === Boolean(stroke.shift) &&
+					Boolean(literalEvent.meta) === Boolean(stroke.meta) &&
+					Boolean(literalEvent.super) === Boolean(stroke.super) &&
+					Boolean(literalEvent.hyper) === Boolean(stroke.hyper)
+				);
+			};
+		}
+		matcherCache.set(cacheKey, matcher);
+	}
+	return matcher;
+}
+
+for (const context of Object.values(uiKeymap)) {
+	for (const keys of Object.values(context)) {
+		for (const key of keys) matcherFor(keyFromCanonical(key));
+	}
 }
 
 function sameKey(left: ShortcutKey, right: ShortcutKey): boolean {
-	const a = normalizedKey(left);
-	const b = normalizedKey(right);
-	return (
-		a.key === b.key &&
-		Boolean(a.ctrl) === Boolean(b.ctrl) &&
-		Boolean(a.shift) === Boolean(b.shift) &&
-		Boolean(a.meta) === Boolean(b.meta) &&
-		Boolean(a.super) === Boolean(b.super) &&
-		Boolean(a.hyper) === Boolean(b.hyper)
-	);
+	return matcherFor(normalizeShortcutKey(left))(toKeyStroke(normalizeShortcutKey(right)));
 }
 
 function isShortcutKey(value: unknown): value is ShortcutKey {
@@ -399,7 +472,7 @@ export function shortcutKeyFromEvent(event: KeyEvent): ShortcutKey | undefined {
 			meta = true;
 		}
 	}
-	return normalizedKey({
+	return normalizeShortcutKey({
 		key,
 		...(event.ctrl ? { ctrl: true } : {}),
 		...(event.shift ? { shift: true } : {}),

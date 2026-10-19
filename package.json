@@ -85,6 +85,7 @@
   ],
   "dependencies": {
     "@opentui/core": "^0.5.14",
+    "@opentui/keymap": "0.5.14",
     "libtmux": "^0.1.0-alpha.12",
     "zod": "^4.6.7"
   }
