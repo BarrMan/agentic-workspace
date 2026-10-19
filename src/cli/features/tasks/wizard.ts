@@ -6,7 +6,7 @@ import { DEFAULT_STATUSES, DRAFT_STATUS, FALLBACK_STATUS } from "../../../model/
 import { normalizeDueDate } from "../../../model/task/due-date.ts";
 import { getPriorityOptions, normalizePriorityValue } from "../../../model/task/priority-config.ts";
 import { getProjectValues, resolveProjectValue } from "../../../model/task/project-config.ts";
-import { statusComparisonKey, statusLookupKey } from "../../../model/task/status.ts";
+import { findCanonicalStatus, statusComparisonKey } from "../../../model/task/status.ts";
 import { getTaskTypeValues, resolveTaskTypeValue } from "../../../model/task/task-type-config.ts";
 import type { Task, TaskCreateInput, TaskUpdateInput } from "../../../model/types.ts";
 import { TASK_FIELD_LABELS } from "../../../renderer/formatters/task-labels.ts";
@@ -69,23 +69,8 @@ const WIZARD_NAVIGATION_KEY = "__wizardNavigation";
 const WIZARD_NAVIGATION_PREVIOUS = "previous";
 const WIZARD_BACKSPACE_NAVIGATION = Symbol("task-wizard-backspace-navigation");
 
-function findCanonicalStatus(input: string, statuses: string[]): string | null {
-	const normalizedInput = statusLookupKey(input);
-	if (!normalizedInput) return null;
-	for (const status of statuses) {
-		if (statusLookupKey(status) === normalizedInput) {
-			return status;
-		}
-	}
-	return null;
-}
-
 function parseListInput(value: string): string[] {
-	const entries = value
-		.split(/,|\r?\n/g)
-		.map((entry) => entry.trim())
-		.filter((entry) => entry.length > 0);
-	return normalizeStringList(entries) ?? [];
+	return normalizeStringList(value.split(/,|\r?\n/g)) ?? [];
 }
 
 function getDefaultCreateStatus(statuses: string[]): string {
@@ -101,7 +86,7 @@ function buildStatusPromptValues(params: { statuses: string[]; mode: "create" | 
 	options: PromptChoice[];
 	initial: string;
 } {
-	const configuredStatuses = normalizeStringList(params.statuses.map((status) => status.trim())) ?? [];
+	const configuredStatuses = normalizeStringList(params.statuses) ?? [];
 	const baseStatuses = configuredStatuses.length > 0 ? configuredStatuses : [...DEFAULT_STATUSES];
 	const hasDraftStatus = baseStatuses.some(
 		(status) => statusComparisonKey(status) === statusComparisonKey(DRAFT_STATUS),

@@ -10,6 +10,32 @@ const profile = getDefaultModeCatalog().profiles.build;
 if (!profile) throw new Error("Missing default build mode profile.");
 
 describe("OpenCode 1.19 TUI adapter", () => {
+	it("quotes bootstrap paths and keeps the built-in command shell-syntax guard", () => {
+		const agent = new OpencodeV1Agent();
+		const quotedPath = `folder with 'quote/bootstrap.md`;
+		const command = "opencode";
+		const safePreset = { command, env: {}, prepare: "", bootstrap: "opencode" as const };
+		expect(agent.launchCommand({ preset: safePreset, bootstrapPath: quotedPath })).toBe(
+			`opencode --prompt "$(cat -- 'folder with '"'"'quote/bootstrap.md')"`,
+		);
+		expect(agent.resumeCommand({ preset: safePreset, nativeSessionId: "ses_resume" })).toBe(
+			"opencode '--session' 'ses_resume'",
+		);
+		expect(agent.askCommand({ preset: safePreset, nativeSessionId: "ses_resume", question: "What next?" })).toContain(
+			"run --session",
+		);
+		for (const invalidPreset of ["opencode; false", "opencode | false", "opencode && false", "opencode\nfalse"]) {
+			const preset = { ...safePreset, command: invalidPreset };
+			const expected =
+				"Built-in agent commands must be an executable with flags, not a shell pipeline or compound command.";
+			expect(() => agent.launchCommand({ preset, bootstrapPath: quotedPath })).toThrow(expected);
+			expect(() => agent.resumeCommand({ preset, nativeSessionId: "ses_resume" })).toThrow(expected);
+			expect(() => agent.askCommand({ preset, nativeSessionId: "ses_resume", question: "What next?" })).toThrow(
+				expected,
+			);
+		}
+	});
+
 	it("launches with --prompt and records its created native session in the task root", async () => {
 		const root = await mkdtemp(join(tmpdir(), "agentic-workspace-opencode-v1-"));
 		try {

@@ -1,11 +1,6 @@
 import { DEFAULT_TASK_TYPES } from "../constants.ts";
 import type { AgenticWorkspaceConfig } from "../types.ts";
-import {
-	matchesConfiguredFilter,
-	normalizeConfiguredValues,
-	resolveConfiguredValue,
-	resolveConfiguredValues,
-} from "./config-values.ts";
+import { normalizeConfiguredValues, resolveConfiguredValue, resolveConfiguredValues } from "./config-values.ts";
 
 type TaskTypeConfig = Pick<AgenticWorkspaceConfig, "types"> | readonly string[] | null | undefined;
 
@@ -30,13 +25,6 @@ export function resolveTaskTypeValues(
 	configOrTypes?: TaskTypeConfig,
 ): { values: string[]; invalid: string[] } {
 	return resolveConfiguredValues(inputs, getTaskTypeValues(configOrTypes));
-}
-
-export function matchesTaskTypeFilter(
-	taskType: string | null | undefined,
-	filter: string | readonly string[] | null | undefined,
-): boolean {
-	return matchesConfiguredFilter(taskType, filter);
 }
 
 export function formatValidTaskTypeValues(configOrTypes?: TaskTypeConfig): string {

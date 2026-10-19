@@ -1,6 +1,6 @@
 /** Generic string-list normalization shared by CLI input and task updates. */
 
-export function normalizeStringList(values: string[] | undefined): string[] | undefined {
+export function normalizeStringList(values: readonly string[] | undefined): string[] | undefined {
 	if (!values) return undefined;
 	const unique = Array.from(new Set(values.map((value) => String(value).trim()).filter((value) => value.length > 0)));
 	return unique.length > 0 ? unique : undefined;
@@ -13,11 +13,7 @@ export function toStringArray(value: unknown): string[] {
 }
 
 export function parseDelimitedStringList(value: unknown): string[] | undefined {
-	const entries = toStringArray(value).flatMap((entry) =>
-		String(entry)
-			.split(",")
-			.map((item) => item.trim()),
-	);
+	const entries = toStringArray(value).flatMap((entry) => entry.split(","));
 	return normalizeStringList(entries);
 }
 

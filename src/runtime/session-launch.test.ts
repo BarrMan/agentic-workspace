@@ -39,14 +39,16 @@ describe("session-local agent launch", () => {
 		const original = agentFor("claude");
 		if (!original) throw new Error("Missing Claude adapter.");
 		const calls: string[] = [];
+		const preparedCommands: string[] = [];
 		const adapter = Object.create(original) as Agent;
 		adapter.sanitizeLaunchPreset = (value) => {
 			calls.push("sanitize");
 			return { ...value, command: "capability-sanitized" };
 		};
 		Object.defineProperty(adapter, "prepareBeforeAsk", { value: true });
-		adapter.prepare = async () => {
+		adapter.prepare = async (request) => {
 			calls.push("prepare");
+			preparedCommands.push(request.preset.command);
 			return { command: "capability-prepared", env: {} };
 		};
 		registerAgent(adapter);
@@ -66,7 +68,9 @@ describe("session-local agent launch", () => {
 			);
 			try {
 				expect(calls).toEqual(["sanitize", "sanitize", "prepare"]);
-				expect(ask.command).toContain("claude");
+				expect(preparedCommands).toEqual(["capability-sanitized"]);
+				expect(ask.command).toContain("capability-sanitized");
+				expect(ask.command).not.toContain("claude");
 			} finally {
 				await ask.cleanup();
 			}
@@ -133,6 +137,18 @@ describe("session-local agent launch", () => {
 				expect(staleClaude.command).not.toContain("--dangerously-skip-permissions");
 			} finally {
 				await staleClaude.cleanup();
+			}
+			const staleAsk = await prepareAgentAsk(
+				{ command: "claude --dangerously-skip-permissions", bootstrap: "claude", env: {}, prepare: "" },
+				"native-ask",
+				"question",
+				defaultProfile,
+				{ repositoryRoot: root, taskRoot: root },
+			);
+			try {
+				expect(staleAsk.command).not.toContain("--dangerously-skip-permissions");
+			} finally {
+				await staleAsk.cleanup();
 			}
 			for (const yolo of [true, false]) {
 				const resumed = await prepareAgentLaunch(

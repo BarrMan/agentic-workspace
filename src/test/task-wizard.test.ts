@@ -7,6 +7,7 @@ import {
 	type TaskWizardPromptRunner,
 } from "../cli/features/tasks/wizard.ts";
 import { prepareTaskCreationInput } from "../controller/task-creation-input.ts";
+import { parseDelimitedStringList } from "../lib/string-list.ts";
 import type { Task } from "../model/types.ts";
 
 type PromptResponses = Record<string, string | string[]>;
@@ -35,6 +36,19 @@ function createPromptRunner(responses: PromptResponses): TaskWizardPromptRunner 
 }
 
 describe("task wizard", () => {
+	it("normalizes generic comma-delimited lists in first-seen order", () => {
+		expect(parseDelimitedStringList(" alpha, beta, alpha, ,gamma ")).toEqual(["alpha", "beta", "gamma"]);
+	});
+
+	it("splits wizard list input on CRLF and preserves first-seen order", async () => {
+		const input = await runTaskCreateWizard({
+			statuses: ["To Do"],
+			promptImpl: createPromptRunner({ title: "CRLF list", labels: "alpha\r\nbeta, alpha" }),
+		});
+
+		expect(input?.labels).toEqual(["alpha", "beta"]);
+	});
+
 	it("builds create input from shared wizard fields", async () => {
 		const prompt = createPromptRunner({
 			title: "Create from wizard",

@@ -12,6 +12,33 @@ const profile = getDefaultModeCatalog().profiles.build;
 if (!profile) throw new Error("Missing default build mode profile.");
 
 describe("OpenCode v2 adapter", () => {
+	test("quotes bootstrap paths and keeps the built-in command shell-syntax guard", () => {
+		const agent = new OpencodeV2Agent();
+		const nativeSessionId = "ses_0123456789abcdef0123456789abcdef";
+		const quotedPath = `folder with 'quote/bootstrap.md`;
+		const expected =
+			"Built-in agent commands must be an executable with flags, not a shell pipeline or compound command.";
+		expect(agent.launchCommand({ preset, bootstrapPath: quotedPath, nativeSessionId })).toBe(
+			`opencode --standalone --session '${nativeSessionId}' --prompt "$(cat -- 'folder with '"'"'quote/bootstrap.md')"`,
+		);
+		expect(agent.resumeCommand({ preset, nativeSessionId })).toBe(
+			`opencode --standalone --session '${nativeSessionId}'`,
+		);
+		expect(agent.askCommand({ preset, nativeSessionId, question: "What next?" })).toContain(
+			"run --standalone --session",
+		);
+		for (const command of ["opencode; false", "opencode | false", "opencode && false", "opencode\nfalse"]) {
+			const invalidPreset = { ...preset, command };
+			expect(() => agent.launchCommand({ preset: invalidPreset, bootstrapPath: quotedPath, nativeSessionId })).toThrow(
+				expected,
+			);
+			expect(() => agent.resumeCommand({ preset: invalidPreset, nativeSessionId })).toThrow(expected);
+			expect(() => agent.askCommand({ preset: invalidPreset, nativeSessionId, question: "What next?" })).toThrow(
+				expected,
+			);
+		}
+	});
+
 	test("uses an exact native session for interactive launch, resume, and ask", async () => {
 		const directory = await mkdtemp(join(tmpdir(), "agentic-workspace-opencode-v2-identity-"));
 		try {

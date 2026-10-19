@@ -32,6 +32,16 @@ export function resolveInProgressStatus(statuses: readonly string[] | undefined)
 	return list.length > 1 ? list[1] : undefined;
 }
 
+/** Synchronous canonical-status lookup over an already resolved status list. */
+export function findCanonicalStatus(input: string, statuses: readonly string[]): string | null {
+	const normalized = statusLookupKey(input);
+	if (!normalized) return null;
+	for (const status of statuses) {
+		if (statusLookupKey(status) === normalized) return status;
+	}
+	return null;
+}
+
 /**
  * Load valid statuses from project configuration.
  */
@@ -58,12 +68,7 @@ export async function getCanonicalStatus(
 ): Promise<string | null> {
 	if (!input) return null;
 	const statuses = allowedStatuses ?? (await getValidStatuses(core));
-	const normalized = statusLookupKey(input);
-	if (!normalized) return null;
-	for (const s of statuses) {
-		if (statusLookupKey(s) === normalized) return s; // preserve configured casing
-	}
-	return null;
+	return findCanonicalStatus(input, statuses);
 }
 
 export async function getCanonicalStatuses(

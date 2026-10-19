@@ -51,9 +51,7 @@ function assignSanitizedList(
 
 function assignTaskLists(updateInput: TaskUpdateInput, args: TaskEditArgs): void {
 	if (typeof args.ordinal === "number") updateInput.ordinal = args.ordinal;
-	const labels = normalizeStringList(args.labels);
-	if (labels) updateInput.labels = labels;
-	else if (args.labels?.length === 0) updateInput.labels = [];
+	assignSanitizedList(updateInput, "labels", args.labels, true);
 	assignSanitizedList(updateInput, "addLabels", args.addLabels);
 	assignSanitizedList(updateInput, "removeLabels", args.removeLabels);
 	if (args.assignee !== undefined) {

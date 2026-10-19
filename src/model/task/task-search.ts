@@ -9,12 +9,11 @@
 
 import type { LabelMatchMode, Task } from "../types.ts";
 import { assigneeComparisonKey } from "./assignee-filter.ts";
+import { matchesConfiguredFilter } from "./config-values.ts";
 import { labelComparisonKey } from "./label-filter.ts";
 import { normalizePriorityValue } from "./priority-config.ts";
-import { matchesProjectFilter } from "./project-config.ts";
 import { statusComparisonKey } from "./status.ts";
 import { taskIdsEqual } from "./task-id.ts";
-import { matchesTaskTypeFilter } from "./task-type-config.ts";
 
 export const NO_MILESTONE_FILTER_VALUE = "\u0000no-milestone";
 
@@ -120,12 +119,12 @@ export class TaskSearchIndex {
 
 		if (options.type) {
 			const types = options.type;
-			checks.push((task) => matchesTaskTypeFilter(task.type, types));
+			checks.push((task) => matchesConfiguredFilter(task.type, types));
 		}
 
 		if (options.project) {
 			const projects = options.project;
-			checks.push((task) => matchesProjectFilter(task.project, projects));
+			checks.push((task) => matchesConfiguredFilter(task.project, projects));
 		}
 
 		const priorities = new Set(

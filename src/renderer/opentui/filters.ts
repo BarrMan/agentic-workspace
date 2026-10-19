@@ -8,6 +8,7 @@ import {
 	TextAttributes,
 	TextRenderable,
 } from "@opentui/core";
+import { normalizeStringList } from "../../lib/string-list.ts";
 import { labelComparisonKey } from "../../model/task/label-filter.ts";
 import type { LabelMatchMode, TaskListFilter } from "../../model/types.ts";
 import {
@@ -120,18 +121,6 @@ function copyFilters(filters: OpenTuiFilterState): OpenTuiFilterState {
 	};
 }
 
-function normalizeValues(values: readonly string[] | undefined): string[] {
-	const seen = new Set<string>();
-	const result: string[] = [];
-	for (const value of values ?? []) {
-		const trimmed = value.trim();
-		if (!trimmed || seen.has(trimmed)) continue;
-		seen.add(trimmed);
-		result.push(trimmed);
-	}
-	return result;
-}
-
 function normalizeLabelValues(values: readonly string[] | undefined): string[] {
 	const seen = new Set<string>();
 	const result: string[] = [];
@@ -148,9 +137,9 @@ function normalizeLabelValues(values: readonly string[] | undefined): string[] {
 function normalizeFilters(filters: Partial<OpenTuiFilterState>): OpenTuiFilterState {
 	return {
 		search: filters.search?.trim() ?? "",
-		status: normalizeValues(filters.status),
-		type: normalizeValues(filters.type),
-		project: normalizeValues(filters.project),
+		status: normalizeStringList(filters.status) ?? [],
+		type: normalizeStringList(filters.type) ?? [],
+		project: normalizeStringList(filters.project) ?? [],
 		priority: filters.priority?.trim() ?? "",
 		labels: normalizeLabelValues(filters.labels),
 		milestone: filters.milestone?.trim() ?? "",
@@ -256,7 +245,9 @@ export function mountOpenTuiFilterEditor(
 	surface.add(help);
 
 	const choicesFor = (field: Exclude<OpenTuiFilterField, "search">): string[] =>
-		field === "labels" ? normalizeLabelValues(options.choices?.labels) : normalizeValues(options.choices?.[field]);
+		field === "labels"
+			? normalizeLabelValues(options.choices?.labels)
+			: (normalizeStringList(options.choices?.[field]) ?? []);
 	const currentChoice = (): string[] => (selecting && selecting !== "search" ? choicesFor(selecting) : []);
 	const updateSearch = (): void => {
 		filters = { ...filters, search: search.plainText.trim() };

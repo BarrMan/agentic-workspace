@@ -6,6 +6,8 @@ import {
 	type Agent,
 	type AgentPreparation,
 	type AskCommandRequest,
+	appendArguments,
+	filePrompt,
 	type LaunchCommandRequest,
 	type LaunchOrigin,
 	type NativeIdentity,
@@ -20,19 +22,6 @@ import {
 import { OPENCODE_CHROME_RULES } from "./chrome-rules.ts";
 import { openCodeBootstrapForVersion } from "./opencode-version.ts";
 import { discoverModels, sanitizeProfilePreset, withExplicitModel } from "./profile.ts";
-
-function appendArguments(command: string, arguments_: string): string {
-	if (/[|;&\n]/.test(command)) {
-		throw new Error(
-			"Built-in agent commands must be an executable with flags, not a shell pipeline or compound command.",
-		);
-	}
-	return `${command} ${arguments_}`;
-}
-
-function filePrompt(bootstrapPath: string): string {
-	return `"$(cat -- ${shellQuote(bootstrapPath)})"`;
-}
 
 function parseOpenCodeConfig(content: string | undefined) {
 	const config: unknown = content ? Bun.JSONC.parse(content) : {};

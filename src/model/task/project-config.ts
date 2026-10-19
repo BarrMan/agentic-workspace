@@ -1,10 +1,5 @@
 import type { AgenticWorkspaceConfig } from "../types.ts";
-import {
-	matchesConfiguredFilter,
-	normalizeConfiguredValues,
-	resolveConfiguredValue,
-	resolveConfiguredValues,
-} from "./config-values.ts";
+import { normalizeConfiguredValues, resolveConfiguredValue, resolveConfiguredValues } from "./config-values.ts";
 
 type ProjectConfig = Pick<AgenticWorkspaceConfig, "projects"> | readonly string[] | null | undefined;
 
@@ -32,13 +27,6 @@ export function resolveProjectValues(
 	configOrProjects?: ProjectConfig,
 ): { values: string[]; invalid: string[] } {
 	return resolveConfiguredValues(inputs, getProjectValues(configOrProjects));
-}
-
-export function matchesProjectFilter(
-	taskProject: string | null | undefined,
-	filter: string | readonly string[] | null | undefined,
-): boolean {
-	return matchesConfiguredFilter(taskProject, filter);
 }
 
 export function formatValidProjectValues(configOrProjects?: ProjectConfig): string {

@@ -11,8 +11,6 @@
 
 import { spawnSync } from "node:child_process";
 
-export type ProcessIdentity = { readonly pid: number; readonly started: string };
-
 export type OwnedProcess = {
 	readonly pid: number;
 	readonly started: string;
@@ -24,6 +22,7 @@ export type ProcessRow = OwnedProcess & { readonly ppid: number; readonly pgid: 
 
 const LSTART =
 	/^(?:Sun|Mon|Tue|Wed|Thu|Fri|Sat)\s+(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+\d{1,2}\s+\d{2}:\d{2}:\d{2}\s+\d{4}$/;
+const normalizeStarted = (started: string): string => started.trim().replace(/\s+/g, " ");
 
 /** Parse a complete `ps` table; one bad row invalidates the observation rather than hiding processes. */
 export const parseProcessTable = (output: string): readonly ProcessRow[] | undefined => {
@@ -36,7 +35,8 @@ export const parseProcessTable = (output: string): readonly ProcessRow[] | undef
 		if (!match) return undefined;
 		const [pid, ppid, pgid, uid] = match.slice(1, 5).map(Number);
 		const stat = match[5];
-		const started = match[6]?.trim();
+		const rawStarted = match[6]?.trim();
+		const started = rawStarted ? normalizeStarted(rawStarted) : undefined;
 		if (
 			![pid, ppid, pgid, uid].every(Number.isSafeInteger) ||
 			pid! <= 0 ||
@@ -45,12 +45,12 @@ export const parseProcessTable = (output: string): readonly ProcessRow[] | undef
 			uid! < -2 ||
 			!stat ||
 			!started ||
-			!LSTART.test(started.replace(/\s+/g, " ")) ||
+			!LSTART.test(started) ||
 			seen.has(pid!)
 		)
 			return undefined;
 		seen.add(pid!);
-		rows.push({ pid: pid!, ppid: ppid!, pgid: pgid!, uid: uid!, stat, started: started.replace(/\s+/g, " ") });
+		rows.push({ pid: pid!, ppid: ppid!, pgid: pgid!, uid: uid!, stat, started });
 	}
 	return rows.length ? rows : undefined;
 };
@@ -67,7 +67,6 @@ export const readProcessTable = (timeoutMs = 2_000): readonly ProcessRow[] | und
 };
 
 const live = (row: ProcessRow): boolean => !row.stat.startsWith("Z");
-const normalizeStarted = (started: string): string => started.trim().replace(/\s+/g, " ");
 const sameOwnedIdentity = (row: ProcessRow | undefined, owner: OwnedProcess): boolean =>
 	!!row && live(row) && normalizeStarted(row.started) === normalizeStarted(owner.started);
 
@@ -243,28 +242,6 @@ export const terminateOwnedDescendants = async (
 	return "survivor";
 };
 
-/** A failed probe is unknown, not death; start time fences PID reuse. */
-export function processIdentity(pid: number): ProcessIdentity | null | undefined {
-	if (!Number.isSafeInteger(pid) || pid <= 1) throw new Error("Invalid app pid.");
-	const result = spawnSync("ps", ["-p", String(pid), "-o", "pid=,stat=,lstart="], {
-		encoding: "utf8",
-		timeout: 2_000,
-		env: { ...process.env, LC_ALL: "C" },
-	});
-	if (result.status === 1 && !result.stdout?.trim() && !result.stderr?.trim()) return null;
-	if (result.status !== 0) return undefined;
-	const match = /^(\d+)\s+(\S+)\s+(.+)$/.exec(result.stdout.trim());
-	if (!match || Number(match[1]) !== pid || !match[3]?.trim()) return undefined;
-	return match[2]?.startsWith("Z") ? null : { pid, started: match[3].trim().replace(/\s+/g, " ") };
-}
-
-export function processIdentityAlive(owner: ProcessIdentity): boolean | undefined {
-	const identity = processIdentity(owner.pid);
-	return identity === undefined
-		? undefined
-		: identity !== null && normalizeStarted(identity.started) === normalizeStarted(owner.started);
-}
-
 /**
  * How long a pane tree may take to honour SIGTERM before it is killed outright.
  *
@@ -359,22 +336,6 @@ const groupMembers = (
 	return observe()
 		?.filter((row) => row.pgid === pgid)
 		.map(({ pid, stat, started }) => ({ pid, stat, started }));
-};
-
-/** The pane's root pid and dead flag, as tmux reports them. */
-export type PaneRootState = { readonly pid: number | undefined; readonly dead: boolean };
-
-/**
- * Parse `display-message -p -t <pane> "#{pane_pid} #{pane_dead}"`.
- *
- * A dead pane still reports its original root pid, and that pid may already have been recycled, so
- * it may be used for liveness only while `dead` is false, and elsewhere only as the *group id* the
- * pane's command owned — see {@link deadPaneGroupState}.
- */
-export const paneRootState = (output: string): PaneRootState => {
-	const [rawPid, rawDead] = output.trim().split(/\s+/);
-	const pid = Number.parseInt(rawPid ?? "", 10);
-	return { pid: Number.isFinite(pid) && pid > 1 ? pid : undefined, dead: rawDead === "1" };
 };
 
 /** Identity of one live member of a pane's group, taken while the pane root was still alive. */

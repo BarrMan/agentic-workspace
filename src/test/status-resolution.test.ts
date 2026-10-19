@@ -1,5 +1,10 @@
 import { describe, expect, it } from "bun:test";
-import { resolveInProgressStatus, statusComparisonKey, statusLookupKey } from "../model/task/status.ts";
+import {
+	findCanonicalStatus,
+	resolveInProgressStatus,
+	statusComparisonKey,
+	statusLookupKey,
+} from "../model/task/status.ts";
 
 describe("status comparison keys", () => {
 	it("trims and lowercases while preserving internal whitespace", () => {
@@ -11,6 +16,11 @@ describe("status comparison keys", () => {
 	it("collapses internal whitespace only for canonical lookup", () => {
 		expect(statusLookupKey("  In Progress ")).toBe("inprogress");
 		expect(statusLookupKey("InProgress")).toBe("inprogress");
+		expect(statusLookupKey("In\tProgress")).toBe("inprogress");
+	});
+
+	it("finds the first configured canonical match", () => {
+		expect(findCanonicalStatus(" in\tprogress ", ["In Progress", "InProgress"])).toBe("In Progress");
 	});
 });
 

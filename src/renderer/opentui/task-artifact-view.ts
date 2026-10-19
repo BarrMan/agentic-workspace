@@ -188,7 +188,7 @@ export class TaskArtifactView {
 		} catch (error) {
 			if (request !== this.request || taskId !== this.taskId || path !== this.selectedPath) return;
 			const message = error instanceof Error ? error.message : String(error);
-			if (/changed since it was reviewed/i.test(message)) {
+			if (message.toLowerCase().includes("changed since it was reviewed")) {
 				this.footer.content =
 					"Artifact changed since review; refreshed current version. Approve current version · Revoke approval";
 				await this.refresh();

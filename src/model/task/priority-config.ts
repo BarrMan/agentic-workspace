@@ -32,7 +32,7 @@ export function getPriorityOptions(
 		const label = String(entry ?? "")
 			.trim()
 			.replace(/\s+/g, " ");
-		const value = normalizePriorityValue(label);
+		const value = label.toLowerCase();
 		if (!value || seen.has(value)) {
 			continue;
 		}

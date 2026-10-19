@@ -664,7 +664,7 @@ export class GitOperations {
 	}
 
 	private normalizeGitPath(pathValue: string): string {
-		return pathValue.replace(/\\/g, "/");
+		return pathValue.replaceAll("\\", "/");
 	}
 }
 

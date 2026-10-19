@@ -23,6 +23,18 @@ describe("Priority functionality", () => {
 			expect(getPriorityRank("very low", config)).toBe(1);
 		});
 
+		it("keeps the first normalized spelling and configured order, falling back when empty", () => {
+			expect(getPriorityOptions(["  Urgent   Work ", "urgent work", "Normal", "  "])).toEqual([
+				{ label: "Urgent Work", value: "urgent work" },
+				{ label: "Normal", value: "normal" },
+			]);
+			expect(getPriorityOptions(["", "   "])).toEqual([
+				{ label: "High", value: "high" },
+				{ label: "Medium", value: "medium" },
+				{ label: "Low", value: "low" },
+			]);
+		});
+
 		it("round-trips configured priorities through config.yml", async () => {
 			const testDir = createUniqueTestDir("priority-config");
 			const filesystem = new FileSystem(testDir);

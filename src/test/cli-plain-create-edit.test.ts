@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { mkdir } from "node:fs/promises";
 import { Writable } from "node:stream";
 import { runCli } from "../cli/register.ts";
+import { buildTaskUpdateInput } from "../cli/task-edit-builder.ts";
 import { Core } from "../index.ts";
 import { coreFileSystem, createUniqueTestDir, initializeFilesystemTestProject, safeCleanup } from "./test-utils.ts";
 
@@ -61,6 +62,12 @@ function $(parts: TemplateStringsArray, ...values: unknown[]) {
 }
 
 describe("CLI task create/edit descriptions", () => {
+	it("distinguishes omitted, explicit empty, and blank-only label lists", () => {
+		expect(buildTaskUpdateInput({})).not.toHaveProperty("labels");
+		expect(buildTaskUpdateInput({ labels: [] }).labels).toEqual([]);
+		expect(buildTaskUpdateInput({ labels: [" "] })).not.toHaveProperty("labels");
+	});
+
 	beforeEach(async () => {
 		TEST_DIR = createUniqueTestDir("test-plain-create-edit");
 		await mkdir(TEST_DIR, { recursive: true });

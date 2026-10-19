@@ -282,7 +282,7 @@ export async function prepareAgentAsk(
 	const directory = await mkdtemp(join(tmpdir(), "agentic-workspace-agent-ask-"));
 	const cleanup = () => rm(directory, { recursive: true, force: true });
 	try {
-		const effective = agent.prepareProfile ? agent.prepareProfile(profile, preflight.preset) : preflight.preset;
+		const effective = preflight.policyPreset;
 		const contextualQuestion = `${profileInstructions(profile, roots.repositoryRoot, roots.taskRoot)}\n\nUser request:\n${question}`;
 		const prepared = agent.prepareBeforeAsk
 			? await (async () => {

@@ -160,6 +160,26 @@ describe("native workspace filters", () => {
 			modal.dispose();
 		}
 	});
+
+	test("normalizes declared string filter lists in first-seen order and treats empty lists as unset", async () => {
+		const setup = await createTestRenderer({ width: 120, height: 40, kittyKeyboard: true });
+		renderers.push(setup);
+		const parent = new BoxRenderable(setup.renderer, { width: "100%", height: "100%" });
+		setup.renderer.root.add(parent);
+		const modal = mountOpenTuiFilterEditor(setup.renderer, parent, {
+			initial: { status: [" Todo ", "Done", "Todo", "  "], type: ["feature", "bug", "feature"] },
+			choices: { status: [" Todo ", "Done", "Todo", "  "] },
+			onApply: () => {},
+		});
+		try {
+			expect(modal.values().status).toEqual(["Todo", "Done"]);
+			expect(modal.values().type).toEqual(["feature", "bug"]);
+			modal.reset();
+			expect(modal.values().status).toEqual([]);
+		} finally {
+			modal.dispose();
+		}
+	});
 });
 
 describe("native shortcut help", () => {

@@ -216,7 +216,7 @@ export function normalizeProjectAgenticWorkspaceDirectory(value: string | null |
 		return null;
 	}
 
-	const slashNormalized = trimmed.replace(/\\/g, "/");
+	const slashNormalized = trimmed.replaceAll("\\", "/");
 	if (slashNormalized.split("/").includes("..")) return null;
 	const normalized = slashNormalized.replace(/\/+$/g, "");
 	if (!normalized || normalized === ".") {

@@ -4,8 +4,6 @@ import {
 	captureOwnedDescendants,
 	type OwnedProcess,
 	parseProcessTable,
-	processIdentity,
-	processIdentityAlive,
 	terminateOwnedDescendants,
 	terminateOwnedProcessGroup,
 } from "./process-tree.ts";
@@ -46,6 +44,8 @@ describe("owned process primitives", () => {
 		for (const output of ["", `${row(10, 1, 10)}\nmalformed`, "12 1 12 501 S", "12 1 12 501 S not-a-start-time"])
 			expect(parseProcessTable(output)).toBeUndefined();
 		expect(table("1 0 0 0 S Mon Sep 23 09:03:11 2026", row(10, 1, 10))).toHaveLength(2);
+		const spaced = parseProcessTable(`12 1 12 501 S ${legacySpacing(started(12))}`);
+		expect(spaced?.[0]?.started).toBe(started(12));
 	});
 
 	it("captures verified descendants, rejects recycled ancestry, and retains UID-changed identities", () => {
@@ -68,9 +68,6 @@ describe("owned process primitives", () => {
 		];
 		const observed = table(row(10, 1, 10), row(11, 10, 11), row(12, 11, 12));
 		expect(captureOwnedDescendants(oldRoot, saved, () => observed)?.map(({ pid }) => pid)).toEqual([11, 12]);
-		const identity = processIdentity(process.pid);
-		expect(identity).toBeDefined();
-		expect(processIdentityAlive({ ...identity!, started: legacySpacing(identity!.started) })).toBe(true);
 	});
 
 	it("treats unknown final probes and UID changes as outstanding, not gone", async () => {

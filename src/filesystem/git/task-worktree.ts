@@ -112,7 +112,7 @@ export async function ensureTaskWorktree(projectRoot: string, task: WorktreeTask
 	const path = taskWorktreePath(projectRoot, task);
 	const branch = taskWorktreeBranch(task.id);
 	let result = await runGit(["worktree", "add", "-b", branch, path], projectRoot);
-	if (result.exitCode !== 0 && /already exists/i.test(result.stderr)) {
+	if (result.exitCode !== 0 && result.stderr.toLowerCase().includes("already exists")) {
 		result = await runGit(["worktree", "add", path, branch], projectRoot);
 	}
 	if (result.exitCode !== 0) {

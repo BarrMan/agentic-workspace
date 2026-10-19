@@ -76,10 +76,6 @@ function applyOptionalOverrides(
 	}
 }
 
-function resolveConfigValue<T>(override: T | undefined, existing: T | undefined, fallback: T): T {
-	return override ?? existing ?? fallback;
-}
-
 export function resolveInitializationConfig(options: InitializeProjectOptions): {
 	config: AgenticWorkspaceConfig;
 	isReInitialization: boolean;
@@ -103,32 +99,13 @@ export function resolveInitializationConfig(options: InitializeProjectOptions): 
 		...(existingConfig ?? {}),
 		projectName: options.projectName,
 		filesystemOnly: effectiveFilesystemOnly || defaults.filesystemOnly,
-		remoteOperations: resolveConfigValue(
-			advancedConfig.remoteOperations,
-			existingConfig?.remoteOperations,
-			defaults.remoteOperations,
-		),
-		bypassGitHooks: resolveConfigValue(
-			advancedConfig.bypassGitHooks,
-			existingConfig?.bypassGitHooks,
-			defaults.bypassGitHooks,
-		),
-		checkActiveBranches: resolveConfigValue(
-			advancedConfig.checkActiveBranches,
-			existingConfig?.checkActiveBranches,
-			defaults.checkActiveBranches,
-		),
-		activeBranchDays: resolveConfigValue(
-			advancedConfig.activeBranchDays,
-			existingConfig?.activeBranchDays,
-			defaults.activeBranchDays,
-		),
-		defaultPort: resolveConfigValue(advancedConfig.defaultPort, existingConfig?.defaultPort, defaults.defaultPort),
-		autoOpenBrowser: resolveConfigValue(
-			advancedConfig.autoOpenBrowser,
-			existingConfig?.autoOpenBrowser,
-			defaults.autoOpenBrowser,
-		),
+		remoteOperations: advancedConfig.remoteOperations ?? existingConfig?.remoteOperations ?? defaults.remoteOperations,
+		bypassGitHooks: advancedConfig.bypassGitHooks ?? existingConfig?.bypassGitHooks ?? defaults.bypassGitHooks,
+		checkActiveBranches:
+			advancedConfig.checkActiveBranches ?? existingConfig?.checkActiveBranches ?? defaults.checkActiveBranches,
+		activeBranchDays: advancedConfig.activeBranchDays ?? existingConfig?.activeBranchDays ?? defaults.activeBranchDays,
+		defaultPort: advancedConfig.defaultPort ?? existingConfig?.defaultPort ?? defaults.defaultPort,
+		autoOpenBrowser: advancedConfig.autoOpenBrowser ?? existingConfig?.autoOpenBrowser ?? defaults.autoOpenBrowser,
 		prefixes: existingConfig?.prefixes ?? freshConfig.prefixes,
 	};
 	applyOptionalOverrides(config, advancedConfig);

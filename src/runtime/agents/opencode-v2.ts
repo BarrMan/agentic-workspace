@@ -14,24 +14,13 @@ import type {
 	SessionIntent,
 	StatusHookInstallOptions,
 } from "./agent.ts";
-import { readinessReceipts, shellQuote } from "./agent.ts";
+import { appendArguments, filePrompt, readinessReceipts, shellQuote } from "./agent.ts";
 import { OPENCODE_CHROME_RULES } from "./chrome-rules.ts";
 import { createOpencodeV2CliPlugin } from "./opencode-v2-cli-plugin.ts";
 import { openCodeBootstrapForVersion } from "./opencode-version.ts";
 import { commandArguments, discoverModels, sanitizeProfilePreset, withExplicitModel } from "./profile.ts";
 
-function appendArguments(command: string, arguments_: string): string {
-	if (/[|;&\n]/.test(command)) {
-		throw new Error(
-			"Built-in agent commands must be an executable with flags, not a shell pipeline or compound command.",
-		);
-	}
-	return `${command} ${arguments_}`;
-}
-
-function filePrompt(bootstrapPath: string): string {
-	return `"$(cat -- ${shellQuote(bootstrapPath)})"`;
-}
+const NATIVE_SESSION_ID = /^ses_[A-Za-z0-9_-]+$/;
 
 function parseCliConfig(content: string | undefined) {
 	let config: unknown;
@@ -98,7 +87,7 @@ async function lookupNativeSession(
 	env: Record<string, string>,
 	sessionId: string,
 ): Promise<string | undefined> {
-	if (!/^ses_[A-Za-z0-9_-]+$/.test(sessionId)) {
+	if (!NATIVE_SESSION_ID.test(sessionId)) {
 		throw new Error("Cannot resume OpenCode v2: saved native session ID is invalid.");
 	}
 	const { exitCode, output } = await runCli(
@@ -173,7 +162,7 @@ export class OpencodeV2Agent implements Agent {
 
 	askCommand({ preset, nativeSessionId, question }: AskCommandRequest): string {
 		if (!nativeSessionId.trim()) throw new Error("Cannot ask OpenCode v2 without its exact native session ID.");
-		if (!/^ses_[A-Za-z0-9_-]+$/.test(nativeSessionId))
+		if (!NATIVE_SESSION_ID.test(nativeSessionId))
 			throw new Error("Cannot ask OpenCode v2 with an invalid native session ID.");
 		const lookup = appendArguments(
 			preset.command,
