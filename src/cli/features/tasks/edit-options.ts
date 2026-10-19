@@ -12,7 +12,6 @@ type ParseResult = { input: TaskUpdateInput } | { error: string; formatForTask?:
 export type TaskEditOptionContext = {
 	core: Core;
 	statuses: () => Promise<string[]>;
-	resolveMilestone: (value: string) => Promise<string>;
 };
 
 async function parseScalarOptions(
@@ -34,7 +33,7 @@ async function parseScalarOptions(
 		return { error: "Cannot use --milestone and --clear-milestone together." };
 	if (options.dueDate !== undefined && options.clearDueDate)
 		return { error: "Cannot use --due-date and --clear-due-date together." };
-	await addMilestoneOption(args, options, context);
+	addMilestoneOption(args, options);
 	addDueDateOption(args, options);
 	if (options.type !== undefined) args.type = String(options.type);
 	if (options.project !== undefined) args.project = String(options.project);
@@ -67,12 +66,8 @@ async function addPriorityOption(
 	args.priority = priority;
 }
 
-async function addMilestoneOption(
-	args: TaskEditArgs,
-	options: Record<string, unknown>,
-	context: TaskEditOptionContext,
-): Promise<void> {
-	if (typeof options.milestone === "string") args.milestone = await context.resolveMilestone(options.milestone);
+function addMilestoneOption(args: TaskEditArgs, options: Record<string, unknown>): void {
+	if (typeof options.milestone === "string") args.milestone = options.milestone;
 	else if (options.clearMilestone) args.milestone = null;
 }
 

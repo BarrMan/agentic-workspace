@@ -1,10 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import {
-	collectAvailableLabels,
-	formatLabelSummary,
-	labelComparisonKey,
-	labelsToLower,
-} from "../model/task/label-filter.ts";
+import { collectAvailableLabels, labelComparisonKey } from "../model/task/label-filter.ts";
 import type { Task } from "../model/types.ts";
 
 describe("label filter utilities", () => {
@@ -49,17 +44,6 @@ describe("label filter utilities", () => {
 
 		expect(collectAvailableLabels([], [composed, decomposed])).toEqual(expected);
 		expect(collectAvailableLabels([], [decomposed, composed])).toEqual(expected);
-	});
-
-	test("formatLabelSummary produces concise summaries", () => {
-		expect(formatLabelSummary([])).toBe("Labels: All");
-		expect(formatLabelSummary(["bug"])).toBe("Labels: bug");
-		expect(formatLabelSummary(["bug", "ui"])).toBe("Labels: bug, ui");
-		expect(formatLabelSummary(["bug", "ui", "infra"])).toBe("Labels: bug, ui +1");
-	});
-
-	test("labelsToLower normalizes labels for filtering", () => {
-		expect(labelsToLower([" Bug ", "UI"])).toEqual(["bug", "ui"]);
 	});
 
 	test("labelComparisonKey trims and lowercases without changing display values", () => {

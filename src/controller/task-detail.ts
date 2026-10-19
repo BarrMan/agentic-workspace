@@ -6,7 +6,7 @@ import {
 import { createReadinessGraph, getTaskReadiness, type TaskReadiness } from "../model/task/readiness.ts";
 import { taskIdsEqual } from "../model/task/task-id.ts";
 import { createTaskRecordIndex } from "../model/task/task-record-index.ts";
-import { TASK_SOURCE, type Task, type TaskSummary } from "../model/types.ts";
+import { TASK_SOURCE, type Task } from "../model/types.ts";
 import type { Core } from "./agentic-workspace.ts";
 
 /**
@@ -55,37 +55,6 @@ export async function loadTaskCorpus(
  * any size stays the size it already was.
  */
 export type TaskListItem = Task & { isReady: boolean };
-
-/** Strip task detail fields before a task crosses the browser collection boundary. */
-export function toTaskSummary(task: TaskListItem | TaskSummary): TaskSummary {
-	return {
-		id: task.id,
-		title: task.title,
-		status: task.status,
-		assignee: task.assignee,
-		reporter: task.reporter,
-		createdDate: task.createdDate,
-		updatedDate: task.updatedDate,
-		dueDate: task.dueDate,
-		labels: task.labels,
-		milestone: task.milestone,
-		dependencies: task.dependencies,
-		references: task.references,
-		documentation: task.documentation,
-		modifiedFiles: task.modifiedFiles,
-		parentTaskId: task.parentTaskId,
-		parentTaskTitle: task.parentTaskTitle,
-		subtasks: task.subtasks,
-		subtaskSummaries: task.subtaskSummaries,
-		priority: task.priority,
-		type: task.type,
-		project: task.project,
-		branch: task.branch,
-		ordinal: task.ordinal,
-		source: task.source,
-		isReady: task.isReady,
-	};
-}
 
 /**
  * A task as a detail read returns it: the stored record plus the relationships derived from the

@@ -86,15 +86,8 @@ export function addHelpSchema(command: Command, schema: HelpSchema): Command {
 }
 
 function includeDraftStatus(statuses: string[]): string[] {
-	const normalizedStatuses = normalizeStatusValues(statuses);
-	const hasDraft = normalizedStatuses.some(
-		(status) => statusComparisonKey(status) === statusComparisonKey(DRAFT_STATUS),
-	);
-	return hasDraft ? normalizedStatuses : [DRAFT_STATUS, ...normalizedStatuses];
-}
-
-function normalizeStatusValues(statuses: string[]): string[] {
-	return statuses.map((status) => status.trim()).filter(Boolean);
+	const hasDraft = statuses.some((status) => statusComparisonKey(status) === statusComparisonKey(DRAFT_STATUS));
+	return hasDraft ? statuses : [DRAFT_STATUS, ...statuses];
 }
 
 function getCliStatusValues(options?: { includeDraft?: boolean }): string[] {
@@ -102,8 +95,7 @@ function getCliStatusValues(options?: { includeDraft?: boolean }): string[] {
 	const config = helpConfig;
 	if (config && config.statuses.length > 0) configuredStatuses = config.statuses;
 
-	const normalizedStatuses = normalizeStatusValues(configuredStatuses);
-	return options?.includeDraft ? includeDraftStatus(normalizedStatuses) : normalizedStatuses;
+	return options?.includeDraft ? includeDraftStatus(configuredStatuses) : configuredStatuses;
 }
 
 function getCliPriorityValues(): string[] {

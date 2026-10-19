@@ -1,60 +1,19 @@
 import { describe, expect, test } from "bun:test";
 import {
-	buildFilenameIdRegex,
-	buildGlobPattern,
 	buildIdRegex,
-	DEFAULT_PREFIX_CONFIG,
 	extractAnyPrefix,
 	extractIdBody,
-	extractIdNumbers,
 	generateNextId,
 	generateNextSubtaskId,
-	getDefaultPrefixConfig,
 	getPrefixForType,
 	getTaskPrefixError,
 	hasPrefix,
 	isReservedTaskPrefix,
-	mergePrefixConfig,
 } from "../model/task/prefix-config.ts";
+import { canonicalTaskIdKey, canonicalTaskIdSegments } from "../model/task/task-id.ts";
 import { type AgenticWorkspaceConfig, EntityType } from "../model/types.ts";
 
 describe("prefix-config", () => {
-	describe("getDefaultPrefixConfig", () => {
-		test("returns default task prefix", () => {
-			const config = getDefaultPrefixConfig();
-			expect(config.task).toBe("task");
-		});
-
-		test("returns a new object each time", () => {
-			const config1 = getDefaultPrefixConfig();
-			const config2 = getDefaultPrefixConfig();
-			expect(config1).not.toBe(config2);
-			expect(config1).toEqual(config2);
-		});
-	});
-
-	describe("mergePrefixConfig", () => {
-		test("returns defaults when no config provided", () => {
-			const config = mergePrefixConfig();
-			expect(config).toEqual(DEFAULT_PREFIX_CONFIG);
-		});
-
-		test("returns defaults when empty object provided", () => {
-			const config = mergePrefixConfig({});
-			expect(config).toEqual(DEFAULT_PREFIX_CONFIG);
-		});
-
-		test("merges partial config with defaults", () => {
-			const config = mergePrefixConfig({ task: "JIRA" });
-			expect(config.task).toBe("JIRA");
-		});
-
-		test("uses custom task value when provided", () => {
-			const config = mergePrefixConfig({ task: "issue" });
-			expect(config.task).toBe("issue");
-		});
-	});
-
 	describe("extractIdBody", () => {
 		test("extracts body from prefixed ID", () => {
 			expect(extractIdBody("task-123", "task")).toBe("123");
@@ -78,38 +37,6 @@ describe("prefix-config", () => {
 		test("works with custom prefixes", () => {
 			expect(extractIdBody("JIRA-789", "JIRA")).toBe("789");
 			expect(extractIdBody("issue-42", "issue")).toBe("42");
-		});
-	});
-
-	describe("extractIdNumbers", () => {
-		test("extracts single number", () => {
-			expect(extractIdNumbers("task-123", "task")).toEqual([123]);
-		});
-
-		test("extracts hierarchical numbers", () => {
-			expect(extractIdNumbers("task-5.2.1", "task")).toEqual([5, 2, 1]);
-			expect(extractIdNumbers("task-10.20.30", "task")).toEqual([10, 20, 30]);
-		});
-
-		test("handles non-numeric body", () => {
-			expect(extractIdNumbers("task-abc", "task")).toEqual([0]);
-		});
-
-		test("handles mixed numeric/non-numeric", () => {
-			// Each segment is parsed independently
-			expect(extractIdNumbers("task-5.abc.3", "task")).toEqual([5, 0, 3]);
-		});
-
-		test("works with custom prefixes", () => {
-			expect(extractIdNumbers("JIRA-456", "JIRA")).toEqual([456]);
-		});
-	});
-
-	describe("buildGlobPattern", () => {
-		test("builds correct glob pattern", () => {
-			expect(buildGlobPattern("task")).toBe("task-*.md");
-			expect(buildGlobPattern("draft")).toBe("draft-*.md");
-			expect(buildGlobPattern("JIRA")).toBe("JIRA-*.md");
 		});
 	});
 
@@ -145,20 +72,6 @@ describe("prefix-config", () => {
 		test("only matches at start of string", () => {
 			const regex = buildIdRegex("task");
 			expect("prefix-task-123".match(regex)).toBeFalsy();
-		});
-	});
-
-	describe("buildFilenameIdRegex", () => {
-		test("extracts ID from filename", () => {
-			const regex = buildFilenameIdRegex("task");
-			const match = "task-123 - Some Title.md".match(regex);
-			expect(match?.[1]).toBe("123");
-		});
-
-		test("handles hierarchical IDs in filenames", () => {
-			const regex = buildFilenameIdRegex("task");
-			const match = "task-5.2 - Subtask Title.md".match(regex);
-			expect(match?.[1]).toBe("5.2");
 		});
 	});
 
@@ -252,6 +165,18 @@ describe("prefix-config", () => {
 					"task",
 				),
 			).toBe("TASK-9007199254740992.1000000000000000000000000000000000000000");
+		});
+	});
+
+	describe("canonical task ID keys", () => {
+		test("canonicalizes numeric segments without losing arbitrary precision", () => {
+			expect(canonicalTaskIdSegments(["000", "09007199254740992"])).toEqual(["0", "9007199254740992"]);
+			expect(canonicalTaskIdSegments(["1", "x"])).toBeNull();
+		});
+
+		test("folds case and leading zeros only for numeric task IDs", () => {
+			expect(canonicalTaskIdKey(" Draft-0005.02 ")).toBe("draft-5.2");
+			expect(canonicalTaskIdKey("Not-An-ID")).toBe("not-an-id");
 		});
 	});
 

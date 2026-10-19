@@ -1,5 +1,3 @@
-import type { Core } from "../../../index.ts";
-
 export const TASK_SORT_FIELDS = ["priority", "id", "ordinal", "newest"];
 export const TASK_SORT_FIELD_LIST = TASK_SORT_FIELDS.join(", ");
 
@@ -19,8 +17,4 @@ export function formatTaskEditError(error: unknown, taskId: string, commandKind 
 		return `${message}\nRun 'agentic-workspace ${commandKind} view ${taskId} --plain' to inspect indexes, or 'agentic-workspace ${commandKind} edit ${taskId} --help' for edit options.`;
 	}
 	return message;
-}
-
-export async function resolveCliMilestoneInput(_core: Core, milestone: string): Promise<string> {
-	return milestone;
 }

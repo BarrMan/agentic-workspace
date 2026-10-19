@@ -1,13 +1,7 @@
+import { comparisonKey } from "../../lib/comparison-key.ts";
 import type { AgenticWorkspaceConfig } from "../types.ts";
 
 type ProjectConfig = Pick<AgenticWorkspaceConfig, "projects"> | readonly string[] | null | undefined;
-
-function normalizeProjectValue(value: string | null | undefined): string | undefined {
-	const normalized = String(value ?? "")
-		.trim()
-		.toLowerCase();
-	return normalized.length > 0 ? normalized : undefined;
-}
 
 /**
  * Unlike task types, projects have no sensible default set. When `projects` is
@@ -23,7 +17,7 @@ export function getProjectValues(configOrProjects?: ProjectConfig): string[] {
 
 	for (const entry of configuredProjects) {
 		const value = String(entry ?? "").trim();
-		const normalized = normalizeProjectValue(value);
+		const normalized = comparisonKey(value);
 		if (!normalized || seen.has(normalized)) {
 			continue;
 		}
@@ -38,11 +32,11 @@ export function resolveProjectValue(
 	value: string | null | undefined,
 	configOrProjects?: ProjectConfig,
 ): string | undefined {
-	const normalized = normalizeProjectValue(value);
+	const normalized = comparisonKey(value);
 	if (!normalized) {
 		return undefined;
 	}
-	return getProjectValues(configOrProjects).find((project) => normalizeProjectValue(project) === normalized);
+	return getProjectValues(configOrProjects).find((project) => comparisonKey(project) === normalized);
 }
 
 export function resolveProjectValues(
@@ -59,7 +53,7 @@ export function resolveProjectValues(
 			invalid.push(input);
 			continue;
 		}
-		const normalized = normalizeProjectValue(canonical);
+		const normalized = comparisonKey(canonical);
 		if (!normalized || seen.has(normalized)) {
 			continue;
 		}
@@ -75,11 +69,11 @@ export function matchesProjectFilter(
 	filter: string | readonly string[] | null | undefined,
 ): boolean {
 	const filters = typeof filter === "string" ? [filter] : (filter ?? []);
-	const allowed = new Set(filters.map(normalizeProjectValue).filter((value): value is string => Boolean(value)));
+	const allowed = new Set(filters.map(comparisonKey).filter((value): value is string => Boolean(value)));
 	if (allowed.size === 0) {
 		return true;
 	}
-	const normalizedTaskProject = normalizeProjectValue(taskProject);
+	const normalizedTaskProject = comparisonKey(taskProject);
 	return normalizedTaskProject ? allowed.has(normalizedTaskProject) : false;
 }
 

@@ -13,10 +13,6 @@ export type DraftIdentityFindings = {
 	drifted: Array<{ path: string; frontmatterId: string; filenameId: string }>;
 };
 
-export function hasDraftIdentityFindings(findings: DraftIdentityFindings): boolean {
-	return findings.duplicates.length > 0 || findings.unreadable.length > 0 || findings.drifted.length > 0;
-}
-
 export function detectDuplicateTaskIds(tasks: Task[]): DuplicateGroup[] {
 	const byId = new Map<string, Task[]>();
 	for (const task of tasks) {
@@ -50,9 +46,4 @@ export function formatDuplicateTaskIdWarning(groups: DuplicateGroup[]): string {
 	}
 	lines.push("Remove the conflicting files, then retry.");
 	return lines.join("\n");
-}
-
-export function formatDuplicateTaskIdSummary(groups: DuplicateGroup[]): string {
-	const ids = groups.map((group) => group.id).join(", ");
-	return `Duplicate task IDs detected: ${ids}. Remove the conflicting files, then retry.`;
 }

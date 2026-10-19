@@ -12,11 +12,6 @@ export function findActiveSession(state: Pick<TaskSessions, "sessions" | "active
 	return findSessionById(state.sessions, state.activeSessionId);
 }
 
-/** Select a mode history without treating any other mode's active pointer as authoritative. */
-export function findModeActiveSession(history: ModeSessionHistory | undefined): AgentSession | undefined {
-	return history ? findSessionById(history.sessions, history.activeSessionId) : undefined;
-}
-
 /** Resolve a session's fixed mode from nested ownership. */
 export function findSessionMode(modes?: Record<ModeId, ModeSessionHistory>, sessionId = ""): ModeId | undefined {
 	if (!modes) return undefined;

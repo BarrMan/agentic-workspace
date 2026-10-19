@@ -1,7 +1,8 @@
+import { comparisonKey } from "../../lib/comparison-key.ts";
 import type { Task } from "../types.ts";
 
 export function labelComparisonKey(label: string): string {
-	return label.trim().toLowerCase();
+	return comparisonKey(label);
 }
 
 function compareCodeUnits(left: string, right: string): number {
@@ -43,42 +44,4 @@ export function collectAvailableLabels(tasks: Task[], configured: string[] = [])
 		const result = compareCodeUnits(leftKey, rightKey);
 		return result !== 0 ? result : compareCodeUnits(left, right);
 	});
-}
-
-/**
- * Build a short, footer-friendly summary for the current label filter selection.
- * Examples:
- * - [] => "Labels: All"
- * - ["bug"] => "Labels: bug"
- * - ["bug", "ui"] => "Labels: bug, ui"
- * - ["bug", "ui", "infra"] => "Labels: bug, ui +1"
- */
-export function formatLabelSummary(selected: string[]): string {
-	if (!selected || selected.length === 0) {
-		return "Labels: All";
-	}
-	if (selected.length === 1) {
-		return `Labels: ${selected[0]}`;
-	}
-	if (selected.length === 2) {
-		return `Labels: ${selected[0]}, ${selected[1]}`;
-	}
-	const remaining = selected.length - 2;
-	return `Labels: ${selected[0]}, ${selected[1]} +${remaining}`;
-}
-
-export function labelsToLower(labels: string[]): string[] {
-	return labels.map(labelComparisonKey).filter((label) => label.length > 0);
-}
-
-export function areLabelSelectionsEqual(left: string[], right: string[]): boolean {
-	const normalizedLeft = labelsToLower(left);
-	const normalizedRight = labelsToLower(right);
-
-	if (normalizedLeft.length !== normalizedRight.length) {
-		return false;
-	}
-
-	const leftLabels = new Set(normalizedLeft);
-	return normalizedRight.every((label) => leftLabels.has(label));
 }

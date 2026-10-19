@@ -3,7 +3,6 @@ import { existsSync } from "node:fs";
 import { mkdir, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { Core } from "../controller/agentic-workspace.ts";
-import { getTaskPath } from "../model/task/task-path.ts";
 import type { Task } from "../model/types.ts";
 import { BunRunner } from "../runtime/session-process.ts";
 import { AgentSessionService, type ProcessRunner, type TmuxServer } from "../runtime/sessions.ts";
@@ -62,7 +61,7 @@ describe("Permanent task deletion", () => {
 		core = new Core(testDir);
 		await initializeFilesystemTestProject(core, "Delete task");
 		const { task } = await core.createTaskFromInput({ title: "Delete me" });
-		const taskPath = task.filePath ?? (await getTaskPath(task.id, core));
+		const taskPath = task.filePath ?? (await core.findTaskRecordPath(task.id));
 		expect(taskPath).toBeTruthy();
 		expect(existsSync(taskPath as string)).toBe(true);
 
@@ -208,7 +207,7 @@ describe("Permanent task deletion", () => {
 		});
 		const providerData = join(testDir, "provider-conversation.json");
 		await Bun.write(providerData, "preserve provider data\n");
-		const taskPath = task.filePath ?? (await getTaskPath(task.id, core));
+		const taskPath = task.filePath ?? (await core.findTaskRecordPath(task.id));
 		if (!taskPath) throw new Error("Expected deleted task path.");
 
 		await expect(core.deleteTask(task.id)).rejects.toThrow("expected exactly one pane");
@@ -284,7 +283,7 @@ describe("Permanent task deletion", () => {
 		core = new Core(testDir);
 		await initializeFilesystemTestProject(core, "Delete task");
 		const { task } = await core.createTaskFromInput({ title: "Await cleanup" });
-		const taskPath = task.filePath ?? (await getTaskPath(task.id, core));
+		const taskPath = task.filePath ?? (await core.findTaskRecordPath(task.id));
 		const { promise, resolve } = Promise.withResolvers<void>();
 		let cleanupStarted = false;
 		core.sessions.forgetTaskSessions = async () => {

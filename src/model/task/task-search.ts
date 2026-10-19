@@ -10,14 +10,13 @@
 import type { LabelMatchMode, Task } from "../types.ts";
 import { assigneeComparisonKey } from "./assignee-filter.ts";
 import { labelComparisonKey } from "./label-filter.ts";
-import { createMilestoneFilterMatcher, NO_MILESTONE_FILTER_VALUE } from "./milestone-filter.ts";
-import { matchesModifiedFileFilters, normalizeModifiedFileFilters } from "./modified-files.ts";
 import { normalizePriorityValue } from "./priority-config.ts";
 import { matchesProjectFilter } from "./project-config.ts";
-import { normalizeStatusSet, statusMatchesSet } from "./status-filter.ts";
+import { statusComparisonKey } from "./status.ts";
 import { taskIdsEqual } from "./task-id.ts";
-import { createTaskIdSearchVariants } from "./task-id-search.ts";
 import { matchesTaskTypeFilter } from "./task-type-config.ts";
+
+export const NO_MILESTONE_FILTER_VALUE = "\u0000no-milestone";
 
 /** The task fields the shared search configuration indexes. */
 export interface TaskSearchFields {
@@ -181,6 +180,39 @@ function toList(value: string | string[] | undefined): string[] {
 	return values.map((item) => item.trim()).filter((item) => item.length > 0);
 }
 
+function createTaskIdSearchVariants(id: string): string[] {
+	const lowerId = id.toLowerCase();
+	return id === lowerId ? [id] : [id, lowerId];
+}
+
+function normalizeStatusSet(values: string | string[] | undefined): Set<string> {
+	const list = Array.isArray(values) ? values : values ? [values] : [];
+	return new Set(list.map(statusComparisonKey).filter((value) => value.length > 0));
+}
+
+function statusMatchesSet(wanted: Set<string>, status: string | null | undefined): boolean {
+	return wanted.has(statusComparisonKey(status));
+}
+
+function normalizeModifiedFileFilters(value?: string | string[]): string[] | undefined {
+	if (!value) return undefined;
+
+	const values = Array.isArray(value) ? value : [value];
+	const normalized = values.map((item) => item.trim().toLowerCase()).filter((item) => item.length > 0);
+	return normalized.length > 0 ? normalized : undefined;
+}
+
+function matchesModifiedFileFilters(
+	modifiedFiles: readonly string[] | undefined,
+	filters: readonly string[] | undefined,
+): boolean {
+	if (!filters || filters.length === 0) return true;
+	if (!modifiedFiles || modifiedFiles.length === 0) return false;
+
+	const filePaths = modifiedFiles.map((file) => file.trim().toLowerCase()).filter((file) => file.length > 0);
+	return filters.some((filter) => filePaths.some((file) => file.includes(filter)));
+}
+
 function addSetCheck(
 	checks: Array<(task: Task) => boolean>,
 	values: Set<string>,
@@ -196,6 +228,5 @@ function addMilestoneCheck(checks: Array<(task: Task) => boolean>, options: Task
 		checks.push((task) => !task.milestone?.trim());
 		return;
 	}
-	const matchesMilestone = createMilestoneFilterMatcher(options.milestone as string);
-	checks.push((task) => matchesMilestone(task.milestone ?? ""));
+	checks.push((task) => (task.milestone ?? "") === options.milestone);
 }

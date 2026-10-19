@@ -1,10 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import type { Task } from "../model/types.ts";
-import {
-	changedTaskFields,
-	createWorkspaceDraft,
-	taskWithWorkspaceDraft,
-} from "../renderer/opentui/workspace/model/drafts.ts";
+import { changedTaskFields, createWorkspaceDraft } from "../renderer/opentui/workspace/model/drafts.ts";
 
 const task = (id: string, status: string): Task => ({
 	id,
@@ -34,23 +30,5 @@ describe("agent workspace model", () => {
 		draft.values.description = "mine";
 		expect(changedTaskFields(draft, original)).toEqual({ description: "mine" });
 		expect(() => changedTaskFields(draft, { ...original, description: "theirs" })).toThrow("description changed");
-	});
-
-	it("renders workspace drafts without mutating the selected task", () => {
-		const original = {
-			...task("BACK-1", "To Do"),
-			title: "Saved",
-			description: "saved",
-			type: "bug",
-			priority: "low",
-		};
-		const draft = createWorkspaceDraft(original);
-		draft.values.title = "Draft";
-		draft.values.description = "draft";
-		draft.values.type = "feature";
-		draft.values.priority = "high";
-		const rendered = taskWithWorkspaceDraft(original, draft);
-		expect(rendered).toMatchObject({ title: "Draft", description: "draft", type: "feature", priority: "high" });
-		expect(original.title).toBe("Saved");
 	});
 });

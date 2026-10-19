@@ -3,18 +3,12 @@ import { normalizeAssignees } from "../model/task/assignee-filter.ts";
 import type { TaskUpdateInput } from "../model/types.ts";
 import type { TaskEditArgs } from "./task-edit-args.ts";
 
-function sanitizeStringArray(values: string[] | undefined): string[] | undefined {
-	if (!values) return undefined;
-	const trimmed = values.map((value) => String(value).trim()).filter((value) => value.length > 0);
-	return trimmed.length > 0 ? trimmed : undefined;
-}
-
 /**
  * Resolve a clearable list field: blank-only values are a no-op, an explicit empty array clears the list.
  */
 function sanitizeClearableStringArray(values: string[] | undefined): string[] | undefined {
 	if (values === undefined) return undefined;
-	return sanitizeStringArray(values) ?? (values.length === 0 ? [] : undefined);
+	return normalizeStringList(values) ?? (values.length === 0 ? [] : undefined);
 }
 
 function assignStringFields(updateInput: TaskUpdateInput, args: TaskEditArgs): void {
@@ -51,7 +45,7 @@ function assignSanitizedList(
 	values: string[] | undefined,
 	clearable = false,
 ): void {
-	const sanitized = clearable ? sanitizeClearableStringArray(values) : sanitizeStringArray(values);
+	const sanitized = clearable ? sanitizeClearableStringArray(values) : normalizeStringList(values);
 	if (sanitized) updateInput[field] = sanitized;
 }
 

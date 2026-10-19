@@ -1,5 +1,13 @@
+import { escapeRegex } from "../../lib/regex.ts";
 import { type AgenticWorkspaceConfig, EntityType, type PrefixConfig } from "../types.ts";
-import { isNumericTaskIdSegment, parseTaskId, taskIdBody, taskIdKey, taskIdRegex } from "./task-id.ts";
+import {
+	canonicalTaskIdSegments,
+	isNumericTaskIdSegment,
+	parseTaskId,
+	taskIdBody,
+	taskIdKey,
+	taskIdRegex,
+} from "./task-id.ts";
 
 /**
  * Default prefix configuration for tasks.
@@ -48,27 +56,6 @@ export function getTaskPrefixError(prefix: string): string | undefined {
 }
 
 /**
- * Returns the default prefix configuration.
- * Use this when no custom config is specified.
- */
-export function getDefaultPrefixConfig(): PrefixConfig {
-	return { ...DEFAULT_PREFIX_CONFIG };
-}
-
-/**
- * Merges user-provided prefix config with defaults.
- * Missing fields are filled with default values.
- *
- * @param config - Partial prefix config from user
- * @returns Complete prefix config with defaults applied
- */
-export function mergePrefixConfig(config?: Partial<PrefixConfig>): PrefixConfig {
-	return {
-		task: config?.task ?? DEFAULT_PREFIX_CONFIG.task,
-	};
-}
-
-/**
  * Extracts the numeric/body part from an ID, removing the prefix.
  * Returns the body portion that follows the prefix.
  *
@@ -84,42 +71,6 @@ export function mergePrefixConfig(config?: Partial<PrefixConfig>): PrefixConfig 
 export function extractIdBody(id: string, prefix: string): string {
 	const trimmed = id.trim();
 	return taskIdBody(trimmed, prefix) ?? trimmed;
-}
-
-/**
- * Extracts the numeric parts from an ID as an array of numbers.
- * Handles both simple IDs (task-5) and hierarchical IDs (task-5.2.1).
- *
- * @param id - The ID to parse (e.g., "task-123", "task-5.2.1")
- * @param prefix - The prefix to strip (e.g., "task")
- * @returns Array of numeric segments, or [0] if unparseable
- *
- * @example
- * extractIdNumbers("task-123", "task") // => [123]
- * extractIdNumbers("task-5.2.1", "task") // => [5, 2, 1]
- * extractIdNumbers("task-abc", "task") // => [0]
- */
-export function extractIdNumbers(id: string, prefix: string): number[] {
-	const body = extractIdBody(id, prefix);
-	const segments = body.split(".").map((seg) => {
-		const num = Number.parseInt(seg, 10);
-		return Number.isNaN(num) ? 0 : num;
-	});
-	return segments.length > 0 ? segments : [0];
-}
-
-/**
- * Builds a glob pattern for finding files with a specific prefix.
- *
- * @param prefix - The prefix to match (e.g., "task", "draft")
- * @returns Glob pattern (e.g., "task-*.md")
- *
- * @example
- * buildGlobPattern("task") // => "task-*.md"
- * buildGlobPattern("JIRA") // => "JIRA-*.md"
- */
-export function buildGlobPattern(prefix: string): string {
-	return `${prefix}-*.md`;
 }
 
 /**
@@ -139,21 +90,6 @@ export function buildIdRegex(prefix: string): RegExp {
 }
 
 /**
- * Builds a regex pattern for extracting IDs from filenames.
- * Similar to buildIdRegex but designed for filename parsing.
- *
- * @param prefix - The prefix to match (e.g., "task", "draft")
- * @returns RegExp for filename matching
- *
- * @example
- * const regex = buildFilenameIdRegex("task");
- * "task-123 - Some Title.md".match(regex) // => ["task-123", "123"]
- */
-export function buildFilenameIdRegex(prefix: string): RegExp {
-	return taskIdRegex(prefix);
-}
-
-/**
  * Checks if an ID matches a given prefix pattern.
  *
  * @param id - The ID to check
@@ -168,25 +104,6 @@ export function buildFilenameIdRegex(prefix: string): RegExp {
 export function hasPrefix(id: string, prefix: string): boolean {
 	const pattern = new RegExp(`^${escapeRegex(prefix)}-`, "i");
 	return pattern.test(id.trim());
-}
-
-/**
- * Checks if an ID has any valid prefix pattern (letters followed by dash).
- * Use this for filtering/validation when you want to accept any prefix.
- *
- * @param id - The ID to check
- * @returns true if the ID matches the pattern: letters-dash-something
- *
- * @example
- * hasAnyPrefix("task-123") // => true
- * hasAnyPrefix("JIRA-456") // => true
- * hasAnyPrefix("draft-1") // => true
- * hasAnyPrefix("123") // => false
- * hasAnyPrefix("") // => false
- */
-export function hasAnyPrefix(id: string): boolean {
-	if (!id || typeof id !== "string") return false;
-	return /^[a-zA-Z]+-\S/.test(id.trim());
 }
 
 /**
@@ -268,7 +185,7 @@ export function generateNextSubtaskId(
 	const normalizedParent = hasPrefix(parentKey, prefix) ? parentKey : `${prefix.toUpperCase()}-${parentKey}`;
 	const parentBody = extractIdBody(normalizedParent, prefix);
 	const parentSegments = parentBody.split(".");
-	const canonicalParentSegments = canonicalizeNumericSegments(parentSegments);
+	const canonicalParentSegments = canonicalTaskIdSegments(parentSegments);
 
 	let max = 0n;
 
@@ -299,7 +216,7 @@ function subtaskSequenceNumber(
 	if (
 		!subtaskParentMatches(
 			canonicalParentSegments,
-			canonicalizeNumericSegments(candidateParentSegments),
+			canonicalTaskIdSegments(candidateParentSegments),
 			candidateParentSegments,
 			parentBody,
 		)
@@ -307,11 +224,6 @@ function subtaskSequenceNumber(
 		return null;
 	const sequence = bodySegments[parentSegments.length];
 	return sequence && isNumericTaskIdSegment(sequence) ? BigInt(sequence) : null;
-}
-
-function canonicalizeNumericSegments(segments: string[]): string[] | null {
-	if (!segments.every(isNumericTaskIdSegment)) return null;
-	return segments.map((segment) => segment.replace(/^0+/, "") || "0");
 }
 
 function subtaskParentMatches(
@@ -323,21 +235,6 @@ function subtaskParentMatches(
 	if (canonicalParent && canonicalCandidate)
 		return canonicalParent.every((segment, index) => segment === canonicalCandidate[index]);
 	return candidateSegments.join(".").toLowerCase() === parentBody.toLowerCase();
-}
-
-/**
- * Escapes special regex characters in a string.
- * Used to safely build regex patterns from user-provided prefixes.
- *
- * @param str - The string to escape
- * @returns String with regex special characters escaped
- *
- * @example
- * escapeRegex("task-") // => "task-"
- * escapeRegex("JIRA.") // => "JIRA\\."
- */
-export function escapeRegex(str: string): string {
-	return str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 /**

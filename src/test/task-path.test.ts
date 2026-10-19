@@ -3,7 +3,6 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { Core } from "../controller/agentic-workspace.ts";
 import { taskIdsEqual } from "../model/task/task-id.ts";
-import { getTaskPath } from "../model/task/task-path.ts";
 import type { Task } from "../model/types.ts";
 import { serializeTask } from "../storage/markdown/serializer.ts";
 import { coreFileSystem, createUniqueTestDir, initializeFilesystemTestProject, safeCleanup } from "./test-utils.ts";
@@ -47,32 +46,38 @@ describe("Task path utilities", () => {
 	});
 
 	it("constructs a path from an exact prefixed ID", async () => {
-		expect(await getTaskPath("TASK-123", core)).toBe(join(coreFileSystem(core).tasksDir, "task-123", "task.md"));
-		expect(await getTaskPath("TASK-3.01", core)).toBe(join(coreFileSystem(core).tasksDir, "task-3.01", "task.md"));
+		expect(await core.findTaskRecordPath("TASK-123")).toBe(join(coreFileSystem(core).tasksDir, "task-123", "task.md"));
+		expect(await core.findTaskRecordPath("TASK-3.01")).toBe(
+			join(coreFileSystem(core).tasksDir, "task-3.01", "task.md"),
+		);
 	});
 
 	it("resolves case and surrounding-whitespace variants to the canonical container", async () => {
-		expect(await getTaskPath(" task-123 ", core)).toBe(join(coreFileSystem(core).tasksDir, "task-123", "task.md"));
-		expect(await getTaskPath(" Task-3.01 ", core)).toBe(join(coreFileSystem(core).tasksDir, "task-3.01", "task.md"));
+		expect(await core.findTaskRecordPath(" task-123 ")).toBe(
+			join(coreFileSystem(core).tasksDir, "task-123", "task.md"),
+		);
+		expect(await core.findTaskRecordPath(" Task-3.01 ")).toBe(
+			join(coreFileSystem(core).tasksDir, "task-3.01", "task.md"),
+		);
 	});
 
 	it("does not infer a prefix or discard padding", async () => {
-		expect(await getTaskPath("123", core)).toBeNull();
-		expect(await getTaskPath("TASK-1", core)).toBeNull();
-		expect(await getTaskPath("TASK-01", core)).toBeNull();
-		expect(await getTaskPath("TASK-123x", core)).toBeNull();
+		expect(await core.findTaskRecordPath("123")).toBeNull();
+		expect(await core.findTaskRecordPath("TASK-1")).toBeNull();
+		expect(await core.findTaskRecordPath("TASK-01")).toBeNull();
+		expect(await core.findTaskRecordPath("TASK-123x")).toBeNull();
 	});
 
 	it("does not search other containers for a case-variant ID", async () => {
 		await writeTaskContainer(coreFileSystem(core).tasksDir, "BACK-12", "Variant");
-		expect(await getTaskPath("BACK-12", core)).toBe(join(coreFileSystem(core).tasksDir, "back-12", "task.md"));
+		expect(await core.findTaskRecordPath("BACK-12")).toBe(join(coreFileSystem(core).tasksDir, "back-12", "task.md"));
 	});
 
 	it("ignores flat task records", async () => {
 		const flatPath = join(coreFileSystem(core).tasksDir, "task-999 - Exact.md");
 		await writeFile(flatPath, "# Exact");
 		expect((await coreFileSystem(core).listTasks()).some((task) => task.id === "TASK-999")).toBe(false);
-		expect(await getTaskPath("TASK-999", core)).toBeNull();
+		expect(await core.findTaskRecordPath("TASK-999")).toBeNull();
 		expect(await Bun.file(flatPath).text()).toBe("# Exact");
 	});
 });

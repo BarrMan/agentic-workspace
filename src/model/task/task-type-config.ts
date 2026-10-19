@@ -1,14 +1,8 @@
+import { comparisonKey } from "../../lib/comparison-key.ts";
 import { DEFAULT_TASK_TYPES } from "../constants.ts";
 import type { AgenticWorkspaceConfig } from "../types.ts";
 
 type TaskTypeConfig = Pick<AgenticWorkspaceConfig, "types"> | readonly string[] | null | undefined;
-
-function normalizeTaskTypeValue(value: string | null | undefined): string | undefined {
-	const normalized = String(value ?? "")
-		.trim()
-		.toLowerCase();
-	return normalized.length > 0 ? normalized : undefined;
-}
 
 export function getTaskTypeValues(configOrTypes?: TaskTypeConfig): string[] {
 	const configuredTypes: readonly string[] = Array.isArray(configOrTypes)
@@ -19,7 +13,7 @@ export function getTaskTypeValues(configOrTypes?: TaskTypeConfig): string[] {
 
 	for (const entry of configuredTypes) {
 		const value = String(entry ?? "").trim();
-		const normalized = normalizeTaskTypeValue(value);
+		const normalized = comparisonKey(value);
 		if (!normalized || seen.has(normalized)) {
 			continue;
 		}
@@ -34,11 +28,11 @@ export function resolveTaskTypeValue(
 	value: string | null | undefined,
 	configOrTypes?: TaskTypeConfig,
 ): string | undefined {
-	const normalized = normalizeTaskTypeValue(value);
+	const normalized = comparisonKey(value);
 	if (!normalized) {
 		return undefined;
 	}
-	return getTaskTypeValues(configOrTypes).find((type) => normalizeTaskTypeValue(type) === normalized);
+	return getTaskTypeValues(configOrTypes).find((type) => comparisonKey(type) === normalized);
 }
 
 export function resolveTaskTypeValues(
@@ -55,7 +49,7 @@ export function resolveTaskTypeValues(
 			invalid.push(input);
 			continue;
 		}
-		const normalized = normalizeTaskTypeValue(canonical);
+		const normalized = comparisonKey(canonical);
 		if (!normalized || seen.has(normalized)) {
 			continue;
 		}
@@ -71,11 +65,11 @@ export function matchesTaskTypeFilter(
 	filter: string | readonly string[] | null | undefined,
 ): boolean {
 	const filters = typeof filter === "string" ? [filter] : (filter ?? []);
-	const allowed = new Set(filters.map(normalizeTaskTypeValue).filter((value): value is string => Boolean(value)));
+	const allowed = new Set(filters.map(comparisonKey).filter((value): value is string => Boolean(value)));
 	if (allowed.size === 0) {
 		return true;
 	}
-	const normalizedTaskType = normalizeTaskTypeValue(taskType);
+	const normalizedTaskType = comparisonKey(taskType);
 	return normalizedTaskType ? allowed.has(normalizedTaskType) : false;
 }
 

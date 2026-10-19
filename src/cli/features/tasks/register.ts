@@ -32,12 +32,7 @@ import {
 import { parseTaskListRequest } from "./list-parse.ts";
 import { queryTaskList } from "./list-query.ts";
 import { formatTaskListRow, groupTaskListByStatus, printTaskListGroupedByStatus } from "./list-render.ts";
-import {
-	formatTaskEditError,
-	printMissingRequiredArgument,
-	resolveCliMilestoneInput,
-	TASK_SORT_FIELDS,
-} from "./policies.ts";
+import { formatTaskEditError, printMissingRequiredArgument, TASK_SORT_FIELDS } from "./policies.ts";
 
 export type TaskRuntime = {
 	runtime: CliRuntime;
@@ -195,7 +190,6 @@ export function registerTaskCommands(program: Command, { runtime, readOutput }: 
 		isPlainRequested: (options: { plain?: boolean }) => isPlainRequested(options, readOutput),
 		printMissingRequiredArgument,
 		formatError: formatTaskEditError,
-		resolveMilestone: resolveCliMilestoneInput,
 	};
 	const taskEditCommand = addHelpSchema(taskCmd.command("edit <taskId>"), {
 		required: [

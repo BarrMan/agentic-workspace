@@ -1,16 +1,13 @@
-import { isAbsolute } from "node:path";
 import * as clack from "@clack/prompts";
-import type { Command, OptionValues } from "commander";
+import type { OptionValues } from "commander";
 import { loadTaskDetail } from "../../../controller/task-detail.ts";
 import type { Core } from "../../../index.ts";
-import { DRAFT_STATUS } from "../../../model/constants.ts";
-import { AmbiguousIdError } from "../../../model/errors/entity-id.ts";
+import { normalizeStringList } from "../../../lib/string-list.ts";
 import { getValidStatuses } from "../../../model/task/status.ts";
-import { taskIdKey } from "../../../model/task/task-id.ts";
 import { LOCAL_TASK_LOOKUP_HINT } from "../../../model/task/task-path.ts";
 import type { Task, TaskUpdateInput } from "../../../model/types.ts";
 import { formatTaskPlainText } from "../../../renderer/formatters/task-plain-text.ts";
-import { addEditFieldOptions, hasEditFieldFlags } from "../task/edit-fields.ts";
+import { hasEditFieldFlags } from "../task/edit-fields.ts";
 import { parseTaskEditOptions } from "./edit-options.ts";
 import { pickTaskForEditWizard, runTaskEditWizard } from "./wizard.ts";
 
@@ -31,7 +28,6 @@ export type EditRuntime = {
 	isPlainRequested: (options: { plain?: boolean }) => boolean;
 	printMissingRequiredArgument: (argumentName: string) => void;
 	formatError: (error: unknown, taskId: string, commandKind?: string) => string;
-	resolveMilestone: (core: Core, value: string) => Promise<string>;
 };
 
 const PER_TASK_ONLY_EDIT_FLAGS: ReadonlyArray<{ option: string; flag: string }> = [
@@ -60,45 +56,6 @@ const taskEditTarget: EditCommandTarget = {
 	update: (core, existing, input) => core.editTask(existing.id, input, { includeCrossBranch: false }),
 	notFoundMessage: (id) => `Task ${id} not found. ${LOCAL_TASK_LOOKUP_HINT}`,
 };
-
-const draftEditTarget: EditCommandTarget = {
-	label: DRAFT_STATUS,
-	pluralLabel: "drafts",
-	statuses: async () => [DRAFT_STATUS],
-	async resolve(core, idOrSelectedPath) {
-		if (isAbsolute(idOrSelectedPath)) {
-			const direct = await core.draftReferenceFromPath(idOrSelectedPath);
-			const resolved = await core.resolveDraftReference(direct.canonicalId);
-			if (!resolved || resolved.filePath !== idOrSelectedPath)
-				throw new AmbiguousIdError(
-					"Draft",
-					taskIdKey(direct.canonicalId),
-					[idOrSelectedPath],
-					"Rename one file to a distinct numeric id, then make its frontmatter agree.",
-				);
-			return { ...resolved.task, id: resolved.canonicalId, filePath: resolved.filePath };
-		}
-		const reference = await core.resolveDraftReference(idOrSelectedPath);
-		return reference ? { ...reference.task, id: reference.canonicalId, filePath: reference.filePath } : null;
-	},
-	listCandidates: (core) => core.listHealthyDrafts(),
-	selectionValue: (candidate) => candidate.filePath ?? candidate.id,
-	update: (core, existing, input) => {
-		if (!existing.filePath) throw new Error(`Cannot update draft ${existing.id} without its file path.`);
-		return core.updateDraftFromInput({ filePath: existing.filePath, canonicalId: existing.id }, input);
-	},
-	notFoundMessage: (id) => `Draft ${id} not found.`,
-};
-
-function normalizeEditRequestIds(requestedIds: string[] | undefined): string[] {
-	const taskIds: string[] = [];
-	for (const value of requestedIds ?? []) {
-		const trimmed = String(value).trim();
-		if (!trimmed || taskIds.includes(trimmed)) continue;
-		taskIds.push(trimmed);
-	}
-	return taskIds;
-}
 
 async function runEditWizard(
 	target: EditCommandTarget,
@@ -180,7 +137,7 @@ async function runEdits(
 	options: OptionValues,
 	runtime: EditRuntime,
 ): Promise<void> {
-	const taskIds = normalizeEditRequestIds(requestedIds);
+	const taskIds = normalizeStringList(requestedIds) ?? [];
 	const taskId = taskIds[0];
 	const shouldUseWizard = runtime.hasInteractiveTTY && !hasEditFieldFlags(options);
 	if (!shouldUseWizard && !taskId) return runtime.printMissingRequiredArgument("taskId");
@@ -197,7 +154,6 @@ async function runEdits(
 	const parsed = await parseTaskEditOptions(options, {
 		core,
 		statuses: () => target.statuses(core),
-		resolveMilestone: (value) => runtime.resolveMilestone(core, value),
 	});
 	if ("error" in parsed) {
 		console.error(
@@ -229,20 +185,10 @@ async function runEdits(
 	if (editFailures.length > 0) process.exitCode = 1;
 }
 
-export function addTaskEditOptions(command: Command): Command {
-	return addEditFieldOptions(command);
-}
 export function runTaskEdit(
 	requestedIds: string[] | undefined,
 	options: OptionValues,
 	runtime: EditRuntime,
 ): Promise<void> {
 	return runEdits(taskEditTarget, requestedIds, options, runtime);
-}
-export function runDraftEdit(
-	requestedIds: string[] | undefined,
-	options: OptionValues,
-	runtime: EditRuntime,
-): Promise<void> {
-	return runEdits(draftEditTarget, requestedIds, options, runtime);
 }

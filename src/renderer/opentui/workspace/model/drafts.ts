@@ -22,18 +22,6 @@ export function createWorkspaceDraft(task: Task): WorkspaceDraft {
 	return { values: { ...values }, baseline: values, cursor: {} };
 }
 
-/** Applies in-pane edits without changing the task retained by the workspace selection. */
-export function taskWithWorkspaceDraft(task: Task, draft?: WorkspaceDraft): Task {
-	if (!draft) return task;
-	return {
-		...task,
-		title: draft.values.title,
-		description: draft.values.description,
-		type: draft.values.type || undefined,
-		priority: draft.values.priority || undefined,
-	};
-}
-
 export function changedTaskFields(draft: WorkspaceDraft, latest: Task): Partial<Record<DraftField, string>> {
 	const latestValues = taskFieldValues(latest);
 	const changed: Partial<Record<DraftField, string>> = {};

@@ -1,3 +1,4 @@
+import { comparisonKey } from "../../lib/comparison-key.ts";
 import { DEFAULT_IN_PROGRESS_STATUS, DEFAULT_STATUSES } from "../constants.ts";
 
 type StatusConfigReader = { getStoredConfig(): Promise<{ statuses?: string[] } | null> };
@@ -7,7 +8,7 @@ type StatusConfigReader = { getStoredConfig(): Promise<{ statuses?: string[] } |
  * Use it for equality, filtering, and lane matching so every surface compares statuses alike.
  */
 export function statusComparisonKey(status: string | null | undefined): string {
-	return (status ?? "").trim().toLowerCase();
+	return comparisonKey(status);
 }
 
 /**

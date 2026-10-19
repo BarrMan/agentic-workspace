@@ -21,7 +21,7 @@ Statuses: **verified** = source/test evidence matches the stated scenario; **gap
 | IF-FS-002 — project task coverage | verified | `searchSnapshot` constructs task entities and applies requested type selection. |
 | IF-FS-002 — task id/title/description fields | verified | `searchSnapshot` searches stored IDs, titles, and task body text using literal substring checks. `search-service.test.ts` covers task fields. |
 | IF-FS-002 — case-insensitive literal matching | verified | Shared literal matcher lowercases query and fields; search/parity tests cover case-insensitivity and fuzzy near-miss rejection. |
-| IF-FS-002 — task ID matching | verified | `task-id-search.ts` now supplies only stored ID spellings (case variants); substring matching does not synthesize suffix/numeric-segment aliases. No whole-token boundary is required by the contract. |
+| IF-FS-002 — task ID matching | verified | `task-search.ts` now supplies only stored ID spellings (case variants) through a module-private helper; substring matching does not synthesize suffix/numeric-segment aliases. No whole-token boundary is required by the contract. |
 | IF-FS-002 — project scope excludes outside records | blocked | `searchSnapshot` searches exactly its supplied corpus; corpus assembly/scope is not owned here. |
 | IF-FS-002 failures | verified | Contract has no additional failure behavior; invalid/corpus I/O handling is upstream. |
 | IF-FS-002 empty query / empty corpus | verified | Whitespace-only query returns all allowed entities in collection order; empty corpus returns `[]`. |

@@ -9,6 +9,7 @@ import {
 	TextareaRenderable,
 	TextRenderable,
 } from "@opentui/core";
+import { slug } from "../../lib/slug.ts";
 import { effectiveModeTextColor, MODE_TEXT_COLORS } from "../../model/session/mode-colors.ts";
 import {
 	type AgentConfiguration,
@@ -1234,10 +1235,7 @@ export function mountOpenTuiAgentSettings(
 						if (!value || /[\0\r\n]/.test(value)) throw new Error("Mode name must be non-empty single-line text.");
 						if (modeActionInput === "rename" && currentId) modeDraft!.renameMode(currentId, value);
 						if (modeActionInput === "add") {
-							const newId = value
-								.toLowerCase()
-								.replace(/[^a-z0-9]+/g, "-")
-								.replace(/^-|-$/g, "");
+							const newId = slug(value);
 							modeDraft!.addMode(newId, value);
 							selectedModeId = newId;
 							selectedModeIndex = modeIds().indexOf(newId);

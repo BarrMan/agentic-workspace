@@ -10,12 +10,13 @@ import {
 	resolveAgenticWorkspaceDirectoryFromRootConfig,
 } from "../filesystem/paths/agentic-workspace-directory.ts";
 import { ProjectLayout } from "../filesystem/project-layout.ts";
+import { escapeRegex } from "../lib/regex.ts";
 import { DEFAULT_DIRECTORIES, DEFAULT_FILES, DRAFT_STATUS, FALLBACK_STATUS } from "../model/constants.ts";
 import { AmbiguousIdError, isAmbiguousIdError } from "../model/errors/entity-id.ts";
 import { AmbiguousTaskIdError, isAmbiguousTaskIdError } from "../model/errors/task-id.ts";
 import type { DraftIdentityFindings } from "../model/task/duplicate-detection.ts";
-import { DEFAULT_TASK_PREFIX, DRAFT_PREFIX, escapeRegex, generateNextId } from "../model/task/prefix-config.ts";
-import { isValidDraftId, isValidTaskId, taskIdKey, taskIdsEqual } from "../model/task/task-id.ts";
+import { DEFAULT_TASK_PREFIX, DRAFT_PREFIX, generateNextId } from "../model/task/prefix-config.ts";
+import { canonicalTaskIdKey, isValidDraftId, isValidTaskId, taskIdKey, taskIdsEqual } from "../model/task/task-id.ts";
 import { withoutVacatedTaskLinks } from "../model/task/task-links.ts";
 import { TaskOrdering } from "../model/task/task-ordering.ts";
 import {
@@ -99,6 +100,15 @@ function createLockError(message: string, cause?: unknown): Error {
 
 function taskLockError(message: string, cause?: unknown): Error {
 	return lockError(TASK_LOCK_ERROR_NAME, TASK_LOCK_ERROR_CODE, message, cause);
+}
+
+function sanitizeLockKey(value: string): string {
+	return (
+		value
+			.toLowerCase()
+			.replace(/[^a-z0-9._-]+/g, "-")
+			.replace(/^\.+/, "") || "unknown"
+	);
 }
 
 export function isCreateLockError(error: unknown): error is Error {
@@ -486,19 +496,7 @@ export class FileSystem {
 	 * while two editors of the same draft file still fail fast against each other.
 	 */
 	async withDraftLock<T>(reference: DraftFileReference, fn: () => Promise<T>): Promise<T> {
-		const normalizedId = reference.canonicalId.trim().toLowerCase();
-		const identityKey = normalizedId
-			.split(".")
-			.map((segment) => {
-				const idMatch = segment.match(/^(.*?)(\d+)$/);
-				if (!idMatch) {
-					return segment;
-				}
-				const numericPart = idMatch[2]!;
-				return `${idMatch[1]!}${Number.parseInt(numericPart, 10)}`;
-			})
-			.join(".");
-		const lockKey = identityKey.replace(/[^a-z0-9._-]+/g, "-").replace(/^\.+/, "") || "unknown";
+		const lockKey = sanitizeLockKey(canonicalTaskIdKey(reference.canonicalId));
 		const locksDir = join(await this.getAgenticWorkspaceDir(), ".locks");
 		const targetPath = join(locksDir, `${DRAFT_DIRECTORY}-${lockKey}`);
 		await mkdir(targetPath, { recursive: true });
@@ -580,13 +578,10 @@ export class FileSystem {
 		filePath: string,
 		fn: () => Promise<T>,
 	): Promise<T> {
-		const lockKey = taskIdKey(entityId)
-			.toLowerCase()
-			.replace(/[^a-z0-9._-]+/g, "-")
-			.replace(/^\.+/, "");
+		const lockKey = sanitizeLockKey(taskIdKey(entityId));
 		return await this.withLockTarget(
 			filePath,
-			join(await this.getAgenticWorkspaceDir(), ".locks", `${scope}-${lockKey || "unknown"}`),
+			join(await this.getAgenticWorkspaceDir(), ".locks", `${scope}-${lockKey}`),
 			{ staleMs: DEFAULT_CREATE_LOCK_STALE_MS, retries: 0, retryDelayMs: 0 },
 			(error) => this.toTaskLockError(error, entityId),
 			fn,

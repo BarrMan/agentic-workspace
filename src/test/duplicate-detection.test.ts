@@ -1,9 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import {
-	detectDuplicateTaskIds,
-	formatDuplicateTaskIdSummary,
-	formatDuplicateTaskIdWarning,
-} from "../model/task/duplicate-detection.ts";
+import { detectDuplicateTaskIds, formatDuplicateTaskIdWarning } from "../model/task/duplicate-detection.ts";
 import type { Task } from "../model/types.ts";
 
 function makeTask(id: string, title: string): Task {
@@ -114,12 +110,5 @@ describe("formatDuplicateTaskIdWarning", () => {
 		expect(warning).toContain("Remove the conflicting files, then retry.");
 		expect(warning).not.toContain("prompt");
 		expect(warning).not.toContain("agent repair");
-	});
-
-	it("provides a concise TUI summary", () => {
-		const groups = [{ id: "TASK-1", tasks: [makeTask("TASK-1", "A"), makeTask("task-1", "B")] }];
-		expect(formatDuplicateTaskIdSummary(groups)).toBe(
-			"Duplicate task IDs detected: TASK-1. Remove the conflicting files, then retry.",
-		);
 	});
 });

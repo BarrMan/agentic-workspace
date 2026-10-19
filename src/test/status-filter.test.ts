@@ -1,48 +1,31 @@
 import { describe, expect, it } from "bun:test";
-import { normalizeStatusSet, statusMatchesSet } from "../model/task/status-filter.ts";
+import { TaskSearchIndex } from "../model/task/task-search.ts";
 
-describe("normalizeStatusSet", () => {
-	it("lowercases and trims each status", () => {
-		expect([...normalizeStatusSet(["To Do", "  DONE "])]).toEqual(["to do", "done"]);
+describe("task search status filtering", () => {
+	const tasks = ["To Do", "Done", "In Progress"].map((status, index) => ({
+		id: `task-${index}`,
+		title: status,
+		status,
+		assignee: [],
+		createdDate: "2025-01-01",
+		labels: [],
+		dependencies: [],
+	}));
+
+	it("trims and matches statuses case-insensitively, dropping blank entries", () => {
+		expect(TaskSearchIndex.apply(tasks, { status: ["  TO DO ", "", "DONE"] }).map((task) => task.status)).toEqual([
+			"To Do",
+			"Done",
+		]);
 	});
 
-	it("accepts a single status string", () => {
-		expect([...normalizeStatusSet("In Progress")]).toEqual(["in progress"]);
+	it("keeps internal whitespace significant", () => {
+		expect(TaskSearchIndex.apply(tasks, { status: "In Progress" }).map((task) => task.status)).toEqual(["In Progress"]);
+		expect(TaskSearchIndex.apply(tasks, { status: "InProgress" })).toEqual([]);
 	});
 
-	it("drops blank entries and deduplicates case-insensitively", () => {
-		const set = normalizeStatusSet(["To Do", "", "   ", "TO DO"]);
-		expect(set.size).toBe(1);
-		expect(set.has("to do")).toBe(true);
-	});
-
-	it("returns an empty set for missing values", () => {
-		expect(normalizeStatusSet(undefined).size).toBe(0);
-	});
-});
-
-describe("statusMatchesSet", () => {
-	it("matches task statuses case-insensitively", () => {
-		const wanted = normalizeStatusSet(["to do", "done"]);
-		expect(statusMatchesSet(wanted, "To Do")).toBe(true);
-		expect(statusMatchesSet(wanted, "DONE")).toBe(true);
-		expect(statusMatchesSet(wanted, "In Progress")).toBe(false);
-	});
-
-	it("treats missing task statuses as no match", () => {
-		const wanted = normalizeStatusSet(["done"]);
-		expect(statusMatchesSet(wanted, undefined)).toBe(false);
-		expect(statusMatchesSet(wanted, null)).toBe(false);
-	});
-
-	it("matches nothing when the selection is empty", () => {
-		const wanted = normalizeStatusSet([]);
-		expect(statusMatchesSet(wanted, "Done")).toBe(false);
-	});
-
-	it("preserves internal whitespace so distinct status names do not match", () => {
-		const wanted = normalizeStatusSet(["In Progress"]);
-		expect(statusMatchesSet(wanted, " in progress ")).toBe(true);
-		expect(statusMatchesSet(wanted, "InProgress")).toBe(false);
+	it("treats a skipped empty filter differently from a nonempty selection", () => {
+		expect(TaskSearchIndex.apply(tasks, { status: ["", "  "] })).toHaveLength(3);
+		expect(TaskSearchIndex.apply(tasks, { status: "missing" })).toEqual([]);
 	});
 });

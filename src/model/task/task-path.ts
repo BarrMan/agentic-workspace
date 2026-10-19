@@ -1,9 +1,6 @@
-import { buildFilenameIdRegex, DRAFT_PREFIX, escapeRegex } from "./prefix-config.ts";
-import { taskIdKey } from "./task-id.ts";
-
-interface TaskPathContext {
-	findTaskRecordPath(taskId: string): Promise<string | null>;
-}
+import { escapeRegex } from "../../lib/regex.ts";
+import { buildIdRegex, DRAFT_PREFIX } from "./prefix-config.ts";
+import { canonicalTaskIdSegments, taskIdKey } from "./task-id.ts";
 
 /**
  * Appended to a task not-found message produced by a working-copy lookup.
@@ -14,11 +11,6 @@ interface TaskPathContext {
  */
 export const LOCAL_TASK_LOOKUP_HINT =
 	"Task lookups read only the local working copy; use 'agentic-workspace board' to see tasks from other branches.";
-
-/** Resolve the canonical active record path for an exact task ID through Storage. */
-export async function getTaskPath(taskId: string, context: TaskPathContext): Promise<string | null> {
-	return await context.findTaskRecordPath(taskId);
-}
 
 /**
  * Normalize a draft ID by ensuring the draft prefix is present (uppercase).
@@ -44,7 +36,7 @@ export function draftIdsMatchLoosely(inputId: string, filename: string): boolean
  * Extracts the draft ID from a filename.
  */
 export function extractDraftIdFromFilename(filename: string): string | null {
-	const regex = buildFilenameIdRegex(DRAFT_PREFIX);
+	const regex = buildIdRegex(DRAFT_PREFIX);
 	const match = filename.match(regex);
 	if (!match?.[1]) return null;
 	return normalizeDraftId(`${DRAFT_PREFIX}-${match[1]}`);
@@ -58,11 +50,8 @@ function draftIdentityKey(id: string): string {
 	const trimmed = id.trim().toLowerCase();
 	const match = trimmed.match(new RegExp(`^(?:${escapeRegex(DRAFT_PREFIX)}-)?(\\d+(?:\\.\\d+)*)$`));
 	if (!match?.[1]) return trimmed;
-	const body = match[1]
-		.split(".")
-		.map((segment) => segment.replace(/^0+(?=\d)/, "") || "0")
-		.join(".");
-	return `${DRAFT_PREFIX}-${body}`;
+	const segments = canonicalTaskIdSegments(match[1].split("."));
+	return segments ? `${DRAFT_PREFIX}-${segments.join(".")}` : trimmed;
 }
 
 /**
