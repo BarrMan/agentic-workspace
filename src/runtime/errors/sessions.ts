@@ -1,6 +1,4 @@
 export class ResumeFailedError extends Error {
-	readonly kind = "resume-failed";
-
 	constructor(
 		readonly nativeProvider: string,
 		readonly nativeSessionId: string,
@@ -15,6 +13,8 @@ export class ResumeFailedError extends Error {
 }
 
 export class ExactResumeUnavailableError extends Error {
+	// Callers and tests discriminate this error by its kind.
+	// fallow-ignore-next-line unused-class-member -- asserted by startup and resume failure tests
 	readonly kind = "exact-resume-unavailable";
 
 	constructor(
@@ -33,5 +33,7 @@ export class ExactResumeUnavailableError extends Error {
 }
 
 export class ConclusiveStartupFailureError extends Error {
+	// Callers and tests discriminate this error by its kind.
+	// fallow-ignore-next-line unused-class-member -- asserted by startup and resume failure tests
 	readonly kind = "conclusive-startup-failure";
 }

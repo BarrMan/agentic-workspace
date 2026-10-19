@@ -81,6 +81,8 @@ export function claudeHooksConfig(
 
 export class ClaudeAgent implements Agent {
 	readonly name = "claude";
+	// Called through the optional Agent interface.
+	// fallow-ignore-next-line unused-class-member -- called through the optional Agent interface
 	readonly events = {
 		turnCompleted: "supported",
 		permissionWait: "supported",
@@ -98,10 +100,14 @@ export class ClaudeAgent implements Agent {
 	}
 
 	// Claude has no verified model-list command; explicit IDs remain manually configurable.
+	// Called through the optional Agent interface.
+	// fallow-ignore-next-line unused-class-member -- called through the optional Agent interface
 	discoverModels() {
 		return Promise.resolve([]);
 	}
 
+	// Called through the optional Agent interface.
+	// fallow-ignore-next-line unused-class-member -- called through the optional Agent interface
 	prepareProfile(profile: ModeProfile, preset: import("../../model/session/types.ts").AgentPreset) {
 		return profile.model.kind === "explicit" ? withExplicitModel(preset, profile.model.id) : preset;
 	}
@@ -157,6 +163,8 @@ export class ClaudeAgent implements Agent {
 		return { command, env, identity };
 	}
 
+	// Called through the optional Agent interface.
+	// fallow-ignore-next-line unused-class-member -- called through the optional Agent interface
 	readiness(intent: SessionIntent, launchDirectory: string, identity?: NativeIdentity) {
 		const id = identity?.id ?? (intent.kind === "resume" ? intent.nativeSessionId : undefined);
 		return {
@@ -180,6 +188,8 @@ export class ClaudeAgent implements Agent {
 		_publish: (identity: NativeIdentity) => Promise<void>,
 	): Promise<void> {}
 
+	// Called through the optional Agent interface.
+	// fallow-ignore-next-line unused-class-member -- called through the optional Agent interface
 	async preflightLaunch(request: import("./agent.ts").AgentPreflightRequest): Promise<void> {
 		if (request.resume) this.resumeCommand(request);
 		else this.launchCommand({ ...request, bootstrapPath: request.bootstrapPath });

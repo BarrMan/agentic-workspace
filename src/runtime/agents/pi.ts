@@ -71,6 +71,8 @@ export default function agenticWorkspaceStatus(pi) {
 
 export class PiAgent implements Agent {
 	readonly name = "pi";
+	// Called through the optional Agent interface.
+	// fallow-ignore-next-line unused-class-member -- called through the optional Agent interface
 	readonly events = {
 		turnCompleted: "supported",
 		permissionWait: "unsupported",
@@ -89,10 +91,14 @@ export class PiAgent implements Agent {
 		return preset;
 	}
 
+	// Called through the optional Agent interface.
+	// fallow-ignore-next-line unused-class-member -- called through the optional Agent interface
 	discoverModels(request: import("./agent.ts").ModelDiscoveryRequest) {
 		return discoverModels("pi", request.command, request.env, request.timeoutMs);
 	}
 
+	// Called through the optional Agent interface.
+	// fallow-ignore-next-line unused-class-member -- called through the optional Agent interface
 	prepareProfile(profile: ModeProfile, preset: import("../../model/session/types.ts").AgentPreset) {
 		return profile.model.kind === "explicit" ? withExplicitModel(preset, profile.model.id) : preset;
 	}
@@ -145,6 +151,8 @@ export class PiAgent implements Agent {
 		return { command, env, identity };
 	}
 
+	// Called through the optional Agent interface.
+	// fallow-ignore-next-line unused-class-member -- called through the optional Agent interface
 	readiness(intent: SessionIntent, launchDirectory: string, identity?: NativeIdentity) {
 		return readinessReceipts(intent, launchDirectory, identity);
 	}
@@ -154,6 +162,8 @@ export class PiAgent implements Agent {
 		_publish: (identity: NativeIdentity) => Promise<void>,
 	): Promise<void> {}
 
+	// Called through the optional Agent interface.
+	// fallow-ignore-next-line unused-class-member -- called through the optional Agent interface
 	async preflightLaunch(request: import("./agent.ts").AgentPreflightRequest): Promise<void> {
 		if (request.resume) this.resumeCommand(request);
 		else this.launchCommand(request);

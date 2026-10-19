@@ -59,6 +59,8 @@ function openCodeSkillConfig(parsed: ReturnType<typeof parseOpenCodeConfig>, ski
 /** OpenCode 1.19 TUI adapter: launch normally and let the plugin observe session creation. */
 export class OpencodeV1Agent implements Agent {
 	readonly name = "opencode-v1";
+	// Called through the optional Agent interface.
+	// fallow-ignore-next-line unused-class-member -- called through the optional Agent interface
 	readonly events = {
 		turnCompleted: "supported",
 		permissionWait: "supported",
@@ -75,10 +77,14 @@ export class OpencodeV1Agent implements Agent {
 		return sanitizeProfilePreset(preset);
 	}
 
+	// Called through the optional Agent interface.
+	// fallow-ignore-next-line unused-class-member -- called through the optional Agent interface
 	discoverModels(request: import("./agent.ts").ModelDiscoveryRequest) {
 		return discoverModels("opencode", request.command, request.env, request.timeoutMs);
 	}
 
+	// Called through the optional Agent interface.
+	// fallow-ignore-next-line unused-class-member -- called through the optional Agent interface
 	prepareProfile(profile: import("../../model/session/types.ts").ModeProfile, preset: AgentPreset): AgentPreset {
 		const prepared = sanitizeProfilePreset(preset);
 		return profile.model.kind === "explicit" ? withExplicitModel(prepared, profile.model.id) : prepared;
@@ -136,6 +142,8 @@ export class OpencodeV1Agent implements Agent {
 		return { command: this.launchCommand({ preset, bootstrapPath }), env };
 	}
 
+	// Called through the optional Agent interface.
+	// fallow-ignore-next-line unused-class-member -- called through the optional Agent interface
 	readiness(intent: SessionIntent, launchDirectory: string, identity?: NativeIdentity) {
 		return readinessReceipts(intent, launchDirectory, identity);
 	}

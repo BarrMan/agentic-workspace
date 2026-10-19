@@ -122,6 +122,8 @@ async function lookupNativeSession(
 
 export class OpencodeV2Agent implements Agent {
 	readonly name = "opencode-v2";
+	// Called through the optional Agent interface.
+	// fallow-ignore-next-line unused-class-member -- called through the optional Agent interface
 	readonly events = {
 		turnCompleted: "supported",
 		permissionWait: "unsupported",
@@ -138,6 +140,8 @@ export class OpencodeV2Agent implements Agent {
 		return sanitizeProfilePreset(preset);
 	}
 
+	// Called through the optional Agent interface.
+	// fallow-ignore-next-line unused-class-member -- called through the optional Agent interface
 	discoverModels(request: import("./agent.ts").ModelDiscoveryRequest) {
 		return discoverModels("opencode", request.command, request.env, request.timeoutMs);
 	}
@@ -250,6 +254,8 @@ export class OpencodeV2Agent implements Agent {
 		};
 	}
 
+	// Called through the optional Agent interface.
+	// fallow-ignore-next-line unused-class-member -- called through the optional Agent interface
 	readiness(intent: SessionIntent, launchDirectory: string, identity?: NativeIdentity) {
 		return { ...readinessReceipts(intent, launchDirectory, identity), confirmationRequired: intent.kind === "new" };
 	}
