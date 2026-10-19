@@ -1,10 +1,10 @@
 import { describe, expect, it } from "bun:test";
 import { BoxRenderable, TextAttributes } from "@opentui/core";
 import { createTestRenderer, type TestRendererSetup } from "@opentui/core/testing";
-import type { AgentHost } from "../agent-workspace/live/agent-host.ts";
-import { renderModeRowLabel } from "../ui/opentui/mode-row-label.ts";
-import { mountOpenTuiWorkspace, type OpenTuiWorkspaceModeProjection } from "../ui/opentui/workspace.ts";
-import { createWorkspaceAgent } from "../ui/opentui/workspace-agent.ts";
+import { renderModeRowLabel } from "../renderer/opentui/mode-row-label.ts";
+import { mountOpenTuiWorkspace, type OpenTuiWorkspaceModeProjection } from "../renderer/opentui/workspace.ts";
+import { createWorkspaceAgent } from "../renderer/opentui/workspace-agent.ts";
+import type { AgentHost } from "../runtime/live/agent-host.ts";
 
 function spanAt(setup: TestRendererSetup, x: number, y: number) {
 	let column = 0;

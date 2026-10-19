@@ -3,9 +3,9 @@ import { mkdir, mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { Writable } from "node:stream";
 import { $ as shell } from "bun";
-import { getDefaultModeCatalog, updateAgentConfiguration } from "../agent-workspace/config.ts";
 import { runCli } from "../cli/register.ts";
 import { Core } from "../index.ts";
+import { getDefaultModeCatalog, updateAgentConfiguration } from "../storage/config.ts";
 import { coreFileSystem, createUniqueTestDir, initializeTestProject, safeCleanup } from "./test-utils.ts";
 
 let testDir: string;

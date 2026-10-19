@@ -1,15 +1,15 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { BoxRenderable, InputRenderable, TextRenderable } from "@opentui/core";
 import { createTestRenderer, type TestRendererSetup } from "@opentui/core/testing";
-import type { TaskListFilter } from "../types/index.ts";
+import type { TaskListFilter } from "../model/types.ts";
 import {
 	mountOpenTuiFilterEditor,
 	mountOpenTuiHelpOverlay,
 	type OpenTuiFilterState,
 	type OpenTuiHelpItem,
-} from "../ui/opentui/filters.ts";
-import { type ShortcutOverrides, shortcutHelpItems } from "../ui/opentui/keybindings.ts";
-import { mountOpenTuiWorkspace } from "../ui/opentui/workspace.ts";
+} from "../renderer/opentui/filters.ts";
+import { type ShortcutOverrides, shortcutHelpItems } from "../renderer/opentui/keybindings.ts";
+import { mountOpenTuiWorkspace } from "../renderer/opentui/workspace.ts";
 
 describe("native workspace filters", () => {
 	const renderers: TestRendererSetup[] = [];

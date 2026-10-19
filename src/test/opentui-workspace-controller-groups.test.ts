@@ -3,15 +3,15 @@ import { EventEmitter } from "node:events";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { getBuiltInAgentConfiguration, getDefaultModeCatalog } from "../agent-workspace/config.ts";
-import type { GroupState, GroupStore } from "../agent-workspace/group-store.ts";
-import type { WorkspaceStateService } from "../agent-workspace/workspace-state.ts";
-import type { Core } from "../core/agentic-workspace.ts";
-import type { Task } from "../types/index.ts";
-import type { OpenTuiHost } from "../ui/opentui/host.ts";
-import { createWorkspaceFilters } from "../ui/opentui/workspace/state.ts";
-import type { OpenTuiWorkspaceOptions } from "../ui/opentui/workspace.ts";
-import { OpenTuiWorkspaceController } from "../ui/opentui/workspace-controller.ts";
+import type { Core } from "../controller/agentic-workspace.ts";
+import type { WorkspaceStateService } from "../controller/workspace-state.ts";
+import type { Task } from "../model/types.ts";
+import type { OpenTuiHost } from "../renderer/opentui/host.ts";
+import { createWorkspaceFilters } from "../renderer/opentui/workspace/state.ts";
+import type { OpenTuiWorkspaceOptions } from "../renderer/opentui/workspace.ts";
+import { OpenTuiWorkspaceController } from "../renderer/opentui/workspace-controller.ts";
+import { getBuiltInAgentConfiguration, getDefaultModeCatalog } from "../storage/config.ts";
+import type { GroupState, GroupStore } from "../storage/group-store.ts";
 
 const roots: string[] = [];
 afterEach(() => {

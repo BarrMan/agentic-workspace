@@ -2,8 +2,8 @@ import { describe, expect, it } from "bun:test";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { buildKanbanStatusGroups, exportKanbanBoardToFile, generateMilestoneGroupedBoard } from "../board.ts";
-import type { Milestone, Task } from "../types/index.ts";
+import type { Milestone, Task } from "../model/types.ts";
+import { buildKanbanStatusGroups, exportKanbanBoardToFile, generateMilestoneGroupedBoard } from "../renderer/board.ts";
 
 describe("exportKanbanBoardToFile", () => {
 	it("creates file and overwrites board content", async () => {

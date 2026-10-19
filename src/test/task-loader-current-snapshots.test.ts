@@ -1,9 +1,9 @@
 import { describe, expect, it } from "bun:test";
-import { BranchTaskLoader, getBranchHistoryCutoff } from "../core/task-loader.ts";
-import type { GitOperations } from "../git/operations.ts";
-import { UnsupportedTaskFrontmatterSchemaError } from "../markdown/parser.ts";
-import { serializeTask } from "../markdown/serializer.ts";
-import type { AgenticWorkspaceConfig, Task } from "../types/index.ts";
+import { BranchTaskLoader, getBranchHistoryCutoff } from "../controller/task-loader.ts";
+import type { GitOperations } from "../filesystem/git/operations.ts";
+import type { AgenticWorkspaceConfig, Task } from "../model/types.ts";
+import { UnsupportedTaskFrontmatterSchemaError } from "../storage/errors/frontmatter.ts";
+import { serializeTask } from "../storage/markdown/serializer.ts";
 
 const commit = "1".repeat(40);
 const tips = [

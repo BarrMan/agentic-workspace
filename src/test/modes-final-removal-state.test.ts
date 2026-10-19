@@ -3,14 +3,14 @@ import { EventEmitter } from "node:events";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { getDefaultModeCatalog } from "../agent-workspace/config.ts";
-import { openViewStateStore } from "../agent-workspace/view-state-store.ts";
-import type { Core } from "../core/agentic-workspace.ts";
-import type { Task } from "../types/index.ts";
-import type { OpenTuiHost } from "../ui/opentui/host.ts";
-import { createWorkspaceFilters } from "../ui/opentui/workspace/state.ts";
-import type { OpenTuiWorkspaceOptions } from "../ui/opentui/workspace.ts";
-import { OpenTuiWorkspaceController } from "../ui/opentui/workspace-controller.ts";
+import type { Core } from "../controller/agentic-workspace.ts";
+import type { Task } from "../model/types.ts";
+import type { OpenTuiHost } from "../renderer/opentui/host.ts";
+import { createWorkspaceFilters } from "../renderer/opentui/workspace/state.ts";
+import type { OpenTuiWorkspaceOptions } from "../renderer/opentui/workspace.ts";
+import { OpenTuiWorkspaceController } from "../renderer/opentui/workspace-controller.ts";
+import { getDefaultModeCatalog } from "../storage/config.ts";
+import { openViewStateStore } from "../storage/view-state-store.ts";
 
 const task: Task = {
 	id: "TASK-1",

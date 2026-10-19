@@ -2,13 +2,16 @@ import { afterEach, beforeEach, describe, expect, it, spyOn } from "bun:test";
 import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { Core } from "../core/agentic-workspace.ts";
-import { BranchTaskLoader } from "../core/task-loader.ts";
-import { MilestoneStore } from "../file-system/milestones.ts";
-import type { GitOperations } from "../git/operations.ts";
-import { UnsupportedRecordFrontmatterSchemaError, UnsupportedTaskFrontmatterSchemaError } from "../markdown/parser.ts";
-import { serializeMilestone, serializeTask } from "../markdown/serializer.ts";
-import type { AgenticWorkspaceConfig, Milestone, Task } from "../types/index.ts";
+import { Core } from "../controller/agentic-workspace.ts";
+import { BranchTaskLoader } from "../controller/task-loader.ts";
+import type { GitOperations } from "../filesystem/git/operations.ts";
+import type { AgenticWorkspaceConfig, Milestone, Task } from "../model/types.ts";
+import {
+	UnsupportedRecordFrontmatterSchemaError,
+	UnsupportedTaskFrontmatterSchemaError,
+} from "../storage/errors/frontmatter.ts";
+import { serializeMilestone, serializeTask } from "../storage/markdown/serializer.ts";
+import { MilestoneStore } from "../storage/milestones.ts";
 import { coreFileSystem, createUniqueTestDir, initializeFilesystemTestProject, safeCleanup } from "./test-utils.ts";
 
 const task: Task = {

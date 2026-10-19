@@ -1,8 +1,8 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { join } from "node:path";
-import { Core } from "../core/agentic-workspace.ts";
-import { initializeProject } from "../core/init.ts";
-import type { AgenticWorkspaceConfig } from "../types/index.ts";
+import { Core } from "../controller/agentic-workspace.ts";
+import { initializeProject } from "../controller/init.ts";
+import type { AgenticWorkspaceConfig } from "../model/types.ts";
 import { coreFileSystem, createUniqueTestDir, initializeTestProject, safeCleanup } from "./test-utils.ts";
 
 describe("Enhanced init command", () => {

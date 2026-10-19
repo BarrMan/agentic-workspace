@@ -1,10 +1,10 @@
 import { describe, expect, it } from "bun:test";
-import type { Task } from "../types/index.ts";
+import type { Task } from "../model/types.ts";
 import {
 	changedTaskFields,
 	createWorkspaceDraft,
 	taskWithWorkspaceDraft,
-} from "../ui/opentui/workspace/model/drafts.ts";
+} from "../renderer/opentui/workspace/model/drafts.ts";
 
 const task = (id: string, status: string): Task => ({
 	id,

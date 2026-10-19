@@ -3,8 +3,8 @@ import { lstat, mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Core } from "../index.ts";
-import { serializeTask } from "../markdown/serializer.ts";
-import type { Task } from "../types/index.ts";
+import type { Task } from "../model/types.ts";
+import { serializeTask } from "../storage/markdown/serializer.ts";
 import { coreFileSystem, initializeFilesystemTestProject } from "./test-utils.ts";
 
 const roots: string[] = [];

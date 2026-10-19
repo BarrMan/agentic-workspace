@@ -79,6 +79,18 @@ Task.findSession(sessionId) {
   return null
 }
 
+Task.equals(other) {
+  return taskIdsEqual(this.id, typeof other === "string" ? other : other.id)
+}
+
+Task.equalsDeep(record) {
+  return isDeepStrictEqual(this.serialize(), record)
+}
+
+Task.ready(graph) {
+  return getTaskReadiness(this.serialize(), graph)
+}
+
 Task.fromRecord(record, newSession) {
   task = new Task(record)
   task.newSession = newSession
@@ -122,3 +134,4 @@ Task.serializeSessions() {
 - A nonempty history's active ID names a retained member; an empty history has no active ID.
 - Sessions never move between modes.
 - Removing a mode requires an empty history.
+- Identity comparison, value equality, and readiness are Task operations. Readiness takes the corpus graph because it is derived from more than one record.

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "bun:test";
-import { toTaskDetail } from "../core/task-detail.ts";
-import { formatTaskPlainText } from "../formatters/task-plain-text.ts";
-import type { Task } from "../types/index.ts";
+import { toTaskDetail } from "../controller/task-detail.ts";
+import type { Task } from "../model/types.ts";
+import { formatTaskPlainText } from "../renderer/formatters/task-plain-text.ts";
 
 describe("plain text assignee display", () => {
 	it("adds one prefix, trims display values, and skips blanks", () => {

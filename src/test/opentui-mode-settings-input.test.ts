@@ -1,9 +1,9 @@
 import { afterEach, describe, expect, it } from "bun:test";
 import { BoxRenderable, InputRenderable, parseColor, TextareaRenderable, type TextRenderable } from "@opentui/core";
 import { createTestRenderer, type TestRendererSetup } from "@opentui/core/testing";
-import { MODE_TEXT_COLORS } from "../agent-workspace/mode-colors.ts";
-import type { AgentConfiguration } from "../agent-workspace/types.ts";
-import { mountOpenTuiAgentSettings, type OpenTuiAgentSettingsOptions } from "../ui/opentui/agent-settings.ts";
+import { MODE_TEXT_COLORS } from "../model/session/mode-colors.ts";
+import type { AgentConfiguration } from "../model/session/types.ts";
+import { mountOpenTuiAgentSettings, type OpenTuiAgentSettingsOptions } from "../renderer/opentui/agent-settings.ts";
 
 function configuration(): AgentConfiguration {
 	return {

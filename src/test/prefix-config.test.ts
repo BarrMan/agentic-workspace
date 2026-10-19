@@ -1,5 +1,4 @@
 import { describe, expect, test } from "bun:test";
-import { type AgenticWorkspaceConfig, EntityType } from "../types/index.ts";
 import {
 	buildFilenameIdRegex,
 	buildGlobPattern,
@@ -16,7 +15,8 @@ import {
 	hasPrefix,
 	isReservedTaskPrefix,
 	mergePrefixConfig,
-} from "../utils/prefix-config.ts";
+} from "../model/task/prefix-config.ts";
+import { type AgenticWorkspaceConfig, EntityType } from "../model/types.ts";
 
 describe("prefix-config", () => {
 	describe("getDefaultPrefixConfig", () => {

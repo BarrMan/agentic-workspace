@@ -1,8 +1,8 @@
 import { describe, expect, it } from "bun:test";
-import { BranchTaskLoader } from "../core/task-loader.ts";
-import type { GitOperations } from "../git/operations.ts";
-import { serializeTask } from "../markdown/serializer.ts";
-import type { AgenticWorkspaceConfig } from "../types/index.ts";
+import { BranchTaskLoader } from "../controller/task-loader.ts";
+import type { GitOperations } from "../filesystem/git/operations.ts";
+import type { AgenticWorkspaceConfig } from "../model/types.ts";
+import { serializeTask } from "../storage/markdown/serializer.ts";
 
 const config: AgenticWorkspaceConfig = {
 	projectName: "Branch loader resilience",

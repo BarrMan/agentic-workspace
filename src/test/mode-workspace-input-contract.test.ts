@@ -1,9 +1,9 @@
 import { afterEach, describe, expect, it } from "bun:test";
 import { BoxRenderable, KeyEvent, parseKeypress } from "@opentui/core";
 import { createTestRenderer, type TestRendererSetup } from "@opentui/core/testing";
-import type { AgentHost } from "../agent-workspace/live/agent-host.ts";
-import { mountOpenTuiWorkspace } from "../ui/opentui/workspace.ts";
-import { createWorkspaceAgent } from "../ui/opentui/workspace-agent.ts";
+import { mountOpenTuiWorkspace } from "../renderer/opentui/workspace.ts";
+import { createWorkspaceAgent } from "../renderer/opentui/workspace-agent.ts";
+import type { AgentHost } from "../runtime/live/agent-host.ts";
 
 function key(sequence: string): KeyEvent {
 	const parsed = parseKeypress(sequence, { useKittyKeyboard: true });

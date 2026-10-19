@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { moveTargetToAdjacentColumn } from "../ui/opentui/board/interaction.ts";
+import { moveTargetToAdjacentColumn } from "../renderer/opentui/board/interaction.ts";
 
 describe("UI state owners", () => {
 	test("clamps adjacent board move targets without mutating the source state", () => {

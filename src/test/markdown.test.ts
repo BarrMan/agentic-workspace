@@ -1,8 +1,9 @@
 import { describe, expect, it } from "bun:test";
-import { parseFrontmatter } from "../markdown/frontmatter.ts";
-import { parseMarkdown, parseTask, UnsupportedTaskFrontmatterSchemaError } from "../markdown/parser.ts";
-import { serializeTask } from "../markdown/serializer.ts";
-import type { Task } from "../types/index.ts";
+import type { Task } from "../model/types.ts";
+import { UnsupportedTaskFrontmatterSchemaError } from "../storage/errors/frontmatter.ts";
+import { parseFrontmatter } from "../storage/markdown/frontmatter.ts";
+import { parseMarkdown, parseTask } from "../storage/markdown/parser.ts";
+import { serializeTask } from "../storage/markdown/serializer.ts";
 
 describe("Markdown Parser", () => {
 	describe("parseMarkdown", () => {

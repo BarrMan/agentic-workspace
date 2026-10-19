@@ -1,13 +1,13 @@
 import type { Core } from "../../../index.ts";
-import { formatValidPriorityValues, resolvePriorityValue } from "../../../utils/priority-config.ts";
+import { formatValidPriorityValues, resolvePriorityValue } from "../../../model/task/priority-config.ts";
 import {
 	formatValidProjectValues,
 	getProjectValues,
 	noProjectsConfiguredMessage,
 	resolveProjectValues,
-} from "../../../utils/project-config.ts";
-import { formatValidStatuses, getCanonicalStatuses } from "../../../utils/status.ts";
-import { formatValidTaskTypeValues, resolveTaskTypeValues } from "../../../utils/task-type-config.ts";
+} from "../../../model/task/project-config.ts";
+import { formatValidStatuses, getCanonicalStatuses } from "../../../model/task/status.ts";
+import { formatValidTaskTypeValues, resolveTaskTypeValues } from "../../../model/task/task-type-config.ts";
 
 export async function normalizeCliStatusList(
 	core: Core,

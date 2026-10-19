@@ -2,14 +2,10 @@ import { expect, it } from "bun:test";
 import { mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import {
-	getBuiltInAgentConfiguration,
-	getDefaultModeCatalog,
-	requireProjectModeCatalog,
-} from "../agent-workspace/config.ts";
-import type { Core } from "../core/agentic-workspace.ts";
-import { selectedModeForTask, validateSelectedModeByTask } from "../ui/opentui/workspace/state.ts";
-import { OpenTuiWorkspaceController } from "../ui/opentui/workspace-controller.ts";
+import type { Core } from "../controller/agentic-workspace.ts";
+import { selectedModeForTask, validateSelectedModeByTask } from "../renderer/opentui/workspace/state.ts";
+import { OpenTuiWorkspaceController } from "../renderer/opentui/workspace-controller.ts";
+import { getBuiltInAgentConfiguration, getDefaultModeCatalog, requireProjectModeCatalog } from "../storage/config.ts";
 
 it("rejects a mode-less project before acquiring stores or a terminal, without changing configuration", async () => {
 	const root = await mkdtemp(join(tmpdir(), "workspace-mode-preflight-"));

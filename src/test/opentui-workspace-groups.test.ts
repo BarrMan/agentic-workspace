@@ -1,8 +1,8 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { BoxRenderable } from "@opentui/core";
 import { createTestRenderer, type TestRendererSetup } from "@opentui/core/testing";
-import type { TaskGroup } from "../agent-workspace/group-store.ts";
-import { mountOpenTuiWorkspace, type OpenTuiWorkspaceGroupEntry } from "../ui/opentui/workspace.ts";
+import { mountOpenTuiWorkspace, type OpenTuiWorkspaceGroupEntry } from "../renderer/opentui/workspace.ts";
+import type { TaskGroup } from "../storage/group-store.ts";
 
 function attachParent(setup: TestRendererSetup): BoxRenderable {
 	const parent = new BoxRenderable(setup.renderer, { width: "100%", height: "100%" });

@@ -1,8 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { mkdir } from "node:fs/promises";
-import { Core } from "../core/agentic-workspace.ts";
-import { toTaskDetail } from "../core/task-detail.ts";
-import { formatTaskPlainText } from "../formatters/task-plain-text.ts";
+import { Core } from "../controller/agentic-workspace.ts";
+import { toTaskDetail } from "../controller/task-detail.ts";
+import { formatTaskPlainText } from "../renderer/formatters/task-plain-text.ts";
 import { coreFileSystem, createUniqueTestDir, initializeFilesystemTestProject, safeCleanup } from "./test-utils.ts";
 
 describe("opaque task body integration", () => {

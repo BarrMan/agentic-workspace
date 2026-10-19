@@ -1,10 +1,10 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { BoxRenderable } from "@opentui/core";
 import { createTestRenderer, type TestRendererSetup } from "@opentui/core/testing";
-import { toTaskDetail } from "../core/task-detail.ts";
-import type { Task } from "../types/index.ts";
-import type { OpenTuiWorkspaceTaskEntry } from "../ui/opentui/workspace.ts";
-import { mountOpenTuiWorkspace } from "../ui/opentui/workspace.ts";
+import { toTaskDetail } from "../controller/task-detail.ts";
+import type { Task } from "../model/types.ts";
+import type { OpenTuiWorkspaceTaskEntry } from "../renderer/opentui/workspace.ts";
+import { mountOpenTuiWorkspace } from "../renderer/opentui/workspace.ts";
 
 function attachParent(setup: TestRendererSetup): BoxRenderable {
 	const parent = new BoxRenderable(setup.renderer, { width: "100%", height: "100%" });

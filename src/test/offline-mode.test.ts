@@ -2,8 +2,8 @@ import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { GitOperations } from "../git/operations.ts";
-import type { AgenticWorkspaceConfig } from "../types/index.ts";
+import { GitOperations } from "../filesystem/git/operations.ts";
+import type { AgenticWorkspaceConfig } from "../model/types.ts";
 
 describe("Offline Mode Configuration", () => {
 	let tempDir: string;

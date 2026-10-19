@@ -2,11 +2,11 @@ import { afterEach, beforeEach, describe, expect, it, spyOn } from "bun:test";
 import { mkdir, unlink } from "node:fs/promises";
 import { join } from "node:path";
 import { $ } from "bun";
-import { Core } from "../core/agentic-workspace.ts";
-import { findCrossBranchDuplicateTaskIds, findLocalDuplicateTaskIds } from "../core/duplicate-task-detection.ts";
-import { serializeTask } from "../markdown/serializer.ts";
-import type { Task } from "../types/index.ts";
-import { AmbiguousTaskIdError } from "../utils/task-path.ts";
+import { Core } from "../controller/agentic-workspace.ts";
+import { findCrossBranchDuplicateTaskIds, findLocalDuplicateTaskIds } from "../controller/duplicate-task-detection.ts";
+import { AmbiguousTaskIdError } from "../model/errors/task-id.ts";
+import type { Task } from "../model/types.ts";
+import { serializeTask } from "../storage/markdown/serializer.ts";
 import { coreFileSystem, createUniqueTestDir, initGitRepo, safeCleanup } from "./test-utils.ts";
 
 let testDir: string;

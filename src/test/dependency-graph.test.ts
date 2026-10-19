@@ -1,17 +1,17 @@
 import { describe, expect, it } from "bun:test";
 import {
-	formatDependencyGraphEntries,
-	formatDependencyGraphLines,
-	formatDependencyGraphSection,
-} from "../formatters/dependency-graph-text.ts";
-import type { Task } from "../types/index.ts";
-import {
 	buildDependencyGraph,
 	buildDependencyTree,
 	type DependencyGraph,
 	nodesInDirection,
-} from "../utils/dependency-graph.ts";
-import { createReadinessGraph, getTaskReadiness } from "../utils/readiness.ts";
+} from "../model/task/dependency-graph.ts";
+import { createReadinessGraph, getTaskReadiness } from "../model/task/readiness.ts";
+import type { Task } from "../model/types.ts";
+import {
+	formatDependencyGraphEntries,
+	formatDependencyGraphLines,
+	formatDependencyGraphSection,
+} from "../renderer/formatters/dependency-graph-text.ts";
 
 const STATUSES = ["To Do", "In Progress", "Done"] as const;
 

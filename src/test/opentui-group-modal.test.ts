@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { BoxRenderable } from "@opentui/core";
 import { createTestRenderer, type TestRendererSetup } from "@opentui/core/testing";
-import { mountOpenTuiGroupModal, type OpenTuiGroupModalOptions } from "../ui/opentui/group-modal.ts";
+import { mountOpenTuiGroupModal, type OpenTuiGroupModalOptions } from "../renderer/opentui/group-modal.ts";
 
 type Created = { name: string; parentGroupId: string | null };
 

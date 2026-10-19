@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { getTerminalStatus, isTerminalStatus } from "../utils/terminal-status.ts";
+import { getTerminalStatus, isTerminalStatus } from "../model/task/terminal-status.ts";
 
 describe("terminal status helpers", () => {
 	it("uses the final configured status as terminal", () => {

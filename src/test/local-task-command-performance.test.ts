@@ -4,10 +4,10 @@ import { join } from "node:path";
 import { Writable } from "node:stream";
 import { $ } from "bun";
 import { runCli } from "../cli/register.ts";
-import { Core } from "../core/agentic-workspace.ts";
-import { serializeTask } from "../markdown/serializer.ts";
-import type { Task } from "../types/index.ts";
-import { AmbiguousTaskIdError } from "../utils/task-path.ts";
+import { Core } from "../controller/agentic-workspace.ts";
+import { AmbiguousTaskIdError } from "../model/errors/task-id.ts";
+import type { Task } from "../model/types.ts";
+import { serializeTask } from "../storage/markdown/serializer.ts";
 import { coreFileSystem, createUniqueTestDir, initGitRepo, initializeTestProject, safeCleanup } from "./test-utils.ts";
 
 async function cli(args: string[], cwd: string) {

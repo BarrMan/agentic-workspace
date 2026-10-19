@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, spyOn, test } from "bun:test";
 import * as opentui from "@opentui/core";
 import { createTestRenderer, type TestRendererSetup } from "@opentui/core/testing";
-import { createOpenTuiHost } from "../ui/opentui/host.ts";
+import { createOpenTuiHost } from "../renderer/opentui/host.ts";
 
 describe("OpenTUI host cleanup", () => {
 	let setup: TestRendererSetup | undefined;

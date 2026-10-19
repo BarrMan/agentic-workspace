@@ -3,8 +3,8 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { $ } from "bun";
-import { Core } from "../core/agentic-workspace.ts";
-import type { AgenticWorkspaceConfig } from "../types/index.ts";
+import { Core } from "../controller/agentic-workspace.ts";
+import type { AgenticWorkspaceConfig } from "../model/types.ts";
 import { coreFileSystem, initGitRepo } from "./test-utils.ts";
 
 describe("Offline Integration Tests", () => {

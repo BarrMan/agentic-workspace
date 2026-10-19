@@ -1,11 +1,11 @@
 import { describe, expect, it } from "bun:test";
-import type { Task } from "../types/index.ts";
 import {
 	createMilestoneFilterMatcher,
 	normalizeMilestoneFilterValue,
 	resolveClosestMilestoneFilterValue,
-} from "../utils/milestone-filter.ts";
-import { applyTaskFilters } from "../utils/task-search.ts";
+} from "../model/task/milestone-filter.ts";
+import { TaskSearchIndex } from "../model/task/task-search.ts";
+import type { Task } from "../model/types.ts";
 
 describe("milestone filter matching", () => {
 	it("normalizes punctuation and case", () => {
@@ -40,6 +40,6 @@ it("filters tasks by exact milestone IDs only", () => {
 		{ id: "task-1", title: "One", status: "To Do", milestone: "m-1" },
 		{ id: "task-2", title: "Two", status: "To Do", milestone: "m-2" },
 	] as unknown as Task[];
-	expect(applyTaskFilters(tasks, { milestone: "m-1" }).map((task) => task.id)).toEqual(["task-1"]);
-	expect(applyTaskFilters(tasks, { milestone: "Release 1" }).map((task) => task.id)).toEqual([]);
+	expect(TaskSearchIndex.apply(tasks, { milestone: "m-1" }).map((task) => task.id)).toEqual(["task-1"]);
+	expect(TaskSearchIndex.apply(tasks, { milestone: "Release 1" }).map((task) => task.id)).toEqual([]);
 });

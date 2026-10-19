@@ -2,16 +2,12 @@ import { describe, expect, it } from "bun:test";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { getDefaultModeCatalog, updateAgentConfiguration } from "../agent-workspace/config.ts";
-import { Core } from "../core/agentic-workspace.ts";
-import {
-	FrontmatterSchemaError,
-	parseMilestone,
-	parseTask,
-	UnsupportedTaskFrontmatterSchemaError,
-} from "../markdown/parser.ts";
-import { serializeMilestone, serializeTask } from "../markdown/serializer.ts";
-import type { Milestone, Task } from "../types/index.ts";
+import { Core } from "../controller/agentic-workspace.ts";
+import type { Milestone, Task } from "../model/types.ts";
+import { getDefaultModeCatalog, updateAgentConfiguration } from "../storage/config.ts";
+import { FrontmatterSchemaError, UnsupportedTaskFrontmatterSchemaError } from "../storage/errors/frontmatter.ts";
+import { parseMilestone, parseTask } from "../storage/markdown/parser.ts";
+import { serializeMilestone, serializeTask } from "../storage/markdown/serializer.ts";
 import { coreFileSystem } from "./test-utils.ts";
 
 const task: Task = {

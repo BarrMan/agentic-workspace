@@ -1,9 +1,9 @@
 import { afterEach, describe, expect, it } from "bun:test";
 import { BoxRenderable } from "@opentui/core";
 import { createTestRenderer, type TestRendererSetup } from "@opentui/core/testing";
-import { profilePermissionSupport } from "../agent-workspace/agents/profile.ts";
-import type { AgentBootstrap, AgentConfiguration, ModeProfile } from "../agent-workspace/types.ts";
-import { mountOpenTuiAgentSettings } from "../ui/opentui/agent-settings.ts";
+import type { AgentBootstrap, AgentConfiguration, ModeProfile } from "../model/session/types.ts";
+import { mountOpenTuiAgentSettings } from "../renderer/opentui/agent-settings.ts";
+import { profilePermissionSupport } from "../runtime/agents/profile.ts";
 
 function configuration(bootstrap: AgentBootstrap, model: string): AgentConfiguration {
 	const profile: ModeProfile = {

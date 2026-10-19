@@ -3,8 +3,8 @@ import { existsSync } from "node:fs";
 import { mkdtemp, readdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { updateReadmeWithBoard } from "../readme.ts";
-import type { Task } from "../types/index.ts";
+import type { Task } from "../model/types.ts";
+import { updateReadmeWithBoard } from "../renderer/readme.ts";
 
 const BOARD_START = "<!-- BOARD_START -->";
 const BOARD_END = "<!-- BOARD_END -->";

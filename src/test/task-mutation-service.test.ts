@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
-import { ProjectTaskMutations } from "../core/task-mutation-service.ts";
-import type { Task } from "../types/index.ts";
+import { ProjectTaskMutations } from "../controller/task-mutation-service.ts";
+import type { Task } from "../model/types.ts";
 
 describe("ProjectTaskMutations", () => {
 	it("falls back to the filesystem task when the working-copy index has no match", async () => {

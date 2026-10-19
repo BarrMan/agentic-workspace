@@ -1,9 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import { DEFAULT_TASK_TYPES } from "../constants/index.ts";
-import { Core } from "../core/agentic-workspace.ts";
-import { parseTask } from "../markdown/parser.ts";
-import { serializeTask } from "../markdown/serializer.ts";
-import type { Task } from "../types/index.ts";
+import { Core } from "../controller/agentic-workspace.ts";
+import { DEFAULT_TASK_TYPES } from "../model/constants.ts";
+import type { Task } from "../model/types.ts";
+import { parseTask } from "../storage/markdown/parser.ts";
+import { serializeTask } from "../storage/markdown/serializer.ts";
 import { coreFileSystem, createUniqueTestDir, initializeFilesystemTestProject, safeCleanup } from "./test-utils.ts";
 
 let TEST_DIR: string;

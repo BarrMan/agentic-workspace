@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from "bun:test";
 import { join } from "node:path";
-import { Core } from "../core/agentic-workspace.ts";
-import { FileSystem } from "../file-system/operations.ts";
+import { Core } from "../controller/agentic-workspace.ts";
+import { FileSystem } from "../storage/file-system.ts";
 import { coreFileSystem, createUniqueTestDir, safeCleanup } from "./test-utils.ts";
 
 const directories: string[] = [];

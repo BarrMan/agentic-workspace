@@ -1,4 +1,4 @@
-import { renderConfiguredTaskIds } from "../commands/help-schema.ts";
+import { renderConfiguredTaskIds } from "./commands/help-schema.ts";
 
 type RootEntryOptions = {
 	version: string;

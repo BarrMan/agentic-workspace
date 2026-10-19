@@ -3,7 +3,7 @@ import { mkdir, readdir } from "node:fs/promises";
 import { join } from "node:path";
 import { Writable } from "node:stream";
 import { runCli } from "../cli/register.ts";
-import { Core } from "../core/agentic-workspace.ts";
+import { Core } from "../controller/agentic-workspace.ts";
 import { coreFileSystem, createUniqueTestDir, initializeFilesystemTestProject, safeCleanup } from "./test-utils.ts";
 
 const CLI_COMMAND = ["agentic-workspace"];

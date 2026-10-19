@@ -1,4 +1,4 @@
-import { parseDelimitedStringList, toStringArray } from "../../../utils/task-builders.ts";
+import { parseDelimitedStringList, toStringArray } from "../../../lib/string-list.ts";
 
 function validateClearableListInput(input: {
 	rawValues: string[];

@@ -1,5 +1,5 @@
 import { join } from "node:path";
-import { captureProcessOutput } from "../process/capture.ts";
+import { captureProcessOutput } from "../lib/process/capture.ts";
 
 const cliEntrypoint = join(import.meta.dir, "..", "cli", "index.ts");
 

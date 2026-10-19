@@ -9,8 +9,8 @@ import {
 	shortcutHelpItems,
 	shortcutKeyFromEvent,
 	shortcutsConfig,
-} from "../ui/opentui/keybindings.ts";
-import { metaModifierLabel, uiKeymap } from "../ui/opentui/keymap.ts";
+} from "../renderer/opentui/keybindings.ts";
+import { metaModifierLabel, uiKeymap } from "../renderer/opentui/keymap.ts";
 
 function keyEvent(
 	name: string,

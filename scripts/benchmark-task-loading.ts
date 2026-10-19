@@ -2,11 +2,11 @@ import { createHash } from "node:crypto";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
-import { Core } from "../src/core/agentic-workspace.ts";
-import { initializeProject } from "../src/core/init.ts";
-import type { FileSystem } from "../src/file-system/operations.ts";
-import { serializeTask } from "../src/markdown/serializer.ts";
-import type { Task } from "../src/types/index.ts";
+import { Core } from "../src/controller/agentic-workspace.ts";
+import { initializeProject } from "../src/controller/init.ts";
+import type { Task } from "../src/model/types.ts";
+import type { FileSystem } from "../src/storage/file-system.ts";
+import { serializeTask } from "../src/storage/markdown/serializer.ts";
 
 const fileSystemOf = (core: Core): FileSystem => (core as unknown as { filesystem: FileSystem }).filesystem;
 

@@ -2,11 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { mkdtemp, readdir, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
-import {
-	openViewStateStore,
-	type ViewStateEnvelope,
-	type ViewStateListener,
-} from "../agent-workspace/view-state-store.ts";
+import { openViewStateStore, type ViewStateEnvelope, type ViewStateListener } from "../storage/view-state-store.ts";
 import { safeCleanup, waitUntil } from "./test-utils.ts";
 
 /**

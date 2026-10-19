@@ -5,39 +5,32 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import type { BoxRenderable } from "@opentui/core";
 import { createTestRenderer } from "@opentui/core/testing";
-import type {
-	ActivityProbe,
-	ActivityProbeEvidence,
-	ActivityProbeTarget,
-} from "../agent-workspace/agent-status-probe.ts";
-import {
-	getBuiltInAgentConfiguration,
-	getDefaultModeCatalog,
-	upsertAgentConfiguration,
-} from "../agent-workspace/config.ts";
-import type { GroupState, GroupStore } from "../agent-workspace/group-store.ts";
-import type { AgentHost } from "../agent-workspace/live/agent-host.ts";
-import type { createExistingAgentHost } from "../agent-workspace/live/existing-agent-host.ts";
-import { BunRunner, type TmuxServer } from "../agent-workspace/session-process.ts";
-import { SessionStore } from "../agent-workspace/session-store.ts";
-import { nativeSessionName } from "../agent-workspace/session-utils.ts";
-import type { SharedAgentAttachment } from "../agent-workspace/sessions.ts";
-import { AgentSessionService, ExactResumeUnavailableError } from "../agent-workspace/sessions.ts";
-import type { AgentIndication, AgentSession, AgentSessionStatus, TaskSessions } from "../agent-workspace/types.ts";
-import type { ViewStateEnvelope, ViewStateListener, ViewStateStore } from "../agent-workspace/view-state-store.ts";
-import { workspaceRequestDir, writeWorkspaceRequest } from "../agent-workspace/workspace-context.ts";
-import { WorkspaceStateService } from "../agent-workspace/workspace-state.ts";
-import { Core } from "../core/agentic-workspace.ts";
-import type { Task } from "../types/index.ts";
-import type { OpenTuiBoardProps } from "../ui/opentui/board.ts";
-import type { OpenTuiConfirmMount } from "../ui/opentui/confirm.ts";
-import type { OpenTuiHost } from "../ui/opentui/host.ts";
-import type { OpenTuiSessionPickerOptions } from "../ui/opentui/session-picker.ts";
-import { createWorkspaceFilters, type SharedWorkspaceState } from "../ui/opentui/workspace/state.ts";
-import type { OpenTuiWorkspaceMount, OpenTuiWorkspaceOptions } from "../ui/opentui/workspace.ts";
-import { mountOpenTuiWorkspace } from "../ui/opentui/workspace.ts";
-import { createWorkspaceAgent } from "../ui/opentui/workspace-agent.ts";
-import { modeSessionIndication, OpenTuiWorkspaceController } from "../ui/opentui/workspace-controller.ts";
+import { Core } from "../controller/agentic-workspace.ts";
+import { WorkspaceStateService } from "../controller/workspace-state.ts";
+import { nativeSessionName } from "../model/session/session-utils.ts";
+import type { AgentIndication, AgentSession, AgentSessionStatus, TaskSessions } from "../model/session/types.ts";
+import type { Task } from "../model/types.ts";
+import type { OpenTuiBoardProps } from "../renderer/opentui/board.ts";
+import type { OpenTuiConfirmMount } from "../renderer/opentui/confirm.ts";
+import type { OpenTuiHost } from "../renderer/opentui/host.ts";
+import type { OpenTuiSessionPickerOptions } from "../renderer/opentui/session-picker.ts";
+import { createWorkspaceFilters, type SharedWorkspaceState } from "../renderer/opentui/workspace/state.ts";
+import type { OpenTuiWorkspaceMount, OpenTuiWorkspaceOptions } from "../renderer/opentui/workspace.ts";
+import { mountOpenTuiWorkspace } from "../renderer/opentui/workspace.ts";
+import { createWorkspaceAgent } from "../renderer/opentui/workspace-agent.ts";
+import { modeSessionIndication, OpenTuiWorkspaceController } from "../renderer/opentui/workspace-controller.ts";
+import type { ActivityProbe, ActivityProbeEvidence, ActivityProbeTarget } from "../runtime/agent-status-probe.ts";
+import { ExactResumeUnavailableError } from "../runtime/errors/sessions.ts";
+import type { AgentHost } from "../runtime/live/agent-host.ts";
+import type { createExistingAgentHost } from "../runtime/live/existing-agent-host.ts";
+import { BunRunner, type TmuxServer } from "../runtime/session-process.ts";
+import type { SharedAgentAttachment } from "../runtime/sessions.ts";
+import { AgentSessionService } from "../runtime/sessions.ts";
+import { workspaceRequestDir, writeWorkspaceRequest } from "../runtime/workspace-context.ts";
+import { getBuiltInAgentConfiguration, getDefaultModeCatalog, upsertAgentConfiguration } from "../storage/config.ts";
+import type { GroupState, GroupStore } from "../storage/group-store.ts";
+import { SessionStore } from "../storage/session-store.ts";
+import type { ViewStateEnvelope, ViewStateListener, ViewStateStore } from "../storage/view-state-store.ts";
 import { coreFileSystem, initializeTestProject, waitUntil as waitForCondition } from "./test-utils.ts";
 
 class MemoryViewStateStore implements ViewStateStore<SharedWorkspaceState> {
@@ -399,7 +392,7 @@ function fakeExistingAgentHost(
 			await fake?.stop();
 			disposed = true;
 		},
-		async detach(history?: import("../agent-workspace/activity-observer.ts").ActivityHistory) {
+		async detach(history?: import("../runtime/activity-observer.ts").ActivityHistory) {
 			if (fake && "detach" in fake && typeof fake.detach === "function") await fake.detach(history);
 			disposed = true;
 			return "retained" as const;
@@ -1479,11 +1472,11 @@ describe("OpenTuiWorkspaceController", () => {
 				watchTasks: ((_core: Core, callbacks: typeof taskCallbacks) => {
 					taskCallbacks = callbacks;
 					return { stop: () => (taskStops += 1) };
-				}) as unknown as typeof import("../utils/task-watcher.ts").watchTasks,
+				}) as unknown as typeof import("../storage/watchers/task-watcher.ts").watchTasks,
 				watchConfig: ((_core: Core, callbacks: { onConfigChanged?: typeof configChanged }) => {
 					configChanged = callbacks.onConfigChanged;
 					return { stop: () => (configStops += 1) };
-				}) as unknown as typeof import("../utils/config-watcher.ts").watchConfig,
+				}) as unknown as typeof import("../storage/watchers/config-watcher.ts").watchConfig,
 			},
 		});
 		const running = controller.run();
@@ -1528,7 +1521,7 @@ describe("OpenTuiWorkspaceController", () => {
 				watchTasks: ((_core: Core, callbacks: { onTaskRemoved?: (taskId: string) => void | Promise<void> }) => {
 					removed = callbacks.onTaskRemoved;
 					return { stop() {} };
-				}) as unknown as typeof import("../utils/task-watcher.ts").watchTasks,
+				}) as unknown as typeof import("../storage/watchers/task-watcher.ts").watchTasks,
 				createExistingAgentHost: (() => {
 					const id = fixture.records[created++]?.id;
 					return {
@@ -1586,7 +1579,7 @@ describe("OpenTuiWorkspaceController", () => {
 				watchTasks: ((_core: Core, callbacks: { onTaskRemoved?: (taskId: string) => void | Promise<void> }) => {
 					removed = callbacks.onTaskRemoved;
 					return { stop() {} };
-				}) as unknown as typeof import("../utils/task-watcher.ts").watchTasks,
+				}) as unknown as typeof import("../storage/watchers/task-watcher.ts").watchTasks,
 				createExistingAgentHost: (() => {
 					const id = fixture.records[created++]?.id;
 					return {
@@ -1653,7 +1646,7 @@ describe("OpenTuiWorkspaceController", () => {
 				watchTasks: ((_core: Core, callbacks: { onTaskRemoved?: (taskId: string) => void | Promise<void> }) => {
 					removed = callbacks.onTaskRemoved;
 					return { stop() {} };
-				}) as unknown as typeof import("../utils/task-watcher.ts").watchTasks,
+				}) as unknown as typeof import("../storage/watchers/task-watcher.ts").watchTasks,
 				createExistingAgentHost: ((options: Parameters<typeof createExistingAgentHost>[0]) => {
 					const host = fakeExistingAgentHost(options, {
 						...agentHostStub(),
@@ -3300,7 +3293,7 @@ describe("OpenTuiWorkspaceController", () => {
 	it("releases working agents on close with their complete observation history without parking", async () => {
 		const counters = { live: 0, prepare: 0, activate: 0, finish: 0 };
 		const fake = controlledProbe();
-		let history: import("../agent-workspace/activity-observer.ts").ActivityHistory | undefined;
+		let history: import("../runtime/activity-observer.ts").ActivityHistory | undefined;
 		let stops = 0;
 		const fixture = await launchNativeAgent(fake.probe, counters, 0, {
 			...agentHostStub(),

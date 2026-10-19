@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { assigneeComparisonKey, formatAssignee, normalizeAssignees } from "../utils/assignee-filter.ts";
+import { assigneeComparisonKey, formatAssignee, normalizeAssignees } from "../model/task/assignee-filter.ts";
 
 describe("assignee identity", () => {
 	it("compares optional @, casing, and surrounding whitespace equally", () => {

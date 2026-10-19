@@ -17,6 +17,30 @@ AgenticWorkspace manages project tasks, configured modes, retained conversations
 
 Controller is UI-agnostic: no keybindings, focus, layout, or terminal backend. Only Renderer knows the terminal backend. Application init runs `controller.load(project)` before `renderer.init(controller)`.
 
+## Repository Layout
+
+`src/` uses the component boundaries as its top-level layers. A file belongs to the layer that owns its behavior, not to a catch-all utility directory.
+
+| Directory | Component | Owns |
+|---|---|---|
+| `model/` | Models | Task and Session records and behavior, identity, readiness, dependency graph, ordering, filters, configuration types, domain constants, and domain errors. No I/O. |
+| `storage/` | Storage | Model-typed persistence, record codecs and schema validation, repositories, watchers, session/group/view state, and storage errors. |
+| `filesystem/` | Storage substrate | Filesystem operations, path resolution, atomic writes, locks, and git worktree access. |
+| `controller/` | Controller | The operation boundary and application workflows: task lifecycle, creation, mutation, queries, search, and initialization. |
+| `runtime/` | SessionRuntime | Harness adapters, agent presets, session process and tmux management, activity/status, and workspace context. |
+| `renderer/` | Renderer | OpenTUI screens, board, presentation formatters, and README/board rendering. |
+| `cli/` | CLI | Command registration, feature modules, completions, and CLI-only parsing and output. |
+| `lib/` | none | Generic, domain-free helpers such as dates, slugs, process capture, and debug logging. It does not import application layers. |
+| `test/` | none | Shared fixtures and cross-cutting contract/integration tests. Focused tests sit beside their owner. |
+| `types/` | none | Ambient `.d.ts` declarations only. |
+
+Rules:
+
+- Put a change in its owner's directory. `lib/` is not a default for helpers that know task, session, storage, runtime, or presentation concepts.
+- Domain behavior lives on the model that owns it. Task identity comparison, value equality, and readiness are Task operations, not free helpers or controller methods.
+- Custom errors live in the `errors/` subdirectory of the layer that owns the failure.
+- A new top-level directory or a new layer-crossing dependency requires a BLUEPRINT update.
+
 ## Detailed Pages
 
 | Page | Owns |

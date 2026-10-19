@@ -3,9 +3,9 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { mkdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { Core } from "../core/agentic-workspace.ts";
-import type { Task } from "../types/index.ts";
-import { taskIdsEqual } from "../utils/task-id.ts";
+import { Core } from "../controller/agentic-workspace.ts";
+import { taskIdsEqual } from "../model/task/task-id.ts";
+import type { Task } from "../model/types.ts";
 import { coreFileSystem, initializeFilesystemTestProject } from "./test-utils.ts";
 
 describe("Task Dependencies", () => {

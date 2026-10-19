@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
-import { DEFAULT_TASK_TYPES } from "../constants/index.ts";
-import { formatValidTaskTypeValues, getTaskTypeValues, resolveTaskTypeValue } from "../utils/task-type-config.ts";
+import { DEFAULT_TASK_TYPES } from "../model/constants.ts";
+import { formatValidTaskTypeValues, getTaskTypeValues, resolveTaskTypeValue } from "../model/task/task-type-config.ts";
 
 describe("task type configuration", () => {
 	it("uses defaults when task types are not configured", () => {

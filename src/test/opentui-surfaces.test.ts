@@ -1,10 +1,10 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { BoxRenderable } from "@opentui/core";
 import { createTestRenderer, type TestRendererSetup } from "@opentui/core/testing";
-import type { Task } from "../types/index.ts";
-import { Board } from "../ui/opentui/board/models/board.ts";
-import { mountOpenTuiBoard } from "../ui/opentui/board.ts";
-import { mountOpenTuiWorkspace } from "../ui/opentui/workspace.ts";
+import type { Task } from "../model/types.ts";
+import { Board } from "../renderer/opentui/board/models/board.ts";
+import { mountOpenTuiBoard } from "../renderer/opentui/board.ts";
+import { mountOpenTuiWorkspace } from "../renderer/opentui/workspace.ts";
 
 function task(id: string, status = "Todo"): Task {
 	return { id, title: `Task ${id}`, status, assignee: [], createdDate: "2026-01-01", labels: [], dependencies: [] };

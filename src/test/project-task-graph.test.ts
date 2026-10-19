@@ -1,10 +1,10 @@
 import { describe, expect, it } from "bun:test";
-import { TaskCollectionParentNotFoundError } from "../core/domain-errors.ts";
-import { ProjectTaskGraph } from "../core/project-task-graph.ts";
-import { TaskIdentityIndex, workingCopyTaskIdentityRecord } from "../core/task-identity-index.ts";
-import type { TaskCorpusSnapshot } from "../core/task-loader.ts";
-import type { Task } from "../types/index.ts";
-import { AmbiguousTaskIdError } from "../utils/task-path.ts";
+import type { TaskCorpusSnapshot } from "../controller/task-loader.ts";
+import { TaskCollectionParentNotFoundError } from "../model/errors/task-collection.ts";
+import { AmbiguousTaskIdError } from "../model/errors/task-id.ts";
+import { ProjectTaskGraph } from "../model/task/project-task-graph.ts";
+import { TaskIdentityIndex, workingCopyTaskIdentityRecord } from "../model/task/task-identity-index.ts";
+import type { Task } from "../model/types.ts";
 
 function task(id: string, dependencies: string[] = [], overrides: Partial<Task> = {}): Task {
 	return {

@@ -3,10 +3,10 @@ import { mkdir, mkdtemp, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { $ } from "bun";
+import { getAssignees, getLabels, getStatuses, getTaskIds } from "../cli/completions/data-providers.ts";
 import { CliRuntime } from "../cli/runtime.ts";
-import { getAssignees, getLabels, getStatuses, getTaskIds } from "../completions/data-providers.ts";
-import { Core, createRuntimeCore } from "../core/agentic-workspace.ts";
-import { AGENTIC_WORKSPACE_CWD_ENV, resolveRuntimeCwd } from "../utils/runtime-cwd.ts";
+import { Core, createRuntimeCore } from "../controller/agentic-workspace.ts";
+import { AGENTIC_WORKSPACE_CWD_ENV, resolveRuntimeCwd } from "../lib/runtime-cwd.ts";
 import { coreFileSystem, initGitRepo, initializeFilesystemTestProject } from "./test-utils.ts";
 
 describe("resolveRuntimeCwd", () => {

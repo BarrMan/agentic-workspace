@@ -1,10 +1,10 @@
 import { describe, expect, it } from "bun:test";
-import type { Task } from "../types/index.ts";
 import {
 	detectDuplicateTaskIds,
 	formatDuplicateTaskIdSummary,
 	formatDuplicateTaskIdWarning,
-} from "../utils/duplicate-detection.ts";
+} from "../model/task/duplicate-detection.ts";
+import type { Task } from "../model/types.ts";
 
 function makeTask(id: string, title: string): Task {
 	return {

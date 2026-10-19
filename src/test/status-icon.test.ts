@@ -6,7 +6,7 @@ import {
 	getSelectedActivityColor,
 	getSelectedIndicationColor,
 	getStatusStyle,
-} from "../formatters/status-icon.ts";
+} from "../renderer/formatters/status-icon.ts";
 
 describe("Status Icon Component", () => {
 	describe("getStatusStyle", () => {

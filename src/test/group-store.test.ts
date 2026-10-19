@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from "bun:test";
 import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { type GroupState, openGroupStore, type TaskGroup } from "../agent-workspace/group-store.ts";
+import { type GroupState, openGroupStore, type TaskGroup } from "../storage/group-store.ts";
 import { safeCleanup, waitUntil } from "./test-utils.ts";
 
 type Store = Awaited<ReturnType<typeof openGroupStore>>;

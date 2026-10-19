@@ -2,17 +2,12 @@ import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { mkdir } from "node:fs/promises";
 import { Writable } from "node:stream";
 import { runCli } from "../cli/register.ts";
-import { Core } from "../core/agentic-workspace.ts";
-import { withReadiness } from "../core/task-detail.ts";
-import type { FileSystem } from "../file-system/operations.ts";
-import type { Task, TaskSearchResult } from "../types/index.ts";
-import { NO_MILESTONE_FILTER_VALUE } from "../utils/milestone-filter.ts";
-import {
-	applyTaskFilters,
-	buildTaskSearchBodyText,
-	createTaskSearchIndex,
-	type TaskFilterOptions,
-} from "../utils/task-search.ts";
+import { Core } from "../controller/agentic-workspace.ts";
+import { withReadiness } from "../controller/task-detail.ts";
+import { NO_MILESTONE_FILTER_VALUE } from "../model/task/milestone-filter.ts";
+import { type TaskFilterOptions, TaskSearchIndex } from "../model/task/task-search.ts";
+import type { Task, TaskSearchResult } from "../model/types.ts";
+import type { FileSystem } from "../storage/file-system.ts";
 import { coreFileSystem, createUniqueTestDir, initializeFilesystemTestProject, safeCleanup } from "./test-utils.ts";
 
 const cliCommand = ["agentic-workspace"];
@@ -109,7 +104,7 @@ function taskIds(results: Task[]): string[] {
 
 describe("task search corpus", () => {
 	it("puts labels and assignees in the searchable text", () => {
-		const bodyText = buildTaskSearchBodyText(labelledTask);
+		const bodyText = TaskSearchIndex.bodyText(labelledTask);
 		expect(bodyText).toContain("infrastructure");
 		expect(bodyText).toContain("@morgan");
 	});
@@ -141,30 +136,30 @@ describe("cross-surface search parity", () => {
 			.sort();
 
 	it("finds a task by a label it carries through both surfaces", async () => {
-		const localMatches = taskIds(createTaskSearchIndex(tasks).search({ query: "infrastructure" }));
+		const localMatches = taskIds(new TaskSearchIndex(tasks).search({ query: "infrastructure" }));
 
 		expect(localMatches).toEqual(["task-1"]);
 		expect(await persistentTaskIds("infrastructure")).toEqual(["TASK-1"]);
 	});
 
 	it("finds a task by its assignee through both surfaces", async () => {
-		const localMatches = taskIds(createTaskSearchIndex(tasks).search({ query: "morgan" }));
+		const localMatches = taskIds(new TaskSearchIndex(tasks).search({ query: "morgan" }));
 
 		expect(localMatches).toEqual(["task-1"]);
 		expect(await persistentTaskIds("morgan")).toEqual(["TASK-1"]);
 	});
 
 	it("uses case-insensitive literal matching with stable corpus order", async () => {
-		const localMatches = createTaskSearchIndex(tasks).search({ query: "REWORK" });
+		const localMatches = new TaskSearchIndex(tasks).search({ query: "REWORK" });
 		const persistentMatches = await persistentTaskIds("REWORK");
 
 		expect(localMatches.map((task) => task.id)).toEqual(["task-1"]);
 		expect(persistentMatches).toEqual(["TASK-1"]);
-		expect(createTaskSearchIndex(tasks).search({ query: "rewrok" })).toEqual([]);
+		expect(new TaskSearchIndex(tasks).search({ query: "rewrok" })).toEqual([]);
 	});
 
 	it("agrees on a label filter applied without a query", async () => {
-		const localMatches = taskIds(applyTaskFilters(tasks, { labels: ["backend"] }));
+		const localMatches = taskIds(TaskSearchIndex.apply(tasks, { labels: ["backend"] }));
 		const serviceMatches = (await core.searchPersistently({ types: ["task"], filters: { labels: ["backend"] } }))
 			.filter((result): result is TaskSearchResult => result.type === "task")
 			.map((result) => result.task.id)
@@ -175,7 +170,7 @@ describe("cross-surface search parity", () => {
 	});
 
 	it("agrees on an assignee filter applied without a query", async () => {
-		const localMatches = taskIds(applyTaskFilters(tasks, { assignee: "@MORGAN" }));
+		const localMatches = taskIds(TaskSearchIndex.apply(tasks, { assignee: "@MORGAN" }));
 		const serviceMatches = (await core.searchPersistently({ types: ["task"], filters: { assignee: "@MORGAN" } }))
 			.filter((result): result is TaskSearchResult => result.type === "task")
 			.map((result) => result.task.id)
@@ -189,8 +184,8 @@ describe("cross-surface search parity", () => {
 		const unassigned: Task = { ...otherTask, id: "task-3", title: "Unassigned", assignee: ["", "  "] };
 		await filesystem.saveTask(unassigned);
 		const corpus = [...tasks, unassigned];
-		expect(taskIds(applyTaskFilters(corpus, { assignee: [" Morgan ", "riley"] }))).toEqual(["task-1", "task-2"]);
-		expect(taskIds(applyTaskFilters(corpus, { unassigned: true }))).toEqual(["task-3"]);
+		expect(taskIds(TaskSearchIndex.apply(corpus, { assignee: [" Morgan ", "riley"] }))).toEqual(["task-1", "task-2"]);
+		expect(taskIds(TaskSearchIndex.apply(corpus, { unassigned: true }))).toEqual(["task-3"]);
 		const assigned = (await core.searchPersistently({ types: ["task"], filters: { assignee: ["morgan", "@RILEY"] } }))
 			.filter((result): result is TaskSearchResult => result.type === "task")
 			.map((result) => result.task.id)
@@ -205,12 +200,15 @@ describe("cross-surface search parity", () => {
 	it("applies the same labelMatch semantics with and without a query", () => {
 		const bothLabels = ["backend", "infrastructure"];
 
-		expect(taskIds(applyTaskFilters(tasks, { labels: bothLabels, labelMatch: "all" }))).toEqual(["task-1"]);
-		expect(taskIds(applyTaskFilters(tasks, { labels: bothLabels, labelMatch: "any" }))).toEqual(["task-1", "task-2"]);
+		expect(taskIds(TaskSearchIndex.apply(tasks, { labels: bothLabels, labelMatch: "all" }))).toEqual(["task-1"]);
+		expect(taskIds(TaskSearchIndex.apply(tasks, { labels: bothLabels, labelMatch: "any" }))).toEqual([
+			"task-1",
+			"task-2",
+		]);
 
 		const withQuery = { query: "the", labels: bothLabels } as const;
-		expect(taskIds(applyTaskFilters(tasks, { ...withQuery, labelMatch: "all" }))).toEqual(["task-1"]);
-		expect(taskIds(applyTaskFilters(tasks, { ...withQuery, labelMatch: "any" }))).toEqual(["task-1", "task-2"]);
+		expect(taskIds(TaskSearchIndex.apply(tasks, { ...withQuery, labelMatch: "all" }))).toEqual(["task-1"]);
+		expect(taskIds(TaskSearchIndex.apply(tasks, { ...withQuery, labelMatch: "any" }))).toEqual(["task-1", "task-2"]);
 	});
 });
 
@@ -257,14 +255,14 @@ describe("filters mean the same thing with and without a query", () => {
 
 	it("resolves a milestone title the same way with and without a query", () => {
 		const options = { milestone: "m-1" } as const;
-		expect(taskIds(applyTaskFilters(milestoneTasks, options))).toEqual(["task-10"]);
-		expect(taskIds(applyTaskFilters(milestoneTasks, { ...options, query }))).toEqual(["task-10"]);
+		expect(taskIds(TaskSearchIndex.apply(milestoneTasks, options))).toEqual(["task-10"]);
+		expect(taskIds(TaskSearchIndex.apply(milestoneTasks, { ...options, query }))).toEqual(["task-10"]);
 	});
 
 	it("keeps the no-milestone filter meaning the same with and without a query", () => {
 		const options = { milestone: NO_MILESTONE_FILTER_VALUE } as const;
-		expect(taskIds(applyTaskFilters(milestoneTasks, options))).toEqual(["task-12"]);
-		expect(taskIds(applyTaskFilters(milestoneTasks, { ...options, query }))).toEqual(["task-12"]);
+		expect(taskIds(TaskSearchIndex.apply(milestoneTasks, options))).toEqual(["task-12"]);
+		expect(taskIds(TaskSearchIndex.apply(milestoneTasks, { ...options, query }))).toEqual(["task-12"]);
 	});
 
 	it("keeps dependency readiness meaning the same with and without a query", () => {
@@ -272,7 +270,7 @@ describe("filters mean the same thing with and without a query", () => {
 		// left, against the whole corpus. A query must not change which rows come back ready.
 		const corpus = { tasks: milestoneTasks, completedTasks: [], statuses: ["To Do", "In Progress", "Done"] };
 		const readyIds = (options: TaskFilterOptions) =>
-			withReadiness(applyTaskFilters(milestoneTasks, options), corpus)
+			withReadiness(TaskSearchIndex.apply(milestoneTasks, options), corpus)
 				.filter((row) => row.isReady)
 				.map((row) => row.id);
 		// task-11 depends on an unfinished task-10, so it is the one readiness must drop.
@@ -283,20 +281,23 @@ describe("filters mean the same thing with and without a query", () => {
 
 describe("labelMatch semantics", () => {
 	it("defaults to matching any selected label", () => {
-		expect(taskIds(applyTaskFilters(tasks, { labels: ["backend", "infrastructure"] }))).toEqual(["task-1", "task-2"]);
+		expect(taskIds(TaskSearchIndex.apply(tasks, { labels: ["backend", "infrastructure"] }))).toEqual([
+			"task-1",
+			"task-2",
+		]);
 	});
 
 	it("requires every label when the caller asks for all", () => {
-		expect(taskIds(applyTaskFilters(tasks, { labels: ["backend", "infrastructure"], labelMatch: "all" }))).toEqual([
-			"task-1",
-		]);
+		expect(taskIds(TaskSearchIndex.apply(tasks, { labels: ["backend", "infrastructure"], labelMatch: "all" }))).toEqual(
+			["task-1"],
+		);
 	});
 
 	it("matches labels case-insensitively in both modes", () => {
-		expect(taskIds(applyTaskFilters(tasks, { labels: ["BACKEND"] }))).toEqual(["task-1", "task-2"]);
-		expect(taskIds(applyTaskFilters(tasks, { labels: ["BackEnd", "INFRASTRUCTURE"], labelMatch: "all" }))).toEqual([
-			"task-1",
-		]);
+		expect(taskIds(TaskSearchIndex.apply(tasks, { labels: ["BACKEND"] }))).toEqual(["task-1", "task-2"]);
+		expect(taskIds(TaskSearchIndex.apply(tasks, { labels: ["BackEnd", "INFRASTRUCTURE"], labelMatch: "all" }))).toEqual(
+			["task-1"],
+		);
 	});
 });
 

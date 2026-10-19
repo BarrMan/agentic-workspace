@@ -4,25 +4,25 @@ import { chmod, cp, mkdir, mkdtemp, realpath, rm, writeFile } from "node:fs/prom
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { TmuxCommandError } from "libtmux";
-import { agentFor } from "../agent-workspace/agents/agents.ts";
-import { renderSessionBootstrap, yoloFlagFor } from "../agent-workspace/bootstrap.ts";
-import type { PreparedLaunchResources } from "../agent-workspace/completion-supervisor-resources.ts";
-import { getDefaultModeCatalog, upsertAgentConfiguration } from "../agent-workspace/config.ts";
-import * as processTree from "../agent-workspace/process-tree.ts";
-import { prepareAgentLaunch } from "../agent-workspace/session-launch.ts";
-import { SessionStore } from "../agent-workspace/session-store.ts";
-import { isAgenticWorkspaceSessionName, nativeSessionName } from "../agent-workspace/session-utils.ts";
-import type { ProcessRunner, TmuxServer } from "../agent-workspace/sessions.ts";
-import type { AgentPreset, AgentSession } from "../agent-workspace/types.ts";
-import { type WorkspaceContext, workspaceRequestDir } from "../agent-workspace/workspace-context.ts";
-import { Core } from "../core/agentic-workspace.ts";
-import { ensureTaskWorktree, taskWorktreeExists, taskWorktreePath } from "../git/task-worktree.ts";
+import { Core } from "../controller/agentic-workspace.ts";
+import { ensureTaskWorktree, taskWorktreeExists, taskWorktreePath } from "../filesystem/git/task-worktree.ts";
+import * as processTree from "../lib/process-tree.ts";
+import { isAgenticWorkspaceSessionName, nativeSessionName } from "../model/session/session-utils.ts";
+import type { AgentPreset, AgentSession } from "../model/session/types.ts";
+import { agentFor } from "../runtime/agents/agents.ts";
+import { renderSessionBootstrap, yoloFlagFor } from "../runtime/bootstrap.ts";
+import type { PreparedLaunchResources } from "../runtime/completion-supervisor-resources.ts";
+import { prepareAgentLaunch } from "../runtime/session-launch.ts";
+import type { ProcessRunner, TmuxServer } from "../runtime/sessions.ts";
+import { type WorkspaceContext, workspaceRequestDir } from "../runtime/workspace-context.ts";
+import { getDefaultModeCatalog, upsertAgentConfiguration } from "../storage/config.ts";
+import { SessionStore } from "../storage/session-store.ts";
 import { registerPromptAgent } from "./agent-test-helpers.ts";
 import { coreFileSystem, createConcurrencyLimiter, initGitRepo, initializeTestProject } from "./test-utils.ts";
 import { isolatedTmuxServer, killTmuxServer, uniqueTmuxSocket } from "./tmux-test-server.ts";
 
 const processRows: processTree.ProcessRow[] = [];
-mock.module("../agent-workspace/process-tree.ts", () => ({
+mock.module("../lib/process-tree.ts", () => ({
 	...processTree,
 	readProcessTable: () => processRows,
 	snapshotProcessGroup: (pid: number) => [{ pid, started: "fake-start" }],
@@ -30,8 +30,8 @@ mock.module("../agent-workspace/process-tree.ts", () => ({
 	terminateOwnedDescendants: async () => "terminated",
 	deadPaneGroupState: () => "gone",
 }));
-const { BunRunner, SessionProcess } = await import("../agent-workspace/session-process.ts");
-const { AgentSessionService } = await import("../agent-workspace/sessions.ts");
+const { BunRunner, SessionProcess } = await import("../runtime/session-process.ts");
+const { AgentSessionService } = await import("../runtime/sessions.ts");
 type SessionProcessInstance = InstanceType<typeof SessionProcess>;
 type AgentSessionServiceInstance = InstanceType<typeof AgentSessionService>;
 

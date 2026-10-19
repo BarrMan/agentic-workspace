@@ -1,18 +1,23 @@
 import type { Command, OptionValues } from "commander";
-import { addHelpSchema } from "../../../commands/help-schema.ts";
-import { DEFAULT_DONE_STATUS } from "../../../constants/index.ts";
-import { findLocalDuplicateTaskIds } from "../../../core/duplicate-task-detection.ts";
-import { loadTaskDetail } from "../../../core/task-detail.ts";
-import { printJson, type TaskArtifactProjection, taskListJson, taskViewJson } from "../../../formatters/json-output.ts";
-import { formatTaskPlainText } from "../../../formatters/task-plain-text.ts";
+import { findLocalDuplicateTaskIds } from "../../../controller/duplicate-task-detection.ts";
+import { loadTaskDetail } from "../../../controller/task-detail.ts";
 import { Core } from "../../../index.ts";
-import { formatDuplicateTaskIdWarning } from "../../../utils/duplicate-detection.ts";
-import { LIST_WINDOW_OUTPUT_HELP, printListWindow, selectListWindow } from "../../../utils/list-window.ts";
-import type { ReadOutputMode, ReadOutputOptions } from "../../../utils/read-output-mode.ts";
-import { getCanonicalStatus, getValidStatuses } from "../../../utils/status.ts";
-import { taskIdsEqual } from "../../../utils/task-id.ts";
-import { LOCAL_TASK_LOOKUP_HINT } from "../../../utils/task-path.ts";
-import { getTerminalStatus } from "../../../utils/terminal-status.ts";
+import { DEFAULT_DONE_STATUS } from "../../../model/constants.ts";
+import { formatDuplicateTaskIdWarning } from "../../../model/task/duplicate-detection.ts";
+import { getCanonicalStatus, getValidStatuses } from "../../../model/task/status.ts";
+import { taskIdsEqual } from "../../../model/task/task-id.ts";
+import { LOCAL_TASK_LOOKUP_HINT } from "../../../model/task/task-path.ts";
+import { getTerminalStatus } from "../../../model/task/terminal-status.ts";
+import {
+	printJson,
+	type TaskArtifactProjection,
+	taskListJson,
+	taskViewJson,
+} from "../../../renderer/formatters/json-output.ts";
+import { formatTaskPlainText } from "../../../renderer/formatters/task-plain-text.ts";
+import { addHelpSchema } from "../../commands/help-schema.ts";
+import { LIST_WINDOW_OUTPUT_HELP, printListWindow, selectListWindow } from "../../list-window.ts";
+import type { ReadOutputMode, ReadOutputOptions } from "../../read-output-mode.ts";
 import type { CliRuntime } from "../../runtime.ts";
 import { registerTaskArtifactCommands } from "../../task-artifact.ts";
 import { type CliReadOutput, getReadOutputMode, isPlainRequested, resolveListOutput } from "../read-output.ts";

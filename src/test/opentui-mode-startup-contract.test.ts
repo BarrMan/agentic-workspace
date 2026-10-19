@@ -4,19 +4,19 @@ import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, wr
 import { tmpdir } from "node:os";
 import { join, relative } from "node:path";
 import { Writable } from "node:stream";
-import { getBuiltInAgentConfiguration } from "../agent-workspace/config.ts";
-import * as groupStores from "../agent-workspace/group-store.ts";
-import * as sessionStores from "../agent-workspace/session-store.ts";
-import type { AgentConfiguration, TaskSessions } from "../agent-workspace/types.ts";
-import * as viewStores from "../agent-workspace/view-state-store.ts";
-import type { WorkspaceStateService } from "../agent-workspace/workspace-state.ts";
 import { runCli } from "../cli/register.ts";
-import type { Core } from "../core/agentic-workspace.ts";
-import type { Task } from "../types/index.ts";
-import type { OpenTuiHost } from "../ui/opentui/host.ts";
-import { createWorkspaceFilters, type SharedWorkspaceState } from "../ui/opentui/workspace/state.ts";
-import type { OpenTuiWorkspaceOptions } from "../ui/opentui/workspace.ts";
-import { OpenTuiWorkspaceController } from "../ui/opentui/workspace-controller.ts";
+import type { Core } from "../controller/agentic-workspace.ts";
+import type { WorkspaceStateService } from "../controller/workspace-state.ts";
+import type { AgentConfiguration, TaskSessions } from "../model/session/types.ts";
+import type { Task } from "../model/types.ts";
+import type { OpenTuiHost } from "../renderer/opentui/host.ts";
+import { createWorkspaceFilters, type SharedWorkspaceState } from "../renderer/opentui/workspace/state.ts";
+import type { OpenTuiWorkspaceOptions } from "../renderer/opentui/workspace.ts";
+import { OpenTuiWorkspaceController } from "../renderer/opentui/workspace-controller.ts";
+import { getBuiltInAgentConfiguration } from "../storage/config.ts";
+import * as groupStores from "../storage/group-store.ts";
+import * as sessionStores from "../storage/session-store.ts";
+import * as viewStores from "../storage/view-state-store.ts";
 
 const task: Task = {
 	id: "BACK-1",

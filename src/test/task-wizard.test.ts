@@ -1,13 +1,13 @@
 import { describe, expect, it } from "bun:test";
+import { TaskWizardCancelledError } from "../cli/errors/wizard.ts";
 import {
 	pickTaskForEditWizard,
 	runTaskCreateWizard,
 	runTaskEditWizard,
-	TaskWizardCancelledError,
 	type TaskWizardPromptRunner,
 } from "../cli/features/tasks/wizard.ts";
-import { prepareTaskCreationInput } from "../core/task-creation-input.ts";
-import type { Task } from "../types/index.ts";
+import { prepareTaskCreationInput } from "../controller/task-creation-input.ts";
+import type { Task } from "../model/types.ts";
 
 type PromptResponses = Record<string, string | string[]>;
 

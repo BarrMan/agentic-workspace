@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { formatStoredDate } from "../utils/date.ts";
+import { formatStoredDate } from "../lib/date.ts";
 
 describe("formatStoredDate", () => {
 	it("uses the byte-exact UTC minute format stored in markdown", () => {

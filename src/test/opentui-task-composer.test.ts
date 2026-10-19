@@ -1,9 +1,9 @@
 import { afterEach, describe, expect, it } from "bun:test";
 import { BoxRenderable } from "@opentui/core";
 import { createTestRenderer, type TestRendererSetup } from "@opentui/core/testing";
-import type { AgentConfiguration } from "../agent-workspace/types.ts";
-import type { Task, TaskCreateInput } from "../types/index.ts";
-import { mountOpenTuiTaskComposer } from "../ui/opentui/task-composer.ts";
+import type { AgentConfiguration } from "../model/session/types.ts";
+import type { Task, TaskCreateInput } from "../model/types.ts";
+import { mountOpenTuiTaskComposer } from "../renderer/opentui/task-composer.ts";
 
 function configuration(overrides: Partial<AgentConfiguration> = {}): AgentConfiguration {
 	return {

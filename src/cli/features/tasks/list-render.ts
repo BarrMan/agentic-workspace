@@ -1,5 +1,5 @@
-import type { Task } from "../../../types/index.ts";
-import { formatUtcDateForDisplay } from "../../../utils/utc-date-display.ts";
+import { formatUtcDateForDisplay } from "../../../lib/utc-date-display.ts";
+import type { Task } from "../../../model/types.ts";
 
 export function formatTaskListRow(task: Task, includeStatus = false): string {
 	const priority = task.priority ? `[${task.priority.toUpperCase()}] ` : "";

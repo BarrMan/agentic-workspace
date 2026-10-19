@@ -1,4 +1,4 @@
-import type { Task, TaskListFilter } from "../types/index.ts";
+import type { Task, TaskListFilter } from "../model/types.ts";
 
 export const taskTypeScenarioTasks: readonly Task[] = [
 	{

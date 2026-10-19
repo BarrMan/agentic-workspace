@@ -3,9 +3,9 @@ import { mkdir } from "node:fs/promises";
 import { Writable } from "node:stream";
 import { runCli } from "../cli/register.ts";
 import { Core } from "../index.ts";
-import type { Task } from "../types/index.ts";
-import { prepareBoardColumns } from "../ui/opentui/board/policies/column-policy.ts";
-import { compareTaskIds } from "../utils/task-sorting.ts";
+import { TaskOrdering } from "../model/task/task-ordering.ts";
+import type { Task } from "../model/types.ts";
+import { prepareBoardColumns } from "../renderer/opentui/board/policies/column-policy.ts";
 import { coreFileSystem, createUniqueTestDir, initializeFilesystemTestProject, safeCleanup } from "./test-utils.ts";
 
 async function runCliCommand(args: string[], cwd: string) {
@@ -30,7 +30,7 @@ async function runCliCommand(args: string[], cwd: string) {
 // One parent with more than nine subtasks, plus two-digit top-level ids, so any surface that
 // compares ids as plain strings puts TASK-1.10 in front of TASK-1.2.
 const SUBTASK_IDS = Array.from({ length: 11 }, (_, index) => `TASK-1.${index + 1}`);
-const EXPECTED_ORDER = ["TASK-1", ...SUBTASK_IDS.slice().sort(compareTaskIds), "TASK-2", "TASK-11"];
+const EXPECTED_ORDER = ["TASK-1", ...SUBTASK_IDS.slice().sort(TaskOrdering.compareIds), "TASK-2", "TASK-11"];
 // The CLI list and the board columns render newest-first: top-level ids descending, then the
 // parent's subtasks. The CLI tie-break keeps parents before children, so subtasks descend; the
 // board keeps sibling subtasks ascending under their parent.
@@ -38,9 +38,9 @@ const EXPECTED_DESCENDING_ORDER = [
 	"TASK-11",
 	"TASK-2",
 	"TASK-1",
-	...SUBTASK_IDS.slice().sort(compareTaskIds).reverse(),
+	...SUBTASK_IDS.slice().sort(TaskOrdering.compareIds).reverse(),
 ];
-const EXPECTED_COLUMN_ORDER = ["TASK-11", "TASK-2", "TASK-1", ...SUBTASK_IDS.slice().sort(compareTaskIds)];
+const EXPECTED_COLUMN_ORDER = ["TASK-11", "TASK-2", "TASK-1", ...SUBTASK_IDS.slice().sort(TaskOrdering.compareIds)];
 
 let TEST_DIR: string;
 let core: Core;
@@ -106,7 +106,7 @@ describe("subtask ordering consistency", () => {
 		// The web task list sorts with this same comparator, so a corpus already in its order
 		// cannot disagree with it.
 		expect(tasks.map((task) => task.id)).toEqual(
-			[...tasks].sort((left, right) => compareTaskIds(left.id, right.id)).map((task) => task.id),
+			[...tasks].sort((left, right) => TaskOrdering.compareIds(left.id, right.id)).map((task) => task.id),
 		);
 	});
 

@@ -3,17 +3,17 @@ import { EventEmitter } from "node:events";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { getBuiltInAgentConfiguration, getDefaultModeCatalog } from "../agent-workspace/config.ts";
-import type { TmuxServer } from "../agent-workspace/session-process.ts";
-import type { SharedAgentAttachment } from "../agent-workspace/sessions.ts";
-import type { AgentSession } from "../agent-workspace/types.ts";
-import type { WorkspaceStateService } from "../agent-workspace/workspace-state.ts";
-import type { Core } from "../core/agentic-workspace.ts";
-import type { Task } from "../types/index.ts";
-import type { OpenTuiHost } from "../ui/opentui/host.ts";
-import { createWorkspaceFilters } from "../ui/opentui/workspace/state.ts";
-import type { OpenTuiWorkspaceOptions } from "../ui/opentui/workspace.ts";
-import { OpenTuiWorkspaceController } from "../ui/opentui/workspace-controller.ts";
+import type { Core } from "../controller/agentic-workspace.ts";
+import type { WorkspaceStateService } from "../controller/workspace-state.ts";
+import type { AgentSession } from "../model/session/types.ts";
+import type { Task } from "../model/types.ts";
+import type { OpenTuiHost } from "../renderer/opentui/host.ts";
+import { createWorkspaceFilters } from "../renderer/opentui/workspace/state.ts";
+import type { OpenTuiWorkspaceOptions } from "../renderer/opentui/workspace.ts";
+import { OpenTuiWorkspaceController } from "../renderer/opentui/workspace-controller.ts";
+import type { TmuxServer } from "../runtime/session-process.ts";
+import type { SharedAgentAttachment } from "../runtime/sessions.ts";
+import { getBuiltInAgentConfiguration, getDefaultModeCatalog } from "../storage/config.ts";
 
 const roots: string[] = [];
 afterEach(() => {

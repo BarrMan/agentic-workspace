@@ -1,8 +1,9 @@
 import { describe, expect, it } from "bun:test";
-import { parseFrontmatter } from "../markdown/frontmatter.ts";
-import { parseTask, TaskFrontmatterSchemaError } from "../markdown/parser.ts";
-import { serializeTask } from "../markdown/serializer.ts";
-import type { Task } from "../types/index.ts";
+import type { Task } from "../model/types.ts";
+import { TaskFrontmatterSchemaError } from "../storage/errors/frontmatter.ts";
+import { parseFrontmatter } from "../storage/markdown/frontmatter.ts";
+import { parseTask } from "../storage/markdown/parser.ts";
+import { serializeTask } from "../storage/markdown/serializer.ts";
 
 const task: Task = {
 	id: "TASK-1",

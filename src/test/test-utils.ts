@@ -10,11 +10,11 @@ import { chmod, copyFile, mkdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { $ } from "bun";
-import type { Core } from "../core/agentic-workspace.ts";
-import { initializeProject as initializeProjectShared } from "../core/init.ts";
-import type { FileSystem } from "../file-system/operations.ts";
-import { serializeTask } from "../markdown/serializer.ts";
-import type { Task } from "../types/index.ts";
+import type { Core } from "../controller/agentic-workspace.ts";
+import { initializeProject as initializeProjectShared } from "../controller/init.ts";
+import type { Task } from "../model/types.ts";
+import type { FileSystem } from "../storage/file-system.ts";
+import { serializeTask } from "../storage/markdown/serializer.ts";
 
 /**
  * Root for every test project and Git template. It lives in the operating-system temp directory,

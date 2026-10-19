@@ -1,9 +1,9 @@
 import { afterEach, describe, expect, it } from "bun:test";
 import { BoxRenderable, KeyEvent, parseKeypress } from "@opentui/core";
 import { createTestRenderer, type TestRendererSetup } from "@opentui/core/testing";
-import { findShortcutConflict, shortcutsConfig } from "../ui/opentui/keybindings.ts";
-import type { TaskArtifactViewApi } from "../ui/opentui/task-artifact-view.ts";
-import { mountOpenTuiWorkspace } from "../ui/opentui/workspace.ts";
+import { findShortcutConflict, shortcutsConfig } from "../renderer/opentui/keybindings.ts";
+import type { TaskArtifactViewApi } from "../renderer/opentui/task-artifact-view.ts";
+import { mountOpenTuiWorkspace } from "../renderer/opentui/workspace.ts";
 
 function key(sequence: string): KeyEvent {
 	const parsed = parseKeypress(sequence, { useKittyKeyboard: true });

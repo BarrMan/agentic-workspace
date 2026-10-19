@@ -1,6 +1,6 @@
 import type { Writable } from "node:stream";
-import { findAgenticWorkspaceRoot } from "../utils/find-agentic-workspace-root.ts";
-import { resolveRuntimeCwd } from "../utils/runtime-cwd.ts";
+import { findAgenticWorkspaceRoot } from "../filesystem/paths/find-root.ts";
+import { resolveRuntimeCwd } from "../lib/runtime-cwd.ts";
 
 /** Startup capabilities shared by command registrations without exposing process-wide state. */
 export class CliRuntime {

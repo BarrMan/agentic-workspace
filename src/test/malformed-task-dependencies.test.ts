@@ -3,8 +3,8 @@ import { mkdir, readdir } from "node:fs/promises";
 import { join } from "node:path";
 import { Writable } from "node:stream";
 import { runCli } from "../cli/register.ts";
-import { Core } from "../core/agentic-workspace.ts";
-import { parseTask } from "../markdown/parser.ts";
+import { Core } from "../controller/agentic-workspace.ts";
+import { parseTask } from "../storage/markdown/parser.ts";
 import { coreFileSystem, createUniqueTestDir, initializeFilesystemTestProject, safeCleanup } from "./test-utils.ts";
 
 async function cli(args: string[], cwd: string) {

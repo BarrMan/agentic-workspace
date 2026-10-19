@@ -5,11 +5,11 @@ import { mkdir, rename, unlink } from "node:fs/promises";
 import { join } from "node:path";
 import { Writable } from "node:stream";
 import { runCli } from "../cli/register.ts";
-import { Core } from "../core/agentic-workspace.ts";
-import * as mainWorktree from "../git/main-worktree.ts";
-import { serializeTask } from "../markdown/serializer.ts";
-import type { Task } from "../types/index.ts";
-import { watchTasks } from "../utils/task-watcher.ts";
+import { Core } from "../controller/agentic-workspace.ts";
+import * as mainWorktree from "../filesystem/git/main-worktree.ts";
+import type { Task } from "../model/types.ts";
+import { serializeTask } from "../storage/markdown/serializer.ts";
+import { watchTasks } from "../storage/watchers/task-watcher.ts";
 import {
 	coreFileSystem,
 	createUniqueTestDir,

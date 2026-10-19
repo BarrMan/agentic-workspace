@@ -1,8 +1,8 @@
 import type { OptionValues } from "commander";
 import type { Core } from "../../../index.ts";
-import type { TaskListFilter } from "../../../types/index.ts";
-import { parsePositiveIntegerOption } from "../../../utils/list-window.ts";
-import { parseDelimitedStringList } from "../../../utils/task-builders.ts";
+import { parseDelimitedStringList } from "../../../lib/string-list.ts";
+import type { TaskListFilter } from "../../../model/types.ts";
+import { parsePositiveIntegerOption } from "../../list-window.ts";
 
 export type TaskListRequest = {
 	filters: TaskListFilter;

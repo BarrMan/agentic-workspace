@@ -1,8 +1,8 @@
 import { afterEach, describe, expect, it } from "bun:test";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { Core } from "../core/agentic-workspace.ts";
-import type { Task, TaskSearchResult } from "../types/index.ts";
+import { Core } from "../controller/agentic-workspace.ts";
+import type { Task, TaskSearchResult } from "../model/types.ts";
 import { coreFileSystem, createUniqueTestDir, initializeFilesystemTestProject, safeCleanup } from "./test-utils.ts";
 
 const roots: string[] = [];

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { findTmuxPanesByTaskAndRole } from "../agent-workspace/tmux-pane-lookup.ts";
+import { findTmuxPanesByTaskAndRole } from "../runtime/tmux-pane-lookup.ts";
 
 describe("durable tmux pane identity", () => {
 	it("matches task identity case-insensitively without rewriting the pane tag", async () => {

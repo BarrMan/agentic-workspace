@@ -1,12 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
-import { Core } from "../core/agentic-workspace.ts";
-import { parseFrontmatter } from "../markdown/frontmatter.ts";
-import { parseMilestone, parseTask } from "../markdown/parser.ts";
-import { serializeTask } from "../markdown/serializer.ts";
-import type { Task } from "../types/index.ts";
-import { normalizeDueDate } from "../utils/due-date.ts";
+import { Core } from "../controller/agentic-workspace.ts";
+import { normalizeDueDate } from "../model/task/due-date.ts";
+import type { Task } from "../model/types.ts";
+import { parseFrontmatter } from "../storage/markdown/frontmatter.ts";
+import { parseMilestone, parseTask } from "../storage/markdown/parser.ts";
+import { serializeTask } from "../storage/markdown/serializer.ts";
 import { coreFileSystem, createUniqueTestDir, initializeFilesystemTestProject, safeCleanup } from "./test-utils.ts";
 
 describe("date-only due date model", () => {

@@ -1,12 +1,12 @@
 import { afterEach, describe, expect, it } from "bun:test";
 import { BoxRenderable, InputRenderable, rgbToHex, TextareaRenderable } from "@opentui/core";
 import { createTestRenderer, type TestRendererSetup } from "@opentui/core/testing";
-import type { AgentConfiguration } from "../agent-workspace/types.ts";
+import type { AgentConfiguration } from "../model/session/types.ts";
 import {
 	mountOpenTuiAgentSettings,
 	mountOpenTuiPresetPicker,
 	parseAgentPresetEnvironment,
-} from "../ui/opentui/agent-settings.ts";
+} from "../renderer/opentui/agent-settings.ts";
 
 function configuration(): AgentConfiguration {
 	return {

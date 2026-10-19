@@ -1,10 +1,10 @@
 import { describe, expect, it } from "bun:test";
-import { BunRunner } from "../agent-workspace/session-process.ts";
-import { SessionStore } from "../agent-workspace/session-store.ts";
-import { AgentSessionService, type ProcessRunner, type TmuxServer } from "../agent-workspace/sessions.ts";
-import type { AgentSession, TaskSessions } from "../agent-workspace/types.ts";
-import { Core } from "../core/agentic-workspace.ts";
-import { cleanupTaskWorktreeSessions, withoutSelectedModeForTask } from "../git/task-worktree-cleanup.ts";
+import { Core } from "../controller/agentic-workspace.ts";
+import { cleanupTaskWorktreeSessions, withoutSelectedModeForTask } from "../filesystem/git/task-worktree-cleanup.ts";
+import type { AgentSession, TaskSessions } from "../model/session/types.ts";
+import { BunRunner } from "../runtime/session-process.ts";
+import { AgentSessionService, type ProcessRunner, type TmuxServer } from "../runtime/sessions.ts";
+import { SessionStore } from "../storage/session-store.ts";
 import { coreFileSystem, createUniqueTestDir, initializeFilesystemTestProject, safeCleanup } from "./test-utils.ts";
 
 function session(id: string, status: AgentSession["status"], _modeId?: string): AgentSession {

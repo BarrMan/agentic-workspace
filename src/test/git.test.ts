@@ -2,8 +2,8 @@ import { describe, expect, it, spyOn } from "bun:test";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { GitOperations, isGitRepository } from "../git/operations.ts";
-import type { AgenticWorkspaceConfig } from "../types/index.ts";
+import { GitOperations, isGitRepository } from "../filesystem/git/operations.ts";
+import type { AgenticWorkspaceConfig } from "../model/types.ts";
 
 const TEST_CONFIG = {
 	projectName: "Git operations",

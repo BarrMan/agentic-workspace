@@ -8,7 +8,7 @@ import {
 	nextPageCommand,
 	parseListWindow,
 	selectListWindow,
-} from "../utils/list-window.ts";
+} from "../cli/list-window.ts";
 
 /** `agentic-workspace task list` with the window options and one option that reads a value, `--search`. */
 function taskListCommand(): Command {

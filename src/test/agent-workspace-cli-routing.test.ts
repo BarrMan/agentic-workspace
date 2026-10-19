@@ -1,9 +1,9 @@
 import { afterEach, describe, expect, it, spyOn } from "bun:test";
 import { join } from "node:path";
 import { Command } from "commander";
-import { AgentSessionService } from "../agent-workspace/sessions.ts";
-import { registerAgentWorkspaceCommands } from "../commands/agent-workspace.ts";
-import type { Core } from "../core/agentic-workspace.ts";
+import { registerAgentWorkspaceCommands } from "../cli/commands/agent-workspace.ts";
+import type { Core } from "../controller/agentic-workspace.ts";
+import { AgentSessionService } from "../runtime/sessions.ts";
 
 describe("agent-workspace CLI routing", () => {
 	afterEach(() => {

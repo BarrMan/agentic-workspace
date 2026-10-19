@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { resolveInProgressStatus, statusComparisonKey, statusLookupKey } from "../utils/status.ts";
+import { resolveInProgressStatus, statusComparisonKey, statusLookupKey } from "../model/task/status.ts";
 
 describe("status comparison keys", () => {
 	it("trims and lowercases while preserving internal whitespace", () => {

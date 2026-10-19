@@ -2,13 +2,13 @@ import { afterEach, describe, expect, it } from "bun:test";
 import { EventEmitter } from "node:events";
 import { mkdir, utimes, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import type { Core } from "../core/agentic-workspace.ts";
-import { TaskArtifactRepository } from "../file-system/task-artifact-repository.ts";
-import type { Task } from "../types/index.ts";
-import type { OpenTuiHost } from "../ui/opentui/host.ts";
-import { createWorkspaceFilters } from "../ui/opentui/workspace/state.ts";
-import type { OpenTuiWorkspaceOptions } from "../ui/opentui/workspace.ts";
-import { OpenTuiWorkspaceController } from "../ui/opentui/workspace-controller.ts";
+import type { Core } from "../controller/agentic-workspace.ts";
+import type { Task } from "../model/types.ts";
+import type { OpenTuiHost } from "../renderer/opentui/host.ts";
+import { createWorkspaceFilters } from "../renderer/opentui/workspace/state.ts";
+import type { OpenTuiWorkspaceOptions } from "../renderer/opentui/workspace.ts";
+import { OpenTuiWorkspaceController } from "../renderer/opentui/workspace-controller.ts";
+import { TaskArtifactRepository } from "../storage/task-artifact-repository.ts";
 import { createUniqueTestDir, safeCleanup } from "./test-utils.ts";
 
 const task: Task = {

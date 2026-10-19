@@ -4,8 +4,8 @@ import { Writable } from "node:stream";
 import type { ShellExpression } from "bun";
 import { $ as shell } from "bun";
 import { runCli } from "../cli/register.ts";
-import { Core } from "../core/agentic-workspace.ts";
-import type { Task } from "../types";
+import { Core } from "../controller/agentic-workspace.ts";
+import type { Task } from "../model/types.ts";
 import { createUniqueTestDir, initializeFilesystemTestProject, safeCleanup } from "./test-utils.ts";
 
 const CLI_COMMAND = ["agentic-workspace"];

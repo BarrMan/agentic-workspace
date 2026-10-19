@@ -3,7 +3,7 @@ import { mkdir, mkdtemp, realpath, rm, symlink, writeFile } from "node:fs/promis
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { $ } from "bun";
-import { findGitWorktreeRoot, resolveMainWorktreeRoot } from "../git/main-worktree.ts";
+import { findGitWorktreeRoot, resolveMainWorktreeRoot } from "../filesystem/git/main-worktree.ts";
 import { initGitRepo } from "./test-utils.ts";
 
 describe("main worktree discovery", () => {

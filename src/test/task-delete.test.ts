@@ -2,14 +2,14 @@ import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { existsSync } from "node:fs";
 import { mkdir, rm } from "node:fs/promises";
 import { join } from "node:path";
-import { getDefaultModeCatalog } from "../agent-workspace/config.ts";
-import { BunRunner } from "../agent-workspace/session-process.ts";
-import { SessionStore } from "../agent-workspace/session-store.ts";
-import { AgentSessionService, type ProcessRunner, type TmuxServer } from "../agent-workspace/sessions.ts";
-import { workspaceRequestDir } from "../agent-workspace/workspace-context.ts";
-import { Core } from "../core/agentic-workspace.ts";
-import type { Task } from "../types/index.ts";
-import { getTaskPath } from "../utils/task-path.ts";
+import { Core } from "../controller/agentic-workspace.ts";
+import { getTaskPath } from "../model/task/task-path.ts";
+import type { Task } from "../model/types.ts";
+import { BunRunner } from "../runtime/session-process.ts";
+import { AgentSessionService, type ProcessRunner, type TmuxServer } from "../runtime/sessions.ts";
+import { workspaceRequestDir } from "../runtime/workspace-context.ts";
+import { getDefaultModeCatalog } from "../storage/config.ts";
+import { SessionStore } from "../storage/session-store.ts";
 import { coreFileSystem, createUniqueTestDir, initializeFilesystemTestProject } from "./test-utils.ts";
 
 describe("Permanent task deletion", () => {

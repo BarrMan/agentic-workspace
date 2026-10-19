@@ -3,9 +3,9 @@ import { randomUUID } from "node:crypto";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { SessionStore } from "../agent-workspace/session-store.ts";
-import type { AgentSession } from "../agent-workspace/types.ts";
-import { Core } from "../core/agentic-workspace.ts";
+import { Core } from "../controller/agentic-workspace.ts";
+import type { AgentSession } from "../model/session/types.ts";
+import { SessionStore } from "../storage/session-store.ts";
 import { coreFileSystem, initializeTestProject } from "./test-utils.ts";
 
 const roots: string[] = [];

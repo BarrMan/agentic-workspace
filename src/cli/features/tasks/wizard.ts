@@ -1,15 +1,16 @@
 import { TextPrompt } from "@clack/core";
 import * as clack from "@clack/prompts";
 import picocolors from "picocolors";
-import { DEFAULT_STATUSES, DRAFT_STATUS, FALLBACK_STATUS } from "../../../constants/index.ts";
-import { TASK_FIELD_LABELS } from "../../../formatters/task-labels.ts";
-import type { Task, TaskCreateInput, TaskUpdateInput } from "../../../types/index.ts";
-import { normalizeDueDate } from "../../../utils/due-date.ts";
-import { getPriorityOptions, normalizePriorityValue } from "../../../utils/priority-config.ts";
-import { getProjectValues, resolveProjectValue } from "../../../utils/project-config.ts";
-import { statusComparisonKey, statusLookupKey } from "../../../utils/status.ts";
-import { normalizeStringList } from "../../../utils/task-builders.ts";
-import { getTaskTypeValues, resolveTaskTypeValue } from "../../../utils/task-type-config.ts";
+import { normalizeStringList } from "../../../lib/string-list.ts";
+import { DEFAULT_STATUSES, DRAFT_STATUS, FALLBACK_STATUS } from "../../../model/constants.ts";
+import { normalizeDueDate } from "../../../model/task/due-date.ts";
+import { getPriorityOptions, normalizePriorityValue } from "../../../model/task/priority-config.ts";
+import { getProjectValues, resolveProjectValue } from "../../../model/task/project-config.ts";
+import { statusComparisonKey, statusLookupKey } from "../../../model/task/status.ts";
+import { getTaskTypeValues, resolveTaskTypeValue } from "../../../model/task/task-type-config.ts";
+import type { Task, TaskCreateInput, TaskUpdateInput } from "../../../model/types.ts";
+import { TASK_FIELD_LABELS } from "../../../renderer/formatters/task-labels.ts";
+import { TaskWizardCancelledError } from "../../errors/wizard.ts";
 
 interface TaskWizardValues {
 	title: string;
@@ -54,12 +55,6 @@ interface TaskWizardValueQuestion extends Omit<TaskWizardQuestion, "name"> {
 }
 
 export type TaskWizardPromptRunner = (question: TaskWizardQuestion) => Promise<Record<string, unknown>>;
-
-export class TaskWizardCancelledError extends Error {
-	constructor() {
-		super("Task wizard cancelled.");
-	}
-}
 
 interface WizardOptions {
 	statuses: string[];

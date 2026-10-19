@@ -1,8 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
-import { Core } from "../core/agentic-workspace.ts";
-import type { Task } from "../types/index.ts";
+import { Core } from "../controller/agentic-workspace.ts";
+import type { Task } from "../model/types.ts";
 import { coreFileSystem, createUniqueTestDir, initializeFilesystemTestProject, safeCleanup } from "./test-utils.ts";
 
 let TEST_DIR: string;

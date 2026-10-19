@@ -10,11 +10,11 @@ import type {
 	ResumeCommandRequest,
 	SessionIntent,
 	StatusHookInstallOptions,
-} from "../agent-workspace/agents/agent.ts";
-import { shellQuote } from "../agent-workspace/agents/agent.ts";
-import { registerAgent } from "../agent-workspace/agents/agents.ts";
-import { filePrompt } from "../agent-workspace/bootstrap.ts";
-import type { InstalledStatusHook } from "../agent-workspace/status-hooks.ts";
+} from "../runtime/agents/agent.ts";
+import { shellQuote } from "../runtime/agents/agent.ts";
+import { registerAgent } from "../runtime/agents/agents.ts";
+import { filePrompt } from "../runtime/bootstrap.ts";
+import type { InstalledStatusHook } from "../runtime/status-hooks.ts";
 
 /**
  * Test-only stand-in for the retired generic `prompt` bootstrap.
@@ -33,8 +33,8 @@ export class PromptAgent implements Agent {
 	readonly nativeNamespace = "pi" as const;
 
 	sanitizeLaunchPreset(
-		preset: import("../agent-workspace/types.ts").AgentPreset,
-	): import("../agent-workspace/types.ts").AgentPreset {
+		preset: import("../model/session/types.ts").AgentPreset,
+	): import("../model/session/types.ts").AgentPreset {
 		return preset;
 	}
 

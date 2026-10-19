@@ -3,9 +3,9 @@ import { mkdir, mkdtemp, readFile, realpath, rm, symlink, writeFile } from "node
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { $ } from "bun";
-import { TaskArtifactRepository, validateTaskArtifactPath } from "../file-system/task-artifact-repository.ts";
-import { serializeTask } from "../markdown/serializer.ts";
-import type { Task } from "../types/index.ts";
+import type { Task } from "../model/types.ts";
+import { serializeTask } from "../storage/markdown/serializer.ts";
+import { TaskArtifactRepository, validateTaskArtifactPath } from "../storage/task-artifact-repository.ts";
 
 const roots: string[] = [];
 afterEach(async () => {

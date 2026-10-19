@@ -1,7 +1,7 @@
 import { describe, expect, it } from "bun:test";
-import { parseTask } from "../markdown/parser.ts";
-import { serializeTask } from "../markdown/serializer.ts";
-import type { Task } from "../types/index.ts";
+import type { Task } from "../model/types.ts";
+import { parseTask } from "../storage/markdown/parser.ts";
+import { serializeTask } from "../storage/markdown/serializer.ts";
 
 describe("task description storage", () => {
 	it("replaces the YAML description without interpreting a body heading", () => {

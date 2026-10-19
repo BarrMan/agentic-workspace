@@ -3,11 +3,11 @@ import * as fsPromises from "node:fs/promises";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
-import { resolveAgentConfiguration, upsertAgentConfiguration } from "../agent-workspace/config.ts";
-import type { AgentConfiguration } from "../agent-workspace/types.ts";
-import { Core } from "../core/agentic-workspace.ts";
-import { CREATE_LOCK_ERROR_MESSAGE } from "../file-system/operations.ts";
-import type { Task } from "../types";
+import { Core } from "../controller/agentic-workspace.ts";
+import type { AgentConfiguration } from "../model/session/types.ts";
+import type { Task } from "../model/types.ts";
+import { resolveAgentConfiguration, upsertAgentConfiguration } from "../storage/config.ts";
+import { CREATE_LOCK_ERROR_MESSAGE } from "../storage/file-system.ts";
 import { coreFileSystem, initializeTestProject, withTimeout } from "./test-utils.ts";
 
 type Deferred<T> = {

@@ -2,10 +2,10 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { AgentSessionService, SessionRuntimeOrigin } from "../agent-workspace/sessions.ts";
-import { WorkspaceStateService } from "../agent-workspace/workspace-state.ts";
-import { Core } from "../core/agentic-workspace.ts";
-import { SessionApplication } from "../core/session-application.ts";
+import { Core } from "../controller/agentic-workspace.ts";
+import { SessionApplication } from "../controller/session-application.ts";
+import { WorkspaceStateService } from "../controller/workspace-state.ts";
+import type { AgentSessionService, SessionRuntimeOrigin } from "../runtime/sessions.ts";
 import { initializeTestProject } from "./test-utils.ts";
 
 const roots: string[] = [];

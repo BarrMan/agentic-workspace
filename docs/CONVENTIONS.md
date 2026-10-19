@@ -17,7 +17,7 @@ This document owns repeatable coding, organization, and verification practices. 
 - Apply approved contracts even where existing code differs. Record implementation discrepancies as alignment issues; do not treat an implementation habit as a requirement or weaken a convention to match it.
 - Use the repository's strict TypeScript settings in [tsconfig.json](../tsconfig.json), including checked indexed access, explicit overrides, and unused-symbol checks. Use type-only imports when only a type is needed.
 - Let [biome.json](../biome.json) define formatting and lint rules; do not maintain a second style configuration in prose.
-- Put changes with the owning feature/module and reuse its existing types and helpers. Keep code in the owning feature or domain directory under `src/`; keep focused tests beside the implementation and shared test helpers under `src/test/`.
+- Put changes in the directory of the owning component as fixed by [BLUEPRINT](BLUEPRINT.md#repository-layout), and reuse its existing types and helpers. `model/` holds domain records and behavior; `storage/` and `filesystem/` hold persistence and its substrate; `controller/` holds operations; `runtime/` holds execution; `renderer/` and `cli/` are frontends; `lib/` holds generic domain-free helpers. Do not use `lib/` as a default for domain helpers. Keep focused tests beside the implementation and shared test helpers under `src/test/`.
 - Follow [BLUEPRINT](BLUEPRINT.md) for provider isolation, rendering and orchestration boundaries, dependency direction, boundary ownership, module boundaries, and public contracts.
 
 ### Identity and Reference Resolution

@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { mkdir, rm, symlink, utimes, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { Writable } from "node:stream";
-import { filesSignature, watchJson } from "../commands/watch-json.ts";
+import { filesSignature, watchJson } from "../cli/commands/watch-json.ts";
 import { createUniqueTestDir, safeCleanup, waitUntil } from "./test-utils.ts";
 
 let directory: string;

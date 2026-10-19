@@ -5,7 +5,7 @@
  * every test process.
  */
 
-import { terminateProcessTreeSync } from "../agent-workspace/process-tree.ts";
+import { terminateProcessTreeSync } from "../lib/process-tree.ts";
 
 /** Prefix every test-owned socket label carries. `default` and `main` can never match. */
 export const TEST_TMUX_SOCKET_PREFIX = "agentic-workspace-test";

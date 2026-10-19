@@ -1,11 +1,11 @@
 import { describe, expect, test } from "bun:test";
-import type { Task } from "../types/index.ts";
 import {
 	collectAvailableLabels,
 	formatLabelSummary,
 	labelComparisonKey,
 	labelsToLower,
-} from "../utils/label-filter.ts";
+} from "../model/task/label-filter.ts";
+import type { Task } from "../model/types.ts";
 
 describe("label filter utilities", () => {
 	test("collectAvailableLabels merges configured labels and task labels without duplicates sorted alphabetically", () => {

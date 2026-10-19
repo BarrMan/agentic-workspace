@@ -1,8 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { mkdir } from "node:fs/promises";
-import { Core } from "../core/agentic-workspace.ts";
-import { calculateNewOrdinal, DEFAULT_ORDINAL_STEP, resolveOrdinalConflicts } from "../core/reorder.ts";
-import type { Task } from "../types/index.ts";
+import { Core } from "../controller/agentic-workspace.ts";
+import { calculateNewOrdinal, DEFAULT_ORDINAL_STEP, resolveOrdinalConflicts } from "../model/task/reorder.ts";
+import type { Task } from "../model/types.ts";
 import { coreFileSystem, createUniqueTestDir, initializeFilesystemTestProject, safeCleanup } from "./test-utils.ts";
 
 const item = (id: string, ordinal?: number) => ({ id, ordinal });

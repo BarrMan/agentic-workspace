@@ -2,12 +2,12 @@ import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { existsSync } from "node:fs";
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
-import { getBuiltInAgentConfiguration, upsertAgentConfiguration } from "../agent-workspace/config.ts";
-import { sessionCwdFor } from "../agent-workspace/session-service-mechanics.ts";
-import { resolveSessionSettings } from "../agent-workspace/types.ts";
-import { Core } from "../core/agentic-workspace.ts";
-import { ensureTaskWorktree, taskWorktreeExists, taskWorktreePath } from "../git/task-worktree.ts";
-import type { Task } from "../types/index.ts";
+import { Core } from "../controller/agentic-workspace.ts";
+import { ensureTaskWorktree, taskWorktreeExists, taskWorktreePath } from "../filesystem/git/task-worktree.ts";
+import { resolveSessionSettings } from "../model/session/types.ts";
+import type { Task } from "../model/types.ts";
+import { sessionCwdFor } from "../runtime/session-service-mechanics.ts";
+import { getBuiltInAgentConfiguration, upsertAgentConfiguration } from "../storage/config.ts";
 import { coreFileSystem, createUniqueTestDir, initGitRepo, initializeTestProject, safeCleanup } from "./test-utils.ts";
 
 let TEST_DIR: string;

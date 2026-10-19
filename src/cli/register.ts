@@ -3,16 +3,15 @@
 import { Console } from "node:console";
 import type { Writable } from "node:stream";
 import { Command } from "commander";
-import { loadProjectModeCatalog } from "../agent-workspace/config.ts";
-import { registerAgentWorkspaceCommands } from "../commands/agent-workspace.ts";
-import { configureHelpValues } from "../commands/help-schema.ts";
-import { registerSearchCommand } from "../commands/search.ts";
-import { findLocalDuplicateTaskIds } from "../core/duplicate-task-detection.ts";
-import { isConfigValueError } from "../file-system/operations.ts";
+import { findLocalDuplicateTaskIds } from "../controller/duplicate-task-detection.ts";
 import { Core } from "../index.ts";
-import { formatDuplicateTaskIdWarning } from "../utils/duplicate-detection.ts";
-import type { ReadOutputOptions } from "../utils/read-output-mode.ts";
-import { getVersion } from "../utils/version.ts";
+import { getVersion } from "../lib/version.ts";
+import { formatDuplicateTaskIdWarning } from "../model/task/duplicate-detection.ts";
+import { loadProjectModeCatalog } from "../storage/config.ts";
+import { isConfigValueError } from "../storage/file-system.ts";
+import { registerAgentWorkspaceCommands } from "./commands/agent-workspace.ts";
+import { configureHelpValues } from "./commands/help-schema.ts";
+import { registerSearchCommand } from "./commands/search.ts";
 import { type CliReadOutput, resolveListOutput as resolveRuntimeListOutput } from "./features/read-output.ts";
 import {
 	normalizeCliPriority,
@@ -21,6 +20,7 @@ import {
 	normalizeCliTaskTypes,
 } from "./features/tasks/filter-normalizers.ts";
 import { registerTaskCommands } from "./features/tasks/register.ts";
+import type { ReadOutputOptions } from "./read-output-mode.ts";
 import { CliRuntime } from "./runtime.ts";
 
 export async function runCli(

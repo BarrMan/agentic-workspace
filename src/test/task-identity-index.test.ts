@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
-import { TaskIdentityIndex, type TaskIdentityRecord } from "../core/task-identity-index.ts";
-import type { Task } from "../types/index.ts";
+import { TaskIdentityIndex, type TaskIdentityRecord } from "../model/task/task-identity-index.ts";
+import type { Task } from "../model/types.ts";
 
 const context = {
 	repositoryRoot: "/repo",

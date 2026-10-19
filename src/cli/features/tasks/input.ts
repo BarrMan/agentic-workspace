@@ -1,8 +1,8 @@
-import { DRAFT_STATUS } from "../../../constants/index.ts";
-import type { Core } from "../../../core/agentic-workspace.ts";
-import { loadTaskDetail } from "../../../core/task-detail.ts";
-import { formatTaskPlainText } from "../../../formatters/task-plain-text.ts";
-import { parseClearableStringList, parseDelimitedStringList, toStringArray } from "../../../utils/task-builders.ts";
+import type { Core } from "../../../controller/agentic-workspace.ts";
+import { loadTaskDetail } from "../../../controller/task-detail.ts";
+import { parseClearableStringList, parseDelimitedStringList, toStringArray } from "../../../lib/string-list.ts";
+import { DRAFT_STATUS } from "../../../model/constants.ts";
+import { formatTaskPlainText } from "../../../renderer/formatters/task-plain-text.ts";
 import { validateTaskListFlags } from "./edit-list-options.ts";
 
 type CreateInput = Parameters<Core["createTaskFromInput"]>[0];

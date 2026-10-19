@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { BoxRenderable, TextRenderable } from "@opentui/core";
 import { createTestRenderer, type TestRendererSetup } from "@opentui/core/testing";
-import { mountOpenTuiConfirm } from "../ui/opentui/confirm.ts";
+import { mountOpenTuiConfirm } from "../renderer/opentui/confirm.ts";
 
 describe("native confirm overlay", () => {
 	const renderers: TestRendererSetup[] = [];

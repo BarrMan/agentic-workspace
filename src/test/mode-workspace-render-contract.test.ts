@@ -1,8 +1,8 @@
 import { afterEach, describe, expect, it } from "bun:test";
 import { BoxRenderable, TextAttributes } from "@opentui/core";
 import { createTestRenderer, type TestRendererSetup } from "@opentui/core/testing";
-import type { OpenTuiWorkspaceOptions } from "../ui/opentui/workspace.ts";
-import { mountOpenTuiWorkspace } from "../ui/opentui/workspace.ts";
+import type { OpenTuiWorkspaceOptions } from "../renderer/opentui/workspace.ts";
+import { mountOpenTuiWorkspace } from "../renderer/opentui/workspace.ts";
 
 function plainContent(content: unknown): string {
 	if (typeof content === "string") return content;

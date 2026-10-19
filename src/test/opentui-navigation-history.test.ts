@@ -1,6 +1,9 @@
 import { describe, expect, it } from "bun:test";
-import { WorkspaceNavigationHistory, type WorkspaceNavigationSnapshot } from "../ui/opentui/navigation-history.ts";
-import { createWorkspaceFilters } from "../ui/opentui/workspace/state.ts";
+import {
+	WorkspaceNavigationHistory,
+	type WorkspaceNavigationSnapshot,
+} from "../renderer/opentui/navigation-history.ts";
+import { createWorkspaceFilters } from "../renderer/opentui/workspace/state.ts";
 
 function snapshot(
 	selectedTaskId: string,

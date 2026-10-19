@@ -1,0 +1,647 @@
+/**
+ * Task loading with optimized index-first, hydrate-later pattern
+ * Dramatically reduces git operations for multi-branch task loading
+ *
+ * This is the single module for all cross-branch task loading:
+ * - Local filesystem tasks
+ * - Other local branch tasks
+ * - Remote branch tasks
+ */
+
+import type { GitBranchTip, GitOperations } from "../filesystem/git/operations.ts";
+import { DEFAULT_DIRECTORIES } from "../model/constants.ts";
+import { DEFAULT_TASK_PREFIX, extractAnyPrefix } from "../model/task/prefix-config.ts";
+import { isValidTaskId } from "../model/task/task-id.ts";
+import { normalizeTaskLifecyclePath, type TaskIdentityIndex } from "../model/task/task-identity-index.ts";
+import {
+	type AgenticWorkspaceConfig,
+	TASK_DIRECTORY,
+	TASK_SOURCE,
+	type Task,
+	type TaskDirectoryType,
+	type TaskSource,
+} from "../model/types.ts";
+import { FrontmatterSchemaError } from "../storage/errors/frontmatter.ts";
+import { parseTask } from "../storage/markdown/parser.ts";
+import { warnUnparseableTaskFile } from "../storage/task-repository.ts";
+import type { BranchTaskStateEntry } from "../storage/types.ts";
+
+export function getBranchHistoryCutoff(activeBranchDays: number, now = Date.now()): Date | undefined {
+	if (!activeBranchDays) return undefined;
+	const cutoff = new Date(now);
+	cutoff.setUTCHours(0, 0, 0, 0);
+	cutoff.setUTCDate(cutoff.getUTCDate() - activeBranchDays);
+	return cutoff;
+}
+
+export interface BranchTaskLoadResult {
+	entries: BranchTaskStateEntry[];
+	/** False when at least one branch index or selected task payload could not be read. */
+	complete: boolean;
+}
+
+/** One immutable task read shared by persistent query and repair operations. */
+export interface TaskCorpusSnapshot {
+	tasks: Task[];
+	activeTasks: Task[];
+	completedTasks: Task[];
+	identityIndex?: TaskIdentityIndex;
+	branchStateEntries?: BranchTaskStateEntry[];
+	config?: AgenticWorkspaceConfig | null;
+}
+
+function getTaskContainerId(path: string): string | null {
+	const parts = path.replaceAll("\\", "/").split("/");
+	const id = parts.at(-2);
+	if (!id || parts.at(-1) !== "task.md" || !isValidTaskId(id.toUpperCase())) return null;
+	return id.toUpperCase();
+}
+
+const STATE_DIRECTORIES: Array<{ path: string; type: TaskDirectoryType }> = [
+	{ path: DEFAULT_DIRECTORIES.TASKS, type: TASK_DIRECTORY.TASK },
+	{ path: DEFAULT_DIRECTORIES.DRAFTS, type: TASK_DIRECTORY.DRAFT },
+	{ path: DEFAULT_DIRECTORIES.ARCHIVE_TASKS, type: TASK_DIRECTORY.ARCHIVED },
+	{ path: DEFAULT_DIRECTORIES.COMPLETED, type: TASK_DIRECTORY.COMPLETED },
+];
+
+function getTaskTypeFromPath(path: string, agenticWorkspaceDir: string): TaskDirectoryType | null {
+	const normalized = path.startsWith(`${agenticWorkspaceDir}/`) ? path.slice(agenticWorkspaceDir.length + 1) : path;
+
+	for (const { path: dir, type } of STATE_DIRECTORIES) {
+		if (normalized.startsWith(`${dir}/`)) {
+			return type;
+		}
+	}
+
+	return null;
+}
+
+/** Immutable Git trees expose current task containers only; other layouts are not task records. */
+function getTaskRecordId(path: string, agenticWorkspaceDir: string, prefix: string): string | null {
+	const normalized = path.replaceAll("\\", "/");
+	const root = `${agenticWorkspaceDir
+		.replaceAll("\\", "/")
+		.replace(/^\.\//, "")
+		.replace(/^\/+|\/+$/g, "")}/`;
+	if (!normalized.startsWith(root)) return null;
+	const relative = normalized.slice(root.length);
+	const stateDirectory = STATE_DIRECTORIES.find((entry) => relative.startsWith(`${entry.path}/`));
+	if (!stateDirectory) return null;
+	const record = relative.slice(stateDirectory.path.length + 1);
+	if (record.split("/").length !== 2) return null;
+	const id = getTaskContainerId(record);
+	return id && extractAnyPrefix(id)?.toLowerCase() === prefix.toLowerCase() ? id : null;
+}
+
+interface RemoteIndexEntry {
+	id: string;
+	branch: string;
+	path: string; // "agentic-workspace/tasks/task-123/task.md"
+	lastModified: Date;
+	commit: string;
+	stateEntry?: BranchTaskStateEntry;
+}
+
+/**
+ * A blob that read successfully but does not parse as a task. The payload is immutable
+ * for its commit, so its identity stays reserved without re-reading the blob on each load.
+ */
+const MALFORMED_TASK = Symbol("malformed-task");
+
+interface HydrationCandidate {
+	id: string;
+	ref: string;
+	path: string;
+	commit: string;
+	stateEntry?: BranchTaskStateEntry;
+}
+
+interface CachedTaskTreeEntry {
+	id: string;
+	path: string;
+	type: TaskDirectoryType | null;
+	lastModified: number;
+}
+
+interface PinnedBranchRef {
+	branch: string;
+	ref: string;
+	commit: string;
+	source: TaskSource;
+}
+
+interface HydrationOptions {
+	source: Extract<TaskSource, "local-branch" | "remote">;
+	loadTask: (commit: string, path: string) => Promise<Task | null | typeof MALFORMED_TASK>;
+}
+
+function logicalTaskPath(path: string, agenticWorkspaceDir: string): string {
+	const normalizedPath = path.replaceAll("\\", "/");
+	const normalizedAgenticWorkspaceDir = agenticWorkspaceDir
+		.replaceAll("\\", "/")
+		.replace(/^\.\//, "")
+		.replace(/^\/+|\/+$/g, "");
+	const agenticWorkspaceMarker = `/${normalizedAgenticWorkspaceDir}/`;
+	const markerIndex = normalizedPath.indexOf(agenticWorkspaceMarker);
+	const logicalPath = markerIndex >= 0 ? normalizedPath.slice(markerIndex + 1) : normalizedPath.replace(/^\.\//, "");
+	return normalizeTaskLifecyclePath(logicalPath, normalizedAgenticWorkspaceDir);
+}
+
+function lifecycleRank(type: TaskDirectoryType | undefined): number {
+	if (type === TASK_DIRECTORY.TASK) return 2;
+	if (type === TASK_DIRECTORY.COMPLETED) return 1;
+	return 0;
+}
+
+function isPreferredIdentityEntry(candidate: RemoteIndexEntry, current: RemoteIndexEntry): boolean {
+	const timeDifference = candidate.lastModified.getTime() - current.lastModified.getTime();
+	if (timeDifference !== 0) return timeDifference > 0;
+	const rankDifference = lifecycleRank(candidate.stateEntry?.type) - lifecycleRank(current.stateEntry?.type);
+	if (rankDifference !== 0) return rankDifference > 0;
+	return `${candidate.branch}\0${candidate.path}`.localeCompare(`${current.branch}\0${current.path}`) < 0;
+}
+
+function selectPreferredIdentityEntry(entries: RemoteIndexEntry[]): RemoteIndexEntry {
+	const first = entries[0];
+	if (!first) throw new Error("Cannot select a task from an empty branch index");
+	return entries
+		.slice(1)
+		.reduce((current, candidate) => (isPreferredIdentityEntry(candidate, current) ? candidate : current), first);
+}
+
+function chooseIdentityHydrationCandidates(
+	index: Map<string, RemoteIndexEntry[]>,
+	localTasks: Task[] | undefined,
+	agenticWorkspaceDir: string,
+	toRef: (entry: RemoteIndexEntry) => string,
+): HydrationCandidate[] {
+	const localIdentities = new Set(
+		(localTasks ?? [])
+			.filter((task) => task.filePath)
+			.map((task) => `${task.id}\0${logicalTaskPath(task.filePath ?? "", agenticWorkspaceDir)}`),
+	);
+	const winners = new Map<string, RemoteIndexEntry>();
+	for (const entries of index.values()) {
+		for (const entry of entries) {
+			const identity = `${entry.id}\0${logicalTaskPath(entry.path, agenticWorkspaceDir)}`;
+			if (localIdentities.has(identity)) continue;
+			const current = winners.get(identity);
+			if (!current || isPreferredIdentityEntry(entry, current)) winners.set(identity, entry);
+		}
+	}
+
+	return [...winners.values()].map((entry) => ({
+		id: entry.id,
+		ref: toRef(entry),
+		path: entry.path,
+		commit: entry.commit,
+		stateEntry: entry.stateEntry,
+	}));
+}
+
+function mergeHydrationCandidates(
+	primary: HydrationCandidate[],
+	supplemental: HydrationCandidate[],
+): HydrationCandidate[] {
+	const candidates = new Map<string, HydrationCandidate>();
+	for (const candidate of [...primary, ...supplemental]) {
+		candidates.set(`${candidate.ref}\0${candidate.path}\0${candidate.commit}`, candidate);
+	}
+	return [...candidates.values()];
+}
+
+function normalizeRemoteBranch(branch: string): string | null {
+	let br = branch.trim();
+	if (!br) return null;
+	br = br.replace(/^refs\/remotes\//, "");
+	if (br === "origin" || br === "HEAD" || br === "origin/HEAD") return null;
+	if (br.startsWith("origin/")) br = br.slice("origin/".length);
+	// Filter weird cases like "origin" again after stripping prefix
+	if (!br || br === "HEAD" || br === "origin") return null;
+	return br;
+}
+
+/**
+ * Normalize a local branch name, filtering out invalid entries
+ */
+function normalizeLocalBranch(branch: string, currentBranch: string): string | null {
+	const br = branch.trim();
+	if (!br) return null;
+	// Skip HEAD, origin refs, and current branch
+	if (br === "HEAD" || br.includes("HEAD")) return null;
+	if (br.startsWith("origin/") || br.startsWith("refs/remotes/")) return null;
+	if (br === "origin") return null;
+	// Skip current branch - we already have its tasks from filesystem
+	if (br === currentBranch) return null;
+	return br;
+}
+
+function isRemoteBranch(branch: string): boolean {
+	return branch
+		.trim()
+		.replace(/^refs\/remotes\//, "")
+		.startsWith("origin/");
+}
+
+function pinnedBranchRef(tip: GitBranchTip, currentBranch: string, includeRemote: boolean): PinnedBranchRef | null {
+	if (isRemoteBranch(tip.name)) {
+		if (!includeRemote) return null;
+		const branch = normalizeRemoteBranch(tip.name);
+		return branch ? { branch, ref: `origin/${branch}`, commit: tip.commit, source: TASK_SOURCE.REMOTE } : null;
+	}
+	if (!currentBranch || tip.current) return null;
+	const branch = normalizeLocalBranch(tip.name, currentBranch);
+	return branch ? { branch, ref: branch, commit: tip.commit, source: TASK_SOURCE.LOCAL_BRANCH } : null;
+}
+
+/**
+ * Hydrate tasks by fetching their content
+ * Only call this for the "winner" tasks that we actually need
+ */
+async function hydrateTasks(winners: HydrationCandidate[], options: HydrationOptions): Promise<boolean> {
+	const CONCURRENCY = 8;
+	let i = 0;
+	let complete = true;
+
+	async function worker() {
+		while (i < winners.length) {
+			const idx = i++;
+			if (idx >= winners.length) break;
+
+			const w = winners[idx];
+			if (!w) break;
+
+			try {
+				const task = await options.loadTask(w.commit, w.path);
+				if (task === MALFORMED_TASK) {
+					continue;
+				}
+				if (task) {
+					task.source = options.source;
+					task.branch = options.source === TASK_SOURCE.REMOTE ? w.ref.replace(/^origin\//, "") : w.ref;
+					task.filePath = w.path;
+					task.contentRef = w.commit;
+					if (w.stateEntry) w.stateEntry.task = task;
+				}
+			} catch (error) {
+				// Current record paths must report schema diagnostics, including unversioned payloads.
+				if (error instanceof FrontmatterSchemaError) throw error;
+				complete = false;
+				console.error(`Failed to hydrate task ${w.id} from ${w.ref}:${w.path}`, error);
+			}
+		}
+	}
+
+	await Promise.all(Array.from({ length: Math.min(CONCURRENCY, winners.length) }, worker));
+	return complete;
+}
+
+/**
+ * Choose which remote tasks need to be hydrated based on strategy
+ * Returns only the tasks that are newer or more progressed than local versions
+ */
+function chooseWinners(
+	localById: Map<string, Task>,
+	remoteIndex: Map<string, RemoteIndexEntry[]>,
+	strategy: "most_recent" | "most_progressed",
+	toRef: (entry: RemoteIndexEntry) => string,
+): HydrationCandidate[] {
+	const winners: HydrationCandidate[] = [];
+
+	for (const [id, entries] of remoteIndex) {
+		const local = localById.get(id);
+
+		if (!local) {
+			// No local version - take the newest remote
+			const best = selectPreferredIdentityEntry(entries);
+			winners.push({
+				id,
+				ref: toRef(best),
+				path: best.path,
+				commit: best.commit,
+				stateEntry: best.stateEntry,
+			});
+			continue;
+		}
+
+		// If strategy is "most_recent", only hydrate if any remote is newer
+		if (strategy === "most_recent") {
+			const localTs = local.updatedDate ? new Date(local.updatedDate).getTime() : 0;
+			const newestRemote = selectPreferredIdentityEntry(entries);
+
+			if (newestRemote.lastModified.getTime() > localTs) {
+				winners.push({
+					id,
+					ref: toRef(newestRemote),
+					path: newestRemote.path,
+					commit: newestRemote.commit,
+					stateEntry: newestRemote.stateEntry,
+				});
+			}
+			continue;
+		}
+
+		// For "most_progressed", we might need to check if remote is newer
+		// to potentially have a more progressed status
+		const localTs = local.updatedDate ? new Date(local.updatedDate).getTime() : 0;
+		const maybeNewer = entries.some((e) => e.lastModified.getTime() > localTs);
+
+		if (maybeNewer) {
+			// Only hydrate the newest remote to check if it's more progressed
+			const newestRemote = selectPreferredIdentityEntry(entries);
+			winners.push({
+				id,
+				ref: toRef(newestRemote),
+				path: newestRemote.path,
+				commit: newestRemote.commit,
+				stateEntry: newestRemote.stateEntry,
+			});
+		}
+	}
+
+	return winners;
+}
+
+/**
+ * Reuses immutable branch trees and task blobs for the lifetime of one Core.
+ * Branch names are deliberately kept out of cache keys: several refs at one
+ * commit share the same Git reads, while fresh state entries retain each ref's
+ * provenance for identity and ambiguity resolution.
+ */
+export class BranchTaskLoader {
+	private readonly commitIndexCache = new Map<string, Promise<readonly CachedTaskTreeEntry[]>>();
+	private readonly taskCache = new Map<
+		string,
+		{ commit: string; promise: Promise<Task | null | typeof MALFORMED_TASK> }
+	>();
+
+	constructor(private readonly git: GitOperations) {}
+
+	clear(): void {
+		this.commitIndexCache.clear();
+		this.taskCache.clear();
+	}
+
+	/** Read current-layout, current-schema records only, even at historical commits. */
+	async loadPersistentTask(commit: string, path: string): Promise<Task | null> {
+		const id = getTaskContainerId(path);
+		if (!id || !STATE_DIRECTORIES.some((entry) => path.endsWith(`/${entry.path}/${id.toLowerCase()}/task.md`)))
+			return null;
+		return parseTask(await this.git.showFile(commit, path));
+	}
+
+	retainSnapshot(
+		tips: readonly GitBranchTip[],
+		options: { agenticWorkspaceDir: string; prefix: string; activeBranchDays: number },
+	): void {
+		const historyCutoff = getBranchHistoryCutoff(options.activeBranchDays);
+		const retainedCommits = new Set(tips.map((tip) => tip.commit));
+		const retainedIndexKeys = new Set(
+			[...retainedCommits].map((commit) =>
+				this.commitIndexKey(commit, options.agenticWorkspaceDir, options.prefix, historyCutoff),
+			),
+		);
+		for (const key of this.commitIndexCache.keys()) {
+			if (!retainedIndexKeys.has(key)) this.commitIndexCache.delete(key);
+		}
+		for (const [key, entry] of this.taskCache) {
+			if (!retainedCommits.has(entry.commit)) this.taskCache.delete(key);
+		}
+	}
+
+	async load(
+		tips: readonly GitBranchTip[],
+		userConfig: AgenticWorkspaceConfig | null,
+		localTasks: Task[],
+		includeCompleted: boolean,
+		agenticWorkspaceDir: string = DEFAULT_DIRECTORIES.AGENTIC_WORKSPACE,
+		onProgress?: (message: string) => void,
+		currentBranch?: string,
+	): Promise<BranchTaskLoadResult> {
+		const branchRefs = await this.getPinnedBranchRefs(tips, userConfig, currentBranch);
+		if (branchRefs.length === 0) return { entries: [], complete: true };
+
+		const remoteCount = branchRefs.filter((branch) => branch.source === TASK_SOURCE.REMOTE).length;
+		const localCount = branchRefs.length - remoteCount;
+		if (remoteCount > 0) onProgress?.(`Indexing ${remoteCount} recent remote branches...`);
+		if (localCount > 0) onProgress?.(`Indexing ${localCount} other local branches...`);
+
+		const prefix = userConfig?.prefixes?.task ?? DEFAULT_TASK_PREFIX;
+		const historyCutoff = getBranchHistoryCutoff(userConfig?.activeBranchDays ?? 30);
+		const stateEntries: BranchTaskStateEntry[] = [];
+		const remoteIndex = new Map<string, RemoteIndexEntry[]>();
+		const localIndex = new Map<string, RemoteIndexEntry[]>();
+		const queue = [...branchRefs];
+		const CONCURRENCY = 4;
+		let complete = true;
+
+		const workers = Array.from({ length: Math.min(CONCURRENCY, queue.length) }, async () => {
+			while (queue.length > 0) {
+				const branchRef = queue.pop();
+				if (!branchRef) break;
+				const indexed = await this.indexBranch(
+					branchRef,
+					{ agenticWorkspaceDir, prefix, historyCutoff, includeCompleted },
+					stateEntries,
+					branchRef.source === TASK_SOURCE.REMOTE ? remoteIndex : localIndex,
+				);
+				complete = indexed && complete;
+			}
+		});
+		await Promise.all(workers);
+
+		const localById = new Map(localTasks.map((task) => [task.id, task]));
+		const strategy = userConfig?.taskResolutionStrategy ?? "most_progressed";
+		const candidatesFor = (
+			index: Map<string, RemoteIndexEntry[]>,
+			source: Extract<TaskSource, "local-branch" | "remote">,
+		): HydrationCandidate[] => {
+			const toRef =
+				source === TASK_SOURCE.REMOTE
+					? (entry: RemoteIndexEntry) => `origin/${entry.branch}`
+					: (entry: RemoteIndexEntry) => entry.branch;
+			let candidates: HydrationCandidate[];
+			if (localTasks.length > 0) {
+				candidates = chooseWinners(localById, index, strategy, toRef);
+			} else {
+				candidates = [];
+				for (const [id, entries] of index) {
+					const best = selectPreferredIdentityEntry(entries);
+					candidates.push({
+						id,
+						ref: toRef(best),
+						path: best.path,
+						commit: best.commit,
+						stateEntry: best.stateEntry,
+					});
+				}
+			}
+			return mergeHydrationCandidates(
+				candidates,
+				chooseIdentityHydrationCandidates(index, localTasks, agenticWorkspaceDir, toRef),
+			);
+		};
+
+		const loadTask = (commit: string, path: string) => this.loadCachedTask(commit, path);
+		const hydrationResults = await Promise.all([
+			hydrateTasks(candidatesFor(remoteIndex, TASK_SOURCE.REMOTE), { source: TASK_SOURCE.REMOTE, loadTask }),
+			hydrateTasks(candidatesFor(localIndex, TASK_SOURCE.LOCAL_BRANCH), {
+				source: TASK_SOURCE.LOCAL_BRANCH,
+				loadTask,
+			}),
+		]);
+		return {
+			entries: stateEntries,
+			complete: complete && hydrationResults.every(Boolean),
+		};
+	}
+
+	private async getPinnedBranchRefs(
+		tips: readonly GitBranchTip[],
+		userConfig: AgenticWorkspaceConfig | null,
+		snapshotCurrentBranch?: string,
+	): Promise<PinnedBranchRef[]> {
+		const currentTip = tips.find((tip) => tip.current && !isRemoteBranch(tip.name));
+		const currentBranch = currentTip?.name ?? snapshotCurrentBranch ?? (await this.git.getCurrentBranch()).trim();
+		const refs: PinnedBranchRef[] = [];
+		const seen = new Set<string>();
+
+		for (const tip of tips) {
+			const branchRef = pinnedBranchRef(tip, currentBranch, userConfig?.remoteOperations !== false);
+			if (!branchRef) continue;
+			const key = `${branchRef.source}\0${branchRef.ref}\0${branchRef.commit}`;
+			if (seen.has(key)) continue;
+			seen.add(key);
+			refs.push(branchRef);
+		}
+		return refs;
+	}
+
+	private async indexBranch(
+		branchRef: PinnedBranchRef,
+		options: {
+			agenticWorkspaceDir: string;
+			prefix: string;
+			historyCutoff: Date | undefined;
+			includeCompleted: boolean;
+		},
+		stateEntries: BranchTaskStateEntry[],
+		index: Map<string, RemoteIndexEntry[]>,
+	): Promise<boolean> {
+		try {
+			const tree = await this.loadCommitIndex(
+				branchRef.commit,
+				options.agenticWorkspaceDir,
+				options.prefix,
+				options.historyCutoff,
+			);
+			for (const cached of tree) this.addIndexedTask(cached, branchRef, options.includeCompleted, stateEntries, index);
+			return true;
+		} catch (error) {
+			if (process.env.DEBUG) console.debug(`Skipping branch ${branchRef.ref}: ${error}`);
+			return false;
+		}
+	}
+
+	private addIndexedTask(
+		cached: CachedTaskTreeEntry,
+		branchRef: PinnedBranchRef,
+		includeCompleted: boolean,
+		stateEntries: BranchTaskStateEntry[],
+		index: Map<string, RemoteIndexEntry[]>,
+	): void {
+		const lastModified = new Date(cached.lastModified);
+		const entry: RemoteIndexEntry = {
+			id: cached.id,
+			branch: branchRef.branch,
+			path: cached.path,
+			lastModified,
+			commit: branchRef.commit,
+		};
+		if (cached.type) {
+			entry.stateEntry = { id: cached.id, type: cached.type, branch: branchRef.ref, path: cached.path, lastModified };
+			stateEntries.push(entry.stateEntry);
+		}
+		if (cached.type !== TASK_DIRECTORY.TASK && (!includeCompleted || cached.type !== TASK_DIRECTORY.COMPLETED)) return;
+		const entries = index.get(cached.id);
+		if (entries) entries.push(entry);
+		else index.set(cached.id, [entry]);
+	}
+
+	private commitIndexKey(
+		commit: string,
+		agenticWorkspaceDir: string,
+		prefix: string,
+		cutoff: Date | undefined,
+	): string {
+		return JSON.stringify([commit, agenticWorkspaceDir, prefix.toLowerCase(), cutoff?.getTime() ?? null]);
+	}
+
+	private async loadCommitIndex(
+		commit: string,
+		agenticWorkspaceDir: string,
+		prefix: string,
+		historyCutoff: Date | undefined,
+	): Promise<readonly CachedTaskTreeEntry[]> {
+		const key = this.commitIndexKey(commit, agenticWorkspaceDir, prefix, historyCutoff);
+		const cached = this.commitIndexCache.get(key);
+		if (cached) return await cached;
+
+		const promise = (async (): Promise<readonly CachedTaskTreeEntry[]> => {
+			const files = await this.git.listFilesInTree(commit, agenticWorkspaceDir);
+			if (files.length === 0) return [];
+			const lastModified = await this.git.getBranchLastModifiedMap(commit, agenticWorkspaceDir, historyCutoff);
+			const seenLayouts = new Map<string, string>();
+			return files.flatMap((path) => {
+				const id = getTaskRecordId(path, agenticWorkspaceDir, prefix);
+				if (!id) return [];
+				const identity = id;
+				const priorPath = seenLayouts.get(identity);
+				if (priorPath && priorPath !== path) {
+					console.warn(`Duplicate task identity ${id} across task record paths: ${priorPath} and ${path}`);
+				} else {
+					seenLayouts.set(identity, path);
+				}
+				return [
+					{
+						id,
+						path,
+						type: getTaskTypeFromPath(path, agenticWorkspaceDir),
+						lastModified: (lastModified.get(path) ?? new Date(0)).getTime(),
+					},
+				];
+			});
+		})();
+		this.commitIndexCache.set(key, promise);
+		try {
+			return await promise;
+		} catch (error) {
+			if (this.commitIndexCache.get(key) === promise) this.commitIndexCache.delete(key);
+			throw error;
+		}
+	}
+
+	private async loadCachedTask(commit: string, path: string): Promise<Task | null | typeof MALFORMED_TASK> {
+		const key = `${commit}\0${path}`;
+		let cached = this.taskCache.get(key);
+		if (!cached) {
+			const promise = this.git.showFile(commit, path).then((content): Task | null | typeof MALFORMED_TASK => {
+				try {
+					return parseTask(content);
+				} catch (error) {
+					warnUnparseableTaskFile(`${commit}:${path}`, error);
+					return MALFORMED_TASK;
+				}
+			});
+			cached = { commit, promise };
+			this.taskCache.set(key, cached);
+		}
+		try {
+			const task = await cached.promise;
+			return task === MALFORMED_TASK || task === null ? task : structuredClone(task);
+		} catch (error) {
+			if (this.taskCache.get(key)?.promise === cached.promise) this.taskCache.delete(key);
+			throw error;
+		}
+	}
+}

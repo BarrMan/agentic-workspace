@@ -1,6 +1,6 @@
 import type { Command, OptionValues } from "commander";
-import { addHelpSchema } from "../../../commands/help-schema.ts";
 import { Core } from "../../../index.ts";
+import { addHelpSchema } from "../../commands/help-schema.ts";
 import type { CliRuntime } from "../../runtime.ts";
 import type { CliReadOutput } from "../read-output.ts";
 import { isPlainRequested } from "../read-output.ts";

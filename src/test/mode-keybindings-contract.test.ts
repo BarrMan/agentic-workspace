@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { findShortcutConflict, formatShortcut, shortcutsConfig } from "../ui/opentui/keybindings.ts";
+import { findShortcutConflict, formatShortcut, shortcutsConfig } from "../renderer/opentui/keybindings.ts";
 
 describe("mode keybinding contract", () => {
 	it("has one workspace Tab descriptor and labels it Cycle mode", () => {

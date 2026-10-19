@@ -4,11 +4,11 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { BoxRenderable } from "@opentui/core";
 import { createTestRenderer } from "@opentui/core/testing";
-import type { ProcessRunner } from "../agent-workspace/session-process.ts";
-import { SessionStore } from "../agent-workspace/session-store.ts";
-import type { AgentSession } from "../agent-workspace/types.ts";
-import { mountOpenTuiWorkspace } from "../ui/opentui/workspace.ts";
-import { modeSessionIndication } from "../ui/opentui/workspace-controller.ts";
+import type { AgentSession } from "../model/session/types.ts";
+import { mountOpenTuiWorkspace } from "../renderer/opentui/workspace.ts";
+import { modeSessionIndication } from "../renderer/opentui/workspace-controller.ts";
+import type { ProcessRunner } from "../runtime/session-process.ts";
+import { SessionStore } from "../storage/session-store.ts";
 
 /**
  * A row dot comes only from that task's active session in its selected mode. The compatibility

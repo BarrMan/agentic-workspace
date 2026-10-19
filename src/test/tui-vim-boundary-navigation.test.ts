@@ -1,9 +1,9 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { BoxRenderable, InputRenderable } from "@opentui/core";
 import { createTestRenderer, type TestRendererSetup } from "@opentui/core/testing";
-import type { Task } from "../types/index.ts";
-import { Board } from "../ui/opentui/board/models/board.ts";
-import { mountOpenTuiBoard } from "../ui/opentui/board.ts";
+import type { Task } from "../model/types.ts";
+import { Board } from "../renderer/opentui/board/models/board.ts";
+import { mountOpenTuiBoard } from "../renderer/opentui/board.ts";
 
 function task(id: string, status = "To Do", visible = true): Task {
 	return {

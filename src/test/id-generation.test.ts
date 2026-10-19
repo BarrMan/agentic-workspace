@@ -2,10 +2,10 @@ import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { Core } from "../core/agentic-workspace.ts";
-import { serializeTask } from "../markdown/serializer.ts";
-import type { Task } from "../types/index.ts";
-import { isValidTaskId, parseTaskId, taskIdsEqual } from "../utils/task-id.ts";
+import { Core } from "../controller/agentic-workspace.ts";
+import { isValidTaskId, parseTaskId, taskIdsEqual } from "../model/task/task-id.ts";
+import type { Task } from "../model/types.ts";
+import { serializeTask } from "../storage/markdown/serializer.ts";
 import { coreFileSystem } from "./test-utils.ts";
 
 const TEST_DIR = join(tmpdir(), "agentic-workspace-id-gen-test");

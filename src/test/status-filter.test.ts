@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { normalizeStatusSet, statusMatchesSet } from "../utils/status-filter.ts";
+import { normalizeStatusSet, statusMatchesSet } from "../model/task/status-filter.ts";
 
 describe("normalizeStatusSet", () => {
 	it("lowercases and trims each status", () => {

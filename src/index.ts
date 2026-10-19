@@ -1,12 +1,13 @@
-export * from "./readme.ts";
+export * from "./renderer/readme.ts";
+
 // Types
 
-// Kanban board utilities
-export { exportKanbanBoardToFile } from "./board.ts";
-// Constants
-export * from "./constants/index.ts";
 // Core entry point
-export { Core } from "./core/agentic-workspace.ts";
+export { Core } from "./controller/agentic-workspace.ts";
+// Constants
+export * from "./model/constants.ts";
+// Kanban board utilities
+export { exportKanbanBoardToFile } from "./renderer/board.ts";
 
 // File system operations
 
@@ -14,8 +15,8 @@ export { Core } from "./core/agentic-workspace.ts";
 export {
 	initializeGitRepository,
 	isGitRepository,
-} from "./git/operations.ts";
+} from "./filesystem/git/operations.ts";
+export * from "./model/types.ts";
 // Markdown operations
-export * from "./markdown/parser.ts";
-export * from "./markdown/serializer.ts";
-export * from "./types/index.ts";
+export * from "./storage/markdown/parser.ts";
+export * from "./storage/markdown/serializer.ts";

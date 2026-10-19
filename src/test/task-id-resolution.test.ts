@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { isValidTaskId, taskIdKey, taskIdsEqual } from "../utils/task-id.ts";
+import { isValidTaskId, taskIdKey, taskIdsEqual } from "../model/task/task-id.ts";
 
 describe("exact task IDs", () => {
 	it("accepts only prefixed numeric IDs with optional dotted segments", () => {

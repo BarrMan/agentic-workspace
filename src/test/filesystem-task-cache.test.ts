@@ -1,10 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, spyOn } from "bun:test";
 import { stat, unlink, utimes } from "node:fs/promises";
 import { join } from "node:path";
-import { FileSystem } from "../file-system/operations.ts";
-import { TASK_FILE_READ_CONCURRENCY } from "../file-system/task-repository.ts";
-import { serializeTask } from "../markdown/serializer.ts";
-import type { Task } from "../types/index.ts";
+import type { Task } from "../model/types.ts";
+import { FileSystem } from "../storage/file-system.ts";
+import { serializeTask } from "../storage/markdown/serializer.ts";
+import { TASK_FILE_READ_CONCURRENCY } from "../storage/task-repository.ts";
 import { createUniqueTestDir, safeCleanup } from "./test-utils.ts";
 
 function task(id: string, title: string): Task {

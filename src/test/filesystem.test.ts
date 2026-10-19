@@ -2,10 +2,10 @@ import { afterEach, beforeEach, describe, expect, it, spyOn } from "bun:test";
 import * as fsPromises from "node:fs/promises";
 import { mkdir, readdir, stat } from "node:fs/promises";
 import { join } from "node:path";
-import { FileSystem } from "../file-system/operations.ts";
-import { serializeTask } from "../markdown/serializer.ts";
-import type { AgenticWorkspaceConfig, Task } from "../types/index.ts";
-import { AmbiguousIdError } from "../utils/entity-id.ts";
+import { AmbiguousIdError } from "../model/errors/entity-id.ts";
+import type { AgenticWorkspaceConfig, Task } from "../model/types.ts";
+import { FileSystem } from "../storage/file-system.ts";
+import { serializeTask } from "../storage/markdown/serializer.ts";
 import { createUniqueTestDir, safeCleanup } from "./test-utils.ts";
 
 let TEST_DIR: string;
@@ -73,7 +73,7 @@ describe("FileSystem", () => {
 
 			try {
 				const { FileSystem: MockedFileSystem } = await import(
-					`../file-system/operations.ts?eexist-directories=${Date.now()}`
+					`../storage/file-system.ts?eexist-directories=${Date.now()}`
 				);
 				const oneDriveFilesystem = new MockedFileSystem(projectDir);
 
@@ -107,7 +107,7 @@ describe("FileSystem", () => {
 			});
 
 			try {
-				const { FileSystem: MockedFileSystem } = await import(`../file-system/operations.ts?eexist-file=${Date.now()}`);
+				const { FileSystem: MockedFileSystem } = await import(`../storage/file-system.ts?eexist-file=${Date.now()}`);
 				const conflictFilesystem = new MockedFileSystem(projectDir);
 
 				await expect(conflictFilesystem.ensureAgenticWorkspaceStructure()).rejects.toMatchObject({ code: "EEXIST" });

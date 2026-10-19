@@ -1,9 +1,9 @@
 import { afterEach, describe, expect, it } from "bun:test";
 import { BoxRenderable, TextareaRenderable } from "@opentui/core";
 import { createTestRenderer, type TestRendererSetup } from "@opentui/core/testing";
-import { getDefaultModeCatalog } from "../agent-workspace/config.ts";
-import type { AgentConfiguration } from "../agent-workspace/types.ts";
-import { mountOpenTuiAgentSettings, parseModeArtifactDefinitions } from "../ui/opentui/agent-settings.ts";
+import type { AgentConfiguration } from "../model/session/types.ts";
+import { mountOpenTuiAgentSettings, parseModeArtifactDefinitions } from "../renderer/opentui/agent-settings.ts";
+import { getDefaultModeCatalog } from "../storage/config.ts";
 
 function configuration(): AgentConfiguration {
 	const modes = getDefaultModeCatalog();

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import { mkdir, symlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { Core } from "../core/agentic-workspace.ts";
+import { Core } from "../controller/agentic-workspace.ts";
 import { createUniqueTestDir, isWindows, safeCleanup } from "./test-utils.ts";
 
 type SymlinkFixture = { repoDir: string; agenticWorkspaceDir: string };

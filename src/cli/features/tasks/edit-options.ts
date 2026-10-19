@@ -1,10 +1,10 @@
 import type { Core } from "../../../index.ts";
-import type { TaskUpdateInput } from "../../../types/index.ts";
-import type { TaskEditArgs } from "../../../types/task-edit-args.ts";
-import { formatValidPriorityValues, resolvePriorityValue } from "../../../utils/priority-config.ts";
-import { formatValidStatuses, getCanonicalStatus } from "../../../utils/status.ts";
-import { parseClearableStringList, parseDelimitedStringList, toStringArray } from "../../../utils/task-builders.ts";
-import { buildTaskUpdateInput } from "../../../utils/task-edit-builder.ts";
+import { parseClearableStringList, parseDelimitedStringList, toStringArray } from "../../../lib/string-list.ts";
+import { formatValidPriorityValues, resolvePriorityValue } from "../../../model/task/priority-config.ts";
+import { formatValidStatuses, getCanonicalStatus } from "../../../model/task/status.ts";
+import type { TaskUpdateInput } from "../../../model/types.ts";
+import type { TaskEditArgs } from "../../task-edit-args.ts";
+import { buildTaskUpdateInput } from "../../task-edit-builder.ts";
 import { validateTaskListFlags } from "./edit-list-options.ts";
 
 type ParseResult = { input: TaskUpdateInput } | { error: string; formatForTask?: boolean };

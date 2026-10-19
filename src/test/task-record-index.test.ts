@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
-import type { Task } from "../types/index.ts";
-import { createTaskRecordIndex } from "../utils/task-record-index.ts";
+import { createTaskRecordIndex } from "../model/task/task-record-index.ts";
+import type { Task } from "../model/types.ts";
 
 function task(id: string, status = "To Do"): Task {
 	return {

@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import type { TaskGroup } from "../agent-workspace/group-store.ts";
-import { buildGroupRows, collectDescendantGroupIds, findGroup, setCollapsed } from "../ui/opentui/groups.ts";
+import { buildGroupRows, collectDescendantGroupIds, findGroup, setCollapsed } from "../renderer/opentui/groups.ts";
+import type { TaskGroup } from "../storage/group-store.ts";
 
 const group = (id: string, name: string, parentId: string | null, order: number, collapsed = false): TaskGroup => ({
 	id,

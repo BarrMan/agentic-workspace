@@ -1,9 +1,9 @@
 import { describe, expect, it } from "bun:test";
-import { FileSystem } from "../file-system/operations.ts";
-import { parseTask } from "../markdown/parser.ts";
-import { serializeTask } from "../markdown/serializer.ts";
-import type { Task } from "../types/index.ts";
-import { getPriorityOptions, getPriorityRank, resolvePriorityValue } from "../utils/priority-config.ts";
+import { getPriorityOptions, getPriorityRank, resolvePriorityValue } from "../model/task/priority-config.ts";
+import type { Task } from "../model/types.ts";
+import { FileSystem } from "../storage/file-system.ts";
+import { parseTask } from "../storage/markdown/parser.ts";
+import { serializeTask } from "../storage/markdown/serializer.ts";
 import { createUniqueTestDir, safeCleanup } from "./test-utils.ts";
 
 describe("Priority functionality", () => {

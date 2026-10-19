@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { getTaskStatistics } from "../core/statistics.ts";
-import type { Task } from "../types/index.ts";
+import { getTaskStatistics } from "../model/task/statistics.ts";
+import type { Task } from "../model/types.ts";
 
 describe("getTaskStatistics", () => {
 	const statuses = ["To Do", "In Progress", "Done"];

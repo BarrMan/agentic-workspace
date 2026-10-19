@@ -2,8 +2,8 @@ import { afterEach, describe, expect, it } from "bun:test";
 import { mkdir, mkdtemp, readdir, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { FileSystem } from "../file-system/operations.ts";
-import type { Task } from "../types/index.ts";
+import type { Task } from "../model/types.ts";
+import { FileSystem } from "../storage/file-system.ts";
 
 const roots: string[] = [];
 

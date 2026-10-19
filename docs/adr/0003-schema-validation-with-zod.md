@@ -18,7 +18,7 @@ Define one declarative validation boundary for Markdown frontmatter. Tasks and m
 
 ## Decision
 
-**Selected Technology:** `zod@4` schemas in `src/markdown/task-record-schema.ts` and `src/markdown/record-schemas.ts`.
+**Selected Technology:** `zod@4` schemas in `src/storage/markdown/task-record-schema.ts` and `src/storage/markdown/record-schemas.ts`.
 
 **Role:** `gray-matter` remains the only frontmatter extractor. A generic key map translates frontmatter keys to record properties; the schema owns validation, coercion, defaults, enums, dates, and list shapes. The parser maps `ZodError` issues to the existing public error classes, including `TaskDependenciesParseError` for structured dependency values. Serialization keeps its canonical key order and omission rules, and unknown frontmatter keys are retained by callers when a record is saved.
 
@@ -63,7 +63,7 @@ Zod keeps the validation contract in one place, makes field rules readable next 
 
 ## References
 
-- [Markdown parser](../../src/markdown/parser.ts) — public parse functions and error mapping.
-- [Task record schema](../../src/markdown/task-record-schema.ts) — task field, date, enum, and dependency rules.
-- [Record schemas](../../src/markdown/record-schemas.ts) — milestone rules.
+- [Markdown parser](../../src/storage/markdown/parser.ts) — public parse functions and error mapping.
+- [Task record schema](../../src/storage/markdown/task-record-schema.ts) — task field, date, enum, and dependency rules.
+- [Record schemas](../../src/storage/markdown/record-schemas.ts) — milestone rules.
 - [SPEC](../../docs/SPEC.md) — current record behavior.

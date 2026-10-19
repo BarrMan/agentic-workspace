@@ -2,11 +2,11 @@ import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { mkdir, unlink } from "node:fs/promises";
 import { join } from "node:path";
 import { $ } from "bun";
-import { Core } from "../core/agentic-workspace.ts";
-import { loadTaskCorpus } from "../core/task-detail.ts";
-import { serializeTask } from "../markdown/serializer.ts";
-import type { Task } from "../types/index.ts";
-import { buildDependencyGraph } from "../utils/dependency-graph.ts";
+import { Core } from "../controller/agentic-workspace.ts";
+import { loadTaskCorpus } from "../controller/task-detail.ts";
+import { buildDependencyGraph } from "../model/task/dependency-graph.ts";
+import type { Task } from "../model/types.ts";
+import { serializeTask } from "../storage/markdown/serializer.ts";
 import { coreFileSystem, createUniqueTestDir, initGitRepo, safeCleanup } from "./test-utils.ts";
 
 let testDir: string;

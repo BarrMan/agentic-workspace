@@ -2,8 +2,8 @@ import { afterEach, describe, expect, it } from "bun:test";
 import { appendFile, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createExistingAgentHost } from "../agent-workspace/live/existing-agent-host.ts";
-import type { TmuxExec, TmuxResult } from "../agent-workspace/live/tmux/types.ts";
+import { createExistingAgentHost } from "../runtime/live/existing-agent-host.ts";
+import type { TmuxExec, TmuxResult } from "../runtime/live/tmux/types.ts";
 
 describe("existing CLI agent host", () => {
 	const directories: string[] = [];

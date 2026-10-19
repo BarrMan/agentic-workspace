@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
-import type { Task } from "../types/index.ts";
-import { Board } from "../ui/opentui/board/models/board.ts";
-import { Filter } from "../ui/opentui/board/models/filter.ts";
+import type { Task } from "../model/types.ts";
+import { Board } from "../renderer/opentui/board/models/board.ts";
+import { Filter } from "../renderer/opentui/board/models/filter.ts";
 
 const task = (id: string, status: string, ordinal: number, branch?: string): Task => ({
 	id,

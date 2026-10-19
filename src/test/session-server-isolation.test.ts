@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "bun:test";
-import { createSessionServer } from "../agent-workspace/session-process.ts";
+import { createSessionServer } from "../runtime/session-process.ts";
 
 describe("createSessionServer socket isolation", () => {
 	const original = process.env.AGENTIC_WORKSPACE_TMUX_SOCKET;

@@ -1,5 +1,10 @@
 import { describe, expect, test } from "bun:test";
-import { CODE_PATH_PATTERNS, extractCodePaths, isCodePath, transformCodePathsPlain } from "../formatters/code-path.ts";
+import {
+	CODE_PATH_PATTERNS,
+	extractCodePaths,
+	isCodePath,
+	transformCodePathsPlain,
+} from "../renderer/formatters/code-path.ts";
 
 describe("Code path utilities", () => {
 	describe("CODE_PATH_PATTERNS", () => {

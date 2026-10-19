@@ -2,17 +2,13 @@ import { afterEach, describe, expect, it } from "bun:test";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import {
-	getDefaultModeCatalog,
-	initializeAgentConfiguration,
-	upsertAgentConfiguration,
-} from "../agent-workspace/config.ts";
-import { SessionStore } from "../agent-workspace/session-store.ts";
-import { AgentSessionService, type ProcessRunner, type TmuxServer } from "../agent-workspace/sessions.ts";
-import type { AgentSession } from "../agent-workspace/types.ts";
-import type { WorkspaceContext } from "../agent-workspace/workspace-context.ts";
-import { Core } from "../core/agentic-workspace.ts";
-import { initializeTestProject } from "../test/test-utils.ts";
+import { Core } from "../controller/agentic-workspace.ts";
+import type { AgentSession } from "../model/session/types.ts";
+import { AgentSessionService, type ProcessRunner, type TmuxServer } from "../runtime/sessions.ts";
+import type { WorkspaceContext } from "../runtime/workspace-context.ts";
+import { getDefaultModeCatalog, initializeAgentConfiguration, upsertAgentConfiguration } from "../storage/config.ts";
+import { SessionStore } from "../storage/session-store.ts";
+import { initializeTestProject } from "./test-utils.ts";
 
 type Pane = {
 	id: string;

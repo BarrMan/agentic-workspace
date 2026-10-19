@@ -1,11 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { mkdir, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
-import { Core } from "../core/agentic-workspace.ts";
-import { serializeTask } from "../markdown/serializer.ts";
-import type { Task } from "../types/index.ts";
-import { taskIdsEqual } from "../utils/task-id.ts";
-import { getTaskPath } from "../utils/task-path.ts";
+import { Core } from "../controller/agentic-workspace.ts";
+import { taskIdsEqual } from "../model/task/task-id.ts";
+import { getTaskPath } from "../model/task/task-path.ts";
+import type { Task } from "../model/types.ts";
+import { serializeTask } from "../storage/markdown/serializer.ts";
 import { coreFileSystem, createUniqueTestDir, initializeFilesystemTestProject, safeCleanup } from "./test-utils.ts";
 
 async function writeTaskContainer(directory: string, id: string, title: string): Promise<string> {

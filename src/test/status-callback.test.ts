@@ -2,9 +2,9 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { Core } from "../core/agentic-workspace.ts";
-import { serializeTask } from "../markdown/serializer.ts";
-import { executeStatusCallback } from "../utils/status-callback.ts";
+import { Core } from "../controller/agentic-workspace.ts";
+import { executeStatusCallback } from "../controller/status-callback.ts";
+import { serializeTask } from "../storage/markdown/serializer.ts";
 import { coreFileSystem } from "./test-utils.ts";
 
 describe("Status Change Callbacks", () => {

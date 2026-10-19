@@ -2,7 +2,7 @@ import { describe, expect, it } from "bun:test";
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { $ } from "bun";
-import { Core } from "../core/agentic-workspace.ts";
+import { Core } from "../controller/agentic-workspace.ts";
 import { getTestCliCommand } from "./test-cli.ts";
 import { coreFileSystem, createUniqueTestDir, initializeTestProject, safeCleanup } from "./test-utils.ts";
 

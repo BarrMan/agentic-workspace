@@ -1,7 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { Core } from "../core/agentic-workspace.ts";
+import { Core } from "../controller/agentic-workspace.ts";
 import { coreFileSystem, createUniqueTestDir, initializeTestProject, safeCleanup } from "./test-utils.ts";
 
 async function setup(): Promise<{ dir: string; core: Core }> {

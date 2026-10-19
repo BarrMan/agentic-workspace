@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from "bun:test";
-import { Core } from "../core/agentic-workspace.ts";
-import { searchSnapshot } from "../core/search-service.ts";
-import type { Task, TaskSearchResult } from "../types/index.ts";
+import { Core } from "../controller/agentic-workspace.ts";
+import { searchSnapshot } from "../controller/search-service.ts";
+import type { Task, TaskSearchResult } from "../model/types.ts";
 import { coreFileSystem, createUniqueTestDir, safeCleanup } from "./test-utils.ts";
 
 const directories: string[] = [];

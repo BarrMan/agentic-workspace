@@ -1,8 +1,8 @@
 import { afterEach, describe, expect, it } from "bun:test";
 import { BoxRenderable } from "@opentui/core";
 import { createTestRenderer, type TestRendererSetup } from "@opentui/core/testing";
-import type { AgentSession } from "../agent-workspace/types.ts";
-import { mountOpenTuiSessionPicker } from "../ui/opentui/session-picker.ts";
+import type { AgentSession } from "../model/session/types.ts";
+import { mountOpenTuiSessionPicker } from "../renderer/opentui/session-picker.ts";
 
 function session(id: string, createdAt: string): AgentSession {
 	return {

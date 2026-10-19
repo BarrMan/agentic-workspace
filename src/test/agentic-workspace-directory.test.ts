@@ -5,7 +5,7 @@ import { join } from "node:path";
 import {
 	normalizeProjectAgenticWorkspaceDirectory,
 	resolveAgenticWorkspaceDirectory,
-} from "../utils/agentic-workspace-directory.ts";
+} from "../filesystem/paths/agentic-workspace-directory.ts";
 
 describe("resolveAgenticWorkspaceDirectory", () => {
 	let testDir: string;

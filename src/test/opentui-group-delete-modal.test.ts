@@ -1,7 +1,10 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { BoxRenderable } from "@opentui/core";
 import { createTestRenderer, type TestRendererSetup } from "@opentui/core/testing";
-import { mountOpenTuiGroupDeleteModal, type OpenTuiGroupDeleteModalOptions } from "../ui/opentui/group-delete-modal.ts";
+import {
+	mountOpenTuiGroupDeleteModal,
+	type OpenTuiGroupDeleteModalOptions,
+} from "../renderer/opentui/group-delete-modal.ts";
 
 describe("native group delete modal", () => {
 	const renderers: TestRendererSetup[] = [];

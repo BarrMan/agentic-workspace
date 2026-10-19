@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { charFromBaseCode, optionBaseKey } from "../ui/opentui/option-compose.ts";
+import { charFromBaseCode, optionBaseKey } from "../renderer/opentui/option-compose.ts";
 
 describe("macOS Option-composed glyphs", () => {
 	it("reverse-maps the standard letters, digits, and punctuation", () => {

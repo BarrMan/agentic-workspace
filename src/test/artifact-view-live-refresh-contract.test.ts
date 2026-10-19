@@ -3,11 +3,11 @@ import { mkdir, utimes, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { BoxRenderable } from "@opentui/core";
 import { createTestRenderer, type TestRendererSetup } from "@opentui/core/testing";
-import { Storage } from "../core/storage.ts";
-import { FileSystem } from "../file-system/operations.ts";
-import { TaskArtifactRepository } from "../file-system/task-artifact-repository.ts";
-import { TaskArtifactView, type TaskArtifactViewApi } from "../ui/opentui/task-artifact-view.ts";
-import { watchTaskRecords } from "../utils/task-watcher.ts";
+import { TaskArtifactView, type TaskArtifactViewApi } from "../renderer/opentui/task-artifact-view.ts";
+import { FileSystem } from "../storage/file-system.ts";
+import { Storage } from "../storage/storage.ts";
+import { TaskArtifactRepository } from "../storage/task-artifact-repository.ts";
+import { watchTaskRecords } from "../storage/watchers/task-watcher.ts";
 import { createUniqueTestDir, getPlatformTimeout, safeCleanup } from "./test-utils.ts";
 
 const taskId = "BACK-23";

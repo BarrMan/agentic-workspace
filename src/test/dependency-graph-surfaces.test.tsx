@@ -1,8 +1,8 @@
 import { describe, expect, it } from "bun:test";
 import { parseColor, type StyledText } from "@opentui/core";
-import { toTaskDetail } from "../core/task-detail.ts";
-import type { Task } from "../types/index.ts";
-import { generateTaskDetailStyled } from "../ui/opentui/task-detail-content.ts";
+import { toTaskDetail } from "../controller/task-detail.ts";
+import type { Task } from "../model/types.ts";
+import { generateTaskDetailStyled } from "../renderer/opentui/task-detail-content.ts";
 
 const STATUSES = ["To Do", "In Progress", "Done"] as const;
 

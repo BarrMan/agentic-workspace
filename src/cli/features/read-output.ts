@@ -1,6 +1,6 @@
 import type { Command } from "commander";
-import { type ListWindow, type ListWindowOptions, parseListWindow } from "../../utils/list-window.ts";
-import { type ReadOutputMode, type ReadOutputOptions, resolveReadOutputMode } from "../../utils/read-output-mode.ts";
+import { type ListWindow, type ListWindowOptions, parseListWindow } from "../list-window.ts";
+import { type ReadOutputMode, type ReadOutputOptions, resolveReadOutputMode } from "../read-output-mode.ts";
 
 export type CliReadOutput = {
 	hasInteractiveTTY: boolean;

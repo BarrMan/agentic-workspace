@@ -1,8 +1,8 @@
 import { describe, expect, it } from "bun:test";
-import type { Task } from "../types/index.ts";
-import type { ColumnData } from "../ui/opentui/board/policies/column-policy.ts";
-import { shouldRebuildColumns } from "../ui/opentui/board/policies/column-policy.ts";
-import { hasMoveBlockingBoardFilters } from "../ui/opentui/board/policies/filter-policy.ts";
+import type { Task } from "../model/types.ts";
+import type { ColumnData } from "../renderer/opentui/board/policies/column-policy.ts";
+import { shouldRebuildColumns } from "../renderer/opentui/board/policies/column-policy.ts";
+import { hasMoveBlockingBoardFilters } from "../renderer/opentui/board/policies/filter-policy.ts";
 
 // Helper to create a minimal valid Task for testing
 const createTestTask = (id: string, title: string, status: string): Task => ({

@@ -3,7 +3,7 @@ import { mkdir, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { $ } from "bun";
-import { findAgenticWorkspaceRoot } from "../utils/find-agentic-workspace-root.ts";
+import { findAgenticWorkspaceRoot } from "../filesystem/paths/find-root.ts";
 import { initGitRepo } from "./test-utils.ts";
 
 describe("findAgenticWorkspaceRoot", () => {

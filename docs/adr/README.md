@@ -10,6 +10,7 @@ This directory defines the project's approved technology stack and concrete impl
 | Storage | Local filesystem; Markdown/YAML task records; JSON state | [ADR-0002](0002-storage-filesystem-paths-formats.md) |
 | Record validation | Zod frontmatter schemas | [ADR-0003](0003-schema-validation-with-zod.md) |
 | Content identity | Frontmatter decision IDs; title-bearing filenames are presentation | [ADR-0004](0004-document-and-decision-identity.md), affirmed for decision records by [ADR-0005](0005-project-document-removal.md) |
+| Source layout | Layer-first directories mirroring component ownership | [ADR-0006](0006-layer-first-source-layout.md) |
 
 ## Decision History
 
@@ -20,3 +21,4 @@ This directory defines the project's approved technology stack and concrete impl
 | [ADR-0003](0003-schema-validation-with-zod.md) | Schema validation with Zod | Accepted | — |
 | [ADR-0004](0004-document-and-decision-identity.md) | Document and decision identity | Superseded in part | [ADR-0005](0005-project-document-removal.md) (project-document provisions) |
 | [ADR-0005](0005-project-document-removal.md) | Remove project documents; retain decision-record identity | Accepted | — |
+| [ADR-0006](0006-layer-first-source-layout.md) | Layer-first source layout | Accepted | — |

@@ -2,10 +2,10 @@ import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { writeFileSync } from "node:fs";
 import { mkdir, rename } from "node:fs/promises";
 import { join } from "node:path";
-import { Core } from "../core/agentic-workspace.ts";
-import { FileSystem } from "../file-system/operations.ts";
-import type { AgenticWorkspaceConfig } from "../types/index.ts";
-import { watchConfig, watchConfigFile } from "../utils/config-watcher.ts";
+import { Core } from "../controller/agentic-workspace.ts";
+import type { AgenticWorkspaceConfig } from "../model/types.ts";
+import { FileSystem } from "../storage/file-system.ts";
+import { watchConfig, watchConfigFile } from "../storage/watchers/config-watcher.ts";
 import { coreFileSystem, createUniqueTestDir, getPlatformTimeout, safeCleanup } from "./test-utils.ts";
 
 let testDir: string;
@@ -661,8 +661,8 @@ describe("config watcher", () => {
 	it("does not keep a child process alive when only the missing-file poll fallback exists", async () => {
 		const missingProjectRoot = join(testDir, "missing-parent", "project");
 		const script = `
-			import { FileSystem } from "./src/file-system/operations.ts";
-			import { watchConfigFile } from "./src/utils/config-watcher.ts";
+			import { FileSystem } from "./src/storage/file-system.ts";
+			import { watchConfigFile } from "./src/storage/watchers/config-watcher.ts";
 			watchConfigFile(new FileSystem(${JSON.stringify(missingProjectRoot)}), {});
 		`;
 		watcherChild = Bun.spawn(["bun", "-e", script], {

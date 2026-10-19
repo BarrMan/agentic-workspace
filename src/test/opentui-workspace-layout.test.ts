@@ -1,10 +1,10 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { BoxRenderable, TextAttributes } from "@opentui/core";
 import { createTestRenderer, type TestRendererSetup } from "@opentui/core/testing";
-import type { AgentHost } from "../agent-workspace/live/agent-host.ts";
-import type { AgentIndication } from "../agent-workspace/types.ts";
-import { mountOpenTuiWorkspace } from "../ui/opentui/workspace.ts";
-import { createWorkspaceAgent } from "../ui/opentui/workspace-agent.ts";
+import type { AgentIndication } from "../model/session/types.ts";
+import { mountOpenTuiWorkspace } from "../renderer/opentui/workspace.ts";
+import { createWorkspaceAgent } from "../renderer/opentui/workspace-agent.ts";
+import type { AgentHost } from "../runtime/live/agent-host.ts";
 
 function plainContent(content: unknown): string {
 	if (typeof content === "string") return content;

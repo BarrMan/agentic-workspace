@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { formatKey, formatKeymap, keymapKeys, metaModifierLabel, uiKeymap } from "../ui/opentui/keymap.ts";
+import { formatKey, formatKeymap, keymapKeys, metaModifierLabel, uiKeymap } from "../renderer/opentui/keymap.ts";
 
 describe("TUI keymap", () => {
 	it("exposes the canonical binding lists per context", () => {

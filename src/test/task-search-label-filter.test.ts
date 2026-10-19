@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import type { Task } from "../types/index.ts";
-import { createTaskSearchIndex } from "../utils/task-search.ts";
+import { TaskSearchIndex } from "../model/task/task-search.ts";
+import type { Task } from "../model/types.ts";
 
 const tasks: Task[] = [
 	{
@@ -35,33 +35,33 @@ const tasks: Task[] = [
 	},
 ];
 
-describe("createTaskSearchIndex label filtering", () => {
+describe("TaskSearchIndex label filtering", () => {
 	test("filters tasks by single label", () => {
-		const index = createTaskSearchIndex(tasks);
+		const index = new TaskSearchIndex(tasks);
 		const results = index.search({ labels: [" Ui "] });
 		expect(results.map((t) => t.id)).toEqual(["task-2", "task-3"]);
 	});
 
 	test("matches any of the selected labels", () => {
-		const index = createTaskSearchIndex(tasks);
+		const index = new TaskSearchIndex(tasks);
 		const results = index.search({ labels: ["ui", "docs"] });
 		expect(results.map((t) => t.id)).toEqual(["task-2", "task-3"]);
 	});
 
 	test("can require all selected labels", () => {
-		const index = createTaskSearchIndex(tasks);
+		const index = new TaskSearchIndex(tasks);
 		const results = index.search({ labels: ["ui", "docs"], labelMatch: "all" });
 		expect(results.map((t) => t.id)).toEqual(["task-3"]);
 	});
 
 	test("finds tasks by modified file query", () => {
-		const index = createTaskSearchIndex(tasks);
+		const index = new TaskSearchIndex(tasks);
 		const results = index.search({ query: "components/Button.tsx" });
 		expect(results.map((t) => t.id)).toEqual(["task-2"]);
 	});
 
 	test("filters tasks by modified file substring", () => {
-		const index = createTaskSearchIndex(tasks);
+		const index = new TaskSearchIndex(tasks);
 		const results = index.search({ modifiedFiles: ["button"] });
 		expect(results.map((t) => t.id)).toEqual(["task-2"]);
 	});

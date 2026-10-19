@@ -2,10 +2,10 @@ import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { mkdir } from "node:fs/promises";
 import { Writable } from "node:stream";
 import { runCli } from "../cli/register.ts";
-import { Core } from "../core/agentic-workspace.ts";
-import { type TaskCorpus, toTaskDetail, withReadiness } from "../core/task-detail.ts";
-import { searchJson } from "../formatters/json-output.ts";
-import { generateTaskDetailStyled } from "../ui/opentui/task-detail-content.ts";
+import { Core } from "../controller/agentic-workspace.ts";
+import { type TaskCorpus, toTaskDetail, withReadiness } from "../controller/task-detail.ts";
+import { searchJson } from "../renderer/formatters/json-output.ts";
+import { generateTaskDetailStyled } from "../renderer/opentui/task-detail-content.ts";
 import { coreFileSystem, createUniqueTestDir, initializeFilesystemTestProject, safeCleanup } from "./test-utils.ts";
 
 /**
