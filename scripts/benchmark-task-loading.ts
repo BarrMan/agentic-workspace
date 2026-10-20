@@ -25,12 +25,8 @@ const SEMANTIC_OPERATIONS = [
 	"repositoryChecks",
 	"remoteFetches",
 	"branchTipSnapshots",
-	"remoteBranchEnumerations",
-	"localBranchEnumerations",
-	"treeIndexes",
 	"historyScans",
 	"refResolutions",
-	"taskHydrations",
 ] as const;
 
 type SemanticOperation = (typeof SEMANTIC_OPERATIONS)[number];
@@ -352,12 +348,8 @@ function instrumentCore(core: Core): Instrumentation {
 	wrap(fileSystemOf(core), "listCompletedTasks", "completedTaskScans");
 	wrap(core.git, "fetch", "remoteFetches");
 	wrap(core.git, "listRecentBranchTips", "branchTipSnapshots");
-	wrap(core.git, "listRecentRemoteBranches", "remoteBranchEnumerations");
-	wrap(core.git, "listRecentBranches", "localBranchEnumerations");
-	wrap(core.git, "listFilesInTree", "treeIndexes");
 	wrap(core.git, "getBranchLastModifiedMap", "historyScans");
 	wrap(core.git, "resolveCommit", "refResolutions");
-	wrap(core.git, "showFile", "taskHydrations");
 
 	return {
 		reset() {
@@ -598,8 +590,6 @@ function printTable(options: Options, results: BenchmarkResult[]): void {
 		Repo: formatNumber(result.semanticOperations.repositoryChecks.median, 0),
 		Fetch: formatNumber(result.semanticOperations.remoteFetches.median, 0),
 		Tips: formatNumber(result.semanticOperations.branchTipSnapshots.median, 0),
-		Trees: formatNumber(result.semanticOperations.treeIndexes.median, 0),
-		Hydrate: formatNumber(result.semanticOperations.taskHydrations.median, 0),
 		Count: formatNumber(result.resultCount.median, 0),
 		Expected: String(result.expectedResultCount),
 		Digest: result.resultDigest,

@@ -701,16 +701,17 @@ export function mountOpenTuiHelpOverlay(
 		if (previousFocus && !previousFocus.isDestroyed) previousFocus.focus();
 		options.onClose?.();
 	};
-	const showConfirmation = (): void => {
+	const conflictMessage = (): string | undefined => {
 		const current = recording;
-		if (!current?.item.shortcut) return;
+		if (!current?.item.shortcut) return undefined;
 		const conflict = findShortcutConflict(current.item.shortcut, current.keys, overrides);
-		if (conflict) {
-			const description = options.items.find((row) => row.shortcut?.id === conflict.id)?.description ?? conflict.id;
-			message = `Conflict: ${formatSequence(current.keys)} is assigned to ${description}.`;
-		} else {
-			message = "";
-		}
+		if (!conflict) return undefined;
+		const description = options.items.find((row) => row.shortcut?.id === conflict.id)?.description ?? conflict.id;
+		return `Conflict: ${formatSequence(current.keys)} is assigned to ${description}.`;
+	};
+	const showConfirmation = (): void => {
+		if (!recording?.item.shortcut) return;
+		message = conflictMessage() ?? "";
 		confirmationAction = "save";
 		confirming = true;
 		render();
@@ -725,10 +726,9 @@ export function mountOpenTuiHelpOverlay(
 	const saveRecording = async (): Promise<void> => {
 		const current = recording;
 		if (!current?.item.shortcut || !options.onOverridesChange) return;
-		const conflict = findShortcutConflict(current.item.shortcut, current.keys, overrides);
+		const conflict = conflictMessage();
 		if (conflict) {
-			const description = options.items.find((row) => row.shortcut?.id === conflict.id)?.description ?? conflict.id;
-			message = `Conflict: ${formatSequence(current.keys)} is assigned to ${description}.`;
+			message = conflict;
 			render();
 			return;
 		}

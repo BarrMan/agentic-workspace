@@ -13,7 +13,7 @@ import {
 	updateAgentConfiguration,
 	upsertAgentConfiguration,
 } from "../../storage/config.ts";
-import { disableHarnessReadiness } from "../agent-test-helpers.ts";
+import { disableHarnessReadiness, writePiCapture } from "../agent-test-helpers.ts";
 import { coreFileSystem, initializeTestProject } from "../test-utils.ts";
 
 mock.module("../../lib/process-tree.ts", () => ({
@@ -145,7 +145,7 @@ class SnapshotHarness implements ProcessRunner, TmuxServer {
 					const nativeId = /nativeSessionId[^0-9a-f]+([0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})/.exec(command)?.[1];
 					if (skillPath && nativeId) {
 						const receipt = JSON.stringify({ session_id: nativeId });
-						await writeFile(join(skillPath, "session_id"), nativeId);
+						await writePiCapture(skillPath, command, nativeId);
 						await writeFile(join(skillPath, "initialized"), receipt);
 						await writeFile(join(skillPath, "prompt-accepted"), receipt);
 					}

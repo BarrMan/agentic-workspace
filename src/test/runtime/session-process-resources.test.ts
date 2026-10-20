@@ -1,25 +1,14 @@
-import { afterEach, describe, expect, it, mock } from "bun:test";
+import { afterEach, describe, expect, it } from "bun:test";
 import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { TmuxCommandError } from "libtmux";
-import type { AgentPreset, AgentSession } from "../../model/session/types.ts";
+import type { AgentSession } from "../../model/session/types.ts";
 import { preparedLaunchResources } from "../../runtime/completion-supervisor-resources.ts";
+import { ConclusiveStartupFailureError } from "../../runtime/errors/sessions.ts";
 import type { ProcessRunner, TmuxServer } from "../../runtime/session-process.ts";
-import { getDefaultModeCatalog } from "../../storage/config.ts";
-
-const profile = getDefaultModeCatalog().profiles.build;
-if (!profile) throw new Error("Missing default build mode profile.");
 
 let resourceMarker = "";
-let preparedLaunch: unknown;
-let preflightError: Error | undefined;
-mock.module("../../runtime/session-launch.ts", () => ({
-	prepareAgentLaunch: async () => preparedLaunch,
-	preflightAgentLaunch: async () => {
-		if (preflightError) throw preflightError;
-	},
-}));
 const { SessionProcess } = await import("../../runtime/session-process.ts");
 
 async function rejection(promise: Promise<unknown>): Promise<unknown> {
@@ -36,7 +25,6 @@ describe("persisted prepared launch resources", () => {
 	afterEach(async () => {
 		await Promise.all(roots.splice(0).map((path) => rm(path, { recursive: true, force: true })));
 		resourceMarker = "";
-		preflightError = undefined;
 	});
 
 	async function fixture() {
@@ -270,36 +258,19 @@ describe("persisted prepared launch resources", () => {
 		expect(f.events.filter((event) => event === "respawn")).toHaveLength(2);
 	});
 
-	it("resumes by tearing down, creating, preparing capture, and only then respawning", async () => {
-		const f = await fixture();
-		const process = f.makeProcess();
-		preparedLaunch = f.launch;
-		await process.resume(f.session, { bootstrap: "opencode" } as AgentPreset, { profile });
-		expect(f.events.indexOf("kill-pane:resource-present")).toBeLessThan(f.events.indexOf("create"));
-		expect(f.events.indexOf("create")).toBeLessThan(f.events.indexOf("capture"));
-		expect(f.events.indexOf("capture")).toBeLessThan(f.events.indexOf("respawn"));
-		expect(f.options.has("@agentic_workspace_launch_resources")).toBe(true);
-	});
-
 	it("treats an early non-127 pane exit as failed startup", async () => {
 		const f = await fixture();
 		f.setPaneDeadOnRespawn();
-		preparedLaunch = f.launch;
-		const error = await rejection(
-			f.makeProcess().resume(f.session, { bootstrap: "opencode" } as AgentPreset, { profile }),
-		);
-		expect(error).toMatchObject({ kind: "conclusive-startup-failure" });
+		const error = await rejection(f.makeProcess().launchPrepared(f.session, f.launch));
+		expect(error).toBeInstanceOf(ConclusiveStartupFailureError);
 		expect(error).toMatchObject({ message: expect.stringContaining("failed to launch") });
 	});
 
 	it("detects an early exit after the first startup observation", async () => {
 		const f = await fixture();
 		f.setPaneDeadAfter(60);
-		preparedLaunch = f.launch;
-		const error = await rejection(
-			f.makeProcess().resume(f.session, { bootstrap: "opencode" } as AgentPreset, { profile }),
-		);
-		expect(error).toMatchObject({ kind: "conclusive-startup-failure" });
+		const error = await rejection(f.makeProcess().launchPrepared(f.session, f.launch));
+		expect(error).toBeInstanceOf(ConclusiveStartupFailureError);
 		expect(error).toMatchObject({ message: expect.stringContaining("failed to launch") });
 	});
 
@@ -307,20 +278,7 @@ describe("persisted prepared launch resources", () => {
 		const f = await fixture();
 		f.setPaneDisappearOnRespawn();
 		const error = await rejection(f.makeProcess().launchPrepared(f.session, f.launch));
-		expect(error).toMatchObject({ kind: "conclusive-startup-failure" });
-	});
-
-	it("preflights resume before cleaning the owned pane or its resources", async () => {
-		const f = await fixture();
-		await f.makeProcess().launchPrepared(f.session, f.launch);
-		preflightError = new Error("resume prerequisite rejected");
-		await expect(
-			f.makeProcess().resume(f.session, { bootstrap: "opencode" } as AgentPreset, { profile }),
-		).rejects.toThrow("resume prerequisite rejected");
-		expect(f.events.some((event) => event.startsWith("kill-pane:"))).toBe(false);
-		expect(await readFile(join(f.resources.skill.path, ".agentic-workspace-launch-owner"), "utf8")).toBe(
-			f.resources.skill.marker,
-		);
+		expect(error).toBeInstanceOf(ConclusiveStartupFailureError);
 	});
 
 	it("leaves launch inventory untouched when the owned startup probe is malformed", async () => {
@@ -328,7 +286,7 @@ describe("persisted prepared launch resources", () => {
 		f.setMalformedPaneProbe();
 		const error = await rejection(f.makeProcess().launchPrepared(f.session, f.launch));
 		expect(error).toMatchObject({ message: expect.stringContaining("ownership does not match") });
-		expect(error).not.toHaveProperty("kind", "conclusive-startup-failure");
+		expect(error).not.toBeInstanceOf(ConclusiveStartupFailureError);
 		expect(f.options.has("@agentic_workspace_launch_resources")).toBe(true);
 		expect(await readFile(join(f.resources.skill.path, ".agentic-workspace-launch-owner"), "utf8")).toBe(
 			f.resources.skill.marker,
@@ -341,7 +299,7 @@ describe("persisted prepared launch resources", () => {
 		f.setProbeDelayOnRespawn();
 		const error = await rejection(f.makeProcess().launchPrepared(f.session, f.launch));
 		expect(error).toMatchObject({ message: expect.stringContaining("startup pane probe deadline exceeded") });
-		expect(error).not.toHaveProperty("kind", "conclusive-startup-failure");
+		expect(error).not.toBeInstanceOf(ConclusiveStartupFailureError);
 		expect(f.probeTimeouts).toHaveLength(1);
 		expect(f.probeTimeouts[0]).toBeGreaterThan(0);
 		expect(f.probeTimeouts[0]).toBeLessThanOrEqual(250);
@@ -357,24 +315,11 @@ describe("persisted prepared launch resources", () => {
 		f.setPaneIdChangeOnRespawn();
 		const error = await rejection(f.makeProcess().launchPrepared(f.session, f.launch));
 		expect(error).toMatchObject({ message: expect.stringContaining("pane changed during probe") });
-		expect(error).not.toHaveProperty("kind", "conclusive-startup-failure");
+		expect(error).not.toBeInstanceOf(ConclusiveStartupFailureError);
 		expect(f.options.has("@agentic_workspace_launch_resources")).toBe(true);
 		expect(await readFile(join(f.resources.skill.path, ".agentic-workspace-launch-owner"), "utf8")).toBe(
 			f.resources.skill.marker,
 		);
-	});
-
-	it("cleans newly prepared launch resources when replacement creation fails before transfer", async () => {
-		const f = await fixture();
-		preparedLaunch = f.launch;
-		f.server.newSession = async () => {
-			throw new Error("tmux create denied");
-		};
-		await expect(
-			f.makeProcess().resume(f.session, { bootstrap: "opencode" } as AgentPreset, { profile }),
-		).rejects.toThrow("tmux create denied");
-		await expect(readFile(f.resources.skill.path)).rejects.toMatchObject({ code: "ENOENT" });
-		expect(f.events).not.toContain("respawn");
 	});
 
 	it("still explicitly stops a pane with no declared resource inventory", async () => {
@@ -394,7 +339,7 @@ describe("persisted prepared launch resources", () => {
 		);
 		const error = await rejection(f.makeProcess().launchPrepared(f.session, f.launch));
 		expect(error).toMatchObject({ message: expect.stringContaining("lost respawn ACK") });
-		expect(error).not.toHaveProperty("kind", "conclusive-startup-failure");
+		expect(error).not.toBeInstanceOf(ConclusiveStartupFailureError);
 		expect(f.options.has("@agentic_workspace_launch_resources")).toBe(true);
 		expect(await readFile(join(f.resources.skill.path, ".agentic-workspace-launch-owner"), "utf8")).toBe(
 			f.resources.skill.marker,

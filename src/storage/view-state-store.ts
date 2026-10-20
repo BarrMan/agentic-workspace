@@ -4,7 +4,8 @@ import { access, lstat, mkdir, readFile, realpath, rename, stat } from "node:fs/
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { LockOwner } from "../filesystem/lock-owner.ts";
 import { type ProjectStateRootOptions, resolveProjectStateRoot, writeFileAtomic } from "./session-store.ts";
-import { type StateStoreWatcher, startStateStoreWatcher } from "./watchers/state-store-watcher.ts";
+import { StateStoreLifecycle } from "./state-store-lifecycle.ts";
+import { startStateStoreWatcher } from "./watchers/state-store-watcher.ts";
 
 const VIEW_STATE_FILE = "view-state.json";
 /** Reclaim abandoned view-state locks without holding a lock during rendering. */
@@ -106,13 +107,11 @@ async function canonicalViewLock(projectRoot: string): Promise<string | undefine
 class ViewStateStoreImpl<T extends object> implements ViewStateStore<T> {
 	readonly origin: string = randomUUID();
 	private readonly lock = new LockOwner();
-	private readonly listeners = new Set<ViewStateListener<T>>();
+	private readonly lifecycle = new StateStoreLifecycle<ViewStateEnvelope<T>>();
 	private state: T;
 	private rev = 0;
 	private path = "";
 	private externalStateRoot?: string;
-	private stateWatcher?: StateStoreWatcher;
-	private closed = false;
 	private recoveredNotice?: string;
 
 	constructor(
@@ -141,19 +140,11 @@ class ViewStateStoreImpl<T extends object> implements ViewStateStore<T> {
 		this.externalStateRoot =
 			physicalStateRoot === join(physicalProjectRoot, ".agentic-workspace") ? undefined : physicalStateRoot;
 		await this.seed();
-		this.stateWatcher = startStateStoreWatcher(
+		this.lifecycle.stateWatcher = startStateStoreWatcher(
 			this.path,
 			() => void this.recheck().catch(() => undefined),
-			() => this.closed,
+			() => this.lifecycle.closed,
 		);
-	}
-
-	subscribe(listener: ViewStateListener<T>): () => void {
-		if (this.closed) return () => undefined;
-		this.listeners.add(listener);
-		return () => {
-			this.listeners.delete(listener);
-		};
 	}
 
 	/**
@@ -172,18 +163,18 @@ class ViewStateStoreImpl<T extends object> implements ViewStateStore<T> {
 		});
 	}
 
-	async recheck(): Promise<void> {
-		if (this.closed) return;
-		const envelope = await this.readEnvelope();
-		if (envelope) this.apply(envelope);
+	subscribe(listener: ViewStateListener<T>): () => void {
+		return this.lifecycle.subscribe(listener);
 	}
 
 	close(): void {
-		if (this.closed) return;
-		this.closed = true;
-		this.stateWatcher?.close();
-		this.stateWatcher = undefined;
-		this.listeners.clear();
+		this.lifecycle.close();
+	}
+
+	async recheck(): Promise<void> {
+		if (this.lifecycle.closed) return;
+		const envelope = await this.readEnvelope();
+		if (envelope) this.apply(envelope);
 	}
 
 	/** Creates the file with the default state if no one else has written it yet. */
@@ -217,7 +208,7 @@ class ViewStateStoreImpl<T extends object> implements ViewStateStore<T> {
 		if (envelope.rev <= this.rev) return;
 		this.rev = envelope.rev;
 		this.state = envelope.state;
-		for (const listener of [...this.listeners]) {
+		for (const listener of [...this.lifecycle.listeners]) {
 			try {
 				listener(envelope);
 			} catch {

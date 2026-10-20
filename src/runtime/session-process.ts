@@ -9,15 +9,14 @@ import {
 } from "libtmux";
 import { processIdentity, terminateProcessTree } from "../lib/process-tree.ts";
 import { fail, type SessionCommandResult } from "../model/session/session-utils.ts";
-import type { AgentPreset, AgentSession, ModeProfile } from "../model/session/types.ts";
+import type { AgentSession } from "../model/session/types.ts";
 import { taskIdsEqual } from "../model/task/task-id.ts";
 import { resolveProjectStateRoot } from "../storage/session-store.ts";
-import type { SessionIntent } from "./agents/core/agent.ts";
 import { cleanupPreparedLaunchResources, type PreparedLaunchResources } from "./completion-supervisor-resources.ts";
 import { ConclusiveStartupFailureError } from "./errors/sessions.ts";
 import { createTmuxExec } from "./live/tmux/exec.ts";
 import type { TmuxExec } from "./live/tmux/types.ts";
-import { type PreparedAgentLaunch, preflightAgentLaunch, prepareAgentLaunch } from "./session-launch.ts";
+import type { PreparedAgentLaunch } from "./session-launch.ts";
 import { paneTitle } from "./tmux-pane-lookup.ts";
 
 const LAUNCH_PROBE_INTERVAL_MS = 25;
@@ -305,62 +304,6 @@ export class SessionProcess {
 	async assertNoPreparedResources(session: AgentSession): Promise<void> {
 		const pane = await this.exactPane(session, [LIVE_PREVIEW_ROLE]);
 		if (pane || this.launches.has(session.id)) await this.kill(session);
-	}
-
-	async resume(
-		session: AgentSession,
-		preset: AgentPreset,
-		options: {
-			includeDead?: boolean;
-			yolo?: boolean;
-			profile: ModeProfile;
-			repositoryRoot?: string;
-			taskRoot?: string;
-		},
-	): Promise<void> {
-		if (!session.nativeSessionId)
-			throw new Error("Cannot resume this agent without its exact native session ID; start a new session instead.");
-		const intent: SessionIntent = { kind: "resume", nativeSessionId: session.nativeSessionId };
-		const preflight = await preflightAgentLaunch(preset, session.bootstrapPath, {
-			cwd: session.cwd,
-			intent,
-			sessionId: session.id,
-			yolo: options.yolo,
-			profile: options.profile,
-			repositoryRoot: options.repositoryRoot ?? session.pathContext?.projectDir,
-			taskRoot: options.taskRoot ?? session.pathContext?.taskDir,
-		});
-		await this.kill(session);
-		const launch = await prepareAgentLaunch(
-			preset,
-			session.bootstrapPath,
-			{
-				// Prefer the persisted cwd: a worktree session must resume in its own worktree, not the root.
-				cwd: session.cwd,
-				intent,
-				sessionId: session.id,
-				yolo: options.yolo,
-				profile: options.profile,
-				repositoryRoot: options.repositoryRoot ?? session.pathContext?.projectDir,
-				taskRoot: options.taskRoot ?? session.pathContext?.taskDir,
-			},
-			preflight,
-		);
-		try {
-			await this.create(session, launch.env);
-			await this.preparePane(session);
-			await this.launchPrepared(session, launch);
-		} catch (error) {
-			if (this.launches.get(session.id) !== launch && launch.resources) {
-				try {
-					await this.validateLaunchResources(session, launch.resources, false);
-				} catch (cleanupError) {
-					this.launches.set(session.id, launch);
-					throw new AggregateError([error, cleanupError], `Could not prepare resumed session ${session.id}`);
-				}
-			}
-			throw error;
-		}
 	}
 
 	private async launchCommand(

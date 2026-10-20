@@ -11,6 +11,13 @@
 	],
 	// .omp/ contains the external RTK host extension, not application source.
 	"ignorePatterns": [".omp/**"],
+	// These members are dispatched through the optional HarnessInterface capabilities.
+	"usedClassMembers": [
+		{
+			"implements": "HarnessInterface",
+			"members": ["events", "discoverModels", "prepareProfile", "readiness", "preflightLaunch"]
+		}
+	],
 	"typeAware": {
 		"enabled": true,
 		"projects": ["tsconfig.json"],

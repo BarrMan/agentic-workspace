@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { lstat, mkdir, readFile, realpath, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
+import { setTimeout as delay } from "node:timers/promises";
 import type { ModeProfile } from "../../../model/session/types.ts";
 import type { InstalledStatusHook } from "../../status-hooks.ts";
 import {
@@ -16,6 +17,7 @@ import {
 	type PreparationResources,
 	quotedAskArguments,
 	type ResumeCommandRequest,
+	resumeCommandWithFlag,
 	type SessionIntent,
 	type StatusHookInstallOptions,
 	shellQuote,
@@ -108,8 +110,6 @@ function encodeClaudeCwd(cwd: string): string {
 
 export class ClaudeAgent implements HarnessInterface {
 	readonly name = "claude";
-	// Called through the optional Agent interface.
-	// fallow-ignore-next-line unused-class-member -- called through the optional Agent interface
 	readonly events = {
 		turnCompleted: "supported",
 		permissionWait: "supported",
@@ -123,14 +123,10 @@ export class ClaudeAgent implements HarnessInterface {
 	readonly prepareBeforeAsk = false;
 
 	// Claude has no verified model-list command; explicit IDs remain manually configurable.
-	// Called through the optional Agent interface.
-	// fallow-ignore-next-line unused-class-member -- called through the optional Agent interface
 	discoverModels() {
 		return Promise.resolve([]);
 	}
 
-	// Called through the optional Agent interface.
-	// fallow-ignore-next-line unused-class-member -- called through the optional Agent interface
 	prepareProfile(profile: ModeProfile, preset: import("../../../model/session/types.ts").AgentPreset) {
 		return profile.model.kind === "explicit" ? withExplicitModel(preset, profile.model.id) : preset;
 	}
@@ -152,14 +148,7 @@ export class ClaudeAgent implements HarnessInterface {
 	}
 
 	resumeCommand({ preset, nativeSessionId }: ResumeCommandRequest): string {
-		if (!nativeSessionId) {
-			throw new Error("Cannot resume this agent without its exact native session ID; start a new session instead.");
-		}
-		const resumeFlag = preset.resumeFlag ?? "--resume";
-		if (!resumeFlag.trim() || resumeFlag.includes("\0")) {
-			throw new Error("Agent resumeFlag must be a non-empty string without NUL bytes.");
-		}
-		return appendArguments(preset.command, `${shellQuote(resumeFlag)} ${shellQuote(nativeSessionId)}`);
+		return resumeCommandWithFlag(preset, nativeSessionId, "--resume");
 	}
 
 	askCommand({ preset, nativeSessionId, question }: AskCommandRequest): string {
@@ -189,8 +178,6 @@ export class ClaudeAgent implements HarnessInterface {
 		return { command, env, identity };
 	}
 
-	// Called through the optional Agent interface.
-	// fallow-ignore-next-line unused-class-member -- called through the optional Agent interface
 	readiness(intent: SessionIntent, launchDirectory: string, identity?: NativeIdentity) {
 		const id = identity?.id ?? (intent.kind === "resume" ? intent.nativeSessionId : undefined);
 		return {
@@ -243,22 +230,15 @@ export class ClaudeAgent implements HarnessInterface {
 				if (metadata.isFile()) return { id: expected, basis: "provider-confirmed" };
 			} catch {}
 			if (Date.now() >= deadline) throw new Error("Claude did not provide provider-owned session identity evidence.");
-			await new Promise<void>((resolve, reject) => {
-				const timer = setTimeout(() => {
-					signal.removeEventListener("abort", abort);
-					resolve();
-				}, 50);
-				const abort = (): void => {
-					clearTimeout(timer);
-					reject(signal.reason ?? new Error("Claude identity capture aborted."));
-				};
-				signal.addEventListener("abort", abort, { once: true });
-			});
+			try {
+				await delay(50, undefined, { signal });
+			} catch (error) {
+				if (signal.aborted) throw signal.reason ?? error;
+				throw error;
+			}
 		}
 	}
 
-	// Called through the optional Agent interface.
-	// fallow-ignore-next-line unused-class-member -- called through the optional Agent interface
 	async preflightLaunch(request: import("../core/agent.ts").AgentPreflightRequest): Promise<void> {
 		if (request.resume) this.resumeCommand(request);
 		else this.launchCommand({ ...request, bootstrapPath: request.bootstrapPath });

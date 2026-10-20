@@ -16,6 +16,7 @@ import {
 } from "../runtime/agents/core/agent.ts";
 import { harnessRegistry } from "../runtime/agents/startup.ts";
 import type { InstalledStatusHook } from "../runtime/status-hooks.ts";
+import { expandPromptPresetCommand } from "./prompt-preset-command.ts";
 
 /**
  * Test-only stand-in for the retired generic `prompt` bootstrap. It reproduces the old prompt
@@ -44,14 +45,7 @@ class PromptInjectionAgent implements HarnessInterface {
 			throw new Error("Custom agent commands must include {prompt} or {instructions} to receive session instructions.");
 		}
 		const prompt = filePrompt(bootstrapPath);
-		return preset.command
-			.map((arg) =>
-				arg
-					.split(/(\{prompt\}|\{instructions\})/)
-					.map((part) => (part === "{prompt}" || part === "{instructions}" ? prompt : shellQuote(part)))
-					.join(""),
-			)
-			.join(" ");
+		return expandPromptPresetCommand(preset.command, prompt);
 	}
 
 	resumeCommand({ preset, nativeSessionId }: ResumeCommandRequest): string {

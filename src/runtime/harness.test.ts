@@ -29,7 +29,7 @@ async function fixture(omit?: Omitted, resume = false) {
 		launchEnvironment: {} as Record<string, string>,
 		order: [] as string[],
 	};
-	const state = { killCalls: 0, failKill: false };
+	const state = { killCalls: 0, capturedPaneIds: [] as string[], failKill: false };
 	const record: AgentSession = {
 		id: "session-1",
 		taskId: "TASK-1",
@@ -100,8 +100,9 @@ async function fixture(omit?: Omitted, resume = false) {
 			}
 		},
 		alive: async () => ({ exitCode: 0, stdout: "0", stderr: "" }),
-		kill: async () => {
+		killCaptured: async (_record: AgentSession, paneId: string) => {
 			state.killCalls += 1;
+			state.capturedPaneIds.push(paneId);
 			if (state.failKill) throw new Error("execution cleanup failed");
 		},
 		input: async () => {},
@@ -271,6 +272,7 @@ describe("provider prompt-acceptance receipts", () => {
 			expect(failure?.message).toContain("missing prompt-accepted receipt");
 			expect(failure?.execution).toBeUndefined();
 			expect(test.state.killCalls).toBe(1);
+			expect(test.state.capturedPaneIds).toEqual(["%42"]);
 		} finally {
 			await test.cleanup();
 		}
@@ -295,6 +297,59 @@ describe("provider prompt-acceptance receipts", () => {
 			});
 			expect(test.state.killCalls).toBe(1);
 		} finally {
+			await test.cleanup();
+		}
+	});
+
+	it("preflights a resume before touching the outgoing owned pane", async () => {
+		const test = await fixture();
+		const original = harnessRegistry.forPreset("claude");
+		const fake = Object.create(original) as typeof original;
+		fake.preflightLaunch = async () => {
+			throw new Error("preflight denied");
+		};
+		harnessRegistry.replace(fake);
+		try {
+			const context = {
+				...test.context,
+				record: { ...test.context.record, nativeSessionId: "native-1" },
+			};
+			await expect(new Harness(test.root, test.process).resume("native-1", context)).rejects.toThrow(
+				"preflight denied",
+			);
+			expect(test.emitted.order).not.toContain("outgoing-cleanup");
+			expect(test.state.killCalls).toBe(0);
+		} finally {
+			harnessRegistry.replace(original);
+			await test.cleanup();
+		}
+	});
+
+	it("cleans prepared launch resources when creating the replacement fails", async () => {
+		const test = await fixture();
+		const original = harnessRegistry.forPreset("claude");
+		let directory = "";
+		const fake = Object.create(original) as typeof original;
+		fake.prepare = async (request) => {
+			directory = request.directory;
+			return await original.prepare(request);
+		};
+		harnessRegistry.replace(fake);
+		const process = test.process as unknown as {
+			create: (record: AgentSession, env: Record<string, string>) => Promise<void>;
+		};
+		const originalCreate = process.create;
+		process.create = async () => {
+			throw new Error("create denied");
+		};
+		try {
+			await expect(new Harness(test.root, test.process).launch(test.context)).rejects.toThrow("create denied");
+			expect(directory).not.toBe("");
+			await expect(access(directory)).rejects.toMatchObject({ code: "ENOENT" });
+			expect(test.emitted.order).not.toContain("dispatch");
+		} finally {
+			process.create = originalCreate;
+			harnessRegistry.replace(original);
 			await test.cleanup();
 		}
 	});

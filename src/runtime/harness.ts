@@ -109,21 +109,19 @@ async function receipt(path: string, expected?: ReadinessReceiptExpectation): Pr
 }
 
 export async function waitForReceipts(
-	paths: string[],
+	path: string,
 	expected: ReadinessReceiptExpectation | undefined,
 	session: AgentSession,
 	process: SessionProcess,
 	timeoutMs = PROVIDER_READINESS_DEADLINE_MS,
 ): Promise<void> {
-	const firstPath = paths[0];
-	if (!firstPath) throw new Error("No provider readiness receipts were configured.");
-	const directory = dirname(firstPath);
+	const directory = dirname(path);
 	const deadline = Date.now() + timeoutMs;
 	while (Date.now() < deadline) {
 		const pane = await process.alive(session);
 		if (pane.exitCode !== 0 || pane.stdout.trim() !== "0")
 			throw new Error(`Agent startup failed for session ${session.id}: owned pane exited.`);
-		if ((await Promise.all(paths.map((path) => receipt(path, expected)))).every(Boolean)) return;
+		if (await receipt(path, expected)) return;
 		await new Promise<void>((resolve, reject) => {
 			const remaining = deadline - Date.now();
 			const watcher = watch(directory, () => {
@@ -140,8 +138,8 @@ export async function waitForReceipts(
 				watcher.close();
 				reject(error);
 			});
-			void Promise.all(paths.map((path) => receipt(path, expected))).then((found) => {
-				if (found.every(Boolean)) {
+			void receipt(path, expected).then((found) => {
+				if (found) {
 					clearTimeout(timer);
 					watcher.close();
 					resolve();
@@ -149,9 +147,9 @@ export async function waitForReceipts(
 			});
 		});
 	}
-	const mismatched = await receiptExists(firstPath);
+	const mismatched = await receiptExists(path);
 	throw new Error(
-		`Provider readiness timed out for session ${session.id}; ${mismatched ? "mismatched" : "missing"} ${basename(firstPath)} receipt.`,
+		`Provider readiness timed out for session ${session.id}; ${mismatched ? "mismatched" : "missing"} ${basename(path)} receipt.`,
 	);
 }
 
@@ -211,8 +209,7 @@ export class Harness implements HarnessProvider {
 			owned = true;
 			await this.process.preparePane(record);
 			prepared.env = workspaceContextInto(prepared.env, {
-				// Test process doubles may omit pane lookup; SessionProcess resolves the created pane.
-				paneId: (await this.process.paneId?.(record)) ?? "%0",
+				paneId: await this.process.paneId(record),
 				rootDir: record.pathContext?.projectDir ?? this.rootDir,
 				conversation: { taskId: context.taskId, modeId: context.modeId, sessionId: record.id },
 				...(intent.kind === "resume" ? { nativeSessionId: intent.nativeSessionId } : {}),
@@ -220,7 +217,7 @@ export class Harness implements HarnessProvider {
 			await this.process.launchPrepared(record, prepared);
 			const readiness = agent.readiness(intent, prepared.resources.skill.path, prepared.identity);
 			await waitForReceipts(
-				[readiness.initialized.path],
+				readiness.initialized.path,
 				readiness.initialized.expected,
 				record,
 				this.process,
@@ -230,7 +227,7 @@ export class Harness implements HarnessProvider {
 				if (!readiness.promptAccepted)
 					throw new Error(`Provider prompt acceptance evidence is unavailable for session ${record.id}.`);
 				await waitForReceipts(
-					[readiness.promptAccepted.path],
+					readiness.promptAccepted.path,
 					readiness.promptAccepted.expected,
 					record,
 					this.process,
@@ -344,8 +341,7 @@ export class Harness implements HarnessProvider {
 			input: (text) => this.process.input(record, text),
 			sendKey: (key) => this.process.sendKey(record, key),
 			stop: async () => {
-				if (typeof this.process.killCaptured === "function") await this.process.killCaptured(record, paneId);
-				else await this.process.kill(record);
+				await this.process.killCaptured(record, paneId);
 				await prepared.cleanup();
 			},
 			observe: (listener) => {

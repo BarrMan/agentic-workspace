@@ -1,4 +1,6 @@
 import { randomUUID } from "node:crypto";
+import { writeFile } from "node:fs/promises";
+import { join } from "node:path";
 import type {
 	AgentPreparation,
 	AskCommandRequest,
@@ -13,6 +15,13 @@ import type {
 import { filePrompt, shellQuote } from "../runtime/agents/core/agent.ts";
 import { harnessRegistry } from "../runtime/agents/startup.ts";
 import type { InstalledStatusHook } from "../runtime/status-hooks.ts";
+import { expandPromptPresetCommand } from "./prompt-preset-command.ts";
+
+/** Write Pi's launch-scoped capture file from a fake process command. */
+export async function writePiCapture(skillPath: string, command: string, nativeId: string): Promise<void> {
+	const source = /AOE_SESSION_SOURCE=([0-9a-f-]+)/.exec(command)?.[1];
+	if (source) await writeFile(join(skillPath, `session_id.${source}`), nativeId);
+}
 
 /** Contract tests use a fake process that cannot emit provider receipts. */
 export function disableHarnessReadiness(): () => void {
@@ -58,14 +67,7 @@ class PromptAgent implements HarnessInterface {
 		if (!preset.command.includes("{prompt}") && !preset.command.includes("{instructions}")) {
 			throw new Error("Custom agent commands must include {prompt} or {instructions} to receive session instructions.");
 		}
-		return preset.command
-			.map((arg) =>
-				arg
-					.split(/(\{prompt\}|\{instructions\})/)
-					.map((part) => (part === "{prompt}" || part === "{instructions}" ? prompt : shellQuote(part)))
-					.join(""),
-			)
-			.join(" ");
+		return expandPromptPresetCommand(preset.command, prompt);
 	}
 
 	resumeCommand(request: ResumeCommandRequest): string {

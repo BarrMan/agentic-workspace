@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { constants } from "node:fs";
 import { lstat, mkdir, open, readFile, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
+import { setTimeout as delay } from "node:timers/promises";
 import type { ModeProfile } from "../../../model/session/types.ts";
 import type { InstalledStatusHook } from "../../status-hooks.ts";
 import {
@@ -17,6 +18,7 @@ import {
 	quotedAskArguments,
 	type ResumeCommandRequest,
 	readinessReceipts,
+	resumeCommandWithFlag,
 	type SessionIntent,
 	type StatusHookInstallOptions,
 	shellQuote,
@@ -67,7 +69,7 @@ export default function agenticWorkspaceStatus(pi) {
       try {
         const sessionId = ctx.sessionManager.getSessionId();
         const sessionFile = ctx.sessionManager.getSessionFile?.();
-        if (ID_TARGET && sessionId && (!SOURCE || /^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$/.test(SOURCE))) {
+        if (ID_TARGET && sessionId && SOURCE && /^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$/.test(SOURCE)) {
           publish(ID_TARGET + SUFFIX, sessionId);
           if (sessionFile) publish(join(dirname(ID_TARGET), "session_path" + SUFFIX), sessionFile);
         }
@@ -136,8 +138,6 @@ function isUuid(value: string): boolean {
 
 export class PiAgent implements HarnessInterface {
 	readonly name = "pi";
-	// Called through the optional Agent interface.
-	// fallow-ignore-next-line unused-class-member -- called through the optional Agent interface
 	readonly events = {
 		turnCompleted: "supported",
 		permissionWait: "unsupported",
@@ -150,14 +150,10 @@ export class PiAgent implements HarnessInterface {
 	readonly nativeNamespace = "pi" as const;
 	readonly prepareBeforeAsk = false;
 
-	// Called through the optional Agent interface.
-	// fallow-ignore-next-line unused-class-member -- called through the optional Agent interface
 	discoverModels(request: import("../core/agent.ts").ModelDiscoveryRequest) {
 		return discoverModels("pi", request.command, request.env, request.timeoutMs);
 	}
 
-	// Called through the optional Agent interface.
-	// fallow-ignore-next-line unused-class-member -- called through the optional Agent interface
 	prepareProfile(profile: ModeProfile, preset: import("../../../model/session/types.ts").AgentPreset) {
 		return profile.model.kind === "explicit" ? withExplicitModel(preset, profile.model.id) : preset;
 	}
@@ -179,14 +175,7 @@ export class PiAgent implements HarnessInterface {
 	}
 
 	resumeCommand({ preset, nativeSessionId }: ResumeCommandRequest): string {
-		if (!nativeSessionId) {
-			throw new Error("Cannot resume this agent without its exact native session ID; start a new session instead.");
-		}
-		const resumeFlag = preset.resumeFlag ?? "--session";
-		if (!resumeFlag.trim() || resumeFlag.includes("\0")) {
-			throw new Error("Agent resumeFlag must be a non-empty string without NUL bytes.");
-		}
-		return appendArguments(preset.command, `${shellQuote(resumeFlag)} ${shellQuote(nativeSessionId)}`);
+		return resumeCommandWithFlag(preset, nativeSessionId, "--session");
 	}
 
 	askCommand({ preset, nativeSessionId, question }: AskCommandRequest): string {
@@ -217,8 +206,6 @@ export class PiAgent implements HarnessInterface {
 		return { command, env, identity };
 	}
 
-	// Called through the optional Agent interface.
-	// fallow-ignore-next-line unused-class-member -- called through the optional Agent interface
 	readiness(intent: SessionIntent, launchDirectory: string, identity?: NativeIdentity) {
 		return readinessReceipts(intent, launchDirectory, identity);
 	}
@@ -227,15 +214,15 @@ export class PiAgent implements HarnessInterface {
 		const target = env.AOE_SESSION_ID_FILE;
 		if (!target) throw new Error("Pi session capture requires AOE_SESSION_ID_FILE.");
 		const source = env.AOE_SESSION_SOURCE;
-		const suffix = source ? `.${source}` : "";
-		if (source && !isUuid(source)) throw new Error("Pi session capture received an invalid AOE_SESSION_SOURCE.");
+		if (!source) throw new Error("Pi session capture requires AOE_SESSION_SOURCE.");
+		if (!isUuid(source)) throw new Error("Pi session capture received an invalid AOE_SESSION_SOURCE.");
+		const suffix = `.${source}`;
 		const started = Date.now();
 		while (Date.now() - started < PI_CAPTURE_TIMEOUT_MS) {
 			if (signal.aborted) throw signal.reason ?? new Error("Pi session capture aborted.");
 			const dir = dirname(target);
 			const launchId = await readFile(join(dir, `session_id${suffix}`), "utf8").catch(() => undefined);
-			const defaultId = suffix ? await readFile(join(dir, "session_id"), "utf8").catch(() => undefined) : undefined;
-			const published = launchId ?? defaultId;
+			const published = launchId;
 			if (published) {
 				const id = published.trim();
 				if (!isUuid(id)) throw new Error("Pi published an invalid session ID.");
@@ -244,10 +231,7 @@ export class PiAgent implements HarnessInterface {
 				if (intent.kind === "resume" && id !== intent.nativeSessionId)
 					throw new Error("Pi published a session ID different from the requested resume ID.");
 				const launchPath = await readFile(join(dir, `session_path${suffix}`), "utf8").catch(() => undefined);
-				const defaultPath = suffix
-					? await readFile(join(dir, "session_path"), "utf8").catch(() => undefined)
-					: undefined;
-				const publishedPath = launchPath ?? defaultPath;
+				const publishedPath = launchPath;
 				if (publishedPath) {
 					const path = publishedPath.trim();
 					let exists = true;
@@ -272,23 +256,16 @@ export class PiAgent implements HarnessInterface {
 				}
 				return { id, basis: "provider-confirmed" };
 			}
-			await new Promise<void>((resolve, reject) => {
-				const timer = setTimeout(() => {
-					signal.removeEventListener("abort", abort);
-					resolve();
-				}, 50);
-				const abort = (): void => {
-					clearTimeout(timer);
-					reject(signal.reason ?? new Error("Pi session capture aborted."));
-				};
-				signal.addEventListener("abort", abort, { once: true });
-			});
+			try {
+				await delay(50, undefined, { signal });
+			} catch (error) {
+				if (signal.aborted) throw signal.reason ?? error;
+				throw error;
+			}
 		}
 		throw new Error("Timed out waiting for Pi to publish its session ID.");
 	}
 
-	// Called through the optional Agent interface.
-	// fallow-ignore-next-line unused-class-member -- called through the optional Agent interface
 	async preflightLaunch(request: import("../core/agent.ts").AgentPreflightRequest): Promise<void> {
 		if (request.resume) this.resumeCommand(request);
 		else this.launchCommand(request);

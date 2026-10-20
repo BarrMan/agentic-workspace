@@ -1373,27 +1373,28 @@ export class OpenTuiWorkspaceController {
 		this.#attachingSessions.add(session.id);
 		const columns = Math.max(20, host.renderer.width);
 		const rows = Math.max(5, host.renderer.height - 6);
-		const attach = this.#launchAgent(taskId, columns, rows, session.id, { attachOnly: true })
-			.then(() => undefined)
-			.catch((error: unknown) => {
-				if (this.#closed) return;
-				const message = error instanceof Error ? error.message : String(error);
-				if (message === `Task ${taskId} is no longer selected.` || message === "Workspace closed before agent launch.")
-					return;
-				// Surface the failure instead of retrying the attach on every refresh. Enter now retries
-				// through the normal launch path, which may resume the exact conversation.
-				this.#notice = `Could not attach to ${session.id}: ${message}`;
-				this.#agents.set(session.id, { taskId, label: session.preset, status: "error", error: message });
-				this.#agentAlive.delete(session.id);
-				this.#forgetActivity(session.id);
-				this.#activeAgents.set(taskId, session.id);
-			})
-			.finally(() => {
-				this.#attachStarts.delete(attach);
-				this.#attachingSessions.delete(session.id);
-				if (!this.#closed) void this.#scheduleRefresh();
-			});
-		this.#attachStarts.add(attach);
+		this.#launchSession(
+			taskId,
+			columns,
+			rows,
+			session.id,
+			{ attachOnly: true },
+			{
+				sessions: this.#attachingSessions,
+				starts: this.#attachStarts,
+				notice: (message) => `Could not attach to ${session.id}: ${message}`,
+				ignore: (message) =>
+					message === `Task ${taskId} is no longer selected.` || message === "Workspace closed before agent launch.",
+				onError: (message) => {
+					// Surface the failure instead of retrying the attach on every refresh. Enter now retries
+					// through the normal launch path, which may resume the exact conversation.
+					this.#agents.set(session.id, { taskId, label: session.preset, status: "error", error: message });
+					this.#agentAlive.delete(session.id);
+					this.#forgetActivity(session.id);
+					this.#activeAgents.set(taskId, session.id);
+				},
+			},
+		);
 	}
 
 	#startTaskSession(
@@ -1593,20 +1594,50 @@ export class OpenTuiWorkspaceController {
 		this.#adoptingSessions.add(sessionId);
 		const columns = Math.max(20, width);
 		const rows = Math.max(5, height - 6);
-		const adopt = this.#launchAgent(taskId, columns, rows, sessionId, { adopt: true, modeId })
+		this.#launchSession(
+			taskId,
+			columns,
+			rows,
+			sessionId,
+			{ adopt: true, modeId },
+			{
+				sessions: this.#adoptingSessions,
+				starts: this.#agentStarts,
+				notice: (message) => `Could not adopt agent request ${sessionId}: ${message}`,
+				ignore: (message) => message === "Workspace closed before agent launch.",
+			},
+		);
+	}
+
+	#launchSession(
+		taskId: string,
+		columns: number,
+		rows: number,
+		sessionId: string,
+		options: { attachOnly?: boolean; adopt?: boolean; modeId?: string },
+		config: {
+			sessions: Set<string>;
+			starts: Set<Promise<void>>;
+			notice: (message: string) => string;
+			ignore: (message: string) => boolean;
+			onError?: (message: string) => void;
+		},
+	): void {
+		const launch = this.#launchAgent(taskId, columns, rows, sessionId, options)
 			.then(() => undefined)
 			.catch((error: unknown) => {
 				if (this.#closed) return;
 				const message = error instanceof Error ? error.message : String(error);
-				if (message === "Workspace closed before agent launch.") return;
-				this.#notice = `Could not adopt agent request ${sessionId}: ${message}`;
+				if (config.ignore(message)) return;
+				this.#notice = config.notice(message);
+				config.onError?.(message);
 			})
 			.finally(() => {
-				this.#agentStarts.delete(adopt);
-				this.#adoptingSessions.delete(sessionId);
+				config.starts.delete(launch);
+				config.sessions.delete(sessionId);
 				if (!this.#closed) void this.#scheduleRefresh();
 			});
-		this.#agentStarts.add(adopt);
+		config.starts.add(launch);
 	}
 
 	/** Schedule the next marker poll; the delay tracks the activity cadence, capped at one second. */

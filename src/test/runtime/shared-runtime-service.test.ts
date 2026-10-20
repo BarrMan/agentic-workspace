@@ -929,7 +929,7 @@ describe("shared runtime session service", () => {
 		const before = await store.read("TASK-1");
 		const launches = runtime.launches.length;
 		await expect(service.prepareNativeSession("task-1", started.record.id, "build")).rejects.toMatchObject({
-			kind: "exact-resume-unavailable",
+			name: "ExactResumeUnavailableError",
 			reason: "auto-resume-disabled",
 			nativeSessionId: started.record.nativeSessionId,
 		});
@@ -1242,7 +1242,7 @@ describe("shared runtime session service", () => {
 		const before = await f.store.read("TASK-1");
 		const launches = f.runtime.launches.length;
 		await expect(f.service.prepareNativeSession("task-1", f.sessionId, "build")).rejects.toMatchObject({
-			kind: "exact-resume-unavailable",
+			name: "ExactResumeUnavailableError",
 			reason: "previous-resume-failed",
 			nativeProvider: "pi",
 			nativeSessionId: f.nativeSessionId,
@@ -1264,7 +1264,7 @@ describe("shared runtime session service", () => {
 		const before = await f.store.read("TASK-1");
 		const launches = f.runtime.launches.length;
 		await expect(recreated.prepareNativeSession("task-1", f.sessionId, "build")).rejects.toMatchObject({
-			kind: "exact-resume-unavailable",
+			name: "ExactResumeUnavailableError",
 			reason: "previous-resume-failed",
 		});
 		expect(f.runtime.launches).toHaveLength(launches);
@@ -1331,7 +1331,7 @@ describe("shared runtime session service", () => {
 		f.runtime.exitOnLaunch = false;
 		const retry = new AgentSessionService(f.core, { runner: f.runtime, tmuxServer: f.runtime });
 		await expect(retry.prepareNativeSession("task-1", f.sessionId, "build")).rejects.toMatchObject({
-			kind: "exact-resume-unavailable",
+			name: "ExactResumeUnavailableError",
 			reason: "previous-resume-failed",
 		});
 		expect(f.runtime.launches).toHaveLength(before + 1);
@@ -1345,14 +1345,14 @@ describe("shared runtime session service", () => {
 		const recreated = new AgentSessionService(f.core, { runner: f.runtime, tmuxServer: f.runtime });
 		const before = await f.store.read("TASK-1");
 		await expect(recreated.prepareNativeSession("task-1", f.sessionId, "build")).rejects.toMatchObject({
-			kind: "exact-resume-unavailable",
+			name: "ExactResumeUnavailableError",
 			reason: "previous-resume-failed",
 		});
 		expect(await f.store.read("TASK-1")).toEqual(before);
 		const launches = f.runtime.launches.length;
 		const reopened = new AgentSessionService(f.core, { runner: f.runtime, tmuxServer: f.runtime });
 		await expect(reopened.prepareNativeSession("task-1", f.sessionId, "build")).rejects.toMatchObject({
-			kind: "exact-resume-unavailable",
+			name: "ExactResumeUnavailableError",
 			reason: "previous-resume-failed",
 		});
 		expect(f.runtime.launches).toHaveLength(launches);
@@ -1377,7 +1377,7 @@ describe("shared runtime session service", () => {
 		}
 		expect(resumeNotice).toContain("ResumeFailed:");
 		expect(unavailable).toMatchObject({
-			kind: "exact-resume-unavailable",
+			name: "ExactResumeUnavailableError",
 			reason: "previous-resume-failed",
 			nativeSessionId: f.nativeSessionId,
 		});

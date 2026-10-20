@@ -15,6 +15,7 @@ import {
 	quotedAskArguments,
 	type ResumeCommandRequest,
 	readinessReceipts,
+	resumeCommandWithFlag,
 	type SessionIntent,
 	type StatusHookInstallOptions,
 	shellQuote,
@@ -52,8 +53,6 @@ function openCodeSkillConfig(parsed: ReturnType<typeof parseOpenCodeConfig>, ski
 export class OpencodeV1Agent implements HarnessInterface {
 	constructor(private readonly capture = new OpenCodeSessionCapture()) {}
 	readonly name = "opencode-v1";
-	// Called through the optional Agent interface.
-	// fallow-ignore-next-line unused-class-member -- called through the optional Agent interface
 	readonly events = {
 		turnCompleted: "supported",
 		permissionWait: "supported",
@@ -66,14 +65,10 @@ export class OpencodeV1Agent implements HarnessInterface {
 	readonly nativeNamespace = "opencode" as const;
 	readonly prepareBeforeAsk = true;
 
-	// Called through the optional Agent interface.
-	// fallow-ignore-next-line unused-class-member -- called through the optional Agent interface
 	discoverModels(request: import("../core/agent.ts").ModelDiscoveryRequest) {
 		return discoverModels("opencode", request.command, request.env, request.timeoutMs);
 	}
 
-	// Called through the optional Agent interface.
-	// fallow-ignore-next-line unused-class-member -- called through the optional Agent interface
 	prepareProfile(profile: import("../../../model/session/types.ts").ModeProfile, preset: AgentPreset): AgentPreset {
 		return profile.model.kind === "explicit" ? withExplicitModel(preset, profile.model.id) : preset;
 	}
@@ -96,14 +91,7 @@ export class OpencodeV1Agent implements HarnessInterface {
 	}
 
 	resumeCommand({ preset, nativeSessionId }: ResumeCommandRequest): string {
-		if (!nativeSessionId) {
-			throw new Error("Cannot resume this agent without its exact native session ID; start a new session instead.");
-		}
-		const resumeFlag = preset.resumeFlag ?? "--session";
-		if (!resumeFlag.trim() || resumeFlag.includes("\0")) {
-			throw new Error("Agent resumeFlag must be a non-empty string without NUL bytes.");
-		}
-		return appendArguments(preset.command, `${shellQuote(resumeFlag)} ${shellQuote(nativeSessionId)}`);
+		return resumeCommandWithFlag(preset, nativeSessionId, "--session");
 	}
 
 	askCommand({ preset, nativeSessionId, question }: AskCommandRequest): string {
@@ -135,8 +123,6 @@ export class OpencodeV1Agent implements HarnessInterface {
 		};
 	}
 
-	// Called through the optional Agent interface.
-	// fallow-ignore-next-line unused-class-member -- called through the optional Agent interface
 	readiness(intent: SessionIntent, launchDirectory: string, identity?: NativeIdentity) {
 		return readinessReceipts(intent, launchDirectory, identity);
 	}

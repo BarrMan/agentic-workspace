@@ -16,7 +16,7 @@ class TaskFileParseError extends Error {
 	}
 }
 
-export function warnUnparseableTaskFile(filepath: string, error: unknown): void {
+function warnUnparseableTaskFile(filepath: string, error: unknown): void {
 	const problem = (error instanceof Error ? error.message : String(error)).replace(/[\r\n]+/g, " ");
 	console.warn(`Warning: Skipping unparseable task file ${filepath}: ${problem}`);
 }

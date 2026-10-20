@@ -126,8 +126,6 @@ export class OpencodeV2Agent implements HarnessInterface {
 	constructor(private readonly capture = new OpenCodeSessionCapture()) {}
 
 	readonly name = "opencode-v2";
-	// Called through the optional Agent interface.
-	// fallow-ignore-next-line unused-class-member -- called through the optional Agent interface
 	readonly events = {
 		turnCompleted: "supported",
 		permissionWait: "unsupported",
@@ -140,8 +138,6 @@ export class OpencodeV2Agent implements HarnessInterface {
 	readonly nativeNamespace = "opencode" as const;
 	readonly prepareBeforeAsk = true;
 
-	// Called through the optional Agent interface.
-	// fallow-ignore-next-line unused-class-member -- called through the optional Agent interface
 	discoverModels(request: import("../core/agent.ts").ModelDiscoveryRequest) {
 		return discoverModels("opencode", request.command, request.env, request.timeoutMs);
 	}
@@ -237,8 +233,6 @@ export class OpencodeV2Agent implements HarnessInterface {
 		return { command, env, identity };
 	}
 
-	// Called through the optional Agent interface.
-	// fallow-ignore-next-line unused-class-member -- called through the optional Agent interface
 	readiness(intent: SessionIntent, launchDirectory: string, identity?: NativeIdentity) {
 		return readinessReceipts(intent, launchDirectory, identity);
 	}

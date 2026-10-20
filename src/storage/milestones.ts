@@ -1,7 +1,8 @@
-import { mkdir, rename, stat, unlink, writeFile } from "node:fs/promises";
+import { mkdir, rename, stat } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { normalizeDueDate } from "../model/task/due-date.ts";
 import type { Milestone } from "../model/types.ts";
+import { writeAtomically } from "./atomic-write.ts";
 import { FrontmatterSchemaError } from "./errors/frontmatter.ts";
 import { parseMarkdown, parseMilestone } from "./markdown/parser.ts";
 import { serializeMilestone } from "./markdown/serializer.ts";
@@ -26,24 +27,6 @@ function filename(id: string, title: string): string {
 		.replace(/\s+/g, "-")
 		.toLowerCase()
 		.slice(0, 50)}.md`;
-}
-
-async function writeAtomically(filepath: string, content: string): Promise<void> {
-	const temporaryPath = `${filepath}.${process.pid}.${Date.now()}.tmp`;
-	try {
-		await writeFile(temporaryPath, content, { flag: "wx" });
-		await rename(temporaryPath, filepath);
-	} catch (error) {
-		try {
-			await unlink(temporaryPath);
-		} catch (cleanupError) {
-			if ((cleanupError as NodeJS.ErrnoException).code !== "ENOENT")
-				throw new Error(`Atomic milestone write failed and temporary-file cleanup failed for ${temporaryPath}.`, {
-					cause: new AggregateError([error, cleanupError]),
-				});
-		}
-		throw error;
-	}
 }
 
 async function assertAbsent(filepath: string): Promise<void> {
@@ -175,7 +158,7 @@ export class MilestoneStore {
 				description: description || `Milestone: ${title}`,
 				rawContent: "",
 			});
-			await writeAtomically(join(active, filename(id, title)), content);
+			await writeAtomically(join(active, filename(id, title)), content, "Atomic milestone");
 			return parseMilestone(content);
 		});
 	}
@@ -215,7 +198,7 @@ export class MilestoneStore {
 					await rename(sourcePath, targetPath);
 					moved = true;
 				}
-				await writeAtomically(targetPath, content);
+				await writeAtomically(targetPath, content, "Atomic milestone");
 				return {
 					success: true,
 					sourcePath,

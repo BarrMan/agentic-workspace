@@ -960,7 +960,7 @@ export class AgentSessionService {
 				try {
 					const readiness = agent.readiness(intent, resources.skill.path, capturedIdentity);
 					await waitForReceipts(
-						[readiness.initialized.path],
+						readiness.initialized.path,
 						readiness.initialized.expected,
 						next,
 						this.process,
@@ -970,7 +970,7 @@ export class AgentSessionService {
 						if (!readiness.promptAccepted)
 							throw new Error(`Provider prompt acceptance evidence is unavailable for session ${next.id}.`);
 						await waitForReceipts(
-							[readiness.promptAccepted.path],
+							readiness.promptAccepted.path,
 							readiness.promptAccepted.expected,
 							next,
 							this.process,

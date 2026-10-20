@@ -113,6 +113,26 @@ describe("Pi provider-owned identity capture", () => {
 				signal: new AbortController().signal,
 			}),
 		).rejects.toThrow("Pi session capture requires AOE_SESSION_ID_FILE");
+		await expect(
+			agent.reconcileIdentity({
+				intent: { kind: "new" },
+				preset: {} as any,
+				cwd: "/tmp",
+				env: { AOE_SESSION_ID_FILE: join(tmpdir(), "session_id") },
+				launchDirectory: "/tmp",
+				signal: new AbortController().signal,
+			}),
+		).rejects.toThrow("Pi session capture requires AOE_SESSION_SOURCE");
+		await expect(
+			agent.reconcileIdentity({
+				intent: { kind: "new" },
+				preset: {} as any,
+				cwd: "/tmp",
+				env: { AOE_SESSION_ID_FILE: join(tmpdir(), "session_id"), AOE_SESSION_SOURCE: "invalid" },
+				launchDirectory: "/tmp",
+				signal: new AbortController().signal,
+			}),
+		).rejects.toThrow("Pi session capture received an invalid AOE_SESSION_SOURCE");
 	});
 
 	it("publishes the session_start ID and transcript and validates the real JSONL header", async () => {

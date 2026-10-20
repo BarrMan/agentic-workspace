@@ -294,43 +294,6 @@ export class GitOperations {
 		return null;
 	}
 	/**
-	 * List remote branches that have been active within the specified days
-	 * Much faster than listing all remote branches for filtering old branches
-	 */
-	async listRecentRemoteBranches(daysAgo: number, remote = "origin"): Promise<string[]> {
-		try {
-			// Fast-path: if no remotes, return empty
-			if (!(await this.hasAnyRemote())) return [];
-			const { stdout } = await this.execGit(
-				["for-each-ref", "--format=%(refname:short)|%(committerdate:iso8601)", `refs/remotes/${remote}`],
-				{ readOnly: true },
-			);
-			const since = Date.now() - daysAgo * MILLISECONDS_PER_DAY;
-			return (
-				stdout
-					.split("\n")
-					.map((l) => l.trim())
-					.filter(Boolean)
-					.map((line) => {
-						const [ref, iso] = line.split("|");
-						return { ref, t: Date.parse(iso || "") };
-					})
-					.filter((x) => Number.isFinite(x.t) && x.t >= since && x.ref)
-					.map((x) => x.ref?.replace(`${remote}/`, ""))
-					// Filter out invalid/ambiguous entries that would normalize to empty or "origin"
-					.filter((b): b is string => Boolean(b))
-					.filter((b) => b !== "HEAD" && b !== remote && b !== `${remote}`)
-			);
-		} catch {
-			return [];
-		}
-	}
-
-	async listRecentBranches(daysAgo: number): Promise<string[]> {
-		return (await this.listRecentBranchTips(daysAgo)).map((tip) => tip.name);
-	}
-
-	/**
 	 * List recent branch names and immutable tips in one Git process.
 	 * The result is sorted so callers can use it as a stable ref fingerprint.
 	 */
@@ -427,21 +390,6 @@ export class GitOperations {
 		} catch {
 			return false;
 		}
-	}
-
-	async listFilesInTree(ref: string, path: string): Promise<string[]> {
-		if (!(await this.isRepository())) {
-			return [];
-		}
-		const { stdout } = await this.execGit(["ls-tree", "-r", "--name-only", "-z", ref, "--", path], { readOnly: true });
-		return stdout.split("\0").filter(Boolean);
-	}
-	async showFile(ref: string, filePath: string): Promise<string> {
-		if (!(await this.isRepository())) {
-			return "";
-		}
-		const { stdout } = await this.execGit(["show", `${ref}:${filePath}`], { readOnly: true });
-		return stdout;
 	}
 
 	/**

@@ -122,13 +122,7 @@ export class TaskArtifactView {
 		const path = this.selectedPath;
 		const request = ++this.request;
 		try {
-			const entries = await this.options.api.list(taskId);
-			if (request !== this.request || taskId !== this.taskId || path !== this.selectedPath || !this.active) return;
-			const byPath = new Map(entries.map((entry) => [entry.path, entry]));
-			for (const path of this.declaredPaths) {
-				if (!byPath.has(path)) byPath.set(path, { path, state: "missing", size: 0, type: "text" });
-			}
-			this.entries = [...byPath.values()].sort((a, b) => a.path.localeCompare(b.path));
+			if (!(await this.#loadEntries(taskId, path, request))) return;
 			if (!this.entries.some((entry) => entry.path === this.selectedPath)) this.selectedPath = this.entries[0]?.path;
 			this.renderList();
 			await this.loadSelected(taskId, this.selectedPath, request);
@@ -144,14 +138,7 @@ export class TaskArtifactView {
 		const path = this.selectedPath;
 		const request = ++this.request;
 		try {
-			const entries = await this.options.api.list(taskId);
-			if (request !== this.request || taskId !== this.taskId || path !== this.selectedPath || !this.active) return;
-			const byPath = new Map(entries.map((entry) => [entry.path, entry]));
-			for (const declaredPath of this.declaredPaths) {
-				if (!byPath.has(declaredPath))
-					byPath.set(declaredPath, { path: declaredPath, state: "missing", size: 0, type: "text" });
-			}
-			this.entries = [...byPath.values()].sort((a, b) => a.path.localeCompare(b.path));
+			if (!(await this.#loadEntries(taskId, path, request))) return;
 			this.renderList();
 			const current = this.entries.findIndex((entry) => entry.path === path);
 			const next = this.entries[Math.max(0, Math.min(this.entries.length - 1, (current < 0 ? 0 : current) + delta))];
@@ -164,6 +151,18 @@ export class TaskArtifactView {
 			if (request === this.request && taskId === this.taskId && path === this.selectedPath && this.active)
 				this.showError(error);
 		}
+	}
+
+	async #loadEntries(taskId: string, path: string | undefined, request: number): Promise<boolean> {
+		const entries = await this.options.api.list(taskId);
+		if (request !== this.request || taskId !== this.taskId || path !== this.selectedPath || !this.active) return false;
+		const byPath = new Map(entries.map((entry) => [entry.path, entry]));
+		for (const declaredPath of this.declaredPaths) {
+			if (!byPath.has(declaredPath))
+				byPath.set(declaredPath, { path: declaredPath, state: "missing", size: 0, type: "text" });
+		}
+		this.entries = [...byPath.values()].sort((a, b) => a.path.localeCompare(b.path));
+		return true;
 	}
 
 	async select(path: string): Promise<void> {

@@ -25,21 +25,6 @@ export interface PreparedAgentLaunch {
 	cleanup(): Promise<void>;
 }
 
-export type ReadinessReceiptName = "initialized" | "prompt-accepted";
-
-/** Receipt paths are scoped to the unique owned directory for this launch, never the session activity directory. */
-export function readinessReceiptPath(launchDirectory: string, name: ReadinessReceiptName): string {
-	return join(launchDirectory, name);
-}
-
-export function initializedReceiptPath(launchDirectory: string): string {
-	return readinessReceiptPath(launchDirectory, "initialized");
-}
-
-export function promptAcceptedReceiptPath(launchDirectory: string): string {
-	return readinessReceiptPath(launchDirectory, "prompt-accepted");
-}
-
 export interface PrepareAgentLaunchOptions {
 	/** The effective session cwd: the project root, or the task worktree when worktree-per-task is on and it exists. */
 	cwd: string;

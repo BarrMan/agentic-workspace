@@ -8,8 +8,6 @@ const DEFAULT_PREFIX_CONFIG: PrefixConfig = {
 	task: EntityType.Task,
 };
 
-export const DEFAULT_TASK_PREFIX = DEFAULT_PREFIX_CONFIG.task;
-
 /**
  * Init-time task prefix validation. Empty input is allowed (the default prefix is used).
  * The value is judged exactly as given, because init persists it verbatim: padding that

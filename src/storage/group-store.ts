@@ -2,7 +2,8 @@ import { mkdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { LockOwner } from "../filesystem/lock-owner.ts";
 import { writeFileAtomic } from "./session-store.ts";
-import { type StateStoreWatcher, startStateStoreWatcher } from "./watchers/state-store-watcher.ts";
+import { StateStoreLifecycle } from "./state-store-lifecycle.ts";
+import { startStateStoreWatcher } from "./watchers/state-store-watcher.ts";
 
 const GROUPS_FILE = "groups.json";
 /** Reclaim abandoned group locks without holding a lock during rendering. */
@@ -89,11 +90,9 @@ async function readStateFile(path: string): Promise<GroupState | undefined> {
 
 class GroupStoreImpl implements GroupStore {
 	private readonly lock = new LockOwner();
-	private readonly listeners = new Set<(state: GroupState) => void>();
+	private readonly lifecycle = new StateStoreLifecycle<GroupState>();
 	private state: GroupState = emptyGroupState();
 	private path = "";
-	private stateWatcher?: StateStoreWatcher;
-	private closed = false;
 	/** Serialises recheck against update so a stale watcher read cannot regress `current`. */
 	private tail: Promise<void> = Promise.resolve();
 
@@ -111,19 +110,11 @@ class GroupStoreImpl implements GroupStore {
 		// The directory has to exist before fs.watch can attach to it.
 		await mkdir(this.agenticWorkspaceDir, { recursive: true });
 		await this.seed();
-		this.stateWatcher = startStateStoreWatcher(
+		this.lifecycle.stateWatcher = startStateStoreWatcher(
 			this.path,
 			() => void this.recheck().catch(() => undefined),
-			() => this.closed,
+			() => this.lifecycle.closed,
 		);
-	}
-
-	subscribe(listener: (state: GroupState) => void): () => void {
-		if (this.closed) return () => undefined;
-		this.listeners.add(listener);
-		return () => {
-			this.listeners.delete(listener);
-		};
 	}
 
 	/**
@@ -143,20 +134,20 @@ class GroupStoreImpl implements GroupStore {
 		});
 	}
 
+	subscribe(listener: (state: GroupState) => void): () => void {
+		return this.lifecycle.subscribe(listener);
+	}
+
+	close(): void {
+		this.lifecycle.close();
+	}
+
 	async recheck(): Promise<void> {
-		if (this.closed) return;
+		if (this.lifecycle.closed) return;
 		await this.serialize(async () => {
 			const next = await this.readState();
 			if (next) this.apply(next);
 		});
-	}
-
-	close(): void {
-		if (this.closed) return;
-		this.closed = true;
-		this.stateWatcher?.close();
-		this.stateWatcher = undefined;
-		this.listeners.clear();
 	}
 
 	/** Creates the file with the default state if no one else has written it yet. */
@@ -180,7 +171,7 @@ class GroupStoreImpl implements GroupStore {
 	private apply(next: GroupState): void {
 		if (JSON.stringify(next) === JSON.stringify(this.state)) return;
 		this.state = next;
-		for (const listener of [...this.listeners]) {
+		for (const listener of [...this.lifecycle.listeners]) {
 			try {
 				listener(next);
 			} catch {

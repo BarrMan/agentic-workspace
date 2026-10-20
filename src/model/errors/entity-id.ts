@@ -23,7 +23,3 @@ export class AmbiguousIdError extends Error {
 		this.candidates = sortedCandidates;
 	}
 }
-
-export function isAmbiguousIdError(error: unknown): error is AmbiguousIdError {
-	return error instanceof AmbiguousIdError;
-}

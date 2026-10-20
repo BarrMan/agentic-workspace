@@ -6,7 +6,7 @@ import { TmuxCommandError } from "libtmux";
 import { Core } from "../../controller/agentic-workspace.ts";
 import { AgentSessionService, type ProcessRunner, type TmuxServer } from "../../runtime/sessions.ts";
 import { getDefaultModeCatalog, initializeAgentConfiguration, upsertAgentConfiguration } from "../../storage/config.ts";
-import { disableHarnessReadiness } from "../agent-test-helpers.ts";
+import { disableHarnessReadiness, writePiCapture } from "../agent-test-helpers.ts";
 import { initializeTestProject } from "../test-utils.ts";
 
 type Pane = {
@@ -168,7 +168,7 @@ class FakeHarness implements ProcessRunner, TmuxServer {
 		const nativeId = /nativeSessionId[^0-9a-f]+([0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})/.exec(command)?.[1];
 		if (!skillPath || !nativeId) throw new Error("Fake launch omitted exact provider identity evidence inputs.");
 		const receipt = JSON.stringify({ session_id: nativeId });
-		await writeFile(join(skillPath, "session_id"), nativeId);
+		await writePiCapture(skillPath, command, nativeId);
 		await writeFile(join(skillPath, "initialized"), receipt);
 		await writeFile(join(skillPath, "prompt-accepted"), receipt);
 	}

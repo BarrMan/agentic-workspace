@@ -3,7 +3,6 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { parseReadinessReceipt, waitForReceipts } from "../../runtime/harness.ts";
-import { initializedReceiptPath, promptAcceptedReceiptPath } from "../../runtime/session-launch.ts";
 import type { AgentSession } from "../session/types.ts";
 
 const session = { id: "session-readiness-test" } as AgentSession;
@@ -29,7 +28,7 @@ describe("launch readiness plumbing", () => {
 		const directory = await mkdtemp(join(tmpdir(), "readiness-deadline-test-"));
 		try {
 			await expect(
-				waitForReceipts([initializedReceiptPath(directory)], undefined, session, liveProcess as never, 5),
+				waitForReceipts(join(directory, "initialized"), undefined, session, liveProcess as never, 5),
 			).rejects.toThrow("Provider readiness timed out");
 		} finally {
 			await rm(directory, { recursive: true, force: true });
@@ -40,11 +39,11 @@ describe("launch readiness plumbing", () => {
 		const earlier = await mkdtemp(join(tmpdir(), "readiness-launch-old-"));
 		const later = await mkdtemp(join(tmpdir(), "readiness-launch-new-"));
 		try {
-			await writeFile(promptAcceptedReceiptPath(earlier), "same-native-id");
-			expect(initializedReceiptPath(earlier)).not.toBe(initializedReceiptPath(later));
-			expect(promptAcceptedReceiptPath(earlier)).not.toBe(promptAcceptedReceiptPath(later));
+			await writeFile(join(earlier, "prompt-accepted"), "same-native-id");
+			expect(join(earlier, "initialized")).not.toBe(join(later, "initialized"));
+			expect(join(earlier, "prompt-accepted")).not.toBe(join(later, "prompt-accepted"));
 			await expect(
-				waitForReceipts([promptAcceptedReceiptPath(later)], "same-native-id", session, liveProcess as never, 5),
+				waitForReceipts(join(later, "prompt-accepted"), "same-native-id", session, liveProcess as never, 5),
 			).rejects.toThrow("Provider readiness timed out");
 		} finally {
 			await Promise.all([rm(earlier, { recursive: true, force: true }), rm(later, { recursive: true, force: true })]);
@@ -53,11 +52,11 @@ describe("launch readiness plumbing", () => {
 
 	it("reports a present but invalid stage receipt as mismatched", async () => {
 		const directory = await mkdtemp(join(tmpdir(), "readiness-mismatch-test-"));
-		const path = initializedReceiptPath(directory);
+		const path = join(directory, "initialized");
 		try {
 			await writeFile(path, '{"session_id":"other","source":"startup"}');
 			await expect(
-				waitForReceipts([path], { session_id: "expected", source: "resume" }, session, liveProcess as never, 5),
+				waitForReceipts(path, { session_id: "expected", source: "resume" }, session, liveProcess as never, 5),
 			).rejects.toThrow("mismatched initialized receipt");
 		} finally {
 			await rm(directory, { recursive: true, force: true });

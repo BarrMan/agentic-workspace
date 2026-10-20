@@ -30,7 +30,7 @@ export interface TaskCorpus {
  *
  * The corpus is loaded from the configured task store, shared by linked worktrees.
  */
-export async function loadTaskCorpus(core: Core): Promise<TaskCorpus> {
+async function loadTaskCorpus(core: Core): Promise<TaskCorpus> {
 	const snapshot = await core.loadTaskSnapshot();
 	return {
 		tasks: snapshot.activeTasks.concat(

@@ -1,5 +1,5 @@
 import { realpathSync } from "node:fs";
-import { chmod, mkdir, readFile, rename, rm, stat, unlink, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rename, rm, stat, unlink, writeFile } from "node:fs/promises";
 import { basename, dirname, isAbsolute, join, resolve } from "node:path";
 import { resolveMainWorktreeRootSync } from "../filesystem/git/main-worktree.ts";
 import { type LockAttemptSettings, LockOwner } from "../filesystem/lock-owner.ts";
@@ -22,6 +22,7 @@ import {
 	type Task,
 	type TaskListFilter,
 } from "../model/types.ts";
+import { writeAtomically } from "./atomic-write.ts";
 import { isConfigValueError, parseConfig, serializeConfig } from "./config-codec.ts";
 import { FrontmatterSchemaError, TaskDependenciesParseError } from "./errors/frontmatter.ts";
 import { parseMarkdown, parseTask } from "./markdown/parser.ts";
@@ -656,21 +657,7 @@ export class FileSystem {
 			await this.ensureDirectoryExists(dirname(container));
 			await mkdir(container);
 		}
-		const temporaryPath = `${filepath}.${process.pid}.${Date.now()}.tmp`;
-		try {
-			await writeFile(temporaryPath, content, { flag: "wx" });
-			await rename(temporaryPath, filepath);
-		} catch (error) {
-			try {
-				await unlink(temporaryPath);
-			} catch (cleanupError) {
-				if ((cleanupError as NodeJS.ErrnoException).code !== "ENOENT")
-					throw new Error(`Task write failed and temporary-file cleanup failed for ${temporaryPath}.`, {
-						cause: new AggregateError([error, cleanupError]),
-					});
-			}
-			throw error;
-		}
+		await writeAtomically(filepath, content, "Task");
 		await this.publishContentMutation({
 			type: TASK_DIRECTORY,
 			root: resolve(this.agenticWorkspaceDir),
@@ -906,28 +893,13 @@ export class FileSystem {
 		}
 		const configPath = this.resolvedConfigPath;
 		const content = serializeConfig(normalizedConfig);
-		const temporaryPath = `${configPath}.${process.pid}.${Date.now()}.tmp`;
+		let mode = 0o600;
 		try {
-			let mode = 0o600;
-			try {
-				mode = (await stat(configPath)).mode & 0o7777;
-			} catch (error) {
-				if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
-			}
-			await writeFile(temporaryPath, content, { flag: "wx" });
-			await chmod(temporaryPath, mode);
-			await rename(temporaryPath, configPath);
+			mode = (await stat(configPath)).mode & 0o7777;
 		} catch (error) {
-			try {
-				await unlink(temporaryPath);
-			} catch (cleanupError) {
-				if ((cleanupError as NodeJS.ErrnoException).code !== "ENOENT")
-					throw new Error(`Config write failed and temporary-file cleanup failed for ${temporaryPath}.`, {
-						cause: new AggregateError([error, cleanupError]),
-					});
-			}
-			throw error;
+			if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
 		}
+		await writeAtomically(configPath, content, "Config", mode);
 		this.cachedConfig = normalizedConfig;
 		this.cachedConfigSnapshot = { path: configPath, content };
 	}

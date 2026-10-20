@@ -55,10 +55,6 @@ export class Storage {
 		return this.filesystem.rootDir;
 	}
 
-	get workspaceDirectoryName(): string {
-		return this.filesystem.agenticWorkspaceDirName;
-	}
-
 	get workspaceDirectoryPath(): string {
 		return (
 			this.filesystem.agenticWorkspaceDir ?? join(this.filesystem.rootDir, this.filesystem.agenticWorkspaceDirName)

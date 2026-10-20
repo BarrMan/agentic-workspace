@@ -81,9 +81,10 @@ async function harnessFixture(provider: Provider, omitted?: OmittedStage) {
 			if (!nativeId) throw new Error(`${provider} did not prepare its native identity`);
 			if (provider === "pi") {
 				const target = prepared.env.AOE_SESSION_ID_FILE;
-				if (!target) throw new Error("Pi did not prepare its session ID capture path");
-				await writeFile(target, nativeId);
-				await writeFile(join(directory, "session_path"), `${nativeId}.jsonl`);
+				const source = prepared.env.AOE_SESSION_SOURCE;
+				if (!target || !source) throw new Error("Pi did not prepare its launch-scoped session ID capture path");
+				await writeFile(`${target}.${source}`, nativeId);
+				await writeFile(join(directory, `session_path.${source}`), `${nativeId}.jsonl`);
 			}
 			if (provider === "opencode-v1") {
 				const pluginPath = join(directory, "plugins", "agentic-workspace-status.ts");

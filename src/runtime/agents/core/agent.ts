@@ -175,6 +175,21 @@ export function appendArguments(command: string[], arguments_: string): string {
 	return `${command.map(shellQuote).join(" ")} ${arguments_}`;
 }
 
+export function resumeCommandWithFlag(
+	preset: AgentPreset,
+	nativeSessionId: string | undefined,
+	defaultFlag: string,
+): string {
+	if (!nativeSessionId) {
+		throw new Error("Cannot resume this agent without its exact native session ID; start a new session instead.");
+	}
+	const resumeFlag = preset.resumeFlag ?? defaultFlag;
+	if (!resumeFlag.trim() || resumeFlag.includes("\0")) {
+		throw new Error("Agent resumeFlag must be a non-empty string without NUL bytes.");
+	}
+	return appendArguments(preset.command, `${shellQuote(resumeFlag)} ${shellQuote(nativeSessionId)}`);
+}
+
 /** Shared readiness receipt paths for adapters whose expected value is the native session ID. */
 export function readinessReceipts(
 	intent: SessionIntent,

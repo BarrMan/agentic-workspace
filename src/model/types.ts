@@ -1,12 +1,7 @@
 import type { AgentConfiguration } from "./session/types.ts";
 
 export type TaskStatus = string;
-export const TASK_DIRECTORY = {
-	TASK: "task",
-	ARCHIVED: "archived",
-	COMPLETED: "completed",
-} as const;
-export const TASK_DIRECTORY_TYPES = [TASK_DIRECTORY.TASK, TASK_DIRECTORY.ARCHIVED, TASK_DIRECTORY.COMPLETED] as const;
+export const TASK_DIRECTORY_TYPES = ["task", "archived", "completed"] as const;
 export type TaskDirectoryType = (typeof TASK_DIRECTORY_TYPES)[number];
 
 export const TASK_SOURCE = {
