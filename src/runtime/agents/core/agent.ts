@@ -140,7 +140,6 @@ export interface HarnessInterface {
 	readonly chromeRules: readonly AgentChromeRule[];
 	readonly nativeNamespace: NativeAgentNamespace;
 	yoloFlag(): string | undefined;
-	sanitizeLaunchPreset(preset: AgentPreset): AgentPreset;
 	launchCommand(request: LaunchCommandRequest): string;
 	resumeCommand(request: ResumeCommandRequest): string;
 	askCommand(request: AskCommandRequest): string;

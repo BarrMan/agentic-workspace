@@ -2,7 +2,6 @@ import { afterEach, describe, expect, it } from "bun:test";
 import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { parseConfig } from "./config-codec.ts";
 import { serializeMilestone } from "./markdown/serializer.ts";
 import { MilestoneStore } from "./milestones.ts";
 
@@ -37,20 +36,5 @@ describe("MilestoneStore", () => {
 		expect(await store.load("Release")).toBeNull();
 		expect(await store.load("1")).toBeNull();
 		expect((await store.load("m-2"))?.title).toBe("Release");
-	});
-});
-
-describe("filesystem config parsing", () => {
-	it("accepts a scalar default assignee without weakening list parsing", () => {
-		const config = parseConfig('statuses: ["To Do"]\ndefault_assignee: "@alex"\n', "/tmp/agentic-workspace/config.yml");
-		expect(config.defaultAssignee).toEqual(["@alex"]);
-	});
-
-	it("deduplicates default assignees by trimmed case-insensitive identity", () => {
-		const config = parseConfig(
-			'default_assignee: ["@Alice", "@alice", "alice", " Bob "]\n',
-			"/tmp/agentic-workspace/config.yml",
-		);
-		expect(config.defaultAssignee).toEqual(["@Alice", "alice", "Bob"]);
 	});
 });

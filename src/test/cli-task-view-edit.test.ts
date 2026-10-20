@@ -94,7 +94,6 @@ describe("CLI task view and edit", () => {
 			id: "task-1",
 			title: "Original",
 			status: "To Do",
-			assignee: [],
 			createdDate: "2026-09-30",
 			labels: [],
 			dependencies: [],
@@ -122,7 +121,7 @@ describe("CLI task view and edit", () => {
 
 	it("ignores flat records without modifying their bytes", async () => {
 		const content =
-			"---\nid: TASK-2\ntitle: Historical\nstatus: To Do\nassignee: []\ncreated_date: '2026-10-01'\nlabels: []\ndependencies: []\n---\n\n## Description\n\n<!-- SECTION:DESCRIPTION:BEGIN -->\nPreserved\n<!-- SECTION:DESCRIPTION:END -->\n";
+			"---\nid: TASK-2\ntitle: Historical\nstatus: To Do\ncreated_date: '2026-10-01'\nlabels: []\ndependencies: []\n---\n\n## Description\n\n<!-- SECTION:DESCRIPTION:BEGIN -->\nPreserved\n<!-- SECTION:DESCRIPTION:END -->\n";
 		const first = `${testDir}/agentic-workspace/tasks/task-2 - First.md`;
 		await writeFile(first, content);
 		const result = await $`${[...cliCommand, "task", "view", "TASK-2", "--plain"]}`.cwd(testDir).nothrow().quiet();

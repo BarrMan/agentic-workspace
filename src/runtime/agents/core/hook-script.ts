@@ -9,7 +9,6 @@ function quoteShell(value: string): string {
 /** The shared shell-script body for every command-hook emitter. */
 function hookScript(directoryExpression: string, status: HookStatus): string {
 	return [
-		"unset IFS",
 		"set -f",
 		"umask 077",
 		`D=${directoryExpression}`,

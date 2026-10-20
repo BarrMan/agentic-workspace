@@ -23,7 +23,7 @@ This document owns repeatable coding, organization, and verification practices. 
 ### Identity and Reference Resolution
 
 - Normalize an identity at the boundary that writes it. Do not add read-time alias layers or per-caller normalization for a value that has a canonical form.
-- Use each identity family's shared comparison key for equality, lookup, and mutation: `taskIdKey` for task IDs, `statusComparisonKey` for stored/configured status comparison, `statusLookupKey` only to resolve user/config input, `labelComparisonKey` for labels, and the generic `comparisonKey` for assignees; do not hand-roll `toLowerCase`/`trim`. For assignees, leading and trailing whitespace and case are ignored, while a leading `@` and internal whitespace are significant; preserve stored display spelling.
+- Use each identity family's shared comparison key for equality, lookup, and mutation: `taskIdKey` for task IDs and `labelComparisonKey` for labels; do not hand-roll `toLowerCase`/`trim`. Task statuses use the exact configured label; do not use a separate whitespace-insensitive status lookup key. Priorities are exact configured labels, not normalized values.
 - Where existing stored data requires aliases, one resolver owns their precedence; callers consume its result instead of reimplementing matching. Keep identity resolution separate from presentation and aggregation.
 - Do not fabricate records or clone entities with blank fields to reuse a helper; make the helper's scope explicit. Aggregate a collection once instead of filtering it again for each bucket or output row.
 
@@ -49,14 +49,21 @@ This document owns repeatable coding, organization, and verification practices. 
 
 - **Organization:** Use Bun 1.4 or newer, following the CI pin and exact test invocation in [AGENTS](../AGENTS.md#running-tests). Run affected test files during iteration rather than the full suite by default. Keep focused behavior tests beside their owner; shared fixtures and CLI helpers live in `src/test/`.
 - **Test boundaries:** Prefer real domain/store behavior with controlled external/provider boundaries. A passing double proves only the behavior exercised, not live-provider acceptance. Keep end-to-end coverage to a few basic user flows and assert observable results. Ordinary CLI behavior tests use the in-process CLI entry; spawn processes only for genuine process-boundary cases; direct service tests stay direct. Use source-based CLI tests for behavior and reserve compiled-binary checks for actual packaging/runtime verification.
-- **Isolation:** [bunfig.toml](../bunfig.toml) selects the shared test preload, which owns run-scoped `TMPDIR`, clears workspace-pinning environment variables, and assigns a unique `AGENTIC_WORKSPACE_TMUX_SOCKET`. Reuse this isolation rather than adding another process supervisor or global cleanup layer. Use the isolated tmux test helper and owned resources; never a developer/default socket, bare `tmux kill-server`, or broad default-server process discovery. Serialize in-process `runCli` cases that mutate process globals.
+- **Isolation:** [bunfig.toml](../bunfig.toml) selects the shared test preload, which owns run-scoped `TMPDIR`, clears workspace-pinning environment variables, and assigns a unique `AGENTIC_WORKSPACE_TMUX_SOCKET`. Reuse this test isolation rather than adding another process supervisor or global cleanup layer. Production child launches inherit the parent environment unchanged, with no environment variables stripped; explicitly set child workspace/session identities and the selected tmux socket and protect them from preset/adapter replacement. Use the isolated tmux test helper and owned resources; never a developer/default socket, bare `tmux kill-server`, or broad default-server process discovery. Serialize in-process `runCli` cases that mutate process globals.
 - **Determinism:** Use reliable synchronization rather than timing assumptions. Tests that spawn processes own cleanup on success, failure, and timeout: stop children and await exit. For viewer/watch behavior, assert that an external edit becomes visible; test same-size/same-mtime detection at unit level. Do not require periodic rechecks or promise recovery from a missed notification.
 - **Coverage:** Cover observable behavior and relevant failure paths at the owning test boundary. Retain the approved small compiled-binary check. Distinguish inspection, source tests, type checks, and live-runtime evidence in reports; re-measure baselines rather than copying historical diagnostic counts.
+
+## Review and Verification
+
+- The reviewer owns the judgment: review the whole rejected design, its callers, and tests. For each custom operation, identify the behavior required by its owner contract and why an existing dependency cannot provide it. Remove unnecessary wrappers; do not merely relabel them as domain-specific.
+- An independent verifier/reviewer is read-only. Assertion changes belong to a separately scoped implementation supported by fixture and contract evidence, not to verification.
+- Limit completion claims to inspected paths and checks actually observed. Summaries and task documents do not authorize Git mutation; follow [AGENTS](../AGENTS.md) for workflow constraints.
 
 ## Dependencies
 
 - **Implementation facts, not technology decisions:** The current toolchain uses Bun 1.4+, TypeScript, and `@opentui/core`; project data is filesystem-backed. These are repository implementation facts, not approved technology decisions.
 - Reuse existing project utilities and dependencies before adding another package. Add runtime packages to `dependencies` and development-only tooling to `devDependencies` in [package.json](../package.json).
+- Use native Temporal for strict due-date parsing and Luxon for date-only configured formatting; see [ADR-0010](adr/0010-temporal-due-dates-luxon-display.md).
 - Keep [bun.lock](../bun.lock) and, when changed, generated `bun.nix` aligned. When `bun.lock` changes, regenerate `bun.nix` with the pinned `update-nix` package script. Technology decisions belong in [ADRs](adr/README.md).
 - Install dependencies with `bun install`; use the source entry through package scripts during development.
 
@@ -84,6 +91,7 @@ This document owns repeatable coding, organization, and verification practices. 
 - **Linting:** Use the linter configured by [biome.json](../biome.json) through the package scripts in [package.json](../package.json).
 - **Type Checking:** Run `bun run check:types` using [tsconfig.json](../tsconfig.json).
 - **Tests:** Run `bun test <affected-test-file> --timeout=10000` following [AGENTS](../AGENTS.md#running-tests); `bun run test` runs the full suite.
+- **Non-writing check:** Include `bun run check` alongside the applicable type, test, and other existing gates. Do not use write-mode lint/format commands as verifier checks.
 - **Build:** Run `bun run build` to build the executable.
 - Use the package scripts as the command inventory for formatting, linting, type checking, tests, build, source CLI, and Nix regeneration. Check the script before using it: `format` and `lint` write changes; `check` is a check.
 - Use the affected-test procedure for behavior verification; formatting/lint and type checks provide different evidence.

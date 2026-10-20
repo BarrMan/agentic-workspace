@@ -49,7 +49,6 @@ const createTask = (id: string, overrides: Partial<Task> = {}): Task => ({
 	id,
 	title: `Task ${id}`,
 	status: "To Do",
-	assignee: [],
 	labels: [],
 	dependencies: [],
 	createdDate: "2026-01-01",

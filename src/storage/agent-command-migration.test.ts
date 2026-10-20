@@ -31,7 +31,7 @@ function yaml(command: string, unrelated = "keep") {
 }
 
 describe("agent preset command migration", () => {
-	it("runs profile and task-field migrations during Core startup before config and task reads", async () => {
+	it("migrates agent-command argv during Core startup without rewriting task fields", async () => {
 		const fs = coreFileSystem(core);
 		await writeFile(fs.configFilePath, yaml("project-agent --flag"));
 		const taskPath = join(fs.tasksDir, "startup-task", "task.md");
@@ -48,8 +48,10 @@ describe("agent preset command migration", () => {
 			agent_configuration: { presets: { custom: { command: ["project-agent", "--flag"] } } },
 		});
 		expect(parseFrontmatter(await readFile(taskPath, "utf8")).data).toMatchObject({
-			assignee: ["alice"],
-			priority: "high",
+			assignee: "alice",
+			priority: "HIGH",
+			task_schema_version: 3,
+			status: "To Do",
 			agentConfiguration: { presets: { custom: { command: ["task-agent", "--task"] } } },
 		});
 	});

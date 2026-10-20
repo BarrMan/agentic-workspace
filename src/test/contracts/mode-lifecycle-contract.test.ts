@@ -74,7 +74,6 @@ describe("mode lifecycle deletion contract", () => {
 				id: container.id,
 				title: container.id,
 				status: "To Do",
-				assignee: [],
 				createdDate: "2026-10-10",
 				labels: [],
 				dependencies: [],

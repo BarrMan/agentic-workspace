@@ -21,7 +21,6 @@ describe("generic task artifact search contract", () => {
 			id: "TASK-1",
 			title: "Unrelated task",
 			status: "To Do",
-			assignee: [],
 			labels: [],
 			dependencies: [],
 			createdDate: "2026-10-10",

@@ -24,7 +24,7 @@ import {
 } from "../core/agent.ts";
 import { CLAUDE_CHROME_RULES } from "../core/chrome-rules.ts";
 import { buildHookCommand, buildReadinessReceiptCommand, type HookStatus } from "../core/hook-script.ts";
-import { sanitizeProfilePreset, withExplicitModel } from "../core/profile.ts";
+import { withExplicitModel } from "../core/profile.ts";
 
 /** The Claude Code event → status map, expressed as a settings-shaped hooks object. */
 export function claudeHooksConfig(
@@ -133,10 +133,6 @@ export class ClaudeAgent implements HarnessInterface {
 
 	yoloFlag(): string | undefined {
 		return "--dangerously-skip-permissions";
-	}
-
-	sanitizeLaunchPreset(preset: import("../../../model/session/types.ts").AgentPreset) {
-		return sanitizeProfilePreset(preset);
 	}
 
 	launchCommand({ preset, bootstrapPath, nativeSessionId }: LaunchCommandRequest): string {

@@ -1,7 +1,6 @@
 /* Status icon and color mappings for consistent UI display */
 
 import type { AgentActivity, AgentIndication } from "../../model/session/types.ts";
-import { statusComparisonKey } from "../../model/task/status.ts";
 
 export interface StatusStyle {
 	icon: string;
@@ -15,16 +14,16 @@ export interface StatusStyle {
  */
 export function getStatusStyle(status: string): StatusStyle {
 	const statusMap: Record<string, StatusStyle> = {
-		done: { icon: "✔", color: "green" },
-		"in progress": { icon: "◒", color: "yellow" },
-		blocked: { icon: "●", color: "red" },
-		"to do": { icon: "○", color: "default" },
-		review: { icon: "◆", color: "blue" },
-		testing: { icon: "▣", color: "cyan" },
+		Done: { icon: "✔", color: "green" },
+		"In Progress": { icon: "◒", color: "yellow" },
+		Blocked: { icon: "●", color: "red" },
+		"To Do": { icon: "○", color: "default" },
+		Review: { icon: "◆", color: "blue" },
+		Testing: { icon: "▣", color: "cyan" },
 	};
 
 	// Return the mapped style or default for unknown statuses
-	return statusMap[statusComparisonKey(status)] || { icon: "○", color: "default" };
+	return statusMap[status] || { icon: "○", color: "default" };
 }
 
 /**

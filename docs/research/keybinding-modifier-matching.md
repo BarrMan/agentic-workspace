@@ -1,7 +1,7 @@
 # Keybinding Modifier Matching — Research
 
-Status: supporting evidence, not a contract. Prepared for the review of
-[normalization-refactor-decisions-explained.md](../audits/normalization-refactor-decisions-explained.md) item 13.
+Status: supporting evidence, not a contract. Prepared for the keybinding review indexed in
+[normalization-refactor-decisions.md](../audits/normalization-refactor-decisions.md).
 Question: should the local chord parser/matcher stay, or should it be replaced by a framework or established
 TUI pattern? Oracle-validated with corrections.
 

@@ -58,7 +58,15 @@ it("detaches a default live-session transport before saturated slots admit cance
 printf '%s\n' "$*" >> "$AGENTIC_WORKSPACE_EXEC_TEST_LOG"
 case " $* " in
   *" hold "*) while [ ! -f "$AGENTIC_WORKSPACE_EXEC_TEST_RELEASE" ]; do /bin/sleep 0.01; done;;
-  *" list-panes "*) printf 'agentic-workspace-fixture-session\t%s\tTASK-1\tsaved-session\tlive-preview\t%%1\t0\n' "$AGENTIC_WORKSPACE_EXEC_TEST_ROOT";;
+  *" list-panes "*) case " $* " in
+    *" -F #{pane_id} "*) printf '%%1\n';;
+    *" -F #{session_name} "*) printf 'agentic-workspace-fixture-session\n';;
+    *" -F #{@agentic_workspace_root} "*) printf '%s\n' "$AGENTIC_WORKSPACE_EXEC_TEST_ROOT";;
+    *" -F #{@agentic_workspace_task} "*) printf 'TASK-1\n';;
+    *" -F #{@agentic_workspace_session} "*) printf 'saved-session\n';;
+    *" -F #{@agentic_workspace_role} "*) printf 'live-preview\n';;
+    *" -F #{pane_dead} "*) printf '0\n';;
+  esac;;
   *" display-message "*) case "$*" in *pane_id*) printf '%%1 0\n';; *) printf '0\n';; esac;;
   *" capture-pane "*) printf 'fixture screen\n';;
 esac
@@ -121,7 +129,6 @@ esac
 			id: record.taskId,
 			title: "Transport detach fixture",
 			status: "To Do",
-			assignee: [],
 			createdDate: new Date().toISOString(),
 			labels: [],
 			dependencies: [],

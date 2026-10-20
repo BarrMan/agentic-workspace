@@ -299,7 +299,7 @@ printf '%s\\n' "$LOOKUP_RESULT"
 		}
 	});
 
-	test("validates v2 skill arrays and configures explicit models without CLI flags", async () => {
+	test("validates v2 skill arrays and configures opaque explicit models without CLI flags", async () => {
 		const directory = await mkdtemp(join(tmpdir(), "agentic-workspace-opencode-v2-config-"));
 		try {
 			const agent = new OpencodeV2Agent();
@@ -318,7 +318,7 @@ printf '%s\\n' "$LOOKUP_RESULT"
 			).rejects.toThrow("skills must be an array of directory paths");
 			const explicit: ModeProfile = {
 				name: "BUILD",
-				model: { kind: "explicit", id: "provider/model" },
+				model: { kind: "explicit", id: "bad model; $(not-a-command)" },
 				prompt: "",
 				permissions: { repository: "read-write", task: "read-write", artifacts: "read-write", subagents: "allowed" },
 				artifacts: [],
@@ -340,22 +340,21 @@ printf '%s\\n' "$LOOKUP_RESULT"
 				profile: explicit,
 			});
 			const config = JSON.parse(prepared.env.OPENCODE_CONFIG_CONTENT ?? "{}") as Record<string, unknown>;
-			expect(config.model).toBe("provider/model");
+			expect(config.model).toBe("bad model; $(not-a-command)");
 			expect(config.theme).toBe("dark");
 			expect(config.skills).toEqual([join(directory, "skills")]);
-			await expect(
-				agent.prepare({
-					preset,
-					cwd: directory,
-					bootstrapPath: join(directory, "bootstrap"),
-					directory,
-					skillRoot: join(directory, "skills"),
-					skillPath: join(directory, "skills", "SKILL.md"),
-					env: { PATH: process.env.PATH ?? "" },
-					intent: { kind: "resume", nativeSessionId: "ses_seed" },
-					profile: { ...explicit, model: { kind: "explicit", id: "invalid model" } },
-				}),
-			).rejects.toThrow("Model ID contains unsupported characters");
+			const opaquePrepared = await agent.prepare({
+				preset,
+				cwd: directory,
+				bootstrapPath: join(directory, "bootstrap"),
+				directory,
+				skillRoot: join(directory, "skills"),
+				skillPath: join(directory, "skills", "SKILL.md"),
+				env: { PATH: process.env.PATH ?? "" },
+				intent: { kind: "resume", nativeSessionId: "ses_seed" },
+				profile: { ...explicit, model: { kind: "explicit", id: "invalid model" } },
+			});
+			expect(JSON.parse(opaquePrepared.env.OPENCODE_CONFIG_CONTENT ?? "{}")).toMatchObject({ model: "invalid model" });
 		} finally {
 			await rm(directory, { recursive: true, force: true });
 		}

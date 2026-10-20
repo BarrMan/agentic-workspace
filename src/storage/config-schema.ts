@@ -1,7 +1,6 @@
 import { z } from "zod";
-import { DEFAULT_FRESH_INIT_POLICY, DEFAULT_STATUSES } from "../model/constants.ts";
+import { DEFAULT_FRESH_INIT_POLICY, DEFAULT_PRIORITIES, DEFAULT_STATUSES } from "../model/constants.ts";
 import { AgentConfigurationSchema } from "../model/session/agent-config-schema.ts";
-import { normalizeAssignees } from "../model/task/assignee-filter.ts";
 import type { AgenticWorkspaceConfig } from "../model/types.ts";
 
 const MAX_SAFE_INTEGER = Number.MAX_SAFE_INTEGER;
@@ -51,14 +50,14 @@ const taskPrefix = z.string({ error: "must contain only letters." }).regex(/^[a-
 const rawConfigSchema = z.object({
 	agent_configuration: AgentConfigurationSchema.optional(),
 	project_name: z.string().default(""),
-	default_assignee: z
-		.union([configList(), z.string(), z.null()], { error: "must be a list or a single name." })
-		.optional(),
 	default_reporter: z.string().optional(),
 	statuses,
 	labels,
 	types: optionalConfigList,
-	priorities: optionalConfigList,
+	priorities: z.preprocess(
+		(value) => (value === null ? undefined : value),
+		configList().default(() => [...DEFAULT_PRIORITIES]),
+	),
 	projects: optionalConfigList,
 	milestones: z.array(z.string()).optional(),
 	default_status: z.string().optional(),
@@ -77,19 +76,10 @@ const rawConfigSchema = z.object({
 	task_prefix: taskPrefix.optional(),
 });
 
-function defaultAssignees(value: string[] | string | null | undefined): string[] | undefined {
-	if (value === null) return [];
-	if (typeof value === "string") {
-		return normalizeAssignees([value]);
-	}
-	return normalizeAssignees(value);
-}
-
 export const AgenticWorkspaceConfigSchema = rawConfigSchema.transform(
 	(raw): AgenticWorkspaceConfig => ({
 		projectName: raw.project_name,
 		agentConfiguration: raw.agent_configuration as AgenticWorkspaceConfig["agentConfiguration"],
-		defaultAssignee: defaultAssignees(raw.default_assignee),
 		defaultReporter: raw.default_reporter,
 		statuses: raw.statuses,
 		labels: raw.labels,

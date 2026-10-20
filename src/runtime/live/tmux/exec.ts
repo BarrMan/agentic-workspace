@@ -193,9 +193,8 @@ const spawnTmux = async (
 			stdin: "ignore",
 			stdout: Bun.file(outPath),
 			stderr: Bun.file(errPath),
-			// `-L` already outranks `$TMUX`, but clearing it means an inherited client can never
-			// misroute a transport command at another server.
-			env: { ...(environment ?? process.env), TMUX: "" },
+			// Explicit `-L` routing outranks an inherited `$TMUX` client identity.
+			env: { ...(environment ?? process.env) },
 		});
 		let timedOut = false;
 		let aborted = false;

@@ -23,7 +23,7 @@ describe("artifact approval key contract", () => {
 		await mkdir(container, { recursive: true });
 		await writeFile(
 			join(container, "task.md"),
-			"---\ntask_schema_version: 3\nid: BACK-23\ntitle: Artifact key contract\nstatus: To Do\nassignee: []\ncreated_date: 2026-10-10\nlabels: []\ndependencies: []\n---\n",
+			"---\ntask_schema_version: 3\nid: BACK-23\ntitle: Artifact key contract\nstatus: To Do\ncreated_date: 2026-10-10\nlabels: []\ndependencies: []\n---\n",
 		);
 
 		const paths = ["__proto__", "constructor", "toString"];

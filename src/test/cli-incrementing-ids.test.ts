@@ -48,7 +48,6 @@ describe("CLI ID Incrementing Behavior", () => {
 			id: "task-1",
 			title: "First Task",
 			status: "To Do",
-			assignee: [],
 			createdDate: "2025-01-01",
 			labels: [],
 			dependencies: [],

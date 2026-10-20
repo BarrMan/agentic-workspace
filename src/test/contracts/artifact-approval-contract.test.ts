@@ -21,7 +21,7 @@ async function fixture() {
 	const taskRecord = join(container, "task.md");
 	await writeFile(
 		taskRecord,
-		"---\ntask_schema_version: 3\nid: BACK-23\ntitle: Artifact contract\nstatus: To Do\nassignee: []\ncreated_date: 2026-10-10\nlabels: []\ndependencies: []\n---\n\ntask record bytes\n",
+		"---\ntask_schema_version: 3\nid: BACK-23\ntitle: Artifact contract\nstatus: To Do\ncreated_date: 2026-10-10\nlabels: []\ndependencies: []\n---\n\ntask record bytes\n",
 	);
 	return {
 		container,

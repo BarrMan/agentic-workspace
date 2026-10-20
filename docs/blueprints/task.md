@@ -145,7 +145,8 @@ Searchable-field extraction, task-ID variants, status-set matching, and modified
 ## Invariants
 
 - Task model mutations are synchronous and free of I/O.
-- Status is the stored display string. Comparison uses `statusComparisonKey`; canonical lookup resolves against the configured status list; terminal status is derived from that list. A single status is not a class.
+- Status is the stored display string and must match an exact configured label; no whitespace-insensitive status lookup is used. Terminal status is derived from the configured list. A single status is not a class.
+- Priority is one exact label from the ordered configured `priorities` string array (default `High`, `Medium`, `Low`); no separate comparison value exists. Assignee is not part of Task or TaskDetails.
 - Task never starts or stops execution; it creates Session records and receives Session operations from Controller.
 - Selection is Task and Controller state, not a preference.
 - A nonempty history's active ID names a retained member; an empty history has no active ID.

@@ -29,7 +29,6 @@ describe("Permanent task deletion", () => {
 			id,
 			title: "Test Task",
 			status: "To Do",
-			assignee: [],
 			createdDate: "2025-07-07",
 			labels: [],
 			dependencies: [],

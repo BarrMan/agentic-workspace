@@ -61,7 +61,6 @@ async function runLiveRefreshScenario(): Promise<{ title: string; transcriptPath
 		id: "task-1",
 		title: "before-refresh",
 		status: "To Do",
-		assignee: [],
 		createdDate: "2026-07-14 00:00",
 		labels: [],
 		dependencies: [],

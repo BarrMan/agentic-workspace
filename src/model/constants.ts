@@ -49,6 +49,7 @@ export const FALLBACK_STATUS = DEFAULT_TODO_STATUS;
  * Default task types, used when no `types` are configured
  */
 export const DEFAULT_TASK_TYPES = ["bug", "feature", "enhancement", "task", "chore", "docs", "spike"] as const;
+export const DEFAULT_PRIORITIES = ["High", "Medium", "Low"] as const;
 
 /**
  * Default values for advanced configuration options used during project initialization.
@@ -66,6 +67,6 @@ export const DEFAULT_INIT_CONFIG = {
 
 /** Values written by a newly initialized project. */
 export const DEFAULT_FRESH_INIT_POLICY = {
-	dateFormat: "yyyy-mm-dd",
+	dateFormat: "yyyy-MM-dd",
 	maxColumnWidth: 20,
 } as const;

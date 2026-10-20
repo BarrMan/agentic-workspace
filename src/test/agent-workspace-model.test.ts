@@ -6,7 +6,6 @@ const task = (id: string, status: string): Task => ({
 	id,
 	title: id,
 	status,
-	assignee: [],
 	createdDate: "2026-01-01",
 	labels: [],
 	dependencies: [],

@@ -13,6 +13,7 @@ The project contracts are authoritative and are the single source of truth for t
 | Reusing or adding visual/interaction patterns | [DESIGN-SYSTEM](DESIGN-SYSTEM.md) | Shared palette, spacing, headers, footers, dialogs and component patterns. |
 | Writing code or tests | [CONVENTIONS](CONVENTIONS.md) | Repeatable engineering and organization practices. |
 | Understanding an accepted technology choice or significant architecture decision | [ADRs](adr/README.md) | Approved decisions with rationale, alternatives and consequences; significant new decisions require approval and accepted records are preserved with explicit supersession. |
+| Reviewing normalization-refactor evidence or its retained research | [Evidence/review index](audits/normalization-refactor-decisions.md) | Bounded current implementation paths, scoped evidence, and unresolved issues; supporting evidence only, not behavior authority. |
 
 The root [README](../README.md) introduces installation and usage. Root [AGENTS.md](../AGENTS.md) defines the reading/execution workflow, not product behavior.
 

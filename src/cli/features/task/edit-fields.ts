@@ -2,7 +2,6 @@ const EDIT_FIELD_OPTIONS = [
 	"title",
 	"description",
 	"desc",
-	"assignee",
 	"status",
 	"label",
 	"priority",

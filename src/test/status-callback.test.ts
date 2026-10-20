@@ -100,8 +100,6 @@ describe("Status Change Callbacks", () => {
 
 			callbackOutputFile = join(testDir, "callback-output.txt");
 			callbackOutputPath = callbackOutputFile.replace(/\\/g, "/");
-
-			core = new Core(testDir);
 		});
 
 		afterEach(async () => {
@@ -124,6 +122,7 @@ date_format: yyyy-mm-dd
 on_status_change: 'echo "$TASK_ID:$OLD_STATUS->$NEW_STATUS" > "${callbackOutputPath}"'
 `;
 			await writeFile(join(testDir, "agentic-workspace", "config.yml"), configContent);
+			core = new Core(testDir);
 
 			// Verify config was written correctly
 			const writtenConfig = await Bun.file(join(testDir, "agentic-workspace", "config.yml")).text();
@@ -160,13 +159,13 @@ date_format: yyyy-mm-dd
 on_status_change: 'echo "global" > "${callbackOutputPath}"'
 `;
 			await writeFile(join(testDir, "agentic-workspace", "config.yml"), configContent);
+			core = new Core(testDir);
 
 			// Create a task with per-task callback
 			const taskContent = serializeTask({
 				id: "TASK-1",
 				title: "Task with legacy callback",
 				status: "To Do",
-				assignee: [],
 				createdDate: "2025-01-01",
 				labels: [],
 				dependencies: [],
@@ -185,6 +184,7 @@ on_status_change: 'echo "global" > "${callbackOutputPath}"'
 		test("does not execute a project hook without explicit opt-in", async () => {
 			const config = `project_name: Test\nstatuses: [To Do, Done]\non_status_change: 'echo executed > "${callbackOutputPath}"'\n`;
 			await writeFile(join(testDir, "agentic-workspace", "config.yml"), config);
+			core = new Core(testDir);
 			const { task } = await core.createTaskFromInput({ title: "Opt-in gate", status: "To Do" });
 			await core.updateTaskFromInput(task.id, { status: "Done" });
 			expect(await Bun.file(callbackOutputFile).exists()).toBe(false);
@@ -204,6 +204,7 @@ date_format: yyyy-mm-dd
 on_status_change: 'echo "callback-ran" > "${callbackOutputPath}"'
 `;
 			await writeFile(join(testDir, "agentic-workspace", "config.yml"), configContent);
+			core = new Core(testDir);
 
 			// Create a task
 			const { task } = await core.createTaskFromInput({
@@ -231,6 +232,7 @@ milestones: []
 date_format: yyyy-mm-dd
 `;
 			await writeFile(join(testDir, "agentic-workspace", "config.yml"), configContent);
+			core = new Core(testDir);
 
 			// Create a task
 			const { task } = await core.createTaskFromInput({
@@ -257,6 +259,7 @@ date_format: yyyy-mm-dd
 on_status_change: 'exit 1'
 `;
 			await writeFile(join(testDir, "agentic-workspace", "config.yml"), configContent);
+			core = new Core(testDir);
 
 			// Create a task
 			const { task } = await core.createTaskFromInput({
@@ -283,6 +286,7 @@ date_format: yyyy-mm-dd
 on_status_change: 'echo "$TASK_ID:$OLD_STATUS->$NEW_STATUS" >> "${callbackOutputPath}"'
 `;
 			await writeFile(join(testDir, "agentic-workspace", "config.yml"), configContent);
+			core = new Core(testDir);
 
 			// Create a task in "To Do"
 			const { task } = await core.createTaskFromInput({

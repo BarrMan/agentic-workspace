@@ -6,7 +6,6 @@ import {
 	runTaskEditWizard,
 	type TaskWizardPromptRunner,
 } from "../cli/features/tasks/wizard.ts";
-import { prepareTaskCreationInput } from "../controller/task-creation-input.ts";
 import type { Task } from "../model/types.ts";
 
 type PromptResponses = Record<string, string | string[]>;
@@ -49,10 +48,9 @@ describe("task wizard", () => {
 			title: "Create from wizard",
 			description: "Wizard description",
 			status: "In Progress",
-			priority: "medium",
+			priority: " medium ",
 			type: "epic",
 			dueDate: "2026-08-10",
-			assignee: "alice\n@bob",
 			labels: "cli\nwizard",
 			references: "src/cli.ts\ndocs/plan.md",
 			documentation: "docs/spec.md",
@@ -62,6 +60,7 @@ describe("task wizard", () => {
 		const input = await runTaskCreateWizard({
 			statuses: ["To Do", "In Progress", "Done"],
 			types: ["Bug", "Epic"],
+			priorities: ["Low", "Medium", "High"],
 			promptImpl: prompt,
 		});
 
@@ -69,10 +68,9 @@ describe("task wizard", () => {
 		expect(input?.title).toBe("Create from wizard");
 		expect(input?.description).toBe("Wizard description");
 		expect(input?.status).toBe("In Progress");
-		expect(input?.priority).toBe("medium");
+		expect(input?.priority).toBe("Medium");
 		expect(input?.type).toBe("Epic");
 		expect(input?.dueDate).toBe("2026-08-10");
-		expect(input?.assignee).toEqual(["alice", "@bob"]);
 		expect(input?.labels).toEqual(["cli", "wizard"]);
 		expect(input?.references).toEqual(["src/cli.ts", "docs/plan.md"]);
 		expect(input?.documentation).toEqual(["docs/spec.md"]);
@@ -81,16 +79,7 @@ describe("task wizard", () => {
 		expect(input?.dependencies).toEqual(["task-1", "2"]);
 	});
 
-	it("deduplicates assignee identities at the create boundary", async () => {
-		const input = await runTaskCreateWizard({
-			statuses: ["To Do"],
-			promptImpl: createPromptRunner({ title: "Assignee dedupe", assignee: "@Alice\nalice\nBob\n@bob" }),
-		});
-		if (!input) throw new Error("Expected task wizard input");
-		expect(prepareTaskCreationInput(input).assignees).toEqual(["@Alice", "alice", "Bob", "@bob"]);
-	});
-
-	it("canonicalizes a whitespace-collapsed status name to the configured label", async () => {
+	it("does not rewrite a status that does not exactly match configuration", async () => {
 		const prompt = createPromptRunner({ title: "Status identity", status: "inprogress" });
 
 		const input = await runTaskCreateWizard({
@@ -98,7 +87,7 @@ describe("task wizard", () => {
 			promptImpl: prompt,
 		});
 
-		expect(input?.status).toBe("In Progress");
+		expect(input?.status).toBe("inprogress");
 	});
 
 	it("builds prefilled edit update input", async () => {
@@ -108,7 +97,6 @@ describe("task wizard", () => {
 			status: "To Do",
 			priority: "low",
 			type: "Bug",
-			assignee: ["alice"],
 			createdDate: "2026-02-20 12:00",
 			dueDate: "2026-08-10",
 			labels: ["existing"],
@@ -122,10 +110,9 @@ describe("task wizard", () => {
 			title: "New title",
 			description: "New description",
 			status: "In Progress",
-			priority: "high",
+			priority: " urgent ",
 			type: "Epic",
 			dueDate: "",
-			assignee: "alice\nbob",
 			labels: "existing\ncli",
 			references: "docs/new.md\nsrc/cli.ts",
 			documentation: "docs/spec.md",
@@ -136,6 +123,7 @@ describe("task wizard", () => {
 			task: existingTask,
 			statuses: ["To Do", "In Progress", "Done"],
 			types: ["Bug", "Epic"],
+			priorities: ["Low", "Urgent"],
 			promptImpl: prompt,
 		});
 
@@ -143,10 +131,9 @@ describe("task wizard", () => {
 		expect(updateInput?.title).toBe("New title");
 		expect(updateInput?.description).toBe("New description");
 		expect(updateInput?.status).toBe("In Progress");
-		expect(updateInput?.priority).toBe("high");
+		expect(updateInput?.priority).toBe("Urgent");
 		expect(updateInput?.type).toBe("Epic");
 		expect(updateInput?.dueDate).toBeNull();
-		expect(updateInput?.assignee).toEqual(["alice", "bob"]);
 		expect(updateInput?.labels).toEqual(["existing", "cli"]);
 		expect(updateInput?.dependencies).toEqual(["task-2", "3"]);
 		expect(updateInput?.references).toEqual(["docs/new.md", "src/cli.ts"]);
@@ -158,7 +145,6 @@ describe("task wizard", () => {
 			id: "task-10",
 			title: "List round trip",
 			status: "To Do",
-			assignee: [],
 			createdDate: "2026-02-20",
 			labels: ["alpha", "beta"],
 			dependencies: [],
@@ -268,7 +254,6 @@ describe("task wizard", () => {
 			title: ["   ", "Validated title"],
 			description: "",
 			priority: "",
-			assignee: "",
 			labels: "",
 			references: "",
 			documentation: "",
@@ -328,7 +313,6 @@ describe("task wizard", () => {
 			title: "Typed task",
 			status: "To Do",
 			type: "Epic",
-			assignee: [],
 			createdDate: "2026-02-20 12:00",
 			labels: [],
 			dependencies: [],
@@ -430,7 +414,6 @@ describe("task wizard", () => {
 			priority: "",
 			type: "",
 			project: "web",
-			assignee: "",
 			labels: "",
 			references: "",
 			documentation: "",
@@ -453,7 +436,6 @@ describe("task wizard", () => {
 			title: "Projected task",
 			status: "To Do",
 			project: "API",
-			assignee: [],
 			createdDate: "2026-02-20 12:00",
 			labels: [],
 			dependencies: [],

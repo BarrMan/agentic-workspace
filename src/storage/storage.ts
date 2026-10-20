@@ -4,7 +4,6 @@ import lockfile from "proper-lockfile";
 import { agentCommandArgvSchema } from "../model/session/agent-config-schema.ts";
 import type { AgentConfiguration } from "../model/session/types.ts";
 import type { DependencyStore } from "../model/task/dependency-validator.ts";
-import { normalizePriorityValue, resolvePriorityValue } from "../model/task/priority-config.ts";
 import { taskIdKey } from "../model/task/task-id.ts";
 import {
 	completedTaskIdentityRecord,
@@ -23,6 +22,8 @@ import { readRootConfiguration, rootConfigFilePath } from "./config.ts";
 import { FileSystem, type FileSystemSelection, isTaskLockError } from "./file-system.ts";
 import { parseFrontmatter, stringifyFrontmatter } from "./markdown/frontmatter.ts";
 import { parseTask } from "./markdown/parser.ts";
+import { resolveProjectStateRoot } from "./session-store.ts";
+import { migrateTaskAndConfigFiles, type TaskConfigMigrationReport } from "./task-config-migration.ts";
 import type { CreatedTaskRollbackResult, CreatedTaskWrite } from "./types.ts";
 
 export interface ScannedTaskRecord {
@@ -39,12 +40,22 @@ export class Storage {
 	constructor(private readonly filesystem: FileSystem) {}
 
 	startAgentPresetCommandMigration(): Promise<{ migratedFiles: string[] }> {
-		if (!this.agentPresetMigration)
-			this.agentPresetMigration = this.migrateAgentPresetCommands().then(async (result) => {
-				const priorityResult = await this.migrateTaskAssigneesAndPriority();
-				return { migratedFiles: [...new Set([...result.migratedFiles, ...priorityResult.migratedFiles])] };
-			});
+		if (!this.agentPresetMigration) this.agentPresetMigration = this.migrateAgentPresetCommands();
 		return this.agentPresetMigration;
+	}
+
+	async migrateTaskAndConfig(): Promise<TaskConfigMigrationReport> {
+		const stateRoot = await resolveProjectStateRoot(this.filesystem.rootDir);
+		return await migrateTaskAndConfigFiles({
+			rootConfigPath: rootConfigFilePath(),
+			projectConfigPath: this.configFilePath,
+			tasksDirectories: [
+				this.filesystem.tasksDir,
+				this.filesystem.completedDir,
+				await this.filesystem.getArchiveTasksDir(),
+			],
+			manifestPath: join(stateRoot, "task-config-migration.json"),
+		});
 	}
 
 	private async waitForAgentPresetMigration(): Promise<void> {
@@ -74,6 +85,7 @@ export class Storage {
 	}
 
 	async findTaskRecordPath(taskId: string): Promise<string | null> {
+		await this.waitForAgentPresetMigration();
 		const canonicalId = taskIdKey(taskId);
 		const filepath = join(this.filesystem.tasksDir, canonicalId.toLowerCase(), "task.md");
 		try {
@@ -95,10 +107,12 @@ export class Storage {
 	}
 
 	async saveConfig(config: AgenticWorkspaceConfig): Promise<void> {
+		await this.waitForAgentPresetMigration();
 		await this.filesystem.saveConfig(config);
 	}
 
 	async initializeWorkspace(config: AgenticWorkspaceConfig, selection: FileSystemSelection): Promise<void> {
+		await this.waitForAgentPresetMigration();
 		const filesystem = new FileSystem(this.filesystem.rootDir, selection);
 		await filesystem.ensureAgenticWorkspaceStructure();
 		await filesystem.saveConfig(config);
@@ -200,75 +214,6 @@ export class Storage {
 		} catch (error) {
 			throw new Error(
 				`Agent command migration partially completed (${completed.length} files): ${completed.join(", ")}. ${(error as Error).message}`,
-				{ cause: error },
-			);
-		}
-		return { migratedFiles: completed };
-	}
-
-	async migrateTaskAssigneesAndPriority(): Promise<{ migratedFiles: string[] }> {
-		const config = await this.filesystem.loadConfig();
-		const roots = [this.filesystem.tasksDir, this.filesystem.completedDir, await this.filesystem.getArchiveTasksDir()];
-		const paths: string[] = [];
-		for (const root of roots) {
-			try {
-				await access(root);
-			} catch (error) {
-				if ((error as NodeJS.ErrnoException).code === "ENOENT") continue;
-				throw error;
-			}
-			for await (const path of new Bun.Glob("*/task.md").scan({ cwd: root, absolute: true })) paths.push(path);
-		}
-		const completed: string[] = [];
-		try {
-			for (const path of paths) {
-				const candidate = await this.readTaskFieldMigrationCandidate(path, config);
-				if (!candidate) continue;
-				await this.withMigrationTaskLock({ id: candidate.identity, filePath: path }, async () => {
-					let original: string;
-					try {
-						original = await readFile(path, "utf8");
-					} catch (error) {
-						if ((error as NodeJS.ErrnoException).code === "ENOENT") return;
-						throw error;
-					}
-					let document: Record<string, unknown>;
-					let body: string;
-					try {
-						({ data: document, content: body } = parseFrontmatter(original));
-					} catch {
-						return;
-					}
-					if (typeof document.id === "string" && taskIdKey(document.id) !== taskIdKey(candidate.identity)) return;
-					let changed = false;
-					const assignee = document.assignee;
-					if (assignee === null) {
-						document.assignee = [];
-						changed = true;
-					} else if (typeof assignee === "string") {
-						document.assignee = assignee.trim().length === 0 ? [] : [assignee];
-						changed = true;
-					} else if (Array.isArray(assignee) && assignee.some((entry) => typeof entry !== "string")) {
-						document.assignee = assignee.map(String);
-						changed = true;
-					}
-					const priority = document.priority;
-					if (typeof priority === "string") {
-						const canonical = resolvePriorityValue(priority, config) ?? normalizePriorityValue(priority);
-						if (canonical !== undefined && canonical !== priority) {
-							document.priority = canonical;
-							changed = true;
-						}
-					}
-					if (changed) {
-						await this.replaceMigrationFile(path, stringifyFrontmatter(body, document));
-						completed.push(path);
-					}
-				});
-			}
-		} catch (error) {
-			throw new Error(
-				`Task field migration partially completed (${completed.length} files): ${completed.join(", ")}.`,
 				{ cause: error },
 			);
 		}
@@ -435,29 +380,6 @@ export class Storage {
 		}
 	}
 
-	private async readTaskFieldMigrationCandidate(
-		path: string,
-		config: AgenticWorkspaceConfig | null,
-	): Promise<{ identity: string } | null> {
-		try {
-			const { data } = parseFrontmatter(await readFile(path, "utf8"));
-			const assignee = data.assignee;
-			const needsAssigneeMigration =
-				assignee === null ||
-				typeof assignee === "string" ||
-				(Array.isArray(assignee) && assignee.some((entry) => typeof entry !== "string"));
-			const priority = data.priority;
-			const canonicalPriority =
-				typeof priority === "string"
-					? (resolvePriorityValue(priority, config) ?? normalizePriorityValue(priority))
-					: undefined;
-			if (!needsAssigneeMigration && !(canonicalPriority !== undefined && canonicalPriority !== priority)) return null;
-			return { identity: typeof data.id === "string" && data.id.length > 0 ? data.id : basename(dirname(path)) };
-		} catch {
-			return null;
-		}
-	}
-
 	private async readTaskMigrationIdentity(path: string): Promise<string | null> {
 		try {
 			const { data } = parseFrontmatter(await readFile(path, "utf8"));
@@ -513,6 +435,7 @@ export class Storage {
 	}
 
 	async saveTask(task: Task, options: { approvalMutation?: boolean; create?: boolean } = {}): Promise<string> {
+		await this.waitForAgentPresetMigration();
 		return await this.filesystem.saveTask(task, options);
 	}
 
@@ -524,14 +447,17 @@ export class Storage {
 	}
 
 	async completeTask(taskId: string, alreadyLocked = false): Promise<boolean> {
+		await this.waitForAgentPresetMigration();
 		return await this.filesystem.completeTask(taskId, alreadyLocked);
 	}
 
 	async moveTaskToArchive(task: Task): Promise<string> {
+		await this.waitForAgentPresetMigration();
 		return await this.filesystem.moveTaskContainer(task, await this.filesystem.getArchiveTasksDir(), true);
 	}
 
 	async deleteTaskContainer(task: Task, alreadyLocked = false): Promise<void> {
+		await this.waitForAgentPresetMigration();
 		return await this.filesystem.deleteTaskContainer(task, alreadyLocked);
 	}
 
@@ -624,12 +550,14 @@ export class Storage {
 	}
 
 	async prepareCreatedTaskWrite(filePath: string): Promise<CreatedTaskWrite> {
+		await this.waitForAgentPresetMigration();
 		const createdContent = await this.readFileIfPresent(filePath);
 		if (!createdContent) throw new Error(`Created task record not found: ${filePath}`);
 		return { filePath, createdContent, previousPath: null, previousContent: null };
 	}
 
 	async rollbackCreatedTask(write: CreatedTaskWrite): Promise<CreatedTaskRollbackResult> {
+		await this.waitForAgentPresetMigration();
 		const workingPathRestored = await this.restoreCreatedPath(write);
 		return { workingPathRestored };
 	}

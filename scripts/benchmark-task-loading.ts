@@ -202,7 +202,6 @@ function benchmarkTask(id: number, title: string, status = "To Do"): Task {
 		id: `TASK-${id}`,
 		title,
 		status,
-		assignee: [],
 		createdDate: "2026-01-01",
 		updatedDate: "2026-01-02",
 		labels: ["benchmark"],

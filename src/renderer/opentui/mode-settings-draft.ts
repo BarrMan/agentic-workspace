@@ -70,9 +70,6 @@ export class ModeSettingsDraft {
 			if (!profile.name.trim()) throw new Error(`Mode ${id} needs a name.`);
 			if (profile.textColor !== undefined && !isModeTextColor(profile.textColor))
 				throw new Error(`Mode ${id} text color must be a supported lowercase named color.`);
-			if (profile.model.kind === "explicit" && (!profile.model.id.trim() || /[\0\r\n]/.test(profile.model.id))) {
-				throw new Error(`Mode ${id} has an invalid model id.`);
-			}
 			if (profile.model.kind !== "default" && profile.model.kind !== "explicit")
 				throw new Error(`Mode ${id} has an invalid model selection.`);
 			if (typeof profile.prompt !== "string") throw new Error(`Mode ${id} prompt must be text.`);

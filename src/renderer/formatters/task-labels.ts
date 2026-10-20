@@ -5,7 +5,6 @@ export const TASK_FIELD_LABELS = {
 	STATUS: "Status",
 	PRIORITY: "Priority",
 	PROJECT: "Project",
-	ASSIGNEE: "Assignee",
 	REPORTER: "Reporter",
 	LABELS: "Labels",
 	TYPE: "Type",

@@ -28,6 +28,7 @@ describe("SessionProcess tmux instance lifecycle", () => {
 		const events: string[] = [];
 		const killedPaneIds: string[] = [];
 		let instanceState = state;
+		let panePid = "4242";
 		const options = new Map<string, string>([
 			["@agentic_workspace_root", root],
 			["@agentic_workspace_task", session.taskId],
@@ -56,6 +57,7 @@ describe("SessionProcess tmux instance lifecycle", () => {
 			newSession: async () => ({ activePane: pane }),
 			panes: async () => (instanceState !== "absent" ? [pane] : []),
 			cmd: async (command: string, args: readonly string[] = []) => {
+				if (command === "display-message") return [args.at(-1) === "#{pane_pid}" ? panePid : ""];
 				if (command === "list-sessions") return instanceState === "absent" ? [] : [session.tmuxName];
 				if (command === "list-panes") {
 					if (instanceState === "absent")
@@ -65,6 +67,17 @@ describe("SessionProcess tmux instance lifecycle", () => {
 							stderr: [`can't find session: ${session.tmuxName}`],
 							target: `=${session.tmuxName}:`,
 						});
+					const format = args.at(-1);
+					const values: Record<string, string> = {
+						"#{pane_id}": pane.id,
+						"#{session_name}": session.tmuxName,
+						"#{@agentic_workspace_root}": options.get("@agentic_workspace_root") ?? "",
+						"#{@agentic_workspace_task}": options.get("@agentic_workspace_task") ?? "",
+						"#{@agentic_workspace_session}": options.get("@agentic_workspace_session") ?? "",
+						"#{@agentic_workspace_role}": options.get("@agentic_workspace_role") ?? "",
+						"#{pane_dead}": instanceState === "dead" ? "1" : "0",
+					};
+					if (format && format in values) return [values[format]!];
 					return [
 						[
 							session.tmuxName,
@@ -85,14 +98,35 @@ describe("SessionProcess tmux instance lifecycle", () => {
 				throw new Error("No OS process probes/signals expected");
 			},
 		};
-		return { process: new SessionProcess(runner, root, server), events, killedPaneIds, options, pane, server };
+		return {
+			process: new SessionProcess(runner, root, server),
+			events,
+			killedPaneIds,
+			options,
+			pane,
+			server,
+			setPanePid: (value: string) => {
+				panePid = value;
+			},
+		};
 	}
 
-	it("explicitly stops a live owned pane without OS-group probes or signals", async () => {
+	it("stops the confirmed pane process tree before removing its owned pane", async () => {
 		const f = await fixture();
-		await f.process.kill({ ...session, cwd: await realpath(session.cwd) });
-		expect(f.events).toEqual(["kill-pane"]);
-		expect(f.options.size).toBe(0);
+		const child = Bun.spawn(["/bin/sleep", "60"], { detached: true, stdout: "ignore", stderr: "ignore" });
+		f.setPanePid(String(child.pid));
+		try {
+			await f.process.kill({ ...session, cwd: await realpath(session.cwd) });
+			expect(await child.exited).not.toBe(0);
+			expect(f.events).toEqual(["kill-pane"]);
+			expect(f.options.size).toBe(0);
+		} finally {
+			try {
+				process.kill(child.pid, "SIGKILL");
+			} catch {
+				// The confirmed process tree may already have exited.
+			}
+		}
 	});
 
 	it("cleans a retained dead pane and makes it ready for the saved-ID relaunch", async () => {
@@ -119,6 +153,22 @@ describe("SessionProcess tmux instance lifecycle", () => {
 		const currentPaneId = await current.process.paneId(currentRecord, { roles: ["live-preview"] });
 		await current.process.killCaptured(currentRecord, currentPaneId);
 		expect(current.killedPaneIds).toEqual(["%731"]);
+	});
+
+	it("fails closed on a malformed pane PID before pane teardown", async () => {
+		const f = await fixture();
+		f.setPanePid("not-a-pid");
+		await expect(f.process.kill({ ...session, cwd: await realpath(session.cwd) })).rejects.toThrow(
+			/refusing pane teardown/,
+		);
+		expect(f.events).toEqual([]);
+	});
+
+	it("treats an already-exited pane process as stopped and still removes the pane", async () => {
+		const f = await fixture();
+		f.setPanePid("2147483647");
+		await f.process.kill({ ...session, cwd: await realpath(session.cwd) });
+		expect(f.events).toEqual(["kill-pane"]);
 	});
 
 	it("treats a conclusive absent instance as already stopped", async () => {
@@ -204,19 +254,20 @@ describe("SessionProcess tmux instance lifecycle", () => {
 	it("never routes input or attach through a wrong-name pane and does not report it missing", async () => {
 		const f = await fixture();
 		let sends = 0;
-		f.server.cmd = async (command: string) => {
-			if (command === "list-panes")
-				return [
-					[
-						"foreign-tmux-name",
-						f.options.get("@agentic_workspace_root"),
-						session.taskId,
-						session.id,
-						"live-preview",
-						"%731",
-						"0",
-					].join("\t"),
-				];
+		f.server.cmd = async (command: string, args: readonly string[] = []) => {
+			if (command === "list-panes") {
+				const format = args.at(-1);
+				const values: Record<string, string> = {
+					"#{pane_id}": "%731",
+					"#{session_name}": "foreign-tmux-name",
+					"#{@agentic_workspace_root}": f.options.get("@agentic_workspace_root") ?? "",
+					"#{@agentic_workspace_task}": session.taskId,
+					"#{@agentic_workspace_session}": session.id,
+					"#{@agentic_workspace_role}": "live-preview",
+					"#{pane_dead}": "0",
+				};
+				return format && format in values ? [values[format]!] : [];
+			}
 			if (command === "send-keys") sends++;
 			return [""];
 		};

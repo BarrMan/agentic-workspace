@@ -14,7 +14,7 @@ async function repository() {
 	roots.push(root);
 	const agenticWorkspaceDirectory = join(root, ".agentic-workspace");
 	const taskContent =
-		"---\ntask_schema_version: 3\nid: BACK-23\ntitle: Artifacts\nstatus: To Do\nassignee: []\ncreated_date: 2025-01-01\nlabels: []\ndependencies: []\n---\n";
+		"---\ntask_schema_version: 3\nid: BACK-23\ntitle: Artifacts\nstatus: To Do\ncreated_date: 2025-01-01\nlabels: []\ndependencies: []\n---\n";
 	await mkdir(join(agenticWorkspaceDirectory, "tasks", "back-23"), { recursive: true });
 	await writeFile(join(agenticWorkspaceDirectory, "tasks", "back-23", "task.md"), taskContent);
 	await mkdir(join(agenticWorkspaceDirectory, "tasks", "back-23", "artifacts"));

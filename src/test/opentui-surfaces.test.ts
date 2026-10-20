@@ -7,7 +7,7 @@ import { mountOpenTuiBoard } from "../renderer/opentui/board.ts";
 import { mountOpenTuiWorkspace } from "../renderer/opentui/workspace.ts";
 
 function task(id: string, status = "Todo"): Task {
-	return { id, title: `Task ${id}`, status, assignee: [], createdDate: "2026-01-01", labels: [], dependencies: [] };
+	return { id, title: `Task ${id}`, status, createdDate: "2026-01-01", labels: [], dependencies: [] };
 }
 
 function attachSurfaceParent(setup: TestRendererSetup): BoxRenderable {

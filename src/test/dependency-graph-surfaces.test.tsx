@@ -7,7 +7,7 @@ import { generateTaskDetailSections } from "../renderer/opentui/task-detail-cont
 const STATUSES = ["To Do", "In Progress", "Done"] as const;
 
 function makeTask(id: string, title: string, dependencies: string[] = [], status = "To Do"): Task {
-	return { id, title, status, assignee: [], createdDate: "2026-01-01", labels: [], dependencies };
+	return { id, title, status, createdDate: "2026-01-01", labels: [], dependencies };
 }
 
 const CORPUS = [

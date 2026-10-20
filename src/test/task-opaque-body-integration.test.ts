@@ -25,7 +25,6 @@ describe("opaque task body integration", () => {
 			id: "task-1",
 			title: "Opaque body",
 			status: "To Do",
-			assignee: [],
 			createdDate: "2026-09-30 12:00",
 			labels: [],
 			dependencies: [],

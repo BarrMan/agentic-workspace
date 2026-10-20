@@ -29,7 +29,6 @@ function task(id: string, title: string, rawContent: string, extra: Partial<Task
 		description: rawContent,
 		rawContent: "",
 		status: "To Do",
-		assignee: [],
 		labels: [],
 		dependencies: [],
 		createdDate: "2026-09-30",

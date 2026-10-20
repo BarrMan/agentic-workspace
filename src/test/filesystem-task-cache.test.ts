@@ -12,7 +12,6 @@ function task(id: string, title: string): Task {
 		id,
 		title,
 		status: "To Do",
-		assignee: ["@owner"],
 		createdDate: "2026-08-10",
 		labels: ["cache"],
 		dependencies: [],
@@ -55,7 +54,7 @@ describe("FileSystem task parse cache", () => {
 		if (firstActive[0]?.references?.[0]) {
 			firstActive[0].references[0] = "mutated/reference.md";
 		}
-		firstCompleted[0]?.assignee.push("@mutated");
+		firstCompleted[0]?.labels.push("mutated");
 
 		const [secondActive, secondCompleted] = await Promise.all([
 			filesystem.listTasks(),
@@ -64,7 +63,7 @@ describe("FileSystem task parse cache", () => {
 		expect(secondActive[0]).not.toBe(firstActive[0]);
 		expect(secondActive[0]?.labels).toEqual(["cache"]);
 		expect(secondActive[0]?.references?.[0]).toBe("docs/cached.md");
-		expect(secondCompleted[0]?.assignee).toEqual(["@owner"]);
+		expect(secondCompleted[0]?.labels).toEqual(["cache"]);
 	});
 
 	it("discovers only task.md records in containers and ignores artifact Markdown", async () => {

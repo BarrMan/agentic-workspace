@@ -35,7 +35,6 @@ const tasks: Task[] = ["T1", "T2"].map((id) => ({
 	id,
 	title: id,
 	status: "To Do",
-	assignee: [],
 	createdDate: "2026-01-01",
 	labels: [],
 	dependencies: [],

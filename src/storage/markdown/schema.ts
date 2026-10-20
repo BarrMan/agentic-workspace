@@ -3,7 +3,6 @@ export const TASK_FRONTMATTER_FIELDS = {
 	ID: "id",
 	TITLE: "title",
 	STATUS: "status",
-	ASSIGNEE: "assignee",
 	REPORTER: "reporter",
 	CREATED_DATE: "created_date",
 	UPDATED_DATE: "updated_date",
@@ -33,8 +32,6 @@ export const MILESTONE_FRONTMATTER_FIELDS = {
 	DUE_DATE: "due_date",
 	DESCRIPTION: "description",
 } as const;
-
-export const FRONTMATTER_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}(?: \d{2}:\d{2})?$/;
 
 export const TASK_FRONTMATTER_SCHEMA_VERSION = 3;
 export const MILESTONE_FRONTMATTER_SCHEMA_VERSION = 1;

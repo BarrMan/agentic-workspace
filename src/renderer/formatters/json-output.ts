@@ -1,4 +1,5 @@
 import { isAbsolute, relative } from "node:path";
+import { DateTime } from "luxon";
 import type { ListPage } from "../../cli/list-window.ts";
 import type { TaskDetail, TaskListItem } from "../../controller/task-detail.ts";
 import type { DependencyGraph } from "../../model/task/dependency-graph.ts";
@@ -13,7 +14,6 @@ type TaskSummaryJson = {
 	type: string | null;
 	priority: string | null;
 	project: string | null;
-	assignees: string[];
 	reporter: string | null;
 	labels: string[];
 	milestone: string | null;
@@ -79,16 +79,11 @@ function nullableDescription(value: string | undefined): string | null {
 
 function normalizePublicDate(value: string | undefined): string | null {
 	if (!value) return null;
-	if (/^\d{4}-\d{2}-\d{2}$/.test(value)) return value;
-
-	const minutePrecision = value.match(/^(\d{4}-\d{2}-\d{2})[ T](\d{2}:\d{2})(?::(\d{2}))?(?:\.\d+)?Z?$/);
-	if (minutePrecision) {
-		const [, date, time, seconds = "00"] = minutePrecision;
-		return `${date}T${time}:${seconds}Z`;
-	}
-
-	const parsed = new Date(value);
-	return Number.isNaN(parsed.getTime()) ? value : parsed.toISOString().replace(/\.\d{3}Z$/, "Z");
+	const iso = DateTime.fromISO(value, { zone: "utc", setZone: true });
+	const parsed = iso.isValid ? iso : DateTime.fromSQL(value, { zone: "utc", setZone: true });
+	if (!parsed.isValid) return value;
+	if (DateTime.fromFormat(value, "yyyy-MM-dd", { zone: "utc" }).isValid) return parsed.toFormat("yyyy-MM-dd");
+	return parsed.toUTC().toISO({ suppressMilliseconds: true }) ?? value;
 }
 
 function toTaskSummaryJson(task: TaskListItem): TaskSummaryJson {
@@ -99,7 +94,6 @@ function toTaskSummaryJson(task: TaskListItem): TaskSummaryJson {
 		type: nullable(task.type),
 		priority: nullable(task.priority),
 		project: nullable(task.project),
-		assignees: task.assignee ?? [],
 		reporter: nullable(task.reporter),
 		labels: task.labels ?? [],
 		milestone: nullable(task.milestone),
@@ -109,7 +103,7 @@ function toTaskSummaryJson(task: TaskListItem): TaskSummaryJson {
 		ordinal: task.ordinal ?? null,
 		createdAt: normalizePublicDate(task.createdDate),
 		updatedAt: normalizePublicDate(task.updatedDate),
-		dueDate: normalizePublicDate(task.dueDate),
+		dueDate: task.dueDate ?? null,
 		isReady: task.isReady,
 	};
 }

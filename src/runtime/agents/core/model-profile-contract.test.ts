@@ -59,9 +59,10 @@ describe("approved harness model profile contract", () => {
 		}
 	});
 
-	test("model identifiers are data and command composition is rejected", () => {
-		for (const invalid of ["model; rm -rf /", "model && other", "model|other", "$(touch /tmp/x)", "model\nother"]) {
-			expect(() => withExplicitModel(preset("pi", ["pi"]), invalid)).toThrow();
+	test("opaque model IDs remain a single argument, including shell syntax and whitespace", () => {
+		for (const id of ["model; rm -rf /", "model && other", "model|other", "$(touch /tmp/x)", "model\nother"]) {
+			const result = withExplicitModel(preset("pi", ["pi"]), id);
+			expect(result.command.slice(-2)).toEqual(["--model", id]);
 		}
 	});
 
@@ -88,7 +89,9 @@ describe("approved harness model profile contract", () => {
 					{ ...env, PROFILE_FIXTURE: `${harness}-secret-b` },
 					1_000,
 				);
-				expect(first.map(({ id }) => id)).toEqual(["openai/fast", "openai/slow"]);
+				expect(first.map(({ id }) => id)).toEqual(
+					harness === "opencode" ? ["invalid model", "openai/fast", "openai/slow"] : ["openai/fast", "openai/slow"],
+				);
 				expect(cached).toEqual(first);
 				expect(changedEnv).toEqual(first);
 			}
@@ -118,6 +121,7 @@ describe("approved harness model profile contract", () => {
 			expect(await discoverModels("opencode", [failing], {}, 1_000)).toEqual([]);
 			expect(await discoverModels("opencode", [], {}, 1_000)).toEqual([]);
 			expect(await discoverModels("opencode", [partial], {}, 1_000)).toEqual([
+				{ id: "bad model" },
 				{ id: "good/model" },
 				{ id: "second/model" },
 			]);

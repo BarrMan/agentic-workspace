@@ -141,61 +141,91 @@ describe("bare existing-agent observers", () => {
 	});
 
 	it("stop and detach dispose only local readers and never alter the pane or capture pipe", async () => {
-		const directory = await mkdtemp(join(tmpdir(), "agentic-workspace-fake-observer-dispose-"));
-		directories.push(directory);
-		const outputPath = join(directory, "session.log");
-		await writeFile(outputPath, "existing capture");
 		const commands: string[] = [];
 		const outputs: string[] = [];
-		const exec: TmuxExec = {
-			run: async (argv): Promise<TmuxResult> => {
-				commands.push(argv[0] ?? "");
-				return {
-					exitCode: 0,
-					stdout: argv[0] === "display-message" ? "0" : argv[0] === "capture-pane" ? "screen" : "",
-					stderr: "",
-					durationMs: 0,
-				};
-			},
-		};
-		const stopped = createExistingAgentHost({
-			exec,
-			paneId: "%93",
-			outputPath,
-			onOutput: (bytes) => outputs.push(new TextDecoder().decode(bytes)),
-			onError: (error) => {
-				throw error;
-			},
-		});
-		await stopped.start();
-		await stopped.stop();
-		const detached = createExistingAgentHost({
-			exec,
-			paneId: "%93",
-			outputPath,
-			onOutput: (bytes) => outputs.push(new TextDecoder().decode(bytes)),
-			onError: (error) => {
-				throw error;
-			},
-		});
-		await detached.start();
-		await expect(detached.detach?.()).resolves.toBe("retained");
-		const countAfterDetach = outputs.length;
 		let eventObserved = false;
-		const eventFence = watchFile(directory, () => {
-			eventObserved = true;
-		});
+		let phase = "fixture setup";
+		const startedAt = performance.now();
+		const diagnosticTimer = setTimeout(
+			() =>
+				console.error("observer stop/detach pre-timeout", {
+					phase,
+					elapsedMs: Math.round(performance.now() - startedAt),
+					eventObserved,
+					outputCount: outputs.length,
+					commands: [...commands],
+				}),
+			8_000,
+		);
 		try {
-			await appendFile(outputPath, " externally appended");
-			await waitFor(() => eventObserved, "Timed out waiting for filesystem event after external append");
-			expect(outputs).toHaveLength(countAfterDetach);
+			phase = "fixture directory";
+			const directory = await mkdtemp(join(tmpdir(), "agentic-workspace-fake-observer-dispose-"));
+			directories.push(directory);
+			const outputPath = join(directory, "session.log");
+			phase = "fixture write";
+			await writeFile(outputPath, "existing capture");
+			const exec: TmuxExec = {
+				run: async (argv): Promise<TmuxResult> => {
+					commands.push(argv[0] ?? "");
+					return {
+						exitCode: 0,
+						stdout: argv[0] === "display-message" ? "0" : argv[0] === "capture-pane" ? "screen" : "",
+						stderr: "",
+						durationMs: 0,
+					};
+				},
+			};
+			const stopped = createExistingAgentHost({
+				exec,
+				paneId: "%93",
+				outputPath,
+				onOutput: (bytes) => outputs.push(new TextDecoder().decode(bytes)),
+				onError: (error) => {
+					throw error;
+				},
+			});
+			phase = "stopped start";
+			await stopped.start();
+			phase = "stopped stop";
+			await stopped.stop();
+			const detached = createExistingAgentHost({
+				exec,
+				paneId: "%93",
+				outputPath,
+				onOutput: (bytes) => outputs.push(new TextDecoder().decode(bytes)),
+				onError: (error) => {
+					throw error;
+				},
+			});
+			phase = "detached start";
+			await detached.start();
+			phase = "detached detach";
+			await expect(detached.detach?.()).resolves.toBe("retained");
+			const countAfterDetach = outputs.length;
+			phase = "install event fence";
+			const eventFence = watchFile(directory, () => {
+				eventObserved = true;
+			});
+			try {
+				phase = "external append";
+				await appendFile(outputPath, " externally appended");
+				phase = "event fence wait";
+				await waitFor(() => eventObserved, "Timed out waiting for filesystem event after external append");
+				phase = "output count assertion";
+				expect(outputs).toHaveLength(countAfterDetach);
+			} finally {
+				phase = "close event fence";
+				eventFence.close();
+			}
+			phase = "final file read";
+			expect(await Bun.file(outputPath).text()).toBe("existing capture externally appended");
+			phase = "final assertions";
+			expect(
+				commands.some((command) => ["kill-pane", "kill-session", "kill-server", "pipe-pane"].includes(command)),
+			).toBe(false);
+			expect(outputs.join("")).toContain("screen");
 		} finally {
-			eventFence.close();
+			clearTimeout(diagnosticTimer);
 		}
-		expect(await Bun.file(outputPath).text()).toBe("existing capture externally appended");
-		expect(
-			commands.some((command) => ["kill-pane", "kill-session", "kill-server", "pipe-pane"].includes(command)),
-		).toBe(false);
-		expect(outputs.join("")).toContain("screen");
 	});
 });

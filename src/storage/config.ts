@@ -101,9 +101,6 @@ export const AGENT_PRESENTATION_METADATA: Record<
 	pi: { resumeFlag: "--session", allowManualModel: false },
 };
 
-export const YOLO_PRESENTATION_EXPLANATION =
-	"OpenCode uses --auto; Claude uses full bypass (--dangerously-skip-permissions), even in read-only PLAN. Pi has no verified flag. Permission auto-acceptance never approves artifacts; only you may approve them or change .artifacts.json. Profile path rules are not a security boundary under YOLO; shell/MCP can bypass them.";
-
 function clone<T>(value: T): T {
 	return structuredClone(value);
 }

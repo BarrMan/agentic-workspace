@@ -224,7 +224,6 @@ function task(id: string, overrides: Partial<Task> = {}): Task {
 		id,
 		title: `Task ${id}`,
 		status: "To Do",
-		assignee: [],
 		createdDate: "2026-10-05",
 		labels: [],
 		dependencies: [],

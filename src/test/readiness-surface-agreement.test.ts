@@ -41,7 +41,7 @@ describe("readiness agreement across surfaces", () => {
 		// Dates come from the run clock so the fixture never ages into a different meaning.
 		const createdDate = new Date().toISOString().slice(0, 10);
 		const addTask = async (id: string, title: string, status: string, dependencies: string[] = []) => {
-			await core.createTask({ id, title, status, assignee: [], labels: [], dependencies, createdDate, rawContent: "" });
+			await core.createTask({ id, title, status, labels: [], dependencies, createdDate, rawContent: "" });
 		};
 
 		await addTask("task-1", "Completed dependency", "Done");
@@ -152,7 +152,6 @@ describe("readiness agreement across surfaces", () => {
 			id: "task-7",
 			title: "Unfinished unpadded identity",
 			status: "In Progress",
-			assignee: [],
 			labels: [],
 			dependencies: [],
 			createdDate,
@@ -162,7 +161,6 @@ describe("readiness agreement across surfaces", () => {
 			id: "TASK-07",
 			title: "Finished padded identity",
 			status: "Done",
-			assignee: [],
 			labels: [],
 			dependencies: [],
 			createdDate,
@@ -172,7 +170,6 @@ describe("readiness agreement across surfaces", () => {
 			id: "task-8",
 			title: "Waits on the contested identity",
 			status: "To Do",
-			assignee: [],
 			labels: [],
 			dependencies: ["task-7"],
 			createdDate,
@@ -210,7 +207,6 @@ describe("search JSON readiness for a contested identity", () => {
 			id,
 			title,
 			status: "To Do",
-			assignee: [],
 			labels: [],
 			dependencies,
 			createdDate,

@@ -1,4 +1,4 @@
-import { lstat, realpath, rm, rmdir, stat } from "node:fs/promises";
+import { lstat, realpath, rm, rmdir, stat, unlink } from "node:fs/promises";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import type { Core } from "../controller/agentic-workspace.ts";
 import type { OwnedNativeSessionStops } from "../filesystem/git/task-worktree-cleanup.ts";
@@ -87,7 +87,6 @@ import {
 	readWorkspaceContext,
 	readWorkspaceRequests,
 	type SessionHandoff,
-	WORKSPACE_CONTEXT_ENV,
 	type WorkspaceContext,
 	type WorkspaceRequest,
 	workspaceContextInto,
@@ -135,18 +134,19 @@ async function isDirectory(path: string): Promise<boolean> {
 	}
 }
 
-/** Best-effort unlink for a deleted session's sidecar files; a missing file is not an error. */
-async function removeFile(path: string): Promise<void> {
-	try {
-		await rm(path, { force: true });
-	} catch {
-		// Sidecar cleanup never blocks deleting the durable record.
-	}
-}
-
 async function removeOwnedPath(path: string, recursive = false): Promise<void> {
 	try {
 		await rm(path, { force: true, recursive });
+	} catch (error) {
+		if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+	}
+}
+
+async function unlinkOwnedFile(path: string): Promise<void> {
+	try {
+		const file = await lstat(path);
+		if (!file.isFile() || file.isSymbolicLink()) throw new Error(`Refusing to unlink non-regular owned file ${path}.`);
+		await unlink(path);
 	} catch (error) {
 		if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
 	}
@@ -216,7 +216,7 @@ export class AgentSessionService {
 			this.server = options.tmuxServer;
 			this.exec = createTmuxExec({
 				socketName: process.env.AGENTIC_WORKSPACE_TMUX_SOCKET?.trim() || "default",
-				environment: { ...process.env, TMUX: "" },
+				environment: { ...process.env },
 			});
 		} else {
 			const transport = createSessionTransport();
@@ -413,11 +413,19 @@ export class AgentSessionService {
 		taskId: string,
 	): Promise<{ outputPath: string; bootstrapPath: string }> {
 		if (!/^[A-Za-z0-9._-]+$/.test(session.id)) throw new Error(`Session ${session.id} has an invalid identity.`);
+		const canonicalParent = await realpath(dirname(taskDir));
+		const canonicalTaskDir = await canonicalDirectoryTarget(taskDir);
+		if (
+			!isContainedPath(canonicalParent, canonicalTaskDir) ||
+			relative(canonicalParent, canonicalTaskDir) !== basename(taskDir)
+		)
+			throw new Error(`Cannot delete session ${session.id}: its task session directory is redirected.`);
 		const sidecars = [
 			{ path: session.outputPath, suffix: ".log" },
 			{ path: session.bootstrapPath, suffix: ".md" },
 		] as const;
 		const expected = sidecars.map(({ suffix }) => join(taskDir, `${session.id}${suffix}`));
+		const canonicalExpected = sidecars.map(({ suffix }) => join(canonicalTaskDir, `${session.id}${suffix}`));
 		for (const [index, { path }] of sidecars.entries()) {
 			const expectedPath = resolve(expected[index]!);
 			const recordedPath = resolve(path);
@@ -426,14 +434,14 @@ export class AgentSessionService {
 					`Cannot purge task ${taskId}: session ${session.id} has an untrusted sidecar path outside its task session directory.`,
 				);
 			try {
-				const file = await lstat(expectedPath);
+				const file = await lstat(canonicalExpected[index]!);
 				if (!file.isFile() || file.isSymbolicLink())
 					throw new Error(`Cannot purge task ${taskId}: session ${session.id} sidecar is not a regular owned file.`);
 			} catch (error) {
 				if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
 			}
 		}
-		return { outputPath: expected[0]!, bootstrapPath: expected[1]! };
+		return { outputPath: canonicalExpected[0]!, bootstrapPath: canonicalExpected[1]! };
 	}
 
 	/**
@@ -548,8 +556,8 @@ export class AgentSessionService {
 	async delete(taskId: string, sessionId: string, options: { force?: boolean } = {}): Promise<void> {
 		await withTaskSessionAdmission(this.core, taskId, async (task) => {
 			const session = this.session(await this.store.read(task.id), sessionId);
-			const { taskDir } = await this.store.paths(task.id);
-			const sidecars = await this.validateOwnedSessionSidecars(session, taskDir, task.id);
+			const paths = await this.store.paths(task.id);
+			const sidecars = await this.validateOwnedSessionSidecars(session, paths.taskDir, task.id);
 			const pendingNative = session.nativeWorkspace === true && session.status === AGENT_SESSION_STATUS.STARTING;
 			const live = session.status === AGENT_SESSION_STATUS.RUNNING || session.status === AGENT_SESSION_STATUS.STARTING;
 			if (live && !pendingNative) {
@@ -561,7 +569,7 @@ export class AgentSessionService {
 			}
 			await deleteWorkspaceRequest(this.core.projectRoot, session.id);
 			await this.store.remove(task.id, session.id);
-			await Promise.all([removeFile(sidecars.outputPath), removeFile(sidecars.bootstrapPath)]);
+			await Promise.all([unlinkOwnedFile(sidecars.outputPath), unlinkOwnedFile(sidecars.bootstrapPath)]);
 		});
 	}
 
@@ -743,7 +751,7 @@ export class AgentSessionService {
 						this.store,
 						this.process,
 						task,
-						{ record, preset, profile, environment, settings },
+						{ record, modeId, preset, profile, environment, settings },
 						(taskId, observed, preserveQueuedRequest) =>
 							this.settleObservedSession(taskId, observed, preserveQueuedRequest),
 					));
@@ -893,7 +901,6 @@ export class AgentSessionService {
 					intent,
 					prepare: resume ? undefined : launchPreset.prepare,
 					bootstrapBeforeCreate: !directReservation,
-					clearWorkspaceContext: !!directReservation,
 					preflight: options.preflight,
 					environment: options.environment,
 				},
@@ -1703,6 +1710,9 @@ export class AgentSessionService {
 					repositoryRoot: roots.repositoryRoot,
 					taskRoot: roots.taskRoot,
 					cwd: roots.cwd,
+					taskId: task.id,
+					modeId,
+					sessionId: target.id,
 				});
 				if (
 					context?.conversation !== undefined &&
@@ -1717,7 +1727,6 @@ export class AgentSessionService {
 						conversation: context.conversation,
 						...(context.nativeSessionId ? { nativeSessionId: context.nativeSessionId } : {}),
 					});
-				else delete prepared.env[WORKSPACE_CONTEXT_ENV];
 				try {
 					const timeoutMs = Number(process.env.AGENTIC_WORKSPACE_ASK_TIMEOUT_MS) || ASK_TIMEOUT_MS;
 					const result = await this.runner.run(["/bin/sh", "-lc", prepared.command], {

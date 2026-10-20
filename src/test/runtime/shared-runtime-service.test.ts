@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, mock } from "bun:test";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, mock } from "bun:test";
 import { randomUUID } from "node:crypto";
 import { chmod, mkdir, mkdtemp, readFile, realpath, rename, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -21,15 +21,20 @@ import {
 	upsertAgentConfiguration,
 } from "../../storage/config.ts";
 import { SessionStore } from "../../storage/session-store.ts";
+import { startPaneProcess } from "../agent-test-helpers.ts";
 import { coreFileSystem, initializeTestProject } from "../test-utils.ts";
 
 const realPrepareAgentLaunch = sessionLaunch.prepareAgentLaunch;
 const realPrepareAgentLaunchResources = sessionLaunch.prepareAgentLaunchResources;
 mock.module("../../lib/process-tree.ts", () => ({
 	...processTree,
-	readProcessTable: () => [{ pid: 4242, ppid: 1, name: "bun", state: "running", start_time_unix_ms: 4242 }],
 	terminateProcessTree: async () => "terminated",
 }));
+let paneProcess: Awaited<ReturnType<typeof startPaneProcess>>;
+beforeAll(async () => {
+	paneProcess = await startPaneProcess();
+});
+afterAll(async () => await paneProcess?.stop());
 let afterPrepareAgentLaunch:
 	| ((
 			prepared: Awaited<ReturnType<typeof sessionLaunch.prepareAgentLaunch>>,
@@ -91,7 +96,7 @@ class FakeRuntime implements ProcessRunner, TmuxServer {
 			this.failPrepare = false;
 			return { exitCode: 1, stdout: "", stderr: "fake predispatch failure" };
 		}
-		return { exitCode: 0, stdout: "4242 S", stderr: "" };
+		return { exitCode: 0, stdout: `${paneProcess.pid} S`, stderr: "" };
 	}
 
 	async newSession(options: { name?: string } = {}) {
@@ -156,47 +161,66 @@ class FakeRuntime implements ProcessRunner, TmuxServer {
 					]
 				: [];
 		}
-		if (command === "list-panes" && args.at(-1)?.includes("#{session_name}")) {
-			const target = args[args.indexOf("-t") + 1]?.replace(/^=/, "").replace(/:$/, "");
-			const matches = [...this.panesById].filter(([, pane]) => pane.name === target);
-			if (matches.length === 0)
+		if (command === "list-panes") {
+			const target = args[args.indexOf("-t") + 1] ?? "";
+			const format = args.at(-1) ?? "";
+			const sessionTarget = target.replace(/^=/, "").replace(/:.*$/, "");
+			const matches = [...this.panesById].filter(
+				([paneId, pane]) => paneId === target || (sessionTarget && pane.name === sessionTarget),
+			);
+			if (args.includes("-t") && matches.length === 0)
 				throw new TmuxCommandError({
 					args: [command, ...args],
 					exitCode: 1,
 					stderr: [`can't find session: ${target}`],
 					target: args[args.indexOf("-t") + 1] ?? "",
 				});
-			return matches.map(([paneId, pane]) => {
-				const identity = [
-					pane.name,
-					pane.options["@agentic_workspace_root"],
-					pane.options["@agentic_workspace_task"],
-					pane.options["@agentic_workspace_session"],
-					pane.options["@agentic_workspace_role"],
-				];
-				return [
-					...identity,
-					...(args.at(-1)?.includes("#{pane_pid}")
-						? ["4242", pane.dead ? "1" : "0", paneId]
-						: [paneId, pane.dead ? "1" : "0"]),
-				].join("\t");
-			});
-		}
-		if (command === "list-panes" && args.at(-1)?.includes("@agentic_workspace_native_session_id"))
-			return [...this.panesById].map(([paneId, pane]) =>
-				[
-					pane.options["@agentic_workspace_root"],
-					pane.options["@agentic_workspace_task"],
-					pane.options["@agentic_workspace_session"],
-					...(args.at(-1)?.includes("#{pane_id}") ? [paneId] : []),
-					pane.options["@agentic_workspace_native_session_id"],
-					...(args.at(-1)?.includes("@agentic_workspace_native_provider")
-						? [pane.options["@agentic_workspace_native_provider"]]
-						: []),
-				].join("\t"),
-			);
-		if (command === "list-panes")
-			return [...this.panesById].map(([paneId, pane]) =>
+			if (format === "#{pane_id}") return matches.map(([paneId]) => paneId);
+			if (format.startsWith("#{") && format.endsWith("}") && !format.includes(" ")) {
+				const field = format.slice(2, -1);
+				return matches.map(([paneId, pane]) =>
+					field === "session_name"
+						? pane.name
+						: field === "pane_id"
+							? paneId
+							: field === "pane_dead"
+								? pane.dead
+									? "1"
+									: "0"
+								: (pane.options[field] ?? ""),
+				);
+			}
+			if (format.includes("#{session_name}")) {
+				return matches.map(([paneId, pane]) => {
+					const identity = [
+						pane.name,
+						pane.options["@agentic_workspace_root"],
+						pane.options["@agentic_workspace_task"],
+						pane.options["@agentic_workspace_session"],
+						pane.options["@agentic_workspace_role"],
+					];
+					return [
+						...identity,
+						...(format.includes("#{pane_pid}")
+							? [String(paneProcess.pid), pane.dead ? "1" : "0", paneId]
+							: [paneId, pane.dead ? "1" : "0"]),
+					].join("\t");
+				});
+			}
+			if (format.includes("@agentic_workspace_native_session_id"))
+				return [...this.panesById].map(([paneId, pane]) =>
+					[
+						pane.options["@agentic_workspace_root"],
+						pane.options["@agentic_workspace_task"],
+						pane.options["@agentic_workspace_session"],
+						...(format.includes("#{pane_id}") ? [paneId] : []),
+						pane.options["@agentic_workspace_native_session_id"],
+						...(format.includes("@agentic_workspace_native_provider")
+							? [pane.options["@agentic_workspace_native_provider"]]
+							: []),
+					].join("\t"),
+				);
+			return matches.map(([paneId, pane]) =>
 				[
 					paneId,
 					pane.dead ? "1" : "0",
@@ -208,12 +232,14 @@ class FakeRuntime implements ProcessRunner, TmuxServer {
 					"",
 				].join("\t"),
 			);
+		}
 		if (command === "display-message") {
 			const format = args.at(-1);
+			if (format === "#{pane_pid}") return [String(paneProcess.pid)];
 			if (format === "#{@agentic_workspace_launch_resources}")
 				return [this.panesById.get(args[2] ?? "")?.options["@agentic_workspace_launch_resources"] ?? ""];
 			const pane = this.panesById.get(args[2] ?? "");
-			if (format === "#{pane_pid} #{pane_dead}") return [`4242 ${pane?.dead ? "1" : "0"}`];
+			if (format === "#{pane_pid} #{pane_dead}") return [`${paneProcess.pid} ${pane?.dead ? "1" : "0"}`];
 			return [format === "#{pane_id} #{pane_dead}" ? `${args[2]} ${pane?.dead ? "1" : "0"}` : "0 0"];
 		}
 		return [];

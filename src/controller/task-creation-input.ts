@@ -1,6 +1,5 @@
 import { normalizeStringList } from "../lib/string-list.ts";
 import { FALLBACK_STATUS } from "../model/constants.ts";
-import { normalizeAssignees } from "../model/task/assignee-filter.ts";
 import { normalizeDueDate } from "../model/task/due-date.ts";
 import type { AgenticWorkspaceConfig, Task, TaskCreateInput } from "../model/types.ts";
 
@@ -8,7 +7,6 @@ export type PreparedTaskCreationInput = {
 	title: string;
 	requestedParentTaskId: string | undefined;
 	labels: string[];
-	assignees: string[];
 	dependencies: string[];
 	references: string[];
 	documentation: string[];
@@ -33,7 +31,6 @@ export function prepareTaskCreationInput(input: TaskCreateInput): PreparedTaskCr
 		title: input.title.trim(),
 		requestedParentTaskId: input.parentTaskId?.trim(),
 		labels: normalizeStringList(input.labels) ?? [],
-		assignees: normalizeAssignees(normalizeStringList(input.assignee)),
 		dependencies: normalizeStringList(input.dependencies) ?? [],
 		references: normalizeStringList(input.references) ?? [],
 		documentation: normalizeStringList(input.documentation) ?? [],
@@ -84,12 +81,10 @@ export function buildCreatedTask(
 		createdDate: string;
 	},
 ): Task {
-	const assignee = input.assignee === undefined ? normalizeAssignees(config?.defaultAssignee) : prepared.assignees;
 	return {
 		id: resolved.id,
 		title: prepared.title,
 		status: resolved.status || config?.defaultStatus || FALLBACK_STATUS,
-		assignee,
 		labels: prepared.labels,
 		dependencies: resolved.dependencies,
 		references: prepared.references,

@@ -22,6 +22,8 @@ Harness does not decide task, mode, session, selection, or persistence state. It
 
 Harness may read and write its own provider receipts, resource files, sockets, and process handles. It never reads or writes workspace records or constructs workspace storage paths.
 
+Launch inherits the parent environment unchanged. The workspace sets child identity and the selected tmux socket explicitly; Harness/adapters and preset values cannot replace these protected values. No environment variables are stripped. Inherited credentials are exposed to the child as an accepted consequence. Process identity for termination is PID plus process name, without a start-time or UID fence; inspection failure or unknown identity fails closed and never authorizes termination or clean completion. Same-name PID reuse is an accepted limitation.
+
 ## Interface
 
 ```ts

@@ -20,7 +20,7 @@ import type {
 import { resolveLaunchPreset } from "./agents/opencode/opencode-resolution.ts";
 import { harnessRegistry } from "./agents/startup.ts";
 import { preflightAgentLaunch, prepareAgentLaunchResources } from "./session-launch.ts";
-import { BunRunner, missingPaneStderr, SessionProcess } from "./session-process.ts";
+import { BunRunner, SessionProcess } from "./session-process.ts";
 import { sessionActivityDir } from "./status-hooks.ts";
 import { workspaceContextInto } from "./workspace-context.ts";
 
@@ -369,10 +369,10 @@ export class Harness implements HarnessProvider {
 				const watcher = watch(dirname(statusPath), emit);
 				watcher.on("error", () => {});
 				const exitProbe = setInterval(() => {
-					void this.process.alive(record).then((pane) => {
-						const exited = pane.stdout.trim() === "1" || pane.stderr === missingPaneStderr(record.id);
+					void this.process.nativeRuntimeClassification(record).then((runtime) => {
+						const exited = runtime.status === "dead" || runtime.status === "missing";
 						if (active && exited) {
-							listener({ kind: "execution-exit", exitCode: pane.exitCode });
+							listener({ kind: "execution-exit", exitCode: runtime.status === "missing" ? 1 : 0 });
 							active = false;
 							watcher.close();
 							clearInterval(exitProbe);

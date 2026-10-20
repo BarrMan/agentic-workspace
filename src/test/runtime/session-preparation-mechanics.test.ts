@@ -189,6 +189,7 @@ describe("session preparation mechanics", () => {
 			task,
 			{
 				record,
+				modeId: "build",
 				preset: resumePreset,
 				profile: resumeProfile,
 				environment: {},

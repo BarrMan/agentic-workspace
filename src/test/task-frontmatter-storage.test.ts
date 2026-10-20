@@ -14,7 +14,6 @@ const task: Task = {
 	id: "TASK-1",
 	title: "Structured frontmatter",
 	status: "In Progress",
-	assignee: ["@alex"],
 	createdDate: "2026-09-30 12:00",
 	labels: ["storage"],
 	dependencies: [],

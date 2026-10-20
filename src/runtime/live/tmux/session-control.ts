@@ -8,7 +8,6 @@
  * stray literal can route this at a foreign session.
  */
 
-import { isMissingTmuxTarget } from "../../../lib/process-tree.ts";
 import { isAgenticWorkspaceSessionName } from "../../../model/session/session-utils.ts";
 import type { TmuxResult } from "./types.ts";
 
@@ -27,15 +26,24 @@ export function assertOwnedSessionName(sessionName: string): void {
 	}
 }
 
-/** tmux's own wordings for "no such session", plus the server-absent wordings. */
-const sessionAbsent = (output: string): boolean =>
-	isMissingTmuxTarget(output) || /can't find session|no sessions/i.test(output);
+/** Exact inventory lookup; a failed inventory is inconclusive, never absence. */
+async function sessionListed(sessionName: string, run: TmuxRunner): Promise<boolean> {
+	const inventory = await run(["list-sessions", "-F", "#{session_name}"]);
+	if (inventory.exitCode !== 0)
+		throw new Error(`could not inspect tmux sessions (exit ${inventory.exitCode}: ${inventory.stderr.trim()})`);
+	return inventory.stdout.split(/\r?\n/).some((name) => name === sessionName);
+}
 
 /** True only when the named session exists on the addressed server. Never throws on absence. */
 export async function hasOwnedSession(sessionName: string, run: TmuxRunner): Promise<boolean> {
 	assertOwnedSessionName(sessionName);
 	const result = await run(["has-session", "-t", sessionName]);
-	return result.exitCode === 0;
+	if (result.exitCode === 0) return true;
+	if (result.exitCode !== 1)
+		throw new Error(`could not inspect tmux session ${sessionName} (exit ${result.exitCode}: ${result.stderr.trim()})`);
+	if (await sessionListed(sessionName, run))
+		throw new Error(`tmux session ${sessionName} is listed but has-session failed`);
+	return false;
 }
 
 /**
@@ -53,9 +61,9 @@ export async function killOwnedSession(sessionName: string, run: TmuxRunner): Pr
 	if (probe.exitCode === 0) {
 		throw new Error(`tmux session ${sessionName} is still running after kill-session`);
 	}
-	if (!sessionAbsent(`${probe.stderr}${probe.stdout}`)) {
+	if (probe.exitCode !== 1 || (await sessionListed(sessionName, run))) {
 		throw new Error(
-			`could not prove tmux session ${sessionName} is gone after kill-session (probe exit ${probe.exitCode}: ${`${probe.stderr}${probe.stdout}`.trim()})`,
+			`could not prove tmux session ${sessionName} is gone after kill-session (probe exit ${probe.exitCode}: ${probe.stderr.trim()})`,
 		);
 	}
 }

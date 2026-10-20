@@ -53,7 +53,6 @@ function fixture(overrides: Partial<TaskHydrationInput> = {}) {
 		id: "T-1",
 		title: "title",
 		status: "To Do",
-		assignee: [],
 		createdDate: "today",
 		labels: [],
 		dependencies: [],

@@ -1,12 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { ProcessRunner } from "./session-process.ts";
 
-const RESERVED_ENVIRONMENT = [
-	"AGENTIC_WORKSPACE_PROJECT_DIR",
-	"AGENTIC_WORKSPACE_WORKTREE_DIR",
-	"AGENTIC_WORKSPACE_TASK_DIR",
-] as const;
-const PARENT_ENVIRONMENT = ["AGENTIC_WORKSPACE_CWD", "AGENTIC_WORKSPACE_TASK_ID"] as const;
 const EXPANSION_TIMEOUT_MS = 2_000;
 const STDOUT_LIMIT_BYTES = 1024 * 1024;
 const STDERR_LIMIT_BYTES = 64 * 1024;
@@ -106,27 +100,23 @@ export async function prepareHarnessEnvironment(
 	options: {
 		runner?: ProcessRunner;
 		inherited?: NodeJS.ProcessEnv;
+		childEnv?: Record<string, string>;
 		onWarning?: (text: string) => void;
 	} = {},
 ): Promise<Record<string, string>> {
 	const effective: Record<string, string> = {};
-	for (const [name, value] of Object.entries(options.inherited ?? process.env)) {
-		if (value !== undefined && !(PARENT_ENVIRONMENT as readonly string[]).includes(name)) effective[name] = value;
-	}
-	Object.assign(effective, {
-		AGENTIC_WORKSPACE_PROJECT_DIR: paths.projectDir,
-		AGENTIC_WORKSPACE_WORKTREE_DIR: paths.worktreeDir,
-		AGENTIC_WORKSPACE_TASK_DIR: paths.taskDir,
-	});
-
-	for (const name of RESERVED_ENVIRONMENT) {
-		if (Object.hasOwn(presetEnv, name))
-			options.onWarning?.(`Ignoring preset override for reserved environment variable ${name}.`);
-	}
-
+	for (const [name, value] of Object.entries(options.inherited ?? process.env))
+		if (value !== undefined) effective[name] = value;
+	Object.assign(
+		effective,
+		{
+			AGENTIC_WORKSPACE_PROJECT_DIR: paths.projectDir,
+			AGENTIC_WORKSPACE_WORKTREE_DIR: paths.worktreeDir,
+			AGENTIC_WORKSPACE_TASK_DIR: paths.taskDir,
+		},
+		options.childEnv,
+	);
 	for (const [name, value] of Object.entries(presetEnv)) {
-		if ((RESERVED_ENVIRONMENT as readonly string[]).includes(name)) continue;
-		const previous = effective[name];
 		try {
 			const { script, marker } = expansionScript(value);
 			const result = options.runner
@@ -138,14 +128,10 @@ export async function prepareHarnessEnvironment(
 				result.stdout.includes("\0")
 			) {
 				options.onWarning?.(`Could not expand preset environment variable ${name}; retaining its inherited value.`);
-				if (previous === undefined) delete effective[name];
-				else effective[name] = previous;
 				continue;
 			}
 			if (result.exitCode !== 0 || ("timedOut" in result && result.timedOut)) {
 				options.onWarning?.(`Could not expand preset environment variable ${name}; retaining its inherited value.`);
-				if (previous === undefined) delete effective[name];
-				else effective[name] = previous;
 				continue;
 			}
 			const markerSuffix = `:${marker}\n`;
@@ -155,9 +141,16 @@ export async function prepareHarnessEnvironment(
 			effective[name] = expanded;
 		} catch {
 			options.onWarning?.(`Could not expand preset environment variable ${name}; retaining its inherited value.`);
-			if (previous === undefined) delete effective[name];
-			else effective[name] = previous;
 		}
 	}
+	Object.assign(
+		effective,
+		{
+			AGENTIC_WORKSPACE_PROJECT_DIR: paths.projectDir,
+			AGENTIC_WORKSPACE_WORKTREE_DIR: paths.worktreeDir,
+			AGENTIC_WORKSPACE_TASK_DIR: paths.taskDir,
+		},
+		options.childEnv,
+	);
 	return effective;
 }

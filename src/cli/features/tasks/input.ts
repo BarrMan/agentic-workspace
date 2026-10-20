@@ -35,7 +35,6 @@ export function buildTaskCreateInput(
 			description: options.description || options.desc ? String(options.description || options.desc) : undefined,
 			status: options.status ? String(options.status) : undefined,
 			dueDate: typeof options.dueDate === "string" ? options.dueDate : undefined,
-			assignee: normalizeStringList(toStringArray(options.assignee)),
 			labels: normalizeStringList(toStringArray(options.label)),
 			dependencies: normalizeStringList([...toStringArray(options.dependsOn), ...toStringArray(options.dep)]),
 			references: normalizeStringList(toStringArray(options.ref)),

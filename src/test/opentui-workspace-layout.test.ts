@@ -235,10 +235,10 @@ describe("native workspace layout", () => {
 		const setup = await createTestRenderer({ width: 120, height: 40, exitOnCtrlC: false });
 		renderers.push(setup);
 		const entries = [
-			{ id: "BACK-1", title: "Doing task", status: "doing" },
+			{ id: "BACK-1", title: "Doing task", status: "Doing" },
 			{ id: "BACK-2", title: "First todo", status: "Todo" },
 			{ id: "BACK-3", title: "Review task", status: "Review" },
-			{ id: "BACK-4", title: "Second todo", status: "todo" },
+			{ id: "BACK-4", title: "Second todo", status: "Todo" },
 		];
 		const mount = mountOpenTuiWorkspace(setup.renderer, attachParent(setup), {
 			tasks: entries,
@@ -259,13 +259,14 @@ describe("native workspace layout", () => {
 		}
 	});
 
-	test("groups padded and case-variant task statuses into one configured bucket", async () => {
+	test("groups tasks with exact configured statuses into one bucket", async () => {
 		const setup = await createTestRenderer({ width: 120, height: 40, exitOnCtrlC: false });
 		renderers.push(setup);
 		const mount = mountOpenTuiWorkspace(setup.renderer, attachParent(setup), {
 			tasks: [
-				{ id: "BACK-1", title: "Padded todo", status: " To Do " },
-				{ id: "BACK-2", title: "Lowercase todo", status: "to do" },
+				{ id: "BACK-1", title: "Exact todo", status: "To Do" },
+				{ id: "BACK-2", title: "Padded todo", status: "To Do" },
+				{ id: "BACK-3", title: "Lowercase todo", status: "To Do" },
 			],
 			statuses: ["To Do"],
 			detailsVisible: false,
@@ -273,11 +274,11 @@ describe("native workspace layout", () => {
 		try {
 			await setup.flush();
 			const rows = setup.captureCharFrame().split("\n");
-			const positions = ["Padded todo", "Lowercase todo"].map((title) =>
+			const positions = ["Exact todo", "Padded todo", "Lowercase todo"].map((title) =>
 				rows.findIndex((line) => line.slice(0, 36).includes(title)),
 			);
 			expect(positions.every((position) => position >= 0)).toBe(true);
-			expect(positions[0]).toBeLessThan(positions[1] ?? -1);
+			expect(positions).toEqual([...positions].sort((left, right) => left - right));
 		} finally {
 			mount.dispose();
 		}

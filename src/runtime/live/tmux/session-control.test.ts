@@ -76,35 +76,50 @@ describe("hasOwnedSession", () => {
 		expect(calls).toEqual([["has-session", "-t", NAME]]);
 	});
 
-	it("reports a session absent from a non-zero exit", async () => {
-		const { run, calls } = scriptedRunner([result({ exitCode: 1, stderr: `can't find session: ${NAME}` })]);
+	it("reports a session absent only after a successful exact inventory check", async () => {
+		const { run, calls } = scriptedRunner([
+			result({ exitCode: 1, stderr: "tmux has-session failed" }),
+			result({ stdout: "some-other-session\n" }),
+		]);
 		await expect(hasOwnedSession(NAME, run)).resolves.toBe(false);
-		expect(calls).toEqual([["has-session", "-t", NAME]]);
+		expect(calls).toEqual([
+			["has-session", "-t", NAME],
+			["list-sessions", "-F", "#{session_name}"],
+		]);
+	});
+
+	it("does not treat a failed inventory query as absence", async () => {
+		const { run } = scriptedRunner([result({ exitCode: 1 }), result({ exitCode: 1, stderr: "permission denied" })]);
+		await expect(hasOwnedSession(NAME, run)).rejects.toThrow("could not inspect tmux sessions");
 	});
 });
 
 describe("killOwnedSession", () => {
-	it("kills exactly the named session then proves absence with can't find session", async () => {
+	it("kills exactly the named session then proves absence with exact inventory", async () => {
 		const { run, calls } = scriptedRunner([
 			result({ exitCode: 0 }),
-			result({ exitCode: 1, stderr: `can't find session: ${NAME}` }),
+			result({ exitCode: 1, stderr: "has-session returned nonzero" }),
+			result({ stdout: "" }),
 		]);
 		await expect(killOwnedSession(NAME, run)).resolves.toBeUndefined();
 		expect(calls).toEqual([
 			["kill-session", "-t", NAME],
 			["has-session", "-t", NAME],
+			["list-sessions", "-F", "#{session_name}"],
 		]);
 	});
 
-	it("accepts no server running as proof of absence", async () => {
+	it("does not accept a failed session inventory as proof of absence", async () => {
 		const { run, calls } = scriptedRunner([
 			result({ exitCode: 0 }),
-			result({ exitCode: 1, stderr: "no server running on /tmp/tmux-501/agentic-workspace-test-host-deadbeef" }),
+			result({ exitCode: 1, stderr: "has-session failed" }),
+			result({ exitCode: 1, stderr: "no server running" }),
 		]);
-		await expect(killOwnedSession(NAME, run)).resolves.toBeUndefined();
+		await expect(killOwnedSession(NAME, run)).rejects.toThrow("could not inspect tmux sessions");
 		expect(calls).toEqual([
 			["kill-session", "-t", NAME],
 			["has-session", "-t", NAME],
+			["list-sessions", "-F", "#{session_name}"],
 		]);
 	});
 
@@ -121,11 +136,13 @@ describe("killOwnedSession", () => {
 		const { run, calls } = scriptedRunner([
 			result({ exitCode: 0 }),
 			result({ exitCode: 1, stderr: "permission denied" }),
+			result({ stdout: `${NAME}\n` }),
 		]);
 		await expect(killOwnedSession(NAME, run)).rejects.toThrow(/could not prove/);
 		expect(calls).toEqual([
 			["kill-session", "-t", NAME],
 			["has-session", "-t", NAME],
+			["list-sessions", "-F", "#{session_name}"],
 		]);
 	});
 });

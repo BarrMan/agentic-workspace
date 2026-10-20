@@ -626,7 +626,7 @@ it("seeds a project-only mode catalog on explicit initialization and round-trips
 	expect((await getEditableAgentConfiguration(core, "root")).modes).toBeUndefined();
 });
 
-it("round-trips explicit mode model selections and rejects invalid model identifiers", async () => {
+it("round-trips opaque explicit mode model selections", async () => {
 	const project = await initializeAgentConfiguration(core, "project");
 	const plan = project.modes?.profiles.plan;
 	if (!plan || !project.modes) throw new Error("Missing seeded PLAN profile");
@@ -637,13 +637,8 @@ it("round-trips explicit mode model selections and rejects invalid model identif
 		id: "provider/model-v1",
 	});
 
-	for (const id of ["", "model\nother", "model\0id"]) {
-		const invalid = structuredClone(project);
-		const invalidPlan = invalid.modes?.profiles.plan;
-		if (!invalidPlan) throw new Error("Missing PLAN profile");
-		invalidPlan.model = { kind: "explicit", id };
-		await expect(upsertAgentConfiguration(core, "project", invalid)).rejects.toThrow(/invalid name, prompt, or model/);
-	}
+	plan.model = { kind: "explicit", id: "model\nother\0id" };
+	await expect(upsertAgentConfiguration(core, "project", project)).resolves.toBeUndefined();
 });
 
 it("does not reseed removed modes on ordinary saves and resolves renamed profiles by stable ID", async () => {

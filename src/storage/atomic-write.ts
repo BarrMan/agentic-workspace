@@ -1,7 +1,8 @@
+import { randomUUID } from "node:crypto";
 import { chmod, rename, unlink, writeFile } from "node:fs/promises";
 
 export async function writeAtomically(filepath: string, content: string, label: string, mode?: number): Promise<void> {
-	const temporaryPath = `${filepath}.${process.pid}.${Date.now()}.tmp`;
+	const temporaryPath = `${filepath}.${randomUUID()}.tmp`;
 	try {
 		await writeFile(temporaryPath, content, { flag: "wx" });
 		if (mode !== undefined) await chmod(temporaryPath, mode);

@@ -55,7 +55,6 @@ describe("next id across remote branches", () => {
 			id: "task-1",
 			title: "Remote Task",
 			status: "To Do",
-			assignee: [],
 			createdDate: "2025-06-08",
 			labels: [],
 			dependencies: [],

@@ -7,7 +7,6 @@ function makeTask(id: string, title: string): Task {
 		id,
 		title,
 		status: "To Do",
-		assignee: [],
 		createdDate: "2025-01-01",
 		labels: [],
 		dependencies: [],

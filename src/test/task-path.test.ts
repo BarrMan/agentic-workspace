@@ -12,7 +12,6 @@ async function writeTaskContainer(directory: string, id: string, title: string):
 		id,
 		title,
 		status: "To Do",
-		assignee: [],
 		createdDate: "2026-09-30",
 		labels: [],
 		dependencies: [],

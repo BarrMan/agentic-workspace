@@ -15,7 +15,6 @@ function task(id: string, title: string): Task {
 		id,
 		title,
 		status: "To Do",
-		assignee: [],
 		createdDate: "2026-01-01",
 		labels: [],
 		dependencies: [],

@@ -98,8 +98,19 @@ describe("CLI task create/edit descriptions", () => {
 		expect((await coreFileSystem(new Core(TEST_DIR)).loadTask("task-1"))?.labels).toEqual(["alpha", "beta"]);
 	});
 
+	it("resolves create and edit priorities to configured labels", async () => {
+		const core = new Core(TEST_DIR);
+		const config = await coreFileSystem(core).loadConfig();
+		if (!config) throw new Error("Expected initialized configuration");
+		await coreFileSystem(core).saveConfig({ ...config, priorities: ["Urgent"] });
+
+		await $`${cliCommand} task create "Priority" --priority " urgent "`.cwd(TEST_DIR).quiet();
+		await $`${cliCommand} task edit task-1 --priority "URGENT"`.cwd(TEST_DIR).quiet();
+		expect((await coreFileSystem(core).loadTask("task-1"))?.priority).toBe("Urgent");
+	});
+
 	it("treats a task edit with no field options as an interactive edit", () => {
 		expect(hasEditFieldFlags({})).toBe(false);
-		expect(hasEditFieldFlags({ assignee: undefined, label: undefined, dependsOn: undefined })).toBe(false);
+		expect(hasEditFieldFlags({ label: undefined, dependsOn: undefined })).toBe(false);
 	});
 });

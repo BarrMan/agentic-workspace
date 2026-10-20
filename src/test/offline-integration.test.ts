@@ -68,7 +68,6 @@ remote_operations: false
 			title: "Test task in offline mode",
 			description: "This task should be created without remote operations",
 			status: "To Do",
-			assignee: [],
 			createdDate: new Date().toISOString().split("T")[0] ?? "",
 			updatedDate: new Date().toISOString().split("T")[0] ?? "",
 			labels: ["feature"],

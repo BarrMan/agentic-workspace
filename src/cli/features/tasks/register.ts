@@ -216,10 +216,6 @@ export function registerTaskCommands(program: Command, { runtime, readOutput }: 
 		.option("--priority <priority>", "replacement priority")
 		.option("--type <type>", "replacement task type")
 		.option("--project <project>", "replacement project")
-		.option("--assignee <name>", "replace assignees (repeatable)", (value, previous: string[] = []) => [
-			...previous,
-			value,
-		])
 		.option("--label <label>", "replace labels (repeatable)", (value, previous: string[] = []) => [...previous, value])
 		.option("--add-label <label>", "add label (repeatable)", (value, previous: string[] = []) => [...previous, value])
 		.option("--remove-label <label>", "remove label (repeatable)", (value, previous: string[] = []) => [

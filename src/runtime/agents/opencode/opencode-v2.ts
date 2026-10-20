@@ -16,7 +16,7 @@ import type {
 } from "../core/agent.ts";
 import { appendArguments, filePrompt, readinessReceipts, shellQuote } from "../core/agent.ts";
 import { OPENCODE_CHROME_RULES } from "../core/chrome-rules.ts";
-import { discoverModels, sanitizeProfilePreset, withExplicitModel } from "../core/profile.ts";
+import { discoverModels, withExplicitModel } from "../core/profile.ts";
 import { OpenCodeSessionCapture } from "./opencode-session-capture.ts";
 import { createOpencodeV2CliPlugin } from "./opencode-v2-cli-plugin.ts";
 import { openCodeBootstrapForVersion } from "./opencode-version.ts";
@@ -148,10 +148,6 @@ export class OpencodeV2Agent implements HarnessInterface {
 
 	yoloFlag(): string | undefined {
 		return "--auto";
-	}
-
-	sanitizeLaunchPreset(preset: AgentPreset): AgentPreset {
-		return sanitizeProfilePreset(preset);
 	}
 
 	launchCommand({ preset, bootstrapPath, nativeSessionId }: LaunchCommandRequest): string {

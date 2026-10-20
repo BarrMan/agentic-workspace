@@ -135,18 +135,21 @@ describe("list windows", () => {
 		}
 	});
 
-	it("rejects invalid paging arguments before running the command action", async () => {
+	it("accepts zero and negative paging values and clamps them to an empty-or-first page", async () => {
 		for (const args of [
 			["--max-count", "0"],
 			["--skip", "-1"],
+			["--max-count", "-2"],
 		]) {
 			const command = taskListCommand().exitOverride();
-			let actionCalled = false;
+			let options: ReturnType<typeof command.opts> | undefined;
 			command.action(() => {
-				actionCalled = true;
+				options = command.opts();
 			});
-			await expect(command.parseAsync(["node", "cli", ...args])).rejects.toThrow();
-			expect(actionCalled).toBe(false);
+			await command.parseAsync(["node", "cli", ...args]);
+			expect(options).toBeDefined();
 		}
+		expect(selectListWindow(["a", "b"], windowOf(0, 0)).items).toEqual([]);
+		expect(selectListWindow(["a", "b"], windowOf(-1, 1)).items).toEqual(["a"]);
 	});
 });

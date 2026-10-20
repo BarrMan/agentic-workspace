@@ -10,7 +10,6 @@ export interface TaskEditArgs {
 	labels?: string[];
 	addLabels?: string[];
 	removeLabels?: string[];
-	assignee?: string[];
 	ordinal?: number;
 	dependencies?: string[];
 	references?: string[];

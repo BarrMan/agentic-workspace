@@ -1,22 +1,12 @@
-import { comparisonKey } from "../../lib/comparison-key.ts";
 import { DEFAULT_IN_PROGRESS_STATUS, DEFAULT_STATUSES } from "../constants.ts";
 
 type StatusConfigReader = { getStoredConfig(): Promise<{ statuses?: string[] } | null> };
 
 /**
- * The one status comparison key: trims and lowercases, preserving internal whitespace.
- * Use it for equality, filtering, and lane matching so every surface compares statuses alike.
+ * Statuses are configured labels, so equality and lookup use their exact stored spelling.
  */
 export function statusComparisonKey(status: string | null | undefined): string {
-	return comparisonKey(status);
-}
-
-/**
- * Whitespace-collapsing key for canonical status lookup only. `"In Progress"` and `"InProgress"`
- * resolve to the same configured label, while comparison keeps them distinct (see terminal status).
- */
-export function statusLookupKey(status: string | null | undefined): string {
-	return statusComparisonKey(status).replace(/\s+/g, "");
+	return status ?? "";
 }
 
 /**
@@ -26,20 +16,14 @@ export function statusLookupKey(status: string | null | undefined): string {
  */
 export function resolveInProgressStatus(statuses: readonly string[] | undefined): string | undefined {
 	const list = statuses && statuses.length > 0 ? statuses : [...DEFAULT_STATUSES];
-	const normalizedTarget = statusLookupKey(DEFAULT_IN_PROGRESS_STATUS);
-	const byName = list.find((status) => statusLookupKey(status) === normalizedTarget);
+	const byName = list.find((status) => status === DEFAULT_IN_PROGRESS_STATUS);
 	if (byName) return byName;
 	return list.length > 1 ? list[1] : undefined;
 }
 
 /** Synchronous canonical-status lookup over an already resolved status list. */
 export function findCanonicalStatus(input: string, statuses: readonly string[]): string | null {
-	const normalized = statusLookupKey(input);
-	if (!normalized) return null;
-	for (const status of statuses) {
-		if (statusLookupKey(status) === normalized) return status;
-	}
-	return null;
+	return statuses.includes(input) ? input : null;
 }
 
 /**
@@ -51,15 +35,11 @@ export async function getValidStatuses(core: StatusConfigReader): Promise<string
 }
 
 /**
- * Find the canonical status (matching config casing) for a given input.
- * Loads configured statuses and matches case-insensitively and space-insensitively.
+ * Find the configured status for an exact input.
  * `allowedStatuses` narrows the match set.
  * Returns the canonical value or null if no match is found.
  *
  * Examples:
- * - "todo" matches "To Do"
- * - "in progress" matches "In Progress"
- * - "DONE" matches "Done"
  */
 export async function getCanonicalStatus(
 	input: string | undefined,
@@ -80,34 +60,31 @@ export async function getCanonicalStatuses(
 	const statuses: string[] = [];
 	const seenValidStatuses = new Set<string>();
 	for (const status of [...(options.extraStatuses ?? []), ...configuredStatuses]) {
-		const key = statusLookupKey(status);
-		if (seenValidStatuses.has(key)) {
+		if (seenValidStatuses.has(status)) {
 			continue;
 		}
-		seenValidStatuses.add(key);
+		seenValidStatuses.add(status);
 		statuses.push(status);
 	}
-	const canonicalByNormalized = new Map(statuses.map((status) => [statusLookupKey(status), status] as const));
+	const configured = new Set(statuses);
 	const values: string[] = [];
 	const invalid: string[] = [];
 	const seen = new Set<string>();
 
 	for (const input of inputs) {
-		const raw = String(input ?? "").trim();
+		const raw = String(input ?? "");
 		if (!raw) {
 			continue;
 		}
-		const canonical = canonicalByNormalized.get(statusLookupKey(raw));
-		if (!canonical) {
+		if (!configured.has(raw)) {
 			invalid.push(raw);
 			continue;
 		}
-		const key = statusComparisonKey(canonical);
-		if (seen.has(key)) {
+		if (seen.has(raw)) {
 			continue;
 		}
-		seen.add(key);
-		values.push(canonical);
+		seen.add(raw);
+		values.push(raw);
 	}
 
 	return { values, invalid, validStatuses: statuses };

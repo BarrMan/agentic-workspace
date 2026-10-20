@@ -30,7 +30,6 @@ export interface Task {
 	id: string;
 	title: string;
 	status: TaskStatus;
-	assignee: string[];
 	reporter?: string;
 	createdDate: string;
 	updatedDate?: string;
@@ -86,7 +85,6 @@ export interface TaskCreateInput {
 	ordinal?: number;
 	milestone?: string;
 	labels?: string[];
-	assignee?: string[];
 	dependencies?: string[];
 	references?: string[];
 	documentation?: string[];
@@ -108,7 +106,6 @@ export interface TaskUpdateInput {
 	labels?: string[];
 	addLabels?: string[];
 	removeLabels?: string[];
-	assignee?: string[];
 	ordinal?: number;
 	dependencies?: string[];
 	addDependencies?: string[];
@@ -129,8 +126,6 @@ export interface TaskListFilter {
 	status?: string | string[];
 	excludeStatus?: string | string[];
 	type?: string | string[];
-	assignee?: string | string[];
-	unassigned?: boolean;
 	priority?: string;
 	project?: string | string[];
 	milestone?: string;
@@ -164,8 +159,6 @@ export interface SearchFilters {
 	type?: string | string[];
 	priority?: SearchPriorityFilter | SearchPriorityFilter[];
 	project?: string | string[];
-	assignee?: string | string[];
-	unassigned?: boolean;
 	labels?: string | string[];
 	/** Defaults to "any"; callers passing an explicitly typed label list use "all". */
 	labelMatch?: LabelMatchMode;
@@ -200,8 +193,6 @@ export interface PrefixConfig {
 export interface AgenticWorkspaceConfig {
 	agentConfiguration?: AgentConfiguration;
 	projectName: string;
-	/** Assignees applied to new tasks when none are provided. Empty or unset means no default. */
-	defaultAssignee?: string[];
 	defaultReporter?: string;
 	statuses: string[];
 	labels: string[];

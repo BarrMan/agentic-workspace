@@ -25,7 +25,7 @@ describe("harness profile helpers", () => {
 		const modeled = withExplicitModel(preset, "provider/new-model");
 		expect(modeled.command.filter((arg) => arg === "--model" || arg.startsWith("--model="))).toHaveLength(1);
 		expect(modeled.command).toContain("provider/new-model");
-		expect(() => withExplicitModel(preset, "bad; command")).toThrow(/unsupported/);
+		expect(withExplicitModel(preset, "bad; command").command).toContain("bad; command");
 	});
 
 	test("compatibility validation reports mismatches without replacing IDs", () => {

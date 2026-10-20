@@ -14,7 +14,7 @@ import {
 	upsertAgentConfiguration,
 } from "../../storage/config.ts";
 import { SessionStore } from "../../storage/session-store.ts";
-import { disableHarnessReadiness, writePiCapture } from "../agent-test-helpers.ts";
+import { disableHarnessReadiness, startPaneProcess, writePiCapture } from "../agent-test-helpers.ts";
 import { initializeTestProject } from "../test-utils.ts";
 
 type Pane = {
@@ -31,8 +31,10 @@ type Pane = {
 let originalXdgConfigHome: string | undefined;
 let testConfigHome: string;
 let restoreHarnessReadiness: (() => void) | undefined;
+let paneProcess: Awaited<ReturnType<typeof startPaneProcess>>;
 beforeAll(async () => {
 	restoreHarnessReadiness = disableHarnessReadiness();
+	paneProcess = await startPaneProcess();
 	originalXdgConfigHome = process.env.XDG_CONFIG_HOME;
 	testConfigHome = await mkdtemp(join(tmpdir(), "mode-session-service-config-"));
 	process.env.XDG_CONFIG_HOME = testConfigHome;
@@ -42,6 +44,7 @@ afterAll(async () => {
 	if (originalXdgConfigHome === undefined) delete process.env.XDG_CONFIG_HOME;
 	else process.env.XDG_CONFIG_HOME = originalXdgConfigHome;
 	await rm(testConfigHome, { recursive: true, force: true });
+	await paneProcess?.stop();
 });
 
 class FakeHarness implements ProcessRunner, TmuxServer {
@@ -125,10 +128,11 @@ class FakeHarness implements ProcessRunner, TmuxServer {
 		}
 		if (command === "display-message") {
 			if (args.includes("#{pid}")) return ["4242"];
+			if (args.at(-1) === "#{pane_pid}") return [String(paneProcess.pid)];
 			const id = args[args.indexOf("-t") + 1] ?? "";
 			if (args.some((arg) => arg.includes("@agentic_workspace_launch_resources")))
 				return [this.metadata.get(id)?.["@agentic_workspace_launch_resources"] ?? ""];
-			if (args.includes("#{pane_pid} #{pane_dead}")) return [`4242 ${this.dead.has(id) ? "1" : "0"}`];
+			if (args.includes("#{pane_pid} #{pane_dead}")) return [`${paneProcess.pid} ${this.dead.has(id) ? "1" : "0"}`];
 			return [`${id} ${this.dead.has(id) ? "1" : "0"}`];
 		}
 		return [];

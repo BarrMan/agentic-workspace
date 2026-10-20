@@ -176,21 +176,21 @@ Provide agents inside sessions and external applications with a selective public
 
 ### IF-API-010: Set the calling session's model
 
-**Description:** The CLI must set the calling session's mode model in project configuration to the model that session currently uses, independently of provider.
+**Description:** The CLI must set the calling session's mode model in project configuration to the opaque model ID that session currently uses, independently of provider. The workspace does not impose a model-ID character grammar; provider availability and errors remain governed by [CONFIG-010](configuration.md#config-010-model-discovery-and-availability).
 
 **Trigger:** The calling session requests that its current model be recorded for its mode.
 
 **Preconditions:** The calling session's mode and project configuration are available.
 
 **Behavior:**
-1. Record the model currently used by the calling session for its mode in project configuration.
+1. Record the opaque model ID currently used by the calling session for its mode in project configuration without local character-grammar validation.
 
 **Outcome:** The mode model in project configuration matches the calling session's current model, independent of provider.
 
 **Failures:** The operation fails if the project configuration cannot be updated; it must not record a different model.
 
 **Acceptance Criteria:**
-- The recorded mode model equals the calling session's current model, independently of provider.
+- The recorded mode model equals the calling session's current opaque model ID, independently of provider, without local character-grammar validation; provider availability and errors remain reported under CONFIG-010.
 
 ### IF-API-011: Exclude unsupported operations
 

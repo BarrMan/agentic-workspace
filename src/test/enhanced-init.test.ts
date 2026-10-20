@@ -31,7 +31,7 @@ describe("Enhanced init command", () => {
 		expect(config).toBeTruthy();
 		expect(config?.projectName).toBe("New Project");
 		expect(config?.statuses).toEqual(["To Do", "In Progress", "Done"]);
-		expect(config?.dateFormat).toBe("yyyy-mm-dd");
+		expect(config?.dateFormat).toBe("yyyy-MM-dd");
 	});
 
 	test("should preserve existing statuses and labels during re-initialization", async () => {
@@ -44,7 +44,7 @@ describe("Enhanced init command", () => {
 			labels: ["bug", "feature", "enhancement"],
 			milestones: ["v1.0", "v2.0"],
 			defaultStatus: "Backlog",
-			dateFormat: "dd/mm/yyyy",
+			dateFormat: "dd/MM/yyyy",
 			maxColumnWidth: 30,
 			agenticWorkspaceDirectory: "agentic-workspace",
 			prefixes: { task: "WORK" },
@@ -66,14 +66,14 @@ describe("Enhanced init command", () => {
 		expect(result.config.projectName).toBe("Custom Project Updated");
 		expect(result.config.statuses).toEqual(["Backlog", "In Progress", "Review", "Done"]);
 		expect(result.config.labels).toEqual(["bug", "feature", "enhancement"]);
-		expect(result.config.dateFormat).toBe("dd/mm/yyyy");
+		expect(result.config.dateFormat).toBe("dd/MM/yyyy");
 		expect(result.config.maxColumnWidth).toBe(30);
 		expect(result.config.prefixes?.task).toBe("WORK");
 
 		const reloaded = await coreFileSystem(core).loadConfig();
 		expect(reloaded?.statuses).toEqual(["Backlog", "In Progress", "Review", "Done"]);
 		expect(reloaded?.labels).toEqual(["bug", "feature", "enhancement"]);
-		expect(reloaded?.dateFormat).toBe("dd/mm/yyyy");
+		expect(reloaded?.dateFormat).toBe("dd/MM/yyyy");
 		expect(reloaded?.maxColumnWidth).toBe(30);
 	});
 
@@ -85,8 +85,7 @@ describe("Enhanced init command", () => {
 			statuses: ["To Do", "In Progress", "Done"],
 			labels: ["bug"],
 			defaultStatus: "To Do",
-			dateFormat: "yyyy-mm-dd",
-			defaultAssignee: ["@alex"],
+			dateFormat: "yyyy-MM-dd",
 			defaultReporter: "@bot",
 			includeDateTimeInDates: true,
 			onStatusChange: "echo changed",
@@ -105,7 +104,6 @@ describe("Enhanced init command", () => {
 
 		const reloaded = await coreFileSystem(core).loadConfig();
 		expect(reloaded?.projectName).toBe("Preserve Fields Project Updated");
-		expect(reloaded?.defaultAssignee).toEqual(["@alex"]);
 		expect(reloaded?.defaultReporter).toBe("@bot");
 		expect(reloaded?.includeDateTimeInDates).toBe(true);
 		expect(reloaded?.onStatusChange).toBe("echo changed");

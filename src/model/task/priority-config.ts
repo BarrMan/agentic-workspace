@@ -1,105 +1,37 @@
+import { DEFAULT_PRIORITIES } from "../constants.ts";
 import type { AgenticWorkspaceConfig } from "../types.ts";
 
-const DEFAULT_PRIORITY_OPTIONS = [
-	{ label: "High", value: "high" },
-	{ label: "Medium", value: "medium" },
-	{ label: "Low", value: "low" },
-] as const;
+type PrioritySource = Pick<AgenticWorkspaceConfig, "priorities"> | readonly string[] | null | undefined;
 
-export type PriorityOption = {
-	label: string;
-	value: string;
-};
-
-export function normalizePriorityValue(value: string | null | undefined): string | undefined {
-	const normalized = String(value ?? "")
-		.trim()
-		.toLowerCase()
-		.replace(/\s+/g, " ");
-	return normalized.length > 0 ? normalized : undefined;
+function labels(source?: PrioritySource): readonly string[] {
+	const configured = Array.isArray(source) ? source : source && "priorities" in source ? source.priorities : undefined;
+	return configured?.length ? configured : DEFAULT_PRIORITIES;
 }
 
-export function getPriorityOptions(
-	configOrPriorities?: Pick<AgenticWorkspaceConfig, "priorities"> | readonly string[] | null,
-): PriorityOption[] {
-	const configuredPriorities: readonly string[] = Array.isArray(configOrPriorities)
-		? configOrPriorities
-		: ((configOrPriorities as Pick<AgenticWorkspaceConfig, "priorities"> | null | undefined)?.priorities ?? []);
-	const options: PriorityOption[] = [];
-	const seen = new Set<string>();
-
-	for (const entry of configuredPriorities) {
-		const label = String(entry ?? "")
-			.trim()
-			.replace(/\s+/g, " ");
-		const value = label.toLowerCase();
-		if (!value || seen.has(value)) {
-			continue;
-		}
-		seen.add(value);
-		options.push({ label, value });
-	}
-
-	return options.length > 0 ? options : DEFAULT_PRIORITY_OPTIONS.map((option) => ({ ...option }));
+function key(value: string): string {
+	return value.trim().replace(/\s+/g, " ").toLowerCase();
 }
 
-export function getPriorityValues(
-	configOrPriorities?: Pick<AgenticWorkspaceConfig, "priorities"> | readonly string[] | null,
-): string[] {
-	return getPriorityOptions(configOrPriorities).map((option) => option.value);
+export function getPriorityLabels(source?: PrioritySource): string[] {
+	return [...labels(source)];
 }
 
-export function getPriorityLabels(
-	configOrPriorities?: Pick<AgenticWorkspaceConfig, "priorities"> | readonly string[] | null,
-): string[] {
-	return getPriorityOptions(configOrPriorities).map((option) => option.label);
+export function resolvePriorityLabel(value: string | null | undefined, source?: PrioritySource): string | undefined {
+	const wanted = key(value ?? "");
+	if (!wanted) return undefined;
+	const matches = labels(source).filter((label) => key(label) === wanted);
+	return matches.length === 1 ? matches[0] : undefined;
 }
 
-export function resolvePriorityValue(
-	value: string | null | undefined,
-	configOrPriorities?: Pick<AgenticWorkspaceConfig, "priorities"> | readonly string[] | null,
-): string | undefined {
-	const normalized = normalizePriorityValue(value);
-	if (!normalized) {
-		return undefined;
-	}
-	const allowed = new Set(getPriorityValues(configOrPriorities));
-	return allowed.has(normalized) ? normalized : undefined;
+export function prioritiesEqual(first: string | null | undefined, second: string | null | undefined): boolean {
+	return key(first ?? "") === key(second ?? "");
 }
 
-export function formatPriorityLabel(
-	value: string | null | undefined,
-	configOrPriorities?: Pick<AgenticWorkspaceConfig, "priorities"> | readonly string[] | null,
-): string {
-	const normalized = normalizePriorityValue(value);
-	if (!normalized) {
-		return "";
-	}
-	const configured = getPriorityOptions(configOrPriorities).find((option) => option.value === normalized);
-	if (configured) {
-		return configured.label;
-	}
-	return normalized
-		.split(" ")
-		.map((part) => (part ? `${part.charAt(0).toUpperCase()}${part.slice(1)}` : ""))
-		.join(" ");
+export function getPriorityRank(value: string | null | undefined, source?: PrioritySource): number {
+	const index = labels(source).findIndex((label) => prioritiesEqual(label, value));
+	return index < 0 ? 0 : labels(source).length - index;
 }
 
-export function getPriorityRank(
-	value: string | null | undefined,
-	configOrPriorities?: Pick<AgenticWorkspaceConfig, "priorities"> | readonly string[] | null,
-): number {
-	const normalized = normalizePriorityValue(value);
-	if (!normalized) {
-		return 0;
-	}
-	const values = getPriorityValues(configOrPriorities);
-	const index = values.indexOf(normalized);
-	return index === -1 ? 0 : values.length - index;
-}
-
-export function formatValidPriorityValues(
-	configOrPriorities?: Pick<AgenticWorkspaceConfig, "priorities"> | readonly string[] | null,
-): string {
-	return getPriorityLabels(configOrPriorities).join(", ");
+export function formatValidPriorityValues(source?: PrioritySource): string {
+	return getPriorityLabels(source).join(", ");
 }

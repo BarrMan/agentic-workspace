@@ -18,9 +18,8 @@ import {
 	resolveSessionSettings,
 	type TaskSessions,
 } from "../../model/session/types.ts";
-import { formatAssignee } from "../../model/task/assignee-filter.ts";
 import { getMilestoneLabel } from "../../model/task/milestones.ts";
-import { getPriorityOptions, getPriorityValues } from "../../model/task/priority-config.ts";
+import { getPriorityLabels } from "../../model/task/priority-config.ts";
 import { TaskOrdering } from "../../model/task/task-ordering.ts";
 import { TaskSearchIndex } from "../../model/task/task-search.ts";
 import { getTaskTypeValues } from "../../model/task/task-type-config.ts";
@@ -246,7 +245,6 @@ function taskEntry(task: Task): OpenTuiWorkspaceTaskEntry {
 		title: task.title,
 		status: task.status,
 		description: task.description,
-		assignees: task.assignee.map(formatAssignee).filter((assignee) => assignee !== null),
 		labels: task.labels,
 		priority: task.priority,
 	};
@@ -329,7 +327,7 @@ function editorFields(
 			label: "Priority",
 			options: [
 				{ label: "None", value: "" },
-				...getPriorityOptions(config).map((option) => ({ label: option.label, value: option.value })),
+				...getPriorityLabels(config).map((priority) => ({ label: priority, value: priority })),
 			],
 			value: draft.values.priority,
 		},
@@ -2499,7 +2497,7 @@ export class OpenTuiWorkspaceController {
 				status: uniqueValues([...(this.#config?.statuses ?? []), ...tasks.map((task) => task.status)]),
 				type: uniqueValues([...(this.#config?.types ?? []), ...tasks.map((task) => task.type)]),
 				project: uniqueValues([...(this.#config?.projects ?? []), ...tasks.map((task) => task.project)]),
-				priority: uniqueValues([...getPriorityValues(this.#config), ...tasks.map((task) => task.priority)]),
+				priority: uniqueValues([...getPriorityLabels(this.#config), ...tasks.map((task) => task.priority)]),
 				labels: uniqueValues(tasks.flatMap((task) => task.labels)),
 				milestone: uniqueValues([
 					...this.#milestones.map((milestone) => milestone.title),

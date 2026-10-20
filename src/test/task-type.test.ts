@@ -53,7 +53,6 @@ describe("task type field", () => {
 				id: "task-1",
 				title: "Round trip",
 				status: "To Do",
-				assignee: [],
 				createdDate: "2026-01-01",
 				labels: [],
 				dependencies: [],

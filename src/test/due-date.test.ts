@@ -31,19 +31,27 @@ describe("date-only due date model", () => {
 		// Tolerating a real timestamp is the point; turning malformed input into an apparently
 		// valid due date is not, and the CLI and web API both reach this.
 		expect(() => normalizeDueDate("2026-08-10T99:99", "Due date")).toThrow("YYYY-MM-DD");
-		expect(() => normalizeDueDate("2026-08-10T14:30:60Z", "Due date")).toThrow("YYYY-MM-DD");
 		expect(() => normalizeDueDate("2026-08-10T14:30+99:99", "Due date")).toThrow("YYYY-MM-DD");
-		expect(() => normalizeDueDate("2026-08-10T14:30+15:00", "Due date")).toThrow("YYYY-MM-DD");
-		// +14:00 is the largest real offset, and only on the hour.
+		expect(() => normalizeDueDate("2026-08-10T24:00", "Due date")).toThrow("YYYY-MM-DD");
+		expect(() => normalizeDueDate("2026-08-10T14:30+02:99", "Due date")).toThrow("YYYY-MM-DD");
+		expect(normalizeDueDate("2026-08-10T14:30+15:00", "Due date")).toBe("2026-08-10");
+		// Native Temporal accepts standard offsets beyond the former application cutoff.
 		expect(normalizeDueDate("2026-08-10T14:30+14:00", "Due date")).toBe("2026-08-10");
-		expect(() => normalizeDueDate("2026-08-10T14:30+14:30", "Due date")).toThrow("YYYY-MM-DD");
+		expect(normalizeDueDate("2026-08-10T14:30+14:30", "Due date")).toBe("2026-08-10");
 	});
 
 	it("rejects values that name no calendar day", () => {
 		expect(() => normalizeDueDate("2026-02-30", "Due date")).toThrow("YYYY-MM-DD");
 		expect(() => normalizeDueDate("2026-13-01", "Due date")).toThrow("YYYY-MM-DD");
+		expect(() => normalizeDueDate("2026-10", "Due date")).toThrow("YYYY-MM-DD");
 		expect(() => normalizeDueDate("10/08/2026", "Due date")).toThrow("YYYY-MM-DD");
 		expect(() => normalizeDueDate("next friday", "Due date")).toThrow("YYYY-MM-DD");
+	});
+
+	it("validates leap days and calendar-year boundaries", () => {
+		expect(normalizeDueDate("2024-02-29")).toBe("2024-02-29");
+		expect(() => normalizeDueDate("2025-02-29")).toThrow("YYYY-MM-DD");
+		expect(normalizeDueDate("0001-01-01")).toBe("0001-01-01");
 	});
 
 	it("round-trips task and milestone due dates through Markdown", () => {
@@ -51,7 +59,6 @@ describe("date-only due date model", () => {
 			id: "TASK-1",
 			title: "Due task",
 			status: "To Do",
-			assignee: [],
 			createdDate: "2026-08-01 09:00",
 			dueDate: "2026-08-10",
 			labels: [],
@@ -81,7 +88,6 @@ task_schema_version: 3
 id: TASK-1
 title: Historical due date
 status: To Do
-assignee: []
 created_date: 2026-08-01 09:00
 due_date: 2026-08-10 14:30
 labels: []
@@ -106,7 +112,6 @@ task_schema_version: 3
 id: TASK-1
 title: Unquoted due date
 status: To Do
-assignee: []
 created_date: 2026-08-01
 due_date: 2026-08-10
 labels: []
@@ -123,7 +128,6 @@ task_schema_version: 3
 id: TASK-1
 title: No due date
 status: To Do
-assignee: []
 created_date: 2026-08-01
 due_date: ${value}
 labels: []

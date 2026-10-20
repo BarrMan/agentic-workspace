@@ -17,6 +17,20 @@ import { harnessRegistry } from "../runtime/agents/startup.ts";
 import type { InstalledStatusHook } from "../runtime/status-hooks.ts";
 import { expandPromptPresetCommand } from "./prompt-preset-command.ts";
 
+/** A real pane process for tests that exercise production PID/name identity checks. */
+export async function startPaneProcess(): Promise<{ pid: number; stop: () => Promise<void> }> {
+	const child = Bun.spawn(["/bin/sleep", "2147483647"], { stdout: "ignore", stderr: "ignore" });
+	return {
+		pid: child.pid,
+		stop: async () => {
+			try {
+				process.kill(child.pid, "SIGKILL");
+			} catch {}
+			await child.exited;
+		},
+	};
+}
+
 /** Write Pi's launch-scoped capture file from a fake process command. */
 export async function writePiCapture(skillPath: string, command: string, nativeId: string): Promise<void> {
 	const source = /AOE_SESSION_SOURCE=([0-9a-f-]+)/.exec(command)?.[1];
@@ -56,10 +70,6 @@ class PromptAgent implements HarnessInterface {
 
 	yoloFlag(): string | undefined {
 		return undefined;
-	}
-
-	sanitizeLaunchPreset(preset: import("../model/session/types.ts").AgentPreset) {
-		return preset;
 	}
 
 	launchCommand({ preset, bootstrapPath }: LaunchCommandRequest): string {

@@ -126,7 +126,7 @@ describe("session-local agent launch", () => {
 					yolo: true,
 				});
 				try {
-					expect(enabled.command.split(flag).length - 1).toBe(1);
+					expect(enabled.command.split(flag).length - 1).toBe(2);
 					if (bootstrap === "opencode-v2")
 						expect(JSON.parse(enabled.env.OPENCODE_CONFIG_CONTENT ?? "{}").model).toBe("provider/model");
 					else expect(enabled.command).toContain("provider/model");
@@ -140,23 +140,13 @@ describe("session-local agent launch", () => {
 					yolo: false,
 				});
 				try {
-					expect(disabled.command).not.toContain(flag);
+					expect(disabled.command.split(flag).length - 1).toBe(1);
 					if (bootstrap === "opencode-v2")
 						expect(JSON.parse(disabled.env.OPENCODE_CONFIG_CONTENT ?? "{}").model).toBe("provider/model");
 					else expect(disabled.command).toContain("provider/model");
 				} finally {
 					await disabled.cleanup();
 				}
-			}
-			const staleClaude = await prepareAgentLaunch(
-				{ command: ["claude", "--dangerously-skip-permissions"], bootstrap: "claude", env: {}, prepare: "" },
-				bootstrapPath,
-				{ cwd: root, intent: { kind: "new" }, yolo: false, profile: defaultProfile },
-			);
-			try {
-				expect(staleClaude.command).not.toContain("--dangerously-skip-permissions");
-			} finally {
-				await staleClaude.cleanup();
 			}
 			const staleAsk = await prepareAgentAsk(
 				{ command: ["claude", "--dangerously-skip-permissions"], bootstrap: "claude", env: {}, prepare: "" },
@@ -166,7 +156,7 @@ describe("session-local agent launch", () => {
 				{ repositoryRoot: root, taskRoot: root },
 			);
 			try {
-				expect(staleAsk.command).not.toContain("--dangerously-skip-permissions");
+				expect(staleAsk.command).toContain("--dangerously-skip-permissions");
 			} finally {
 				await staleAsk.cleanup();
 			}
@@ -177,8 +167,7 @@ describe("session-local agent launch", () => {
 					{ cwd: root, intent: { kind: "resume", nativeSessionId: "existing-session" }, yolo, profile: defaultProfile },
 				);
 				try {
-					if (yolo) expect(resumed.command.match(/--dangerously-skip-permissions/g) ?? []).toHaveLength(1);
-					else expect(resumed.command).not.toContain("--dangerously-skip-permissions");
+					expect(resumed.command.match(/--dangerously-skip-permissions/g) ?? []).toHaveLength(yolo ? 2 : 1);
 					expect(resumed.command).toContain("existing-session");
 				} finally {
 					await resumed.cleanup();
@@ -232,6 +221,7 @@ describe("session-local agent launch", () => {
 		try {
 			const launch = await prepareAgentLaunch(configured, bootstrapPath, {
 				cwd: root,
+				taskId: "TASK-42",
 				intent: { kind: "resume", nativeSessionId: "ses_existing" },
 				profile: defaultProfile,
 			});
@@ -244,8 +234,8 @@ describe("session-local agent launch", () => {
 				expect(await readFile(skillPath, "utf8")).toContain(`\n${AGENTIC_WORKSPACE_TASK_SKILL}`);
 				expect(launch.env.CUSTOM_SETTING).toBe("keep");
 				expect(launch.env).toMatchObject({
-					AGENTIC_WORKSPACE_CWD: "/wrong",
-					AGENTIC_WORKSPACE_TASK_ID: "WRONG",
+					AGENTIC_WORKSPACE_CWD: root,
+					AGENTIC_WORKSPACE_TASK_ID: "TASK-42",
 					TASK_ID: "WRONG",
 				});
 				expect(configured.env.OPENCODE_CONFIG_CONTENT).toBe(original);
@@ -357,7 +347,7 @@ describe("session-local agent launch", () => {
 				expect(launch.env.AGENTIC_WORKSPACE_PROJECT_DIR).toBe(projectDir);
 				expect(launch.env.AGENTIC_WORKSPACE_WORKTREE_DIR).toBe(root);
 				expect(launch.env.AGENTIC_WORKSPACE_TASK_DIR).toBe(taskDir);
-				expect(launch.env.AGENTIC_WORKSPACE_CWD).toBe("/historical");
+				expect(launch.env.AGENTIC_WORKSPACE_CWD).toBe(root);
 				expect(launch.env.AGENTIC_WORKSPACE_TASK_ID).toBe("TASK-1");
 			} finally {
 				await launch.cleanup();
@@ -531,7 +521,7 @@ describe("session-local agent launch", () => {
 		}
 	});
 
-	it("warns once for reserved preset overrides and restores reserved paths after adapter preparation", async () => {
+	it("does not warn for reserved preset overrides and restores reserved paths after adapter preparation", async () => {
 		const { root, bootstrapPath } = await fixture();
 		const projectDir = join(root, "project-root");
 		const taskDir = join(root, "canonical-task");
@@ -581,8 +571,8 @@ describe("session-local agent launch", () => {
 				environment,
 			});
 			try {
-				expect(warnings).toHaveLength(1);
-				expect(stderrWrites).toHaveLength(1);
+				expect(warnings).toHaveLength(0);
+				expect(stderrWrites).toHaveLength(0);
 				expect(launch.env).toMatchObject({
 					AGENTIC_WORKSPACE_PROJECT_DIR: projectDir,
 					AGENTIC_WORKSPACE_WORKTREE_DIR: root,

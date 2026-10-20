@@ -1,7 +1,5 @@
-import { comparisonKey } from "../../../lib/comparison-key.ts";
 import { normalizeStringList, stringArraysEqual } from "../../../lib/string-list.ts";
 import type { Task, TaskUpdateInput } from "../../types.ts";
-import { normalizeAssignees } from "../assignee-filter.ts";
 import { labelComparisonKey } from "../label-filter.ts";
 
 export interface CollectionUpdateContext {
@@ -16,17 +14,6 @@ export async function applyCollectionTaskUpdates(
 	context: CollectionUpdateContext,
 ): Promise<boolean> {
 	let mutated = false;
-	if (input.assignee !== undefined) {
-		const assignee = normalizeAssignees(normalizeStringList(input.assignee));
-		if (
-			assignee.length !== (task.assignee ?? []).length ||
-			assignee.some((value, index) => comparisonKey(value) !== comparisonKey(task.assignee?.[index] ?? ""))
-		) {
-			task.assignee = assignee;
-			mutated = true;
-		}
-	}
-
 	mutated = applyList(task, "labels", input.labels, input.addLabels, input.removeLabels, labelComparisonKey) || mutated;
 	mutated = (await applyDependencies(task, input, context)) || mutated;
 	mutated = applyList(task, "references", input.references, input.addReferences, input.removeReferences) || mutated;

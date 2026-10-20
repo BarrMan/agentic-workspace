@@ -117,7 +117,6 @@ describe("FileSystem", () => {
 			id: "task-1",
 			title: "Test Task",
 			status: "To Do",
-			assignee: ["@developer"],
 			reporter: "@manager",
 			createdDate: "2025-06-03",
 			labels: ["test"],
@@ -324,9 +323,8 @@ describe("FileSystem", () => {
 				invalidPath,
 				`---
 id: task-99
-assignee: [@broken
 status: To Do
-title: Broken Task
+title: [unterminated
 ---
 
 				Invalid content`,
@@ -373,37 +371,28 @@ title: Broken Task
 			expect(tasks.map((t) => t.id)).toEqual(["TASK-1", "TASK-2", "TASK-2.1", "TASK-2.2", "TASK-2.10"]); // IDs normalized to uppercase
 		});
 
-		it("should filter tasks by status and assignee", async () => {
+		it("should filter tasks by status", async () => {
 			await filesystem.saveTask({
 				...sampleTask,
 				id: "task-1",
 				status: "To Do",
-				assignee: ["alice"],
 				title: "Task 1",
 			});
 			await filesystem.saveTask({
 				...sampleTask,
 				id: "task-2",
 				status: "Done",
-				assignee: ["bob"],
 				title: "Task 2",
 			});
 			await filesystem.saveTask({
 				...sampleTask,
 				id: "task-3",
 				status: "To Do",
-				assignee: ["bob"],
 				title: "Task 3",
 			});
 
-			const statusFiltered = await filesystem.listTasks({ status: "to do" });
+			const statusFiltered = await filesystem.listTasks({ status: "To Do" });
 			expect(statusFiltered.map((t) => t.id)).toEqual(["TASK-1", "TASK-3"]); // IDs normalized to uppercase
-
-			const assigneeFiltered = await filesystem.listTasks({ assignee: "bob" });
-			expect(assigneeFiltered.map((t) => t.id)).toEqual(["TASK-2", "TASK-3"]); // IDs normalized to uppercase
-
-			const combinedFiltered = await filesystem.listTasks({ status: "to do", assignee: "bob" });
-			expect(combinedFiltered.map((t) => t.id)).toEqual(["TASK-3"]); // IDs normalized to uppercase
 		});
 
 		it("should archive a task", async () => {
@@ -424,7 +413,6 @@ title: Broken Task
 	describe("config operations", () => {
 		const sampleConfig: AgenticWorkspaceConfig = {
 			projectName: "Test Project",
-			defaultAssignee: ["@admin"],
 			defaultStatus: "To Do",
 			defaultReporter: undefined,
 			statuses: ["To Do", "In Progress", "Done"],
@@ -479,7 +467,6 @@ title: Broken Task
 				id: "task-777",
 				title: "Already Prefixed",
 				status: "To Do",
-				assignee: [],
 				createdDate: "2025-06-07",
 				labels: [],
 				dependencies: [],
@@ -506,7 +493,6 @@ title: Broken Task
 				id: "JIRA-456",
 				title: "Custom Prefix",
 				status: "To Do",
-				assignee: [],
 				createdDate: "2025-06-07",
 				labels: [],
 				dependencies: [],
@@ -542,7 +528,6 @@ title: Broken Task
 			const loaded = await filesystem.loadConfig();
 
 			expect(loaded?.projectName).toBe("Minimal Project");
-			expect(loaded?.defaultAssignee).toBeUndefined();
 			expect(loaded?.defaultStatus).toBeUndefined();
 		});
 
@@ -551,7 +536,6 @@ title: Broken Task
 				id: "task-998",
 				title: "Task/with\\special:chars?",
 				status: "To Do",
-				assignee: [],
 				createdDate: "2025-06-07",
 				labels: [],
 				dependencies: [],
@@ -569,7 +553,6 @@ title: Broken Task
 				id: "task-997",
 				title: "Fix Task List Ordering",
 				status: "To Do",
-				assignee: [],
 				createdDate: "2025-06-07",
 				labels: [],
 				dependencies: [],
@@ -593,7 +576,6 @@ title: Broken Task
 				id: "task-995",
 				title: "Historical user's login (OAuth)",
 				status: "To Do",
-				assignee: [],
 				createdDate: "2025-06-07",
 				labels: [],
 				dependencies: [],
@@ -643,7 +625,6 @@ title: Broken Task
 					id,
 					title,
 					status: "To Do",
-					assignee: [],
 					createdDate: "2025-06-07",
 					labels: [],
 					dependencies: [],
@@ -665,7 +646,6 @@ title: Broken Task
 				id: "task-994",
 				title: punctuationOnlyTitle,
 				status: "To Do",
-				assignee: [],
 				createdDate: "2025-06-07",
 				labels: [],
 				dependencies: [],
@@ -686,7 +666,6 @@ title: Broken Task
 				id: "task-993",
 				title: punctuationOnlyTitle,
 				status: "To Do",
-				assignee: [],
 				createdDate: "2025-06-07",
 				labels: [],
 				dependencies: [],
@@ -709,7 +688,6 @@ title: Broken Task
 				id: "TASK-1",
 				title: "Published task",
 				status: "To Do",
-				assignee: [],
 				createdDate: "2025-01-01",
 				labels: [],
 				dependencies: [],
