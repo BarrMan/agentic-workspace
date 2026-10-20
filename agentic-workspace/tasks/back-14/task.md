@@ -16,38 +16,45 @@ agentConfiguration:
   selectedPreset: opencode
   presets:
     opencode:
-      command: opencode
+      command:
+        - opencode
       env: {}
       prepare: ''
       bootstrap: opencode
     claude:
-      command: claude
+      command:
+        - claude
       env: {}
       prepare: ''
       bootstrap: claude
     codex:
-      command: codex
+      command:
+        - codex
       env: {}
       prepare: ''
       bootstrap: codex
     gemini:
-      command: gemini
+      command:
+        - gemini
       env: {}
       prepare: ''
       bootstrap: gemini
     agy:
-      command: agy
+      command:
+        - agy
       env: {}
       prepare: ''
       bootstrap: antigravity
     pi:
-      command: pi
+      command:
+        - pi
       env: {}
       prepare: ''
       bootstrap: pi
       resumeFlag: '--session'
     omp:
-      command: omp
+      command:
+        - omp
       env: {}
       prepare: ''
       bootstrap: omp
@@ -62,9 +69,9 @@ description: >-
   Goal
 
   Remove `neo-neo-bblessed` and all legacy blessed TUI code. Keep only the
-  OpenTUI UI: `agentic-workspace workspace`, the OpenTUI board (`agentic-workspace board` / `board
-  view`, also reachable from the workspace), and `agentic-workspace doc view`'s OpenTUI
-  scroll viewer.
+  OpenTUI UI: `agentic-workspace workspace`, the OpenTUI board
+  (`agentic-workspace board` / `board view`, also reachable from the workspace),
+  and `agentic-workspace doc view`'s OpenTUI scroll viewer.
 
 
   Locked decisions
@@ -77,14 +84,16 @@ description: >-
   2. TTY now defaults to plain output for those commands; `--plain` is still
   accepted.
 
-  3. Delete the `agentic-workspace overview` feature entirely (`commands/overview.ts`,
-  `ui/overview-tui.ts`, `ui/overview-content.ts`, registration).
+  3. Delete the `agentic-workspace overview` feature entirely
+  (`commands/overview.ts`, `ui/overview-tui.ts`, `ui/overview-content.ts`,
+  registration).
 
   4. Delete `genericSelectList`; `doc list` is print-only.
 
   5. No standalone task/draft viewer. Editing is the OpenTUI workspace form or
-  `agentic-workspace task edit`. Delete `Core.editTaskInTui`, `ui/task-viewer/editor.ts`,
-  `core/tui-task-edit-session.ts` (incl. `BlessedScreen`).
+  `agentic-workspace task edit`. Delete `Core.editTaskInTui`,
+  `ui/task-viewer/editor.ts`, `core/tui-task-edit-session.ts` (incl.
+  `BlessedScreen`).
 
   6. Delete `ui/board/board-actions.ts`.
 
@@ -129,7 +138,7 @@ description: >-
   Verification
 
   `bunx tsc --noEmit`; `bun run check .`; `bun run build` after every change;
-  `find src -name '*.ts' -newer dist/agentic-workspace` prints nothing; focused tests then
-  `bun run test`; manual TTY smoke.
+  `find src -name '*.ts' -newer dist/agentic-workspace` prints nothing; focused
+  tests then `bun run test`; manual TTY smoke.
 ---
 

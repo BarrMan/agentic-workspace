@@ -13,17 +13,20 @@ agentConfiguration:
   selectedPreset: opencode
   presets:
     opencode:
-      command: opencode
+      command:
+        - opencode
       env: {}
       prepare: ''
       bootstrap: opencode
     claude:
-      command: claude
+      command:
+        - claude
       env: {}
       prepare: ''
       bootstrap: claude
     pi:
-      command: pi
+      command:
+        - pi
       env: {}
       prepare: ''
       bootstrap: pi

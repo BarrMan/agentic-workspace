@@ -14,17 +14,20 @@ agentConfiguration:
   selectedPreset: opencode
   presets:
     opencode:
-      command: opencode
+      command:
+        - opencode
       env: {}
       prepare: ''
       bootstrap: opencode
     claude:
-      command: claude
+      command:
+        - claude
       env: {}
       prepare: ''
       bootstrap: claude
     pi:
-      command: pi
+      command:
+        - pi
       env: {}
       prepare: ''
       bootstrap: pi
@@ -117,8 +120,9 @@ description: >-
 
   - bun test (or scoped test) passes.
 
-  - Rebuild dist/agentic-workspace after changes, confirm no src .ts file is newer than
-  dist/agentic-workspace, then verify manually against the rebuilt binary.
+  - Rebuild dist/agentic-workspace after changes, confirm no src .ts file is
+  newer than dist/agentic-workspace, then verify manually against the rebuilt
+  binary.
 
 
   Decisions (settled with the plan author)

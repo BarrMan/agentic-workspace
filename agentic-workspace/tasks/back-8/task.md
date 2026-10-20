@@ -13,31 +13,36 @@ agentConfiguration:
   selectedPreset: opencode
   presets:
     opencode:
-      command: opencode
+      command:
+        - opencode
       env: {}
       prepare: ''
       worktree: false
       bootstrap: opencode
     claude:
-      command: claude
+      command:
+        - claude
       env: {}
       prepare: ''
       worktree: false
       bootstrap: claude
     codex:
-      command: codex
+      command:
+        - codex
       env: {}
       prepare: ''
       worktree: false
       bootstrap: codex
     gemini:
-      command: gemini
+      command:
+        - gemini
       env: {}
       prepare: ''
       worktree: false
       bootstrap: gemini
     agy:
-      command: agy
+      command:
+        - agy
       env: {}
       prepare: ''
       worktree: false
@@ -45,9 +50,9 @@ agentConfiguration:
 description: >-
   GOAL
 
-  `agentic-workspace workspace` must use EXACTLY ONE tmux server: the default tmux server
-  (no `-L`). Every agent is ONE tmux session on it, named uniquely. No private
-  `-L ink-proto-<pid>-<n>` servers. This matches AOE
+  `agentic-workspace workspace` must use EXACTLY ONE tmux server: the default
+  tmux server (no `-L`). Every agent is ONE tmux session on it, named uniquely.
+  No private `-L ink-proto-<pid>-<n>` servers. This matches AOE
   (docs/aoe-agent-workspace-reference.md:379,384;
   docs/opentui-workspace-spec.md:20;
   docs/opentui-workspace-session-contract.md:14). The CLI `agent-session`
@@ -84,9 +89,9 @@ description: >-
   agent-host.ts:218) -> become unique automatically.
 
   3. vt-channel.ts:554 forwarder path ->
-  /tmp/agentic-workspace-vt-${sessionName}-${process.pid}.sock (sessionName available at
-  vt-channel.ts:174). MANDATORY: on a shared server all sessions share
-  socketName and one process shares pid.
+  /tmp/agentic-workspace-vt-${sessionName}-${process.pid}.sock (sessionName
+  available at vt-channel.ts:174). MANDATORY: on a shared server all sessions
+  share socketName and one process shares pid.
 
   4. agent-host.ts:152 capture path -> ink-agent-${sessionName}.raw.
 
@@ -104,8 +109,9 @@ description: >-
   6. agent-host.ts:347-355 ownership guard -> replace "server answers" with
   `has-session -t sessionName`; refuse if it exists.
 
-  7. Tag the created session: @agentic-workspace_root(realpath) @agentic-workspace_task
-  @agentic-workspace_role=native-workspace @agentic-workspace_session=<record.id>
+  7. Tag the created session: @agentic-workspace_root(realpath)
+  @agentic-workspace_task @agentic-workspace_role=native-workspace
+  @agentic-workspace_session=<record.id>
   @agentic-workspace_owner_pid=process.pid (mirror session-process.ts:165-171).
 
   8. Async teardown agent-host.ts:246-328: keep pgid/process-tree kill FIRST
@@ -175,10 +181,11 @@ description: >-
   I. STARTUP SWEEP
 
   20. Extend #settleStaleRequests/run() (workspace-controller.ts:1141-1161,430):
-  reap leftover `agentic-workspace-*` sessions on default ONLY when owner pid is dead AND
-  @agentic-workspace_owner_pid/@agentic-workspace_session match; settle pane group first
-  (best-effort); inconclusive probe NEVER kills; never kill-server. Reuse the
-  tri-state discipline from the deleted tmux-orphan-sweep.ts (`git show
+  reap leftover `agentic-workspace-*` sessions on default ONLY when owner pid is
+  dead AND @agentic-workspace_owner_pid/@agentic-workspace_session match; settle
+  pane group first (best-effort); inconclusive probe NEVER kills; never
+  kill-server. Reuse the tri-state discipline from the deleted
+  tmux-orphan-sweep.ts (`git show
   216776cd^:src/agent-workspace/tmux-orphan-sweep.ts`). `settleDeadSessions`
   (sessions.ts:695-726) demotes but does not kill; this is the missing half.
 
@@ -232,8 +239,8 @@ description: >-
   1. Accidental default-server destruction -> delete all kill-server + a test
   asserting none.
 
-  2. Killing a foreign/user session -> require @agentic-workspace_* tags + dead owner
-  before any kill.
+  2. Killing a foreign/user session -> require @agentic-workspace_* tags + dead
+  owner before any kill.
 
   3. `list-panes -a` leaking user panes -> avoid for teardown.
 

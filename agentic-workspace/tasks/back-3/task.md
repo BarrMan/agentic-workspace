@@ -13,31 +13,36 @@ agentConfiguration:
   selectedPreset: opencode
   presets:
     opencode:
-      command: opencode
+      command:
+        - opencode
       env: {}
       prepare: ''
       worktree: false
       bootstrap: opencode
     claude:
-      command: claude
+      command:
+        - claude
       env: {}
       prepare: ''
       worktree: false
       bootstrap: claude
     codex:
-      command: codex
+      command:
+        - codex
       env: {}
       prepare: ''
       worktree: false
       bootstrap: codex
     gemini:
-      command: gemini
+      command:
+        - gemini
       env: {}
       prepare: ''
       worktree: false
       bootstrap: gemini
     agy:
-      command: agy
+      command:
+        - agy
       env: {}
       prepare: ''
       worktree: false

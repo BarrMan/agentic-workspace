@@ -15,44 +15,51 @@ agentConfiguration:
   selectedPreset: opencode
   presets:
     opencode:
-      command: opencode
+      command:
+        - opencode
       env: {}
       prepare: ''
       worktree: false
       bootstrap: opencode
     claude:
-      command: claude
+      command:
+        - claude
       env: {}
       prepare: ''
       worktree: false
       bootstrap: claude
     codex:
-      command: codex
+      command:
+        - codex
       env: {}
       prepare: ''
       worktree: false
       bootstrap: codex
     gemini:
-      command: gemini
+      command:
+        - gemini
       env: {}
       prepare: ''
       worktree: false
       bootstrap: gemini
     agy:
-      command: agy
+      command:
+        - agy
       env: {}
       prepare: ''
       worktree: false
       bootstrap: antigravity
     pi:
-      command: pi
+      command:
+        - pi
       env: {}
       prepare: ''
       worktree: false
       bootstrap: pi
       resumeFlag: '--session'
     omp:
-      command: omp
+      command:
+        - omp
       env: {}
       prepare: ''
       worktree: false
@@ -61,19 +68,19 @@ agentConfiguration:
 description: >-
   ## Context
 
-  BACK-8 consolidated `agentic-workspace workspace` onto one default tmux server and one
-  named session per agent. BACK-9 is the follow-up performance task. A process
-  census compared AgenticWorkspace's per-agent fan-out against AOE (`aoe 1.18.0`) on the
-  same machine and default tmux server.
+  BACK-8 consolidated `agentic-workspace workspace` onto one default tmux server
+  and one named session per agent. BACK-9 is the follow-up performance task. A
+  process census compared AgenticWorkspace's per-agent fan-out against AOE (`aoe
+  1.18.0`) on the same machine and default tmux server.
 
 
   ## Baseline caveat - READ FIRST
 
   The original census (5 persistent procs/agent, including 2x `/bin/sh`) was
   taken from the LIVE workspace process tree, which may have been running a
-  stale `dist/agentic-workspace`. It also cited `cd ... &&` at `agent-host.ts:171` and
-  double cwd at `:241`; those have ALREADY been removed in the working tree by
-  an earlier Phase-1 pass:
+  stale `dist/agentic-workspace`. It also cited `cd ... &&` at
+  `agent-host.ts:171` and double cwd at `:241`; those have ALREADY been removed
+  in the working tree by an earlier Phase-1 pass:
 
   - `workspace-controller.ts:1263` now builds `env <...> <prepared.command>`
   (the extra `sh -c` is gone).
@@ -134,9 +141,9 @@ description: >-
 
   ## Measured findings (current, pre-optimization)
 
-  - Persistent procs/agent: AgenticWorkspace ~8-9 (1 `sh`, `opencode`, `serena`, 4 node
-  LSP, `agentic-workspace __vt-pipe`) + occasional zombie; AOE 4 core + same 4 node LSP.
-  Neither spawns idle `sleep`/`cat` (machine-wide 0/0).
+  - Persistent procs/agent: AgenticWorkspace ~8-9 (1 `sh`, `opencode`, `serena`,
+  4 node LSP, `agentic-workspace __vt-pipe`) + occasional zombie; AOE 4 core +
+  same 4 node LSP. Neither spawns idle `sleep`/`cat` (machine-wide 0/0).
 
   - Idle tmux forks: ~180 execs/min/agent (VT lease heartbeat 1/s at
   `vt-channel.ts:98,621-625`; activity probe ~2 execs/s at
@@ -167,8 +174,8 @@ description: >-
 
   ## Operational item
 
-  Confirm exactly one `agentic-workspace workspace` process runs. The stray `9059 bun
-  --inspect-wait ./src/cli/index.ts workspace` was already closed; only `42325
-  agentic-workspace workspace` remains.
+  Confirm exactly one `agentic-workspace workspace` process runs. The stray
+  `9059 bun --inspect-wait ./src/cli/index.ts workspace` was already closed;
+  only `42325 agentic-workspace workspace` remains.
 ---
 

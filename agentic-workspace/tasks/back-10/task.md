@@ -13,38 +13,45 @@ agentConfiguration:
   selectedPreset: opencode
   presets:
     opencode:
-      command: opencode
+      command:
+        - opencode
       env: {}
       prepare: ''
       bootstrap: opencode
     claude:
-      command: claude
+      command:
+        - claude
       env: {}
       prepare: ''
       bootstrap: claude
     codex:
-      command: codex
+      command:
+        - codex
       env: {}
       prepare: ''
       bootstrap: codex
     gemini:
-      command: gemini
+      command:
+        - gemini
       env: {}
       prepare: ''
       bootstrap: gemini
     agy:
-      command: agy
+      command:
+        - agy
       env: {}
       prepare: ''
       bootstrap: antigravity
     pi:
-      command: pi
+      command:
+        - pi
       env: {}
       prepare: ''
       bootstrap: pi
       resumeFlag: '--session'
     omp:
-      command: omp
+      command:
+        - omp
       env: {}
       prepare: ''
       bootstrap: omp

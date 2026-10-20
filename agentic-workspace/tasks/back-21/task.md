@@ -13,17 +13,20 @@ agentConfiguration:
   selectedPreset: opencode
   presets:
     opencode:
-      command: opencode
+      command:
+        - opencode
       env: {}
       prepare: ''
       bootstrap: opencode
     claude:
-      command: claude
+      command:
+        - claude
       env: {}
       prepare: ''
       bootstrap: claude
     pi:
-      command: pi
+      command:
+        - pi
       env: {}
       prepare: ''
       bootstrap: pi
@@ -35,8 +38,8 @@ description: >-
   # Goal
 
 
-  Give the active agent a `agentic-workspace` CLI command to ask the previous (handed-off)
-  agent a
+  Give the active agent a `agentic-workspace` CLI command to ask the previous
+  (handed-off) agent a
 
   question and receive its answer, so follow-up questions that were already
   answered in the
@@ -167,7 +170,8 @@ description: >-
 
   (~16 files) to a real
      adapter with a fake command (e.g. `pi`/`claude`) or a test-injected agent via `registerAgent`.
-  7. Verify: `bun run build` and `find src -name '*.ts' -newer dist/agentic-workspace`
+  7. Verify: `bun run build` and `find src -name '*.ts' -newer
+  dist/agentic-workspace`
 
   prints nothing,
      `bunx tsc --noEmit`, `bun run check .`, scoped tests.
@@ -188,7 +192,8 @@ description: >-
     `nativeSessionId`; refuse `running`/`starting`; run via the injected `ProcessRunner` in
     `session.cwd` with `launchEnvironment(presetSnapshot)` minus `FORBIDDEN_ENV`; internal timeout;
     return trimmed stdout; throw with stderr on failure.
-  - CLI: `agentic-workspace agent-session ask <taskId> <question> [--session <id>]` in
+  - CLI: `agentic-workspace agent-session ask <taskId> <question> [--session
+  <id>]` in
     `commands/agent-workspace.ts`.
   - Docs: add an "Ask the previous session" section to
 
