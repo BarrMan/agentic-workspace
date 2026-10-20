@@ -24,7 +24,7 @@ function initialConfiguration(): AgentConfiguration {
 		selectedPreset: "contract",
 		presets: {
 			contract: {
-				command: "false {prompt}",
+				command: ["false", "{prompt}"],
 				bootstrap: "claude",
 				env: { RAW: "kept=exact" },
 				prepare: "kept",
@@ -222,7 +222,7 @@ describe("real WorkspaceController Settings persistence", () => {
 		f.setup.mockInput.pressTab();
 		f.setup.mockInput.pressEnter();
 		clear(f.setup);
-		await f.setup.mockInput.typeText("false changed {prompt}");
+		await f.setup.mockInput.typeText('["false","changed","{prompt}"]');
 		f.setup.mockInput.pressEnter();
 		down(f.setup);
 		f.setup.mockInput.pressEnter();
@@ -290,7 +290,7 @@ describe("real WorkspaceController Settings persistence", () => {
 			...before,
 			presets: {
 				...before.presets,
-				concurrent: { command: "concurrent {prompt}", bootstrap: "claude", env: {}, prepare: "" },
+				concurrent: { command: ["concurrent", "{prompt}"], bootstrap: "claude", env: {}, prepare: "" },
 			},
 		});
 		save(f.setup);
@@ -305,13 +305,13 @@ describe("real WorkspaceController Settings persistence", () => {
 			textColor: "brightgreen",
 		});
 		expect(raw.presets.contract).toMatchObject({
-			command: "false changed {prompt}",
+			command: ["false", "changed", "{prompt}"],
 			resumeFlag: "--continue",
 			env: { RAW: "kept=exact", NEW: "value" },
 			prepare: "kept",
 			bootstrap: "claude",
 		});
-		expect(raw.presets.concurrent?.command).toBe("concurrent {prompt}");
+		expect(raw.presets.concurrent?.command).toEqual(["concurrent", "{prompt}"]);
 		expect(raw.sessions).toEqual({ worktreePerTask: true, yoloMode: true, autoResumeOnRestart: true });
 		expect(await loadAgentConfiguration(f.core, "project")).toEqual(raw);
 		await f.open();

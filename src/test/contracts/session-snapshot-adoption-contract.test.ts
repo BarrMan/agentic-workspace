@@ -1,5 +1,5 @@
-import { afterEach, describe, expect, it, mock } from "bun:test";
-import { mkdtemp, rm } from "node:fs/promises";
+import { afterAll, afterEach, beforeAll, describe, expect, it, mock } from "bun:test";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { TmuxCommandError } from "libtmux";
@@ -13,15 +13,20 @@ import {
 	updateAgentConfiguration,
 	upsertAgentConfiguration,
 } from "../../storage/config.ts";
+import { disableHarnessReadiness } from "../agent-test-helpers.ts";
 import { coreFileSystem, initializeTestProject } from "../test-utils.ts";
 
 mock.module("../../lib/process-tree.ts", () => ({
 	...processTree,
-	snapshotProcessGroup: (pid: number) => [{ pid, started: "fake-start" }],
 	terminateProcessTree: async () => "terminated",
-	deadPaneGroupState: () => "gone",
 }));
 const { AgentSessionService } = await import("../../runtime/sessions.ts");
+
+let restoreHarnessReadiness: (() => void) | undefined;
+beforeAll(() => {
+	restoreHarnessReadiness = disableHarnessReadiness();
+});
+afterAll(() => restoreHarnessReadiness?.());
 
 function requireModeProfile(profile: ModeProfile | undefined): ModeProfile {
 	if (!profile || typeof profile.name !== "string" || !profile.name.trim()) {
@@ -68,6 +73,12 @@ class SnapshotHarness implements ProcessRunner, TmuxServer {
 	}
 
 	async cmd(command: string, args: readonly string[] = []): Promise<readonly string[]> {
+		if (command === "has-session") {
+			const target = args[args.indexOf("-t") + 1] ?? "";
+			const name = target.slice(1);
+			if ([...this.metadata.values()].some((values) => values["@session_name"] === name)) return [];
+			throw new TmuxCommandError({ args: [command, ...args], exitCode: 1, target, stderr: [] });
+		}
 		if (command === "list-panes") {
 			const hasTarget = args.includes("-t");
 			const target = args[args.indexOf("-t") + 1];
@@ -127,7 +138,18 @@ class SnapshotHarness implements ProcessRunner, TmuxServer {
 			setTitle: async () => {},
 			pipeTo: async () => {},
 			respawn: async (command) => {
-				if (command) this.launches.push(command);
+				if (command) {
+					this.launches.push(command);
+					const raw = this.metadata.get(id)?.["@agentic_workspace_launch_resources"];
+					const skillPath = raw ? (JSON.parse(raw) as { skill?: { path?: string } }).skill?.path : undefined;
+					const nativeId = /nativeSessionId[^0-9a-f]+([0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})/.exec(command)?.[1];
+					if (skillPath && nativeId) {
+						const receipt = JSON.stringify({ session_id: nativeId });
+						await writeFile(join(skillPath, "session_id"), nativeId);
+						await writeFile(join(skillPath, "initialized"), receipt);
+						await writeFile(join(skillPath, "prompt-accepted"), receipt);
+					}
+				}
 				this.dead.delete(id);
 			},
 			displayMessage: async (message) =>
@@ -158,6 +180,7 @@ describe("public session snapshot adoption contract", () => {
 		roots.push(root);
 		process.env.XDG_CONFIG_HOME = join(root, "isolated-config-home");
 		const core = new Core(root);
+		await core.getConfig();
 		await initializeTestProject(core, "Snapshot adoption");
 		await core.createTaskFromInput({ title: "Snapshot adoption task", status: "To Do" });
 		await initializeAgentConfiguration(core, "project");
@@ -172,7 +195,7 @@ describe("public session snapshot adoption contract", () => {
 			selectedPreset: "original",
 			presets: {
 				original: {
-					command: "original-harness",
+					command: ["original-harness", "{prompt}"],
 					env: { SNAPSHOT_VALUE: "original", AGENTIC_WORKSPACE_WORKTREE_DIR: "/ignored-preset-path" },
 					prepare:
 						"printf '%s' \"$AGENTIC_WORKSPACE_PROJECT_DIR|$AGENTIC_WORKSPACE_WORKTREE_DIR|$AGENTIC_WORKSPACE_TASK_DIR\"",
@@ -202,12 +225,12 @@ describe("public session snapshot adoption contract", () => {
 			selectedPreset: "replacement",
 			presets: {
 				original: {
-					command: "replacement-harness",
+					command: ["replacement-harness", "{prompt}"],
 					env: { SNAPSHOT_VALUE: "replacement", AGENTIC_WORKSPACE_WORKTREE_DIR: "/ignored-preset-path" },
 					prepare: prepareCommand,
 					bootstrap: "pi",
 				},
-				replacement: { command: "unused-selected-harness", env: {}, prepare: "", bootstrap: "pi" },
+				replacement: { command: ["unused-selected-harness", "{prompt}"], env: {}, prepare: "", bootstrap: "pi" },
 			},
 			modes: configuration.modes
 				? {

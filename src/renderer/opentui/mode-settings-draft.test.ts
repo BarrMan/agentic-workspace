@@ -4,7 +4,7 @@ import { ModeSettingsDraft } from "./mode-settings-draft.ts";
 
 const configuration = (): AgentConfiguration => ({
 	selectedPreset: "custom",
-	presets: { custom: { command: "run", env: { KEEP: "yes" }, prepare: "", bootstrap: "opencode" } },
+	presets: { custom: { command: ["run"], env: { KEEP: "yes" }, prepare: "", bootstrap: "opencode" } },
 	sessions: { worktreePerTask: true, yoloMode: false },
 	modes: {
 		version: 1,

@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, mock } from "bun:test";
+import { afterAll, afterEach, beforeAll, describe, expect, it, mock } from "bun:test";
 import { randomUUID } from "node:crypto";
 import { realpathSync } from "node:fs";
 import { chmod, mkdtemp, rm, writeFile } from "node:fs/promises";
@@ -11,27 +11,31 @@ import type { AgentSession } from "../../model/session/types.ts";
 import type { ProcessRunner, TmuxServer } from "../../runtime/sessions.ts";
 import { getDefaultModeCatalog, initializeAgentConfiguration, upsertAgentConfiguration } from "../../storage/config.ts";
 import { SessionStore } from "../../storage/session-store.ts";
+import { disableHarnessReadiness } from "../agent-test-helpers.ts";
 import { coreFileSystem, initializeTestProject } from "../test-utils.ts";
 
 const processRows: processTree.ProcessRow[] = [
 	{
 		pid: 4242,
 		ppid: 1,
-		pgid: 4242,
-		uid: typeof process.getuid === "function" ? process.getuid() : 0,
-		stat: "S",
-		started: "fake-start",
+		name: "bun",
+		state: "running",
+		start_time_unix_ms: 4242,
 	},
 ];
 mock.module("../../lib/process-tree.ts", () => ({
 	...processTree,
 	readProcessTable: () => processRows,
-	snapshotProcessGroup: (pid: number) => [{ pid, started: "fake-start" }],
 	terminateProcessTree: async () => "terminated",
 	terminateOwnedDescendants: async () => "terminated",
-	deadPaneGroupState: () => "gone",
 }));
 const { AgentSessionService } = await import("../../runtime/sessions.ts");
+
+let restoreHarnessReadiness: (() => void) | undefined;
+beforeAll(() => {
+	restoreHarnessReadiness = disableHarnessReadiness();
+});
+afterAll(() => restoreHarnessReadiness?.());
 
 class DeadProcessHarness implements ProcessRunner, TmuxServer {
 	readonly commands: string[][] = [];
@@ -97,6 +101,17 @@ class DeadProcessHarness implements ProcessRunner, TmuxServer {
 	}
 	async cmd(_command: string, args: readonly string[] = []) {
 		const target = args[args.indexOf("-t") + 1] ?? "";
+		if (_command === "list-sessions") return this.row ? [this.row.split("\t")[0] ?? ""] : [];
+		if (_command === "has-session") {
+			const name = target.slice(1);
+			if (this.row?.split("\t")[0] === name) return [];
+			throw new TmuxCommandError({
+				args: [_command, ...args],
+				exitCode: 1,
+				target,
+				stderr: [],
+			});
+		}
 		if (_command === "display-message") {
 			if (args.includes("#{pane_id} #{pane_dead}")) {
 				const dead = target === this.row?.split("\t")[8] && this.row?.split("\t")[7] === "1";
@@ -159,7 +174,7 @@ class DeadProcessHarness implements ProcessRunner, TmuxServer {
 								"@agentic_workspace_native_session_id":
 									[...this.metadata.values()].find(
 										(metadata) => metadata["@agentic_workspace_role"] === "live-preview",
-									)?.["@agentic_workspace_native_session_id"] ?? "native-conversation-exact",
+									)?.["@agentic_workspace_native_session_id"] ?? "ses_native_conversation_exact",
 								"@agentic_workspace_native_provider": "opencode",
 								"@agentic_workspace_completion_endpoint": endpoint ?? "",
 								"@agentic_workspace_completion_generation": generation ?? "",
@@ -213,7 +228,7 @@ describe("stale persisted mode session preview", () => {
 			sessions: { worktreePerTask: false, yoloMode: true },
 			selectedPreset: "contract",
 			presets: {
-				contract: { command: opencode, env: {}, prepare: "", bootstrap: "opencode", resumeFlag: "--session" },
+				contract: { command: [opencode], env: {}, prepare: "", bootstrap: "opencode", resumeFlag: "--session" },
 			},
 		});
 		const harness = new DeadProcessHarness();
@@ -229,7 +244,7 @@ describe("stale persisted mode session preview", () => {
 			cwd: taskRoot,
 			createdAt: "2026-10-10T00:00:00.000Z",
 			status: "running",
-			nativeSessionId: "native-conversation-exact",
+			nativeSessionId: "ses_native_conversation_exact",
 			nativeWorkspace: true,
 			outputPath: join(sessionPaths.taskDir, "conversation.log"),
 			bootstrapPath: join(sessionPaths.taskDir, "conversation.prompt"),
@@ -335,7 +350,7 @@ describe("stale persisted mode session preview", () => {
 		expect(prepared.record.cwd).toBe(stale.cwd);
 		expect(prepared.record.pathContext).toEqual(stale.pathContext);
 		expect(prepared.bootstrap).toBe("opencode-v1");
-		expect(harness.respawns.at(-1)).toContain("native-conversation-exact");
+		expect(harness.respawns.at(-1)).toContain("ses_native_conversation_exact");
 		expect(harness.respawns.at(-1)).toContain("--session");
 		expect(harness.respawns.at(-1)).toContain("--auto");
 		await store.mutateSession(taskId, stale.id, async (current) => {
@@ -353,7 +368,7 @@ describe("stale persisted mode session preview", () => {
 			sessions: { worktreePerTask: false, yoloMode: false },
 			selectedPreset: "contract",
 			presets: {
-				contract: { command: opencode, env: {}, prepare: "", bootstrap: "opencode", resumeFlag: "--session" },
+				contract: { command: [opencode], env: {}, prepare: "", bootstrap: "opencode", resumeFlag: "--session" },
 			},
 		});
 		service = new AgentSessionService(core, { runner: harness, tmuxServer: harness });

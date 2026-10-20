@@ -1,29 +1,26 @@
-import { escapeRegex } from "../../lib/regex.ts";
-
-const TASK_ID_BODY_PATTERN = String.raw`\d+(?:\.\d+)*`;
-const TASK_ID_PATTERN = new RegExp(`^([A-Za-z]+)-(${TASK_ID_BODY_PATTERN})$`);
-
 export interface ParsedTaskId {
 	prefix: string;
 	segments: string[];
 }
 
 export function parseTaskId(value: string, prefix?: string): ParsedTaskId | null {
-	const match = TASK_ID_PATTERN.exec(value);
-	if (!match?.[1] || !match[2] || (prefix && match[1].toLowerCase() !== prefix.toLowerCase())) return null;
-	return { prefix: match[1], segments: match[2].split(".") };
-}
-
-export function taskIdBody(value: string, prefix?: string): string | null {
 	const separator = value.indexOf("-");
 	if (separator < 1) return null;
 	const idPrefix = value.slice(0, separator);
+	const body = value.slice(separator + 1);
 	if (!/^[A-Za-z]+$/.test(idPrefix) || (prefix && idPrefix.toLowerCase() !== prefix.toLowerCase())) return null;
-	return value.slice(separator + 1);
+	if (!/^\d+(?:\.\d+)*$/.test(body)) return null;
+	return { prefix: idPrefix, segments: body.split(".") };
 }
 
-export function taskIdRegex(prefix: string): RegExp {
-	return new RegExp(`^${escapeRegex(prefix)}-(${TASK_ID_BODY_PATTERN})`, "i");
+export function taskIdBody(value: string, prefix?: string): string | null {
+	if (prefix) {
+		if (!value.toLowerCase().startsWith(`${prefix.toLowerCase()}-`)) return null;
+		return value.slice(prefix.length + 1);
+	}
+	const separator = value.indexOf("-");
+	if (separator < 1 || !/^[A-Za-z]+$/.test(value.slice(0, separator))) return null;
+	return value.slice(separator + 1);
 }
 
 export function isNumericTaskIdSegment(value: string): boolean {

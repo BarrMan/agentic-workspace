@@ -190,6 +190,8 @@ Define configuration access and precedence, configurable modes and task-scoped a
 - [ ] Agent settings expose named presets, editable mode prompts, model selection/discovery, and the specified permission controls.
 - [ ] Saving staged settings retains them; canceling discards them.
 
+Agent preset commands are argv arrays: the first item is a non-empty executable and every item is a NUL-free string. Empty later arguments are preserved. Legacy string commands are converted once during selected-workspace startup; normal readers require arrays.
+
 ### CONFIG-009: Permission enforcement disclosure
 
 **Description:** Instruction-only permissions remain available and are clearly identified as guidance, distinct from provider-enforced restrictions. UI describes actual enforcement rather than presenting instructions as filesystem isolation.

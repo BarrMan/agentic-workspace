@@ -1,6 +1,8 @@
 # Harness
 
-Part of [BLUEPRINT](../BLUEPRINT.md). Harness is the provider-adapter boundary owned by [SessionRuntime](session.md). SessionRuntime depends only on the interface below; each provider supplies an implementation. Harness selection is configuration, never a branch inside SessionRuntime.
+Part of [BLUEPRINT](../BLUEPRINT.md). Harness is the provider-adapter boundary owned by [SessionRuntime](session.md). SessionRuntime depends only on the `HarnessProvider` execution boundary below; each provider supplies an implementation. Harness selection is configuration, never a branch inside SessionRuntime.
+
+Provider adapters implement the internal `HarnessInterface` contract in `src/runtime/agents/core/agent.ts` (command construction, preparation, hooks, and identity capture). The explicit startup list in `src/runtime/agents/startup.ts` registers those adapters. `HarnessProvider` is the narrower runtime boundary that launches and resumes an execution.
 
 ## Responsibility
 
@@ -23,7 +25,7 @@ Harness may read and write its own provider receipts, resource files, sockets, a
 ## Interface
 
 ```ts
-interface Harness {
+interface HarnessProvider {
   launch(request: LaunchRequest): Promise<RunningExecution>
   resume(providerSessionId: string, request: ResumeRequest): Promise<RunningExecution>
   stop(execution: RunningExecution): Promise<void>

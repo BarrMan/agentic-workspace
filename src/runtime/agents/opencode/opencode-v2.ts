@@ -1,24 +1,25 @@
 import { randomUUID } from "node:crypto";
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import type { AgentPreset } from "../../model/session/types.ts";
+import type { AgentPreset } from "../../../model/session/types.ts";
 import type {
-	Agent,
 	AgentPreparation,
 	AskCommandRequest,
+	HarnessInterface,
+	IdentityCaptureRequest,
 	LaunchCommandRequest,
-	LaunchOrigin,
 	NativeIdentity,
 	PreparationResources,
 	ResumeCommandRequest,
 	SessionIntent,
 	StatusHookInstallOptions,
-} from "./agent.ts";
-import { appendArguments, filePrompt, readinessReceipts, shellQuote } from "./agent.ts";
-import { OPENCODE_CHROME_RULES } from "./chrome-rules.ts";
+} from "../core/agent.ts";
+import { appendArguments, filePrompt, readinessReceipts, shellQuote } from "../core/agent.ts";
+import { OPENCODE_CHROME_RULES } from "../core/chrome-rules.ts";
+import { discoverModels, sanitizeProfilePreset, withExplicitModel } from "../core/profile.ts";
+import { OpenCodeSessionCapture } from "./opencode-session-capture.ts";
 import { createOpencodeV2CliPlugin } from "./opencode-v2-cli-plugin.ts";
 import { openCodeBootstrapForVersion } from "./opencode-version.ts";
-import { commandArguments, discoverModels, sanitizeProfilePreset, withExplicitModel } from "./profile.ts";
 
 const NATIVE_SESSION_ID = /^ses_[A-Za-z0-9_-]+$/;
 
@@ -62,20 +63,30 @@ function parseOpenCodeConfig(content: string | undefined) {
 	return { settings, skills: skills as string[] };
 }
 
-async function runCli(args: string[], cwd: string, env: Record<string, string>, timeoutMs: number) {
+async function runCli(
+	args: string[],
+	cwd: string,
+	env: Record<string, string>,
+	timeoutMs: number,
+	signal?: AbortSignal,
+) {
 	const child = Bun.spawn(args, { cwd, env, stdin: "ignore", stdout: "pipe", stderr: "ignore" });
 	const output = new Response(child.stdout).text();
 	const timeout = setTimeout(() => child.kill("SIGKILL"), timeoutMs);
+	const abort = () => child.kill("SIGKILL");
+	signal?.addEventListener("abort", abort, { once: true });
 	try {
 		await child.exited;
+		signal?.throwIfAborted();
 		return { exitCode: child.exitCode, output: await output };
 	} finally {
 		clearTimeout(timeout);
+		signal?.removeEventListener("abort", abort);
 	}
 }
 
 async function assertOpenCodeV2(preset: AgentPreset, cwd: string, env: Record<string, string>) {
-	const result = await runCli([...commandArguments(preset.command), "--version"], cwd, env, 5_000);
+	const result = await runCli([...preset.command, "--version"], cwd, env, 5_000);
 	if (result.exitCode !== 0 || openCodeBootstrapForVersion(result.output) !== "opencode-v2") {
 		throw new Error("The opencode-v2 harness requires an OpenCode v2 CLI binary.");
 	}
@@ -86,15 +97,17 @@ async function lookupNativeSession(
 	cwd: string,
 	env: Record<string, string>,
 	sessionId: string,
+	signal?: AbortSignal,
 ): Promise<string | undefined> {
 	if (!NATIVE_SESSION_ID.test(sessionId)) {
 		throw new Error("Cannot resume OpenCode v2: saved native session ID is invalid.");
 	}
 	const { exitCode, output } = await runCli(
-		[...commandArguments(preset.command), "api", "--standalone", "get", `/api/session/${sessionId}`],
+		[...preset.command, "api", "--standalone", "get", `/api/session/${sessionId}`],
 		cwd,
 		env,
 		8_000,
+		signal,
 	);
 	if (exitCode !== 0) return undefined;
 	let result: unknown;
@@ -109,7 +122,9 @@ async function lookupNativeSession(
 	return typeof observed === "string" ? observed : undefined;
 }
 
-export class OpencodeV2Agent implements Agent {
+export class OpencodeV2Agent implements HarnessInterface {
+	constructor(private readonly capture = new OpenCodeSessionCapture()) {}
+
 	readonly name = "opencode-v2";
 	// Called through the optional Agent interface.
 	// fallow-ignore-next-line unused-class-member -- called through the optional Agent interface
@@ -125,26 +140,22 @@ export class OpencodeV2Agent implements Agent {
 	readonly nativeNamespace = "opencode" as const;
 	readonly prepareBeforeAsk = true;
 
-	sanitizeLaunchPreset(preset: AgentPreset): AgentPreset {
-		return sanitizeProfilePreset(preset);
-	}
-
 	// Called through the optional Agent interface.
 	// fallow-ignore-next-line unused-class-member -- called through the optional Agent interface
-	discoverModels(request: import("./agent.ts").ModelDiscoveryRequest) {
+	discoverModels(request: import("../core/agent.ts").ModelDiscoveryRequest) {
 		return discoverModels("opencode", request.command, request.env, request.timeoutMs);
 	}
 
-	prepareProfile(_profile: import("../../model/session/types.ts").ModeProfile, preset: AgentPreset): AgentPreset {
-		return sanitizeProfilePreset(preset);
-	}
-
-	private allocateNativeSessionId(): string {
-		return `ses_${randomUUID().replaceAll("-", "")}`;
+	prepareProfile(_profile: import("../../../model/session/types.ts").ModeProfile, preset: AgentPreset): AgentPreset {
+		return preset;
 	}
 
 	yoloFlag(): string | undefined {
 		return "--auto";
+	}
+
+	sanitizeLaunchPreset(preset: AgentPreset): AgentPreset {
+		return sanitizeProfilePreset(preset);
 	}
 
 	launchCommand({ preset, bootstrapPath, nativeSessionId }: LaunchCommandRequest): string {
@@ -191,7 +202,7 @@ export class OpencodeV2Agent implements Agent {
 		const identity: NativeIdentity =
 			intent.kind === "resume"
 				? { id: intent.nativeSessionId, basis: "client-established" }
-				: { id: this.allocateNativeSessionId(), basis: "client-established" };
+				: { id: await this.capture.preassignSession(preset, request.cwd, env), basis: "client-established" };
 		if (sessionId) {
 			if (!statusDir) throw new Error("OpenCode v2 session launch requires its durable status directory.");
 			await this.installStatusHooks({ pluginDir: directory, statusDir, sessionId });
@@ -223,42 +234,39 @@ export class OpencodeV2Agent implements Agent {
 			intent.kind === "resume"
 				? this.resumeCommand({ preset, nativeSessionId: identity.id })
 				: this.launchCommand({ preset, bootstrapPath, nativeSessionId: identity.id });
-		return {
-			command,
-			env,
-			identity,
-			...(sessionId
-				? {
-						confirmSession: async (expectedNativeSessionId: string) => {
-							if (expectedNativeSessionId !== identity.id) return false;
-							try {
-								const observed = await lookupNativeSession(preset, request.cwd, env, expectedNativeSessionId);
-								return observed === expectedNativeSessionId;
-							} catch {
-								return false;
-							}
-						},
-					}
-				: {}),
-		};
+		return { command, env, identity };
 	}
 
 	// Called through the optional Agent interface.
 	// fallow-ignore-next-line unused-class-member -- called through the optional Agent interface
 	readiness(intent: SessionIntent, launchDirectory: string, identity?: NativeIdentity) {
-		return { ...readinessReceipts(intent, launchDirectory, identity), confirmationRequired: intent.kind === "new" };
+		return readinessReceipts(intent, launchDirectory, identity);
 	}
 
-	async reconcileIdentity(
-		_origin: LaunchOrigin,
-		_publish: (identity: NativeIdentity) => Promise<void>,
-	): Promise<void> {}
+	async reconcileIdentity({
+		intent,
+		preset,
+		cwd,
+		env,
+		preparedIdentity,
+		signal,
+	}: IdentityCaptureRequest): Promise<NativeIdentity> {
+		const identity =
+			preparedIdentity ??
+			(intent.kind === "resume" ? { id: intent.nativeSessionId, basis: "client-established" as const } : undefined);
+		if (!identity) throw new Error("OpenCode v2 launch did not provide a prepared native identity.");
+		if (intent.kind === "new") {
+			const observed = await lookupNativeSession(preset, cwd, env, identity.id, signal);
+			if (observed !== identity.id) throw new Error(`OpenCode v2 did not confirm accepted session '${identity.id}'.`);
+		}
+		return identity;
+	}
 
-	async preflightLaunch(request: import("./agent.ts").AgentPreflightRequest): Promise<unknown> {
+	async preflightLaunch(request: import("../core/agent.ts").AgentPreflightRequest): Promise<unknown> {
 		if (request.resume) this.resumeCommand(request);
 		// A fresh launch validates the interactive command shape against a throwaway client ID; the
 		// real ID is privately allocated during prepare.
-		else this.launchCommand({ ...request, nativeSessionId: request.nativeSessionId ?? this.allocateNativeSessionId() });
+		else this.launchCommand({ ...request, nativeSessionId: request.nativeSessionId ?? `ses_${randomUUID()}` });
 		await assertOpenCodeV2(request.preset, request.cwd, request.env);
 		if (request.resume && request.nativeSessionId) {
 			const observed = await lookupNativeSession(request.preset, request.cwd, request.env, request.nativeSessionId);

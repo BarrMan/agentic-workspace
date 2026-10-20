@@ -33,9 +33,9 @@ import {
 	type ActivityProbeTarget,
 	createActivityProbe,
 } from "../../runtime/agent-status-probe.ts";
-import { agentFor } from "../../runtime/agents/agents.ts";
-import { resolveLaunchPreset } from "../../runtime/agents/opencode-resolution.ts";
-import { profilePermissionSupport } from "../../runtime/agents/profile.ts";
+import { profilePermissionSupport } from "../../runtime/agents/core/profile.ts";
+import { resolveLaunchPreset } from "../../runtime/agents/opencode/opencode-resolution.ts";
+import { harnessRegistry } from "../../runtime/agents/startup.ts";
 import { ExactResumeUnavailableError } from "../../runtime/errors/sessions.ts";
 import { createExistingAgentHost } from "../../runtime/live/existing-agent-host.ts";
 import { createTmuxExec } from "../../runtime/live/tmux/exec.ts";
@@ -2671,9 +2671,8 @@ export class OpenTuiWorkspaceController {
 						cwd: this.#core.projectRoot,
 						env: effectiveEnv,
 					});
-					const adapter = agentFor(discoveryPreset.bootstrap);
-					if (!adapter) throw new Error(`Unsupported project preset: ${discoveryPreset.bootstrap}`);
-					if (!adapter?.discoverModels) return [];
+					const adapter = harnessRegistry.forPreset(discoveryPreset.bootstrap);
+					if (!adapter.discoverModels) return [];
 					const found = await adapter.discoverModels({
 						command: discoveryPreset.command,
 						env: { ...effectiveEnv, ...discoveryPreset.env },

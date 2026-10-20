@@ -3,7 +3,7 @@ import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
-import "./agents.ts";
+import "../startup.ts";
 import { piExtensionSource } from "./pi.ts";
 
 async function extensionFixture() {

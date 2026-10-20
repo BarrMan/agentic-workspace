@@ -12,17 +12,6 @@ export function toStringArray(value: unknown): string[] {
 	return [String(value)];
 }
 
-export function parseDelimitedStringList(value: unknown): string[] | undefined {
-	const entries = toStringArray(value).flatMap((entry) => entry.split(","));
-	return normalizeStringList(entries);
-}
-
-export function parseClearableStringList(value: unknown): string[] | undefined {
-	if (value === undefined || value === null) return undefined;
-	if (Array.isArray(value) && value.length === 0) return undefined;
-	return parseDelimitedStringList(value) ?? [];
-}
-
 export function stringArraysEqual(a: string[], b: string[]): boolean {
 	if (a.length !== b.length) return false;
 	return a.every((value, index) => value === b[index]);

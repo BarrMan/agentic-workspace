@@ -6,9 +6,9 @@ import type {
 	ModeId,
 	ModeProfile,
 	NativeAgentNamespace,
-} from "../../model/session/types.ts";
-import type { PreparedLaunchResources } from "../completion-supervisor-resources.ts";
-import type { InstalledStatusHook } from "../status-hooks.ts";
+} from "../../../model/session/types.ts";
+import type { PreparedLaunchResources } from "../../completion-supervisor-resources.ts";
+import type { InstalledStatusHook } from "../../status-hooks.ts";
 
 export interface AgentChromeRule {
 	readonly pattern: RegExp;
@@ -96,13 +96,23 @@ export interface AgentPreflightRequest {
 	profile: ModeProfile;
 }
 
+export interface IdentityCaptureRequest {
+	intent: SessionIntent;
+	preset: AgentPreset;
+	cwd: string;
+	env: Record<string, string>;
+	launchDirectory: string;
+	preparedIdentity?: NativeIdentity;
+	signal: AbortSignal;
+}
+
 export interface AgentModel {
 	id: string;
 	name?: string;
 }
 
 export interface ModelDiscoveryRequest {
-	command: string;
+	command: string[];
 	env: Record<string, string>;
 	timeoutMs: number;
 }
@@ -113,8 +123,6 @@ export interface AgentPreparation {
 	env: Record<string, string>;
 	/** Present when the adapter established an identity during prepare; absent means it is deferred. */
 	identity?: NativeIdentity;
-	/** Optional transient exact-session confirmation; never persisted beyond this prepared launch. */
-	confirmSession?: (expectedNativeSessionId: string) => Promise<boolean>;
 }
 
 export interface StatusHookInstallOptions {
@@ -123,7 +131,7 @@ export interface StatusHookInstallOptions {
 	sessionId?: string;
 }
 
-export interface Agent {
+export interface HarnessInterface {
 	readonly name: string;
 	readonly events?: AgentEventCapabilities;
 	readonly supported: boolean;
@@ -131,8 +139,8 @@ export interface Agent {
 	readonly prepareBeforeAsk: boolean;
 	readonly chromeRules: readonly AgentChromeRule[];
 	readonly nativeNamespace: NativeAgentNamespace;
-	sanitizeLaunchPreset(preset: AgentPreset): AgentPreset;
 	yoloFlag(): string | undefined;
+	sanitizeLaunchPreset(preset: AgentPreset): AgentPreset;
 	launchCommand(request: LaunchCommandRequest): string;
 	resumeCommand(request: ResumeCommandRequest): string;
 	askCommand(request: AskCommandRequest): string;
@@ -146,14 +154,9 @@ export interface Agent {
 	): {
 		initialized: { path: string; expected?: ReadinessExpectation };
 		promptAccepted?: { path: string; expected?: ReadinessExpectation };
-		confirmationRequired?: boolean;
 	};
-	/**
-	 * Acquire a deferred native identity from the provider and publish it exactly once.
-	 * Immediate-identity adapters implement this as a no-op; a receipt-based adapter reads its
-	 * provider-written receipt and publishes a `provider-confirmed` identity when it exists.
-	 */
-	reconcileIdentity(origin: LaunchOrigin, publish: (identity: NativeIdentity) => Promise<void>): Promise<void>;
+	/** Establish the launch identity through provider-owned logic, or throw when it cannot be established. */
+	reconcileIdentity(request: IdentityCaptureRequest): Promise<NativeIdentity>;
 	discoverModels?(request: ModelDiscoveryRequest): Promise<AgentModel[]>;
 	prepareProfile?(profile: ModeProfile, preset: AgentPreset): AgentPreset;
 	installStatusHooks(options: StatusHookInstallOptions): Promise<InstalledStatusHook>;
@@ -167,13 +170,9 @@ export function filePrompt(bootstrapPath: string): string {
 	return `"$(cat -- ${shellQuote(bootstrapPath)})"`;
 }
 
-export function appendArguments(command: string, arguments_: string): string {
-	if (/[|;&\n]/.test(command)) {
-		throw new Error(
-			"Built-in agent commands must be an executable with flags, not a shell pipeline or compound command.",
-		);
-	}
-	return `${command} ${arguments_}`;
+export function appendArguments(command: string[], arguments_: string): string {
+	if (command.length === 0 || !command[0]) throw new Error("Built-in agent command must include an executable.");
+	return `${command.map(shellQuote).join(" ")} ${arguments_}`;
 }
 
 /** Shared readiness receipt paths for adapters whose expected value is the native session ID. */

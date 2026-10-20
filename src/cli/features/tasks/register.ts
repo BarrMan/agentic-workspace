@@ -16,7 +16,7 @@ import {
 } from "../../../renderer/formatters/json-output.ts";
 import { formatTaskPlainText } from "../../../renderer/formatters/task-plain-text.ts";
 import { addHelpSchema } from "../../commands/help-schema.ts";
-import { LIST_WINDOW_OUTPUT_HELP, printListWindow, selectListWindow } from "../../list-window.ts";
+import { addListWindowOptions, LIST_WINDOW_OUTPUT_HELP, printListWindow, selectListWindow } from "../../list-window.ts";
 import type { ReadOutputMode, ReadOutputOptions } from "../../read-output-mode.ts";
 import type { CliRuntime } from "../../runtime.ts";
 import { registerTaskArtifactCommands } from "../../task-artifact.ts";
@@ -169,16 +169,18 @@ export function registerTaskCommands(program: Command, { runtime, readOutput }: 
 		}
 	}
 
-	const taskListCommand = addHelpSchema(taskCmd.command("list"), {
-		reads: "Local editable tasks from the configured AgenticWorkspace directory",
-		required: [],
-		optional: [
-			{ name: "plain", type: "Boolean", description: "Use text output" },
-			{ name: "json", type: "Boolean", description: "Use JSON output" },
-		],
-		output: `Plain text task list by default, or versioned JSON with --json. ${LIST_WINDOW_OUTPUT_HELP}`,
-		examples: ["agentic-workspace task list --plain", "agentic-workspace task list --json"],
-	})
+	const taskListCommand = addListWindowOptions(
+		addHelpSchema(taskCmd.command("list"), {
+			reads: "Local editable tasks from the configured AgenticWorkspace directory",
+			required: [],
+			optional: [
+				{ name: "plain", type: "Boolean", description: "Use text output" },
+				{ name: "json", type: "Boolean", description: "Use JSON output" },
+			],
+			output: `Plain text task list by default, or versioned JSON with --json. ${LIST_WINDOW_OUTPUT_HELP}`,
+			examples: ["agentic-workspace task list --plain", "agentic-workspace task list --json"],
+		}),
+	)
 		.description("list tasks grouped by status")
 		.option("--plain", "use plain text output")
 		.option("--json", "print versioned machine-readable JSON output")
@@ -210,6 +212,52 @@ export function registerTaskCommands(program: Command, { runtime, readOutput }: 
 	taskEditCommand
 		.option("--title <title>", "replacement task title")
 		.option("--description <description>", "replacement description")
+		.option("--status <status>", "replacement status")
+		.option("--priority <priority>", "replacement priority")
+		.option("--type <type>", "replacement task type")
+		.option("--project <project>", "replacement project")
+		.option("--assignee <name>", "replace assignees (repeatable)", (value, previous: string[] = []) => [
+			...previous,
+			value,
+		])
+		.option("--label <label>", "replace labels (repeatable)", (value, previous: string[] = []) => [...previous, value])
+		.option("--add-label <label>", "add label (repeatable)", (value, previous: string[] = []) => [...previous, value])
+		.option("--remove-label <label>", "remove label (repeatable)", (value, previous: string[] = []) => [
+			...previous,
+			value,
+		])
+		.option("--clear-labels", "clear all labels")
+		.option("--depends-on <taskId>", "replace dependencies (repeatable)", (value, previous: string[] = []) => [
+			...previous,
+			value,
+		])
+		.option("--dep <taskId>", "replace dependencies (repeatable)", (value, previous: string[] = []) => [
+			...previous,
+			value,
+		])
+		.option("--clear-deps", "clear dependencies")
+		.option("--ref <reference>", "replace references (repeatable)", (value, previous: string[] = []) => [
+			...previous,
+			value,
+		])
+		.option("--add-ref <reference>", "add reference (repeatable)", (value, previous: string[] = []) => [
+			...previous,
+			value,
+		])
+		.option("--remove-ref <reference>", "remove reference (repeatable)", (value, previous: string[] = []) => [
+			...previous,
+			value,
+		])
+		.option("--clear-refs", "clear references")
+		.option("--doc <path>", "replace documentation paths (repeatable)", (value, previous: string[] = []) => [
+			...previous,
+			value,
+		])
+		.option("--clear-docs", "clear documentation paths")
+		.option("--modified-file <path>", "add modified file (repeatable)", (value, previous: string[] = []) => [
+			...previous,
+			value,
+		])
 		.action(async (taskId: string, options) => runTaskEdit([taskId], options, editRuntime));
 
 	addHelpSchema(taskCmd.command("view <taskId>"), {

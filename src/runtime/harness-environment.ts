@@ -6,14 +6,7 @@ const RESERVED_ENVIRONMENT = [
 	"AGENTIC_WORKSPACE_WORKTREE_DIR",
 	"AGENTIC_WORKSPACE_TASK_DIR",
 ] as const;
-const LEGACY_ENVIRONMENT = [
-	"AGENTIC_WORKSPACE_CWD",
-	"AGENTIC_WORKSPACE_TASK_ID",
-	"AGENTIC_WORKSPACE_SESSION_ID",
-	"AGENTIC_WORKSPACE_PROJECT_ROOT",
-	"TASK_ID",
-	"SESSION_ID",
-] as const;
+const PARENT_ENVIRONMENT = ["AGENTIC_WORKSPACE_CWD", "AGENTIC_WORKSPACE_TASK_ID"] as const;
 const EXPANSION_TIMEOUT_MS = 2_000;
 const STDOUT_LIMIT_BYTES = 1024 * 1024;
 const STDERR_LIMIT_BYTES = 64 * 1024;
@@ -118,7 +111,7 @@ export async function prepareHarnessEnvironment(
 ): Promise<Record<string, string>> {
 	const effective: Record<string, string> = {};
 	for (const [name, value] of Object.entries(options.inherited ?? process.env)) {
-		if (value !== undefined && !(LEGACY_ENVIRONMENT as readonly string[]).includes(name)) effective[name] = value;
+		if (value !== undefined && !(PARENT_ENVIRONMENT as readonly string[]).includes(name)) effective[name] = value;
 	}
 	Object.assign(effective, {
 		AGENTIC_WORKSPACE_PROJECT_DIR: paths.projectDir,

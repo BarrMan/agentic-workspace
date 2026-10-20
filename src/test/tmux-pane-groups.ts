@@ -5,7 +5,7 @@
  * every test process.
  */
 
-import { terminateProcessTreeSync } from "../lib/process-tree.ts";
+import { terminateTree } from "@3leaps/sysprims";
 
 /** Prefix every test-owned socket label carries. `default` and `main` can never match. */
 export const TEST_TMUX_SOCKET_PREFIX = "agentic-workspace-test";
@@ -36,6 +36,10 @@ export function killTmuxSocketPaneGroups(
 	if (listed.exitCode !== 0) return;
 	for (const line of listed.stdout.toString().split("\n")) {
 		const pid = Number.parseInt(line.trim(), 10);
-		if (Number.isFinite(pid)) terminateProcessTreeSync(pid);
+		if (Number.isFinite(pid)) {
+			try {
+				terminateTree(pid, { grace_timeout_ms: 0, kill_timeout_ms: 0 });
+			} catch {}
+		}
 	}
 }

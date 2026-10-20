@@ -18,11 +18,7 @@ function taskListCommand(): Command {
 }
 
 function windowOf(skip: number, maxCount?: number, commandArgs: string[] = []): ListWindow {
-	const window = parseListWindow(
-		{ skip: String(skip), maxCount: maxCount === undefined ? undefined : String(maxCount) },
-		taskListCommand(),
-		commandArgs,
-	);
+	const window = parseListWindow({ skip, maxCount }, taskListCommand(), commandArgs);
 	if (!window) throw new Error("invalid test window");
 	return window;
 }
@@ -113,7 +109,7 @@ describe("list windows", () => {
 			forcesText: false,
 			commandArgs: args,
 		});
-		expect(parseListWindow({ maxCount: "5", skip: "0" }, taskListCommand(), args)).toMatchObject({
+		expect(parseListWindow({ maxCount: 5, skip: 0 }, taskListCommand(), args)).toMatchObject({
 			skip: 0,
 			maxCount: 5,
 			count: false,
@@ -125,15 +121,10 @@ describe("list windows", () => {
 		});
 	});
 
-	it("rejects invalid window values and count with JSON", () => {
+	it("rejects count with JSON", () => {
 		const errors = spyOn(console, "error").mockImplementation(() => {});
 		const previousExitCode = process.exitCode;
 		try {
-			for (const options of [{ maxCount: "0" }, { maxCount: "2.5" }, { skip: "-1" }, { skip: "x" }]) {
-				process.exitCode = 0;
-				expect(parseListWindow(options, taskListCommand(), [])).toBeNull();
-				expect(process.exitCode).toBe(1);
-			}
 			expect(parseListWindow({ count: true, json: true }, taskListCommand(), [])).toBeNull();
 			expect(errors).toHaveBeenLastCalledWith(
 				"--count cannot be combined with --json. Try 'agentic-workspace task list --help' for options.",
@@ -141,6 +132,21 @@ describe("list windows", () => {
 		} finally {
 			errors.mockRestore();
 			process.exitCode = previousExitCode ?? 0;
+		}
+	});
+
+	it("rejects invalid paging arguments before running the command action", async () => {
+		for (const args of [
+			["--max-count", "0"],
+			["--skip", "-1"],
+		]) {
+			const command = taskListCommand().exitOverride();
+			let actionCalled = false;
+			command.action(() => {
+				actionCalled = true;
+			});
+			await expect(command.parseAsync(["node", "cli", ...args])).rejects.toThrow();
+			expect(actionCalled).toBe(false);
 		}
 	});
 });

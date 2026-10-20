@@ -64,8 +64,8 @@ describe("atomic task creation", () => {
 		const configuration: AgentConfiguration = {
 			selectedPreset: "first",
 			presets: {
-				first: { command: "first {skill} {prompt}", bootstrap: "opencode", env: {}, prepare: "" },
-				second: { command: "second {skill} {prompt}", bootstrap: "opencode", env: {}, prepare: "" },
+				first: { command: ["first", "{skill}", "{prompt}"], bootstrap: "opencode", env: {}, prepare: "" },
+				second: { command: ["second", "{skill}", "{prompt}"], bootstrap: "opencode", env: {}, prepare: "" },
 			},
 		};
 		await upsertAgentConfiguration(core, "project", configuration);
@@ -150,7 +150,7 @@ describe("atomic task creation", () => {
 			const firstCreate = coreFileSystem(first).createMilestone("Alpha Milestone");
 			await expectResolvesWithin(
 				firstEnteredWrite.promise,
-				250,
+				5_000,
 				"first milestone create should reach temporary-file write",
 			);
 

@@ -18,10 +18,16 @@ import { taskIdsEqual } from "../model/task/task-id.ts";
 import { TASK_SOURCE, type Task } from "../model/types.ts";
 import { getDefaultModeCatalog, loadAgentConfiguration, resolveSessionPreset } from "../storage/config.ts";
 import type { SessionState, SessionStore } from "../storage/session-store.ts";
-import type { Agent, LaunchOrigin, NativeIdentity, SessionIntent } from "./agents/agent.ts";
-import { agentFor } from "./agents/agents.ts";
-import { resolveLaunchPreset } from "./agents/opencode-resolution.ts";
-import { validateExplicitModel } from "./agents/profile.ts";
+import type {
+	HarnessInterface,
+	IdentityCaptureRequest,
+	LaunchOrigin,
+	NativeIdentity,
+	SessionIntent,
+} from "./agents/core/agent.ts";
+import { validateExplicitModel } from "./agents/core/profile.ts";
+import { resolveLaunchPreset } from "./agents/opencode/opencode-resolution.ts";
+import { harnessRegistry } from "./agents/startup.ts";
 import { buildAgentResumeCommand, renderSessionBootstrap } from "./bootstrap.ts";
 import { prepareHarnessEnvironment } from "./harness-environment.ts";
 import {
@@ -120,7 +126,7 @@ export async function prepareSessionLaunch(
 		preflight?: PreflightedAgentLaunch;
 		environment?: Record<string, string>;
 	},
-): Promise<{ paneId: string; prepared: PreparedAgentLaunch; agent: Agent }> {
+): Promise<{ paneId: string; prepared: PreparedAgentLaunch; agent: HarnessInterface }> {
 	const pathContext = await pathContextForSession(core, task, record);
 	const warnings: string[] = [];
 	let environment = options.preflight
@@ -321,7 +327,7 @@ export async function profileFor(
 	const profile = catalog.profiles[modeId];
 	if (!profile) throw new Error(`Unknown mode '${modeId}'.`);
 	let selectedPreset = preset;
-	const agent = agentFor(preset.bootstrap);
+	const agent = harnessRegistry.find(preset.bootstrap);
 	if (profile.model.kind === "explicit") {
 		const available = agent?.discoverModels
 			? await agent.discoverModels({ command: preset.command, env: { ...preset.env }, timeoutMs: 5_000 })
@@ -494,11 +500,10 @@ export async function publishNativeIdentity(
 }
 
 export async function reconcileDeferredIdentity(
-	agent: Agent,
-	origin: LaunchOrigin,
-	publish: (origin: LaunchOrigin, identity: NativeIdentity) => Promise<void>,
-): Promise<void> {
-	await agent.reconcileIdentity(origin, async (identity) => await publish(origin, identity));
+	agent: HarnessInterface,
+	request: IdentityCaptureRequest,
+): Promise<NativeIdentity> {
+	return await agent.reconcileIdentity(request);
 }
 
 export async function resumeExistingTarget(
@@ -510,16 +515,13 @@ export async function resumeExistingTarget(
 		record: AgentSession;
 		preset: AgentPreset;
 		profile: ModeProfile;
-		receipt?: string;
 		environment: Record<string, string>;
 		settings: SessionSettings;
 	},
 	settleObserved: (taskId: string, record: AgentSession, preserveQueuedRequest: boolean) => Promise<void>,
 ): Promise<{ record: AgentSession; preflight: PreflightedAgentLaunch }> {
-	const { record, receipt } = target;
-	const candidate = await store.readNativeSessionIdCandidate(task.id, record.id);
-	if (candidate !== receipt) throw new Error(`Native session receipt changed for session ${record.id}.`);
-	const resumeNativeSessionId = record.nativeSessionId ?? candidate;
+	const { record } = target;
+	const resumeNativeSessionId = record.nativeSessionId;
 	buildAgentResumeCommand(target.preset, resumeNativeSessionId);
 	const pathContext = await pathContextForSession(core, task, record);
 	if (!(await isDirectory(pathContext.worktreeDir)))
@@ -537,8 +539,6 @@ export async function resumeExistingTarget(
 	});
 	const current = requireSessionRecord(await store.read(task.id), record.id);
 	assertSameSession(current, record);
-	const currentReceipt = await store.readNativeSessionIdCandidate(task.id, record.id);
-	if (currentReceipt !== receipt) throw new Error(`Native session receipt changed for session ${record.id}.`);
 	const immediatelyCurrent = requireSessionRecord(await store.read(task.id), record.id);
 	assertSameSession(immediatelyCurrent, record);
 	await process.kill(immediatelyCurrent);

@@ -49,7 +49,7 @@ it("detaches a default live-session transport before saturated slots admit cance
 			join(root, ".agentic-workspace", "agentic-workspace.config.yml"),
 			`agent_configuration: ${JSON.stringify({
 				selectedPreset: "fixture",
-				presets: { fixture: { command: "pi", env: {}, prepare: "", bootstrap: "pi" } },
+				presets: { fixture: { command: ["pi"], env: {}, prepare: "", bootstrap: "pi" } },
 			})}\n`,
 		);
 		await writeFile(
@@ -99,7 +99,7 @@ esac
 			getStoredConfig: async () => ({
 				agentConfiguration: {
 					selectedPreset: "fixture",
-					presets: { fixture: { command: "pi", env: {}, prepare: "", bootstrap: "pi" } },
+					presets: { fixture: { command: ["pi"], env: {}, prepare: "", bootstrap: "pi" } },
 				},
 			}),
 			getTask: async (taskId: string) => ({ id: taskId, agentConfiguration: undefined }),
@@ -109,7 +109,7 @@ esac
 				loadConfig: async () => ({
 					agentConfiguration: {
 						selectedPreset: "fixture",
-						presets: { fixture: { command: "pi", env: {}, prepare: "", bootstrap: "pi" } },
+						presets: { fixture: { command: ["pi"], env: {}, prepare: "", bootstrap: "pi" } },
 					},
 				}),
 				loadTask: async (taskId: string) => ({ id: taskId, agentConfiguration: undefined }),

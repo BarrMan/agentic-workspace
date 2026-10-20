@@ -1,9 +1,9 @@
 import { describe, expect, it } from "bun:test";
-import { detectChromeActivity } from "../agent-status.ts";
-import { agentFor } from "./agents.ts";
+import { detectChromeActivity } from "../../agent-status.ts";
+import { harnessRegistry } from "../startup.ts";
 
 function rulesFor(bootstrap: string) {
-	const agent = agentFor(bootstrap);
+	const agent = harnessRegistry.forPreset(bootstrap);
 	if (!agent) throw new Error(`Missing adapter: ${bootstrap}`);
 	return agent.chromeRules;
 }

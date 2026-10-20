@@ -1,6 +1,6 @@
 import type { OptionValues } from "commander";
 import type { Core } from "../../../index.ts";
-import { parseDelimitedStringList } from "../../../lib/string-list.ts";
+import { normalizeStringList, toStringArray } from "../../../lib/string-list.ts";
 import type { TaskListFilter } from "../../../model/types.ts";
 import { parsePositiveIntegerOption } from "../../list-window.ts";
 
@@ -29,7 +29,8 @@ async function parseTaskListFilters(
 ): Promise<Pick<TaskListRequest, "filters" | "labels"> | null> {
 	if (!validateAssigneeFilter(options)) return null;
 	const filters: TaskListFilter = {};
-	if (options.status) filters.status = parseDelimitedStringList(options.status) ?? options.status;
+	if (options.status)
+		filters.status = normalizeStringList(toStringArray(options.status)) ?? toStringArray(options.status);
 	if (
 		!(await addNormalizedListFilter(
 			filters,
@@ -41,7 +42,7 @@ async function parseTaskListFilters(
 		))
 	)
 		return null;
-	if (options.assignee) filters.assignee = parseDelimitedStringList(options.assignee) ?? [];
+	if (options.assignee) filters.assignee = normalizeStringList(toStringArray(options.assignee)) ?? [];
 	if (options.unassigned) filters.unassigned = true;
 	if (options.milestone) filters.milestone = options.milestone;
 	if (options.priority) {
@@ -52,7 +53,7 @@ async function parseTaskListFilters(
 	if (!(await addNormalizedListFilter(filters, core, options.type, "type", "type", normalize.types))) return null;
 	if (!(await addNormalizedListFilter(filters, core, options.project, "project", "project", normalize.projects)))
 		return null;
-	const labels = parseDelimitedStringList(options.labels) ?? [];
+	const labels = normalizeStringList(toStringArray(options.labels)) ?? [];
 	if (labels.length > 0) {
 		filters.labels = labels;
 		filters.labelMatch = "all";
@@ -75,7 +76,7 @@ async function addNormalizedListFilter(
 	field: "excludeStatus" | "type" | "project",
 	normalize: (core: Core, values: string[], optionName: string) => Promise<string[] | null>,
 ): Promise<boolean> {
-	const values = parseDelimitedStringList(value) ?? [];
+	const values = normalizeStringList(toStringArray(value)) ?? [];
 	if (values.length === 0) return true;
 	const normalized = await normalize(core, values, optionName);
 	if (!normalized) return false;

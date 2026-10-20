@@ -13,7 +13,7 @@ function configuration(): AgentConfiguration {
 	return {
 		selectedPreset: "work",
 		presets: {
-			work: { command: "agent {prompt}", env: { TOKEN: "kept" }, prepare: "prepare", bootstrap: "claude" },
+			work: { command: ["agent", "{prompt}"], env: { TOKEN: "kept" }, prepare: "prepare", bootstrap: "claude" },
 		},
 		sessions: { worktreePerTask: false, yoloMode: false },
 		modes,

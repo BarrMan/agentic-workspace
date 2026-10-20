@@ -42,7 +42,7 @@ function setup() {
 		`agent_configuration: ${JSON.stringify({
 			selectedPreset: "opencode",
 			presets: {
-				opencode: { command: "opencode", env: {}, prepare: "", bootstrap: "opencode", resumeFlag: "--session" },
+				opencode: { command: ["opencode"], env: {}, prepare: "", bootstrap: "opencode", resumeFlag: "--session" },
 			},
 			modes,
 		})}\n`,
@@ -53,7 +53,7 @@ function setup() {
 				selectedPreset: "opencode",
 				presets: {
 					opencode: {
-						command: "opencode",
+						command: ["opencode"],
 						env: {},
 						prepare: "",
 						bootstrap: "opencode",
@@ -81,7 +81,7 @@ function setup() {
 					selectedPreset: "opencode",
 					presets: {
 						opencode: {
-							command: "opencode",
+							command: ["opencode"],
 							env: {},
 							prepare: "",
 							bootstrap: "opencode",

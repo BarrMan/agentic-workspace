@@ -7,7 +7,6 @@ import {
 	type TaskWizardPromptRunner,
 } from "../cli/features/tasks/wizard.ts";
 import { prepareTaskCreationInput } from "../controller/task-creation-input.ts";
-import { parseDelimitedStringList } from "../lib/string-list.ts";
 import type { Task } from "../model/types.ts";
 
 type PromptResponses = Record<string, string | string[]>;
@@ -36,17 +35,13 @@ function createPromptRunner(responses: PromptResponses): TaskWizardPromptRunner 
 }
 
 describe("task wizard", () => {
-	it("normalizes generic comma-delimited lists in first-seen order", () => {
-		expect(parseDelimitedStringList(" alpha, beta, alpha, ,gamma ")).toEqual(["alpha", "beta", "gamma"]);
-	});
-
-	it("splits wizard list input on CRLF and preserves first-seen order", async () => {
+	it("splits wizard list input on CRLF without splitting commas", async () => {
 		const input = await runTaskCreateWizard({
 			statuses: ["To Do"],
 			promptImpl: createPromptRunner({ title: "CRLF list", labels: "alpha\r\nbeta, alpha" }),
 		});
 
-		expect(input?.labels).toEqual(["alpha", "beta"]);
+		expect(input?.labels).toEqual(["alpha", "beta, alpha"]);
 	});
 
 	it("builds create input from shared wizard fields", async () => {
@@ -57,11 +52,11 @@ describe("task wizard", () => {
 			priority: "medium",
 			type: "epic",
 			dueDate: "2026-08-10",
-			assignee: "alice, @bob",
-			labels: "cli, wizard",
-			references: "src/cli.ts, docs/plan.md",
+			assignee: "alice\n@bob",
+			labels: "cli\nwizard",
+			references: "src/cli.ts\ndocs/plan.md",
 			documentation: "docs/spec.md",
-			dependencies: "task-1,2",
+			dependencies: "task-1\n2",
 		});
 
 		const input = await runTaskCreateWizard({
@@ -89,7 +84,7 @@ describe("task wizard", () => {
 	it("deduplicates assignee identities at the create boundary", async () => {
 		const input = await runTaskCreateWizard({
 			statuses: ["To Do"],
-			promptImpl: createPromptRunner({ title: "Assignee dedupe", assignee: "@Alice, alice, Bob, @bob" }),
+			promptImpl: createPromptRunner({ title: "Assignee dedupe", assignee: "@Alice\nalice\nBob\n@bob" }),
 		});
 		if (!input) throw new Error("Expected task wizard input");
 		expect(prepareTaskCreationInput(input).assignees).toEqual(["@Alice", "alice", "Bob", "@bob"]);
@@ -130,11 +125,11 @@ describe("task wizard", () => {
 			priority: "high",
 			type: "Epic",
 			dueDate: "",
-			assignee: "alice, bob",
-			labels: "existing, cli",
-			references: "docs/new.md,src/cli.ts",
+			assignee: "alice\nbob",
+			labels: "existing\ncli",
+			references: "docs/new.md\nsrc/cli.ts",
 			documentation: "docs/spec.md",
-			dependencies: "task-2,3",
+			dependencies: "task-2\n3",
 		});
 
 		const updateInput = await runTaskEditWizard({
@@ -156,6 +151,31 @@ describe("task wizard", () => {
 		expect(updateInput?.dependencies).toEqual(["task-2", "3"]);
 		expect(updateInput?.references).toEqual(["docs/new.md", "src/cli.ts"]);
 		expect(updateInput?.documentation).toEqual(["docs/spec.md"]);
+	});
+
+	it("preserves existing list items when appending in a prefilled edit", async () => {
+		const existingTask: Task = {
+			id: "task-10",
+			title: "List round trip",
+			status: "To Do",
+			assignee: [],
+			createdDate: "2026-02-20",
+			labels: ["alpha", "beta"],
+			dependencies: [],
+			references: [],
+			documentation: [],
+			rawContent: "",
+		};
+		const prompt: TaskWizardPromptRunner = async (question) => {
+			if (question.name === "labels") {
+				expect(question.initial).toBe("alpha\nbeta");
+				return { labels: `${question.initial}\ngamma` };
+			}
+			return { [question.name]: question.initial ?? "" };
+		};
+
+		const input = await runTaskEditWizard({ task: existingTask, statuses: ["To Do"], promptImpl: prompt });
+		expect(input?.labels).toEqual(["alpha", "beta", "gamma"]);
 	});
 
 	it("supports edit picker flow", async () => {

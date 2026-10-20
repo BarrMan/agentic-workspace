@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import type { ModeProfile } from "../../model/session/types.ts";
+import type { ModeProfile } from "../../../model/session/types.ts";
 import { profileInstructions, profilePermissionSupport } from "./profile.ts";
 
 const plan: ModeProfile = {

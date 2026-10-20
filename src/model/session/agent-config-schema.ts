@@ -7,6 +7,11 @@ const POSIX_ENV_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/;
 const SAFE_MODE_ID = /^(?!__proto__$|prototype$|constructor$)[a-z][a-z0-9-]*$/;
 const NO_NUL = (value: string): boolean => !value.includes("\0");
 
+export const agentCommandArgvSchema = z
+	.array(z.string().refine(NO_NUL, "arguments must not contain NUL bytes."))
+	.min(1, "command must contain an executable.")
+	.refine((argv) => !!argv[0]?.trim(), "command must contain a non-empty executable.");
+
 /** Task-container relative names only; internal files and task records are not artifacts. */
 export function validateArtifactPath(path: string): string {
 	if (
@@ -41,9 +46,7 @@ const envSchema = z
 const presetSchema = z
 	.looseObject(
 		{
-			command: z
-				.string({ error: "command must be a non-empty string." })
-				.refine((value) => value.trim().length > 0 && NO_NUL(value), "command must be a non-empty string."),
+			command: agentCommandArgvSchema,
 			env: envSchema,
 			prepare: z.string({ error: "prepare must be a string." }).refine(NO_NUL, "prepare must be a string."),
 			bootstrap: z.enum(AGENT_BOOTSTRAP_TYPES, {

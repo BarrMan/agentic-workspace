@@ -1,6 +1,5 @@
 import { describe, expect, test } from "bun:test";
 import {
-	buildIdRegex,
 	extractAnyPrefix,
 	extractIdBody,
 	generateNextId,
@@ -38,41 +37,6 @@ describe("prefix-config", () => {
 		});
 	});
 
-	describe("buildIdRegex", () => {
-		test("matches simple IDs", () => {
-			const regex = buildIdRegex("task");
-			expect("task-123".match(regex)).toBeTruthy();
-			expect("task-123".match(regex)?.[1]).toBe("123");
-		});
-
-		test("matches hierarchical IDs", () => {
-			const regex = buildIdRegex("task");
-			expect("task-5.2.1".match(regex)?.[1]).toBe("5.2.1");
-		});
-
-		test("is case-insensitive", () => {
-			const regex = buildIdRegex("task");
-			expect("TASK-123".match(regex)).toBeTruthy();
-			expect("Task-456".match(regex)).toBeTruthy();
-		});
-
-		test("does not match wrong prefix", () => {
-			const regex = buildIdRegex("task");
-			expect("JIRA-123".match(regex)).toBeFalsy();
-		});
-
-		test("works with custom prefixes", () => {
-			const regex = buildIdRegex("JIRA");
-			expect("JIRA-789".match(regex)?.[1]).toBe("789");
-			expect("jira-789".match(regex)?.[1]).toBe("789");
-		});
-
-		test("only matches at start of string", () => {
-			const regex = buildIdRegex("task");
-			expect("prefix-task-123".match(regex)).toBeFalsy();
-		});
-	});
-
 	describe("hasPrefix", () => {
 		test("returns true for matching prefix", () => {
 			expect(hasPrefix("task-123", "task")).toBe(true);
@@ -87,6 +51,11 @@ describe("prefix-config", () => {
 		test("returns false for non-matching prefix", () => {
 			expect(hasPrefix("JIRA-123", "task")).toBe(false);
 			expect(hasPrefix("123", "task")).toBe(false);
+		});
+
+		test("treats configured prefixes literally", () => {
+			expect(hasPrefix("a.b-123", "a.b")).toBe(true);
+			expect(hasPrefix("axb-123", "a.b")).toBe(false);
 		});
 
 		test("trims whitespace", () => {

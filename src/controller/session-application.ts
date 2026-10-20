@@ -3,7 +3,7 @@ import { type LifecycleCheckpoint, Session, type SessionRuntime } from "../model
 import { type AgentSession, type ModeId, type ModeProfile, resolveSessionSettings } from "../model/session/types.ts";
 import { type SessionCreationIdentity, Task } from "../model/task/task.ts";
 import { taskIdKey, taskIdsEqual } from "../model/task/task-id.ts";
-import { agentFor } from "../runtime/agents/agents.ts";
+import { harnessRegistry } from "../runtime/agents/startup.ts";
 import { buildAgentResumeCommand } from "../runtime/bootstrap.ts";
 import { ExactResumeUnavailableError } from "../runtime/errors/sessions.ts";
 import {
@@ -131,7 +131,7 @@ export class SessionApplication {
 			);
 			if (!launchProfile) throw new Error(`Mode profile unavailable: ${selectedMode}`);
 			const record = await createSessionRecord(this.store, taskRecord.id, selectedPreset, pathContext);
-			record.nativeProvider = agentFor(preset.bootstrap)?.nativeNamespace;
+			record.nativeProvider = harnessRegistry.find(preset.bootstrap)?.nativeNamespace;
 			record.nativeWorkspace = true;
 			const provisionalSession = new Session(record, selectedMode, this.runtime);
 			let creation!: SessionCreationIdentity;
@@ -202,7 +202,7 @@ export class SessionApplication {
 				const configuredPreset = resolved.config.presets[record.preset];
 				if (!configuredPreset) throw new Error(`Agent preset not found for existing session: ${record.preset}`);
 				const { profile, preset } = await profileFor(this.core, modeId, configuredPreset);
-				const agent = agentFor(preset.bootstrap);
+				const agent = harnessRegistry.find(preset.bootstrap);
 				if (record.nativeProvider && agent?.nativeNamespace && record.nativeProvider !== agent.nativeNamespace)
 					throw new Error(
 						`Session ${record.id} belongs to provider ${record.nativeProvider}, not ${agent.nativeNamespace}.`,
@@ -238,8 +238,7 @@ export class SessionApplication {
 					pathContext.taskDir,
 				);
 				if (!launchProfile) throw new Error(`Mode profile unavailable: ${modeId}`);
-				const receipt = await this.store.readNativeSessionIdCandidate(taskId, sessionId);
-				const nativeId = record.nativeSessionId ?? receipt;
+				const nativeId = record.nativeSessionId;
 				if (!nativeId) throw new Error(`Session ${sessionId} has no exact native conversation identity to resume.`);
 				buildAgentResumeCommand(preset, nativeId);
 				await preflightAgentLaunch(preset, record.bootstrapPath, {
@@ -251,7 +250,6 @@ export class SessionApplication {
 					repositoryRoot: pathContext.projectDir,
 					taskRoot: pathContext.taskDir,
 				});
-				const revalidatedReceipt = await this.store.readNativeSessionIdCandidate(taskId, sessionId);
 				const revalidatedState = await this.store.read(taskId);
 				const revalidated = Object.values(revalidatedState.modes)
 					.flatMap(({ sessions }) => sessions)
@@ -260,8 +258,7 @@ export class SessionApplication {
 					!revalidated ||
 					revalidated.createdAt !== record.createdAt ||
 					revalidated.nativeSessionId !== record.nativeSessionId ||
-					revalidated.ownerPid !== record.ownerPid ||
-					revalidatedReceipt !== receipt
+					revalidated.ownerPid !== record.ownerPid
 				)
 					throw new Error(`Session ${sessionId} changed during exact-resume preflight.`);
 				const launch = this.launchContext(record, modeId, resolved, preset, launchProfile);

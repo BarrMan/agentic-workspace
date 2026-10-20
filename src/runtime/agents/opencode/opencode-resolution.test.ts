@@ -5,15 +5,15 @@ import { join } from "node:path";
 import { resolveLaunchPreset } from "./opencode-resolution.ts";
 
 const directories: string[] = [];
-const preset = { command: "opencode", env: {}, prepare: "", bootstrap: "opencode" as const };
+const preset = { command: ["opencode"], env: {}, prepare: "", bootstrap: "opencode" as const };
 
-async function versionCommand(version: string): Promise<{ cwd: string; command: string }> {
+async function versionCommand(version: string): Promise<{ cwd: string; command: string[] }> {
 	const cwd = await mkdtemp(join(tmpdir(), "agentic-workspace-opencode-resolution-"));
 	directories.push(cwd);
 	const command = join(cwd, "opencode");
 	await writeFile(command, `#!/bin/sh\nprintf '%s\\n' '${version}'\n`);
 	await chmod(command, 0o700);
-	return { cwd, command };
+	return { cwd, command: [command] };
 }
 
 afterEach(async () => {

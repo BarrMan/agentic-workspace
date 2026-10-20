@@ -9,8 +9,8 @@ function configuration(overrides: Partial<AgentConfiguration> = {}): AgentConfig
 	return {
 		selectedPreset: "existing",
 		presets: {
-			existing: { command: "existing {prompt}", env: {}, prepare: "", bootstrap: "opencode" },
-			alternate: { command: "alternate {prompt}", env: {}, prepare: "", bootstrap: "opencode" },
+			existing: { command: ["existing", "{prompt}"], env: {}, prepare: "", bootstrap: "opencode" },
+			alternate: { command: ["alternate", "{prompt}"], env: {}, prepare: "", bootstrap: "opencode" },
 		},
 		sessions: { worktreePerTask: false, yoloMode: false },
 		...overrides,

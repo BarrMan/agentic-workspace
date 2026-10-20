@@ -7,7 +7,7 @@ import { mountOpenTuiAgentSettings } from "../renderer/opentui/agent-settings.ts
 function configuration(): AgentConfiguration {
 	return {
 		selectedPreset: "work",
-		presets: { work: { command: "agent {prompt}", env: {}, prepare: "", bootstrap: "claude" } },
+		presets: { work: { command: ["agent", "{prompt}"], env: {}, prepare: "", bootstrap: "claude" } },
 		sessions: { worktreePerTask: true, yoloMode: false },
 		modes: {
 			version: 1,

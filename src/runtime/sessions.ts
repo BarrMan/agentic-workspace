@@ -34,10 +34,17 @@ import {
 } from "../storage/config.ts";
 import { type SessionState, SessionStore } from "../storage/session-store.ts";
 import { openViewStateStore } from "../storage/view-state-store.ts";
-import type { Agent, LaunchOrigin, NativeIdentity, SessionIntent } from "./agents/agent.ts";
-import { agentFor } from "./agents/agents.ts";
-import { resolveLaunchPreset } from "./agents/opencode-resolution.ts";
+import type {
+	HarnessInterface,
+	IdentityCaptureRequest,
+	LaunchOrigin,
+	NativeIdentity,
+	SessionIntent,
+} from "./agents/core/agent.ts";
+import { resolveLaunchPreset } from "./agents/opencode/opencode-resolution.ts";
+import { harnessRegistry } from "./agents/startup.ts";
 import { ConclusiveStartupFailureError, ExactResumeUnavailableError, ResumeFailedError } from "./errors/sessions.ts";
+import { PROVIDER_READINESS_DEADLINE_MS, waitForReceipts } from "./harness.ts";
 import { prepareHarnessEnvironment } from "./harness-environment.ts";
 import { createTmuxExec } from "./live/tmux/exec.ts";
 import type { TmuxExec } from "./live/tmux/types.ts";
@@ -316,10 +323,33 @@ export class AgentSessionService {
 	 * and `replacement` is a different live/dead pane or a pane carrying another launch's inventory.
 	 */
 	/** Offer one deferred identity delivery to its adapter, routed through the single publisher. */
-	private async reconcileDeferredIdentity(agent: Agent, origin: LaunchOrigin): Promise<void> {
-		await reconcileSharedDeferredIdentity(agent, origin, async (launch, identity) => {
-			await this.publishNativeIdentity(launch, identity);
+	private async reconcileDeferredIdentity(
+		agent: HarnessInterface,
+		origin: LaunchOrigin,
+		request: Omit<IdentityCaptureRequest, "signal">,
+	): Promise<NativeIdentity> {
+		const controller = new AbortController();
+		let timer: ReturnType<typeof setTimeout> | undefined;
+		const deadline = new Promise<never>((_resolve, reject) => {
+			timer = setTimeout(() => {
+				const error = new Error("Provider identity capture timed out.");
+				controller.abort(error);
+				reject(error);
+			}, 30_000);
 		});
+		let identity: NativeIdentity;
+		try {
+			identity = await Promise.race([
+				reconcileSharedDeferredIdentity(agent, { ...request, signal: controller.signal }),
+				deadline,
+			]);
+		} finally {
+			if (timer) clearTimeout(timer);
+		}
+		if (!identity || typeof identity.id !== "string" || !identity.id.trim())
+			throw new Error(`Provider returned an invalid native identity for session ${origin.record.id}.`);
+		await this.publishNativeIdentity(origin, identity);
+		return identity;
 	}
 
 	private async assertSessionIdentity(expected: AgentSession): Promise<void> {
@@ -377,24 +407,33 @@ export class AgentSessionService {
 		await this.store.removeTaskDir(task?.id ?? taskId);
 	}
 
-	private async validateOwnedSessionSidecars(session: AgentSession, taskDir: string, taskId: string): Promise<void> {
+	private async validateOwnedSessionSidecars(
+		session: AgentSession,
+		taskDir: string,
+		taskId: string,
+	): Promise<{ outputPath: string; bootstrapPath: string }> {
 		if (!/^[A-Za-z0-9._-]+$/.test(session.id)) throw new Error(`Session ${session.id} has an invalid identity.`);
-		for (const [path, suffix] of [
-			[session.outputPath, ".log"],
-			[session.bootstrapPath, ".md"],
-		] as const) {
-			if (resolve(path) !== resolve(join(taskDir, `${session.id}${suffix}`)))
+		const sidecars = [
+			{ path: session.outputPath, suffix: ".log" },
+			{ path: session.bootstrapPath, suffix: ".md" },
+		] as const;
+		const expected = sidecars.map(({ suffix }) => join(taskDir, `${session.id}${suffix}`));
+		for (const [index, { path }] of sidecars.entries()) {
+			const expectedPath = resolve(expected[index]!);
+			const recordedPath = resolve(path);
+			if (relative(expectedPath, recordedPath) !== "" || relative(recordedPath, expectedPath) !== "")
 				throw new Error(
 					`Cannot purge task ${taskId}: session ${session.id} has an untrusted sidecar path outside its task session directory.`,
 				);
 			try {
-				const file = await lstat(path);
+				const file = await lstat(expectedPath);
 				if (!file.isFile() || file.isSymbolicLink())
 					throw new Error(`Cannot purge task ${taskId}: session ${session.id} sidecar is not a regular owned file.`);
 			} catch (error) {
 				if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
 			}
 		}
+		return { outputPath: expected[0]!, bootstrapPath: expected[1]! };
 	}
 
 	/**
@@ -477,7 +516,6 @@ export class AgentSessionService {
 				}
 				await removeOwnedPath(join(canonicalTaskDir, `${session.id}.log`));
 				await removeOwnedPath(join(canonicalTaskDir, `${session.id}.md`));
-				await removeOwnedPath(join(canonicalTaskDir, `${session.id}.native-session-id`));
 				await removeOwnedPath(join(canonicalTaskDir, `${session.id}.activity`), true);
 				for (const history of Object.values(currentState.modes)) {
 					history.sessions = history.sessions.filter((current) => current.id !== session.id);
@@ -510,6 +548,8 @@ export class AgentSessionService {
 	async delete(taskId: string, sessionId: string, options: { force?: boolean } = {}): Promise<void> {
 		await withTaskSessionAdmission(this.core, taskId, async (task) => {
 			const session = this.session(await this.store.read(task.id), sessionId);
+			const { taskDir } = await this.store.paths(task.id);
+			const sidecars = await this.validateOwnedSessionSidecars(session, taskDir, task.id);
 			const pendingNative = session.nativeWorkspace === true && session.status === AGENT_SESSION_STATUS.STARTING;
 			const live = session.status === AGENT_SESSION_STATUS.RUNNING || session.status === AGENT_SESSION_STATUS.STARTING;
 			if (live && !pendingNative) {
@@ -521,7 +561,7 @@ export class AgentSessionService {
 			}
 			await deleteWorkspaceRequest(this.core.projectRoot, session.id);
 			await this.store.remove(task.id, session.id);
-			await Promise.all([removeFile(session.outputPath), removeFile(session.bootstrapPath)]);
+			await Promise.all([removeFile(sidecars.outputPath), removeFile(sidecars.bootstrapPath)]);
 		});
 	}
 
@@ -555,11 +595,6 @@ export class AgentSessionService {
 				);
 				if (record.nativeWorkspace) {
 					await tagNativeSessionPane(this.core, this.server, record, paneId, false);
-					const agent = agentFor(preset.bootstrap);
-					const resources = await this.process.launchResources(paneId);
-					const modeId = findSessionMode(state.modes, record.id);
-					if (agent && resources && modeId)
-						await this.reconcileDeferredIdentity(agent, { record, modeId, paneId, resources });
 				}
 				return {
 					record: this.session(await this.store.read(task.id), sessionId),
@@ -645,11 +680,10 @@ export class AgentSessionService {
 				const execution = await executionPresetWithEnvironment(this.core, task.id, record.preset, pathContext);
 				({ preset, profile } = await profileFor(this.core, modeId, execution.preset));
 				environment = execution.environment;
-				const agent = agentFor(preset.bootstrap);
-				const nativeProvider = agent?.nativeNamespace;
-				if (record.nativeProvider && nativeProvider && record.nativeProvider !== nativeProvider)
+				const agent = harnessRegistry.forPreset(preset.bootstrap);
+				const nativeProvider = agent.nativeNamespace;
+				if (record.nativeProvider && record.nativeProvider !== nativeProvider)
 					throw new Error(`Session ${record.id} belongs to provider ${record.nativeProvider}, not ${nativeProvider}.`);
-				const receipt = await this.store.readNativeSessionIdCandidate(task.id, record.id);
 				settings = resolveSessionSettings((await this.launchConfiguration(task.id)).config);
 				if (!sameRoot(pathContext.projectDir, this.core.projectRoot))
 					throw new Error(`Session ${record.id} has a mismatched canonical project root.`);
@@ -664,8 +698,6 @@ export class AgentSessionService {
 				if (runtime.status === "live") {
 					const paneId = runtime.paneId;
 					await tagNativeSessionPane(this.core, this.server, record, paneId, false);
-					const resources = await this.process.launchResources(paneId);
-					if (agent && resources) await this.reconcileDeferredIdentity(agent, { record, modeId, paneId, resources });
 					const observed = this.session(await this.store.read(task.id), record.id);
 					await tagNativeSessionPane(this.core, this.server, observed, paneId);
 					launched = true;
@@ -711,7 +743,7 @@ export class AgentSessionService {
 						this.store,
 						this.process,
 						task,
-						{ record, preset, profile, receipt, environment, settings },
+						{ record, preset, profile, environment, settings },
 						(taskId, observed, preserveQueuedRequest) =>
 							this.settleObservedSession(taskId, observed, preserveQueuedRequest),
 					));
@@ -776,7 +808,7 @@ export class AgentSessionService {
 		});
 		const preset = await resolveLaunchPreset(configured, { cwd, env: environment });
 		const record = await createSessionRecord(this.store, task.id, presetName, pathContext);
-		record.nativeProvider = agentFor(preset.bootstrap)?.nativeNamespace;
+		record.nativeProvider = harnessRegistry.forPreset(preset.bootstrap).nativeNamespace;
 		record.nativeWorkspace = true;
 		const { priorActiveSessionId } = await this.reserveModeRecord(record, modeId, { allowRunningActive });
 		return {
@@ -886,9 +918,6 @@ export class AgentSessionService {
 					};
 			if (intent.kind === "new") delete next.nativeSessionId;
 			if (options.action === "launch-new") delete next.resumeProbeFailed;
-			// A fresh launch discards any previous conversation's receipt before dispatch so a deferred
-			// report can never re-deliver it.
-			if (intent.kind === "new") await this.store.clearNativeSessionReceipt(next);
 			if (!directReservation)
 				await this.store.mutateSession(task.id, next.id, async (current) => {
 					assertSameSessionMembership(current, record);
@@ -911,7 +940,49 @@ export class AgentSessionService {
 			});
 			await this.assertSessionIdentity(next);
 			await this.process.launchPrepared(next, prepared, { onDispatch: () => (dispatchAttempted = true) });
-			await this.reconcileDeferredIdentity(agent, origin);
+			let capturedIdentity: NativeIdentity;
+			try {
+				capturedIdentity = await this.reconcileDeferredIdentity(agent, origin, {
+					intent,
+					preset,
+					cwd: next.cwd,
+					env: prepared.env,
+					launchDirectory: resources.skill.path,
+					...(identity ? { preparedIdentity: identity } : {}),
+				});
+			} catch (error) {
+				throw new ConclusiveStartupFailureError(error instanceof Error ? error.message : String(error), {
+					cause: error,
+				});
+			}
+			next.nativeSessionId = capturedIdentity.id;
+			if (agent.readiness) {
+				try {
+					const readiness = agent.readiness(intent, resources.skill.path, capturedIdentity);
+					await waitForReceipts(
+						[readiness.initialized.path],
+						readiness.initialized.expected,
+						next,
+						this.process,
+						PROVIDER_READINESS_DEADLINE_MS,
+					);
+					if (intent.kind === "new") {
+						if (!readiness.promptAccepted)
+							throw new Error(`Provider prompt acceptance evidence is unavailable for session ${next.id}.`);
+						await waitForReceipts(
+							[readiness.promptAccepted.path],
+							readiness.promptAccepted.expected,
+							next,
+							this.process,
+							PROVIDER_READINESS_DEADLINE_MS,
+						);
+					}
+				} catch (error) {
+					throw new ConclusiveStartupFailureError(error instanceof Error ? error.message : String(error), {
+						cause: error,
+					});
+				}
+			}
 			await this.store.mutateSession(task.id, next.id, async (current) => {
 				assertSharedSameSession(current, next);
 				current.status = AGENT_SESSION_STATUS.RUNNING;
@@ -942,14 +1013,36 @@ export class AgentSessionService {
 				const nativeSessionId = record.nativeSessionId;
 				if (!nativeProvider || !nativeSessionId) throw error;
 				const failure = new ResumeFailedError(nativeProvider, nativeSessionId, error);
-				await this.store.markResumeProbeFailed(record, modeId, { nativeProvider, nativeSessionId }, failure.message);
+				let publicationError: unknown;
+				try {
+					await this.store.markResumeProbeFailed(record, modeId, { nativeProvider, nativeSessionId }, failure.message);
+				} catch (error) {
+					publicationError = error;
+				}
+				const cleanupErrors: unknown[] = [];
 				try {
 					await this.process.kill(record);
 				} catch (cleanupError) {
-					throw new AggregateError([cleanupError, failure], "Owned failed-resume pane cleanup failed.", {
-						cause: cleanupError,
-					});
+					cleanupErrors.push(cleanupError);
 				}
+				try {
+					await prepared?.cleanup();
+				} catch (cleanupError) {
+					cleanupErrors.push(cleanupError);
+				}
+				if (cleanupErrors.length && publicationError)
+					throw new AggregateError(
+						[failure, ...cleanupErrors, publicationError],
+						"Owned failed-resume cleanup failed.",
+						{
+							cause: failure,
+						},
+					);
+				if (publicationError) throw publicationError;
+				if (cleanupErrors.length)
+					throw new AggregateError([failure, ...cleanupErrors], "Owned failed-resume pane cleanup failed.", {
+						cause: failure,
+					});
 				throw failure;
 			}
 			if (!dispatchAttempted) {
@@ -959,7 +1052,12 @@ export class AgentSessionService {
 				});
 			} else {
 				try {
-					await this.settleDispatchedLaunchFailure(launchRecord, error);
+					await this.settleDispatchedLaunchFailure(
+						launchRecord,
+						error,
+						error instanceof ConclusiveStartupFailureError,
+						prepared,
+					);
 				} catch (settlementError) {
 					throw new AggregateError([error, settlementError], "Could not settle the failed dispatched session.", {
 						cause: error,
@@ -1030,21 +1128,41 @@ export class AgentSessionService {
 		});
 	}
 
-	private async settleDispatchedLaunchFailure(expected: AgentSession, failure: unknown): Promise<void> {
+	private async settleDispatchedLaunchFailure(
+		expected: AgentSession,
+		failure: unknown,
+		conclusive = false,
+		prepared?: PreparedAgentLaunch,
+	): Promise<void> {
 		let runtime: "live" | "dead" | "missing" | "uncertain" = "uncertain";
 		let probeReason: string | undefined;
-		try {
-			const classification = await this.process.nativeRuntimeClassification(expected);
-			runtime = classification.status;
-			if (classification.status === "uncertain") probeReason = classification.reason;
-		} catch (error) {
-			probeReason = error instanceof Error ? error.message : String(error);
+		const cleanupErrors: unknown[] = [];
+		if (conclusive) {
+			try {
+				await this.process.kill(expected);
+			} catch (error) {
+				cleanupErrors.push(error);
+			}
+			try {
+				await prepared?.cleanup();
+			} catch (error) {
+				cleanupErrors.push(error);
+			}
+		} else {
+			try {
+				const classification = await this.process.nativeRuntimeClassification(expected);
+				runtime = classification.status;
+				if (classification.status === "uncertain") probeReason = classification.reason;
+			} catch (error) {
+				probeReason = error instanceof Error ? error.message : String(error);
+			}
 		}
+		const publicationErrors: unknown[] = [];
 		try {
 			await this.store.mutateSession(expected.taskId, expected.id, async (session) => {
 				assertSameSessionMembership(session, expected);
-				if (session.status !== AGENT_SESSION_STATUS.STARTING) return;
-				if (runtime === "live") {
+				if (!conclusive && session.status !== AGENT_SESSION_STATUS.STARTING) return;
+				if (!conclusive && runtime === "live") {
 					session.status = AGENT_SESSION_STATUS.RUNNING;
 					session.ownerPid = undefined;
 					session.error = undefined;
@@ -1052,20 +1170,28 @@ export class AgentSessionService {
 					return;
 				}
 				session.status = AGENT_SESSION_STATUS.FAILED;
-				session.error = `Launch failed after dispatch; runtime ${runtime}${probeReason ? ` (${probeReason})` : ""}: ${
-					failure instanceof Error ? failure.message : String(failure)
-				}`;
+				session.error = conclusive
+					? failure instanceof Error
+						? failure.message
+						: String(failure)
+					: `Launch failed after dispatch; runtime ${runtime}${probeReason ? ` (${probeReason})` : ""}: ${
+							failure instanceof Error ? failure.message : String(failure)
+						}`;
 				session.endedAt = timestamp();
 				delete session.ownerPid;
 			});
 		} catch (error) {
 			if (
-				error instanceof Error &&
-				(error.message.startsWith("Agent session not found:") || error.message.includes("was removed or replaced"))
+				!(
+					error instanceof Error &&
+					(error.message.startsWith("Agent session not found:") || error.message.includes("was removed or replaced"))
+				)
 			)
-				return;
-			throw error;
+				publicationErrors.push(error);
 		}
+		const errors = [...cleanupErrors, ...publicationErrors];
+		if (errors.length)
+			throw new AggregateError([failure, ...errors], "Failed startup cleanup failed.", { cause: failure });
 	}
 
 	private async failBeforeDispatch(
@@ -1245,7 +1371,7 @@ export class AgentSessionService {
 		});
 		const profile = await profileFor(this.core, modeId, launchPreset);
 		const session = await createSessionRecord(this.store, task.id, presetName, pathContext);
-		session.nativeProvider = agentFor(profile.preset.bootstrap)?.nativeNamespace;
+		session.nativeProvider = harnessRegistry.forPreset(profile.preset.bootstrap).nativeNamespace;
 		const { preceding, priorActiveSessionId } = await this.reserveModeRecord(session, modeId, {
 			allowRunningActive: options.replace,
 		});
@@ -1558,7 +1684,7 @@ export class AgentSessionService {
 					await this.executionPreset(task.id, target.preset, pathContext),
 				);
 				const preset = currentProfile.preset;
-				const agent = agentFor(preset.bootstrap);
+				const agent = harnessRegistry.forPreset(preset.bootstrap);
 				if (!agent?.supported)
 					throw new Error(`Agent session ${target.id} uses an unsupported agent: ${preset.bootstrap}.`);
 				if (!target.nativeSessionId)

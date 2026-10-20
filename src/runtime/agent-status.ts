@@ -8,7 +8,7 @@
  */
 
 import type { AgentActivity, AgentSessionStatus } from "../model/session/types.ts";
-import type { AgentChromeRule } from "./agents/agent.ts";
+import type { AgentChromeRule } from "./agents/core/agent.ts";
 import type { HookStatus } from "./status-hooks.ts";
 
 /** Timing constants copied verbatim from AOE (`§0.3`). All values are milliseconds. */

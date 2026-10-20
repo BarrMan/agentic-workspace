@@ -2,7 +2,7 @@ import type { Command } from "commander";
 import type { Core } from "../../controller/agentic-workspace.ts";
 import { resolveCallingMode } from "../../model/session/mode-model.ts";
 import { OpenTuiWorkspaceController } from "../../renderer/opentui/workspace-controller.ts";
-import { withExplicitModel } from "../../runtime/agents/profile.ts";
+import { withExplicitModel } from "../../runtime/agents/core/profile.ts";
 import { AgentSessionService } from "../../runtime/sessions.ts";
 import { loadAgentConfiguration, requireProjectModeCatalog, updateAgentConfiguration } from "../../storage/config.ts";
 import { addHelpSchema } from "./help-schema.ts";

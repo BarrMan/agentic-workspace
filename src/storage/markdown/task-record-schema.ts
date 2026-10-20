@@ -1,7 +1,6 @@
 import { z } from "zod";
 import { AgentConfigurationSchema } from "../../model/session/agent-config-schema.ts";
 import { normalizeDueDate } from "../../model/task/due-date.ts";
-import { normalizePriorityValue } from "../../model/task/priority-config.ts";
 import { TASK_FRONTMATTER_FIELDS as FIELD, FRONTMATTER_DATE_PATTERN } from "./schema.ts";
 
 /** Frontmatter key for each task property the schema owns. Dependencies are decoded separately. */
@@ -66,8 +65,8 @@ const requiredText = z.preprocess(textOrEmpty, z.string());
 const optionalString = z.preprocess(optionalText, z.string().optional());
 
 const assignees = z.preprocess(
-	(value) => (value === undefined || value === null ? [] : value),
-	z.array(z.unknown(), { error: "assignee must be a list" }).transform((values) => values.map(String)),
+	(value) => (value === undefined ? [] : value),
+	z.array(z.string(), { error: "assignee must be a list" }),
 );
 
 const dependencies = z
@@ -111,13 +110,7 @@ export const TaskFrontmatterSchema = z.object({
 	modifiedFiles: z.preprocess(textList, z.array(z.string())),
 	parentTaskId: optionalString,
 	subtasks: z.preprocess(optionalTextList, z.array(z.string()).optional()),
-	priority: z.preprocess(
-		optionalText,
-		z
-			.string()
-			.optional()
-			.transform((value) => normalizePriorityValue(value)),
-	),
+	priority: z.preprocess(optionalText, z.string().optional()),
 	type: optionalString,
 	project: optionalString,
 	ordinal: z.preprocess(

@@ -63,6 +63,14 @@ modified_files: ["src/auth/login.ts", "src/web/LoginForm.tsx"]
 parent_task_id: "task-parent"
 subtasks: ["task-1.1", "task-1.2"]
 agent_summary: "Fixed the login race and verified the error paths."
+agentConfiguration:
+  selectedPreset: custom
+  presets:
+    custom:
+      command: [agent, "", "two words"]
+      env: {}
+      prepare: ""
+      bootstrap: pi
 ---
 
 ## Description
@@ -88,6 +96,7 @@ Fix the login bug that prevents users from signing in.
 			expect(task.modifiedFiles).toEqual(["src/auth/login.ts", "src/web/LoginForm.tsx"]);
 			expect(task.parentTaskId).toBe("task-parent");
 			expect(task.subtasks).toEqual(["task-1.1", "task-1.2"]);
+			expect(task.agentConfiguration?.presets.custom?.command).toEqual(["agent", "", "two words"]);
 		});
 
 		it("should parse a task with minimal fields", () => {

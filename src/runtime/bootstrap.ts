@@ -1,5 +1,5 @@
 import type { AgentBootstrap, AgentPreset } from "../model/session/types.ts";
-import { agentFor } from "./agents/agents.ts";
+import { harnessRegistry } from "./agents/startup.ts";
 
 export interface SessionBootstrapInput {
 	taskId: string;
@@ -11,7 +11,7 @@ export interface SessionBootstrapInput {
  * auto-approval option is not confirmed.
  */
 export function yoloFlagFor(bootstrap: AgentBootstrap): string | undefined {
-	return agentFor(bootstrap)?.yoloFlag();
+	return harnessRegistry.find(bootstrap)?.yoloFlag();
 }
 
 /** Startup supplies identity only; task work begins after an explicit user request. */
@@ -25,13 +25,11 @@ export function renderSessionBootstrap(input: SessionBootstrapInput): string {
  * File contents never become shell source.
  */
 export function buildAgentLaunchCommand(preset: AgentPreset, bootstrapPath: string, nativeSessionId?: string): string {
-	const agent = agentFor(preset.bootstrap);
-	if (!agent) throw new Error(`No agent registered for bootstrap type ${preset.bootstrap}.`);
+	const agent = harnessRegistry.forPreset(preset.bootstrap);
 	return agent.launchCommand({ preset, bootstrapPath, nativeSessionId });
 }
 
 export function buildAgentResumeCommand(preset: AgentPreset, nativeSessionId?: string): string {
-	const agent = agentFor(preset.bootstrap);
-	if (!agent) throw new Error(`No agent registered for bootstrap type ${preset.bootstrap}.`);
+	const agent = harnessRegistry.forPreset(preset.bootstrap);
 	return agent.resumeCommand({ preset, nativeSessionId });
 }

@@ -2,11 +2,10 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import type { AgentPreset, ModeProfile, RuntimeAgentBootstrap } from "../model/session/types.ts";
-import type { Agent, NativeIdentity, SessionIntent } from "./agents/agent.ts";
-import { appendArguments } from "./agents/agent.ts";
-import { agentFor } from "./agents/agents.ts";
-import { resolveLaunchPreset } from "./agents/opencode-resolution.ts";
-import { profileInstructions } from "./agents/profile.ts";
+import type { HarnessInterface, NativeIdentity, SessionIntent } from "./agents/core/agent.ts";
+import { profileInstructions } from "./agents/core/profile.ts";
+import { resolveLaunchPreset } from "./agents/opencode/opencode-resolution.ts";
+import { harnessRegistry } from "./agents/startup.ts";
 import { type PreparedLaunchResources, preparedLaunchResources } from "./completion-supervisor-resources.ts";
 import { prepareHarnessEnvironment } from "./harness-environment.ts";
 import { STATUS_DIR_ENV, sessionActivityDir } from "./status-hooks.ts";
@@ -19,8 +18,6 @@ export interface PreparedAgentLaunch {
 	env: Record<string, string>;
 	/** The adapter-established native identity, or absent when the identity is deferred. */
 	identity?: NativeIdentity;
-	/** Optional transient exact-session confirmation supplied by the provider adapter. */
-	confirmSession?: (expectedNativeSessionId: string) => Promise<boolean>;
 	/** Non-blocking preset-environment warnings, available to native workspace presentation. */
 	warnings?: string[];
 	resources: PreparedLaunchResources;
@@ -66,9 +63,9 @@ export interface PrepareAgentLaunchOptions {
 export interface PreflightedAgentLaunch {
 	preset: AgentPreset;
 	options: PrepareAgentLaunchOptions;
-	agent: Agent;
+	agent: HarnessInterface;
 	policyPreset: AgentPreset;
-	command: string;
+	command: string[];
 	projectDir: string;
 	taskDir: string;
 	environment: Record<string, string>;
@@ -112,14 +109,13 @@ export async function preflightAgentLaunch(
 	let preset = configuredPreset;
 	const options = { ...requestedOptions, environment };
 	preset = await resolveLaunchPreset(preset, { cwd: options.cwd, env: environment });
-	const agent = agentFor(preset.bootstrap);
-	if (!agent) throw new Error(`No agent registered for bootstrap type ${preset.bootstrap}.`);
+	const agent = harnessRegistry.forPreset(preset.bootstrap);
 	const profiledPreset = agent.prepareProfile ? agent.prepareProfile(options.profile, preset) : preset;
 	const policyPreset = agent.sanitizeLaunchPreset(profiledPreset);
 	let command = policyPreset.command;
 	if (options.yolo) {
 		const yoloFlag = agent.yoloFlag();
-		if (yoloFlag) command = appendArguments(command, yoloFlag);
+		if (yoloFlag) command = [...command, yoloFlag];
 	}
 	const request = {
 		preset: { ...policyPreset, command },
@@ -230,7 +226,6 @@ export async function prepareAgentLaunchResources(
 			command: `/bin/sh -c ${quote(script)}`,
 			env: preparedEnvironment,
 			identity: prepared.identity,
-			confirmSession: prepared.confirmSession,
 			resources,
 			cleanup,
 		};

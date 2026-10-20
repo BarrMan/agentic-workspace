@@ -2,18 +2,12 @@ import { describe, expect, test } from "bun:test";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { AgentPreset, ModeProfile } from "../../model/session/types.ts";
-import {
-	commandArguments,
-	discoverModels,
-	profileInstructions,
-	validateExplicitModel,
-	withExplicitModel,
-} from "./profile.ts";
+import type { AgentPreset, ModeProfile } from "../../../model/session/types.ts";
+import { discoverModels, profileInstructions, validateExplicitModel, withExplicitModel } from "./profile.ts";
 
 const preset: AgentPreset = {
 	bootstrap: "pi",
-	command: `pi --model 'old/model' --model=duplicate`,
+	command: ["pi", "--model", "old/model", "--model=duplicate"],
 	prepare: "",
 	env: { PROFILE_TEST: "value" },
 };
@@ -27,14 +21,9 @@ const profile: ModeProfile = {
 };
 
 describe("harness profile helpers", () => {
-	test("parses quoted command data and rejects shell composition", () => {
-		expect(commandArguments(`pi --name 'two words'`)).toEqual(["pi", "--name", "two words"]);
-		expect(() => commandArguments("pi; rm -rf /")).toThrow(/shell syntax/);
-	});
-
 	test("explicit model replaces existing preset model switches exactly once", () => {
 		const modeled = withExplicitModel(preset, "provider/new-model");
-		expect(modeled.command.match(/--model/g)).toHaveLength(1);
+		expect(modeled.command.filter((arg) => arg === "--model" || arg.startsWith("--model="))).toHaveLength(1);
 		expect(modeled.command).toContain("provider/new-model");
 		expect(() => withExplicitModel(preset, "bad; command")).toThrow(/unsupported/);
 	});
@@ -60,8 +49,8 @@ describe("harness profile helpers", () => {
 			await writeFile(executable, "#!/bin/sh\nprintf 'provider model context\\nexample model-one 128K\\n'\n", {
 				mode: 0o700,
 			});
-			const first = await discoverModels("pi", executable, { PROFILE_TEST: "isolated" }, 1_000);
-			const second = await discoverModels("pi", executable, { PROFILE_TEST: "isolated" }, 1_000);
+			const first = await discoverModels("pi", [executable], { PROFILE_TEST: "isolated" }, 1_000);
+			const second = await discoverModels("pi", [executable], { PROFILE_TEST: "isolated" }, 1_000);
 			expect(first).toEqual([{ id: "example/model-one" }]);
 			expect(second).toEqual(first);
 		} finally {

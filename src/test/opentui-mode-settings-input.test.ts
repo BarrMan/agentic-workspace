@@ -8,7 +8,7 @@ import { mountOpenTuiAgentSettings, type OpenTuiAgentSettingsOptions } from "../
 function configuration(): AgentConfiguration {
 	return {
 		selectedPreset: "work",
-		presets: { work: { command: "agent {prompt}", env: { TOKEN: "raw" }, bootstrap: "claude", prepare: "kept" } },
+		presets: { work: { command: ["agent", "{prompt}"], env: { TOKEN: "raw" }, bootstrap: "claude", prepare: "kept" } },
 		modes: {
 			version: 1,
 			defaultModeId: "plan",

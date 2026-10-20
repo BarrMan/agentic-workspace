@@ -1,21 +1,20 @@
 import { randomUUID } from "node:crypto";
 import type { AgentBootstrap } from "../model/session/types.ts";
 import {
-	type Agent,
 	type AgentPreparation,
 	type AskCommandRequest,
 	appendArguments,
 	filePrompt,
+	type HarnessInterface,
 	type LaunchCommandRequest,
-	type LaunchOrigin,
 	type NativeIdentity,
 	type PreparationResources,
 	type ResumeCommandRequest,
 	type SessionIntent,
 	type StatusHookInstallOptions,
 	shellQuote,
-} from "../runtime/agents/agent.ts";
-import { builtInAgents, registerAgent } from "../runtime/agents/agents.ts";
+} from "../runtime/agents/core/agent.ts";
+import { harnessRegistry } from "../runtime/agents/startup.ts";
 import type { InstalledStatusHook } from "../runtime/status-hooks.ts";
 
 /**
@@ -23,18 +22,12 @@ import type { InstalledStatusHook } from "../runtime/status-hooks.ts";
  * preset's exact placeholder handling and refusal messages so the affected unit tests keep their
  * original intent after the agent registry replaced the per-provider switch statements.
  */
-class PromptInjectionAgent implements Agent {
+class PromptInjectionAgent implements HarnessInterface {
 	readonly supported = true;
 	readonly hookBacked = false;
 	readonly prepareBeforeAsk = false;
 	readonly chromeRules = [];
 	readonly nativeNamespace = "claude" as const;
-
-	sanitizeLaunchPreset(
-		preset: import("../model/session/types.ts").AgentPreset,
-	): import("../model/session/types.ts").AgentPreset {
-		return preset;
-	}
 
 	constructor(readonly name: AgentBootstrap) {}
 
@@ -42,12 +35,23 @@ class PromptInjectionAgent implements Agent {
 		return undefined;
 	}
 
+	sanitizeLaunchPreset(preset: import("../model/session/types.ts").AgentPreset) {
+		return preset;
+	}
+
 	launchCommand({ preset, bootstrapPath }: LaunchCommandRequest): string {
 		if (!preset.command.includes("{prompt}") && !preset.command.includes("{instructions}")) {
 			throw new Error("Custom agent commands must include {prompt} or {instructions} to receive session instructions.");
 		}
 		const prompt = filePrompt(bootstrapPath);
-		return preset.command.replaceAll("{prompt}", prompt).replaceAll("{instructions}", prompt);
+		return preset.command
+			.map((arg) =>
+				arg
+					.split(/(\{prompt\}|\{instructions\})/)
+					.map((part) => (part === "{prompt}" || part === "{instructions}" ? prompt : shellQuote(part)))
+					.join(""),
+			)
+			.join(" ");
 	}
 
 	resumeCommand({ preset, nativeSessionId }: ResumeCommandRequest): string {
@@ -77,7 +81,7 @@ class PromptInjectionAgent implements Agent {
 				"Custom agent commands must include {skill} for their native skill-loader option (the temporary SKILL.md path), plus {prompt} or {instructions}. Prompt injection is not a skill.",
 			);
 		}
-		const withSkill = { ...preset, command: preset.command.replaceAll("{skill}", shellQuote(skillPath)) };
+		const withSkill = { ...preset, command: preset.command.map((arg) => arg.replaceAll("{skill}", skillPath)) };
 		const command =
 			intent.kind === "resume"
 				? this.resumeCommand({ preset: withSkill, nativeSessionId: intent.nativeSessionId })
@@ -86,10 +90,16 @@ class PromptInjectionAgent implements Agent {
 		return { command, env, identity: { id, basis: "client-established" } };
 	}
 
-	async reconcileIdentity(
-		_origin: LaunchOrigin,
-		_publish: (identity: NativeIdentity) => Promise<void>,
-	): Promise<void> {}
+	async reconcileIdentity({
+		intent,
+		preparedIdentity,
+	}: import("../runtime/agents/core/agent.ts").IdentityCaptureRequest): Promise<NativeIdentity> {
+		const identity =
+			preparedIdentity ??
+			(intent.kind === "resume" ? { id: intent.nativeSessionId, basis: "client-established" as const } : undefined);
+		if (!identity) throw new Error("Fake agent launch did not provide a prepared native identity.");
+		return identity;
+	}
 
 	askCommand(_request: AskCommandRequest): string {
 		throw new Error("Custom prompt agent commands do not define a native resume command.");
@@ -108,8 +118,7 @@ class PromptInjectionAgent implements Agent {
  * in a `finally` so the file's real provider tests keep working.
  */
 export function usePromptInjectionAgent(name: AgentBootstrap): () => void {
-	registerAgent(new PromptInjectionAgent(name));
-	return () => {
-		for (const agent of builtInAgents()) registerAgent(agent);
-	};
+	const original = harnessRegistry.forPreset(name);
+	harnessRegistry.replace(new PromptInjectionAgent(name));
+	return () => harnessRegistry.replace(original);
 }

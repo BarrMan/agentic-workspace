@@ -7,12 +7,12 @@ import {
 	TmuxCommandError,
 	TmuxTransportError,
 } from "libtmux";
-import { terminateProcessTree } from "../lib/process-tree.ts";
+import { processIdentity, terminateProcessTree } from "../lib/process-tree.ts";
 import { fail, type SessionCommandResult } from "../model/session/session-utils.ts";
 import type { AgentPreset, AgentSession, ModeProfile } from "../model/session/types.ts";
 import { taskIdsEqual } from "../model/task/task-id.ts";
 import { resolveProjectStateRoot } from "../storage/session-store.ts";
-import type { SessionIntent } from "./agents/agent.ts";
+import type { SessionIntent } from "./agents/core/agent.ts";
 import { cleanupPreparedLaunchResources, type PreparedLaunchResources } from "./completion-supervisor-resources.ts";
 import { ConclusiveStartupFailureError } from "./errors/sessions.ts";
 import { createTmuxExec } from "./live/tmux/exec.ts";
@@ -181,38 +181,6 @@ async function tmux<T>(prefix: string, fn: () => Promise<T>): Promise<T> {
 	} catch (error) {
 		throw fail(prefix, errorResult(error));
 	}
-}
-
-function isMissingTmuxTarget(error: unknown, session?: AgentSession, paneId?: string): boolean {
-	if (!(error instanceof TmuxCommandError)) return false;
-	const [command] = error.args;
-	const diagnostics = error.stderr.map((line) => line.trim());
-	if (diagnostics.length !== 1) return false;
-	const diagnostic = diagnostics[0];
-	if (
-		["list-panes", "display-message", "kill-pane"].includes(command ?? "") &&
-		/^no server running(?: on .+)?$/i.test(diagnostic ?? "")
-	)
-		return true;
-	if (
-		command === "list-panes" &&
-		session &&
-		error.target === `=${session.tmuxName}:` &&
-		diagnostic === `can't find session: ${session.tmuxName}`
-	)
-		return true;
-	if (command === "list-sessions" && diagnostic === "no sessions") return true;
-	return (
-		(command === "display-message" || command === "kill-pane") &&
-		paneId !== undefined &&
-		error.target === paneId &&
-		diagnostic === `can't find pane: ${paneId}`
-	);
-}
-
-function isUnavailableTmuxServer(error: unknown): boolean {
-	const message = error instanceof Error ? error.message : String(error);
-	return /^error connecting to\s+\S+/i.test(message);
 }
 
 function firstLine(lines: readonly string[]): string {
@@ -458,13 +426,19 @@ export class SessionProcess {
 		const panePid = pane
 			? Number.parseInt(firstLine(await this.server.cmd("display-message", ["-p", "-t", pane.id, "#{pane_pid}"])), 10)
 			: undefined;
+		const paneIdentity = processIdentity(panePid);
 		if (resources) await this.validateLaunchResources(session, resources, true);
 		if (resources) await this.validateLaunchResources(session, resources, false);
+		if (panePid && Number.isSafeInteger(panePid) && paneIdentity) {
+			const outcome = await terminateProcessTree(panePid, 1_000, paneIdentity);
+			if (outcome === "survivor")
+				throw new Error(`Could not prove agent process tree stopped for session ${session.id} (${outcome}).`);
+		}
 		if (pane) {
 			try {
 				await pane.kill();
 			} catch (error) {
-				if (!isMissingTmuxTarget(error, session, pane.id))
+				if (!(await this.sessionAbsent(session)))
 					throw fail(
 						resources
 							? `Could not stop session ${session.id}: launch resources were cleaned, but tmux pane teardown failed`
@@ -472,11 +446,6 @@ export class SessionProcess {
 						errorResult(error),
 					);
 			}
-		}
-		if (panePid && Number.isSafeInteger(panePid)) {
-			const outcome = await terminateProcessTree(panePid);
-			if (outcome === "survivor")
-				throw new Error(`Could not prove agent process tree stopped for session ${session.id} (${outcome}).`);
 		}
 		this.launches.delete(session.id);
 	}
@@ -503,8 +472,13 @@ export class SessionProcess {
 				timeoutMs === undefined ? undefined : { timeoutMs },
 			);
 		} catch (error) {
-			if (isMissingTmuxTarget(error, session) || isUnavailableTmuxServer(error)) return undefined;
-			throw fail(`Could not inspect tmux instance for session ${session.id}`, errorResult(error));
+			try {
+				if (await this.sessionAbsent(session)) return undefined;
+			} catch {
+				// Keep the failed pane inspection as the diagnostic; a failed absence check is not proof.
+			}
+			const message = error instanceof Error ? error.message : String(error);
+			throw new Error(`Could not inspect tmux instance for session ${session.id}: ${message}`, { cause: error });
 		}
 		if (rows.length !== 1)
 			throw new Error(`Could not inspect tmux instance for session ${session.id}: expected exactly one pane.`);
@@ -521,6 +495,11 @@ export class SessionProcess {
 		)
 			throw new Error(`Tmux instance ownership does not match session ${session.id}; refusing takeover.`);
 		return { paneId, dead: dead === "1" };
+	}
+
+	private async sessionAbsent(session: AgentSession): Promise<boolean> {
+		const sessions = await this.server.cmd("list-sessions", ["-F", "#{session_name}"]);
+		return !sessions.some((name) => name === session.tmuxName);
 	}
 
 	/** Read the prepared resource inventory recorded on one owned pane, if any. */

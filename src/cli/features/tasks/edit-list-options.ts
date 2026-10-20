@@ -1,4 +1,4 @@
-import { parseDelimitedStringList, toStringArray } from "../../../lib/string-list.ts";
+import { normalizeStringList, toStringArray } from "../../../lib/string-list.ts";
 
 function validateClearableListInput(input: {
 	rawValues: string[];
@@ -27,7 +27,7 @@ export function validateTaskListFlags(
 	options: Record<string, unknown>,
 	{ supportsClearFlags }: { supportsClearFlags: boolean },
 ): string | undefined {
-	const isBlankListValue = (value: string) => parseDelimitedStringList(value) === undefined;
+	const isBlankListValue = (value: string) => normalizeStringList([value]) === undefined;
 	const clearFlag = (flag: string) => (supportsClearFlags ? flag : undefined);
 	return (
 		validateClearableListInput({

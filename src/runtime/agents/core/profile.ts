@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { isAbsolute, resolve, sep } from "node:path";
-import type { AgentPreset, ModeProfile, RuntimeAgentBootstrap } from "../../model/session/types.ts";
+import type { AgentPreset, ModeProfile, RuntimeAgentBootstrap } from "../../../model/session/types.ts";
 import type { AgentModel } from "./agent.ts";
 
 const modelCache = new Map<string, AgentModel[]>();
@@ -8,54 +8,35 @@ const MODEL_CACHE_LIMIT = 32;
 const MODEL_DISCOVERY_TIMEOUT_LIMIT_MS = 10_000;
 const MODEL_ID = /^[\p{L}\p{N}][\p{L}\p{N}._:/+@-]{0,255}$/u;
 
-/** Tokenize the simple executable/arguments form supported by AgentPreset, never shell syntax. */
-export function commandArguments(command: string): string[] {
-	if (/[|;&`$<>\n\r]/.test(command)) {
-		throw new Error("Harness profile commands must be a single executable with arguments, not shell syntax.");
-	}
-	const args: string[] = [];
-	let value = "";
-	let quote: "'" | '"' | undefined;
-	let escaped = false;
-	let started = false;
-	for (const character of command) {
-		if (escaped) {
-			value += character;
-			escaped = false;
-			started = true;
-		} else if (character === "\\" && quote !== "'") {
-			escaped = true;
-			started = true;
-		} else if (quote) {
-			if (character === quote) quote = undefined;
-			else value += character;
-			started = true;
-		} else if (character === "'" || character === '"') {
-			quote = character;
-			started = true;
-		} else if (/\s/.test(character)) {
-			if (started) args.push(value);
-			value = "";
-			started = false;
-		} else {
-			value += character;
-			started = true;
+export function sanitizeProfilePreset(preset: AgentPreset): AgentPreset {
+	const command: string[] = [];
+	const permissionModes = new Set(["acceptEdits", "auto", "bypassPermissions"]);
+	for (let i = 0; i < preset.command.length; i++) {
+		const arg = preset.command[i];
+		if (arg === undefined) continue;
+		if (["opencode", "opencode-v1", "opencode-v2"].includes(preset.bootstrap) && /^--auto(?:=.*)?$/.test(arg)) continue;
+		if (
+			preset.bootstrap === "claude" &&
+			(/^--(?:allow-)?dangerously-skip-permissions(?:=.*)?$/.test(arg) ||
+				(arg === "--permission-mode" && permissionModes.has(preset.command[i + 1] ?? "")) ||
+				(arg.startsWith("--permission-mode=") && permissionModes.has(arg.slice("--permission-mode=".length))))
+		) {
+			if (arg === "--permission-mode") i++;
+			continue;
 		}
+		command.push(arg);
 	}
-	if (escaped || quote) throw new Error("Harness command contains an unterminated quote or escape.");
-	if (started) args.push(value);
-	return args;
+	return command.length === preset.command.length ? preset : { ...preset, command };
 }
 
 export function withExplicitModel(preset: AgentPreset, modelId: string): AgentPreset {
 	if (!MODEL_ID.test(modelId)) throw new Error("Model ID contains unsupported characters.");
-	const args = commandArguments(preset.command);
-	const executable = args.shift();
+	const [executable, ...args] = preset.command;
 	if (!executable) throw new Error("Harness command is empty.");
 	const filtered: string[] = [];
 	for (let i = 0; i < args.length; i++) {
 		const arg = args[i];
-		if (!arg) continue;
+		if (arg === undefined) continue;
 		if (arg === "--model" || arg === "-m") {
 			if (i + 1 >= args.length) throw new Error("Preset model option is missing its model ID.");
 			i++;
@@ -64,11 +45,7 @@ export function withExplicitModel(preset: AgentPreset, modelId: string): AgentPr
 		if (arg.startsWith("--model=")) continue;
 		filtered.push(arg);
 	}
-	return { ...preset, command: [executable, ...filtered, "--model", modelId].map(quoteArg).join(" ") };
-}
-
-function quoteArg(value: string): string {
-	return `'${value.replaceAll("'", "'\"'\"'")}'`;
+	return { ...preset, command: [executable, ...filtered, "--model", modelId] };
 }
 
 function canonicalModelId(id: string): string {
@@ -87,52 +64,6 @@ function deduplicateModels(models: AgentModel[]): AgentModel[] {
 		byCanonicalId.set(key, { id: existing?.id ?? id, ...(name ? { name: name.trim() } : {}) });
 	}
 	return [...byCanonicalId.entries()].sort(([left], [right]) => left.localeCompare(right)).map(([, model]) => model);
-}
-
-/** Drop preset auto-approval modes that conflict with an explicit AgenticWorkspace profile. */
-export function sanitizeProfilePreset(preset: AgentPreset): AgentPreset {
-	const args = commandArguments(preset.command);
-	const executable = args[0];
-	if (!executable) throw new Error("Harness command is empty.");
-	const filtered: string[] = [executable];
-	let changed = false;
-	for (let index = 1; index < args.length; index++) {
-		const arg = args[index];
-		if (!arg) continue;
-		if (
-			["opencode", "opencode-v1", "opencode-v2"].includes(preset.bootstrap) &&
-			(arg === "--auto" || arg.startsWith("--auto="))
-		) {
-			changed = true;
-			continue;
-		}
-		if (
-			preset.bootstrap === "claude" &&
-			["--dangerously-skip-permissions", "--allow-dangerously-skip-permissions"].some(
-				(flag) => arg === flag || arg.startsWith(`${flag}=`),
-			)
-		) {
-			changed = true;
-			continue;
-		}
-		if (preset.bootstrap === "claude" && arg === "--permission-mode") {
-			const mode = args[index + 1];
-			if (mode === "acceptEdits" || mode === "auto" || mode === "bypassPermissions") {
-				index++;
-				changed = true;
-				continue;
-			}
-		}
-		if (
-			preset.bootstrap === "claude" &&
-			["--permission-mode=acceptEdits", "--permission-mode=auto", "--permission-mode=bypassPermissions"].includes(arg)
-		) {
-			changed = true;
-			continue;
-		}
-		filtered.push(arg);
-	}
-	return changed ? { ...preset, command: filtered.map(quoteArg).join(" ") } : preset;
 }
 
 export function profileInstructions(
@@ -190,17 +121,12 @@ export function profileInstructions(
 
 export async function discoverModels(
 	harness: RuntimeAgentBootstrap,
-	command: string,
+	command: string[],
 	env: Record<string, string>,
 	timeoutMs = 5_000,
 ): Promise<AgentModel[]> {
 	if (harness === "claude") return [];
-	let args: string[];
-	try {
-		args = commandArguments(command);
-	} catch {
-		return [];
-	}
+	const args = [...command];
 	const key = createHash("sha256")
 		.update(JSON.stringify([harness, args, Object.entries(env).sort()]))
 		.digest("hex");
@@ -210,7 +136,7 @@ export async function discoverModels(
 		modelCache.set(key, cached);
 		return cached.map((item) => ({ ...item }));
 	}
-	const executable = args.shift();
+	const [executable, ...presetArgs] = args;
 	if (!executable) return [];
 	let child: {
 		stdout: ReadableStream<Uint8Array<ArrayBufferLike>>;
@@ -221,7 +147,7 @@ export async function discoverModels(
 		child = Bun.spawn(
 			[
 				executable,
-				...args,
+				...presetArgs,
 				...(["opencode", "opencode-v1", "opencode-v2"].includes(harness) ? ["models"] : ["--list-models"]),
 			],
 			{

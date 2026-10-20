@@ -37,7 +37,12 @@ describe("prepareHarnessEnvironment", () => {
 			PATH: process.env.PATH ?? "/bin:/usr/bin",
 			BASE: "base value",
 			AGENTIC_WORKSPACE_CWD: "/spaced root",
+			AGENTIC_WORKSPACE_TASK_ID: "parent-task",
+			AGENTIC_WORKSPACE_SESSION_ID: "old-session",
+			AGENTIC_WORKSPACE_PROJECT_ROOT: "/old-project",
 			TASK_ID: "stale-task",
+			SESSION_ID: "stale-session",
+			AGENTIC_WORKSPACE_TMUX_SOCKET: "parent-socket",
 			AGENTIC_WORKSPACE_PROJECT_DIR: "/untrusted-project",
 		};
 		const preset = {
@@ -74,7 +79,12 @@ describe("prepareHarnessEnvironment", () => {
 				AGENTIC_WORKSPACE_TASK_DIR: join(directory, "task"),
 			});
 			expect(result.AGENTIC_WORKSPACE_CWD).toBeUndefined();
-			expect(result.TASK_ID).toBeUndefined();
+			expect(result.AGENTIC_WORKSPACE_TASK_ID).toBeUndefined();
+			expect(result.AGENTIC_WORKSPACE_SESSION_ID).toBe("old-session");
+			expect(result.AGENTIC_WORKSPACE_PROJECT_ROOT).toBe("/old-project");
+			expect(result.TASK_ID).toBe("stale-task");
+			expect(result.SESSION_ID).toBe("stale-session");
+			expect(result.AGENTIC_WORKSPACE_TMUX_SOCKET).toBe("parent-socket");
 			expect(warnings).toHaveLength(3);
 			expect(warnings.join(" ")).toContain("AGENTIC_WORKSPACE_PROJECT_DIR");
 			expect(warnings.join(" ")).toContain("AGENTIC_WORKSPACE_WORKTREE_DIR");

@@ -75,4 +75,15 @@ labels: []
 			"Invalid dependencies in task TASK-1: entry 2",
 		);
 	});
+
+	it("requires argv commands in task-scoped agent configuration", () => {
+		const valid = taskMarkdown(
+			`agentConfiguration:\n  selectedPreset: custom\n  presets:\n    custom:\n      command: [agent, '', ' two spaces ']\n      env: {}\n      prepare: ''\n      bootstrap: pi`,
+		);
+		expect(parseTask(valid).agentConfiguration?.presets.custom?.command).toEqual(["agent", "", " two spaces "]);
+		const legacy = taskMarkdown(
+			`agentConfiguration:\n  selectedPreset: custom\n  presets:\n    custom:\n      command: 'agent --flag'\n      env: {}\n      prepare: ''\n      bootstrap: pi`,
+		);
+		expect(() => parseTask(legacy)).toThrow(/command/);
+	});
 });

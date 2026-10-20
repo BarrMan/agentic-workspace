@@ -70,7 +70,7 @@ const WIZARD_NAVIGATION_PREVIOUS = "previous";
 const WIZARD_BACKSPACE_NAVIGATION = Symbol("task-wizard-backspace-navigation");
 
 function parseListInput(value: string): string[] {
-	return normalizeStringList(value.split(/,|\r?\n/g)) ?? [];
+	return normalizeStringList(value.split(/\r?\n/g)) ?? [];
 }
 
 function getDefaultCreateStatus(statuses: string[]): string {
@@ -193,7 +193,7 @@ function buildProjectPromptValues(initialProject: string, projects?: string[]) {
 }
 
 function formatListInput(values?: string[]): string {
-	return values && values.length > 0 ? values.join(", ") : "";
+	return values && values.length > 0 ? values.join("\n") : "";
 }
 
 function areStringArraysEqual(a: string[], b: string[]): boolean {
@@ -377,7 +377,7 @@ function buildWizardForm(params: Parameters<typeof runTaskWizardValues>[0]) {
 		validate?: TaskWizardQuestion["validate"],
 	): TaskWizardValueQuestion => ({ type: "text", name, message, validate });
 	const unchanged = (label: string) =>
-		params.mode === "create" ? `${label} (comma-separated)` : `${label} (comma-separated; blank keeps current value)`;
+		params.mode === "create" ? `${label} (one per line)` : `${label} (one per line; blank keeps current value)`;
 	return {
 		values: {
 			...params.initialValues,
@@ -412,8 +412,8 @@ function buildWizardForm(params: Parameters<typeof runTaskWizardValues>[0]) {
 			field(
 				"dependencies",
 				params.mode === "create"
-					? "Dependencies (comma-separated task IDs)"
-					: "Dependencies (comma-separated task IDs; blank keeps current value)",
+					? "Dependencies (one task ID per line)"
+					: "Dependencies (one task ID per line; blank keeps current value)",
 			),
 		] as TaskWizardValueQuestion[],
 	};

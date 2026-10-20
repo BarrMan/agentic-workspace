@@ -2,8 +2,8 @@ import { describe, expect, it } from "bun:test";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import "./agents.ts";
-import { parseReadinessReceipt } from "../harness.ts";
+import "../startup.ts";
+import { parseReadinessReceipt } from "../../harness.ts";
 import { claudeHooksConfig } from "./claude.ts";
 
 type ConfiguredHook = { hooks: Array<{ type: "command"; command: string }> };

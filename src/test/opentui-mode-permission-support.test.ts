@@ -3,7 +3,7 @@ import { BoxRenderable } from "@opentui/core";
 import { createTestRenderer, type TestRendererSetup } from "@opentui/core/testing";
 import type { AgentBootstrap, AgentConfiguration, ModeProfile } from "../model/session/types.ts";
 import { mountOpenTuiAgentSettings } from "../renderer/opentui/agent-settings.ts";
-import { profilePermissionSupport } from "../runtime/agents/profile.ts";
+import { profilePermissionSupport } from "../runtime/agents/core/profile.ts";
 
 function configuration(bootstrap: AgentBootstrap, model: string): AgentConfiguration {
 	const profile: ModeProfile = {
@@ -15,7 +15,7 @@ function configuration(bootstrap: AgentBootstrap, model: string): AgentConfigura
 	};
 	return {
 		selectedPreset: "work",
-		presets: { work: { bootstrap, command: `${bootstrap} agent`, prepare: "", env: {} } },
+		presets: { work: { bootstrap, command: [bootstrap, "agent"], prepare: "", env: {} } },
 		modes: { version: 1, defaultModeId: "plan", order: ["plan"], profiles: { plan: profile } },
 	};
 }

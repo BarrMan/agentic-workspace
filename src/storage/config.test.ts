@@ -40,7 +40,7 @@ function configuration(selectedPreset = "custom"): AgentConfiguration {
 		selectedPreset,
 		presets: {
 			custom: {
-				command: "custom-agent --run",
+				command: ["custom-agent", "--run"],
 				env: { TOKEN: "secret" },
 				prepare: "bun install",
 				bootstrap: "opencode",
@@ -69,12 +69,12 @@ describe("agent workspace configuration", () => {
 		await upsertAgentConfiguration(core, "root", configuration());
 		await upsertAgentConfiguration(core, "project", {
 			...configuration(),
-			presets: { custom: { command: "project-agent", env: {}, prepare: "", bootstrap: "pi" } },
+			presets: { custom: { command: ["project-agent"], env: {}, prepare: "", bootstrap: "pi" } },
 			sessions: { worktreePerTask: true, yoloMode: false },
 		});
 
 		const config = await Config.load(new Storage(coreFileSystem(core)));
-		expect(config.getConfig().presets.custom?.command).toBe("project-agent");
+		expect(config.getConfig().presets.custom?.command).toEqual(["project-agent"]);
 		expect(config.sessionSettings.worktreePerTask).toBe(true);
 	});
 
@@ -88,8 +88,8 @@ describe("agent workspace configuration", () => {
 		expect(merged.sessions).toEqual({ worktreePerTask: false, yoloMode: false });
 		const customPreset = merged.presets.custom;
 		if (!customPreset) throw new Error("Custom preset missing");
-		customPreset.command = "mutated";
-		expect(config.getConfig().presets.custom?.command).toBe("custom-agent --run");
+		customPreset.command = ["mutated"];
+		expect(config.getConfig().presets.custom?.command).toEqual(["custom-agent", "--run"]);
 		expect(config.getConfig().sessions).toEqual({ worktreePerTask: true, yoloMode: true });
 	});
 
@@ -98,44 +98,44 @@ describe("agent workspace configuration", () => {
 		const config = await Config.load(new Storage(coreFileSystem(core)));
 		await upsertAgentConfiguration(core, "project", {
 			...configuration(),
-			presets: { custom: { command: "updated-agent", env: {}, prepare: "", bootstrap: "claude" } },
+			presets: { custom: { command: ["updated-agent"], env: {}, prepare: "", bootstrap: "claude" } },
 		});
 		await config.reload();
-		expect(config.getConfig().presets.custom?.command).toBe("updated-agent");
+		expect(config.getConfig().presets.custom?.command).toEqual(["updated-agent"]);
 	});
 
 	it("resolves a saved arbitrary preset name from current task, project, then user configuration", async () => {
 		await core.createTaskFromInput({ title: "Current configuration", status: "To Do" });
 		const saved = { taskId: "TASK-1", preset: "custom" };
 		await upsertAgentConfiguration(core, "root", configuration());
-		expect((await resolveSessionPreset(core, saved)).command).toBe("custom-agent --run");
+		expect((await resolveSessionPreset(core, saved)).command).toEqual(["custom-agent", "--run"]);
 		await upsertAgentConfiguration(core, "project", {
 			...configuration(),
 			modes: getDefaultModeCatalog(),
-			presets: { custom: { command: "project-agent", env: {}, prepare: "", bootstrap: "pi" } },
+			presets: { custom: { command: ["project-agent"], env: {}, prepare: "", bootstrap: "pi" } },
 		});
-		expect((await resolveSessionPreset(core, saved)).command).toBe("project-agent");
+		expect((await resolveSessionPreset(core, saved)).command).toEqual(["project-agent"]);
 		await upsertAgentConfiguration(
 			core,
 			"card",
 			{
 				...configuration(),
-				presets: { custom: { command: "task-agent", env: {}, prepare: "", bootstrap: "claude" } },
+				presets: { custom: { command: ["task-agent"], env: {}, prepare: "", bootstrap: "claude" } },
 			},
 			saved.taskId,
 		);
-		expect((await resolveSessionPreset(core, saved)).command).toBe("task-agent");
+		expect((await resolveSessionPreset(core, saved)).command).toEqual(["task-agent"]);
 		await updateAgentConfiguration(
 			core,
 			"card",
 			(current) => ({
 				...current,
-				presets: { custom: { command: "updated-task-agent", env: { CURRENT: "yes" }, prepare: "", bootstrap: "pi" } },
+				presets: { custom: { command: ["updated-task-agent"], env: { CURRENT: "yes" }, prepare: "", bootstrap: "pi" } },
 			}),
 			saved.taskId,
 		);
 		expect(await resolveSessionPreset(core, saved)).toMatchObject({
-			command: "updated-task-agent",
+			command: ["updated-task-agent"],
 			bootstrap: "pi",
 			env: { CURRENT: "yes" },
 		});
@@ -148,7 +148,7 @@ describe("agent workspace configuration", () => {
 			delete savedConfig.agentConfiguration;
 			await coreFileSystem(core).saveConfig(savedConfig);
 		}
-		expect((await resolveSessionPreset(core, saved)).command).toBe("custom-agent --run");
+		expect((await resolveSessionPreset(core, saved)).command).toEqual(["custom-agent", "--run"]);
 	});
 	it("round-trips omitted mode colors without filling them on load, save, or repeated initialization", async () => {
 		const modes = getDefaultModeCatalog();
@@ -207,7 +207,7 @@ describe("agent workspace configuration", () => {
 		expect(resolved.config.selectedPreset).toBe("opencode");
 		expect(Object.keys(resolved.config.presets)).toEqual(["opencode", "claude", "pi"]);
 		expect(resolved.config.presets.pi).toEqual({
-			command: "pi",
+			command: ["pi"],
 			env: {},
 			prepare: "",
 			bootstrap: "pi",
@@ -219,8 +219,8 @@ describe("agent workspace configuration", () => {
 		const draft = getBuiltInAgentConfiguration();
 		const pi = draft.presets.pi;
 		if (!pi) throw new Error("Pi preset missing");
-		pi.command = "different-pi";
-		expect(getBuiltInAgentConfiguration().presets.pi?.command).toBe("pi");
+		pi.command = ["different-pi"];
+		expect(getBuiltInAgentConfiguration().presets.pi?.command).toEqual(["pi"]);
 	});
 
 	it("previews an editable parent configuration without writing an override", async () => {
@@ -232,7 +232,7 @@ describe("agent workspace configuration", () => {
 	it("rejects the retired per-preset worktree key without rewriting the configuration", async () => {
 		const path = join(process.env.XDG_CONFIG_HOME as string, "agentic-workspace", "agentic-workspace.config.yml");
 		await mkdir(dirname(path), { recursive: true });
-		const raw = `agent_configuration: ${JSON.stringify({ selectedPreset: "retired", presets: { retired: { command: "retired {prompt}", env: {}, prepare: "", worktree: true, bootstrap: "opencode" } } })}\n`;
+		const raw = `agent_configuration: ${JSON.stringify({ selectedPreset: "retired", presets: { retired: { command: ["retired", "{prompt}"], env: {}, prepare: "", worktree: true, bootstrap: "opencode" } } })}\n`;
 		await writeFile(path, raw, "utf8");
 
 		await expect(loadAgentConfiguration(core, "root")).rejects.toThrow(
@@ -242,10 +242,23 @@ describe("agent workspace configuration", () => {
 		expect(await readFile(path, "utf8")).toBe(raw);
 	});
 
+	it("rejects legacy string commands in normal configuration reads", async () => {
+		const path = join(process.env.XDG_CONFIG_HOME as string, "agentic-workspace", "agentic-workspace.config.yml");
+		await mkdir(dirname(path), { recursive: true });
+		await writeFile(
+			path,
+			`agent_configuration: ${JSON.stringify({
+				selectedPreset: "custom",
+				presets: { custom: { command: "agent --flag", env: {}, prepare: "", bootstrap: "pi" } },
+			})}\n`,
+		);
+		await expect(loadAgentConfiguration(core, "root")).rejects.toThrow(/command/);
+	});
+
 	it("rejects retired bootstrap identifiers without dropping presets or repairing selection", async () => {
 		const path = join(process.env.XDG_CONFIG_HOME as string, "agentic-workspace", "agentic-workspace.config.yml");
 		await mkdir(dirname(path), { recursive: true });
-		const raw = `agent_configuration: ${JSON.stringify({ selectedPreset: "codex", presets: { codex: { command: "codex", env: {}, prepare: "", bootstrap: "codex" }, opencode: { command: "opencode", env: {}, prepare: "", bootstrap: "opencode" } } })}\n`;
+		const raw = `agent_configuration: ${JSON.stringify({ selectedPreset: "codex", presets: { codex: { command: ["codex"], env: {}, prepare: "", bootstrap: "codex" }, opencode: { command: ["opencode"], env: {}, prepare: "", bootstrap: "opencode" } } })}\n`;
 		await writeFile(path, raw, "utf8");
 
 		await expect(loadAgentConfiguration(core, "root")).rejects.toThrow(
@@ -272,15 +285,15 @@ describe("agent workspace configuration", () => {
 					...config,
 					presets: {
 						...config.presets,
-						[name]: { ...source, command: name },
+						[name]: { ...source, command: [name] },
 					},
 				};
 			});
 
 		await Promise.all([addPreset("first"), addPreset("second")]);
 		const saved = await loadAgentConfiguration(core, "root");
-		expect(saved?.presets.first?.command).toBe("first");
-		expect(saved?.presets.second?.command).toBe("second");
+		expect(saved?.presets.first?.command).toEqual(["first"]);
+		expect(saved?.presets.second?.command).toEqual(["second"]);
 	});
 
 	it("inherits configuration fields from project while task fields override them", async () => {
@@ -289,7 +302,7 @@ describe("agent workspace configuration", () => {
 			selectedPreset: "project",
 			presets: {
 				project: {
-					command: "project-agent",
+					command: ["project-agent"],
 					env: {},
 					prepare: "",
 					bootstrap: "opencode",
@@ -304,7 +317,7 @@ describe("agent workspace configuration", () => {
 			{
 				selectedPreset: "custom",
 				presets: {
-					custom: { command: "task-agent", env: {}, prepare: "", bootstrap: "claude" },
+					custom: { command: ["task-agent"], env: {}, prepare: "", bootstrap: "claude" },
 				},
 				sessions: { worktreePerTask: false, yoloMode: false },
 			},
@@ -316,8 +329,8 @@ describe("agent workspace configuration", () => {
 		expect(resolved.config).toMatchObject({
 			selectedPreset: "custom",
 			presets: {
-				project: { command: "project-agent" },
-				custom: { command: "task-agent" },
+				project: { command: ["project-agent"] },
+				custom: { command: ["task-agent"] },
 			},
 			sessions: { worktreePerTask: false, yoloMode: false },
 		});
@@ -348,15 +361,15 @@ describe("agent workspace configuration", () => {
 		});
 
 		const session = { taskId: task.id, preset: "custom" };
-		expect((await resolveSessionPreset(core, session)).command).toBe("custom-agent --run");
+		expect((await resolveSessionPreset(core, session)).command).toEqual(["custom-agent", "--run"]);
 		await updateAgentConfiguration(core, "project", (current) => ({
 			...current,
 			presets: {
 				...current.presets,
-				custom: { command: "current-project-agent", env: {}, prepare: "", bootstrap: "pi" },
+				custom: { command: ["current-project-agent"], env: {}, prepare: "", bootstrap: "pi" },
 			},
 		}));
-		expect((await resolveSessionPreset(core, session)).command).toBe("custom-agent --run");
+		expect((await resolveSessionPreset(core, session)).command).toEqual(["custom-agent", "--run"]);
 		await updateAgentConfiguration(
 			core,
 			"card",
@@ -364,12 +377,12 @@ describe("agent workspace configuration", () => {
 				...current,
 				presets: {
 					...current.presets,
-					custom: { command: "current-task-agent", env: {}, prepare: "", bootstrap: "claude" },
+					custom: { command: ["current-task-agent"], env: {}, prepare: "", bootstrap: "claude" },
 				},
 			}),
 			task.id,
 		);
-		expect((await resolveSessionPreset(core, session)).command).toBe("current-task-agent");
+		expect((await resolveSessionPreset(core, session)).command).toEqual(["current-task-agent"]);
 	});
 
 	it("defaults auto-resume on for configuration without auto-resume and validates explicit values", async () => {
@@ -424,17 +437,17 @@ describe("agent workspace configuration", () => {
 		const project = await initializeAgentConfiguration(core, "project");
 		const projectPreset = project.presets.custom;
 		if (!projectPreset) throw new Error("Custom preset missing");
-		projectPreset.command = "changed-project-agent";
+		projectPreset.command = ["changed-project-agent"];
 		await upsertAgentConfiguration(core, "project", project);
 
 		const root = await loadAgentConfiguration(core, "root");
-		expect(root?.presets.custom?.command).toBe("custom-agent --run");
+		expect(root?.presets.custom?.command).toEqual(["custom-agent", "--run"]);
 
 		const { task } = await core.createTaskFromInput({ title: "Preserve card body", description: "Original content" });
 		const card = await initializeAgentConfiguration(core, "card", task.id);
 		const cardPreset = card.presets.custom;
 		if (!cardPreset) throw new Error("Custom preset missing");
-		expect(cardPreset.command).toBe("changed-project-agent");
+		expect(cardPreset.command).toEqual(["changed-project-agent"]);
 		cardPreset.env.TOKEN = "card-only";
 		await upsertAgentConfiguration(core, "card", card, task.id);
 
@@ -462,8 +475,8 @@ describe("agent workspace configuration", () => {
 		const stale = {
 			selectedPreset: "codex",
 			presets: {
-				codex: { command: "codex", env: {}, prepare: "", bootstrap: "codex" },
-				opencode: { command: "opencode", env: {}, prepare: "", bootstrap: "opencode" },
+				codex: { command: ["codex"], env: {}, prepare: "", bootstrap: "codex" },
+				opencode: { command: ["opencode"], env: {}, prepare: "", bootstrap: "opencode" },
 			},
 		} as unknown as AgentConfiguration;
 		await core.updateTask({ ...task, agentConfiguration: stale });
@@ -496,7 +509,7 @@ describe("agent workspace configuration", () => {
 					selectedPreset: "opencode",
 					presets: {
 						...config.presets,
-						opencode: { ...opencode, command: "opencode {prompt}", env: {} },
+						opencode: { ...opencode, command: ["opencode {prompt}"], env: {} },
 					},
 				};
 			},

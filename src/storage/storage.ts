@@ -1,7 +1,10 @@
-import { access, readdir, readFile, rmdir, unlink, writeFile } from "node:fs/promises";
-import { dirname, join, relative, sep } from "node:path";
+import { access, chmod, mkdir, readdir, readFile, rename, rmdir, stat, unlink, writeFile } from "node:fs/promises";
+import { basename, dirname, join, relative, sep } from "node:path";
+import lockfile from "proper-lockfile";
+import { agentCommandArgvSchema } from "../model/session/agent-config-schema.ts";
 import type { AgentConfiguration } from "../model/session/types.ts";
 import type { DependencyStore } from "../model/task/dependency-validator.ts";
+import { normalizePriorityValue, resolvePriorityValue } from "../model/task/priority-config.ts";
 import { taskIdKey } from "../model/task/task-id.ts";
 import {
 	completedTaskIdentityRecord,
@@ -17,7 +20,8 @@ import {
 } from "../model/types.ts";
 import { addSearchableArtifactText } from "./artifact-text.ts";
 import { readRootConfiguration, rootConfigFilePath } from "./config.ts";
-import { FileSystem, type FileSystemSelection } from "./file-system.ts";
+import { FileSystem, type FileSystemSelection, isTaskLockError } from "./file-system.ts";
+import { parseFrontmatter, stringifyFrontmatter } from "./markdown/frontmatter.ts";
 import { parseTask } from "./markdown/parser.ts";
 import type { CreatedTaskRollbackResult, CreatedTaskWrite } from "./types.ts";
 
@@ -30,7 +34,22 @@ export interface ScannedTaskRecord {
 
 /** The persistence boundary for workspace records, configuration, locks, and transactions. */
 export class Storage {
+	private agentPresetMigration?: Promise<{ migratedFiles: string[] }>;
+
 	constructor(private readonly filesystem: FileSystem) {}
+
+	startAgentPresetCommandMigration(): Promise<{ migratedFiles: string[] }> {
+		if (!this.agentPresetMigration)
+			this.agentPresetMigration = this.migrateAgentPresetCommands().then(async (result) => {
+				const priorityResult = await this.migrateTaskAssigneesAndPriority();
+				return { migratedFiles: [...new Set([...result.migratedFiles, ...priorityResult.migratedFiles])] };
+			});
+		return this.agentPresetMigration;
+	}
+
+	private async waitForAgentPresetMigration(): Promise<void> {
+		await this.agentPresetMigration;
+	}
 
 	get projectRoot(): string {
 		return this.filesystem.rootDir;
@@ -75,6 +94,7 @@ export class Storage {
 	}
 
 	async loadConfig(): Promise<AgenticWorkspaceConfig | null> {
+		await this.waitForAgentPresetMigration();
 		return await this.filesystem.loadConfig();
 	}
 
@@ -89,12 +109,366 @@ export class Storage {
 	}
 
 	async loadUserAgentConfiguration(): Promise<AgentConfiguration | null> {
+		await this.waitForAgentPresetMigration();
 		return await readRootConfiguration(rootConfigFilePath());
 	}
 
 	async loadProjectAgentConfiguration(): Promise<AgentConfiguration | null> {
+		await this.waitForAgentPresetMigration();
 		const config = await this.filesystem.loadConfig();
 		return config?.agentConfiguration ?? null;
+	}
+
+	async migrateAgentPresetCommands(): Promise<{ migratedFiles: string[] }> {
+		const files = [rootConfigFilePath(), this.configFilePath];
+		for (const root of [
+			this.filesystem.tasksDir,
+			this.filesystem.completedDir,
+			await this.filesystem.getArchiveTasksDir(),
+		]) {
+			try {
+				await access(root);
+			} catch (error) {
+				if ((error as NodeJS.ErrnoException).code === "ENOENT") continue;
+				throw error;
+			}
+			for await (const path of new Bun.Glob("*/task.md").scan({ cwd: root, absolute: true })) files.push(path);
+		}
+		const completed: string[] = [];
+		try {
+			for (const path of [...new Set(files)]) {
+				const taskRecord = path.endsWith("task.md");
+				let taskIdentity: string | null = null;
+				if (!(await this.hasAgentCommandMigrationCandidate(path, taskRecord))) continue;
+				const run = async () => {
+					let original: string;
+					try {
+						original = await readFile(path, "utf8");
+					} catch (error) {
+						if ((error as NodeJS.ErrnoException).code === "ENOENT") return;
+						throw error;
+					}
+					let document: Record<string, unknown>;
+					let body = "";
+					try {
+						if (taskRecord) ({ data: document, content: body } = parseFrontmatter(original));
+						else {
+							const parsed = Bun.YAML.parse(original);
+							document =
+								parsed && typeof parsed === "object" && !Array.isArray(parsed)
+									? (parsed as Record<string, unknown>)
+									: {};
+						}
+					} catch (error) {
+						if (taskRecord) return;
+						throw new Error(`Cannot migrate agent commands in ${path}: invalid document.`, { cause: error });
+					}
+					if (
+						taskRecord &&
+						typeof document.id === "string" &&
+						taskIdentity !== null &&
+						taskIdKey(document.id) !== taskIdKey(taskIdentity)
+					)
+						return;
+					const key = taskRecord ? "agentConfiguration" : "agent_configuration";
+					const config = document[key];
+					if (!config || typeof config !== "object" || Array.isArray(config)) return;
+					const presets = (config as Record<string, unknown>).presets;
+					if (!presets || typeof presets !== "object" || Array.isArray(presets)) return;
+					let changed = false;
+					for (const [name, raw] of Object.entries(presets)) {
+						if (!raw || typeof raw !== "object" || Array.isArray(raw)) continue;
+						const preset = raw as Record<string, unknown>;
+						if (typeof preset.command !== "string") continue;
+						try {
+							preset.command = this.parseAgentCommand(preset.command);
+							changed = true;
+						} catch (error) {
+							throw new Error(`Cannot migrate ${path} preset "${name}": ${(error as Error).message}`, { cause: error });
+						}
+					}
+					if (changed) {
+						await this.replaceMigrationFile(
+							path,
+							taskRecord ? stringifyFrontmatter(body, document) : this.serializeRawYaml(document),
+						);
+						completed.push(path);
+					}
+				};
+				if (!taskRecord) await this.withMigrationConfigLock(path, taskRecord, run);
+				else {
+					taskIdentity = await this.readTaskMigrationIdentity(path);
+					if (taskIdentity) await this.withMigrationTaskLock({ id: taskIdentity, filePath: path }, run);
+				}
+			}
+		} catch (error) {
+			throw new Error(
+				`Agent command migration partially completed (${completed.length} files): ${completed.join(", ")}. ${(error as Error).message}`,
+				{ cause: error },
+			);
+		}
+		return { migratedFiles: completed };
+	}
+
+	async migrateTaskAssigneesAndPriority(): Promise<{ migratedFiles: string[] }> {
+		const config = await this.filesystem.loadConfig();
+		const roots = [this.filesystem.tasksDir, this.filesystem.completedDir, await this.filesystem.getArchiveTasksDir()];
+		const paths: string[] = [];
+		for (const root of roots) {
+			try {
+				await access(root);
+			} catch (error) {
+				if ((error as NodeJS.ErrnoException).code === "ENOENT") continue;
+				throw error;
+			}
+			for await (const path of new Bun.Glob("*/task.md").scan({ cwd: root, absolute: true })) paths.push(path);
+		}
+		const completed: string[] = [];
+		try {
+			for (const path of paths) {
+				const candidate = await this.readTaskFieldMigrationCandidate(path, config);
+				if (!candidate) continue;
+				await this.withMigrationTaskLock({ id: candidate.identity, filePath: path }, async () => {
+					let original: string;
+					try {
+						original = await readFile(path, "utf8");
+					} catch (error) {
+						if ((error as NodeJS.ErrnoException).code === "ENOENT") return;
+						throw error;
+					}
+					let document: Record<string, unknown>;
+					let body: string;
+					try {
+						({ data: document, content: body } = parseFrontmatter(original));
+					} catch {
+						return;
+					}
+					if (typeof document.id === "string" && taskIdKey(document.id) !== taskIdKey(candidate.identity)) return;
+					let changed = false;
+					const assignee = document.assignee;
+					if (assignee === null) {
+						document.assignee = [];
+						changed = true;
+					} else if (typeof assignee === "string") {
+						document.assignee = assignee.trim().length === 0 ? [] : [assignee];
+						changed = true;
+					} else if (Array.isArray(assignee) && assignee.some((entry) => typeof entry !== "string")) {
+						document.assignee = assignee.map(String);
+						changed = true;
+					}
+					const priority = document.priority;
+					if (typeof priority === "string") {
+						const canonical = resolvePriorityValue(priority, config) ?? normalizePriorityValue(priority);
+						if (canonical !== undefined && canonical !== priority) {
+							document.priority = canonical;
+							changed = true;
+						}
+					}
+					if (changed) {
+						await this.replaceMigrationFile(path, stringifyFrontmatter(body, document));
+						completed.push(path);
+					}
+				});
+			}
+		} catch (error) {
+			throw new Error(
+				`Task field migration partially completed (${completed.length} files): ${completed.join(", ")}.`,
+				{ cause: error },
+			);
+		}
+		return { migratedFiles: completed };
+	}
+
+	private parseAgentCommand(command: string): string[] {
+		const argv: string[] = [];
+		let token = "";
+		let quote = "";
+		let started = false;
+		for (let i = 0; i < command.length; i++) {
+			const c = command[i]!;
+			if (quote === "'") {
+				if (c === "'") quote = "";
+				else if (c === "\n" || c === "\r") throw new Error("newline is not supported");
+				else token += c;
+				started = true;
+				continue;
+			}
+			if (c === "\\" && quote !== "'") {
+				if (++i >= command.length) throw new Error("malformed trailing escape");
+				const escaped = command[i]!;
+				if (escaped === "\n" || escaped === "\r") throw new Error("newline escape is not supported");
+				if (quote === '"' && !["$", "`", '"', "\\"].includes(escaped)) token += `\\${escaped}`;
+				else token += escaped;
+				started = true;
+				continue;
+			}
+			if (quote === '"') {
+				if (c === '"') quote = "";
+				else if (c === "$" || c === "`" || c === "\n" || c === "\r")
+					throw new Error("expansion or newline is not supported");
+				else token += c;
+				started = true;
+				continue;
+			}
+			if (c === "'" || c === '"') {
+				quote = c;
+				started = true;
+				continue;
+			}
+			if (c === "\n" || c === "\r") throw new Error("newline is not supported");
+			if (/\s/.test(c)) {
+				if (started) {
+					argv.push(token);
+					token = "";
+					started = false;
+				}
+				continue;
+			}
+			if (/[|&;<>`$()]/.test(c)) throw new Error("ambiguous shell expression");
+			token += c;
+			started = true;
+		}
+		if (quote) throw new Error("malformed quoting");
+		if (started) argv.push(token);
+		const checked = agentCommandArgvSchema.safeParse(argv);
+		if (!checked.success) throw new Error(checked.error.issues[0]?.message ?? "invalid argv");
+		return checked.data;
+	}
+
+	private serializeRawYaml(document: Record<string, unknown>): string {
+		return Bun.YAML.stringify(document);
+	}
+
+	private async replaceMigrationFile(path: string, content: string): Promise<void> {
+		const temporary = `${path}.${process.pid}.${Date.now()}.tmp`;
+		try {
+			let mode = 0o600;
+			try {
+				mode = (await stat(path)).mode & 0o7777;
+			} catch (error) {
+				if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+			}
+			await writeFile(temporary, content, { flag: "wx", mode: 0o600 });
+			await chmod(temporary, mode);
+			await rename(temporary, path);
+		} catch (error) {
+			await unlink(temporary).catch((cleanup) => {
+				if ((cleanup as NodeJS.ErrnoException).code !== "ENOENT") throw cleanup;
+			});
+			throw error;
+		}
+	}
+
+	private async withConfigLock<T>(path: string, operation: () => Promise<T>): Promise<T> {
+		await mkdir(dirname(path), { recursive: true });
+		const release = await lockfile.lock(path, {
+			realpath: false,
+			retries: { retries: 4, minTimeout: 25, maxTimeout: 200 },
+		});
+		try {
+			return await operation();
+		} finally {
+			await release();
+		}
+	}
+
+	private async withMigrationConfigLock<T>(
+		path: string,
+		taskRecord: boolean,
+		operation: () => Promise<T>,
+	): Promise<T | undefined> {
+		for (let attempt = 0; ; attempt++) {
+			try {
+				return await this.withConfigLock(path, operation);
+			} catch (error) {
+				if ((error as NodeJS.ErrnoException).code !== "ELOCKED") throw error;
+				if (!(await this.hasAgentCommandMigrationCandidate(path, taskRecord))) return;
+				if (attempt === 19) throw error;
+				await Bun.sleep(Math.min(25 * (attempt + 1), 250));
+			}
+		}
+	}
+
+	private async hasAgentCommandMigrationCandidate(path: string, taskRecord: boolean): Promise<boolean> {
+		let original: string;
+		try {
+			original = await readFile(path, "utf8");
+		} catch (error) {
+			if ((error as NodeJS.ErrnoException).code === "ENOENT") return false;
+			throw error;
+		}
+		try {
+			const document = taskRecord ? parseFrontmatter(original).data : Bun.YAML.parse(original);
+			if (!document || typeof document !== "object" || Array.isArray(document)) return false;
+			const config = (document as Record<string, unknown>)[taskRecord ? "agentConfiguration" : "agent_configuration"];
+			if (!config || typeof config !== "object" || Array.isArray(config)) return false;
+			const presets = (config as Record<string, unknown>).presets;
+			return (
+				!!presets &&
+				typeof presets === "object" &&
+				!Array.isArray(presets) &&
+				Object.values(presets).some(
+					(preset) =>
+						!!preset &&
+						typeof preset === "object" &&
+						!Array.isArray(preset) &&
+						typeof (preset as Record<string, unknown>).command === "string",
+				)
+			);
+		} catch (error) {
+			if (taskRecord) return false;
+			throw new Error(`Cannot migrate agent commands in ${path}: invalid document.`, { cause: error });
+		}
+	}
+
+	private async withMigrationTaskLock<T>(
+		task: Pick<Task, "id" | "filePath">,
+		operation: () => Promise<T>,
+	): Promise<T | undefined> {
+		for (let attempt = 0; ; attempt++) {
+			try {
+				return await this.withTaskLock(task, operation);
+			} catch (error) {
+				const contention =
+					(error as NodeJS.ErrnoException).code === "ELOCKED" ||
+					(isTaskLockError(error) && (error.cause as NodeJS.ErrnoException | undefined)?.code === "ELOCKED");
+				if (!contention) throw error;
+				if (attempt === 19) return undefined;
+				await Bun.sleep(25);
+			}
+		}
+	}
+
+	private async readTaskFieldMigrationCandidate(
+		path: string,
+		config: AgenticWorkspaceConfig | null,
+	): Promise<{ identity: string } | null> {
+		try {
+			const { data } = parseFrontmatter(await readFile(path, "utf8"));
+			const assignee = data.assignee;
+			const needsAssigneeMigration =
+				assignee === null ||
+				typeof assignee === "string" ||
+				(Array.isArray(assignee) && assignee.some((entry) => typeof entry !== "string"));
+			const priority = data.priority;
+			const canonicalPriority =
+				typeof priority === "string"
+					? (resolvePriorityValue(priority, config) ?? normalizePriorityValue(priority))
+					: undefined;
+			if (!needsAssigneeMigration && !(canonicalPriority !== undefined && canonicalPriority !== priority)) return null;
+			return { identity: typeof data.id === "string" && data.id.length > 0 ? data.id : basename(dirname(path)) };
+		} catch {
+			return null;
+		}
+	}
+
+	private async readTaskMigrationIdentity(path: string): Promise<string | null> {
+		try {
+			const { data } = parseFrontmatter(await readFile(path, "utf8"));
+			return typeof data.id === "string" && data.id.length > 0 ? data.id : basename(dirname(path));
+		} catch {
+			return null;
+		}
 	}
 
 	async loadMilestones(): Promise<Milestone[]> {
@@ -114,14 +488,17 @@ export class Storage {
 	}
 
 	async loadTasks(filter?: TaskListFilter): Promise<Task[]> {
+		await this.waitForAgentPresetMigration();
 		return await this.filesystem.listTasks(filter);
 	}
 
 	async loadCompletedTasks(): Promise<Task[]> {
+		await this.waitForAgentPresetMigration();
 		return await this.filesystem.listCompletedTasks();
 	}
 
 	async loadArchivedTasks(): Promise<Task[]> {
+		await this.waitForAgentPresetMigration();
 		return await this.filesystem.listArchivedTasks();
 	}
 
@@ -135,6 +512,7 @@ export class Storage {
 	}
 
 	async loadTask(taskId: string, options: { includeArchived?: boolean } = {}): Promise<Task | null> {
+		await this.waitForAgentPresetMigration();
 		return await this.filesystem.loadTask(taskId, options);
 	}
 
@@ -143,6 +521,7 @@ export class Storage {
 	}
 
 	async loadTaskContent(taskId: string): Promise<string | null> {
+		await this.waitForAgentPresetMigration();
 		const task = await this.filesystem.loadTask(taskId);
 		if (!task?.filePath) return null;
 		return await Bun.file(task.filePath).text();
@@ -190,6 +569,7 @@ export class Storage {
 	}
 
 	async scanTaskRecords(): Promise<ScannedTaskRecord[]> {
+		await this.waitForAgentPresetMigration();
 		const records: ScannedTaskRecord[] = [];
 		const roots = [
 			[this.filesystem.tasksDir, "active"],

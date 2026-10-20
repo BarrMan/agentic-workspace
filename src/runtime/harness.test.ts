@@ -1,10 +1,12 @@
 import { describe, expect, it } from "bun:test";
-import { access, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { access, chmod, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import "./agents/agents.ts";
+import "./agents/core/agents.ts";
 import type { AgentSession } from "../model/session/types.ts";
-import { claudeHooksConfig } from "./agents/claude.ts";
+import { claudeHooksConfig } from "./agents/claude/claude.ts";
+import { OpencodeV1Agent } from "./agents/opencode/opencode-v1.ts";
+import { harnessRegistry } from "./agents/startup.ts";
 import type { SessionLaunchContext } from "./harness.ts";
 import { Harness, PROVIDER_READINESS_DEADLINE_MS } from "./harness.ts";
 import { sessionActivityDir } from "./status-hooks.ts";
@@ -48,7 +50,7 @@ async function fixture(omit?: Omitted, resume = false) {
 			scope: "root",
 			config: {
 				selectedPreset: "default",
-				presets: { default: { command: "claude", bootstrap: "claude", env: {}, prepare: "" } },
+				presets: { default: { command: ["claude"], bootstrap: "claude", env: {}, prepare: "" } },
 			},
 		},
 		profile: {
@@ -58,7 +60,7 @@ async function fixture(omit?: Omitted, resume = false) {
 			permissions: { repository: "read-write", task: "read-write", artifacts: "read", subagents: "disabled" },
 			artifacts: [],
 		},
-		preset: { command: "claude", bootstrap: "claude", env: {}, prepare: "" },
+		preset: { command: ["claude"], bootstrap: "claude", env: {}, prepare: "" },
 		prompt: "composed startup prompt",
 	};
 	const fakeProcess = {
@@ -76,7 +78,7 @@ async function fixture(omit?: Omitted, resume = false) {
 		) => {
 			emitted.order.push("dispatch");
 			emitted.launchEnvironment = prepared.env;
-			const nativeId = resume ? "saved-native-id" : (prepared.identity?.id ?? "");
+			const nativeId = resume ? "123e4567-e89b-42d3-a456-426614174000" : (prepared.identity?.id ?? "");
 			emitted.launchDirectory = prepared.resources.skill.path;
 			const config = claudeHooksConfig(join(root, "activity"), record.id, prepared.resources.skill.path) as {
 				hooks: Record<string, Array<{ hooks: Array<{ command: string }> }>>;
@@ -92,6 +94,10 @@ async function fixture(omit?: Omitted, resume = false) {
 					JSON.stringify({ session_id: nativeId, prompt: "initial" }),
 				);
 			if (!resume && omit !== "prompt-accepted") emitted.promptSubmissions += 1;
+			if (nativeId.startsWith("ses_")) {
+				await writeFile(join(prepared.resources.skill.path, "initialized"), nativeId);
+				await writeFile(join(prepared.resources.skill.path, "prompt-accepted"), nativeId);
+			}
 		},
 		alive: async () => ({ exitCode: 0, stdout: "0", stderr: "" }),
 		kill: async () => {
@@ -140,6 +146,38 @@ describe("provider prompt-acceptance receipts", () => {
 		}
 	});
 
+	it("uses the adapter resolved from a public OpenCode preset for the execution handle", async () => {
+		const test = await fixture();
+		const original = harnessRegistry.forPreset("opencode-v1");
+		harnessRegistry.replace(new OpencodeV1Agent({ preassignSession: async () => "ses_test" }));
+		const command = join(test.root, "opencode");
+		await writeFile(command, "#!/bin/sh\nprintf '1.19.3\\n'\n");
+		await chmod(command, 0o700);
+		const preset = { command: [command], bootstrap: "opencode" as const, env: {}, prepare: "" };
+		test.context = {
+			...test.context,
+			preset,
+			configuration: {
+				...test.context.configuration,
+				config: { ...test.context.configuration.config, presets: { default: preset } },
+			},
+		};
+		try {
+			const execution = await new Harness(test.root, test.process, 25).launch(test.context);
+			expect(execution.providerConversationId).toBeString();
+			expect(execution.events).toEqual({
+				turnCompleted: "supported",
+				permissionWait: "supported",
+				executionExit: "supported",
+				activity: "supported",
+			});
+			await execution.stop();
+		} finally {
+			harnessRegistry.replace(original);
+			await test.cleanup();
+		}
+	});
+
 	it("rejects a blank retained provider identity before preparing a resume", async () => {
 		const test = await fixture();
 		try {
@@ -170,8 +208,11 @@ describe("provider prompt-acceptance receipts", () => {
 	it("resumes only after the generated Claude hook confirms the exact saved identity, without prompt replay", async () => {
 		const test = await fixture(undefined, true);
 		try {
-			const execution = await new Harness(test.root, test.process).resume("saved-native-id", test.context);
-			expect(execution.providerConversationId).toBe("saved-native-id");
+			const execution = await new Harness(test.root, test.process).resume(
+				"123e4567-e89b-42d3-a456-426614174000",
+				test.context,
+			);
+			expect(execution.providerConversationId).toBe("123e4567-e89b-42d3-a456-426614174000");
 			expect(test.emitted.promptSubmissions).toBe(0);
 			expect(test.emitted.order).toEqual(["outgoing-cleanup", "dispatch"]);
 			await access(sessionActivityDir(test.root, test.record.id));
@@ -184,9 +225,9 @@ describe("provider prompt-acceptance receipts", () => {
 	it("does not resume when the generated emitter omits resume initialization", async () => {
 		const test = await fixture("initialized", true);
 		try {
-			await expect(new Harness(test.root, test.process, 25).resume("saved-native-id", test.context)).rejects.toThrow(
-				"missing initialized receipt",
-			);
+			await expect(
+				new Harness(test.root, test.process, 25).resume("123e4567-e89b-42d3-a456-426614174000", test.context),
+			).rejects.toThrow("missing initialized receipt");
 		} finally {
 			await test.cleanup();
 		}

@@ -10,8 +10,8 @@
 import { readFile, stat } from "node:fs/promises";
 import type { ActivityMetadata, AgentActivity } from "../model/session/types.ts";
 import { ACTIVITY_TIMING, detectChromeActivity, type PaneProbe, shouldSkipCapture } from "./agent-status.ts";
-import type { AgentChromeRule } from "./agents/agent.ts";
-import { agentFor } from "./agents/agents.ts";
+import type { AgentChromeRule } from "./agents/core/agent.ts";
+import { harnessRegistry } from "./agents/startup.ts";
 import type { TmuxResult } from "./live/tmux/types.ts";
 import { activityStatusPath, HOOK_STATUS_VALUES, type HookStatus } from "./status-hooks.ts";
 
@@ -150,7 +150,7 @@ export function createActivityProbe(options: { now?: () => number } = {}): Activ
 			const entries = await Promise.all(
 				targets.map(async (target): Promise<[string, ActivityProbeEvidence]> => {
 					const hook = await readHook(target.statusDir, now());
-					const meta = await metadata(target, agentFor(target.bootstrap)?.chromeRules, hook);
+					const meta = await metadata(target, harnessRegistry.find(target.bootstrap)?.chromeRules, hook);
 					return [target.sessionId, { hook, pane: meta.pane, captureEmpty: meta.captureEmpty, chrome: meta.chrome }];
 				}),
 			);

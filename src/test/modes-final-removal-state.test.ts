@@ -38,7 +38,7 @@ describe("final task removal mode state", () => {
 		const agentConfiguration = {
 			selectedPreset: "opencode",
 			presets: {
-				opencode: { command: "opencode", env: {}, prepare: "", bootstrap: "opencode", resumeFlag: "--session" },
+				opencode: { command: ["opencode"], env: {}, prepare: "", bootstrap: "opencode", resumeFlag: "--session" },
 			},
 			modes,
 		};
@@ -126,7 +126,13 @@ describe("final task removal mode state", () => {
 			for (let i = 0; i < 300 && !mounted; i++) await Bun.sleep(1);
 			expect(mounted?.selectedModeId).toBe("build");
 			mounted?.onCycleMode?.();
-			await Bun.sleep(30);
+			const deadline = Date.now() + 2_000;
+			while (
+				(store.current as { selectedModeByTask?: Record<string, string> }).selectedModeByTask?.[task.id] !== "plan" &&
+				Date.now() < deadline
+			) {
+				await Bun.sleep(1);
+			}
 			const afterCycle: unknown = (store.current as { selectedModeByTask?: unknown }).selectedModeByTask;
 			assertValidModeMap(afterCycle);
 			const modeAfterCycle = afterCycle[task.id];

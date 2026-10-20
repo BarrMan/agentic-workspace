@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 import { constants } from "node:fs";
-import { access, lstat, mkdir, readdir, readFile, realpath, rename, rm, stat, unlink } from "node:fs/promises";
+import { access, lstat, mkdir, readdir, realpath, rename, rm, stat } from "node:fs/promises";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import lockfile from "proper-lockfile";
 import { findGitWorktreeRoot } from "../filesystem/git/main-worktree.ts";
@@ -19,8 +19,6 @@ import {
 import { taskIdKey, taskIdsEqual } from "../model/task/task-id.ts";
 import type { ProcessRunner } from "../runtime/session-process.ts";
 import { SessionMutationError } from "./errors/session.ts";
-
-const NATIVE_SESSION_ID = /^ses_[A-Za-z0-9][A-Za-z0-9_-]*$/;
 
 const stateLockQueues = new Map<string, Promise<void>>();
 
@@ -133,8 +131,7 @@ async function hasStoreEvidence(root: string): Promise<boolean> {
 			const files = await readdir(join(root, entry.name)).catch((error: unknown) => {
 				throw new Error(`Cannot inspect agent state container ${join(root, entry.name)}.`, { cause: error });
 			});
-			if (files.some((name) => name === "state.json" || /\.(claim|mode|lock|log|md|native-session-id)$/.test(name)))
-				return true;
+			if (files.some((name) => name === "state.json" || /\.(claim|mode|lock|log|md)$/.test(name))) return true;
 		}
 		return false;
 	} catch (error) {
@@ -330,7 +327,7 @@ export class SessionStore {
 	constructor(
 		rootDir: string,
 		protected readonly runner: ProcessRunner,
-		private readonly resolvePreset?: (session: AgentSession) => Promise<AgentPreset>,
+		_resolvePreset?: (session: AgentSession) => Promise<AgentPreset>,
 		options: ProjectStateRootOptions = {},
 	) {
 		this.rootContext = stateRootContext(rootDir, options);
@@ -342,20 +339,7 @@ export class SessionStore {
 	}
 
 	async read(taskId: string): Promise<SessionState> {
-		return await this.hydrateNativeSessionReceipts(await this.readPersisted(taskId));
-	}
-
-	/** Read a protected OpenCode ID receipt candidate for an exact persisted session membership. */
-	async readNativeSessionIdCandidate(taskId: string, sessionId: string): Promise<string | undefined> {
-		const state = await this.readPersisted(taskId);
-		const session = Object.values(state.modes ?? {})
-			.flatMap((history) => history.sessions)
-			.find((candidate) => taskIdsEqual(candidate.taskId, taskId) && candidate.id === sessionId);
-		if (!session) throw new Error(`Agent session not found: ${sessionId}`);
-		const candidate = await this.readNativeSessionReceipt(session);
-		if (candidate !== undefined && session.nativeSessionId !== undefined && candidate !== session.nativeSessionId)
-			throw new Error(`Native session receipt conflicts with established ID for session ${sessionId}.`);
-		return candidate;
+		return await this.readPersisted(taskId);
 	}
 
 	private async readPersisted(taskId: string): Promise<SessionState> {
@@ -600,7 +584,6 @@ export class SessionStore {
 				if (history.activeSessionId === sessionId) history.activeSessionId = history.sessions[0]?.id;
 			}
 		});
-		if (removed) await this.clearNativeSessionReceipt(removed);
 		return removed;
 	}
 
@@ -628,9 +611,7 @@ export class SessionStore {
 		for (const entry of entries) {
 			try {
 				const parsed = JSON.parse(await Bun.file(join(root, entry, "state.json")).text());
-				if (isRecord(parsed) && typeof parsed.taskId === "string") {
-					states.push(await this.hydrateNativeSessionReceipts(this.validate(parsed, parsed.taskId)));
-				}
+				if (isRecord(parsed) && typeof parsed.taskId === "string") states.push(await this.read(parsed.taskId));
 			} catch (error) {
 				if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
 			}
@@ -644,62 +625,6 @@ export class SessionStore {
 
 	private projectStateRoot(): Promise<string> {
 		return this.stateRoot;
-	}
-
-	/** Receipts are untrusted runtime input, read only for the currently configured OpenCode preset. */
-	private async receiptPath(session: AgentSession): Promise<string | undefined> {
-		if (!this.resolvePreset) return;
-		const paths = await this.paths(session.taskId);
-		const taskDir = resolve(paths.taskDir);
-		const bootstrapPath = resolve(session.bootstrapPath);
-		if (dirname(bootstrapPath) !== taskDir || bootstrapPath !== join(taskDir, `${session.id}.md`)) return;
-		try {
-			if (!(await lstat(taskDir)).isDirectory()) return;
-		} catch {
-			return;
-		}
-		return join(taskDir, `${session.id}.native-session-id`);
-	}
-
-	private async readNativeSessionReceipt(session: AgentSession): Promise<string | undefined> {
-		const path = await this.receiptPath(session);
-		if (!path) return;
-		try {
-			const metadata = await lstat(path);
-			if (!metadata.isFile() || (metadata.mode & 0o077) !== 0) return;
-			if ((await this.resolvePreset?.(session))?.bootstrap !== "opencode") return;
-			const nativeSessionId = await readFile(path, "utf8");
-			const exactId = nativeSessionId.endsWith("\n") ? nativeSessionId.slice(0, -1) : nativeSessionId;
-			return NATIVE_SESSION_ID.test(exactId) ? exactId : undefined;
-		} catch (error) {
-			if ((error as NodeJS.ErrnoException).code === "ENOENT") return;
-			return;
-		}
-	}
-
-	private async hydrateNativeSessionReceipts(state: SessionState): Promise<SessionState> {
-		for (const history of Object.values(state.modes ?? {})) {
-			for (const session of history.sessions) {
-				const nativeSessionId = await this.readNativeSessionReceipt(session);
-				if (nativeSessionId && session.nativeSessionId === undefined) session.nativeSessionId = nativeSessionId;
-			}
-		}
-		return state;
-	}
-
-	/**
-	 * The receipt is a runtime sidecar for the current launch; a fresh launch clears any stale one so
-	 * a previous conversation's identity cannot be re-delivered.
-	 */
-	async clearNativeSessionReceipt(session: AgentSession): Promise<void> {
-		const path = await this.receiptPath(session);
-		if (!path) return;
-		try {
-			const metadata = await lstat(path);
-			if (metadata.isFile() && (metadata.mode & 0o077) === 0) await unlink(path);
-		} catch (error) {
-			if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
-		}
 	}
 
 	private empty(taskId: string): SessionState {

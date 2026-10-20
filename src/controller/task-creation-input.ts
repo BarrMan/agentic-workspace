@@ -1,4 +1,4 @@
-import { normalizeStringList, parseDelimitedStringList } from "../lib/string-list.ts";
+import { normalizeStringList } from "../lib/string-list.ts";
 import { FALLBACK_STATUS } from "../model/constants.ts";
 import { normalizeAssignees } from "../model/task/assignee-filter.ts";
 import { normalizeDueDate } from "../model/task/due-date.ts";
@@ -34,7 +34,7 @@ export function prepareTaskCreationInput(input: TaskCreateInput): PreparedTaskCr
 		requestedParentTaskId: input.parentTaskId?.trim(),
 		labels: normalizeStringList(input.labels) ?? [],
 		assignees: normalizeAssignees(normalizeStringList(input.assignee)),
-		dependencies: parseDelimitedStringList(input.dependencies) ?? [],
+		dependencies: normalizeStringList(input.dependencies) ?? [],
 		references: normalizeStringList(input.references) ?? [],
 		documentation: normalizeStringList(input.documentation) ?? [],
 		modifiedFiles: normalizeStringList(input.modifiedFiles) ?? [],

@@ -122,7 +122,7 @@ async function fixture(providerFailure?: Error, beforeFailure?: (context: Sessio
 	await upsertAgentConfiguration(core, "project", {
 		...config,
 		selectedPreset: "test",
-		presets: { test: { command: "agent {prompt} {skill}", env: {}, prepare: "", bootstrap: "pi" } },
+		presets: { test: { command: ["agent", "{prompt}", "{skill}"], env: {}, prepare: "", bootstrap: "pi" } },
 	});
 	const store = new TrackingStore(root, new BunRunner());
 	const provider = new Provider(store, providerFailure, beforeFailure);
@@ -142,6 +142,21 @@ describe("SessionApplication", () => {
 		expect(published).toHaveLength(1);
 		expect(published[0]?.status).toBe("running");
 		expect(published[0]?.nativeWorkspace).toBe(true);
+	});
+
+	it("creates a session from the unresolved public OpenCode preset", async () => {
+		const { core, store, provider, application, task } = await fixture();
+		const existing = await (await import("../storage/config.ts")).loadAgentConfiguration(core, "project");
+		if (!existing) throw new Error("Expected initialized project configuration");
+		await upsertAgentConfiguration(core, "project", {
+			...existing,
+			selectedPreset: "opencode",
+			presets: { opencode: { command: ["opencode"], env: {}, prepare: "", bootstrap: "opencode" } },
+		});
+		const session = await application.newSession(task.id);
+		const saved = (await store.read(task.id)).modes.build?.sessions.find(({ id }) => id === session.id);
+		expect(provider.calls).toBe(1);
+		expect(saved?.nativeProvider).toBeUndefined();
 	});
 
 	it("hydrates a fresh Task for rollback and rejects a replaced incarnation", async () => {

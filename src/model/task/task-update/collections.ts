@@ -1,5 +1,5 @@
 import { comparisonKey } from "../../../lib/comparison-key.ts";
-import { normalizeStringList, parseDelimitedStringList, stringArraysEqual } from "../../../lib/string-list.ts";
+import { normalizeStringList, stringArraysEqual } from "../../../lib/string-list.ts";
 import type { Task, TaskUpdateInput } from "../../types.ts";
 import { normalizeAssignees } from "../assignee-filter.ts";
 import { labelComparisonKey } from "../label-filter.ts";
@@ -104,7 +104,7 @@ async function applyDependencies(
 		current = next;
 	}
 	if (input.removeDependencies && input.removeDependencies.length > 0) {
-		const removals = parseDelimitedStringList(input.removeDependencies) ?? [];
+		const removals = normalizeStringList(input.removeDependencies) ?? [];
 		const next = current.filter((dependency) => !removals.some((removal) => context.taskIdsEqual(removal, dependency)));
 		if (!stringArraysEqual(next, current)) {
 			current = next;
@@ -116,7 +116,7 @@ async function applyDependencies(
 }
 
 async function validatedDependencies(input: string[], task: Task, context: CollectionUpdateContext): Promise<string[]> {
-	const { valid, invalid } = await context.validateDependencies(parseDelimitedStringList(input) ?? [], task);
+	const { valid, invalid } = await context.validateDependencies(normalizeStringList(input) ?? [], task);
 	if (invalid.length > 0) throw context.formatMissingDependenciesError(invalid);
 	return valid;
 }

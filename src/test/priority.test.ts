@@ -76,7 +76,7 @@ This task has a custom priority.`;
 
 			const task = parseTask(content);
 
-			expect(task.priority).toBe("very high");
+			expect(task.priority).toBe("Very High");
 		});
 
 		it("should handle task without priority field", () => {
@@ -119,7 +119,7 @@ This task has mixed case priority.`;
 
 			const task = parseTask(content);
 
-			expect(task.priority).toBe("high");
+			expect(task.priority).toBe("HIGH");
 		});
 	});
 

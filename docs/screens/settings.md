@@ -12,6 +12,8 @@ Model discovery and configured-model availability behavior follows [CONFIG-010](
 
 Right enters category fields; Left returns to categories without changing values. Tab/Shift+Tab, Up/Down, or mouse clicks select fields. Enter begins editing; preset arrows change a staged choice and text fields reveal native input. Enter commits the field edit to the settings draft; Escape cancels that edit and stays in Settings. At the preset selector, Space marks the choice as default and `n` copies its provider adapter into a new named preset. Ctrl+S saves committed draft values only, never an uncommitted editor buffer. Multiline environment paste works; Shift+Enter inserts a newline when supported by the terminal. The horizontal scrollbar stays hidden; the vertical scrollbar appears only on overflow. Keep controls reachable at constrained sizes.
 
+Preset commands are edited as JSON argv arrays in the existing text input (for example, `["agent", "--prompt", "{prompt}"]`). Enter parses and validates the array; argument boundaries and contents, including empty arguments, whitespace, quotes, and shell metacharacters, are preserved literally. This is not a shell-command field.
+
 ## Open Questions
 
 Exact dialog copy, wrapping, and minimum dimensions are unspecified.

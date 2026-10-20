@@ -56,6 +56,7 @@ describe("SessionProcess tmux instance lifecycle", () => {
 			newSession: async () => ({ activePane: pane }),
 			panes: async () => (instanceState !== "absent" ? [pane] : []),
 			cmd: async (command: string, args: readonly string[] = []) => {
+				if (command === "list-sessions") return instanceState === "absent" ? [] : [session.tmuxName];
 				if (command === "list-panes") {
 					if (instanceState === "absent")
 						throw new TmuxCommandError({
@@ -136,8 +137,7 @@ describe("SessionProcess tmux instance lifecycle", () => {
 		expect(foreign.events).toEqual([]);
 
 		const probe = await fixture();
-		probe.server.cmd = async (command: string) =>
-			command === "list-panes" ? Promise.reject(new Error("tmux socket denied")) : [];
+		probe.server.cmd = async () => Promise.reject(new Error("tmux socket denied"));
 		await expect(
 			probe.process.nativeRuntimeClassification({ ...session, cwd: await realpath(session.cwd) }),
 		).rejects.toThrow("tmux socket denied");

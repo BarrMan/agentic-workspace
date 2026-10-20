@@ -50,7 +50,7 @@ describe("independent MAIN settings persistence through public input", () => {
 		modes.profiles.review = { ...structuredClone(plan), name: "REVIEW" };
 		const configuration: AgentConfiguration = {
 			selectedPreset: "fake",
-			presets: { fake: { command: `${executable} {prompt}`, env: {}, prepare: "", bootstrap: "opencode" } },
+			presets: { fake: { command: [executable, "{prompt}"], env: {}, prepare: "", bootstrap: "opencode" } },
 			sessions: { worktreePerTask: false, yoloMode: false },
 			modes,
 		};
@@ -167,7 +167,7 @@ describe("independent MAIN settings persistence through public input", () => {
 		await setup.mockMouse.click(x + 1, y);
 		setup.mockInput.pressEnter();
 		await setup.flush();
-		await replace(setup, "fake-edited {prompt}");
+		await replace(setup, '["fake-edited","{prompt}"]');
 		setup.mockInput.pressEnter();
 		await setup.flush();
 		await category(setup, "Sessions");
@@ -258,7 +258,7 @@ describe("independent MAIN settings persistence through public input", () => {
 	}
 
 	function expectCombined(configuration: AgentConfiguration | null) {
-		expect(configuration?.presets.fake?.command).toBe("fake-edited {prompt}");
+		expect(configuration?.presets.fake?.command).toEqual(["fake-edited", "{prompt}"]);
 		expect(configuration?.sessions).toEqual({ worktreePerTask: true, yoloMode: true, autoResumeOnRestart: true });
 		const profile = configuration?.modes?.profiles.plan;
 		expect(profile?.model).toEqual({ kind: "explicit", id: "fake/model-a" });

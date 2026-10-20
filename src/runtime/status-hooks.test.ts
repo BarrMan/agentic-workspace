@@ -4,16 +4,11 @@ import { existsSync } from "node:fs";
 import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import "./agents/agents.ts";
-import { claudeHooksConfig } from "./agents/claude.ts";
-import { openCodeV1PluginSource } from "./agents/opencode-v1.ts";
-import { piExtensionSource } from "./agents/pi.ts";
-import {
-	buildHookCommand,
-	installStatusHooks,
-	STATUS_HOOK_OWNERSHIP_TRAILER,
-	sessionActivityDir,
-} from "./status-hooks.ts";
+import "./agents/startup.ts";
+import { claudeHooksConfig } from "./agents/claude/claude.ts";
+import { openCodeV1PluginSource } from "./agents/opencode/opencode-v1.ts";
+import { piExtensionSource } from "./agents/pi/pi.ts";
+import { buildHookCommand, installStatusHooks, sessionActivityDir } from "./status-hooks.ts";
 
 async function fixture() {
 	const root = await mkdtemp(join(tmpdir(), "agentic-workspace-hooks-test-"));
@@ -23,19 +18,18 @@ async function fixture() {
 describe("generated hook command", () => {
 	it("pins the exact command bytes used by Claude hooks", () => {
 		expect(buildHookCommand("/tmp/owned/activity", "running")).toBe(
-			`sh -c 'unset IFS; set -f; umask 077; D='"'"'/tmp/owned/activity'"'"'; [ -n "$D" ] && [ -d "$D" ] || exit 0; printf %s running > "$D/status" 2>/dev/null; exit 0 # agentic-workspace-hooks'`,
+			`sh -c 'unset IFS; set -f; umask 077; D='"'"'/tmp/owned/activity'"'"'; [ -n "$D" ] && [ -d "$D" ] || exit 0; printf %s running > "$D/status" 2>/dev/null; exit 0'`,
 		);
 	});
 
-	it("targets only the owned status dir and ends with the ownership trailer", () => {
+	it("targets only the owned status dir", () => {
 		const statusDir = "/tmp/owned-launch-1234/activity";
 		const command = buildHookCommand(statusDir, "running");
 		expect(command.startsWith("sh -c ")).toBe(true);
 		expect(command).toContain(statusDir);
 		expect(command).toContain("umask 077");
 		expect(command).toContain("set -f");
-		expect(command).toContain("exit 0 # agentic-workspace-hooks");
-		expect(command).toContain(STATUS_HOOK_OWNERSHIP_TRAILER);
+		expect(command).toContain("exit 0");
 		// No home, project, or global path is ever referenced.
 		expect(command.includes("~")).toBe(false);
 		expect(command.includes("$HOME")).toBe(false);
@@ -82,7 +76,7 @@ describe("process-scoped provider install", () => {
 		const piPath = join(root, "pi.mjs");
 		const opencodePath = join(root, "opencode.mjs");
 		await writeFile(piPath, piExtensionSource(statusDir));
-		await writeFile(opencodePath, openCodeV1PluginSource(statusDir, root, "session", root));
+		await writeFile(opencodePath, openCodeV1PluginSource(statusDir, "session"));
 		try {
 			await rm(statusDir, { recursive: true });
 			const pi = await import(`${new URL(`file://${piPath}`).href}?${Date.now()}`);
@@ -109,15 +103,15 @@ describe("process-scoped provider install", () => {
 		try {
 			const statusDir = sessionActivityDir(root, "sess-1");
 			const claude = await installStatusHooks(
-				{ bootstrap: "claude", command: "claude" },
+				{ bootstrap: "claude", command: ["claude"] },
 				{ pluginDir: root, statusDir, sessionId: "sess-1" },
 			);
 			const opencode = await installStatusHooks(
-				{ bootstrap: "opencode-v1", command: "opencode" },
+				{ bootstrap: "opencode-v1", command: ["opencode"] },
 				{ pluginDir: root, statusDir, sessionId: "sess-1" },
 			);
 			const pi = await installStatusHooks(
-				{ bootstrap: "pi", command: "pi" },
+				{ bootstrap: "pi", command: ["pi"] },
 				{ pluginDir: root, statusDir, sessionId: "sess-1" },
 			);
 			for (const install of [claude, opencode, pi]) {
@@ -131,7 +125,6 @@ describe("process-scoped provider install", () => {
 			// The generated plugin/extension never reference a home or global path.
 			const plugin = await readFile(opencode.paths[0] ?? "", "utf8");
 			expect(plugin.includes("~")).toBe(false);
-			expect(plugin).toContain("agentic-workspace-hooks");
 			expect(plugin).toContain(statusDir);
 		} finally {
 			await cleanup();
@@ -143,7 +136,7 @@ describe("process-scoped provider install", () => {
 		try {
 			await expect(
 				installStatusHooks(
-					{ bootstrap: "unregistered" as "opencode", command: "unregistered" },
+					{ bootstrap: "unregistered" as "opencode", command: ["unregistered"] },
 					{ pluginDir: root, statusDir: sessionActivityDir(root, "sess-1"), sessionId: "sess-1" },
 				),
 			).rejects.toThrow();
@@ -152,7 +145,7 @@ describe("process-scoped provider install", () => {
 		}
 	});
 
-	it("marks every Claude settings hook command as ours", () => {
+	it("installs Claude settings hook commands", () => {
 		const config = claudeHooksConfig("/tmp/owned/activity") as {
 			hooks: Record<string, Array<{ hooks: Array<{ command: string }> }>>;
 		};
@@ -160,6 +153,6 @@ describe("process-scoped provider install", () => {
 			groups.flatMap((group) => group.hooks.map((hook) => hook.command)),
 		);
 		expect(commands.length).toBeGreaterThan(0);
-		for (const command of commands) expect(command).toContain(STATUS_HOOK_OWNERSHIP_TRAILER);
+		for (const command of commands) expect(command).toContain("exit 0");
 	});
 });

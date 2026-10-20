@@ -35,7 +35,6 @@ The root is the configured workspace-owned task-data location: `.agentic-workspa
 | Task session state | `<root>/<slug(task-id)>/state.json` |
 | Session bootstrap | `<root>/<slug(task-id)>/<session-id>.md` |
 | Session log | `<root>/<slug(task-id)>/<session-id>.log` |
-| Provider identity receipt | `<root>/<slug(task-id)>/<session-id>.native-session-id` |
 | Presentation state | `<root>/view-state.json` |
 
 ### Formats

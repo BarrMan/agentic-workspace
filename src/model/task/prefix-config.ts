@@ -1,6 +1,5 @@
-import { escapeRegex } from "../../lib/regex.ts";
 import { type AgenticWorkspaceConfig, EntityType, type PrefixConfig } from "../types.ts";
-import { isNumericTaskIdSegment, parseTaskId, taskIdBody, taskIdKey, taskIdRegex } from "./task-id.ts";
+import { isNumericTaskIdSegment, parseTaskId, taskIdBody, taskIdKey } from "./task-id.ts";
 
 /**
  * Default prefix configuration for tasks.
@@ -46,22 +45,6 @@ export function extractIdBody(id: string, prefix: string): string {
 }
 
 /**
- * Builds a regex pattern for matching IDs with a specific prefix.
- * Captures the numeric/body portion after the prefix.
- *
- * @param prefix - The prefix to match (e.g., "task", "draft")
- * @returns RegExp that matches IDs and captures the body (e.g., /^task-(\d+(?:\.\d+)*)/)
- *
- * @example
- * const regex = buildIdRegex("task");
- * "task-123".match(regex) // => ["task-123", "123"]
- * "task-5.2.1".match(regex) // => ["task-5.2.1", "5.2.1"]
- */
-export function buildIdRegex(prefix: string): RegExp {
-	return taskIdRegex(prefix);
-}
-
-/**
  * Checks if an ID matches a given prefix pattern.
  *
  * @param id - The ID to check
@@ -74,8 +57,7 @@ export function buildIdRegex(prefix: string): RegExp {
  * hasPrefix("JIRA-1", "task") // => false
  */
 export function hasPrefix(id: string, prefix: string): boolean {
-	const pattern = new RegExp(`^${escapeRegex(prefix)}-`, "i");
-	return pattern.test(id.trim());
+	return id.trim().toLowerCase().startsWith(`${prefix.toLowerCase()}-`);
 }
 
 /**

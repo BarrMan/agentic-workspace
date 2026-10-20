@@ -109,7 +109,7 @@ describe("public previous-session selection by mode", () => {
 		await upsertAgentConfiguration(core, "project", {
 			modes: getDefaultModeCatalog(),
 			selectedPreset: "contract",
-			presets: { contract: { command: "pi", env: {}, prepare: "", bootstrap: "pi" } },
+			presets: { contract: { command: ["pi"], env: {}, prepare: "", bootstrap: "pi" } },
 		});
 		const harness = new FakeHarness();
 		const store = new SessionStore(root, harness);

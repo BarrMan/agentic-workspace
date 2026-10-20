@@ -52,10 +52,10 @@ describe("native runtime ownership probes", () => {
 		].join("\t");
 	const exactMissing = () =>
 		new TmuxCommandError({
-			args: ["list-panes", "-t", `=${record.tmuxName}:`],
+			args: ["has-session", "-t", `=${record.tmuxName}`],
 			exitCode: 1,
-			stderr: [`can't find session: ${record.tmuxName}`],
-			target: `=${record.tmuxName}:`,
+			stderr: [],
+			target: `=${record.tmuxName}`,
 		});
 
 	it.each([
@@ -105,10 +105,12 @@ describe("native runtime ownership probes", () => {
 		);
 	});
 
-	it("classifies only a typed exact missing tmux target as missing", async () => {
+	it("classifies absence only from a successful exact session inventory", async () => {
 		const server = {
-			cmd: async () => {
-				throw exactMissing();
+			cmd: async (command: string) => {
+				if (command === "list-panes") throw new Error("list panes failed");
+				expect(command).toBe("list-sessions");
+				return [];
 			},
 		} as unknown as TmuxServer;
 		const runner: ProcessRunner = {
@@ -121,7 +123,30 @@ describe("native runtime ownership probes", () => {
 		});
 	});
 
-	it("classifies an unreachable tmux socket as conclusive absence", async () => {
+	it("keeps failed pane and session inspections uncertain", async () => {
+		const server = {
+			cmd: async (command: string) => {
+				throw new TmuxCommandError({
+					args: [command],
+					exitCode: 1,
+					stderr: ["permission denied"],
+				});
+			},
+		} as unknown as TmuxServer;
+		await expect(
+			new SessionProcess(
+				{
+					run: async () => {
+						throw new Error("No process probe expected");
+					},
+				},
+				process.cwd(),
+				server,
+			).nativeRuntimeClassification(record),
+		).rejects.toThrow();
+	});
+
+	it("preserves an unreachable tmux socket as an error", async () => {
 		const server = {
 			cmd: async () => {
 				throw new TmuxTransportError("error connecting to /private/tmp/tmux-501/default", {
@@ -135,9 +160,9 @@ describe("native runtime ownership probes", () => {
 				throw new Error("An unavailable server must not probe the OS");
 			},
 		};
-		expect(await new SessionProcess(runner, process.cwd(), server).nativeRuntimeClassification(record)).toEqual({
-			status: "missing",
-		});
+		await expect(
+			new SessionProcess(runner, process.cwd(), server).nativeRuntimeClassification(record),
+		).rejects.toThrow();
 	});
 
 	it("preserves alive live/dead numeric results and its canonical exact missing stderr", async () => {
@@ -159,9 +184,7 @@ describe("native runtime ownership probes", () => {
 			});
 		}
 		const missingServer = {
-			cmd: async () => {
-				throw exactMissing();
-			},
+			cmd: async (command: string) => (command === "list-panes" ? Promise.reject(exactMissing()) : []),
 		} as unknown as TmuxServer;
 		expect(
 			await new SessionProcess(

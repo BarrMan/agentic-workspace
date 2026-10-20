@@ -13,7 +13,7 @@ function configuration(): AgentConfiguration {
 		selectedPreset: "existing",
 		presets: {
 			existing: {
-				command: "agent {prompt}",
+				command: ["agent", "{prompt}"],
 				env: { TOKEN: "a=b" },
 				prepare: "git status",
 				bootstrap: "opencode",
@@ -84,7 +84,7 @@ describe("native agent settings", () => {
 			expect(rows[0]).toContain("[ Project ]");
 			expect(rows[3]).toContain("╮╭");
 			expect(rows[20]).toContain("╯╰");
-			expect(setup.captureCharFrame()).toContain("agent {prompt}");
+			expect(setup.captureCharFrame()).toContain('["agent","{prompt}"]');
 			expect(setup.renderer.currentFocusedRenderable).toBeInstanceOf(BoxRenderable);
 			const focused = cellColor(setup, 0, 4);
 			const neutral = cellColor(setup, 20, 4);
@@ -95,11 +95,11 @@ describe("native agent settings", () => {
 			expect(cellColor(setup, 0, 4)).toEqual(neutral);
 			expect(cellColor(setup, 20, 4)).toEqual(focused);
 			expect(setup.renderer.currentFocusedRenderable).toBeInstanceOf(BoxRenderable);
-			expect(setup.captureCharFrame()).toContain("Launch command");
+			expect(setup.captureCharFrame()).toContain("JSON argv");
 			setup.mockInput.pressEnter();
 			await setup.flush();
 			expect(setup.renderer.currentFocusedRenderable).toBeInstanceOf(InputRenderable);
-			expect((setup.renderer.currentFocusedRenderable as InputRenderable).value).toBe("agent {prompt}");
+			expect((setup.renderer.currentFocusedRenderable as InputRenderable).value).toBe('["agent","{prompt}"]');
 			setup.mockInput.pressEscape();
 			setup.mockInput.pressArrow("left");
 			await setup.flush();
@@ -116,7 +116,7 @@ describe("native agent settings", () => {
 		const config = configuration();
 		const existing = config.presets.existing;
 		if (!existing) throw new Error("Expected existing preset.");
-		config.presets.second = { ...structuredClone(existing), command: "second {prompt}" };
+		config.presets.second = { ...structuredClone(existing), command: ["second", "{prompt}"] };
 		let saved: AgentConfiguration | undefined;
 		const mount = mountOpenTuiAgentSettings(setup.renderer, parent(setup), {
 			configuration: config,
@@ -154,7 +154,7 @@ describe("native agent settings", () => {
 		const config = configuration();
 		const existing = config.presets.existing;
 		if (!existing) throw new Error("Expected existing preset.");
-		config.presets.second = { ...structuredClone(existing), command: "second {prompt}" };
+		config.presets.second = { ...structuredClone(existing), command: ["second", "{prompt}"] };
 		let saved: AgentConfiguration | undefined;
 		let closed = 0;
 		const mount = mountOpenTuiAgentSettings(setup.renderer, parent(setup), {
@@ -179,7 +179,7 @@ describe("native agent settings", () => {
 			setup.mockInput.pressArrow("right");
 			setup.mockInput.pressEnter();
 			await setup.flush();
-			expect(setup.captureCharFrame()).toContain("second {prompt}");
+			expect(setup.captureCharFrame()).toContain('["second","{prompt}"]');
 			expect(setup.captureCharFrame()).not.toContain("second ● default");
 			setup.mockInput.pressKey(" ");
 			await setup.flush();
@@ -202,7 +202,7 @@ describe("native agent settings", () => {
 		const config = configuration();
 		const existing = config.presets.existing;
 		if (!existing) throw new Error("Expected existing preset.");
-		config.presets.second = { ...structuredClone(existing), command: "second {prompt}" };
+		config.presets.second = { ...structuredClone(existing), command: ["second", "{prompt}"] };
 		let saved: AgentConfiguration | undefined;
 		const mount = mountOpenTuiAgentSettings(setup.renderer, parent(setup), {
 			configuration: config,
@@ -240,8 +240,8 @@ describe("native agent settings", () => {
 		try {
 			setup.mockInput.pressArrow("right");
 			setup.mockInput.pressTab();
-			await editSelectedField(setup, "changed {prompt}");
-			expect(setup.captureCharFrame()).toContain("changed {prompt}");
+			await editSelectedField(setup, '["changed", "{prompt}"]');
+			expect(setup.captureCharFrame()).toContain('["changed","{prompt}"]');
 			expect(setup.renderer.currentFocusedRenderable).toBeInstanceOf(BoxRenderable);
 			setup.mockInput.pressEnter();
 			setup.mockInput.pressKey("e", { ctrl: true });
@@ -251,7 +251,7 @@ describe("native agent settings", () => {
 			setup.mockInput.pressEscape();
 			await setup.flush();
 			expect(closed).toBe(0);
-			expect(setup.captureCharFrame()).toContain("changed {prompt}");
+			expect(setup.captureCharFrame()).toContain('["changed","{prompt}"]');
 			expect(setup.captureCharFrame()).not.toContain("cancelled");
 			setup.mockInput.pressArrow("down");
 			setup.mockInput.pressArrow("down");
@@ -296,17 +296,17 @@ describe("native agent settings", () => {
 		};
 		try {
 			await setup.flush();
-			await clickVisibleText("agent {prompt}");
+			await clickVisibleText('["agent","{prompt}"]');
 			expect(setup.renderer.currentFocusedRenderable).toBeInstanceOf(BoxRenderable);
 			await setup.mockInput.typeText("ignored");
 			await setup.mockInput.pasteBracketedText("ignored");
 			await setup.flush();
 			expect(setup.captureCharFrame()).not.toContain("ignored");
-			await editSelectedField(setup, "changed {prompt}");
+			await editSelectedField(setup, '["changed", "{prompt}"]');
 			await clickVisibleText("--resume");
 			expect(setup.renderer.currentFocusedRenderable).toBeInstanceOf(BoxRenderable);
 			await editSelectedField(setup, "--mouse");
-			await clickVisibleText("changed {prompt}");
+			await clickVisibleText('["changed","{prompt}"]');
 			setup.mockInput.pressEnter();
 			setup.mockInput.pressKey("e", { ctrl: true });
 			await setup.mockInput.typeText(" uncommitted");
@@ -329,7 +329,7 @@ describe("native agent settings", () => {
 			await setup.flush();
 			expect(saved?.presets.existing).toEqual({
 				...existing,
-				command: "changed {prompt}",
+				command: ["changed", "{prompt}"],
 				resumeFlag: "--mouse",
 				env: { TOKEN: "a=b", MOUSE: "clicked", EMPTY: "" },
 			});
@@ -356,7 +356,7 @@ describe("native agent settings", () => {
 		try {
 			setup.mockInput.pressArrow("right");
 			setup.mockInput.pressTab();
-			await editSelectedField(setup, "runner {skill} {prompt}");
+			await editSelectedField(setup, '["runner", "{skill}", "{prompt}"]');
 			setup.mockInput.pressTab();
 			setup.mockInput.pressTab();
 			setup.mockInput.pressEnter();
@@ -383,7 +383,7 @@ describe("native agent settings", () => {
 			setup.mockInput.pressKey("s", { ctrl: true });
 			await setup.flush();
 			expect(saved?.presets.existing?.env).toEqual({ TOKEN: "visible", EMPTY: "" });
-			expect(saved?.presets.existing?.command).toBe("runner {skill} {prompt}");
+			expect(saved?.presets.existing?.command).toEqual(["runner", "{skill}", "{prompt}"]);
 		} finally {
 			mount.dispose();
 		}
@@ -406,7 +406,7 @@ describe("native agent settings", () => {
 		try {
 			setup.mockInput.pressArrow("right");
 			setup.mockInput.pressArrow("down");
-			await editSelectedField(setup, "committed {prompt}");
+			await editSelectedField(setup, '["committed", "{prompt}"]');
 			setup.mockInput.pressArrow("down");
 			setup.mockInput.pressArrow("down");
 			setup.mockInput.pressEnter();
@@ -416,7 +416,7 @@ describe("native agent settings", () => {
 			await setup.flush();
 			expect(saved?.presets.existing).toEqual({
 				...existing,
-				command: "committed {prompt}",
+				command: ["committed", "{prompt}"],
 			});
 		} finally {
 			mount.dispose();
@@ -464,12 +464,12 @@ describe("native agent settings", () => {
 			await setup.flush();
 			expect(setup.renderer.currentFocusedRenderable).toBe(editor);
 			expect(attempts).toBe(1);
-			expect(editor.value).toBe("agent {prompt} unsaved");
+			expect(editor.value).toBe('["agent","{prompt}"] unsaved');
 			expect(closed).toBe(0);
 			complete?.();
 			await setup.flush();
 			expect(setup.captureCharFrame()).toContain("write rejected");
-			expect(editor.value).toBe("agent {prompt} unsaved");
+			expect(editor.value).toBe('["agent","{prompt}"] unsaved');
 			setup.mockInput.pressEscape();
 			await setup.flush();
 			expect(closed).toBe(0);

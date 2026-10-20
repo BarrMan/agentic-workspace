@@ -1,5 +1,5 @@
-import { afterEach, beforeEach, describe, expect, it, spyOn } from "bun:test";
-import { mkdtemp, rm } from "node:fs/promises";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, spyOn } from "bun:test";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { TmuxCommandError } from "libtmux";
@@ -9,7 +9,14 @@ import { AgentSessionService, type ProcessRunner, type TmuxServer } from "../../
 import type { WorkspaceContext } from "../../runtime/workspace-context.ts";
 import { getDefaultModeCatalog, initializeAgentConfiguration, upsertAgentConfiguration } from "../../storage/config.ts";
 import { SessionStore } from "../../storage/session-store.ts";
+import { disableHarnessReadiness } from "../agent-test-helpers.ts";
 import { initializeTestProject } from "../test-utils.ts";
+
+let restoreHarnessReadiness: (() => void) | undefined;
+beforeAll(() => {
+	restoreHarnessReadiness = disableHarnessReadiness();
+});
+afterAll(() => restoreHarnessReadiness?.());
 
 type Pane = {
 	id: string;
@@ -48,6 +55,12 @@ class FakeHarness implements ProcessRunner, TmuxServer {
 		return [...this.sessions.keys()].map((id) => this.pane(id));
 	}
 	async cmd(command: string, args: readonly string[] = []): Promise<readonly string[]> {
+		if (command === "has-session") {
+			const target = args[args.indexOf("-t") + 1] ?? "";
+			const name = target.slice(1);
+			if ([...this.sessions.values()].includes(name)) return [];
+			throw new TmuxCommandError({ args: [command, ...args], exitCode: 1, target, stderr: [] });
+		}
 		if (command === "list-panes") {
 			const target = args[args.indexOf("-t") + 1];
 			const name = target ? /^=(.+):$/.exec(target)?.[1] : undefined;
@@ -99,7 +112,8 @@ class FakeHarness implements ProcessRunner, TmuxServer {
 			},
 			setTitle: async () => {},
 			pipeTo: async () => {},
-			respawn: async () => {
+			respawn: async (command) => {
+				if (command) await this.captureIdentity(id, command);
 				this.dead.delete(id);
 			},
 			displayMessage: async (message) => (message === "#{pane_id} #{pane_dead}" ? [`${id} 0`] : ["0 0"]),
@@ -108,6 +122,16 @@ class FakeHarness implements ProcessRunner, TmuxServer {
 			},
 		};
 	}
+	private async captureIdentity(id: string, command: string): Promise<void> {
+		const raw = this.metadata.get(id)?.["@agentic_workspace_launch_resources"];
+		const skillPath = raw ? (JSON.parse(raw) as { skill?: { path?: string } }).skill?.path : undefined;
+		const nativeId = /nativeSessionId[^0-9a-f]+([0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})/.exec(command)?.[1];
+		if (!skillPath || !nativeId) return;
+		const receipt = JSON.stringify({ session_id: nativeId });
+		await writeFile(join(skillPath, "session_id"), nativeId);
+		await writeFile(join(skillPath, "initialized"), receipt);
+		await writeFile(join(skillPath, "prompt-accepted"), receipt);
+	}
 }
 
 describe("mode ask ownership through the public service", () => {
@@ -115,11 +139,7 @@ describe("mode ask ownership through the public service", () => {
 	const previousConfigHomes: Array<string | undefined> = [];
 	let processMocks: Array<{ mockRestore(): void }> = [];
 	beforeEach(() => {
-		processMocks = [
-			spyOn(processTree, "snapshotProcessGroup").mockReturnValue(undefined),
-			spyOn(processTree, "terminateProcessTree").mockResolvedValue("terminated"),
-			spyOn(processTree, "deadPaneGroupState").mockReturnValue("gone"),
-		];
+		processMocks = [spyOn(processTree, "terminateProcessTree").mockResolvedValue("terminated")];
 	});
 	afterEach(async () => {
 		for (const mock of processMocks) mock.mockRestore();
@@ -135,13 +155,14 @@ describe("mode ask ownership through the public service", () => {
 		previousConfigHomes.push(process.env.XDG_CONFIG_HOME);
 		process.env.XDG_CONFIG_HOME = join(root, "xdg");
 		const core = new Core(root);
+		await core.getConfig();
 		await initializeTestProject(core, "Mode ask context contract");
 		await core.createTaskFromInput({ title: "Mode ownership task", status: "To Do" });
 		await initializeAgentConfiguration(core, "project");
 		await upsertAgentConfiguration(core, "project", {
 			modes: getDefaultModeCatalog(),
 			selectedPreset: "contract",
-			presets: { contract: { command: "pi", env: {}, prepare: "", bootstrap: "pi" } },
+			presets: { contract: { command: ["pi", "{prompt}"], env: {}, prepare: "", bootstrap: "pi" } },
 		});
 		const harness = new FakeHarness();
 		const store = new SessionStore(root, harness);

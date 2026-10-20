@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "bun:test";
-import { chmod, mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import lockfile from "proper-lockfile";
@@ -285,7 +285,7 @@ describe("SessionStore", () => {
 		const root = await mkdtemp(join(tmpdir(), "agentic-workspace-resume-policy-store-"));
 		directories.push(root);
 		const store = new SessionStore(root, new FakeRunner(), async () => ({
-			command: "unused",
+			command: ["unused"],
 			env: {},
 			prepare: "",
 			bootstrap: "opencode",
@@ -301,8 +301,6 @@ describe("SessionStore", () => {
 			history.sessions.push(record);
 			history.activeSessionId = record.id;
 		});
-		await mkdir(taskDir, { recursive: true });
-		await writeFile(join(taskDir, "policy.native-session-id"), "ses_old\n", { mode: 0o600 });
 		const marker = { nativeProvider: "opencode" as const, nativeSessionId: "ses_old" };
 		const expected = (await store.readMode("TASK-1", "plan")).sessions[0];
 		if (!expected) throw new Error("Missing expected session");
@@ -442,154 +440,5 @@ describe("SessionStore", () => {
 			await expect(store.read("TASK-1")).rejects.toThrow(/corrupt or contains invalid session data/i);
 			expect(await Bun.file(statePath).text()).toBe(bytes);
 		}
-	});
-
-	it("hydrates private receipts using current preset configuration, without invoking a CLI", async () => {
-		const root = await mkdtemp(join(tmpdir(), "agentic-workspace-session-receipt-"));
-		directories.push(root);
-		let bootstrap: "opencode" | "claude" = "opencode";
-		const store = new SessionStore(root, new FakeRunner(), async (record) => ({
-			command: "must-not-execute",
-			env: {},
-			prepare: "",
-			bootstrap: record.preset === "other" ? "claude" : bootstrap,
-		}));
-		const artifactRoot = join(root, "task-artifacts");
-		const { taskDir } = await store.paths("TASK-1");
-		const versioned = {
-			...session("versioned"),
-			nativeSessionId: "ses_old_v1",
-			pathContext: { projectDir: root, worktreeDir: root, taskDir: artifactRoot },
-			bootstrapPath: join(taskDir, "versioned.md"),
-		};
-		const second = {
-			...session("second"),
-			nativeSessionId: "ses_old_v2",
-			pathContext: { projectDir: root, worktreeDir: root, taskDir: artifactRoot },
-			bootstrapPath: join(taskDir, "second.md"),
-		};
-		const otherPreset = {
-			...session("other-preset"),
-			pathContext: { projectDir: root, worktreeDir: root, taskDir: artifactRoot },
-			bootstrapPath: join(taskDir, "other-preset.md"),
-			preset: "other",
-		};
-		const stale = {
-			...second,
-			id: "stale",
-			tmuxName: "stale",
-			bootstrapPath: join(taskDir, "stale.md"),
-			nativeSessionId: undefined,
-		};
-		await store.mutate("TASK-1", async (state) => {
-			const history = buildHistory(state);
-			history.sessions.push(versioned, second, otherPreset, stale);
-			history.activeSessionId = versioned.id;
-		});
-		await mkdir(artifactRoot, { recursive: true });
-		await writeFile(join(taskDir, "versioned.native-session-id"), "ses_v1\n", { mode: 0o600 });
-		await writeFile(join(taskDir, "second.native-session-id"), "ses_v2", { mode: 0o600 });
-		await writeFile(join(taskDir, "other-preset.native-session-id"), "ses_other", { mode: 0o600 });
-		await writeFile(join(taskDir, "stale.native-session-id"), "stale-id", { mode: 0o600 });
-
-		const allStates = await store.readAll();
-		const allState = allStates[0];
-		if (!allState) throw new Error("Missing state from readAll.");
-		expect(sessionsOf(allState).map((item) => item.nativeSessionId)).toEqual([
-			"ses_old_v1",
-			"ses_old_v2",
-			undefined,
-			undefined,
-		]);
-		expect((await store.read("TASK-1")).modes.build?.sessions.map((item) => item.nativeSessionId)).toEqual([
-			"ses_old_v1",
-			"ses_old_v2",
-			undefined,
-			undefined,
-		]);
-		await store.mutate("TASK-1", async () => undefined);
-		const persisted = JSON.parse(await Bun.file((await store.paths("TASK-1")).statePath).text());
-		expect(persisted.modes.build.sessions[0].nativeSessionId).toBe("ses_old_v1");
-		expect(persisted.modes.build.sessions[1].nativeSessionId).toBe("ses_old_v2");
-		await writeFile(join(taskDir, "versioned.native-session-id"), "ses_v1_rotated", { mode: 0o600 });
-		await writeFile(join(taskDir, "second.native-session-id"), "ses_v2_rotated", { mode: 0o600 });
-		expect((await store.read("TASK-1")).modes.build?.sessions.map((item) => item.nativeSessionId)).toEqual([
-			"ses_old_v1",
-			"ses_old_v2",
-			undefined,
-			undefined,
-		]);
-		await store.mutate("TASK-1", async () => undefined);
-		const rotated = JSON.parse(await Bun.file((await store.paths("TASK-1")).statePath).text());
-		expect(rotated.modes.build.sessions[0].nativeSessionId).toBe("ses_old_v1");
-		expect(rotated.modes.build.sessions[1].nativeSessionId).toBe("ses_old_v2");
-		bootstrap = "claude";
-		await writeFile(join(taskDir, "second.native-session-id"), "ses_ignored", { mode: 0o600 });
-		expect((await store.read("TASK-1")).modes.build?.sessions[1]?.nativeSessionId).toBe("ses_old_v2");
-		bootstrap = "opencode";
-		await chmod(join(taskDir, "second.native-session-id"), 0o644);
-		expect((await store.read("TASK-1")).modes.build?.sessions[1]?.nativeSessionId).toBe("ses_old_v2");
-		await rm(join(taskDir, "second.native-session-id"));
-		await writeFile(join(artifactRoot, "private-id"), "ses_symlink", { mode: 0o600 });
-		await symlink(join(artifactRoot, "private-id"), join(taskDir, "second.native-session-id"));
-		expect((await store.read("TASK-1")).modes.build?.sessions[1]?.nativeSessionId).toBe("ses_old_v2");
-		await writeFile(join(artifactRoot, "stale.native-session-id"), "ses_outside", { mode: 0o600 });
-		await store.mutateSession("TASK-1", "stale", async (record) => {
-			record.bootstrapPath = join(artifactRoot, "stale.md");
-		});
-		expect((await store.read("TASK-1")).modes.build?.sessions[3]?.nativeSessionId).toBeUndefined();
-		await store.remove("TASK-1", "versioned");
-		expect(await Bun.file(join(taskDir, "versioned.native-session-id")).exists()).toBe(false);
-	});
-
-	it("returns protected receipt candidates without binding them during unrelated mutations", async () => {
-		const root = await mkdtemp(join(tmpdir(), "agentic-workspace-session-receipt-candidate-"));
-		directories.push(root);
-		const store = new SessionStore(root, new FakeRunner(), async () => ({
-			command: "never-run",
-			env: {},
-			prepare: "",
-			bootstrap: "opencode",
-		}));
-		const { taskDir, statePath } = await store.paths("TASK-1");
-		const artifactRoot = join(root, "artifacts");
-		const saved = {
-			...session("saved"),
-			nativeSessionId: "ses_established",
-			bootstrapPath: join(taskDir, "saved.md"),
-		};
-		const candidate = {
-			...session("candidate"),
-			bootstrapPath: join(taskDir, "candidate.md"),
-		};
-		const badPath = {
-			...session("bad-path"),
-			bootstrapPath: join(artifactRoot, "bad-path.md"),
-		};
-		await store.mutate("TASK-1", async (state) => {
-			const history = buildHistory(state);
-			history.sessions.push(saved, candidate, badPath);
-			history.activeSessionId = saved.id;
-		});
-		await mkdir(artifactRoot, { recursive: true });
-		await writeFile(join(taskDir, "saved.native-session-id"), "ses_changed", { mode: 0o600 });
-		await writeFile(join(taskDir, "candidate.native-session-id"), "ses_candidate_exact", { mode: 0o600 });
-		await writeFile(join(taskDir, "bad-path.native-session-id"), "ses_wrong_path", { mode: 0o600 });
-		const before = await Bun.file(statePath).text();
-		expect(await store.readNativeSessionIdCandidate("TASK-1", "candidate")).toBe("ses_candidate_exact");
-		expect(await Bun.file(statePath).text()).toBe(before);
-		await expect(store.readNativeSessionIdCandidate("TASK-1", "saved")).rejects.toThrow(
-			"conflicts with established ID",
-		);
-		expect(await store.readNativeSessionIdCandidate("TASK-1", "bad-path")).toBeUndefined();
-		await expect(store.readNativeSessionIdCandidate("TASK-OTHER", "candidate")).rejects.toThrow("not found");
-		expect((await store.read("TASK-1")).modes.build?.sessions[1]?.nativeSessionId).toBe("ses_candidate_exact");
-		await store.mutate("TASK-1", async (state) => {
-			const item = state.modes.build?.sessions.find((entry) => entry.id === "bad-path");
-			if (item) item.error = "unrelated update";
-		});
-		const persisted = JSON.parse(await Bun.file(statePath).text());
-		expect(persisted.modes.build.sessions[0].nativeSessionId).toBe("ses_established");
-		expect(persisted.modes.build.sessions[1].nativeSessionId).toBeUndefined();
 	});
 });

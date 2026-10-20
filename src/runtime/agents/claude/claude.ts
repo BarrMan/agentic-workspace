@@ -1,16 +1,17 @@
 import { randomUUID } from "node:crypto";
-import { mkdir, writeFile } from "node:fs/promises";
-import { join } from "node:path";
-import type { AgentPreset, ModeProfile } from "../../model/session/types.ts";
-import type { InstalledStatusHook } from "../status-hooks.ts";
+import { lstat, mkdir, readFile, realpath, writeFile } from "node:fs/promises";
+import { homedir } from "node:os";
+import { join, resolve } from "node:path";
+import type { ModeProfile } from "../../../model/session/types.ts";
+import type { InstalledStatusHook } from "../../status-hooks.ts";
 import {
-	type Agent,
 	type AgentPreparation,
 	type AskCommandRequest,
 	appendArguments,
 	filePrompt,
+	type HarnessInterface,
+	type IdentityCaptureRequest,
 	type LaunchCommandRequest,
-	type LaunchOrigin,
 	type NativeIdentity,
 	type PreparationResources,
 	quotedAskArguments,
@@ -18,10 +19,10 @@ import {
 	type SessionIntent,
 	type StatusHookInstallOptions,
 	shellQuote,
-} from "./agent.ts";
-import { CLAUDE_CHROME_RULES } from "./chrome-rules.ts";
-import { buildHookCommand, buildReadinessReceiptCommand, type HookStatus } from "./hook-script.ts";
-import { sanitizeProfilePreset, withExplicitModel } from "./profile.ts";
+} from "../core/agent.ts";
+import { CLAUDE_CHROME_RULES } from "../core/chrome-rules.ts";
+import { buildHookCommand, buildReadinessReceiptCommand, type HookStatus } from "../core/hook-script.ts";
+import { sanitizeProfilePreset, withExplicitModel } from "../core/profile.ts";
 
 /** The Claude Code event → status map, expressed as a settings-shaped hooks object. */
 export function claudeHooksConfig(
@@ -79,7 +80,33 @@ export function claudeHooksConfig(
 	};
 }
 
-export class ClaudeAgent implements Agent {
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+function hookSessionId(contents: string | undefined): string | undefined {
+	if (!contents) return;
+	try {
+		const value: unknown = JSON.parse(contents);
+		if (typeof value !== "object" || value === null || Array.isArray(value)) return;
+		const id = (value as { session_id?: unknown }).session_id;
+		return typeof id === "string" && UUID.test(id) ? id : undefined;
+	} catch {
+		return;
+	}
+}
+
+async function readHookId(path: string): Promise<string | undefined> {
+	try {
+		return hookSessionId(await readFile(path, "utf8"));
+	} catch {
+		return;
+	}
+}
+
+function encodeClaudeCwd(cwd: string): string {
+	return cwd.replace(/[^A-Za-z0-9-]/g, "-");
+}
+
+export class ClaudeAgent implements HarnessInterface {
 	readonly name = "claude";
 	// Called through the optional Agent interface.
 	// fallow-ignore-next-line unused-class-member -- called through the optional Agent interface
@@ -95,10 +122,6 @@ export class ClaudeAgent implements Agent {
 	readonly nativeNamespace = "claude" as const;
 	readonly prepareBeforeAsk = false;
 
-	sanitizeLaunchPreset(preset: AgentPreset): AgentPreset {
-		return sanitizeProfilePreset(preset);
-	}
-
 	// Claude has no verified model-list command; explicit IDs remain manually configurable.
 	// Called through the optional Agent interface.
 	// fallow-ignore-next-line unused-class-member -- called through the optional Agent interface
@@ -108,12 +131,16 @@ export class ClaudeAgent implements Agent {
 
 	// Called through the optional Agent interface.
 	// fallow-ignore-next-line unused-class-member -- called through the optional Agent interface
-	prepareProfile(profile: ModeProfile, preset: import("../../model/session/types.ts").AgentPreset) {
+	prepareProfile(profile: ModeProfile, preset: import("../../../model/session/types.ts").AgentPreset) {
 		return profile.model.kind === "explicit" ? withExplicitModel(preset, profile.model.id) : preset;
 	}
 
 	yoloFlag(): string | undefined {
 		return "--dangerously-skip-permissions";
+	}
+
+	sanitizeLaunchPreset(preset: import("../../../model/session/types.ts").AgentPreset) {
+		return sanitizeProfilePreset(preset);
 	}
 
 	launchCommand({ preset, bootstrapPath, nativeSessionId }: LaunchCommandRequest): string {
@@ -154,8 +181,7 @@ export class ClaudeAgent implements Agent {
 				? { id: intent.nativeSessionId, basis: "client-established" }
 				: { id: randomUUID(), basis: "client-established" };
 		if (statusDir) await this.installStatusHooks({ pluginDir: directory, statusDir, sessionId }, identity.id);
-		const base = `${preset.command} --plugin-dir ${shellQuote(directory)}`;
-		const withIdentity = { ...preset, command: base };
+		const withIdentity = { ...preset, command: [...preset.command, "--plugin-dir", directory] };
 		const command =
 			intent.kind === "resume"
 				? this.resumeCommand({ preset: withIdentity, nativeSessionId: identity.id })
@@ -183,14 +209,57 @@ export class ClaudeAgent implements Agent {
 		};
 	}
 
-	async reconcileIdentity(
-		_origin: LaunchOrigin,
-		_publish: (identity: NativeIdentity) => Promise<void>,
-	): Promise<void> {}
+	async reconcileIdentity({
+		intent,
+		preparedIdentity,
+		cwd,
+		env,
+		launchDirectory,
+		signal,
+	}: IdentityCaptureRequest): Promise<NativeIdentity> {
+		const expected = preparedIdentity?.id ?? (intent.kind === "resume" ? intent.nativeSessionId : undefined);
+		if (!expected || !UUID.test(expected))
+			throw new Error("Claude launch did not provide a valid pinned native identity.");
+		const directory = await realpath(cwd).catch(() => resolve(cwd));
+		const configRoot = env.CLAUDE_CONFIG_DIR || join(homedir(), ".claude");
+		const transcript = join(configRoot, "projects", encodeClaudeCwd(directory), `${expected}.jsonl`);
+		const deadline = Date.now() + 2_000;
+		while (true) {
+			if (signal.aborted) throw signal.reason ?? new Error("Claude identity capture aborted.");
+			const [startup, prompt] = await Promise.all([
+				readHookId(join(launchDirectory, "initialized")),
+				readHookId(join(launchDirectory, "prompt-accepted")),
+			]);
+			if (startup && prompt && startup !== prompt)
+				throw new Error("Claude hook events reported conflicting session IDs.");
+			const observed = startup ?? prompt;
+			if (observed) {
+				if (observed !== expected)
+					throw new Error(`Claude reported session '${observed}' instead of pinned session '${expected}'.`);
+				return { id: observed, basis: "provider-confirmed" };
+			}
+			try {
+				const metadata = await lstat(transcript);
+				if (metadata.isFile()) return { id: expected, basis: "provider-confirmed" };
+			} catch {}
+			if (Date.now() >= deadline) throw new Error("Claude did not provide provider-owned session identity evidence.");
+			await new Promise<void>((resolve, reject) => {
+				const timer = setTimeout(() => {
+					signal.removeEventListener("abort", abort);
+					resolve();
+				}, 50);
+				const abort = (): void => {
+					clearTimeout(timer);
+					reject(signal.reason ?? new Error("Claude identity capture aborted."));
+				};
+				signal.addEventListener("abort", abort, { once: true });
+			});
+		}
+	}
 
 	// Called through the optional Agent interface.
 	// fallow-ignore-next-line unused-class-member -- called through the optional Agent interface
-	async preflightLaunch(request: import("./agent.ts").AgentPreflightRequest): Promise<void> {
+	async preflightLaunch(request: import("../core/agent.ts").AgentPreflightRequest): Promise<void> {
 		if (request.resume) this.resumeCommand(request);
 		else this.launchCommand({ ...request, bootstrapPath: request.bootstrapPath });
 	}

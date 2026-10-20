@@ -1,5 +1,5 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "bun:test";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { TmuxCommandError } from "libtmux";
@@ -14,6 +14,7 @@ import {
 	upsertAgentConfiguration,
 } from "../../storage/config.ts";
 import { SessionStore } from "../../storage/session-store.ts";
+import { disableHarnessReadiness } from "../agent-test-helpers.ts";
 import { initializeTestProject } from "../test-utils.ts";
 
 type Pane = {
@@ -29,12 +30,15 @@ type Pane = {
 
 let originalXdgConfigHome: string | undefined;
 let testConfigHome: string;
+let restoreHarnessReadiness: (() => void) | undefined;
 beforeAll(async () => {
+	restoreHarnessReadiness = disableHarnessReadiness();
 	originalXdgConfigHome = process.env.XDG_CONFIG_HOME;
 	testConfigHome = await mkdtemp(join(tmpdir(), "mode-session-service-config-"));
 	process.env.XDG_CONFIG_HOME = testConfigHome;
 });
 afterAll(async () => {
+	restoreHarnessReadiness?.();
 	if (originalXdgConfigHome === undefined) delete process.env.XDG_CONFIG_HOME;
 	else process.env.XDG_CONFIG_HOME = originalXdgConfigHome;
 	await rm(testConfigHome, { recursive: true, force: true });
@@ -64,7 +68,8 @@ class FakeHarness implements ProcessRunner, TmuxServer {
 			},
 			setTitle: async () => {},
 			pipeTo: async () => {},
-			respawn: async () => {
+			respawn: async (command) => {
+				if (command) await this.captureIdentity(id, command);
 				this.dead.delete(id);
 			},
 			displayMessage: async (message) => {
@@ -86,6 +91,12 @@ class FakeHarness implements ProcessRunner, TmuxServer {
 	}
 
 	async cmd(command: string, args: readonly string[] = []): Promise<readonly string[]> {
+		if (command === "has-session") {
+			const target = args[args.indexOf("-t") + 1] ?? "";
+			const name = target.replace(/^=/, "").replace(/:$/, "");
+			if ([...this.sessions.values()].includes(name)) return [];
+			throw new TmuxCommandError({ args: [command, ...args], exitCode: 1, target, stderr: [] });
+		}
 		if (command === "list-panes") {
 			const targetIndex = args.indexOf("-t");
 			const target = targetIndex >= 0 ? args[targetIndex + 1] : undefined;
@@ -134,7 +145,8 @@ class FakeHarness implements ProcessRunner, TmuxServer {
 			},
 			setTitle: async () => {},
 			pipeTo: async () => {},
-			respawn: async () => {
+			respawn: async (command) => {
+				if (command) await this.captureIdentity(id, command);
 				this.dead.delete(id);
 			},
 			displayMessage: async (message) =>
@@ -148,6 +160,17 @@ class FakeHarness implements ProcessRunner, TmuxServer {
 			},
 		};
 	}
+
+	private async captureIdentity(id: string, command: string): Promise<void> {
+		const raw = this.metadata.get(id)?.["@agentic_workspace_launch_resources"];
+		const skillPath = raw ? (JSON.parse(raw) as { skill?: { path?: string } }).skill?.path : undefined;
+		const nativeId = /nativeSessionId[^0-9a-f]+([0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})/.exec(command)?.[1];
+		if (!skillPath || !nativeId) return;
+		const receipt = JSON.stringify({ session_id: nativeId });
+		await writeFile(join(skillPath, "session_id"), nativeId);
+		await writeFile(join(skillPath, "initialized"), receipt);
+		await writeFile(join(skillPath, "prompt-accepted"), receipt);
+	}
 }
 
 describe("public AgentSessionService mode contract", () => {
@@ -158,13 +181,14 @@ describe("public AgentSessionService mode contract", () => {
 		const root = await mkdtemp(join(tmpdir(), "mode-session-service-contract-"));
 		roots.push(root);
 		const core = new Core(root);
+		await core.getConfig();
 		await initializeTestProject(core, "Mode session contract");
 		await core.createTaskFromInput({ title: "Mode contract task", status: "To Do" });
 		await initializeAgentConfiguration(core, "project");
 		await upsertAgentConfiguration(core, "project", {
 			modes: getDefaultModeCatalog(),
 			selectedPreset: "contract",
-			presets: { contract: { command: "pi", env: {}, prepare: "", bootstrap: "pi" } },
+			presets: { contract: { command: ["pi", "{prompt}"], env: {}, prepare: "", bootstrap: "pi" } },
 		});
 		const harness = new FakeHarness();
 		const store = new SessionStore(root, harness);

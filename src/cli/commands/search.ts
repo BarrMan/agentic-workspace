@@ -1,7 +1,7 @@
 import type { Command, OptionValues } from "commander";
 import { loadTaskListItems } from "../../controller/task-detail.ts";
 import { Core } from "../../index.ts";
-import { parseDelimitedStringList } from "../../lib/string-list.ts";
+import { normalizeStringList, toStringArray } from "../../lib/string-list.ts";
 import {
 	isLocalEditableTask,
 	type SearchPriorityFilter,
@@ -71,23 +71,23 @@ export function registerSearchCommand(program: Command, dependencies: SearchComm
 			{
 				name: "task-type",
 				type: () => taskType({ multiple: true }),
-				description: "Filter task results by one or more configured task types; repeat or comma-separate values",
+				description: "Filter task results by one or more configured task types; repeat the option",
 			},
 			{
 				name: "status",
 				type: () => statusType({ multiple: true }),
-				description: "Filter task results by one or more statuses; repeat or comma-separate values; case-insensitive",
+				description: "Filter task results by one or more statuses; repeat the option; case-insensitive",
 			},
 			{
 				name: "exclude-status",
 				type: statusType,
-				description: "Exclude task results with one or more statuses; repeat or comma-separate values",
+				description: "Exclude task results with one or more statuses; repeat the option",
 			},
 			{ name: "priority", type: priorityType, description: "Filter task results by priority" },
 			{
 				name: "project",
 				type: () => projectType({ multiple: true }),
-				description: "Filter task results by one or more configured projects; repeat or comma-separate values",
+				description: "Filter task results by one or more configured projects; repeat the option",
 			},
 			{
 				name: "modified-file",
@@ -109,23 +109,15 @@ export function registerSearchCommand(program: Command, dependencies: SearchComm
 		.option("--type <type>", "limit results to type (task)", createMultiValueAccumulator())
 		.option(
 			"--task-type <type>",
-			"filter task results by configured task type (repeatable or comma-separated)",
+			"filter task results by configured task type (repeatable)",
 			createMultiValueAccumulator(),
 		)
-		.option(
-			"--status <status>",
-			"filter task results by status (repeatable or comma-separated)",
-			createMultiValueAccumulator(),
-		)
-		.option(
-			"--exclude-status <status>",
-			"exclude task results by status (repeatable or comma-separated)",
-			createMultiValueAccumulator(),
-		)
+		.option("--status <status>", "filter task results by status (repeatable)", createMultiValueAccumulator())
+		.option("--exclude-status <status>", "exclude task results by status (repeatable)", createMultiValueAccumulator())
 		.option("--priority <priority>", "filter task results by priority (configured priorities)")
 		.option(
 			"--project <project>",
-			"filter task results by configured project (repeatable or comma-separated)",
+			"filter task results by configured project (repeatable)",
 			createMultiValueAccumulator(),
 		)
 		.option(
@@ -164,9 +156,9 @@ async function parseSearchOptions(
 	options: OptionValues,
 	dependencies: SearchCommandDependencies,
 ): Promise<ParsedSearchOptions | null> {
-	const modifiedFileFilters = parseDelimitedStringList(options.modifiedFile);
-	const rawTaskTypes = parseDelimitedStringList(options.taskType) ?? [];
-	const rawSearchProjects = parseDelimitedStringList(options.project) ?? [];
+	const modifiedFileFilters = normalizeStringList(toStringArray(options.modifiedFile));
+	const rawTaskTypes = normalizeStringList(toStringArray(options.taskType)) ?? [];
+	const rawSearchProjects = normalizeStringList(toStringArray(options.project)) ?? [];
 	const rawTypes = toSearchTypeValues(options.type);
 	const types = resolveSearchResultTypes(rawTypes, modifiedFileFilters, rawTaskTypes, rawSearchProjects);
 	if (rawTaskTypes.length > 0 && rawTypes && !types.includes("task")) return printTaskFilterTypeError("--task-type");
@@ -215,7 +207,7 @@ async function resolveSearchFilters(
 	rawSearchProjects: string[],
 	modifiedFileFilters: string[] | undefined,
 ): Promise<SearchFilters | null> {
-	const excludeStatuses = parseDelimitedStringList(options.excludeStatus) ?? [];
+	const excludeStatuses = normalizeStringList(toStringArray(options.excludeStatus)) ?? [];
 	const [statuses, taskTypes, projects, priority] = await Promise.all([
 		excludeStatuses.length > 0 ? dependencies.normalizeStatusList(core, excludeStatuses, "exclude-status") : [],
 		rawTaskTypes.length > 0 ? dependencies.normalizeTaskTypes(core, rawTaskTypes, "task-type") : [],
@@ -224,7 +216,7 @@ async function resolveSearchFilters(
 	]);
 	if (statuses === null || taskTypes === null || projects === null || priority === null) return null;
 	return {
-		...(options.status && { status: parseDelimitedStringList(options.status) ?? options.status }),
+		...(options.status && { status: normalizeStringList(toStringArray(options.status)) ?? options.status }),
 		...(statuses.length > 0 && { excludeStatus: statuses }),
 		...(taskTypes.length > 0 && { type: taskTypes }),
 		...(projects.length > 0 && { project: projects }),

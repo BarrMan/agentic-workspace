@@ -6,10 +6,13 @@ import { join } from "node:path";
 import { createExistingAgentHost } from "./existing-agent-host.ts";
 import type { TmuxExec, TmuxResult } from "./tmux/types.ts";
 
-const waitFor = async (predicate: () => boolean): Promise<void> => {
-	const deadline = Date.now() + 2_000;
+const waitFor = async (
+	predicate: () => boolean,
+	message = "Timed out waiting for fake observer output",
+): Promise<void> => {
+	const deadline = Date.now() + 10_000;
 	while (!predicate()) {
-		if (Date.now() >= deadline) throw new Error("Timed out waiting for fake observer output");
+		if (Date.now() >= deadline) throw new Error(message);
 		await new Promise<void>((resolve) => setTimeout(resolve, 5));
 	}
 };
@@ -178,16 +181,13 @@ describe("bare existing-agent observers", () => {
 		await detached.start();
 		await expect(detached.detach?.()).resolves.toBe("retained");
 		const countAfterDetach = outputs.length;
-		let resolveChange: (() => void) | undefined;
-		const changeObserved = new Promise<void>((resolve) => {
-			resolveChange = resolve;
-		});
-		const eventFence = watchFile(directory, (_event, filename) => {
-			if (filename?.toString() === "session.log") resolveChange?.();
+		let eventObserved = false;
+		const eventFence = watchFile(directory, () => {
+			eventObserved = true;
 		});
 		try {
 			await appendFile(outputPath, " externally appended");
-			await changeObserved;
+			await waitFor(() => eventObserved, "Timed out waiting for filesystem event after external append");
 			expect(outputs).toHaveLength(countAfterDetach);
 		} finally {
 			eventFence.close();

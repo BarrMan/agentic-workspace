@@ -110,6 +110,16 @@ describe("Permanent task deletion", () => {
 			});
 			history.activeSessionId = "native-running";
 		});
+		(core as unknown as { agentSessions: AgentSessionService }).agentSessions = new AgentSessionService(core, {
+			runner: { run: async () => ({ exitCode: 0, stdout: "", stderr: "" }) },
+			tmuxServer: {
+				newSession: async () => ({}),
+				panes: async () => [],
+				cmd: async () => {
+					throw new Error("tmux inspection unavailable");
+				},
+			},
+		});
 
 		await expect(core.deleteTask(task.id)).rejects.toThrow(
 			"Could not inspect tmux instance for session native-running",
@@ -504,6 +514,16 @@ describe("Permanent task deletion", () => {
 				bootstrapPath: join(taskDir, `${sessionId}.md`),
 			});
 			history.activeSessionId = sessionId;
+		});
+		(core as unknown as { agentSessions: AgentSessionService }).agentSessions = new AgentSessionService(core, {
+			runner: { run: async () => ({ exitCode: 0, stdout: "", stderr: "" }) },
+			tmuxServer: {
+				newSession: async () => ({}),
+				panes: async () => [],
+				cmd: async () => {
+					throw new Error("tmux inspection unavailable");
+				},
+			},
 		});
 		await expect(core.deleteTask(task.id)).rejects.toThrow("Could not inspect tmux instance");
 		expect(await coreFileSystem(core).loadTask(task.id)).not.toBeNull();

@@ -1,5 +1,5 @@
-import { afterEach, describe, expect, it, mock } from "bun:test";
-import { mkdtemp, rm } from "node:fs/promises";
+import { afterAll, afterEach, beforeAll, describe, expect, it, mock } from "bun:test";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { TmuxCommandError } from "libtmux";
@@ -13,15 +13,20 @@ import {
 	loadAgentConfiguration,
 	upsertAgentConfiguration,
 } from "../../storage/config.ts";
+import { disableHarnessReadiness } from "../agent-test-helpers.ts";
 import { initializeTestProject } from "../test-utils.ts";
 
 mock.module("../../lib/process-tree.ts", () => ({
 	...processTree,
-	snapshotProcessGroup: (pid: number) => [{ pid, started: "fake-start" }],
 	terminateProcessTree: async () => "terminated",
-	deadPaneGroupState: () => "gone",
 }));
 const { AgentSessionService } = await import("../../runtime/sessions.ts");
+
+let restoreHarnessReadiness: (() => void) | undefined;
+beforeAll(() => {
+	restoreHarnessReadiness = disableHarnessReadiness();
+});
+afterAll(() => restoreHarnessReadiness?.());
 
 type Pane = {
 	id: string;
@@ -59,6 +64,12 @@ class CapturedHarness implements ProcessRunner, TmuxServer {
 	}
 
 	async cmd(command: string, args: readonly string[] = []): Promise<readonly string[]> {
+		if (command === "has-session") {
+			const target = args[args.indexOf("-t") + 1] ?? "";
+			const name = target.replace(/^=/, "").replace(/:$/, "");
+			if ([...this.sessions.values()].includes(name)) return [];
+			throw new TmuxCommandError({ args: [command, ...args], exitCode: 1, target, stderr: [] });
+		}
 		if (command === "list-panes") {
 			const hasTarget = args.includes("-t");
 			const target = args[args.indexOf("-t") + 1];
@@ -136,7 +147,18 @@ class CapturedHarness implements ProcessRunner, TmuxServer {
 			setTitle: async () => {},
 			pipeTo: async () => {},
 			respawn: async (command) => {
-				if (command) this.launches.push(command);
+				if (command) {
+					this.launches.push(command);
+					const raw = this.metadata.get(id)?.["@agentic_workspace_launch_resources"];
+					const skillPath = raw ? (JSON.parse(raw) as { skill?: { path?: string } }).skill?.path : undefined;
+					const nativeId = /nativeSessionId[^0-9a-f]+([0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})/.exec(command)?.[1];
+					if (skillPath && nativeId) {
+						const receipt = JSON.stringify({ session_id: nativeId });
+						await writeFile(join(skillPath, "session_id"), nativeId);
+						await writeFile(join(skillPath, "initialized"), receipt);
+						await writeFile(join(skillPath, "prompt-accepted"), receipt);
+					}
+				}
 				this.dead.delete(id);
 			},
 			displayMessage: async (message) =>
@@ -150,9 +172,9 @@ class CapturedHarness implements ProcessRunner, TmuxServer {
 	}
 }
 
-const preset = (command: string, bootstrap: AgentPreset["bootstrap"]): AgentPreset => ({
-	command,
-	env: { HARNESS_MARKER: command },
+const preset = (command: string[], bootstrap: AgentPreset["bootstrap"]): AgentPreset => ({
+	command: [...command, "{prompt}"],
+	env: { HARNESS_MARKER: command.join(" ") },
 	prepare: "",
 	bootstrap,
 });
@@ -171,6 +193,7 @@ describe("project mode harness contract through public configuration and session
 		roots.push(root);
 		process.env.XDG_CONFIG_HOME = join(root, "isolated-config-home");
 		const core = new Core(root);
+		await core.getConfig();
 		await initializeTestProject(core, "Project mode harness contract");
 		await core.createTaskFromInput({ title: "Harness isolation task", status: "To Do" });
 		await initializeAgentConfiguration(core, "project");
@@ -180,15 +203,15 @@ describe("project mode harness contract through public configuration and session
 			...base,
 			selectedPreset: "project-pi",
 			presets: {
-				"project-opencode": preset("opencode", "opencode"),
-				"project-pi": preset("project-pi", "pi"),
-				"project-claude": preset("project-claude", "claude"),
+				"project-opencode": preset(["opencode"], "opencode"),
+				"project-pi": preset(["project-pi"], "pi"),
+				"project-claude": preset(["project-claude"], "claude"),
 			},
 		};
 		await upsertAgentConfiguration(core, "project", project);
 		await upsertAgentConfiguration(core, "root", {
 			selectedPreset: "root-claude",
-			presets: { "root-claude": preset("claude", "claude") },
+			presets: { "root-claude": preset(["claude"], "claude") },
 		});
 		if (taskOverride)
 			await upsertAgentConfiguration(
@@ -196,7 +219,7 @@ describe("project mode harness contract through public configuration and session
 				"card",
 				{
 					selectedPreset: "card-pi",
-					presets: { "card-pi": preset("pi", "pi") },
+					presets: { "card-pi": preset(["pi"], "pi") },
 				},
 				"task-1",
 			);
@@ -219,7 +242,7 @@ describe("project mode harness contract through public configuration and session
 		expect(build.preset).toBe("card-pi");
 		expect(plan.nativeSessionId).toBeDefined();
 		expect(build.nativeSessionId).toBeDefined();
-		expect(launchCommand(harness, "pi")).toContain("--session-id");
+		expect(launchCommand(harness, "pi")).toContain("profile-bootstrap.md");
 		expect(harness.launches).toHaveLength(2);
 	});
 
@@ -237,8 +260,8 @@ describe("project mode harness contract through public configuration and session
 		const history = await service.listMode("task-1", "plan");
 		expect(history.sessions.find(({ id }) => id === old.id)?.preset).toBe("project-pi");
 		expect(Object.keys(old)).not.toContain("createdWith");
-		expect(launchCommand(harness, "project-pi")).toContain("--session-id");
-		expect(launchCommand(harness, "claude")).toContain("--session-id");
+		expect(launchCommand(harness, "project-pi")).toContain("profile-bootstrap.md");
+		expect(launchCommand(harness, "claude")).toContain("profile-bootstrap.md");
 	});
 
 	it("asks a parked prior session with its saved name, current command and unchanged native ID", async () => {
@@ -255,19 +278,21 @@ describe("project mode harness contract through public configuration and session
 		if (!nativeSessionId) throw new Error("The session did not retain its native session ID");
 		await upsertAgentConfiguration(core, "project", {
 			...((await loadAgentConfiguration(core, "project")) as AgentConfiguration),
-			presets: { "project-pi": preset("updated-pi", "pi") },
+			presets: { "project-pi": preset(["updated-pi"], "pi") },
 		});
 		await service.ask("task-1", "continue the original", { sessionId: old.id, modeId: "build" });
 		const ask = harness.commands.at(-1)?.join(" ") ?? "";
 		expect(ask).toContain(nativeSessionId);
 		expect(ask).toContain("--session");
 		expect(ask).toContain(nativeSessionId);
-		expect(ask).toContain("updated-pi -p --session");
+		expect(ask).toContain("updated-pi");
+		expect(ask).toContain("--session");
 		expect(ask).not.toContain("project-claude -p");
 		expect(old.preset).toBe("project-pi");
-		const resumed = buildAgentResumeCommand(preset("updated-pi", "pi"), nativeSessionId);
-		expect(resumed).toContain(`'--session' '${nativeSessionId}'`);
-		expect(resumed).toStartWith("updated-pi ");
+		const resumed = buildAgentResumeCommand(preset(["updated-pi"], "pi"), nativeSessionId);
+		expect(resumed).toContain("--session");
+		expect(resumed).toContain(nativeSessionId);
+		expect(resumed).toContain("updated-pi");
 		const saved = (await service.listMode("task-1", "plan")).sessions.find(({ id }) => id === old.id);
 		expect(saved?.nativeSessionId).toBe(nativeSessionId);
 	});
@@ -279,7 +304,7 @@ describe("project mode harness contract through public configuration and session
 		await service.stop("task-1", explicit.id);
 		const selected = await service.start("task-1", { modeId: "plan", preset: "project-pi" });
 		expect(selected.preset).toBe("project-pi");
-		expect(launchCommand(harness, "pi")).toContain("--session-id");
+		expect(launchCommand(harness, "pi")).toContain("profile-bootstrap.md");
 	});
 
 	it("refuses to change providers for a saved conversation without dispatching", async () => {
@@ -288,7 +313,7 @@ describe("project mode harness contract through public configuration and session
 		await service.stop("task-1", original.id);
 		await upsertAgentConfiguration(core, "project", {
 			...((await loadAgentConfiguration(core, "project")) as AgentConfiguration),
-			presets: { "project-pi": preset("updated-claude", "claude") },
+			presets: { "project-pi": preset(["updated-claude"], "claude") },
 		});
 		const launchesBefore = harness.launches.length;
 		const commandsBefore = harness.commands.length;

@@ -1,6 +1,6 @@
 import type { Core } from "../../../controller/agentic-workspace.ts";
 import { loadTaskDetail } from "../../../controller/task-detail.ts";
-import { parseClearableStringList, parseDelimitedStringList, toStringArray } from "../../../lib/string-list.ts";
+import { normalizeStringList, toStringArray } from "../../../lib/string-list.ts";
 import { formatTaskPlainText } from "../../../renderer/formatters/task-plain-text.ts";
 import { validateTaskListFlags } from "./edit-list-options.ts";
 
@@ -35,12 +35,12 @@ export function buildTaskCreateInput(
 			description: options.description || options.desc ? String(options.description || options.desc) : undefined,
 			status: options.status ? String(options.status) : undefined,
 			dueDate: typeof options.dueDate === "string" ? options.dueDate : undefined,
-			assignee: parseClearableStringList(options.assignee),
-			labels: parseDelimitedStringList(options.labels),
-			dependencies: parseDelimitedStringList([...toStringArray(options.dependsOn), ...toStringArray(options.dep)]),
-			references: parseDelimitedStringList(options.ref),
-			documentation: parseDelimitedStringList(options.doc),
-			modifiedFiles: parseDelimitedStringList(options.modifiedFile),
+			assignee: normalizeStringList(toStringArray(options.assignee)),
+			labels: normalizeStringList(toStringArray(options.label)),
+			dependencies: normalizeStringList([...toStringArray(options.dependsOn), ...toStringArray(options.dep)]),
+			references: normalizeStringList(toStringArray(options.ref)),
+			documentation: normalizeStringList(toStringArray(options.doc)),
+			modifiedFiles: normalizeStringList(toStringArray(options.modifiedFile)),
 			parentTaskId: options.parent ? String(options.parent) : undefined,
 			priority: options.priority ? String(options.priority) : undefined,
 			type: options.type !== undefined ? String(options.type) : undefined,

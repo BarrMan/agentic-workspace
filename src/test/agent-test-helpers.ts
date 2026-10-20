@@ -1,19 +1,31 @@
 import { randomUUID } from "node:crypto";
 import type {
-	Agent,
 	AgentPreparation,
 	AskCommandRequest,
+	HarnessInterface,
 	LaunchCommandRequest,
-	LaunchOrigin,
 	NativeIdentity,
 	PreparationResources,
 	ResumeCommandRequest,
 	SessionIntent,
 	StatusHookInstallOptions,
-} from "../runtime/agents/agent.ts";
-import { filePrompt, shellQuote } from "../runtime/agents/agent.ts";
-import { registerAgent } from "../runtime/agents/agents.ts";
+} from "../runtime/agents/core/agent.ts";
+import { filePrompt, shellQuote } from "../runtime/agents/core/agent.ts";
+import { harnessRegistry } from "../runtime/agents/startup.ts";
 import type { InstalledStatusHook } from "../runtime/status-hooks.ts";
+
+/** Contract tests use a fake process that cannot emit provider receipts. */
+export function disableHarnessReadiness(): () => void {
+	const originals = harnessRegistry.all();
+	for (const agent of originals) {
+		const fake = Object.create(agent) as HarnessInterface;
+		fake.readiness = undefined;
+		harnessRegistry.replace(fake);
+	}
+	return () => {
+		for (const agent of originals) harnessRegistry.replace(agent);
+	};
+}
 
 /**
  * Test-only stand-in for the retired generic `prompt` bootstrap.
@@ -24,18 +36,12 @@ import type { InstalledStatusHook } from "../runtime/status-hooks.ts";
  * built-in name because `AgentBootstrap` is now a closed set; every test file runs in its own
  * process, so overwriting a built-in there never leaks into another file.
  */
-class PromptAgent implements Agent {
+class PromptAgent implements HarnessInterface {
 	readonly supported = true;
 	readonly hookBacked = false;
 	readonly prepareBeforeAsk = false;
 	readonly chromeRules = [];
 	readonly nativeNamespace = "pi" as const;
-
-	sanitizeLaunchPreset(
-		preset: import("../model/session/types.ts").AgentPreset,
-	): import("../model/session/types.ts").AgentPreset {
-		return preset;
-	}
 
 	constructor(readonly name: string) {}
 
@@ -43,23 +49,34 @@ class PromptAgent implements Agent {
 		return undefined;
 	}
 
+	sanitizeLaunchPreset(preset: import("../model/session/types.ts").AgentPreset) {
+		return preset;
+	}
+
 	launchCommand({ preset, bootstrapPath }: LaunchCommandRequest): string {
 		const prompt = filePrompt(bootstrapPath);
 		if (!preset.command.includes("{prompt}") && !preset.command.includes("{instructions}")) {
 			throw new Error("Custom agent commands must include {prompt} or {instructions} to receive session instructions.");
 		}
-		return preset.command.replaceAll("{prompt}", prompt).replaceAll("{instructions}", prompt);
+		return preset.command
+			.map((arg) =>
+				arg
+					.split(/(\{prompt\}|\{instructions\})/)
+					.map((part) => (part === "{prompt}" || part === "{instructions}" ? prompt : shellQuote(part)))
+					.join(""),
+			)
+			.join(" ");
 	}
 
 	resumeCommand(request: ResumeCommandRequest): string {
 		if (!request.nativeSessionId) throw new Error("Cannot resume without a native session id.");
-		return `exec ${request.preset.command.split(/\s+/)[0]} --resume ${shellQuote(request.nativeSessionId)}`;
+		return `exec ${request.preset.command.map(shellQuote).join(" ")} --resume ${shellQuote(request.nativeSessionId)}`;
 	}
 
 	async prepare(request: PreparationResources & { intent: SessionIntent }): Promise<AgentPreparation> {
 		const withSkill = {
 			...request.preset,
-			command: request.preset.command.replaceAll("{skill}", shellQuote(request.skillPath)),
+			command: request.preset.command.map((arg) => arg.replaceAll("{skill}", request.skillPath)),
 		};
 		const command =
 			request.intent.kind === "resume"
@@ -71,13 +88,19 @@ class PromptAgent implements Agent {
 		return { command, env: request.env, identity: { id, basis: "client-established" } };
 	}
 
-	async reconcileIdentity(
-		_origin: LaunchOrigin,
-		_publish: (identity: NativeIdentity) => Promise<void>,
-	): Promise<void> {}
+	async reconcileIdentity({
+		intent,
+		preparedIdentity,
+	}: import("../runtime/agents/core/agent.ts").IdentityCaptureRequest): Promise<NativeIdentity> {
+		const identity =
+			preparedIdentity ??
+			(intent.kind === "resume" ? { id: intent.nativeSessionId, basis: "client-established" as const } : undefined);
+		if (!identity) throw new Error("Test agent launch did not provide a prepared native identity.");
+		return identity;
+	}
 
 	askCommand(request: AskCommandRequest): string {
-		return `exec ${request.preset.command.split(/\s+/)[0]} -p --resume ${shellQuote(request.nativeSessionId)} ${shellQuote(request.question)}`;
+		return `exec ${request.preset.command.map(shellQuote).join(" ")} -p --resume ${shellQuote(request.nativeSessionId)} ${shellQuote(request.question)}`;
 	}
 
 	async installStatusHooks(_options: StatusHookInstallOptions): Promise<InstalledStatusHook> {
@@ -86,6 +109,8 @@ class PromptAgent implements Agent {
 }
 
 /** Register the generic prompt agent under one built-in bootstrap name for this test process. */
-export function registerPromptAgent(name = "pi"): void {
-	registerAgent(new PromptAgent(name));
+export function registerPromptAgent(name = "pi"): () => void {
+	const original = harnessRegistry.forPreset(name);
+	harnessRegistry.replace(new PromptAgent(name));
+	return () => harnessRegistry.replace(original);
 }

@@ -4,7 +4,6 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { Core } from "../../controller/agentic-workspace.ts";
 import type { ModeProfile } from "../../model/session/types.ts";
-import { shellQuote } from "../../runtime/agents/agent.ts";
 import { prepareAgentAsk, prepareAgentLaunch } from "../../runtime/session-launch.ts";
 import { getDefaultModeCatalog } from "../../storage/config.ts";
 import { coreFileSystem, initializeTestProject } from "../test-utils.ts";
@@ -46,13 +45,17 @@ describe("session artifact context contract", () => {
 		};
 		const bootstrapPath = join(root, "bootstrap.md");
 		await Bun.write(bootstrapPath, "Base task bootstrap");
-		const prepared = await prepareAgentLaunch({ command: "pi", env: {}, prepare: "", bootstrap: "pi" }, bootstrapPath, {
-			cwd: root,
-			intent: { kind: "new" },
-			profile,
-			repositoryRoot: coreFileSystem(core).rootDir,
-			taskRoot,
-		});
+		const prepared = await prepareAgentLaunch(
+			{ command: ["pi", "{prompt}"], env: {}, prepare: "", bootstrap: "pi" },
+			bootstrapPath,
+			{
+				cwd: root,
+				intent: { kind: "new" },
+				profile,
+				repositoryRoot: coreFileSystem(core).rootDir,
+				taskRoot,
+			},
+		);
 		try {
 			const generated = prepared.command;
 			const bootstrapMatch = generated.match(/profile-bootstrap\.md/);
@@ -77,7 +80,7 @@ describe("session artifact context contract", () => {
 		);
 		const ask = await prepareAgentAsk(
 			{
-				command: `${shellQuote(process.execPath)} ${shellQuote(binary)}`,
+				command: [process.execPath, binary],
 				env: { SESSION_ID: "ses_context" },
 				prepare: "",
 				bootstrap: "opencode-v2",

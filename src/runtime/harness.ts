@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { watch } from "node:fs";
-import { readFile, rm } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
 import type {
 	AgentActivity,
@@ -10,9 +10,15 @@ import type {
 	ModeProfile,
 	ResolvedAgentConfiguration,
 } from "../model/session/types.ts";
-import type { ReadinessExpectation } from "./agents/agent.ts";
-import { agentFor } from "./agents/agents.ts";
-import { resolveLaunchPreset } from "./agents/opencode-resolution.ts";
+import type {
+	HarnessInterface,
+	IdentityCaptureRequest,
+	NativeIdentity,
+	ReadinessExpectation,
+	SessionIntent,
+} from "./agents/core/agent.ts";
+import { resolveLaunchPreset } from "./agents/opencode/opencode-resolution.ts";
+import { harnessRegistry } from "./agents/startup.ts";
 import { preflightAgentLaunch, prepareAgentLaunchResources } from "./session-launch.ts";
 import { BunRunner, missingPaneStderr, SessionProcess } from "./session-process.ts";
 import { sessionActivityDir } from "./status-hooks.ts";
@@ -158,18 +164,6 @@ async function receiptExists(path: string): Promise<boolean> {
 	}
 }
 
-async function observedNativeId(path: string): Promise<string> {
-	const value = (await readFile(path, "utf8")).trim();
-	try {
-		const parsed: unknown = JSON.parse(value);
-		if (parsed && typeof parsed === "object" && typeof (parsed as { session_id?: unknown }).session_id === "string")
-			return (parsed as { session_id: string }).session_id;
-	} catch {
-		// Other providers emit their native ID as a plain string.
-	}
-	return value;
-}
-
 export class Harness implements HarnessProvider {
 	private readonly process: SessionProcess;
 	private readonly rootDir: string;
@@ -189,17 +183,13 @@ export class Harness implements HarnessProvider {
 		return this.start(context, { kind: "resume", nativeSessionId: nativeId });
 	}
 
-	private async start(
-		context: SessionLaunchContext,
-		intent: { kind: "new" } | { kind: "resume"; nativeSessionId: string },
-	): Promise<RunningExecution> {
+	private async start(context: SessionLaunchContext, intent: SessionIntent): Promise<RunningExecution> {
 		const record = context.record as AgentSession;
-		const agent = agentFor(context.preset.bootstrap);
-		if (!agent) throw new Error(`No agent registered for bootstrap type ${context.preset.bootstrap}.`);
-		if (!agent.readiness) throw new Error(`Agent ${agent.name} does not provide Harness readiness evidence.`);
 		const executionId = randomUUID();
 		const env = { ...context.configuration.config.presets[record.preset]?.env, ...context.preset.env };
 		const preset = await resolveLaunchPreset(context.preset, { cwd: record.cwd, env });
+		const agent = harnessRegistry.forPreset(preset.bootstrap);
+		if (!agent.readiness) throw new Error(`Agent ${agent.name} does not provide Harness readiness evidence.`);
 		const options = {
 			cwd: record.cwd,
 			intent,
@@ -211,14 +201,11 @@ export class Harness implements HarnessProvider {
 			yolo: context.configuration.config.sessions?.yoloMode,
 		};
 		const preflight = await preflightAgentLaunch(preset, record.bootstrapPath, options);
-		const taskDir = context.record.pathContext?.taskDir ?? dirname(record.bootstrapPath);
-		const identityPath = join(taskDir, `${record.id}.native-session-id`);
 		let owned = false;
 		let prepared: Awaited<ReturnType<typeof prepareAgentLaunchResources>> | undefined;
 		try {
 			if (intent.kind === "resume") await this.process.assertNoPreparedResources(record);
 			prepared = await prepareAgentLaunchResources(record.bootstrapPath, preflight);
-			if (intent.kind === "new") await rm(identityPath, { force: true });
 			await this.process.prepare(preset.prepare, record.cwd, prepared.env);
 			await this.process.create(record, prepared.env);
 			owned = true;
@@ -239,9 +226,6 @@ export class Harness implements HarnessProvider {
 				this.process,
 				this.readinessDeadlineMs,
 			);
-			const observedId = await observedNativeId(readiness.initialized.path);
-			if (!observedId || !observedId.trim())
-				throw new Error(`Provider initialized receipt has no native identity for session ${record.id}.`);
 			if (intent.kind === "new") {
 				if (!readiness.promptAccepted)
 					throw new Error(`Provider prompt acceptance evidence is unavailable for session ${record.id}.`);
@@ -252,19 +236,27 @@ export class Harness implements HarnessProvider {
 					this.process,
 					this.readinessDeadlineMs,
 				);
-				if (readiness.confirmationRequired && !prepared.confirmSession)
-					throw new Error(`Provider session confirmation is unavailable for session ${record.id}.`);
-				if (prepared.confirmSession && !(await prepared.confirmSession(observedId)))
-					throw new Error(`Provider could not confirm session ${observedId} after prompt acceptance.`);
 			}
-			const identity = intent.kind === "resume" ? intent.nativeSessionId : observedId;
-			if (!identity?.trim()) throw new Error(`Provider identity missing for session ${record.id}.`);
-			return await this.execution(context, record, identity, prepared, executionId);
+			const identity = await this.captureIdentity(agent, {
+				intent,
+				preset,
+				cwd: record.cwd,
+				env: prepared.env,
+				launchDirectory: prepared.resources.skill.path,
+				...(prepared.identity ? { preparedIdentity: prepared.identity } : {}),
+			});
+			if (!identity || typeof identity.id !== "string" || !identity.id.trim())
+				throw new Error(`Provider returned an invalid native identity for session ${record.id}.`);
+			if (intent.kind === "resume" && identity.id !== intent.nativeSessionId)
+				throw new Error(
+					`Provider returned native identity '${identity.id}' instead of resumed session '${intent.nativeSessionId}'.`,
+				);
+			return await this.execution(agent, context, record, identity.id, prepared, executionId);
 		} catch (cause) {
 			let startupError = cause;
 			let execution: RunningExecution | undefined;
 			if (owned && prepared) {
-				execution = await this.execution(context, record, prepared.identity?.id ?? "", prepared, executionId);
+				execution = await this.execution(agent, context, record, prepared.identity?.id ?? "", prepared, executionId);
 				try {
 					await execution.stop();
 					execution = undefined;
@@ -303,7 +295,28 @@ export class Harness implements HarnessProvider {
 		}
 	}
 
+	private async captureIdentity(
+		agent: HarnessInterface,
+		request: Omit<IdentityCaptureRequest, "signal">,
+	): Promise<NativeIdentity> {
+		const controller = new AbortController();
+		let timer: ReturnType<typeof setTimeout> | undefined;
+		const deadline = new Promise<never>((_resolve, reject) => {
+			timer = setTimeout(() => {
+				const error = new Error("Provider identity capture timed out.");
+				controller.abort(error);
+				reject(error);
+			}, this.readinessDeadlineMs);
+		});
+		try {
+			return await Promise.race([agent.reconcileIdentity({ ...request, signal: controller.signal }), deadline]);
+		} finally {
+			if (timer) clearTimeout(timer);
+		}
+	}
+
 	private async execution(
+		agent: HarnessInterface,
 		context: SessionLaunchContext,
 		record: AgentSession,
 		nativeId: string,
@@ -318,8 +331,6 @@ export class Harness implements HarnessProvider {
 			executionId,
 			nativeSessionId: nativeId,
 		};
-		const agent = agentFor(context.preset.bootstrap);
-		if (!agent) throw new Error(`No agent registered for bootstrap type ${context.preset.bootstrap}.`);
 		const subscriptions = new Set<() => void>();
 		return {
 			identity,

@@ -2,8 +2,8 @@ import { describe, expect, test } from "bun:test";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { AgentPreset, ModeProfile } from "../../model/session/types.ts";
-import { commandArguments, discoverModels, validateExplicitModel, withExplicitModel } from "./profile.ts";
+import type { AgentPreset, ModeProfile } from "../../../model/session/types.ts";
+import { discoverModels, validateExplicitModel, withExplicitModel } from "./profile.ts";
 
 const defaultProfile: ModeProfile = {
 	name: "Default",
@@ -13,7 +13,7 @@ const defaultProfile: ModeProfile = {
 	artifacts: [],
 };
 
-const preset = (bootstrap: AgentPreset["bootstrap"], command: string): AgentPreset => ({
+const preset = (bootstrap: AgentPreset["bootstrap"], command: string[]): AgentPreset => ({
 	bootstrap,
 	command,
 	prepare: "",
@@ -23,26 +23,30 @@ const preset = (bootstrap: AgentPreset["bootstrap"], command: string): AgentPres
 describe("approved harness model profile contract", () => {
 	test("Default preserves each harness preset command and native model selection", () => {
 		const cases = [
-			preset("opencode", "opencode --model preset/model --provider openai"),
-			preset("claude", "claude --model preset/model"),
-			preset("pi", "pi -m preset/model"),
+			preset("opencode", ["opencode", "--model", "preset/model", "--provider", "openai"]),
+			preset("claude", ["claude", "--model", "preset/model"]),
+			preset("pi", ["pi", "-m", "preset/model"]),
 		] as const;
 		expect(cases.map(({ command }) => command)).toEqual([
-			"opencode --model preset/model --provider openai",
-			"claude --model preset/model",
-			"pi -m preset/model",
+			["opencode", "--model", "preset/model", "--provider", "openai"],
+			["claude", "--model", "preset/model"],
+			["pi", "-m", "preset/model"],
 		]);
 	});
 
 	test("explicit IDs replace split, short, and equals model switches once while retaining provider options", () => {
 		const cases = [
-			[preset("opencode", "opencode --model old --provider openai --model=duplicate"), "opencode", true],
-			[preset("claude", "claude -m old --model=duplicate"), "claude", false],
-			[preset("pi", "pi --provider openai -m old --model duplicate"), "pi", true],
+			[
+				preset("opencode", ["opencode", "--model", "old", "--provider", "openai", "--model=duplicate"]),
+				"opencode",
+				true,
+			],
+			[preset("claude", ["claude", "-m", "old", "--model=duplicate"]), "claude", false],
+			[preset("pi", ["pi", "--provider", "openai", "-m", "old", "--model", "duplicate"]), "pi", true],
 		] as const;
 		for (const [configured, harness, hasProvider] of cases) {
 			const result = withExplicitModel(configured, "provider/new:model");
-			const argv = commandArguments(result.command);
+			const argv = result.command;
 			expect(argv[0]).toBe(harness);
 			expect(argv.filter((arg) => arg === "--model" || arg === "-m" || arg.startsWith("--model="))).toEqual([
 				"--model",
@@ -57,10 +61,7 @@ describe("approved harness model profile contract", () => {
 
 	test("model identifiers are data and command composition is rejected", () => {
 		for (const invalid of ["model; rm -rf /", "model && other", "model|other", "$(touch /tmp/x)", "model\nother"]) {
-			expect(() => withExplicitModel(preset("pi", "pi"), invalid)).toThrow();
-		}
-		for (const command of ["pi; touch marker", "pi && other", "pi | cat", "pi $(whoami)", "pi > output"]) {
-			expect(() => commandArguments(command)).toThrow(/shell syntax/);
+			expect(() => withExplicitModel(preset("pi", ["pi"]), invalid)).toThrow();
 		}
 	});
 
@@ -77,7 +78,7 @@ describe("approved harness model profile contract", () => {
 				{ mode: 0o700 },
 			);
 			for (const harness of ["opencode", "pi"] as const) {
-				const command = `${fixture} --preset-arg`;
+				const command = [fixture, "--preset-arg"];
 				const env = { PATH: process.env.PATH ?? "", PROFILE_FIXTURE: `${harness}-secret-a` };
 				const first = await discoverModels(harness, command, env, 1_000);
 				const cached = await discoverModels(harness, command, env, 1_000);
@@ -113,10 +114,10 @@ describe("approved harness model profile contract", () => {
 			await writeFile(timeout, "#!/bin/sh\nsleep 2\n", { mode: 0o700 });
 			await writeFile(failing, "#!/bin/sh\nprintf 'partial/model\\n'; exit 2\n", { mode: 0o700 });
 			await writeFile(partial, "#!/bin/sh\nprintf 'good/model\\nbad model\\nsecond/model\\n'\n", { mode: 0o700 });
-			expect(await discoverModels("opencode", timeout, {}, 20)).toEqual([]);
-			expect(await discoverModels("opencode", failing, {}, 1_000)).toEqual([]);
-			expect(await discoverModels("opencode", "", {}, 1_000)).toEqual([]);
-			expect(await discoverModels("opencode", partial, {}, 1_000)).toEqual([
+			expect(await discoverModels("opencode", [timeout], {}, 20)).toEqual([]);
+			expect(await discoverModels("opencode", [failing], {}, 1_000)).toEqual([]);
+			expect(await discoverModels("opencode", [], {}, 1_000)).toEqual([]);
+			expect(await discoverModels("opencode", [partial], {}, 1_000)).toEqual([
 				{ id: "good/model" },
 				{ id: "second/model" },
 			]);
@@ -127,7 +128,7 @@ describe("approved harness model profile contract", () => {
 	});
 
 	test("Claude remains manual-only and explicit IDs survive empty discovery as editable configuration", async () => {
-		const configured = preset("claude", "claude --model preset/model");
+		const configured = preset("claude", ["claude", "--model", "preset/model"]);
 		const choices = await discoverModels("claude", configured.command, configured.env);
 		expect(choices).toEqual([]);
 		expect(validateExplicitModel("manual/model", undefined)).toMatchObject({ compatible: undefined });

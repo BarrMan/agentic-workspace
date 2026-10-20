@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { mkdir } from "node:fs/promises";
 import { Writable } from "node:stream";
+import { hasEditFieldFlags } from "../cli/features/task/edit-fields.ts";
 import { runCli } from "../cli/register.ts";
 import { buildTaskUpdateInput } from "../cli/task-edit-builder.ts";
 import { Core } from "../index.ts";
@@ -90,5 +91,15 @@ describe("CLI task create/edit descriptions", () => {
 
 		await $`${cliCommand} task edit task-1 --description "Updated description"`.cwd(TEST_DIR).quiet();
 		expect((await coreFileSystem(core).loadTask("task-1"))?.description).toBe("Updated description");
+	});
+
+	it("passes repeated create labels through registration into task input", async () => {
+		await $`${cliCommand} task create "Labeled" --label alpha --label beta`.cwd(TEST_DIR).quiet();
+		expect((await coreFileSystem(new Core(TEST_DIR)).loadTask("task-1"))?.labels).toEqual(["alpha", "beta"]);
+	});
+
+	it("treats a task edit with no field options as an interactive edit", () => {
+		expect(hasEditFieldFlags({})).toBe(false);
+		expect(hasEditFieldFlags({ assignee: undefined, label: undefined, dependsOn: undefined })).toBe(false);
 	});
 });

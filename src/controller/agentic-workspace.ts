@@ -122,6 +122,7 @@ export class Core {
 		this.filesystem = new FileSystem(projectRoot);
 		this.filesystem.freezeResolution();
 		this.storage = new Storage(this.filesystem);
+		void this.storage.startAgentPresetCommandMigration();
 		this.configSnapshot = Config.load(this.storage);
 		void this.configSnapshot.catch(() => undefined);
 		this.git = new GitOperations(projectRoot, null, () => this.storage.loadConfig());

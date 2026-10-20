@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, mock } from "bun:test";
+import { afterAll, afterEach, beforeAll, describe, expect, it, mock } from "bun:test";
 import { chmod, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -8,15 +8,23 @@ import * as processTree from "../../lib/process-tree.ts";
 import type { ProcessRunner, TmuxServer } from "../../runtime/sessions.ts";
 import { getDefaultModeCatalog, initializeAgentConfiguration, upsertAgentConfiguration } from "../../storage/config.ts";
 import { SessionStore } from "../../storage/session-store.ts";
+import { disableHarnessReadiness } from "../agent-test-helpers.ts";
 import { initializeTestProject } from "../test-utils.ts";
 
 mock.module("../../lib/process-tree.ts", () => ({
 	...processTree,
-	snapshotProcessGroup: (pid: number) => [{ pid, started: "fake-start" }],
-	terminateProcessTree: async () => "terminated",
-	deadPaneGroupState: () => "gone",
+	terminateProcessTree: async (pid: number) => {
+		process.kill(pid, "SIGTERM");
+		return "terminated";
+	},
 }));
 const { AgentSessionService } = await import("../../runtime/sessions.ts");
+
+let restoreHarnessReadiness: (() => void) | undefined;
+beforeAll(() => {
+	restoreHarnessReadiness = disableHarnessReadiness();
+});
+afterAll(() => restoreHarnessReadiness?.());
 
 class Runner implements ProcessRunner {
 	readonly commands: string[][] = [];
@@ -34,6 +42,12 @@ class LaunchServer implements TmuxServer {
 	readonly paneHandles = new Map<string, NonNullable<Awaited<ReturnType<TmuxServer["newSession"]>>["activePane"]>>();
 	private nextPane = 0;
 	async cmd(command: string, args: readonly string[] = []): Promise<readonly string[]> {
+		if (command === "has-session") {
+			const target = args[args.indexOf("-t") + 1] ?? "";
+			const name = target.slice(1);
+			if ([...this.sessionNames.values()].includes(name)) return [];
+			throw new TmuxCommandError({ args: [command, ...args], exitCode: 1, target, stderr: [] });
+		}
 		if (command === "list-panes") {
 			const hasTarget = args.includes("-t");
 			const target = args[args.indexOf("-t") + 1] ?? "";
@@ -161,6 +175,15 @@ describe("runtime OpenCode adapter selection", () => {
 import { readFileSync } from "node:fs";
 if (process.argv.includes("--version")) console.log(readFileSync(${JSON.stringify(versionFile)}, "utf8"));
 else if (process.argv.includes("api")) console.log(JSON.stringify({ data: { id: process.argv.at(-1).split("/").at(-1) } }));
+else if (process.argv.includes("serve")) {
+  const port = Number(process.argv[process.argv.indexOf("--port") + 1]);
+  const server = Bun.serve({ hostname: "127.0.0.1", port, fetch: async (request) => {
+    const body = request.method === "POST" ? await request.json() : {};
+    return Response.json({ data: { id: body.id ?? "" } });
+  } });
+  process.on("SIGTERM", () => { server.stop(true); process.exit(0); });
+  setInterval(() => {}, 1000);
+}
 `,
 		);
 		await chmod(command, 0o700);
@@ -171,7 +194,7 @@ else if (process.argv.includes("api")) console.log(JSON.stringify({ data: { id: 
 		await upsertAgentConfiguration(core, "project", {
 			modes: getDefaultModeCatalog(),
 			selectedPreset: "opencode",
-			presets: { opencode: { command, env: {}, prepare: "", bootstrap: "opencode" } },
+			presets: { opencode: { command: [command], env: {}, prepare: "", bootstrap: "opencode" } },
 		});
 		const runner = new Runner();
 		const server = new LaunchServer();

@@ -10,7 +10,6 @@ import {
 	resolveAgenticWorkspaceDirectoryFromRootConfig,
 } from "../filesystem/paths/agentic-workspace-directory.ts";
 import { ProjectLayout } from "../filesystem/project-layout.ts";
-import { escapeRegex } from "../lib/regex.ts";
 import { DEFAULT_DIRECTORIES, DEFAULT_FILES } from "../model/constants.ts";
 import { AmbiguousTaskIdError } from "../model/errors/task-id.ts";
 import { taskIdKey, taskIdsEqual } from "../model/task/task-id.ts";
@@ -453,11 +452,12 @@ export class FileSystem {
 		const canonicalPrefix = prefix.toUpperCase();
 		let next = counters[canonicalPrefix]?.next;
 		if (next === undefined || !Number.isSafeInteger(next) || next < 1) {
-			const prefixPattern = new RegExp(`^${escapeRegex(canonicalPrefix)}-(\\d+)$`);
 			let max = 0;
 			for (const id of await existingIds()) {
-				const match = taskIdKey(id).match(prefixPattern);
-				if (match?.[1]) max = Math.max(max, Number(match[1]));
+				const canonicalId = taskIdKey(id);
+				const prefix = `${canonicalPrefix}-`;
+				const suffix = canonicalId.startsWith(prefix) ? canonicalId.slice(prefix.length) : "";
+				if (/^\d+$/.test(suffix)) max = Math.max(max, Number(suffix));
 			}
 			next = max + 1;
 		}

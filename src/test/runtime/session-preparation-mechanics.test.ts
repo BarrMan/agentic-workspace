@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from "bun:test";
+import { afterAll, afterEach, beforeAll, describe, expect, it } from "bun:test";
 import { chmod, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -19,7 +19,14 @@ import {
 import { WORKSPACE_CONTEXT_ENV } from "../../runtime/workspace-context.ts";
 import { resolveSessionPreset, upsertAgentConfiguration } from "../../storage/config.ts";
 import { SessionStore } from "../../storage/session-store.ts";
+import { registerPromptAgent } from "../agent-test-helpers.ts";
 import { coreFileSystem, initializeTestProject } from "../test-utils.ts";
+
+let restorePromptAgent: (() => void) | undefined;
+beforeAll(() => {
+	restorePromptAgent = registerPromptAgent("pi");
+});
+afterAll(() => restorePromptAgent?.());
 
 describe("session preparation mechanics", () => {
 	const roots: string[] = [];
@@ -38,7 +45,7 @@ describe("session preparation mechanics", () => {
 		await chmod(opencode, 0o700);
 		await upsertAgentConfiguration(core, "project", {
 			selectedPreset: "opencode",
-			presets: { opencode: { command: opencode, env: {}, prepare: "", bootstrap: "opencode" } },
+			presets: { opencode: { command: [opencode, "{prompt}"], env: {}, prepare: "", bootstrap: "pi" } },
 		});
 		await core.createTaskFromInput({ title: "Preparation task", status: "To Do" });
 		const task = { id: "TASK-1", title: "Preparation task" };
@@ -87,7 +94,7 @@ describe("session preparation mechanics", () => {
 		);
 		const store = new SessionStore(root, runner);
 		const resolved = await resolveSessionPreset(core, { taskId: task.id, preset: "opencode" });
-		expect(resolved.command).toBe(opencode);
+		expect(resolved.command).toEqual([opencode, "{prompt}"]);
 		const preset = await executionPresetWithEnvironment(core, task.id, "opencode", pathContext);
 		const modeId = await resolveModeId(core, store, task.id, "build");
 		const resolvedProfile = await profileFor(core, modeId, preset.preset);
@@ -173,7 +180,7 @@ describe("session preparation mechanics", () => {
 			events.push("cleanup");
 		};
 		let settled = false;
-		const resumePreset = { command: "pi", env: {}, prepare: "", bootstrap: "pi" as const };
+		const resumePreset = { command: ["pi"], env: {}, prepare: "", bootstrap: "pi" as const };
 		const { profile: resumeProfile } = await profileFor(core, "build", resumePreset);
 		const result = await resumeExistingTarget(
 			core,
@@ -184,7 +191,6 @@ describe("session preparation mechanics", () => {
 				record,
 				preset: resumePreset,
 				profile: resumeProfile,
-				receipt: undefined,
 				environment: {},
 				settings: { yoloMode: false, worktreePerTask: false },
 			},

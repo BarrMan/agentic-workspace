@@ -1,7 +1,7 @@
 import type { Core } from "../../../index.ts";
-import { parseClearableStringList, parseDelimitedStringList, toStringArray } from "../../../lib/string-list.ts";
+import { normalizeStringList, toStringArray } from "../../../lib/string-list.ts";
 import { formatValidPriorityValues, resolvePriorityValue } from "../../../model/task/priority-config.ts";
-import { formatValidStatuses, getCanonicalStatus } from "../../../model/task/status.ts";
+import { formatValidStatuses } from "../../../model/task/status.ts";
 import type { TaskUpdateInput } from "../../../model/types.ts";
 import type { TaskEditArgs } from "../../task-edit-args.ts";
 import { buildTaskUpdateInput } from "../../task-edit-builder.ts";
@@ -47,8 +47,8 @@ async function addStatusOption(
 ): Promise<ParseResult | undefined> {
 	if (!options.status) return undefined;
 	const validStatuses = await context.statuses();
-	const status = await getCanonicalStatus(String(options.status), context.core, validStatuses);
-	if (!status)
+	const status = String(options.status);
+	if (!validStatuses.includes(status))
 		return { error: `Invalid status: ${options.status}. Valid statuses are: ${formatValidStatuses(validStatuses)}` };
 	args.status = status;
 }
@@ -77,18 +77,18 @@ function addDueDateOption(args: TaskEditArgs, options: Record<string, unknown>):
 }
 
 function validateLabelOptions(options: Record<string, unknown>): ParseResult | undefined {
-	if (
-		options.clearLabels &&
-		(options.label !== undefined || options.addLabel !== undefined || options.removeLabel !== undefined)
-	)
+	const labels = toStringArray(options.label);
+	const addedLabels = toStringArray(options.addLabel);
+	const removedLabels = toStringArray(options.removeLabel);
+	if (options.clearLabels && (labels.length > 0 || addedLabels.length > 0 || removedLabels.length > 0))
 		return {
 			error:
-				"Cannot combine --clear-labels with --label, --add-label, or --remove-label. Use --clear-labels by itself, or --label a,b for the final full label set.",
+				"Cannot combine --clear-labels with --label, --add-label, or --remove-label. Use --clear-labels by itself, or repeat --label for the final full label set.",
 		};
-	if (options.label !== undefined && (options.addLabel !== undefined || options.removeLabel !== undefined))
+	if (labels.length > 0 && (addedLabels.length > 0 || removedLabels.length > 0))
 		return {
 			error:
-				"Cannot combine --label with --add-label or --remove-label. Use --label a,b for the final full label set, or use add/remove flags without --label.",
+				"Cannot combine --label with --add-label or --remove-label. Repeat --label for the final full label set, or use add/remove flags without --label.",
 		};
 	return undefined;
 }
@@ -96,10 +96,13 @@ function validateLabelOptions(options: Record<string, unknown>): ParseResult | u
 function parseListOptions(options: Record<string, unknown>): ParseResult | TaskEditArgs {
 	const listError = validateTaskListFlags(options, { supportsClearFlags: true });
 	if (listError) return { error: listError };
-	if (options.ref !== undefined && (options.addRef !== undefined || options.removeRef !== undefined))
+	if (
+		toStringArray(options.ref).length > 0 &&
+		(toStringArray(options.addRef).length > 0 || toStringArray(options.removeRef).length > 0)
+	)
 		return {
 			error:
-				"Cannot combine --ref with --add-ref or --remove-ref. Use --ref a,b for the final full reference set, or use add/remove flags without --ref.",
+				"Cannot combine --ref with --add-ref or --remove-ref. Repeat --ref for the final full reference set, or use add/remove flags without --ref.",
 		};
 	const args: TaskEditArgs = {};
 	addListValue(args, "labels", options.label, options.clearLabels);
@@ -116,24 +119,24 @@ function parseListOptions(options: Record<string, unknown>): ParseResult | TaskE
 	addDelimitedValue(args, "addReferences", options.addRef);
 	addDelimitedValue(args, "removeReferences", options.removeRef);
 	addClearableValue(args, "documentation", options.doc, options.clearDocs);
-	const modifiedFiles = parseDelimitedStringList(options.modifiedFile);
+	const modifiedFiles = normalizeStringList(toStringArray(options.modifiedFile));
 	if (modifiedFiles?.length) args.modifiedFiles = modifiedFiles;
 	return args;
 }
 
 function addDelimitedValue(args: TaskEditArgs, field: keyof TaskEditArgs, value: unknown): void {
-	const values = parseDelimitedStringList(value) ?? [];
+	const values = normalizeStringList(toStringArray(value)) ?? [];
 	if (values.length > 0) Object.assign(args, { [field]: values });
 }
 
 function addListValue(args: TaskEditArgs, field: keyof TaskEditArgs, value: unknown, clear: unknown): void {
-	const values = parseDelimitedStringList(value) ?? [];
+	const values = normalizeStringList(toStringArray(value)) ?? [];
 	if (values.length > 0) Object.assign(args, { [field]: values });
 	else if (clear) Object.assign(args, { [field]: [] });
 }
 
 function addClearableValue(args: TaskEditArgs, field: keyof TaskEditArgs, value: unknown, clear?: unknown): void {
-	const values = parseClearableStringList(value);
+	const values = normalizeStringList(toStringArray(value));
 	if (values) Object.assign(args, { [field]: values });
 	else if (clear) Object.assign(args, { [field]: [] });
 }

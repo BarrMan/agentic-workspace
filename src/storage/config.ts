@@ -72,20 +72,20 @@ const BUILT_IN_CONFIGURATION: AgentConfiguration = {
 	selectedPreset: "opencode",
 	presets: {
 		opencode: {
-			command: "opencode",
+			command: ["opencode"],
 			env: {},
 			prepare: "",
 			bootstrap: "opencode",
 			resumeFlag: "--session",
 		},
 		claude: {
-			command: "claude",
+			command: ["claude"],
 			env: {},
 			prepare: "",
 			bootstrap: "claude",
 			resumeFlag: "--resume",
 		},
-		pi: { command: "pi", env: {}, prepare: "", bootstrap: "pi", resumeFlag: "--session" },
+		pi: { command: ["pi"], env: {}, prepare: "", bootstrap: "pi", resumeFlag: "--session" },
 	},
 };
 

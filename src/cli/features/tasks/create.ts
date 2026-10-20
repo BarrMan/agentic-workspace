@@ -29,11 +29,61 @@ async function createTask(
 export function registerTaskCreate(taskCmd: Command, runtime: CliRuntime, readOutput: CliReadOutput): void {
 	addHelpSchema(taskCmd.command("create <title>"), {
 		required: [{ name: "title", type: "String", description: "Task title" }],
-		optional: [{ name: "description", type: "Markdown", description: "Task outcome and context" }],
+		optional: [
+			{ name: "description", type: "Markdown", description: "Task outcome and context" },
+			{ name: "assignee", type: "String[]", description: "Assignees (repeat --assignee)" },
+			{ name: "label", type: "String[]", description: "Labels (repeat --label)" },
+			{ name: "depends-on / dep", type: "Task ID[]", description: "Dependencies (repeat either option)" },
+			{ name: "ref", type: "String[]", description: "References (repeat --ref)" },
+			{ name: "doc", type: "Path[]", description: "Documentation paths (repeat --doc)" },
+			{ name: "modified-file", type: "Path[]", description: "Modified files (repeat --modified-file)" },
+		],
 		writes: "Creates a task markdown file through AgenticWorkspace",
 		output: "Created task details; use --plain for text output",
 		examples: ['agentic-workspace task create "Fix session expiry" --description "Ensure sessions expire"'],
 	})
 		.option("--description <text>", "task description")
+		.option(
+			"--assignee <name>",
+			"assign task (repeatable)",
+			(value, previous: string[] = []) => [...previous, value],
+			[],
+		)
+		.option(
+			"--label <label>",
+			"add task label (repeatable)",
+			(value, previous: string[] = []) => [...previous, value],
+			[],
+		)
+		.option(
+			"--depends-on <taskId>",
+			"add dependency (repeatable)",
+			(value, previous: string[] = []) => [...previous, value],
+			[],
+		)
+		.option(
+			"--dep <taskId>",
+			"add dependency (repeatable)",
+			(value, previous: string[] = []) => [...previous, value],
+			[],
+		)
+		.option(
+			"--ref <reference>",
+			"add reference (repeatable)",
+			(value, previous: string[] = []) => [...previous, value],
+			[],
+		)
+		.option(
+			"--doc <path>",
+			"add documentation path (repeatable)",
+			(value, previous: string[] = []) => [...previous, value],
+			[],
+		)
+		.option(
+			"--modified-file <path>",
+			"add modified file (repeatable)",
+			(value, previous: string[] = []) => [...previous, value],
+			[],
+		)
 		.action((title: string | undefined, options: OptionValues) => createTask(title, options, runtime, readOutput));
 }

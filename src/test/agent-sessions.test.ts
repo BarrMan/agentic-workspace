@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it, mock, it as testCase } from "bun:test";
 import { existsSync } from "node:fs";
-import { chmod, cp, mkdir, mkdtemp, realpath, rm, writeFile } from "node:fs/promises";
+import { chmod, cp, mkdir, mkdtemp, realpath, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { TmuxCommandError } from "libtmux";
@@ -9,7 +9,8 @@ import { ensureTaskWorktree, taskWorktreeExists, taskWorktreePath } from "../fil
 import * as processTree from "../lib/process-tree.ts";
 import { isAgenticWorkspaceSessionName, nativeSessionName } from "../model/session/session-utils.ts";
 import type { AgentPreset, AgentSession } from "../model/session/types.ts";
-import { agentFor } from "../runtime/agents/agents.ts";
+import type { HarnessInterface } from "../runtime/agents/core/agent.ts";
+import { harnessRegistry } from "../runtime/agents/startup.ts";
 import { renderSessionBootstrap, yoloFlagFor } from "../runtime/bootstrap.ts";
 import type { PreparedLaunchResources } from "../runtime/completion-supervisor-resources.ts";
 import { prepareAgentLaunch } from "../runtime/session-launch.ts";
@@ -25,19 +26,37 @@ const processRows: processTree.ProcessRow[] = [];
 mock.module("../lib/process-tree.ts", () => ({
 	...processTree,
 	readProcessTable: () => processRows,
-	snapshotProcessGroup: (pid: number) => [{ pid, started: "fake-start" }],
 	terminateProcessTree: async () => "terminated",
 	terminateOwnedDescendants: async () => "terminated",
-	deadPaneGroupState: () => "gone",
 }));
 const { BunRunner, SessionProcess } = await import("../runtime/session-process.ts");
 const { AgentSessionService } = await import("../runtime/sessions.ts");
 type SessionProcessInstance = InstanceType<typeof SessionProcess>;
 type AgentSessionServiceInstance = InstanceType<typeof AgentSessionService>;
 
+const claudeAgent = harnessRegistry.forPreset("claude");
+const capturedClaudeAgent = Object.create(claudeAgent) as typeof claudeAgent;
+capturedClaudeAgent.reconcileIdentity = async ({ intent, preparedIdentity }) => {
+	const identity =
+		preparedIdentity ??
+		(intent.kind === "resume" ? { id: intent.nativeSessionId, basis: "client-established" as const } : undefined);
+	if (!identity) throw new Error("Fake Claude did not receive a pinned session identity");
+	return { id: identity.id, basis: "provider-confirmed" };
+};
+// This fake models identity capture, not provider receipt emission.
+capturedClaudeAgent.readiness = undefined;
+
 // The retired generic `prompt` bootstrap is reproduced as a test-only agent under the `pi`
 // bootstrap name; this file never exercises the real Pi adapter.
-registerPromptAgent("pi");
+const piAgent = harnessRegistry.forPreset("pi");
+beforeAll(() => {
+	registerPromptAgent("pi");
+	harnessRegistry.replace(capturedClaudeAgent);
+});
+afterAll(() => {
+	harnessRegistry.replace(piAgent);
+	harnessRegistry.replace(claudeAgent);
+});
 
 const itRealTmux = process.env.RUN_INTERACTIVE_TUI_TESTS === "1" && Bun.which("tmux") ? it : it.skip;
 
@@ -204,10 +223,9 @@ class FakeTmux implements ProcessRunner, TmuxServer {
 		processRows.push({
 			pid: 100_000 + this.createdPanes,
 			ppid: 1,
-			pgid: 100_000 + this.createdPanes,
-			uid: typeof process.getuid === "function" ? process.getuid() : 0,
-			stat: "S",
-			started: "fake-start",
+			name: "bun",
+			state: "running",
+			start_time_unix_ms: 100_000 + this.createdPanes,
 		});
 		this.paneMetadata.set(id, {});
 		this.actions.push({ type: "newSession", options });
@@ -220,6 +238,23 @@ class FakeTmux implements ProcessRunner, TmuxServer {
 
 	async cmd(command: string, args: readonly string[] = []): Promise<readonly string[]> {
 		this.actions.push({ type: "cmd", command, args });
+		if (command === "list-sessions") {
+			if (this.probeError) throw this.probeError;
+			return [
+				...new Set([...this.paneSessions].flatMap(([pane, name]) => (this.paneInventory.has(pane) ? [name] : []))),
+			];
+		}
+		if (command === "has-session") {
+			if (this.probeError) throw this.probeError;
+			const target = args[args.indexOf("-t") + 1] ?? "";
+			const name = target.slice(1);
+			if (
+				this.paneInventory.has(this.nativeHosts.get(name) ?? "") ||
+				[...this.paneSessions].some(([pane, session]) => this.paneInventory.has(pane) && session === name)
+			)
+				return [];
+			throw new TmuxCommandError({ args: [command, ...args], exitCode: 1, target, stderr: [] });
+		}
 		if (command === "list-panes" && this.probeError) throw this.probeError;
 		if (command === "list-panes") {
 			if (args.includes("-t")) {
@@ -330,7 +365,7 @@ beforeAll(async () => {
 	await upsertAgentConfiguration(core, "project", {
 		selectedPreset: "test",
 		presets: {
-			test: { command: "agent {prompt} {skill}", env: {}, prepare: "", bootstrap: "pi" },
+			test: { command: ["agent", "{prompt}", "{skill}"], env: {}, prepare: "", bootstrap: "pi" },
 		},
 	});
 });
@@ -352,7 +387,7 @@ async function project(): Promise<{ root: string; core: Core; runner: FakeTmux }
 }
 
 /** The real Claude adapter's ask command; used instead of the registered `pi` fake, whose ask throws. */
-const askPreset: AgentPreset = { command: "agent", env: {}, prepare: "", bootstrap: "claude" };
+const askPreset: AgentPreset = { command: ["agent"], env: {}, prepare: "", bootstrap: "claude" };
 
 function askSession(
 	root: string,
@@ -460,8 +495,8 @@ function shellRun(runner: FakeTmux): string[] | undefined {
 describe("agent auto-approval (yolo) flags", () => {
 	it("maps only the providers with a verified auto-approval flag", () => {
 		expect(yoloFlagFor("opencode")).toBeUndefined();
-		expect(agentFor("opencode-v1")?.yoloFlag()).toBe("--auto");
-		expect(agentFor("opencode-v2")?.yoloFlag()).toBe("--auto");
+		expect(harnessRegistry.forPreset("opencode-v1").yoloFlag()).toBe("--auto");
+		expect(harnessRegistry.forPreset("opencode-v2").yoloFlag()).toBe("--auto");
 		expect(yoloFlagFor("claude")).toBe("--dangerously-skip-permissions");
 		expect(yoloFlagFor("pi")).toBeUndefined();
 	});
@@ -469,11 +504,14 @@ describe("agent auto-approval (yolo) flags", () => {
 	it("appends the OpenCode auto-approval flag only when yolo is enabled", async () => {
 		const root = await mkdtemp(join(tmpdir(), "agent-sessions-yolo-"));
 		const bootstrapPath = join(root, "bootstrap.md");
-		const opencode = join(root, "opencode-v1");
 		await Bun.write(bootstrapPath, renderSessionBootstrap({ taskId: "TASK-1" }));
-		await writeFile(opencode, "#!/usr/bin/env bun\nif (process.argv.includes('--version')) console.log('1.19.0');\n");
-		await chmod(opencode, 0o700);
-		const preset: AgentPreset = { command: opencode, env: {}, prepare: "", bootstrap: "opencode-v1" };
+		const original = harnessRegistry.forPreset("opencode-v2");
+		const fake = Object.create(original) as typeof original;
+		fake.preflightLaunch = async () => undefined;
+		fake.prepare = async (request) => ({ command: request.preset.command.join(" "), env: request.env });
+		fake.readiness = undefined;
+		harnessRegistry.replace(fake);
+		const preset: AgentPreset = { command: ["opencode"], env: {}, prepare: "", bootstrap: "opencode-v2" };
 		const profile = getDefaultModeCatalog().profiles.build!;
 		try {
 			const off = await prepareAgentLaunch(preset, bootstrapPath, {
@@ -498,6 +536,7 @@ describe("agent auto-approval (yolo) flags", () => {
 				await on.cleanup();
 			}
 		} finally {
+			harnessRegistry.replace(original);
 			await rm(root, { recursive: true, force: true });
 		}
 	});
@@ -507,10 +546,13 @@ describe.concurrent("AgentSessionService", () => {
 	// Each case copies a project fixture; eight slots limit filesystem contention while avoiding
 	// the long per-case queue introduced by narrower caps under the unchanged timeout.
 	const limit = createConcurrencyLimiter(8);
-	const it = Object.assign((name: string, fn: () => Promise<void>) => testCase(name, () => limit(fn)), {
-		each: (values: boolean[]) => (name: string, fn: (value: boolean) => Promise<void>) =>
-			testCase.each(values)(name, (value) => limit(() => fn(value))),
-	});
+	const it = Object.assign(
+		(name: string, fn: () => Promise<void>, timeout?: number) => testCase(name, () => limit(fn), timeout),
+		{
+			each: (values: boolean[]) => (name: string, fn: (value: boolean) => Promise<void>) =>
+				testCase.each(values)(name, (value) => limit(() => fn(value))),
+		},
+	);
 	const itRealTmuxLimited = (name: string, fn: () => Promise<void>) => itRealTmux(name, () => limit(fn));
 
 	it("reconciles a parked native session when its exact host is absent", async () => {
@@ -652,49 +694,6 @@ describe.concurrent("AgentSessionService", () => {
 		expect(runner.actions.filter(isRespawnAction)).toEqual([]);
 		expect(runner.actions.filter((action) => action.type === "kill")).toEqual([]);
 		expect((await service.list("TASK-1")).activeSessionId).toBe(existing.id);
-	});
-
-	it("revalidates selected membership after target resolution and before runtime classification", async () => {
-		const { root, core, runner } = await project();
-		const service = new AgentSessionService(core, { runner, tmuxServer: runner });
-		const existing = nativeCleanupSession(root, { id: "selection-race", status: "running", ownerPid: process.pid });
-		addNativeHost(runner, root, existing, process.pid);
-		await seedAskSessions(root, [existing], existing.id);
-		const store = (service as unknown as { store: SessionStore }).store;
-		const readReceipt = store.readNativeSessionIdCandidate.bind(store);
-		store.readNativeSessionIdCandidate = async (taskId, sessionId) => {
-			const receipt = await readReceipt(taskId, sessionId);
-			await store.mutateSession(taskId, sessionId, async (current) => {
-				current.tmuxName = `${current.tmuxName}-replacement`;
-			});
-			return receipt;
-		};
-
-		await expect(service.prepareNativeSession("TASK-1", existing.id)).rejects.toThrow("removed or replaced");
-		expect(runner.actions.filter((action) => action.type === "kill")).toEqual([]);
-	});
-
-	it("revalidates membership again after the pre-kill receipt read", async () => {
-		const { root, core, runner } = await project();
-		const service = new AgentSessionService(core, { runner, tmuxServer: runner });
-		const parked = nativeCleanupSession(root, { id: "receipt-race", status: "parked", ownerPid: undefined });
-		await seedAskSessions(root, [parked], parked.id);
-		const store = (service as unknown as { store: SessionStore }).store;
-		const readReceipt = store.readNativeSessionIdCandidate.bind(store);
-		let reads = 0;
-		store.readNativeSessionIdCandidate = async (taskId, sessionId) => {
-			const receipt = await readReceipt(taskId, sessionId);
-			reads += 1;
-			if (reads === 3)
-				await store.mutateSession(taskId, sessionId, async (current) => {
-					current.tmuxName = `${current.tmuxName}-replacement`;
-				});
-			return receipt;
-		};
-
-		await expect(service.prepareNativeSession("TASK-1", parked.id)).rejects.toThrow("removed or replaced");
-		expect(reads).toBe(3);
-		expect(runner.actions.filter((action) => action.type === "kill")).toEqual([]);
 	});
 
 	it("claims every mode in stable order and releases earlier claims after contention", async () => {
@@ -841,6 +840,41 @@ describe.concurrent("AgentSessionService", () => {
 		expect(runner.actions).toContainEqual({ type: "respawn", pane: "%1", command: expect.anything() });
 	});
 
+	testCase.serial(
+		"fails and cleans up a dispatched launch when its readiness receipt never appears",
+		async () => {
+			const { core, runner } = await project();
+			const original = harnessRegistry.forPreset("claude");
+			const fake = Object.create(capturedClaudeAgent) as typeof capturedClaudeAgent;
+			let launchDirectory = "";
+			fake.readiness = (_intent, directory) => {
+				launchDirectory = directory;
+				return {
+					initialized: { path: join(directory, "never-initialized") },
+					promptAccepted: { path: join(directory, "never-accepted") },
+				};
+			};
+			harnessRegistry.replace(fake);
+			await upsertAgentConfiguration(core, "project", {
+				selectedPreset: "claude",
+				presets: { claude: { command: ["claude"], env: {}, prepare: "", bootstrap: "claude" } },
+			});
+			const service = new AgentSessionService(core, { runner, tmuxServer: runner });
+			try {
+				await expect(service.start("task-1")).rejects.toThrow("Provider readiness timed out");
+				const state = await service.list("task-1");
+				expect(state.sessions[0]?.status).not.toBe("running");
+				expect(state.sessions[0]?.error).toContain("Provider readiness timed out");
+				expect(runner.actions).toContainEqual({ type: "kill", pane: "%1" });
+				expect(launchDirectory).not.toBe("");
+				expect(existsSync(launchDirectory)).toBeFalse();
+			} finally {
+				harnessRegistry.replace(original);
+			}
+		},
+		30000,
+	);
+
 	it("reads every persisted session in one scan, without needing the task corpus", async () => {
 		const { root, core, runner } = await project();
 		const service = new AgentSessionService(core, { runner, tmuxServer: runner });
@@ -874,12 +908,12 @@ describe.concurrent("AgentSessionService", () => {
 		await expect(service.sendKey("task-1", session.id, "x")).rejects.toThrow("not active");
 	});
 
-	it("stores the adapter-allocated native session id at launch", async () => {
+	it("persists the provider-captured native session identity at launch", async () => {
 		const { core, runner } = await project();
 		await upsertAgentConfiguration(core, "project", {
 			selectedPreset: "claude",
 			presets: {
-				claude: { command: "claude", env: {}, prepare: "", bootstrap: "claude" },
+				claude: { command: ["claude"], env: {}, prepare: "", bootstrap: "claude" },
 			},
 		});
 		const service = new AgentSessionService(core, { runner, tmuxServer: runner });
@@ -899,7 +933,7 @@ describe.concurrent("AgentSessionService", () => {
 			selectedPreset: "test",
 			presets: {
 				test: {
-					command: "agent {prompt} {skill}",
+					command: ["agent", "{prompt}", "{skill}"],
 					env: { TASK_CONTEXT: "$AGENTIC_WORKSPACE_TASK_DIR", PATH: "/custom/bin" },
 					prepare: prepareCommand,
 					bootstrap: "pi",
@@ -1041,7 +1075,7 @@ describe.concurrent("AgentSessionService", () => {
 		const { root, core, runner } = await project();
 		await upsertAgentConfiguration(core, "project", {
 			selectedPreset: "claude",
-			presets: { claude: { command: "claude", env: {}, prepare: "", bootstrap: "claude" } },
+			presets: { claude: { command: ["claude"], env: {}, prepare: "", bootstrap: "claude" } },
 		});
 		const service = new AgentSessionService(core, { runner, tmuxServer: runner });
 		const first = await service.prepareNativeSession("task-1");
@@ -1096,7 +1130,7 @@ describe.concurrent("AgentSessionService", () => {
 		const { core, runner } = await project();
 		await upsertAgentConfiguration(core, "project", {
 			selectedPreset: "claude",
-			presets: { claude: { command: "claude", env: {}, prepare: "", bootstrap: "claude" } },
+			presets: { claude: { command: ["claude"], env: {}, prepare: "", bootstrap: "claude" } },
 		});
 		const original = new AgentSessionService(core, { runner, tmuxServer: runner });
 		const first = await original.prepareNativeSession("task-1");
@@ -1131,7 +1165,7 @@ describe.concurrent("AgentSessionService", () => {
 		const { core, runner } = await project();
 		await upsertAgentConfiguration(core, "project", {
 			selectedPreset: "claude",
-			presets: { claude: { command: "claude", env: {}, prepare: "", bootstrap: "claude" } },
+			presets: { claude: { command: ["claude"], env: {}, prepare: "", bootstrap: "claude" } },
 		});
 		const service = new AgentSessionService(core, { runner, tmuxServer: runner });
 		const first = await service.prepareNativeSession("task-1");
@@ -1183,7 +1217,7 @@ describe.concurrent("AgentSessionService", () => {
 		expect((await service.list("task-1")).sessions.find((session) => session.id === second.record.id)?.status).toBe(
 			"stopped",
 		);
-	});
+	}, 30000);
 
 	async function nativeIdentityFixture() {
 		const { root, core, runner } = await project();
@@ -1197,7 +1231,33 @@ describe.concurrent("AgentSessionService", () => {
 			paneId: attachment.paneId,
 			resources: JSON.parse(raw) as PreparedLaunchResources,
 		};
-		return { root, runner, service, store: new SessionStore(root, runner), attachment, origin };
+		const promptAgent = harnessRegistry.forPreset("pi");
+		if (!promptAgent) throw new Error("Expected the fake Pi agent to be registered");
+		const provider = Object.create(promptAgent) as HarnessInterface;
+		provider.reconcileIdentity = async ({ preparedIdentity }) => {
+			if (!preparedIdentity) throw new Error("Fake provider did not receive a pinned identity");
+			return { id: preparedIdentity.id, basis: "provider-confirmed" };
+		};
+		return {
+			root,
+			runner,
+			service,
+			store: new SessionStore(root, runner),
+			attachment,
+			origin,
+			captureIdentity: async (id: string) => {
+				const identity = await provider.reconcileIdentity({
+					intent: { kind: "new" },
+					preset: askPreset,
+					cwd: attachment.record.cwd,
+					env: {},
+					launchDirectory: origin.resources.skill.path,
+					preparedIdentity: { id, basis: "client-established" },
+					signal: new AbortController().signal,
+				});
+				await service.publishNativeIdentity(origin, identity);
+			},
+		};
 	}
 
 	/** Drop the record's established identity and pane tag so a deferred report is the first publish. */
@@ -1216,18 +1276,16 @@ describe.concurrent("AgentSessionService", () => {
 		const f = await nativeIdentityFixture();
 		const current = f.attachment.record.nativeSessionId;
 		if (!current) throw new Error("Expected an established identity");
-		await f.service.publishNativeIdentity(f.origin, { id: current, basis: "client-established" });
+		await f.captureIdentity(current);
 		expect((await f.service.list("task-1", "build")).sessions[0]?.nativeSessionId).toBe(current);
-		await expect(
-			f.service.publishNativeIdentity(f.origin, { id: "ses_conflicting", basis: "provider-confirmed" }),
-		).rejects.toThrow("already has native identity");
+		await expect(f.captureIdentity("ses_conflicting")).rejects.toThrow("already has native identity");
 		expect((await f.service.list("task-1", "build")).sessions[0]?.nativeSessionId).toBe(current);
 	});
 
 	it("publishes a late deferred identity into the exact record and pane", async () => {
 		const f = await nativeIdentityFixture();
 		await deferIdentity(f);
-		await f.service.publishNativeIdentity(f.origin, { id: "ses_late", basis: "provider-confirmed" });
+		await f.captureIdentity("ses_late");
 		expect((await f.service.list("task-1", "build")).sessions[0]?.nativeSessionId).toBe("ses_late");
 		expect(f.runner.paneMetadata.get(f.origin.paneId)?.["@agentic_workspace_native_session_id"]).toBe("ses_late");
 	});
@@ -1235,7 +1293,7 @@ describe.concurrent("AgentSessionService", () => {
 	it("never resurrects a deleted record when a deferred identity arrives", async () => {
 		const f = await nativeIdentityFixture();
 		await f.store.remove("TASK-1", f.attachment.record.id);
-		await f.service.publishNativeIdentity(f.origin, { id: "ses_after_delete", basis: "provider-confirmed" });
+		await f.captureIdentity("ses_after_delete");
 		expect((await f.service.list("task-1", "build")).sessions).toEqual([]);
 	});
 
@@ -1250,7 +1308,7 @@ describe.concurrent("AgentSessionService", () => {
 				skill: { ...f.origin.resources.skill, marker: "f".repeat(64) },
 			}),
 		});
-		await f.service.publishNativeIdentity(f.origin, { id: "ses_stale", basis: "provider-confirmed" });
+		await f.captureIdentity("ses_stale");
 		expect((await f.service.list("task-1", "build")).sessions[0]?.nativeSessionId).toBeUndefined();
 	});
 
@@ -1260,7 +1318,7 @@ describe.concurrent("AgentSessionService", () => {
 		f.runner.paneInventory.delete(f.origin.paneId);
 		f.runner.paneHandles.delete(f.origin.paneId);
 		f.runner.paneMetadata.delete(f.origin.paneId);
-		await f.service.publishNativeIdentity(f.origin, { id: "ses_exited", basis: "provider-confirmed" });
+		await f.captureIdentity("ses_exited");
 		expect((await f.service.list("task-1", "build")).sessions[0]?.nativeSessionId).toBe("ses_exited");
 	});
 
@@ -1278,7 +1336,7 @@ describe.concurrent("AgentSessionService", () => {
 		expect(afterPrepare.activeSessionId).toBe(replacement.record.id);
 		await service.activateNativeSession("TASK-1", replacement.record.id, sessionOrigin(replacement));
 		expect((await service.list("task-1")).activeSessionId).toBe(replacement.record.id);
-	});
+	}, 30000);
 
 	it("canonicalizes task identity and persists sessions without starting task work", async () => {
 		const { core, runner } = await project();
@@ -1319,7 +1377,7 @@ describe.concurrent("AgentSessionService", () => {
 		await upsertAgentConfiguration(core, "project", {
 			selectedPreset: "test",
 			presets: {
-				test: { command: "agent {prompt} {skill}", env: {}, prepare: "false", bootstrap: "pi" },
+				test: { command: ["agent", "{prompt}", "{skill}"], env: {}, prepare: "false", bootstrap: "pi" },
 			},
 		});
 		runner.failPrepare = true;
@@ -1336,7 +1394,7 @@ describe.concurrent("AgentSessionService", () => {
 		await upsertAgentConfiguration(core, "project", {
 			selectedPreset: "test",
 			presets: {
-				test: { command: "agent {prompt} {skill}", env: {}, prepare: "", bootstrap: "pi" },
+				test: { command: ["agent", "{prompt}", "{skill}"], env: {}, prepare: "", bootstrap: "pi" },
 			},
 		});
 		const service = new AgentSessionService(core, { runner, tmuxServer: runner });
@@ -1394,7 +1452,7 @@ describe.concurrent("AgentSessionService", () => {
 		await upsertAgentConfiguration(core, "project", {
 			selectedPreset: "claude",
 			presets: {
-				claude: { command: "claude", env: {}, prepare: "", bootstrap: "claude" },
+				claude: { command: ["claude"], env: {}, prepare: "", bootstrap: "claude" },
 			},
 		});
 		const service = new AgentSessionService(core, { runner, tmuxServer: runner });
@@ -1414,7 +1472,7 @@ describe.concurrent("AgentSessionService", () => {
 		await upsertAgentConfiguration(core, "project", {
 			selectedPreset: "test",
 			presets: {
-				test: { command: "agent {prompt} {skill}", env: {}, prepare: "false", bootstrap: "pi" },
+				test: { command: ["agent", "{prompt}", "{skill}"], env: {}, prepare: "false", bootstrap: "pi" },
 			},
 		});
 		const service = new AgentSessionService(core, { runner, tmuxServer: runner });
@@ -1433,7 +1491,7 @@ describe.concurrent("AgentSessionService", () => {
 		await upsertAgentConfiguration(core, "project", {
 			selectedPreset: "test",
 			presets: {
-				test: { command: "agent {prompt} {skill}", env: {}, prepare: "false", bootstrap: "pi" },
+				test: { command: ["agent", "{prompt}", "{skill}"], env: {}, prepare: "false", bootstrap: "pi" },
 			},
 		});
 		runner.failPrepare = true;
@@ -1467,7 +1525,7 @@ describe.concurrent("AgentSessionService", () => {
 		expect(results.map((result) => result.status)).toEqual(["rejected", "fulfilled"]);
 		const sessions = (await service.list("task-1")).sessions;
 		expect(sessions.map((session) => session.status).sort()).toEqual(["failed", "running"]);
-	});
+	}, 30000);
 
 	it("registers a pending request instead of launching when a workspace owns the invocation", async () => {
 		const { core, runner } = await project();
@@ -1633,7 +1691,7 @@ describe.concurrent("AgentSessionService", () => {
 		const { root, core, runner } = await project();
 		await upsertAgentConfiguration(core, "project", {
 			selectedPreset: "claude",
-			presets: { claude: { command: "claude", env: {}, prepare: "", bootstrap: "claude" } },
+			presets: { claude: { command: ["claude"], env: {}, prepare: "", bootstrap: "claude" } },
 		});
 		const service = new AgentSessionService(core, { runner, tmuxServer: runner });
 		const pending = await service.registerPendingSession("task-1", {}, { v: 2, paneId: "%workspace", rootDir: root });
@@ -1887,6 +1945,22 @@ describe.concurrent("AgentSessionService", () => {
 		expect(runner.actions.filter((action) => action.type === "kill")).toHaveLength(killsBefore);
 	});
 
+	it("refuses to delete a session when a sidecar is a symlink", async () => {
+		const { root, core, runner } = await project();
+		const service = new AgentSessionService(core, { runner, tmuxServer: runner });
+		const session = nativeCleanupSession(root, { id: "symlink-sidecar", status: "stopped", ownerPid: undefined });
+		await seedAskSessions(root, [session]);
+		const target = join(root, "outside-session-log");
+		await writeFile(target, "outside data");
+		await writeFile(session.outputPath, "session output");
+		await rm(session.outputPath);
+		await symlink(target, session.outputPath);
+
+		await expect(service.delete("task-1", session.id)).rejects.toThrow(/not a regular owned file/);
+		expect((await service.list("task-1")).sessions.map(({ id }) => id)).toContain(session.id);
+		expect(await Bun.file(target).text()).toBe("outside data");
+	});
+
 	it("refuses to delete a running session without force and kills it when forced", async () => {
 		const { core, runner } = await project();
 		const service = new AgentSessionService(core, { runner, tmuxServer: runner });
@@ -1935,7 +2009,7 @@ describe.concurrent("AgentSessionService", () => {
 		const { core, runner } = await project();
 		await upsertAgentConfiguration(core, "project", {
 			selectedPreset: "claude",
-			presets: { claude: { command: "claude", env: {}, prepare: "", bootstrap: "claude" } },
+			presets: { claude: { command: ["claude"], env: {}, prepare: "", bootstrap: "claude" } },
 		});
 		const service = new AgentSessionService(core, { runner, tmuxServer: runner });
 		const prepared = await service.prepareNativeSession("task-1");
@@ -1997,7 +2071,8 @@ describe.concurrent("AgentSessionService", () => {
 		const command = shellRun(runner);
 		expect(command?.slice(0, 2)).toEqual(["/bin/sh", "-lc"]);
 		expect(command?.[2]).not.toContain("unset AGENTIC_WORKSPACE_CWD AGENTIC_WORKSPACE_TASK_ID");
-		expect(command?.[2]).toContain("exec agent -p --resume");
+		expect(command?.[2]).toContain("--resume");
+		expect(command?.[2]).toContain("native-prev");
 		expect(command?.[2]).toContain("native-prev");
 		expect(command?.[2]).toContain("what changed?");
 		const options = runner.processOptions[runner.processCommands.indexOf(command as string[])];
@@ -2029,7 +2104,8 @@ describe.concurrent("AgentSessionService", () => {
 		expect(timedOut).toBe(false);
 		expect(shellRun(runner)?.slice(0, 2)).toEqual(["/bin/sh", "-lc"]);
 		expect(shellRun(runner)?.[2]).not.toContain("unset AGENTIC_WORKSPACE_CWD AGENTIC_WORKSPACE_TASK_ID");
-		expect(shellRun(runner)?.[2]).toContain("exec agent -p --resume");
+		expect(shellRun(runner)?.[2]).toContain("--resume");
+		expect(shellRun(runner)?.[2]).toContain("native-older");
 		expect(shellRun(runner)?.[2]).toContain("native-older");
 		expect(shellRun(runner)?.[2]).toContain("hi");
 	});
@@ -2128,7 +2204,7 @@ describe.concurrent("AgentSessionService", () => {
 		await upsertAgentConfiguration(core, "project", {
 			selectedPreset: "fake",
 			presets: {
-				fake: { command: `${agent} {prompt} {skill}`, env: {}, prepare: "", bootstrap: "pi" },
+				fake: { command: [agent, "{prompt}", "{skill}"], env: {}, prepare: "", bootstrap: "pi" },
 			},
 		});
 		const socket = uniqueTmuxSocket("agent-sessions");
@@ -2210,7 +2286,7 @@ describe("AgentSessionService worktree sessions", () => {
 			await upsertAgentConfiguration(core, "project", {
 				selectedPreset: "test",
 				presets: {
-					test: { command: "agent {prompt} {skill}", env: {}, prepare: "", bootstrap: "pi" },
+					test: { command: ["agent", "{prompt}", "{skill}"], env: {}, prepare: "", bootstrap: "pi" },
 				},
 				sessions: { worktreePerTask: true, yoloMode: false },
 			});

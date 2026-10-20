@@ -127,6 +127,7 @@ describe("persisted prepared launch resources", () => {
 			},
 			panes: async () => (paneExists ? [pane] : []),
 			cmd: async (command: string, args: readonly string[], cmdOptions?: { timeoutMs?: number | null }) => {
+				if (command === "list-sessions") return paneExists ? [session.tmuxName] : [];
 				if (command === "list-panes") {
 					if (respawned && delayProbeOnRespawn) {
 						const timeoutMs = cmdOptions?.timeoutMs;
@@ -153,6 +154,14 @@ describe("persisted prepared launch resources", () => {
 						].join("\t"),
 					];
 				}
+				if (command === "has-session" && paneExists) return [session.tmuxName];
+				if (command === "has-session")
+					throw new TmuxCommandError({
+						args: [command, ...args],
+						exitCode: 1,
+						stderr: [`can't find session: ${session.tmuxName}`],
+						target: `=${session.tmuxName}`,
+					});
 				if (command === "display-message" && args.at(-1) === "#{@agentic_workspace_launch_resources}")
 					return inventoryRows ?? [options.get("@agentic_workspace_launch_resources") ?? ""];
 				return [""];

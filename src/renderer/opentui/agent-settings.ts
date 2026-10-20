@@ -10,6 +10,7 @@ import {
 	TextRenderable,
 } from "@opentui/core";
 import { slug } from "../../lib/slug.ts";
+import { agentCommandArgvSchema } from "../../model/session/agent-config-schema.ts";
 import { effectiveModeTextColor, MODE_TEXT_COLORS } from "../../model/session/mode-colors.ts";
 import {
 	type AgentConfiguration,
@@ -18,7 +19,7 @@ import {
 	resolveSessionSettings,
 	type SessionSettings,
 } from "../../model/session/types.ts";
-import { profilePermissionSupport } from "../../runtime/agents/profile.ts";
+import { profilePermissionSupport } from "../../runtime/agents/core/profile.ts";
 import {
 	AGENT_PRESENTATION_METADATA,
 	validateArtifactPath,
@@ -197,7 +198,7 @@ function addPresetPickerSurface(
 function presetState(preset: AgentPreset): FormState {
 	const environment = environmentLines(preset.env);
 	return {
-		command: preset.command,
+		command: JSON.stringify(preset.command),
 		resumeFlag: preset.resumeFlag ?? "",
 		environment,
 		initialEnvironment: environment,
@@ -205,8 +206,12 @@ function presetState(preset: AgentPreset): FormState {
 }
 
 function editedPreset(name: string, preset: AgentPreset, state: FormState): AgentPreset {
-	const command = state.command.trim();
-	if (!command || command.includes("\0")) throw new Error(`Preset ${name} needs a non-empty command.`);
+	let command: string[];
+	try {
+		command = agentCommandArgvSchema.parse(JSON.parse(state.command));
+	} catch (cause) {
+		throw new Error(`Preset ${name} command must be valid JSON argv: ${errorMessage(cause, "invalid command.")}`);
+	}
 	const resumeFlag = state.resumeFlag.trim();
 	const environment =
 		state.environment === state.initialEnvironment
@@ -365,7 +370,7 @@ export function mountOpenTuiAgentSettings(
 	const commandLabel = fieldLabel("Command");
 	const commandInput = new InputRenderable(renderer, {
 		...inputOptions,
-		placeholder: "agent --skill {skill} --interactive {prompt}",
+		placeholder: '["agent", "--skill", "{skill}", "--interactive", "{prompt}"]',
 	});
 	const commandDescription = fieldDescription("");
 	const commandValue = fieldValue();
@@ -971,8 +976,8 @@ export function mountOpenTuiAgentSettings(
 				: "Explicit native resume flag"
 			: "Optional explicit native resume flag";
 		commandDescription.content = preset
-			? `Launch command. ${preset.bootstrap} adapter and other options are retained.`
-			: "Launch command.";
+			? `JSON argv. ${preset.bootstrap} adapter and other options are retained.`
+			: "JSON argv.";
 		resumeDescription.content = documentedResumeFlag
 			? `Leave empty for native ${documentedResumeFlag} resume. An explicit flag overrides that default.`
 			: "Optional native resume flag. Leave empty when this adapter has no documented exact-session resume.";
@@ -1067,7 +1072,15 @@ export function mountOpenTuiAgentSettings(
 				const field = fields[activeField];
 				const control = controls()[activeField];
 				if (field && control) {
-					selectedState()[field] = control instanceof InputRenderable ? control.value : control.plainText;
+					const value = control instanceof InputRenderable ? control.value : control.plainText;
+					try {
+						selectedState()[field] =
+							field === "command" ? JSON.stringify(agentCommandArgvSchema.parse(JSON.parse(value))) : value;
+					} catch (cause) {
+						error = errorMessage(cause, "Command must be a JSON argv array.");
+						render();
+						return;
+					}
 				}
 			}
 			error = undefined;

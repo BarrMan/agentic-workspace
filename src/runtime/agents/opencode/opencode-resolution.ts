@@ -1,6 +1,5 @@
-import type { AgentPreset } from "../../model/session/types.ts";
+import type { AgentPreset } from "../../../model/session/types.ts";
 import { openCodeBootstrapForVersion } from "./opencode-version.ts";
-import { commandArguments } from "./profile.ts";
 
 const VERSION_TIMEOUT_MS = 2_000;
 
@@ -10,12 +9,7 @@ export async function resolveLaunchPreset(
 	options: { cwd: string; env: Record<string, string> },
 ): Promise<AgentPreset> {
 	if (preset.bootstrap !== "opencode") return structuredClone(preset);
-	let command: string[];
-	try {
-		command = commandArguments(preset.command);
-	} catch {
-		throw new Error("Could not determine the OpenCode version from the configured command.");
-	}
+	const command = preset.command;
 	if (command.length === 0) throw new Error("Could not determine the OpenCode version from an empty command.");
 	let child: ReturnType<typeof Bun.spawn>;
 	try {

@@ -1,4 +1,5 @@
-import { afterEach, describe, expect, it, mock } from "bun:test";
+import { afterEach, beforeEach, describe, expect, it, mock } from "bun:test";
+import { randomUUID } from "node:crypto";
 import { chmod, mkdir, mkdtemp, readFile, realpath, rename, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -6,8 +7,8 @@ import { TmuxCommandError } from "libtmux";
 import { Core } from "../../controller/agentic-workspace.ts";
 import * as processTree from "../../lib/process-tree.ts";
 import type { AgentConfiguration } from "../../model/session/types.ts";
-import type { Agent } from "../../runtime/agents/agent.ts";
-import { agentFor, builtInAgents, registerAgent } from "../../runtime/agents/agents.ts";
+import type { AgentPreparation, HarnessInterface } from "../../runtime/agents/core/agent.ts";
+import { HarnessStartup, harnessRegistry } from "../../runtime/agents/startup.ts";
 import { buildAgentResumeCommand } from "../../runtime/bootstrap.ts";
 import type { PreparedLaunchResources } from "../../runtime/completion-supervisor-resources.ts";
 import * as sessionLaunch from "../../runtime/session-launch.ts";
@@ -26,12 +27,8 @@ const realPrepareAgentLaunch = sessionLaunch.prepareAgentLaunch;
 const realPrepareAgentLaunchResources = sessionLaunch.prepareAgentLaunchResources;
 mock.module("../../lib/process-tree.ts", () => ({
 	...processTree,
-	readProcessTable: () => [
-		{ pid: 4242, ppid: 1, pgid: 4242, uid: process.getuid?.() ?? 0, stat: "S", started: "fake-start" },
-	],
-	snapshotProcessGroup: (pid: number) => [{ pid, started: "fake-start" }],
+	readProcessTable: () => [{ pid: 4242, ppid: 1, name: "bun", state: "running", start_time_unix_ms: 4242 }],
 	terminateProcessTree: async () => "terminated",
-	deadPaneGroupState: () => "gone",
 }));
 let afterPrepareAgentLaunch:
 	| ((
@@ -108,6 +105,17 @@ class FakeRuntime implements ProcessRunner, TmuxServer {
 	}
 
 	async cmd(command: string, args: readonly string[] = []): Promise<readonly string[]> {
+		if (command === "list-sessions") {
+			if (this.unknownNativeProbe) throw new Error("transient tmux failure");
+			return [...new Set([...this.panesById.values()].map(({ name }) => name))];
+		}
+		if (command === "has-session") {
+			if (this.unknownNativeProbe) throw new Error("transient tmux failure");
+			const target = args[args.indexOf("-t") + 1] ?? "";
+			const name = target.replace(/^=/, "").replace(/:$/, "");
+			if ([...this.panesById.values()].some((pane) => pane.name === name)) return [];
+			throw new TmuxCommandError({ args: [command, ...args], exitCode: 1, target, stderr: [] });
+		}
 		if (this.unknownNativeProbe && command === "list-panes") throw new Error("transient tmux failure");
 		if (command === "set-option") {
 			if (this.failTag) {
@@ -245,6 +253,27 @@ class FakeRuntime implements ProcessRunner, TmuxServer {
 describe("shared runtime session service", () => {
 	const roots: string[] = [];
 	const originalXdg = process.env.XDG_CONFIG_HOME;
+	const providerAgents = HarnessStartup.create().all();
+	beforeEach(() => {
+		for (const original of providerAgents) {
+			const fake = Object.create(original) as HarnessInterface;
+			fake.readiness = undefined;
+			if (original.name === "opencode-v1" || original.name === "opencode-v2")
+				(fake as HarnessInterface & { capture: { preassignSession(): Promise<string> } }).capture = {
+					preassignSession: async () => `ses_${randomUUID()}`,
+				};
+			fake.prepare = async (request) => {
+				return await original.prepare.call(fake, request);
+			};
+			fake.reconcileIdentity = async (request) => ({
+				id:
+					request.preparedIdentity?.id ??
+					(request.intent.kind === "resume" ? request.intent.nativeSessionId : randomUUID()),
+				basis: "provider-confirmed",
+			});
+			harnessRegistry.replace(fake);
+		}
+	});
 	async function resumeFixture(bootstrap: "pi" | "claude" | "opencode-v1" = "pi") {
 		const root = await mkdtemp(join(tmpdir(), `shared-runtime-resume-${bootstrap}-`));
 		roots.push(root);
@@ -257,7 +286,10 @@ describe("shared runtime session service", () => {
 		if (!config) throw new Error("Missing agent configuration");
 		const command = join(root, "fake-opencode");
 		if (bootstrap === "opencode-v1") {
-			await writeFile(command, '#!/bin/sh\n[ "$1" = --version ] && { echo 1.19.0; exit 0; }\nexit 0\n');
+			await writeFile(
+				command,
+				'#!/bin/sh\nif [ "$1" = --version ] || [ "$2" = --version ]; then echo 1.19.0; exit 0; fi\nexit 0\n',
+			);
 			await chmod(command, 0o700);
 		}
 		const presetName = `resume-${bootstrap}`;
@@ -267,7 +299,7 @@ describe("shared runtime session service", () => {
 			selectedPreset: presetName,
 			presets: {
 				[presetName]: {
-					command: bootstrap === "opencode-v1" ? command : "fake-agent",
+					command: bootstrap === "opencode-v1" ? [command, "{prompt}"] : ["fake-agent", "{prompt}"],
 					env: {},
 					prepare: "",
 					bootstrap: agentBootstrap,
@@ -298,6 +330,7 @@ describe("shared runtime session service", () => {
 		};
 	}
 	afterEach(async () => {
+		for (const original of providerAgents) harnessRegistry.replace(original);
 		await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
 		if (originalXdg === undefined) delete process.env.XDG_CONFIG_HOME;
 		else process.env.XDG_CONFIG_HOME = originalXdg;
@@ -319,7 +352,7 @@ describe("shared runtime session service", () => {
 		await upsertAgentConfiguration(core, "project", {
 			...config,
 			selectedPreset: "fake-pi",
-			presets: { "fake-pi": { command: "fake-agent", env: {}, prepare: "", bootstrap: "pi" } },
+			presets: { "fake-pi": { command: ["fake-agent", "{prompt}"], env: {}, prepare: "", bootstrap: "pi" } },
 		});
 		const runtime = new FakeRuntime();
 		const service = new AgentSessionService(core, { runner: runtime, tmuxServer: runtime });
@@ -370,7 +403,7 @@ describe("shared runtime session service", () => {
 		const selected: AgentConfiguration = {
 			...config,
 			selectedPreset: "fake-pi",
-			presets: { "fake-pi": { command: "fake-agent", env: {}, prepare: "", bootstrap: "pi" } },
+			presets: { "fake-pi": { command: ["fake-agent", "{prompt}"], env: {}, prepare: "", bootstrap: "pi" } },
 		};
 		await upsertAgentConfiguration(core, "project", selected);
 		const runtime = new FakeRuntime();
@@ -498,7 +531,7 @@ describe("shared runtime session service", () => {
 		if (!currentPi) throw new Error("Missing fake Pi preset");
 		await upsertAgentConfiguration(core, "project", {
 			...configuredFailure,
-			presets: { "fake-pi": { ...currentPi, command: "fake-claude", bootstrap: "claude" } },
+			presets: { "fake-pi": { ...currentPi, command: ["fake-claude", "{prompt}"], bootstrap: "claude" } },
 		});
 		const runsBeforeProviderMismatch = runtime.runEnvironments.length;
 		await expect(service.ask("task-1", "must not dispatch", { sessionId: resumed.record.id })).rejects.toThrow(
@@ -548,7 +581,7 @@ describe("shared runtime session service", () => {
 		await upsertAgentConfiguration(core, "project", {
 			...config,
 			selectedPreset: "fake-pi",
-			presets: { "fake-pi": { command: "fake-agent", env: {}, prepare: "", bootstrap: "pi" } },
+			presets: { "fake-pi": { command: ["fake-agent", "{prompt}"], env: {}, prepare: "", bootstrap: "pi" } },
 		});
 		const runtime = new FakeRuntime();
 		const service = new AgentSessionService(core, {
@@ -749,7 +782,7 @@ describe("shared runtime session service", () => {
 		await upsertAgentConfiguration(core, "project", {
 			...config,
 			selectedPreset: "fake-pi",
-			presets: { "fake-pi": { command: "fake-agent", env: {}, prepare: "", bootstrap: "pi" } },
+			presets: { "fake-pi": { command: ["fake-agent", "{prompt}"], env: {}, prepare: "", bootstrap: "pi" } },
 		});
 		const runtime = new FakeRuntime();
 		const service = new AgentSessionService(core, {
@@ -827,7 +860,7 @@ describe("shared runtime session service", () => {
 		await upsertAgentConfiguration(core, "project", {
 			...config,
 			selectedPreset: "fake-pi",
-			presets: { "fake-pi": { command: "fake-agent", env: {}, prepare: "", bootstrap: "pi" } },
+			presets: { "fake-pi": { command: ["fake-agent", "{prompt}"], env: {}, prepare: "", bootstrap: "pi" } },
 		});
 		const runtime = new FakeRuntime();
 		const service = new AgentSessionService(core, {
@@ -848,7 +881,7 @@ describe("shared runtime session service", () => {
 		const launches = runtime.launches.length;
 		const paneOptions = structuredClone(outgoingPane.options);
 		await expect(service.prepareNativeSession("task-1", started.record.id, "build")).rejects.toThrow(
-			"exact native session ID",
+			"Cannot resume this agent without its exact native session ID; start a new session instead.",
 		);
 		expect(runtime.kills).toBe(kills);
 		expect(runtime.launches).toHaveLength(launches);
@@ -871,7 +904,7 @@ describe("shared runtime session service", () => {
 		await upsertAgentConfiguration(core, "project", {
 			...config,
 			selectedPreset: "fake-pi",
-			presets: { "fake-pi": { command: "fake-agent", env: {}, prepare: "", bootstrap: "pi" } },
+			presets: { "fake-pi": { command: ["fake-agent", "{prompt}"], env: {}, prepare: "", bootstrap: "pi" } },
 		});
 		const runtime = new FakeRuntime();
 		const service = new AgentSessionService(core, { runner: runtime, tmuxServer: runtime });
@@ -1247,13 +1280,13 @@ describe("shared runtime session service", () => {
 			delete record.nativeSessionId;
 		});
 		await expect(preflight.service.prepareNativeSession("task-1", preflight.sessionId, "build")).rejects.toThrow(
-			"exact native session ID",
+			"Cannot resume this agent without its exact native session ID; start a new session instead.",
 		);
 		expect((await preflight.store.read("TASK-1")).modes?.build?.sessions[0]?.resumeProbeFailed).toBeUndefined();
 		const uncertain = await resumeFixture();
 		uncertain.runtime.unknownNativeProbe = true;
 		await expect(uncertain.service.prepareNativeSession("task-1", uncertain.sessionId, "build")).rejects.toThrow(
-			"Could not inspect",
+			"transient tmux failure",
 		);
 		expect((await uncertain.store.read("TASK-1")).modes?.build?.sessions[0]?.resumeProbeFailed).toBeUndefined();
 	});
@@ -1273,8 +1306,8 @@ describe("shared runtime session service", () => {
 		const record = (await f.store.read("TASK-1")).modes?.build?.sessions.find(({ id }) => id === f.sessionId);
 		expect(record?.nativeSessionId).toBe("ses_replacement");
 		expect(record?.resumeProbeFailed).toBeUndefined();
-		expect(f.runtime.kills).toBe(originalKills + 1);
-		expect(f.runtime.panesById.size).toBe(1);
+		expect(f.runtime.kills).toBe(originalKills + 2);
+		expect(f.runtime.panesById.size).toBe(0);
 	});
 
 	it("competing preparations cannot duplicate resume or start a fresh conversation", async () => {
@@ -1359,13 +1392,14 @@ describe("shared runtime session service", () => {
 		["opencode-v2", "--standalone --session"],
 	] as const)("uses literal resume flags for %s", (bootstrap, expected) => {
 		const preset = {
-			command: "agent",
+			command: ["agent", "{prompt}"],
 			env: {},
 			prepare: "",
 			bootstrap: bootstrap,
 		} satisfies import("../../model/session/types.ts").AgentPreset;
-		expect(buildAgentResumeCommand(preset, "ses_literal")).toContain(expected);
-		expect(buildAgentResumeCommand(preset, "ses_literal")).toContain("ses_literal");
+		const command = buildAgentResumeCommand(preset, "ses_literal");
+		expect(command).toContain(expected);
+		expect(command).toContain("ses_literal");
 	});
 
 	it("validates OpenCode v2 SID lookup before outgoing cleanup", async () => {
@@ -1384,7 +1418,7 @@ describe("shared runtime session service", () => {
 		await upsertAgentConfiguration(core, "project", {
 			...config,
 			selectedPreset: "fake-opencode-v2",
-			presets: { "fake-opencode-v2": { command, env: {}, prepare: "", bootstrap: "opencode" } },
+			presets: { "fake-opencode-v2": { command: [command], env: {}, prepare: "", bootstrap: "opencode" } },
 		});
 		const runtime = new FakeRuntime();
 		const service = new AgentSessionService(core, { runner: runtime, tmuxServer: runtime });
@@ -1426,7 +1460,7 @@ describe("shared runtime session service", () => {
 		await upsertAgentConfiguration(core, "project", {
 			...config,
 			selectedPreset,
-			presets: { [selectedPreset]: { command, env: {}, prepare: "", bootstrap: "opencode" } },
+			presets: { [selectedPreset]: { command: [command], env: {}, prepare: "", bootstrap: "opencode" } },
 		});
 		const runtime = new FakeRuntime();
 		const service = new AgentSessionService(core, { runner: runtime, tmuxServer: runtime });
@@ -1440,7 +1474,7 @@ describe("shared runtime session service", () => {
 			...updated,
 			presets: {
 				[selectedPreset]: {
-					command,
+					command: [command],
 					env: { OPENCODE_CONFIG_CONTENT: "[]" },
 					prepare: "",
 					bootstrap: "opencode",
@@ -1486,7 +1520,7 @@ describe("shared runtime session service", () => {
 		await upsertAgentConfiguration(core, "project", {
 			...config,
 			selectedPreset: "fake-pi",
-			presets: { "fake-pi": { command: "fake-agent", env: {}, prepare: "", bootstrap: "pi" } },
+			presets: { "fake-pi": { command: ["fake-agent", "{prompt}"], env: {}, prepare: "", bootstrap: "pi" } },
 		});
 		const runtime = new FakeRuntime();
 		const service = new AgentSessionService(core, { runner: runtime, tmuxServer: runtime });
@@ -1515,8 +1549,8 @@ describe("shared runtime session service", () => {
 		expect(await store.read("TASK-1")).toEqual(before);
 	});
 
-	it("retains a v1 native ID receipt after binding and rereads it idempotently", async () => {
-		const root = await mkdtemp(join(tmpdir(), "shared-runtime-v1-receipt-"));
+	it("persists provider-captured v1 identities and forgets only session state", async () => {
+		const root = await mkdtemp(join(tmpdir(), "shared-runtime-v1-identity-"));
 		roots.push(root);
 		process.env.XDG_CONFIG_HOME = join(root, "config");
 		const command = join(root, "opencode-version.ts");
@@ -1528,15 +1562,15 @@ describe("shared runtime session service", () => {
 		);
 		await chmod(command, 0o700);
 		const core = new Core(root);
-		await initializeTestProject(core, "Shared runtime v1 receipt");
-		await core.createTaskFromInput({ title: "Receipt task", status: "To Do" });
+		await initializeTestProject(core, "Shared runtime v1 identity");
+		await core.createTaskFromInput({ title: "Identity task", status: "To Do" });
 		await initializeAgentConfiguration(core, "project");
 		const config = await loadAgentConfiguration(core, "project");
 		if (!config) throw new Error("Missing agent configuration");
 		await upsertAgentConfiguration(core, "project", {
 			...config,
 			selectedPreset: "opencode",
-			presets: { opencode: { command, env: {}, prepare: "", bootstrap: "opencode" } },
+			presets: { opencode: { command: [command], env: {}, prepare: "", bootstrap: "opencode" } },
 		});
 		const runtime = new FakeRuntime();
 		const service = new AgentSessionService(core, {
@@ -1547,53 +1581,16 @@ describe("shared runtime session service", () => {
 		const started = await service.prepareNativeSession("task-1", undefined, "build");
 		expect(started.record.status).toBe("running");
 		const paths = await service.stateRoot;
-		await core.createTaskFromInput({ title: "Direct receipt task", status: "To Do" });
-		const direct = await service.start("task-2", { modeId: "build" });
-		expect(direct.nativeSessionId).toBeUndefined();
-		expect(
-			(await new SessionStore(root, runtime).read("TASK-2")).modes?.build?.sessions[0]?.nativeSessionId,
-		).toBeUndefined();
-		const directReceipt = join(paths, "task-2", `${direct.id}.native-session-id`);
-		await Bun.write(directReceipt, "ses_direct_receipt\n");
-		await chmod(directReceipt, 0o600);
-		await service.liveSession("task-2", direct.id);
-		expect((await service.list("task-2", "build")).sessions[0]?.nativeSessionId).toBe("ses_direct_receipt");
-		await service.stop("task-2", direct.id);
-		const receiptPath = join(paths, "task-1", `${started.record.id}.native-session-id`);
-		await Bun.write(receiptPath, "ses_receipt_exact\n");
-		await chmod(receiptPath, 0o600);
 		const receiptStore = new SessionStore(root, runtime);
-		const beforeAttach = await receiptStore.read("TASK-1");
-		expect(beforeAttach.modes?.build?.sessions[0]).toMatchObject({ id: started.record.id, status: "running" });
-		expect(beforeAttach.modes?.build?.sessions[0]?.nativeSessionId).toBeUndefined();
-		const launchesBeforeAttach = runtime.launches.length;
-		const killsBeforeAttach = runtime.kills;
-
-		const attached = await service.prepareNativeSession("task-1", started.record.id, "build");
-
-		expect(attached.paneId).toBe(started.paneId);
-		expect(attached.record.nativeSessionId).toBe("ses_receipt_exact");
-		expect(runtime.launches).toHaveLength(launchesBeforeAttach);
-		expect(runtime.kills).toBe(killsBeforeAttach);
-		expect((await readWorkspaceRequests(root)).some((request) => request.sessionId === started.record.id)).toBe(false);
-		const afterAttach = await receiptStore.read("TASK-1");
-		expect(afterAttach.modes?.build?.sessions[0]).toMatchObject({
-			id: started.record.id,
-			status: "running",
-			nativeSessionId: "ses_receipt_exact",
-		});
-		expect(afterAttach.modes?.build?.activeSessionId).toBe(beforeAttach.modes?.build?.activeSessionId);
-
-		const firstRead = await service.list("task-1", "build");
-		expect(firstRead.sessions[0]?.nativeSessionId).toBe("ses_receipt_exact");
-		await service.liveSession("task-1", started.record.id);
+		expect((await receiptStore.read("TASK-1")).modes?.build?.sessions[0]?.nativeSessionId).toBe(
+			started.record.nativeSessionId,
+		);
 		const reread = await service.list("task-1", "build");
-		expect(reread.sessions[0]?.nativeSessionId).toBe("ses_receipt_exact");
-		expect(await readFile(receiptPath, "utf8")).toBe("ses_receipt_exact\n");
+		expect(reread.sessions[0]?.nativeSessionId).toBe(started.record.nativeSessionId);
 		await service.stop("task-1", started.record.id);
 		const exactResume = await service.prepareNativeSession("task-1", started.record.id, "build");
-		expect(exactResume.record.nativeSessionId).toBe("ses_receipt_exact");
-		expect(runtime.launches).toHaveLength(3);
+		expect(exactResume.record.nativeSessionId).toBe(started.record.nativeSessionId);
+		expect(runtime.launches.at(-1)).toContain(started.record.nativeSessionId);
 		await service.liveSession("task-1", started.record.id);
 
 		const taskDir = join(paths, "task-1");
@@ -1606,23 +1603,22 @@ describe("shared runtime session service", () => {
 		expect(runtime.kills).toBe(killsBeforeForget);
 		expect(await Bun.file(join(taskDir, `${started.record.id}.log`)).exists()).toBe(false);
 		expect(await Bun.file(join(taskDir, `${started.record.id}.md`)).exists()).toBe(false);
-		expect(await Bun.file(receiptPath).exists()).toBe(false);
 		expect(await Bun.file(activityDir).exists()).toBe(false);
 		expect((await readWorkspaceRequests(root)).some((request) => request.sessionId === started.record.id)).toBe(false);
 		expect((await service.list("task-1", "build")).sessions).toEqual([]);
 		expect(runtime.panesById.size).toBe(1);
 		expect([...runtime.panesById.values()][0]?.options["@agentic_workspace_native_session_id"]).toBe(
-			"ses_receipt_exact",
+			started.record.nativeSessionId,
 		);
 		await core.createTaskFromInput({ title: "Forgotten native alias", status: "To Do" });
-		const alias = await service.prepareNativeSession("task-3", undefined, "build");
-		await service.stop("task-3", alias.record.id);
+		const alias = await service.prepareNativeSession("task-2", undefined, "build");
+		await service.stop("task-2", alias.record.id);
 		const store = new SessionStore(root, runtime);
-		await store.mutateSession("TASK-3", alias.record.id, async (session) => {
-			session.nativeSessionId = "ses_receipt_exact";
+		await store.mutateSession("TASK-2", alias.record.id, async (session) => {
+			session.nativeSessionId = started.record.nativeSessionId;
 		});
-		const aliasedAttachment = await service.prepareNativeSession("task-3", alias.record.id, "build");
-		expect(aliasedAttachment.record.nativeSessionId).toBe("ses_receipt_exact");
+		const aliasedAttachment = await service.prepareNativeSession("task-2", alias.record.id, "build");
+		expect(aliasedAttachment.record.nativeSessionId).toBe(started.record.nativeSessionId);
 	});
 
 	it("runs immediately when its adapter establishes an identity during prepare", async () => {
@@ -1646,19 +1642,25 @@ describe("shared runtime session service", () => {
 		await upsertAgentConfiguration(core, "project", {
 			...config,
 			selectedPreset: "opencode",
-			presets: { opencode: { command, env: {}, prepare: "", bootstrap: "opencode" } },
+			presets: { opencode: { command: [command], env: {}, prepare: "", bootstrap: "opencode" } },
 		});
-		const original = agentFor("opencode-v1");
-		if (!original) throw new Error("Missing OpenCode v1 adapter");
-		const adapter = Object.create(original) as Agent;
+		const original = harnessRegistry.forPreset("opencode-v1");
+		const adapter = Object.create(original) as HarnessInterface;
+		adapter.readiness = undefined;
 		adapter.prepare = async (request) => {
-			const prepared = await original.prepare(request);
+			const prepared: AgentPreparation =
+				request.intent.kind === "new"
+					? await (async () => {
+							if (request.statusDir) await mkdir(request.statusDir, { recursive: true, mode: 0o700 });
+							return { command: original.launchCommand(request), env: request.env };
+						})()
+					: await original.prepare(request);
 			return {
 				...prepared,
 				identity: prepared.identity ?? { id: "ses_client_established", basis: "client-established" as const },
 			};
 		};
-		registerAgent(adapter);
+		harnessRegistry.replace(adapter);
 		try {
 			const runtime = new FakeRuntime();
 			const service = new AgentSessionService(core, {
@@ -1670,11 +1672,11 @@ describe("shared runtime session service", () => {
 			expect(started.record.status).toBe("running");
 			expect(started.record.nativeSessionId).toBe("ses_client_established");
 		} finally {
-			for (const agent of builtInAgents()) registerAgent(agent);
+			harnessRegistry.replace(original);
 		}
 	});
 
-	it("forgets hydrated v1 histories without probing or preserving native runtime tags", async () => {
+	it("forgets persisted v1 histories without probing or preserving runtime panes", async () => {
 		const root = await mkdtemp(join(tmpdir(), "shared-runtime-v1-forget-receipt-"));
 		roots.push(root);
 		process.env.XDG_CONFIG_HOME = join(root, "config");
@@ -1695,7 +1697,7 @@ describe("shared runtime session service", () => {
 		await upsertAgentConfiguration(core, "project", {
 			...config,
 			selectedPreset: "opencode",
-			presets: { opencode: { command, env: {}, prepare: "", bootstrap: "opencode" } },
+			presets: { opencode: { command: [command], env: {}, prepare: "", bootstrap: "opencode" } },
 		});
 		const runtime = new FakeRuntime();
 		const service = new AgentSessionService(core, {
@@ -1706,12 +1708,8 @@ describe("shared runtime session service", () => {
 		const started = await service.prepareNativeSession("task-1", undefined, "build");
 		const stateRoot = await service.stateRoot;
 		const taskDir = join(stateRoot, "task-1");
-		const receiptPath = join(taskDir, `${started.record.id}.native-session-id`);
-		await Bun.write(receiptPath, "ses_hydrated_only\n");
-		await chmod(receiptPath, 0o600);
-		expect((await service.list("task-1", "build")).sessions[0]?.nativeSessionId).toBe("ses_hydrated_only");
-		expect((await service.list("task-1", "build")).sessions[0]?.nativeSessionId).toBe("ses_hydrated_only");
-		expect([...runtime.panesById.values()][0]?.options["@agentic_workspace_native_session_id"]).toBeUndefined();
+		expect(started.record.nativeSessionId).toBeDefined();
+		expect((await service.list("task-1", "build")).sessions[0]?.nativeSessionId).toBe(started.record.nativeSessionId);
 		const blockedLog = join(taskDir, `${started.record.id}.log`);
 		await mkdir(blockedLog);
 		await expect(service.forgetTaskSessions("task-1")).rejects.toThrow();
@@ -1728,17 +1726,16 @@ describe("shared runtime session service", () => {
 		await service.forgetTaskSessions("task-1");
 		runtime.unknownNativeProbe = false;
 		expect(runtime.kills).toBe(0);
-		expect(await Bun.file(receiptPath).exists()).toBe(false);
 
 		await core.createTaskFromInput({ title: "Receipt alias", status: "To Do" });
 		const alias = await service.prepareNativeSession("task-2", undefined, "build");
 		await service.stop("task-2", alias.record.id);
 		await new SessionStore(root, runtime).mutateSession("TASK-2", alias.record.id, async (session) => {
-			session.nativeSessionId = "ses_hydrated_only";
+			session.nativeSessionId = started.record.nativeSessionId;
 		});
 		const aliasedAttachment = await service.prepareNativeSession("task-2", alias.record.id, "build");
-		expect(aliasedAttachment.record.nativeSessionId).toBe("ses_hydrated_only");
-		expect(runtime.launches.at(-1)).toContain("ses_hydrated_only");
+		expect(aliasedAttachment.record.nativeSessionId).toBe(started.record.nativeSessionId);
+		expect(runtime.launches.at(-1)).toContain(started.record.nativeSessionId);
 	});
 
 	it("adopts an unlaunched v1 pending request without requiring a resume ID", async () => {
@@ -1762,7 +1759,7 @@ describe("shared runtime session service", () => {
 		await upsertAgentConfiguration(core, "project", {
 			...config,
 			selectedPreset: "opencode",
-			presets: { opencode: { command, env: {}, prepare: "", bootstrap: "opencode" } },
+			presets: { opencode: { command: [command], env: {}, prepare: "", bootstrap: "opencode" } },
 		});
 		const runtime = new FakeRuntime();
 		const context: WorkspaceContext = { v: 2, paneId: "%parent", rootDir: coreFileSystem(core).rootDir };
@@ -1774,10 +1771,11 @@ describe("shared runtime session service", () => {
 		const pending = await service.registerPendingSession("task-1", {}, context);
 		const attachment = await service.prepareNativeSession("task-1", pending.id);
 		expect(attachment.record.id).toBe(pending.id);
-		expect(attachment.record.nativeSessionId).toBeUndefined();
+		expect(attachment.record.nativeSessionId).toBeDefined();
 		expect(runtime.launches).toHaveLength(1);
 		expect(runtime.launches[0]).toContain("--prompt");
-		expect(runtime.launches[0]).not.toContain("--session");
+		expect(runtime.launches[0]).toContain("--session");
+		expect(runtime.launches[0]).toContain(attachment.record.nativeSessionId!);
 	});
 
 	it("returns the owning mode when admitting pending requests across modes", async () => {
@@ -1793,7 +1791,7 @@ describe("shared runtime session service", () => {
 		await upsertAgentConfiguration(core, "project", {
 			...config,
 			selectedPreset: "fake-pi",
-			presets: { "fake-pi": { command: "fake-agent", env: {}, prepare: "", bootstrap: "pi" } },
+			presets: { "fake-pi": { command: ["fake-agent", "{prompt}"], env: {}, prepare: "", bootstrap: "pi" } },
 		});
 		const runtime = new FakeRuntime();
 		const context: WorkspaceContext = { v: 2, paneId: "%parent", rootDir: coreFileSystem(core).rootDir };
@@ -1829,7 +1827,7 @@ describe("shared runtime session service", () => {
 		await upsertAgentConfiguration(core, "project", {
 			...config,
 			selectedPreset: "fake-pi",
-			presets: { "fake-pi": { command: "fake-agent", env: {}, prepare: "", bootstrap: "pi" } },
+			presets: { "fake-pi": { command: ["fake-agent", "{prompt}"], env: {}, prepare: "", bootstrap: "pi" } },
 		});
 		const runtime = new FakeRuntime();
 		let context: WorkspaceContext | undefined;
@@ -1903,7 +1901,7 @@ describe("shared runtime session service", () => {
 		await upsertAgentConfiguration(core, "project", {
 			...config,
 			selectedPreset: "fake-pi",
-			presets: { "fake-pi": { command: "fake-agent", env: {}, prepare: "", bootstrap: "pi" } },
+			presets: { "fake-pi": { command: ["fake-agent", "{prompt}"], env: {}, prepare: "", bootstrap: "pi" } },
 		});
 		const runtime = new FakeRuntime();
 		const service = new AgentSessionService(core, {
@@ -1957,7 +1955,7 @@ describe("shared runtime session service", () => {
 		await upsertAgentConfiguration(core, "project", {
 			...config,
 			selectedPreset: "fake-pi",
-			presets: { "fake-pi": { command: "fake-agent", env: {}, prepare: "", bootstrap: "pi" } },
+			presets: { "fake-pi": { command: ["fake-agent", "{prompt}"], env: {}, prepare: "", bootstrap: "pi" } },
 		});
 		const runtime = new FakeRuntime();
 		const service = new AgentSessionService(core, {

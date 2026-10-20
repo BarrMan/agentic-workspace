@@ -155,7 +155,7 @@ export interface ActivityMetadata {
 
 /** Complete configurations replace their parent; fields are never inherited. */
 export interface AgentPreset {
-	command: string;
+	command: string[];
 	env: Record<string, string>;
 	prepare: string;
 	/** How startup instructions are delivered to the agent. */

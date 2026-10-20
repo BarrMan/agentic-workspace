@@ -880,7 +880,7 @@ async function persistedPendingHostProject(root: string, title: string, modeIds:
 		if (!filePath) throw new Error("Expected the test task to have a persisted path.");
 		await upsertAgentConfiguration(core, "project", {
 			selectedPreset: "test",
-			presets: { test: { command: "agent {prompt}", env: {}, prepare: "", bootstrap: "pi" } },
+			presets: { test: { command: ["agent", "{prompt}"], env: {}, prepare: "", bootstrap: "pi" } },
 			modes: getDefaultModeCatalog(),
 		});
 		const sessions = new AgentSessionService(core);

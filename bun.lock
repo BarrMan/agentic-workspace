@@ -5,6 +5,7 @@
     "": {
       "name": "agentic-workspace",
       "dependencies": {
+        "@3leaps/sysprims": "0.2.4",
         "@opentui/core": "^0.5.14",
         "@opentui/keymap": "0.5.14",
         "libtmux": "^0.1.0-alpha.12",
@@ -39,6 +40,22 @@
     "@biomejs/biome",
   ],
   "packages": {
+    "@3leaps/sysprims": ["@3leaps/sysprims@0.2.4", "", { "optionalDependencies": { "@3leaps/sysprims-darwin-arm64": "0.2.4", "@3leaps/sysprims-linux-arm64-gnu": "0.2.4", "@3leaps/sysprims-linux-arm64-musl": "0.2.4", "@3leaps/sysprims-linux-x64-gnu": "0.2.4", "@3leaps/sysprims-linux-x64-musl": "0.2.4", "@3leaps/sysprims-win32-arm64-msvc": "0.2.4", "@3leaps/sysprims-win32-x64-msvc": "0.2.4" } }, "sha512-yYW8gPC+Jc1yc4pR7KqTCQ2RfIriQMzQ8BT3Wy+Kc2E5dxsYVuJr2I4cc/jTyLuxHdkIiuWnBVWhBknvqWFJ7A=="],
+
+    "@3leaps/sysprims-darwin-arm64": ["@3leaps/sysprims-darwin-arm64@0.2.4", "", { "os": "darwin", "cpu": "arm64" }, "sha512-GnyuInnkQkUzD/nA438O5idbk74Av+B7f0ppsJm/+9AHJr+Bb2DaabvvuwxuZT4p84ch0p4GapWj5Y98eErOTA=="],
+
+    "@3leaps/sysprims-linux-arm64-gnu": ["@3leaps/sysprims-linux-arm64-gnu@0.2.4", "", { "os": "linux", "cpu": "arm64" }, "sha512-VkNSHZblNz3qFL+wsF+q+oxfyc0HawGZsRbeXKShJgnsEc9X+6I9FC615meWVXBa9pqq4loi9drr1JsZthmVcQ=="],
+
+    "@3leaps/sysprims-linux-arm64-musl": ["@3leaps/sysprims-linux-arm64-musl@0.2.4", "", { "os": "linux", "cpu": "arm64" }, "sha512-toaWHJOWDZMLcF9AN7rUjXnjox5jI3BfoqdSTu79FRthSCmxqF3IDo0zZwsgI33x535CUcMmKAfRk71r2X4Lnw=="],
+
+    "@3leaps/sysprims-linux-x64-gnu": ["@3leaps/sysprims-linux-x64-gnu@0.2.4", "", { "os": "linux", "cpu": "x64" }, "sha512-qjz2HskGT8L1QO87zYQtUe5e2Aj1rUWWD/MRAL/BPUZXWQJHo4BFVw4QN68t25yvSFFl4LZpnX5Pa1AnqDRGjQ=="],
+
+    "@3leaps/sysprims-linux-x64-musl": ["@3leaps/sysprims-linux-x64-musl@0.2.4", "", { "os": "linux", "cpu": "x64" }, "sha512-YIr6IECR8f/L+E51kIbqTxp/f3VFkSgdkbD8T39e7psEgwIAlJ0XQenFulwWFaL3VsYUdr4bIlkYdxYJsHVMKA=="],
+
+    "@3leaps/sysprims-win32-arm64-msvc": ["@3leaps/sysprims-win32-arm64-msvc@0.2.4", "", { "os": "win32", "cpu": "arm64" }, "sha512-V2agiNcmPJSIdGbogMiXwva/y8XwOLr1lcA3CyXhTBIup4TwpR3Nch9ahV/S9JbVebnwGC7KKyGPEzW+4vNGyw=="],
+
+    "@3leaps/sysprims-win32-x64-msvc": ["@3leaps/sysprims-win32-x64-msvc@0.2.4", "", { "os": "win32", "cpu": "x64" }, "sha512-a8CeCOjluhremjOgeC0f0UP0DiI2WsgcKwINYPNy7HVr3bS64x4fVANqfJTitcr0XqS3Tq0qxitV8LZzrmUf9g=="],
+
     "@biomejs/biome": ["@biomejs/biome@2.5.3", "", { "optionalDependencies": { "@biomejs/cli-darwin-arm64": "2.5.3", "@biomejs/cli-darwin-x64": "2.5.3", "@biomejs/cli-linux-arm64": "2.5.3", "@biomejs/cli-linux-arm64-musl": "2.5.3", "@biomejs/cli-linux-x64": "2.5.3", "@biomejs/cli-linux-x64-musl": "2.5.3", "@biomejs/cli-win32-arm64": "2.5.3", "@biomejs/cli-win32-x64": "2.5.3" }, "bin": { "biome": "bin/biome" } }, "sha512-MrJswFdei9EfDwwUy2tQrPDpK0AO+RmMFvBoaaJ6ayBc3sUbHdCE+XG5N8vp+5So41ZupZJQm0roHFFhMGVD7A=="],
 
     "@biomejs/cli-darwin-arm64": ["@biomejs/cli-darwin-arm64@2.5.3", "", { "os": "darwin", "cpu": "arm64" }, "sha512-QhYP9muVQ0nUO5zztFuPbEwi4+94sJWVjaZds9aMi1l/KNZBiUjdiSUrGHsTaMGDXrYl+r4AS2sUKfgH3w+V3g=="],
