@@ -80,7 +80,6 @@ describe("task project field", () => {
 				id: "task-1",
 				title: "Round trip",
 				status: "To Do",
-				assignee: [],
 				createdDate: "2026-01-01",
 				labels: [],
 				dependencies: [],
@@ -144,7 +143,7 @@ describe("task project field", () => {
 		});
 	});
 
-	describe("back-compat for unassigned-project tasks", () => {
+	describe("unassigned-project tasks", () => {
 		it("should not write a project key for tasks without a project", async () => {
 			const config = await coreFileSystem(core).loadConfig();
 			if (!config) throw new Error("Config not found");

@@ -73,20 +73,18 @@ const labelledTask: Task = {
 	id: "task-1",
 	title: "Rework the exporter",
 	status: "To Do",
-	assignee: ["@morgan"],
 	reporter: "@morgan",
 	createdDate: "2026-01-05 09:00",
 	labels: ["backend", "infrastructure"],
 	dependencies: [],
-	rawContent: "## Description\nNothing here mentions the label or the assignee.",
-	description: "Nothing here mentions the label or the assignee.",
+	rawContent: "## Description\nNothing here mentions the label.",
+	description: "Nothing here mentions the label.",
 };
 
 const otherTask: Task = {
 	id: "task-2",
 	title: "Polish the sidebar",
 	status: "To Do",
-	assignee: ["@riley"],
 	reporter: "@riley",
 	createdDate: "2026-01-05 09:00",
 	labels: ["backend"],
@@ -102,10 +100,9 @@ function taskIds(results: Task[]): string[] {
 }
 
 describe("task search corpus", () => {
-	it("puts labels and assignees in the searchable text", () => {
+	it("puts labels in the searchable text", () => {
 		const bodyText = TaskSearchIndex.bodyText(labelledTask);
 		expect(bodyText).toContain("infrastructure");
-		expect(bodyText).toContain("@morgan");
 	});
 });
 
@@ -141,13 +138,6 @@ describe("cross-surface search parity", () => {
 		expect(await persistentTaskIds("infrastructure")).toEqual(["TASK-1"]);
 	});
 
-	it("finds a task by its assignee through both surfaces", async () => {
-		const localMatches = taskIds(new TaskSearchIndex(tasks).search({ query: "morgan" }));
-
-		expect(localMatches).toEqual(["task-1"]);
-		expect(await persistentTaskIds("morgan")).toEqual(["TASK-1"]);
-	});
-
 	it("uses case-insensitive literal matching with stable corpus order", async () => {
 		const localMatches = new TaskSearchIndex(tasks).search({ query: "REWORK" });
 		const persistentMatches = await persistentTaskIds("REWORK");
@@ -166,34 +156,6 @@ describe("cross-surface search parity", () => {
 
 		expect(localMatches).toEqual(["task-1", "task-2"]);
 		expect(serviceMatches).toEqual(["TASK-1", "TASK-2"]);
-	});
-
-	it("agrees on an assignee filter applied without a query", async () => {
-		const localMatches = taskIds(TaskSearchIndex.apply(tasks, { assignee: "@MORGAN" }));
-		const serviceMatches = (await core.searchPersistently({ types: ["task"], filters: { assignee: "@MORGAN" } }))
-			.filter((result): result is TaskSearchResult => result.type === "task")
-			.map((result) => result.task.id)
-			.sort();
-
-		expect(localMatches).toEqual(["task-1"]);
-		expect(serviceMatches).toEqual(["TASK-1"]);
-	});
-
-	it("matches assignee identities with OR semantics and treats blank names as unassigned", async () => {
-		const unassigned: Task = { ...otherTask, id: "task-3", title: "Unassigned", assignee: ["", "  "] };
-		await filesystem.saveTask(unassigned);
-		const corpus = [...tasks, unassigned];
-		expect(taskIds(TaskSearchIndex.apply(corpus, { assignee: [" @MORGAN ", "@riley"] }))).toEqual(["task-1", "task-2"]);
-		expect(taskIds(TaskSearchIndex.apply(corpus, { unassigned: true }))).toEqual(["task-3"]);
-		const assigned = (await core.searchPersistently({ types: ["task"], filters: { assignee: ["@morgan", "@RILEY"] } }))
-			.filter((result): result is TaskSearchResult => result.type === "task")
-			.map((result) => result.task.id)
-			.sort();
-		const noAssignee = (await core.searchPersistently({ types: ["task"], filters: { unassigned: true } }))
-			.filter((result): result is TaskSearchResult => result.type === "task")
-			.map((result) => result.task.id);
-		expect(assigned).toEqual(["TASK-1", "TASK-2"]);
-		expect(noAssignee).toEqual(["TASK-3"]);
 	});
 
 	it("applies the same labelMatch semantics with and without a query", () => {
@@ -223,7 +185,6 @@ describe("filters mean the same thing with and without a query", () => {
 			id: "task-10",
 			title: "Wire the release checklist",
 			status: "To Do",
-			assignee: [],
 			createdDate: "2026-01-05 09:00",
 			labels: [],
 			dependencies: [],
@@ -233,7 +194,6 @@ describe("filters mean the same thing with and without a query", () => {
 			id: "task-11",
 			title: "Wire the follow-up checklist",
 			status: "To Do",
-			assignee: [],
 			createdDate: "2026-01-05 09:00",
 			labels: [],
 			dependencies: ["task-10"],
@@ -243,7 +203,6 @@ describe("filters mean the same thing with and without a query", () => {
 			id: "task-12",
 			title: "Wire the unscheduled checklist",
 			status: "To Do",
-			assignee: [],
 			createdDate: "2026-01-05 09:00",
 			labels: [],
 			dependencies: [],

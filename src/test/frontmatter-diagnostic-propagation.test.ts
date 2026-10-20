@@ -16,7 +16,6 @@ const task: Task = {
 	id: "TASK-1",
 	title: "Task",
 	status: "To Do",
-	assignee: [],
 	createdDate: "2026-09-30",
 	labels: [],
 	dependencies: [],

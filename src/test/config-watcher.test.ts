@@ -16,7 +16,7 @@ const initialConfig: AgenticWorkspaceConfig = {
 	projectName: "Config watcher",
 	statuses: ["To Do", "Done"],
 	labels: ["web"],
-	dateFormat: "YYYY-MM-DD",
+	dateFormat: "yyyy-MM-dd",
 	remoteOperations: false,
 	prefixes: { task: "BACK" },
 };
@@ -70,7 +70,7 @@ describe("config watcher", () => {
 				'project_name: "Partial"',
 				"statuses: [",
 				"labels: []",
-				"date_format: YYYY-MM-DD",
+				"date_format: yyyy-MM-dd",
 				"check_active_branches: false",
 				'task_prefix: "BACK"',
 				"",
@@ -79,7 +79,7 @@ describe("config watcher", () => {
 				'project_name: ""',
 				'statuses: ["To Do", "Done"]',
 				'labels: ["web"]',
-				"date_format: YYYY-MM-DD",
+				"date_format: yyyy-MM-dd",
 				"check_active_branches: false",
 				'task_prefix: "BACK"',
 				"",
@@ -88,7 +88,7 @@ describe("config watcher", () => {
 				'project_name: "Malformed boolean"',
 				'statuses: ["To Do", "Done"]',
 				'labels: ["web"]',
-				"date_format: YYYY-MM-DD",
+				"date_format: yyyy-MM-dd",
 				"auto_open_browser: fals",
 				'task_prefix: "BACK"',
 				"",
@@ -97,7 +97,7 @@ describe("config watcher", () => {
 				'project_name: "Malformed port"',
 				'statuses: ["To Do", "Done"]',
 				'labels: ["web"]',
-				"date_format: YYYY-MM-DD",
+				"date_format: yyyy-MM-dd",
 				"default_port: nope",
 				'task_prefix: "BACK"',
 				"",
@@ -106,7 +106,7 @@ describe("config watcher", () => {
 				'project_name: "Malformed task prefix"',
 				'statuses: ["To Do", "Done"]',
 				'labels: ["web"]',
-				"date_format: YYYY-MM-DD",
+				"date_format: yyyy-MM-dd",
 				'task_prefix: "BACK-2"',
 				"",
 			].join("\n"),
@@ -176,88 +176,6 @@ describe("config watcher", () => {
 		}
 	});
 
-	it("retains the cached defaultAssignee while an inline edit is not a usable assignee value", async () => {
-		await coreFileSystem(core).saveConfig({ ...initialConfig, defaultAssignee: ["@alice"] });
-		const baseLines = [
-			'project_name: "Config watcher"',
-			'statuses: ["To Do", "Done"]',
-			'labels: ["web"]',
-			"date_format: YYYY-MM-DD",
-			"check_active_branches: true",
-			'task_prefix: "BACK"',
-		];
-		const withAssignee = (line: string) => [baseLines[0], line, ...baseLines.slice(1), ""].join("\n");
-		// Truncated mid-edit and an unbalanced quote that still opens and closes with brackets, then two
-		// values YAML reads but the key cannot hold. default_assignee is the key that proves the shared
-		// parser rejects wrong types: the other list keys are also screened by the inline-array check,
-		// but this one accepts scalars and block sequences, so only the parser can judge it.
-		const invalidContents = [
-			withAssignee('default_assignee: ["@alice'),
-			withAssignee('default_assignee: ["@alice]'),
-			withAssignee('default_assignee: {name: "@alice"}'),
-			withAssignee("default_assignee: 42"),
-		];
-		const scalarContent = withAssignee('default_assignee: "@carol"');
-		const inlineArrayContent = withAssignee('default_assignee: ["@alice", "@bob"]');
-
-		const originalParseConfig = coreFileSystem(core).parseConfig.bind(coreFileSystem(core));
-		const invalidAttempts = new Map(invalidContents.map((content) => [content, 0]));
-		const invalidResolvers = new Map<string, () => void>();
-		const invalidExhausted = new Map(
-			invalidContents.map((content) => [
-				content,
-				new Promise<void>((resolve) => invalidResolvers.set(content, resolve)),
-			]),
-		);
-		coreFileSystem(core).parseConfig = (content) => {
-			const attempts = invalidAttempts.get(content);
-			if (attempts !== undefined) {
-				const nextAttempts = attempts + 1;
-				invalidAttempts.set(content, nextAttempts);
-				// Accepted content is parsed once and published; a re-read means the watcher rejected it.
-				if (nextAttempts >= 3) invalidResolvers.get(content)?.();
-			}
-			return originalParseConfig(content);
-		};
-
-		const published: AgenticWorkspaceConfig[] = [];
-		let resolveNextPublished: (config: AgenticWorkspaceConfig) => void = () => {};
-		const nextPublished = () =>
-			new Promise<AgenticWorkspaceConfig>((resolve) => {
-				resolveNextPublished = resolve;
-			});
-		const configWatcher = watchConfigFile(coreFileSystem(core), {
-			onConfigChanged: (config) => {
-				if (!config) return;
-				published.push(config);
-				resolveNextPublished(config);
-			},
-		});
-
-		try {
-			// Neither malformed edit may publish an undefined default over the cached one.
-			for (const invalidContent of invalidContents) {
-				await replaceConfigFile(invalidContent);
-				const exhausted = invalidExhausted.get(invalidContent);
-				if (!exhausted) throw new Error("Missing invalid config attempt signal");
-				await withTimeout(exhausted, "invalid default_assignee read attempts");
-				expect(published).toHaveLength(0);
-				expect((await coreFileSystem(core).loadConfig())?.defaultAssignee).toEqual(["@alice"]);
-			}
-
-			const scalarPublished = nextPublished();
-			await replaceConfigFile(scalarContent);
-			expect((await withTimeout(scalarPublished, "scalar callback")).defaultAssignee).toEqual(["@carol"]);
-
-			const inlinePublished = nextPublished();
-			await replaceConfigFile(inlineArrayContent);
-			expect((await withTimeout(inlinePublished, "inline array callback")).defaultAssignee).toEqual(["@alice", "@bob"]);
-		} finally {
-			configWatcher.stop();
-			coreFileSystem(core).parseConfig = originalParseConfig;
-		}
-	});
-
 	it("publishes root config resolution from the same accepted content", async () => {
 		const rootDir = createUniqueTestDir("config-watcher-root");
 		const rootConfigPath = join(rootDir, "agentic-workspace.config.yml");
@@ -266,7 +184,7 @@ describe("config watcher", () => {
 			'agentic_workspace_directory: "custom/a"',
 			'statuses: ["To Do", "Done"]',
 			"labels: []",
-			"date_format: YYYY-MM-DD",
+			"date_format: yyyy-MM-dd",
 			"check_active_branches: true",
 			"",
 		].join("\n");
@@ -280,7 +198,7 @@ describe("config watcher", () => {
 			'project_name: "Sparse root"',
 			'statuses: ["To Do", "Done"]',
 			"labels: []",
-			"date_format: YYYY-MM-DD",
+			"date_format: yyyy-MM-dd",
 			"check_active_branches: true",
 			"",
 		].join("\n");
@@ -289,7 +207,7 @@ describe("config watcher", () => {
 			'agentic_workspace_directory: "../escape"',
 			'statuses: ["To Do", "Done"]',
 			"labels: []",
-			"date_format: YYYY-MM-DD",
+			"date_format: yyyy-MM-dd",
 			"check_active_branches: true",
 			"",
 		].join("\n");
@@ -298,7 +216,7 @@ describe("config watcher", () => {
 			'agentic_workspace_directory "agentic-workspace"',
 			'statuses: ["To Do", "Done"]',
 			"labels: []",
-			"date_format: YYYY-MM-DD",
+			"date_format: yyyy-MM-dd",
 			"check_active_branches: false",
 			"",
 		].join("\n");
@@ -467,7 +385,7 @@ describe("config watcher", () => {
 			expect(config.prefixes?.task).toBe("SPARSE");
 			expect(config.statuses.length).toBeGreaterThan(0);
 			expect(config.labels).toEqual([]);
-			expect(config.dateFormat).toBe("yyyy-mm-dd");
+			expect(config.dateFormat).toBe("yyyy-MM-dd");
 		} finally {
 			configWatcher.stop();
 		}

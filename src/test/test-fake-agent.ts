@@ -36,10 +36,6 @@ class PromptInjectionAgent implements HarnessInterface {
 		return undefined;
 	}
 
-	sanitizeLaunchPreset(preset: import("../model/session/types.ts").AgentPreset) {
-		return preset;
-	}
-
 	launchCommand({ preset, bootstrapPath }: LaunchCommandRequest): string {
 		if (!preset.command.includes("{prompt}") && !preset.command.includes("{instructions}")) {
 			throw new Error("Custom agent commands must include {prompt} or {instructions} to receive session instructions.");

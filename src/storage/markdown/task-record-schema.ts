@@ -1,14 +1,14 @@
+import { DateTime } from "luxon";
 import { z } from "zod";
 import { AgentConfigurationSchema } from "../../model/session/agent-config-schema.ts";
 import { normalizeDueDate } from "../../model/task/due-date.ts";
-import { TASK_FRONTMATTER_FIELDS as FIELD, FRONTMATTER_DATE_PATTERN } from "./schema.ts";
+import { TASK_FRONTMATTER_FIELDS as FIELD } from "./schema.ts";
 
 /** Frontmatter key for each task property the schema owns. Dependencies are decoded separately. */
 export const TASK_FRONTMATTER_KEY_MAP = {
 	id: FIELD.ID,
 	title: FIELD.TITLE,
 	status: FIELD.STATUS,
-	assignee: FIELD.ASSIGNEE,
 	reporter: FIELD.REPORTER,
 	createdDate: FIELD.CREATED_DATE,
 	updatedDate: FIELD.UPDATED_DATE,
@@ -57,17 +57,28 @@ function dateField(key: string) {
 	const message = `${key} must be a date string in YYYY-MM-DD or YYYY-MM-DD HH:mm format`;
 	return z.preprocess(
 		(value) => (value === undefined || value === null || value === "" ? undefined : value),
-		z.string({ error: message }).regex(FRONTMATTER_DATE_PATTERN, { error: message }).optional(),
+		z
+			.string({ error: message })
+			.refine(
+				(value) => {
+					try {
+						Temporal.PlainDate.from(value);
+						return (
+							DateTime.fromFormat(value, "yyyy-MM-dd", { zone: "utc" }).isValid ||
+							DateTime.fromFormat(value, "yyyy-MM-dd HH:mm", { zone: "utc" }).isValid
+						);
+					} catch {
+						return false;
+					}
+				},
+				{ error: message },
+			)
+			.optional(),
 	);
 }
 
 const requiredText = z.preprocess(textOrEmpty, z.string());
 const optionalString = z.preprocess(optionalText, z.string().optional());
-
-const assignees = z.preprocess(
-	(value) => (value === undefined ? [] : value),
-	z.array(z.string(), { error: "assignee must be a list" }),
-);
 
 const dependencies = z
 	.unknown()
@@ -98,7 +109,6 @@ export const TaskFrontmatterSchema = z.object({
 	id: requiredText,
 	title: requiredText,
 	status: requiredText,
-	assignee: assignees,
 	reporter: optionalString,
 	createdDate: dateField(FIELD.CREATED_DATE).transform((value) => value ?? ""),
 	updatedDate: dateField(FIELD.UPDATED_DATE),

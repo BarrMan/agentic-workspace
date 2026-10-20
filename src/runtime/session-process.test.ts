@@ -40,16 +40,6 @@ describe("native runtime ownership probes", () => {
 		bootstrapPath: "/unused.md",
 	};
 
-	const row = (values: Partial<Record<"name" | "root" | "task" | "id" | "role" | "pane" | "dead", string>> = {}) =>
-		[
-			values.name ?? record.tmuxName,
-			values.root ?? process.cwd(),
-			values.task ?? record.taskId,
-			values.id ?? record.id,
-			values.role ?? "live-preview",
-			values.pane ?? "%42",
-			values.dead ?? "0",
-		].join("\t");
 	const exactMissing = () =>
 		new TmuxCommandError({
 			args: ["has-session", "-t", `=${record.tmuxName}`],
@@ -57,6 +47,26 @@ describe("native runtime ownership probes", () => {
 			stderr: [],
 			target: `=${record.tmuxName}`,
 		});
+	const ownedServer = (
+		values: Partial<Record<"name" | "root" | "task" | "id" | "role" | "pane" | "dead", string>> = {},
+	) => ({
+		cmd: async (command: string, args: readonly string[]) => {
+			if (command === "list-panes") {
+				const format = args[args.length - 1];
+				const fields: Record<string, string> = {
+					"#{session_name}": values.name ?? record.tmuxName,
+					"#{@agentic_workspace_root}": values.root ?? process.cwd(),
+					"#{@agentic_workspace_task}": values.task ?? record.taskId,
+					"#{@agentic_workspace_session}": values.id ?? record.id,
+					"#{@agentic_workspace_role}": values.role ?? "live-preview",
+					"#{pane_id}": values.pane ?? "%42",
+					"#{pane_dead}": values.dead ?? "0",
+				};
+				return [fields[format ?? ""] ?? "%42"];
+			}
+			throw new Error(`Unexpected tmux command ${command}`);
+		},
+	});
 
 	it.each([
 		["live pane", "0", { status: "live", paneId: "%42" }],
@@ -67,13 +77,7 @@ describe("native runtime ownership probes", () => {
 				throw new Error("Classification must not probe the OS");
 			},
 		};
-		const server = {
-			cmd: async (command: string, args: readonly string[]) => {
-				expect(command).toBe("list-panes");
-				expect(args).toContain(`=${record.tmuxName}:`);
-				return [row({ dead })];
-			},
-		} as unknown as TmuxServer;
+		const server = ownedServer({ dead }) as unknown as TmuxServer;
 		expect(await new SessionProcess(runner, process.cwd(), server).nativeRuntimeClassification(record)).toEqual(
 			expected,
 		);
@@ -94,7 +98,7 @@ describe("native runtime ownership probes", () => {
 	});
 
 	it("rejects non-live native-workspace ownership instead of adopting it", async () => {
-		const server = { cmd: async () => [row({ role: "native-workspace" })] } as unknown as TmuxServer;
+		const server = ownedServer({ role: "native-workspace" }) as unknown as TmuxServer;
 		const runner: ProcessRunner = {
 			run: async () => {
 				throw new Error("Classification must not probe the OS");
@@ -108,7 +112,7 @@ describe("native runtime ownership probes", () => {
 	it("classifies absence only from a successful exact session inventory", async () => {
 		const server = {
 			cmd: async (command: string) => {
-				if (command === "list-panes") throw new Error("list panes failed");
+				if (command === "list-panes") throw new TmuxCommandError({ args: [command], exitCode: 1, stderr: ["failed"] });
 				expect(command).toBe("list-sessions");
 				return [];
 			},
@@ -121,6 +125,23 @@ describe("native runtime ownership probes", () => {
 		expect(await new SessionProcess(runner, process.cwd(), server).nativeRuntimeClassification(record)).toEqual({
 			status: "missing",
 		});
+	});
+
+	it("rechecks exact session absence when ownership inspection loses its target", async () => {
+		const server = {
+			cmd: async (command: string, args: readonly string[]) => {
+				if (command === "list-sessions") return [];
+				if (args[args.indexOf("-F") + 1] === "#{pane_id}") return ["%42"];
+				throw new TmuxCommandError({ args: [command, ...args], exitCode: 1, stderr: ["target missing"] });
+			},
+		} as unknown as TmuxServer;
+		await expect(
+			new SessionProcess(
+				{ run: async () => ({ exitCode: 0, stdout: "", stderr: "" }) },
+				process.cwd(),
+				server,
+			).nativeRuntimeClassification(record),
+		).resolves.toEqual({ status: "missing" });
 	});
 
 	it("keeps failed pane and session inspections uncertain", async () => {
@@ -170,7 +191,7 @@ describe("native runtime ownership probes", () => {
 			["0", "0\n"],
 			["1", "1\n"],
 		] as const) {
-			const server = { cmd: async () => [row({ dead })] } as unknown as TmuxServer;
+			const server = ownedServer({ dead }) as unknown as TmuxServer;
 			expect(
 				await new SessionProcess(
 					{ run: async () => ({ exitCode: 0, stdout: "", stderr: "" }) },
@@ -228,15 +249,30 @@ describe("native runtime ownership probes", () => {
 	});
 
 	it("rejects wrong-name, foreign-tagged, malformed, and empty successful exact responses", async () => {
-		for (const lines of [[row({ name: "another-session" })], [row({ task: "OTHER" })], ["malformed"], []]) {
-			const server = { cmd: async () => lines } as unknown as TmuxServer;
+		for (const server of [
+			ownedServer({ name: "another-session" }),
+			ownedServer({ task: "OTHER" }),
+			{ cmd: async (command: string) => (command === "list-panes" ? ["malformed"] : []) },
+			{ cmd: async (command: string) => (command === "list-panes" ? [] : []) },
+		]) {
 			await expect(
 				new SessionProcess(
 					{ run: async () => ({ exitCode: 0, stdout: "", stderr: "" }) },
 					process.cwd(),
-					server,
+					server as unknown as TmuxServer,
 				).nativeRuntimeClassification(record),
 			).rejects.toThrow();
 		}
+	});
+
+	it("compares ownership fields as independent values rather than reparsing delimiters", async () => {
+		const server = ownedServer({ task: `${record.taskId}\t${record.id}` }) as unknown as TmuxServer;
+		await expect(
+			new SessionProcess(
+				{ run: async () => ({ exitCode: 0, stdout: "", stderr: "" }) },
+				process.cwd(),
+				server,
+			).nativeRuntimeClassification(record),
+		).rejects.toThrow("ownership");
 	});
 });

@@ -150,23 +150,24 @@ Sessions let users launch and continue agent conversations attached to tasks, ob
 
 ### SESSION-007: Set explicit launch environment
 
-**Description:** The launch environment explicitly sets workspace identity and selected-preset user variables without inherited variables from the launching process.
+**Description:** The child launch inherits the parent environment unchanged. The workspace explicitly sets child workspace/session identities and the selected tmux socket; these protected values cannot be replaced by preset values or adapters. Inherited credentials are exposed to the child as an accepted consequence.
 
 **Trigger:** A session launch environment is prepared.
 
 **Preconditions:** Project, worktree, task, mode, session, and selected preset values are available.
 
 **Behavior:**
-1. Set workspace identity for project, worktree, task, mode, and session, together with selected-preset user variables.
-2. Include those explicit values without inherited launching-process variables.
+1. Inherit the parent environment unchanged; do not strip environment variables.
+2. Set child workspace/project, worktree, task, mode, and session identity and the selected tmux socket explicitly, protecting them against preset or adapter replacement.
 3. Use `AGENTIC_WORKSPACE_PROJECT_DIR`, `AGENTIC_WORKSPACE_WORKTREE_DIR`, `AGENTIC_WORKSPACE_TASK_DIR`, `AGENTIC_WORKSPACE_TASK_ID`, `AGENTIC_WORKSPACE_MODE_ID`, and `AGENTIC_WORKSPACE_SESSION_ID`; workspace-defined names use the `AGENTIC_WORKSPACE_` prefix.
+4. Accept that inherited credentials are exposed to the child process.
 
-**Outcome:** The agent receives the specified explicit workspace identity and selected-preset variables only.
+**Outcome:** The child receives the unchanged inherited environment plus explicitly set workspace/session identities, selected tmux socket, and selected-preset user variables; protected identity/socket values cannot be replaced.
 
 **Failures:** None.
 
 **Acceptance Criteria:**
-- [ ] The launch environment contains explicit workspace identity and selected-preset user variables, with no inherited process variables and the specified identity names/prefix.
+- [ ] The child inherits the parent environment unchanged, including credentials, while workspace/session identities and selected tmux socket are explicit and protected from preset/adapter replacement.
 
 ### SESSION-008: Restrict preset variable references
 
@@ -341,6 +342,8 @@ Sessions let users launch and continue agent conversations attached to tasks, ob
 2. If a step fails or is interrupted, report the error and completed effects.
 3. Keep the predecessor intact if successor creation fails; keep a successfully published successor if predecessor retirement fails.
 4. The only rollback is creation-publication rollback defined in SESSION-009/010.
+5. Read tmux takeover ownership fields as separate typed values and compare each independently; never concatenate and reparse them. Missing or ambiguous ownership fails closed and does not authorize takeover.
+6. Treat tmux as absent only when a structured nonzero tmux result is followed by a successful exact session inventory check. Inspection, permission, or timeout errors are not evidence of absence and do not authorize cleanup.
 
 **Outcome:** The successor is confirmed before retiring an eligible predecessor owned by this app instance.
 
@@ -413,7 +416,7 @@ Sessions let users launch and continue agent conversations attached to tasks, ob
 
 ### SESSION-020: Delete a session safely
 
-**Description:** Deletion is refused while the session's agent is running.
+**Description:** Deletion is refused while the session's agent is running. Process identity is PID plus process name, without a start-time or UID fence; inspection failure or unknown identity fails closed and never authorizes termination or clean completion. Same-name PID reuse is an accepted limitation.
 
 **Trigger:** The user requests session deletion, optionally with force.
 
@@ -422,14 +425,16 @@ Sessions let users launch and continue agent conversations attached to tasks, ob
 **Behavior:**
 1. Refuse deletion while the agent is running unless force is requested.
 2. With force, kill the agent before removing workspace-owned session records/resources.
-3. Never modify provider-owned configuration, data, or state; runtime-evidence constraints continue to apply.
+3. For single-session sidecar deletion, derive targets from the trusted task directory and validated session ID, canonicalize the ancestor directory, verify containment, use `lstat`, and unlink only regular files.
+4. Never modify provider-owned configuration, data, or state; runtime-evidence constraints continue to apply.
+5. Establish process identity by PID and process name only; inspection failure or unknown identity never authorizes termination or clean completion.
 
 **Outcome:** A running agent is not orphaned by session removal and provider-owned state remains untouched.
 
 **Failures:** Refuse non-forced deletion of a running session; apply runtime-evidence constraints when liveness is uncertain.
 
 **Acceptance Criteria:**
-- [ ] Deletion of a running session without force is refused; with force, kill precedes removal of workspace-owned records/resources, and provider state remains untouched.
+- [ ] Deletion of a running session without force is refused; with force, kill precedes removal of workspace-owned records/resources, and provider state remains untouched. Process identity uses PID plus process name only; unknown identity fails closed, with same-name PID reuse accepted as a limitation.
 
 ## States and Transitions
 

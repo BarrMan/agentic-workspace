@@ -29,7 +29,7 @@ describe("artifact viewer live-refresh contract", () => {
 		await mkdir(artifactsDir, { recursive: true });
 		await writeFile(
 			join(container, "task.md"),
-			"---\ntask_schema_version: 3\nid: BACK-23\ntitle: Oversized artifact\nstatus: To Do\nassignee: []\ncreated_date: 2026-10-10\nlabels: []\ndependencies: []\n---\n\nTask body\n",
+			"---\ntask_schema_version: 3\nid: BACK-23\ntitle: Oversized artifact\nstatus: To Do\ncreated_date: 2026-10-10\nlabels: []\ndependencies: []\n---\n\nTask body\n",
 		);
 		const content = Buffer.alloc(128 * 1024 + 1, 0x61);
 		await writeFile(join(artifactsDir, "large.bin"), content);
@@ -51,7 +51,7 @@ describe("artifact viewer live-refresh contract", () => {
 		await mkdir(container, { recursive: true });
 		await writeFile(
 			join(container, "task.md"),
-			"---\ntask_schema_version: 3\nid: BACK-23\ntitle: Live refresh\nstatus: To Do\nassignee: []\ncreated_date: 2026-10-10\nlabels: []\ndependencies: []\n---\n\nTask body\n",
+			"---\ntask_schema_version: 3\nid: BACK-23\ntitle: Live refresh\nstatus: To Do\ncreated_date: 2026-10-10\nlabels: []\ndependencies: []\n---\n\nTask body\n",
 		);
 		const artifactsDir = join(container, "artifacts");
 		await mkdir(artifactsDir, { recursive: true });

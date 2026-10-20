@@ -16,7 +16,6 @@ const dependencyTask: Task = {
 	id: "BACK-2",
 	title: "Dependency task",
 	status: "Todo",
-	assignee: [],
 	createdDate: "2026-01-01",
 	labels: [],
 	dependencies: [],
@@ -26,7 +25,6 @@ const richTask: Task = {
 	id: "BACK-1",
 	title: "Rich task",
 	status: "In Progress",
-	assignee: [" @alice ", "Bob", "  "],
 	reporter: "bob",
 	createdDate: "2026-01-01",
 	updatedDate: "2026-02-02",
@@ -72,7 +70,7 @@ describe("native workspace rich detail", () => {
 			taskDetails: new Map([[richTask.id, detail]]),
 			taskDetailOptions: {
 				configuredProjects: ["alpha"],
-				dateFormat: "YYYY-MM-DD",
+				dateFormat: "yyyy-MM-dd",
 				resolveMilestoneLabel: (milestone) => `Milestone ${milestone}`,
 			},
 		});
@@ -85,8 +83,7 @@ describe("native workspace rich detail", () => {
 			// Metadata block.
 			expect(frame).toContain("Created:");
 			expect(frame).toContain("Priority:");
-			expect(frame).toContain("@alice, @Bob");
-			expect(frame).not.toContain("@@alice");
+			expect(frame).not.toContain("Assignee:");
 			expect(frame).not.toContain("Due:");
 			expect(frame).toContain("Milestone:");
 			expect(frame).toContain("Milestone m1");

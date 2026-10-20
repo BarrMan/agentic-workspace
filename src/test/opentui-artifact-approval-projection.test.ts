@@ -15,7 +15,6 @@ const task: Task = {
 	id: "BACK-23",
 	title: "Approval projection",
 	status: "To Do",
-	assignee: [],
 	createdDate: "2026-10-10",
 	labels: [],
 	dependencies: [],
@@ -34,7 +33,7 @@ async function setup() {
 	await mkdir(container, { recursive: true });
 	await writeFile(
 		join(container, "task.md"),
-		"---\ntask_schema_version: 3\nid: BACK-23\ntitle: Approval projection\nstatus: To Do\nassignee: []\ncreated_date: 2026-10-10\nlabels: []\ndependencies: []\n---\n\ntask record\n",
+		"---\ntask_schema_version: 3\nid: BACK-23\ntitle: Approval projection\nstatus: To Do\ncreated_date: 2026-10-10\nlabels: []\ndependencies: []\n---\n\ntask record\n",
 	);
 	const artifactsDir = join(container, "artifacts");
 	await mkdir(artifactsDir, { recursive: true });

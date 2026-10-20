@@ -3,6 +3,7 @@ import { mkdir } from "node:fs/promises";
 import { Writable } from "node:stream";
 import { runCli } from "../cli/register.ts";
 import { Core } from "../index.ts";
+import { taskListJson } from "../renderer/formatters/json-output.ts";
 import { createUniqueTestDir, initializeFilesystemTestProject, safeCleanup } from "./test-utils.ts";
 
 const createdDirs: string[] = [];
@@ -53,8 +54,7 @@ async function makeProject() {
 		title: "JSON task",
 		status: "In Progress",
 		type: "enhancement",
-		priority: "high",
-		assignee: ["@alex"],
+		priority: "High",
 		reporter: "@sam",
 		createdDate: "2026-07-14 09:30",
 		updatedDate: "2026-07-14 10:45",
@@ -82,6 +82,27 @@ describe("CLI JSON output", () => {
 		await Promise.all(createdDirs.map((dir) => safeCleanup(dir)));
 	});
 
+	it("normalizes created and updated offset timestamps to UTC while preserving due days", () => {
+		const { tasks } = taskListJson([
+			{
+				id: "TASK-1",
+				title: "Offset timestamps",
+				status: "To Do",
+				createdDate: "2026-08-10T00:30+15:00",
+				updatedDate: "2026-08-09T23:30-02:00",
+				dueDate: "2026-08-10",
+				labels: [],
+				dependencies: [],
+				isReady: true,
+			},
+		]);
+
+		expect(tasks).toHaveLength(1);
+		expect(tasks[0]?.createdAt).toBe("2026-08-09T09:30:00Z");
+		expect(tasks[0]?.updatedAt).toBe("2026-08-10T01:30:00Z");
+		expect(tasks[0]?.dueDate).toBe("2026-08-10");
+	});
+
 	it("returns a compact versioned task-list envelope", async () => {
 		const { runCli } = await makeProject();
 		const result = await runCli(["task", "list", "--json"]);
@@ -99,9 +120,8 @@ describe("CLI JSON output", () => {
 					title: "JSON task",
 					status: "In Progress",
 					type: "enhancement",
-					priority: "high",
+					priority: "High",
 					project: null,
-					assignees: ["@alex"],
 					reporter: "@sam",
 					labels: ["cli", "json"],
 					milestone: "m-1",
@@ -129,7 +149,6 @@ describe("CLI JSON output", () => {
 			id: "TASK-3",
 			title: "Bare task",
 			status: "To Do",
-			assignee: [],
 			createdDate: "2026-07-15 08:00",
 			labels: [],
 			dependencies: [],
@@ -190,6 +209,16 @@ describe("CLI JSON output", () => {
 		const markdown = await runCli(["task", "view", "TASK-3", "--json"]);
 		expect(markdown.exitCode).toBe(0);
 		expect(JSON.parse(markdown.stdout.toString()).task.description).toBe("First line\n\n- item with `code`");
+	});
+
+	it('resolves a created task priority of "high" to the configured label in JSON', async () => {
+		const { runCli } = await makeProject();
+		const created = await runCli(["task", "create", "Priority task", "--priority", "high"]);
+		expect(created.exitCode).toBe(0);
+
+		const viewed = await runCli(["task", "view", "TASK-2", "--json"]);
+		expect(viewed.exitCode).toBe(0);
+		expect(JSON.parse(viewed.stdout.toString()).task.priority).toBe("High");
 	});
 
 	it("preserves search rank and omits scores", async () => {

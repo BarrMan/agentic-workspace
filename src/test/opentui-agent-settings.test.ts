@@ -550,10 +550,11 @@ describe("native agent settings", () => {
 			expect(setup.captureCharFrame()).toContain("[x] Worktree per task");
 			expect(setup.captureCharFrame()).toContain("[ ] YOLO mode");
 			expect(setup.captureCharFrame()).toContain("[x] Auto-resume on restart");
+			expect(setup.captureCharFrame()).toContain("override permission");
+			expect(setup.captureCharFrame()).toContain("even when YOLO mode is off");
 			expect(setup.captureCharFrame()).toContain("--dangerously-skip-");
 			expect(setup.captureCharFrame()).toContain("Pi has no verified flag");
 			expect(setup.captureCharFrame()).toContain("never approves artifacts");
-			expect(setup.captureCharFrame()).toContain("not a security boundary under");
 			setup.mockInput.pressArrow("right");
 			await setup.flush();
 			expect(setup.captureCharFrame()).toContain("> [x] Worktree per task");

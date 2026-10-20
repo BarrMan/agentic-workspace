@@ -63,9 +63,9 @@ describe("Task ID Generation with Archives", () => {
 
 	it("should consider completed and archived tasks for ID generation", async () => {
 		// Create tasks 1-3
-		await core.createTaskFromInput({ title: "Task 1", status: "Todo" });
+		await core.createTaskFromInput({ title: "Task 1", status: "To Do" });
 		await core.createTaskFromInput({ title: "Task 2", status: "Done" });
-		await core.createTaskFromInput({ title: "Task 3", status: "Todo" });
+		await core.createTaskFromInput({ title: "Task 3", status: "To Do" });
 
 		// Archive task-1; its canonical ID remains occupied.
 		await core.archiveTask("task-1");
@@ -161,7 +161,6 @@ describe("Task ID Generation with Archives", () => {
 			id: "task-1.1", // Lowercase stored casing
 			title: "Historical Subtask",
 			status: "To Do",
-			assignee: [],
 			createdDate: "2025-01-01",
 			labels: [],
 			dependencies: [],

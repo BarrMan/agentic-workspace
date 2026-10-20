@@ -15,7 +15,6 @@ const task: Task = {
 	id: "TASK-1",
 	title: "Mode navigation",
 	status: "To Do",
-	assignee: [],
 	createdDate: "2026-01-01",
 	labels: [],
 	dependencies: [],

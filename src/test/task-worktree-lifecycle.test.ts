@@ -20,7 +20,6 @@ function newTask(id: string, title: string, status = "To Do"): Task {
 		id,
 		title,
 		status,
-		assignee: [],
 		createdDate: "2026-10-07",
 		labels: [],
 		dependencies: [],

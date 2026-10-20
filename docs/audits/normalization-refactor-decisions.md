@@ -1,42 +1,22 @@
-# Normalization and Regex Refactor Decisions
+# Normalization refactor: evidence and review index
 
-Companion to [normalization-and-regex-audit.md](normalization-and-regex-audit.md). This records the change boundary and why remaining candidates were left unchanged.
+Supporting implementation evidence, not a contract or a progress log. Behavior is owned by the linked [contracts](../README.md#durable-documents); this index records bounded code-review conclusions. A named implementation is not a claim that its policy is approved. Evidence is limited to the paths and checks stated here.
 
-## Change boundary
+| Decision / state | Owner contract | Implementation paths inspected | Evidence scope | Remaining issue |
+|---|---|---|---|---|
+| Task identity preserves the whole ID; numeric padding is significant. | [Tasks](../specs/tasks.md) | `src/model/task/task-id.ts`, `src/model/task/prefix-config.ts` | Contract inspected; current paths implement whole-ID identity. | None identified in this review. |
+| Status values use exact configured labels; no case/whitespace lookup aliases. | [Tasks](../specs/tasks.md) | `src/model/task/status.ts`, CLI status normalizers and wizard | Contract inspected; current status path uses configured labels. | None identified in this review. |
+| Assignees are removed; priority uses its approved configured-label representation. | [Tasks](../specs/tasks.md) | Task model, CLI, renderer, storage, related tests; `src/model/task/priority-config.ts` | Removed assignee model/filter paths are absent; serializer retains unknown assignee data until explicit migration. | Stored assignee policy is migration-only; do not claim data migration. |
+| Lifecycle/record path resolution uses path APIs; view-state migration is removed. | [Storage](../blueprints/storage.md), [Tasks](../specs/tasks.md) | `src/model/task/task-identity-index.ts`, `src/storage/view-state-store.ts`, `src/runtime/sessions.ts` | Named implementations inspected. | None identified in this review. |
+| Process termination uses process-library PID/name identity, not a PID start-time fence. | [Session runtime](../blueprints/session.md) | `src/lib/process-tree.ts` | Inspected: `@3leaps/sysprims` `processList`/`terminateTree`; PID and process name checked before termination. | PID reuse with same name is a residual risk; process-library tradeoffs in [open questions](normalization-refactor-open-questions.md#q7-process-library). |
+| Generated task IDs are opaque at storage boundaries; the CLI model argument accepts provider/model IDs without an exactly-one-slash restriction. | [Tasks](../specs/tasks.md); provider model-selection requirement not found in owner contract. | `src/cli/commands/agent-workspace.ts`, `src/model/task/task-id.ts` | Separate model-ID lane reports 2 tests and typecheck passed; fixtures cover slash-free, multi-slash, punctuation in calling-context validation only. | Does not verify valid-session persistence; close provider model-ID behavior in its owning contract if needed. |
+| Approved: native Temporal for strict due-date parsing; retain Luxon for date-only configured formatting with separately appended fixed `HH:mm`. Implemented and source-reviewed. | [Due dates](../specs/tasks.md#task-024-due-date-interpretation), [date format](../specs/configuration.md#config-016-date-format-tokens), [explicit migration](../specs/tasks.md#task-023-explicit-task-and-configuration-migration), [ADR-0010](../adr/0010-temporal-due-dates-luxon-display.md) | `src/model/task/due-date.ts`, `src/renderer/formatters/utc-date-display.ts`; explicit migration: `src/storage/task-config-migration.ts` | Independent source review PASS, scoped to all four findings: ownership map, UTC behavior, documentation, and regressions. Writer-reported 44 focused tests and typecheck passed; those checks are not claimed as independently reviewed. | Project-local role-policy review independently passed, scoped to the configured roles and fresh debug metadata. Migration owns task assignee/priority fields and root/resolved-project `default_assignee`/`date_format` only; matching custom task frontmatter remains untouched. Mixed/time-token formats are unsupported and left unchanged; no automatic config/data rewrite. |
+| Process listing/termination uses `@3leaps/sysprims`. | [Session runtime](../blueprints/session.md) | `src/lib/process-tree.ts` | Current imports and direct calls inspected. | Library tradeoff rationale retained in [open questions](normalization-refactor-open-questions.md#q7-process-library). |
+| Workspace-context validation, session sidecar guards, and recursive purge containment remain distinct safety checks. | [Session runtime](../blueprints/session.md), [Storage](../blueprints/storage.md) | `src/runtime/workspace-context.ts`, `src/runtime/sessions.ts`, `src/storage/storage.ts` | Current bounded implementations and storage contract inspected. | Detailed Q9.1–Q9.5 rationale is retained in [open questions](normalization-refactor-open-questions.md#q91-session-file-delete-guard). |
+| Launch environment is inherited without filtering; adapter launch sanitizers are removed. | [Session runtime](../blueprints/session.md) | `src/runtime/session-launch.ts`, provider adapters | Current conventions and source behavior inspected. | No environment filter is authorized; do not restore one from historical notes. |
+| Sanitizer removal preserves provider-owned preset intent; explicit bypass options are disclosed. | [Session runtime](../blueprints/session.md) | `src/runtime/session-launch.ts`, provider adapters | Current approved behavior noted; no runtime verification in this documentation task. | None identified in this review. |
+| Keybinding modifier matching remains app-specific. | [Renderer](../blueprints/renderer.md); persisted override policy has no identified detailed owner requirement. | `src/renderer/opentui/keybindings.ts`, `docs/research/keybinding-modifier-matching.md` | Research covers alternatives, input semantics, migration risks, and external sources; see [research](../research/keybinding-modifier-matching.md). | No approved migration; keybinding policy ownership should be clarified if changed. |
+| Task/config migration is explicit and has not been run against real user data; view-state migration is removed. | [Storage](../blueprints/storage.md) | `scripts/migrate-task-config.ts`, `src/storage/task-config-migration.ts`, `src/storage/view-state-store.ts` | Named files inspected; no real-data migration executed. | No data migration authorized by this review. |
+| CI and pre-commit checks exist; non-writing `bun run check` is part of verification alongside approved gates. | [CONVENTIONS](../CONVENTIONS.md#validation) | `.github/workflows/ci.yml`, `.husky/pre-commit`, `package.json` | Files exist; prior audit claim of absence was incorrect. Baseline `bun run check`: 39 errors, 100 warnings, 3 infos; no check run for this documentation edit. | The current baseline is not evidence for these documentation changes. |
 
-The refactor applied the behavior-preserving actions from the audit:
-
-- Ask preparation consumes the already prepared, sanitized preflight preset.
-- OpenCode adapters reuse the shared command helpers.
-- Redundant list normalization passes were removed; clearable-list semantics were preserved.
-- Canonical status lookup has one synchronous implementation.
-- Initialization uses nullish coalescing directly; policy-free project/type filter wrappers were removed.
-- Priority and process normalization avoid repeated work; renderer filter lists reuse the shared normalizer.
-- Unused process identity and pane-root probes were deleted.
-- Literal backslash replacement and literal message checks use native string operations.
-
-## Intentionally unchanged
-
-| Item | Why it remained unchanged |
-|---|---|
-| Cross-branch task discovery | Approved contract-alignment deletion executed: branch enumeration, Git-blob hydration, discovery configuration, and related tests were removed. |
-| `taskIdKey` and padded task IDs | Padding is part of task identity: `TASK-01` and `TASK-1` are different tasks. Delegating to numeric canonicalization would merge distinct IDs. |
-| Clearable-list parsing vs sanitization | Omitted input, explicit `[]`, and blank-only values deliberately produce different results. `parseClearableStringList` and `sanitizeClearableStringArray` operate at different stages and must not be merged. |
-| Status equality, lookup, and comparison keys | Lookup collapses all whitespace; equality preserves internal whitespace. The synchronous lookup was consolidated, but the distinct comparison keys remain because they answer different questions. |
-| Assignee and label equality | Assignee equality removes one leading `@` and collapses internal whitespace; label and generic comparison keys do not. These names document different domain rules. |
-| Priority label vs value | Configured labels preserve display casing; priority values are normalized lowercase. Resolution intentionally returns the value, not the configured spelling. |
-| Task lifecycle and record path normalization | Lifecycle prefix rewriting and absolute/worktree/nested-record path handling have different responsibilities. Treating one as a wrapper around the other would change path resolution. |
-| Process identity checks used for termination | PID plus start-time fencing is required for safe tree termination. Only probes with no production callers were deleted. |
-| Task-ID grammars, numeric option validation, escaped-prefix capture | These are strict validators with distinct diagnostics and matching scope, not generic string cleanup. |
-| Date, timezone, shell-syntax, Unicode model-ID, ownership-hash, pane/session-ID, and tmux-diagnostic regexes | Each encodes a grammar or trust-boundary rule. Replacing them with looser string checks would weaken validation. |
-| Process-table and CRLF/whitespace splitting | The regex is the appropriate split API for variable-width whitespace; `split(" ")` is not equivalent. |
-| Suffix alternatives and one-newline removal | Arrays of `endsWith` checks or CRLF-aware slicing are longer and easier to get wrong than the current expressions. |
-| Artifact path validation duplication | Schema, editor, and storage checks reject different cases, including lock/temp names and NUL input, and produce different diagnostics. Merging them risks weakening a boundary. |
-| Config alias normalization | Alias precedence is behavior. Deleting or flattening it requires a supported-configuration decision, not a local cleanup. |
-| Filesystem ownership and launch-environment sanitization | Repeated checks see different data at different boundaries, including adapter-added environment values. Consolidating them would reduce defense in depth. |
-| Keybinding modifier matcher | The existing loop is readable and the optional single-match cleanup has negligible benefit. |
-| Agent wrapper methods and Pi's sanitization hook | The hook is required by the interface. Replacing wrappers with function-valued members saves little and would not justify an interface change. |
-| Test-only terminal helpers | Ownership and handoff of terminal work are unresolved; absence of production callers does not establish safe deletion. |
-| Code-path heuristics and typed stale-approval errors | These are behavior improvements rather than regex or normalization simplifications, so they were left out of this change. |
-
-The shared conclusion is deliberate: no universal `isSafeId`, `isSafePath`, or `normalizeWhitespace` abstraction was introduced. The repeated expressions represent different grammars, boundaries, or failure behavior, and a common helper would make those distinctions easier to erase.
+Verification and completion reports must distinguish inspected code, test/typecheck output, and runtime evidence. Historical suite counts and task summaries are not current evidence. See [review and verification practice](../CONVENTIONS.md#review-and-verification).

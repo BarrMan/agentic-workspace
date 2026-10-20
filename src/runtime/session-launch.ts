@@ -33,6 +33,7 @@ export interface PrepareAgentLaunchOptions {
 	title?: string;
 	/** Durable session id, used to identify this launch's owned status sidecar. */
 	sessionId?: string;
+	taskId?: string;
 	/** Append the provider's verified auto-approval flag so the session does not prompt for permissions. */
 	yolo?: boolean;
 	/** Resolved immutable mode profile. */
@@ -43,6 +44,7 @@ export interface PrepareAgentLaunchOptions {
 	taskRoot?: string;
 	/** A resolved environment shared by session creation/preparation and final launch. */
 	environment?: Record<string, string>;
+	modeId?: string;
 }
 
 export interface PreflightedAgentLaunch {
@@ -69,9 +71,16 @@ async function launchEnvironment(
 	preset: AgentPreset,
 	paths: { projectDir: string; worktreeDir: string; taskDir: string },
 	resolved?: Record<string, string>,
+	childEnv: Record<string, string> = {},
 ): Promise<Record<string, string>> {
+	const identity = {
+		AGENTIC_WORKSPACE_CWD: paths.worktreeDir,
+		AGENTIC_WORKSPACE_TMUX_SOCKET: process.env.AGENTIC_WORKSPACE_TMUX_SOCKET?.trim() || "default",
+		...childEnv,
+	};
 	if (!resolved)
 		return await prepareHarnessEnvironment(preset.env, paths, {
+			childEnv: identity,
 			onWarning: warnEnvironment,
 		});
 	return {
@@ -79,6 +88,7 @@ async function launchEnvironment(
 		AGENTIC_WORKSPACE_PROJECT_DIR: paths.projectDir,
 		AGENTIC_WORKSPACE_WORKTREE_DIR: paths.worktreeDir,
 		AGENTIC_WORKSPACE_TASK_DIR: paths.taskDir,
+		...identity,
 	};
 }
 
@@ -90,13 +100,17 @@ export async function preflightAgentLaunch(
 	const projectDir = requestedOptions.repositoryRoot ?? requestedOptions.cwd;
 	const taskDir = requestedOptions.taskRoot ?? dirname(bootstrapPath);
 	const paths = { projectDir, worktreeDir: requestedOptions.cwd, taskDir };
-	const environment = await launchEnvironment(configuredPreset, paths, requestedOptions.environment);
+	const environment = await launchEnvironment(configuredPreset, paths, requestedOptions.environment, {
+		...(requestedOptions.taskId ? { AGENTIC_WORKSPACE_TASK_ID: requestedOptions.taskId } : {}),
+		...(requestedOptions.modeId ? { AGENTIC_WORKSPACE_MODE_ID: requestedOptions.modeId } : {}),
+		...(requestedOptions.sessionId ? { AGENTIC_WORKSPACE_SESSION_ID: requestedOptions.sessionId } : {}),
+	});
 	let preset = configuredPreset;
 	const options = { ...requestedOptions, environment };
 	preset = await resolveLaunchPreset(preset, { cwd: options.cwd, env: environment });
 	const agent = harnessRegistry.forPreset(preset.bootstrap);
 	const profiledPreset = agent.prepareProfile ? agent.prepareProfile(options.profile, preset) : preset;
-	const policyPreset = agent.sanitizeLaunchPreset(profiledPreset);
+	const policyPreset = profiledPreset;
 	let command = policyPreset.command;
 	if (options.yolo) {
 		const yoloFlag = agent.yoloFlag();
@@ -128,16 +142,19 @@ export async function prepareAgentLaunch(
 	preflight?: PreflightedAgentLaunch,
 ): Promise<PreparedAgentLaunch> {
 	const checked = preflight ?? (await preflightAgentLaunch(configuredPreset, bootstrapPath, requestedOptions));
-	return await prepareAgentLaunchResources(bootstrapPath, checked, requestedOptions.environment);
+	return await prepareAgentLaunchResources(bootstrapPath, checked, requestedOptions.environment ?? checked.environment);
 }
 
 /** Prepare resources from the exact validated request returned by preflight. */
 export async function prepareAgentLaunchResources(
 	bootstrapPath: string,
 	checked: PreflightedAgentLaunch,
-	requestedEnvironment: Record<string, string> | undefined = checked.options.environment,
+	requestedEnvironment: Record<string, string> = checked.environment,
 ): Promise<PreparedAgentLaunch> {
-	const { preset, options, agent, policyPreset, command, projectDir, taskDir, environment, adapterResult } = checked;
+	const { preset, options, agent, policyPreset, command, projectDir, taskDir, adapterResult } = checked;
+	const environment = { ...checked.environment };
+	if (requestedEnvironment.AGENTIC_WORKSPACE_WORKSPACE_CONTEXT !== undefined)
+		environment.AGENTIC_WORKSPACE_WORKSPACE_CONTEXT = requestedEnvironment.AGENTIC_WORKSPACE_WORKSPACE_CONTEXT;
 
 	const directory = await mkdtemp(join(tmpdir(), "agentic-workspace-agent-skill-"));
 	// The hook file lives in the temp dir; the sidecar lives at its deterministic per-session path
@@ -168,11 +185,6 @@ export async function prepareAgentLaunchResources(
 			);
 		}
 		const env = { ...environment };
-		if (requestedEnvironment) {
-			if (requestedEnvironment.AGENTIC_WORKSPACE_WORKSPACE_CONTEXT === undefined)
-				delete env.AGENTIC_WORKSPACE_WORKSPACE_CONTEXT;
-			else env.AGENTIC_WORKSPACE_WORKSPACE_CONTEXT = requestedEnvironment.AGENTIC_WORKSPACE_WORKSPACE_CONTEXT;
-		}
 		// Process-scoped status sidecar: unconditional for every caller of this chokepoint, so a
 		// CLI-created session is indistinguishable from a workspace-created one. Created inside the
 		// owned mkdtemp root (never the parent process environment, so it cannot leak) and removed
@@ -197,9 +209,26 @@ export async function prepareAgentLaunchResources(
 		});
 		const preparedEnvironment = {
 			...prepared.env,
+			...Object.fromEntries(
+				[
+					"AGENTIC_WORKSPACE_PROJECT_DIR",
+					"AGENTIC_WORKSPACE_WORKTREE_DIR",
+					"AGENTIC_WORKSPACE_TASK_DIR",
+					"AGENTIC_WORKSPACE_TASK_ID",
+					"AGENTIC_WORKSPACE_MODE_ID",
+					"AGENTIC_WORKSPACE_SESSION_ID",
+					"AGENTIC_WORKSPACE_CWD",
+					"AGENTIC_WORKSPACE_WORKSPACE_CONTEXT",
+					"AGENTIC_WORKSPACE_TMUX_SOCKET",
+				].flatMap((name) => (environment[name] === undefined ? [] : [[name, environment[name] as string]])),
+			),
 			AGENTIC_WORKSPACE_PROJECT_DIR: projectDir,
 			AGENTIC_WORKSPACE_WORKTREE_DIR: options.cwd,
 			AGENTIC_WORKSPACE_TASK_DIR: taskDir,
+			AGENTIC_WORKSPACE_CWD: options.cwd,
+			...(options.modeId ? { AGENTIC_WORKSPACE_MODE_ID: options.modeId } : {}),
+			...(options.sessionId ? { AGENTIC_WORKSPACE_SESSION_ID: options.sessionId } : {}),
+			AGENTIC_WORKSPACE_TMUX_SOCKET: environment.AGENTIC_WORKSPACE_TMUX_SOCKET ?? "default",
 		};
 		// A shell-owned trap also cleans durable tmux agents after this CLI has exited.
 		// The trap removes only our mkdtemp directory, never any project or user-owned path.
@@ -226,14 +255,30 @@ export async function prepareAgentAsk(
 	nativeSessionId: string,
 	question: string,
 	profile: ModeProfile,
-	roots: { repositoryRoot: string; taskRoot: string; cwd?: string },
+	roots: {
+		repositoryRoot: string;
+		taskRoot: string;
+		cwd?: string;
+		taskId?: string;
+		modeId?: string;
+		sessionId?: string;
+	},
 ): Promise<{ command: string; env: Record<string, string>; cleanup(): Promise<void> }> {
 	const worktreeDir = roots.cwd ?? roots.repositoryRoot;
-	const env = await launchEnvironment(configuredPreset, {
-		projectDir: roots.repositoryRoot,
-		worktreeDir,
-		taskDir: roots.taskRoot,
-	});
+	const env = await launchEnvironment(
+		configuredPreset,
+		{
+			projectDir: roots.repositoryRoot,
+			worktreeDir,
+			taskDir: roots.taskRoot,
+		},
+		undefined,
+		{
+			...(roots.taskId ? { AGENTIC_WORKSPACE_TASK_ID: roots.taskId } : {}),
+			...(roots.modeId ? { AGENTIC_WORKSPACE_MODE_ID: roots.modeId } : {}),
+			...(roots.sessionId ? { AGENTIC_WORKSPACE_SESSION_ID: roots.sessionId } : {}),
+		},
+	);
 	const preset = await resolveLaunchPreset(configuredPreset, { cwd: worktreeDir, env });
 	const preflight = await preflightAgentLaunch(preset, join(tmpdir(), "agentic-workspace-agent-ask-bootstrap.md"), {
 		cwd: worktreeDir,
@@ -281,9 +326,27 @@ export async function prepareAgentAsk(
 			command: `/bin/sh -c ${quote(`exec ${command}`)}`,
 			env: {
 				...prepared.env,
+				...Object.fromEntries(
+					[
+						"AGENTIC_WORKSPACE_PROJECT_DIR",
+						"AGENTIC_WORKSPACE_WORKTREE_DIR",
+						"AGENTIC_WORKSPACE_TASK_DIR",
+						"AGENTIC_WORKSPACE_TASK_ID",
+						"AGENTIC_WORKSPACE_MODE_ID",
+						"AGENTIC_WORKSPACE_SESSION_ID",
+						"AGENTIC_WORKSPACE_CWD",
+						"AGENTIC_WORKSPACE_WORKSPACE_CONTEXT",
+						"AGENTIC_WORKSPACE_TMUX_SOCKET",
+					].flatMap((name) => (env[name] === undefined ? [] : [[name, env[name] as string]])),
+				),
 				AGENTIC_WORKSPACE_PROJECT_DIR: roots.repositoryRoot,
 				AGENTIC_WORKSPACE_WORKTREE_DIR: worktreeDir,
 				AGENTIC_WORKSPACE_TASK_DIR: roots.taskRoot,
+				AGENTIC_WORKSPACE_CWD: worktreeDir,
+				...(roots.taskId ? { AGENTIC_WORKSPACE_TASK_ID: roots.taskId } : {}),
+				...(roots.modeId ? { AGENTIC_WORKSPACE_MODE_ID: roots.modeId } : {}),
+				...(roots.sessionId ? { AGENTIC_WORKSPACE_SESSION_ID: roots.sessionId } : {}),
+				AGENTIC_WORKSPACE_TMUX_SOCKET: env.AGENTIC_WORKSPACE_TMUX_SOCKET ?? "default",
 			},
 			cleanup,
 		};

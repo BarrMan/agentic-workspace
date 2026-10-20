@@ -9,7 +9,6 @@ import {
 	TextAttributes,
 	TextRenderable,
 } from "@opentui/core";
-import { formatAssignee } from "../../model/task/assignee-filter.ts";
 import { getMilestoneLabel } from "../../model/task/milestones.ts";
 import type { Milestone, Task } from "../../model/types.ts";
 import type { Board, BoardMoveCommit } from "./board/models/board.ts";
@@ -143,10 +142,7 @@ function boardRows(board: Board, props: OpenTuiBoardProps, lanes: readonly Lane[
 
 function selectedTaskContent(task: Task | undefined): string {
 	if (!task) return "No task selected";
-	const assignees = task.assignee.map(formatAssignee).filter((assignee) => assignee !== null);
-	const metadata = [task.priority, task.type, assignees.length ? assignees.join(", ") : undefined]
-		.filter((value): value is string => Boolean(value))
-		.join(" · ");
+	const metadata = [task.priority, task.type].filter((value): value is string => Boolean(value)).join(" · ");
 	return metadata ? `${task.id}: ${task.title} · ${metadata}` : `${task.id}: ${task.title}`;
 }
 

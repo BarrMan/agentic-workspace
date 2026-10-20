@@ -9,12 +9,10 @@ function normalizeConfiguredStatuses(statuses: string[]): { ordered: string[]; c
 
 	for (const status of statuses ?? []) {
 		if (typeof status !== "string") continue;
-		const trimmed = status.trim();
-		if (!trimmed) continue;
-		const key = statusComparisonKey(trimmed);
-		if (!canonicalByKey.has(key)) canonicalByKey.set(key, trimmed);
+		const key = statusComparisonKey(status);
+		if (!canonicalByKey.has(key)) canonicalByKey.set(key, status);
 		if (seen.has(key)) continue;
-		ordered.push(trimmed);
+		ordered.push(status);
 		seen.add(key);
 	}
 
@@ -33,11 +31,10 @@ function buildKanbanStatusGroups(
 	}
 
 	for (const task of tasks) {
-		const raw = (task.status ?? "").trim();
+		const raw = task.status ?? "";
 		if (!raw) continue;
 		const key = statusComparisonKey(raw);
 		const canonical = canonicalByKey.get(key) ?? raw;
-		if (!canonicalByKey.has(key)) canonicalByKey.set(key, canonical);
 		if (!groupedTasks.has(canonical)) {
 			groupedTasks.set(canonical, []);
 		}

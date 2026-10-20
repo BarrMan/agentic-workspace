@@ -1,4 +1,4 @@
-import { formatStoredDate } from "../lib/date.ts";
+import { DateTime } from "luxon";
 import { taskIdsEqual } from "../model/task/task-id.ts";
 import { withoutVacatedTaskLinks } from "../model/task/task-links.ts";
 import type { Task } from "../model/types.ts";
@@ -58,7 +58,7 @@ export class VacatedTaskReferenceService {
 
 	async write(cleanup: VacatedIdCleanup): Promise<{ cleanedTaskIds: string[]; filePaths: string[] }> {
 		const filePaths: string[] = [];
-		const updatedDate = formatStoredDate();
+		const updatedDate = DateTime.utc().toFormat("yyyy-MM-dd HH:mm");
 		for (const task of cleanup.active) {
 			const updated = { ...task, updatedDate };
 			filePaths.push(await this.storage.saveTask(updated));

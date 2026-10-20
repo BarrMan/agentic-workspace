@@ -1,4 +1,4 @@
-import { type Command, InvalidArgumentError } from "commander";
+import type { Command } from "commander";
 
 /**
  * Paging for CLI lists, named after options agents already know: `git log --max-count --skip`
@@ -46,26 +46,12 @@ export const LIST_WINDOW_OUTPUT_HELP =
 export function addListWindowOptions(command: Command): Command {
 	return command
 		.option("--max-count <n>", "print at most n items after filtering and sorting", (value) =>
-			parseListWindowInteger(value, "--max-count", `${commandName(command)} --help`),
+			Number.parseInt(value, 10),
 		)
-		.option("--skip <n>", "leave out the first n items after filtering and sorting", (value) => {
-			const rawValue = value.trim();
-			if (!/^\d+$/.test(rawValue)) {
-				throw new InvalidArgumentError("--skip must be a non-negative integer (0 or greater).");
-			}
-			return Number(rawValue);
-		})
+		.option("--skip <n>", "leave out the first n items after filtering and sorting", (value) =>
+			Number.parseInt(value, 10),
+		)
 		.option("--count", "print only the number of items");
-}
-
-function parseListWindowInteger(value: string, optionName: string, helpCommand: string): number {
-	const rawValue = value.trim();
-	if (!/^[1-9]\d*$/.test(rawValue)) {
-		throw new InvalidArgumentError(
-			`${optionName} must be a positive integer (1 or greater). Try '${helpCommand}' for options.`,
-		);
-	}
-	return Number.parseInt(rawValue, 10);
 }
 
 function reportInvalidOption(message: string, helpCommand: string | undefined): null {
@@ -103,8 +89,8 @@ export function parseListWindow(
 	if (options.count && options.json) {
 		return reportInvalidOption("--count cannot be combined with --json.", helpCommand);
 	}
-	const maxCount = options.maxCount;
-	const skip = options.skip;
+	const maxCount = options.maxCount === undefined ? undefined : Math.max(0, options.maxCount);
+	const skip = options.skip === undefined ? undefined : Math.max(0, options.skip);
 	return {
 		skip: skip ?? 0,
 		maxCount,

@@ -5,7 +5,7 @@ import { DEFAULT_STATUSES, FALLBACK_STATUS } from "../model/constants.ts";
 import { TaskCollectionFilterError } from "../model/errors/task-collection.ts";
 import { AmbiguousTaskIdError } from "../model/errors/task-id.ts";
 import { DependencyValidator } from "../model/task/dependency-validator.ts";
-import { formatValidPriorityValues, resolvePriorityValue } from "../model/task/priority-config.ts";
+import { formatValidPriorityValues, resolvePriorityLabel } from "../model/task/priority-config.ts";
 import { DEFAULT_ORDINAL_STEP, resolveOrdinalConflicts } from "../model/task/reorder.ts";
 import { formatValidStatuses, getCanonicalStatuses } from "../model/task/status.ts";
 import { TaskCollection as TaskCollectionModel } from "../model/task/task-collection.ts";
@@ -58,7 +58,6 @@ export type { TaskReadOptions } from "./task-query-workflow.ts";
 export type TaskCollectionFilterInput = {
 	status?: string;
 	excludeStatus?: string[];
-	assignee?: string;
 	priority?: string;
 	labels?: string[];
 };
@@ -222,7 +221,7 @@ export class Core {
 	/** Shared validation for collection surfaces before applying a prepared task graph. */
 	async resolveCollectionFilters(input: TaskCollectionFilterInput): Promise<TaskListFilter> {
 		const config = await this.storage.loadConfig();
-		const priority = input.priority ? resolvePriorityValue(input.priority, config) : undefined;
+		const priority = input.priority ? resolvePriorityLabel(input.priority, config) : undefined;
 		if (input.priority && !priority)
 			throw new TaskCollectionFilterError(
 				`Invalid priority filter. Valid values are: ${formatValidPriorityValues(config)}`,
@@ -235,7 +234,6 @@ export class Core {
 		return {
 			status: input.status || undefined,
 			excludeStatus: statuses.values.length ? statuses.values : undefined,
-			assignee: input.assignee || undefined,
 			priority,
 			labels: input.labels?.length ? input.labels : undefined,
 		};

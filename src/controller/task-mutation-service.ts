@@ -1,9 +1,9 @@
-import { formatStoredDate } from "../lib/date.ts";
+import { DateTime } from "luxon";
 import { AmbiguousTaskIdError } from "../model/errors/task-id.ts";
 import type { ResolvedAgentConfiguration } from "../model/session/types.ts";
 import { DependencyValidator } from "../model/task/dependency-validator.ts";
 import { generateNextId, generateNextSubtaskId, getPrefixForType } from "../model/task/prefix-config.ts";
-import { formatValidPriorityValues, resolvePriorityValue } from "../model/task/priority-config.ts";
+import { formatValidPriorityValues, resolvePriorityLabel } from "../model/task/priority-config.ts";
 import {
 	formatValidProjectValues,
 	getProjectValues,
@@ -27,7 +27,6 @@ function buildUpdatedDateComparableTask(task: Task): Record<string, unknown> {
 		id: task.id,
 		title: task.title,
 		status: task.status,
-		assignee: task.assignee ?? [],
 		reporter: task.reporter,
 		createdDate: task.createdDate,
 		dueDate: task.dueDate,
@@ -185,7 +184,7 @@ export class ProjectTaskMutations {
 	async normalizePriority(value: string | undefined): Promise<string | undefined> {
 		if (value === undefined || value.trim() === "") return undefined;
 		const config = await this.storage.loadConfig();
-		const normalized = resolvePriorityValue(value, config);
+		const normalized = resolvePriorityLabel(value, config);
 		if (!normalized)
 			throw new Error(`Invalid priority: ${value}. Valid values are: ${formatValidPriorityValues(config)}`);
 		return normalized;
@@ -238,7 +237,7 @@ export class ProjectTaskMutations {
 		const original = await this.storage.loadTask(task.id, { includeArchived: true });
 		const previousStatus = original?.status ?? "";
 		const statusChanged = previousStatus !== (task.status ?? "");
-		if (hasUpdatedDateRelevantChanges(original, task)) task.updatedDate = formatStoredDate();
+		if (hasUpdatedDateRelevantChanges(original, task)) task.updatedDate = DateTime.utc().toFormat("yyyy-MM-dd HH:mm");
 		else if (original?.updatedDate) task.updatedDate = original.updatedDate;
 		else delete task.updatedDate;
 		const filepath = await this.storage.saveTask(task);

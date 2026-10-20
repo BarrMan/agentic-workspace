@@ -77,6 +77,12 @@ describe("mode settings draft", () => {
 		expect(() => draft.validate()).not.toThrow();
 	});
 
+	test("does not validate opaque explicit model IDs in settings", () => {
+		const draft = new ModeSettingsDraft(configuration());
+		profile(draft, "build").model = { kind: "explicit", id: "model\nwith spaces;anything" };
+		expect(() => draft.validate()).not.toThrow();
+	});
+
 	test("rejects reserved, absolute, and traversing artifact paths for declarations and approval indicators", () => {
 		for (const path of [
 			"task.md",

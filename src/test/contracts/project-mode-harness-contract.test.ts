@@ -1,10 +1,9 @@
-import { afterAll, afterEach, beforeAll, describe, expect, it, mock } from "bun:test";
+import { afterAll, afterEach, beforeAll, describe, expect, it } from "bun:test";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { TmuxCommandError } from "libtmux";
 import { Core } from "../../controller/agentic-workspace.ts";
-import * as processTree from "../../lib/process-tree.ts";
 import type { AgentConfiguration, AgentPreset } from "../../model/session/types.ts";
 import { buildAgentResumeCommand } from "../../runtime/bootstrap.ts";
 import type { ProcessRunner, TmuxServer } from "../../runtime/sessions.ts";
@@ -13,20 +12,21 @@ import {
 	loadAgentConfiguration,
 	upsertAgentConfiguration,
 } from "../../storage/config.ts";
-import { disableHarnessReadiness, writePiCapture } from "../agent-test-helpers.ts";
+import { disableHarnessReadiness, startPaneProcess, writePiCapture } from "../agent-test-helpers.ts";
 import { initializeTestProject } from "../test-utils.ts";
 
-mock.module("../../lib/process-tree.ts", () => ({
-	...processTree,
-	terminateProcessTree: async () => "terminated",
-}));
 const { AgentSessionService } = await import("../../runtime/sessions.ts");
 
 let restoreHarnessReadiness: (() => void) | undefined;
-beforeAll(() => {
+let paneProcess: Awaited<ReturnType<typeof startPaneProcess>>;
+beforeAll(async () => {
 	restoreHarnessReadiness = disableHarnessReadiness();
+	paneProcess = await startPaneProcess();
 });
-afterAll(() => restoreHarnessReadiness?.());
+afterAll(async () => {
+	restoreHarnessReadiness?.();
+	await paneProcess?.stop();
+});
 
 type Pane = {
 	id: string;
@@ -93,7 +93,7 @@ class CapturedHarness implements ProcessRunner, TmuxServer {
 					session_name: this.sessions.get(id) ?? "",
 					pane_id: id,
 					pane_dead: this.dead.has(id) ? "1" : "0",
-					pane_pid: "4242",
+					pane_pid: String(paneProcess.pid),
 					window_id: `@${id.slice(1)}`,
 					pane_title: metadata.pane_title ?? "",
 				};
@@ -103,6 +103,7 @@ class CapturedHarness implements ProcessRunner, TmuxServer {
 		if (command === "display-message") {
 			const target = args[args.indexOf("-t") + 1] ?? "";
 			if (args.includes("#{pid}")) return ["4242"];
+			if (args.at(-1) === "#{pane_pid}") return [String(paneProcess.pid)];
 			if (args.includes("#{pane_pid} #{pane_dead}")) {
 				if (!this.sessions.has(target))
 					throw new TmuxCommandError({
@@ -111,7 +112,7 @@ class CapturedHarness implements ProcessRunner, TmuxServer {
 						target,
 						stderr: [`can't find pane: ${target}`],
 					});
-				return [`4242 ${this.dead.has(target) ? "1" : "0"}`];
+				return [`${paneProcess.pid} ${this.dead.has(target) ? "1" : "0"}`];
 			}
 			if (args.some((arg) => arg.includes("@agentic_workspace_launch_resources"))) {
 				if (!this.sessions.has(target))

@@ -194,3 +194,7 @@ Create, resume, and stop are Controller operations: [Controller](controller.md#c
 - Start and resume occur only from an explicit Controller operation, with one attempt. No timer, signal, or cleanup path retries.
 - Terminal-backend code lives only in Renderer. SessionRuntime exposes the abstract boundary.
 - Turn completion is not execution exit. Initial delivery happens once.
+- Workspace-context shape is validated across the process boundary; ownership is checked separately and is never inferred from shape validation.
+- Child processes inherit the parent environment unchanged; no environment variables are stripped. Workspace/session identities and selected tmux socket are explicitly set and protected from preset/adapter replacement; inherited credentials are exposed as an accepted consequence.
+- Process identity is PID plus process name, without start-time or UID fencing. Inspection failure or unknown identity fails closed and never authorizes termination or clean completion; same-name PID reuse is an accepted limitation.
+- Tmux takeover ownership fields remain separate typed values and are compared independently, never concatenated and reparsed. Missing or ambiguous ownership fails closed. Tmux absence requires a structured nonzero tmux result followed by a successful exact session inventory check; inspection, permission, and timeout failures are not absence and never authorize cleanup.

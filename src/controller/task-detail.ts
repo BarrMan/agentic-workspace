@@ -80,8 +80,8 @@ export function toTaskDetail(task: Task, corpus: TaskCorpus): TaskDetail {
  * Attach readiness to a whole list in one pass over the corpus.
  *
  * The index is built once and every task answers from it, so a list interface never resolves
- * dependencies per row. The corpus is the whole project, never the list: `--status` and
- * `--assignee` narrow what is displayed, and readiness must still see the dependencies they hid.
+ * dependencies per row. The corpus is the whole project, never the list: list filters narrow what
+ * is displayed, and readiness must still see the dependencies they hide.
  */
 export function withReadiness(tasks: readonly Task[], corpus: TaskCorpus): TaskListItem[] {
 	const { readinessGraph } = taskDetailGraphs(corpus);

@@ -8,5 +8,5 @@ export function getTerminalStatus(statuses: readonly string[]): string | null {
 
 export function isTerminalStatus(status: string | null | undefined, statuses: readonly string[]): boolean {
 	const terminalStatus = getTerminalStatus(statuses);
-	return terminalStatus !== null && statusComparisonKey(status) === statusComparisonKey(terminalStatus);
+	return terminalStatus !== null && statusComparisonKey(status) === terminalStatus;
 }

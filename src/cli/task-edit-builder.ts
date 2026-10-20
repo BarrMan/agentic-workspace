@@ -1,5 +1,4 @@
 import { normalizeStringList } from "../lib/string-list.ts";
-import { normalizeAssignees } from "../model/task/assignee-filter.ts";
 import type { TaskUpdateInput } from "../model/types.ts";
 import type { TaskEditArgs } from "./task-edit-args.ts";
 
@@ -33,7 +32,6 @@ function assignSanitizedList(
 		| "labels"
 		| "addLabels"
 		| "removeLabels"
-		| "assignee"
 		| "dependencies"
 		| "references"
 		| "addReferences"
@@ -54,10 +52,6 @@ function assignTaskLists(updateInput: TaskUpdateInput, args: TaskEditArgs): void
 	assignSanitizedList(updateInput, "labels", args.labels, true);
 	assignSanitizedList(updateInput, "addLabels", args.addLabels);
 	assignSanitizedList(updateInput, "removeLabels", args.removeLabels);
-	if (args.assignee !== undefined) {
-		const assignee = normalizeAssignees(args.assignee);
-		updateInput.assignee = assignee.length > 0 || args.assignee.length === 0 ? assignee : undefined;
-	}
 	assignSanitizedList(updateInput, "dependencies", args.dependencies, true);
 	assignSanitizedList(updateInput, "references", args.references, true);
 	assignSanitizedList(updateInput, "addReferences", args.addReferences);

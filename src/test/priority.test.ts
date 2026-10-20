@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { getPriorityOptions, getPriorityRank, resolvePriorityValue } from "../model/task/priority-config.ts";
+import { getPriorityRank, resolvePriorityLabel } from "../model/task/priority-config.ts";
 import type { Task } from "../model/types.ts";
 import { FileSystem } from "../storage/file-system.ts";
 import { parseTask } from "../storage/markdown/parser.ts";
@@ -8,31 +8,17 @@ import { createUniqueTestDir, safeCleanup } from "./test-utils.ts";
 
 describe("Priority functionality", () => {
 	describe("priority configuration", () => {
-		it("normalizes configured priorities while preserving labels", () => {
+		it("normalizes configured priority labels", () => {
 			const config = { priorities: ["Very High", "High", "Medium", "Low", "Very Low"] };
 
-			expect(getPriorityOptions(config)).toEqual([
-				{ label: "Very High", value: "very high" },
-				{ label: "High", value: "high" },
-				{ label: "Medium", value: "medium" },
-				{ label: "Low", value: "low" },
-				{ label: "Very Low", value: "very low" },
-			]);
-			expect(resolvePriorityValue("VERY HIGH", config)).toBe("very high");
-			expect(getPriorityRank("very high", config)).toBe(5);
-			expect(getPriorityRank("very low", config)).toBe(1);
+			expect(resolvePriorityLabel("VERY HIGH", config)).toBe("Very High");
+			expect(getPriorityRank("Very High", config)).toBe(5);
+			expect(getPriorityRank("Very Low", config)).toBe(1);
 		});
 
-		it("keeps the first normalized spelling and configured order, falling back when empty", () => {
-			expect(getPriorityOptions(["  Urgent   Work ", "urgent work", "Normal", "  "])).toEqual([
-				{ label: "Urgent Work", value: "urgent work" },
-				{ label: "Normal", value: "normal" },
-			]);
-			expect(getPriorityOptions(["", "   "])).toEqual([
-				{ label: "High", value: "high" },
-				{ label: "Medium", value: "medium" },
-				{ label: "Low", value: "low" },
-			]);
+		it("uses configured priority labels directly", () => {
+			expect(resolvePriorityLabel(" urgent   work ", ["Urgent Work", "Normal"])).toBe("Urgent Work");
+			expect(resolvePriorityLabel("Urgent", ["Urgent Work", "Normal"])).toBeUndefined();
 		});
 
 		it("round-trips configured priorities through config.yml", async () => {
@@ -64,7 +50,6 @@ id: task-1
 title: "Custom priority task"
 status: "To Do"
 priority: Very High
-assignee: []
 created_date: "2025-06-20"
 labels: []
 dependencies: []
@@ -85,7 +70,6 @@ task_schema_version: 3
 id: task-1
 title: "No priority task"
 status: "To Do"
-assignee: []
 created_date: "2025-06-20"
 labels: []
 dependencies: []
@@ -107,7 +91,6 @@ id: task-1
 title: "Mixed case priority"
 status: "To Do"
 priority: HIGH
-assignee: []
 created_date: "2025-06-20"
 labels: []
 dependencies: []
@@ -129,7 +112,6 @@ This task has mixed case priority.`;
 				id: "task-1",
 				title: "No priority task",
 				status: "To Do",
-				assignee: [],
 				createdDate: "2025-06-20",
 				labels: [],
 				dependencies: [],
@@ -149,7 +131,6 @@ This task has mixed case priority.`;
 					id: "task-1",
 					title: `${priority} priority task`,
 					status: "To Do",
-					assignee: [],
 					createdDate: "2025-06-20",
 					labels: [],
 					dependencies: [],

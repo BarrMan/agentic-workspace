@@ -64,7 +64,6 @@ export function serializeConfig(config: AgenticWorkspaceConfig): string {
 	const lines = [
 		...(config.agentConfiguration ? [`agent_configuration: ${JSON.stringify(config.agentConfiguration)}`] : []),
 		...serializeOptional("project_name", config.projectName, true),
-		...serializeList("default_assignee", config.defaultAssignee),
 		...serializeOptional("default_reporter", config.defaultReporter, true),
 		...serializeOptional("default_status", config.defaultStatus, true),
 		...serializeList("statuses", config.statuses, true),
@@ -72,7 +71,7 @@ export function serializeConfig(config: AgenticWorkspaceConfig): string {
 		...serializeList("types", config.types),
 		...serializeList("priorities", config.priorities),
 		...serializeList("projects", config.projects),
-		`date_format: ${config.dateFormat}`,
+		`date_format: ${JSON.stringify(config.dateFormat)}`,
 		...serializeOptional("max_column_width", config.maxColumnWidth || undefined),
 		...serializeOptional("default_editor", config.defaultEditor, true),
 		...(typeof config.autoOpenBrowser === "boolean" ? [`auto_open_browser: ${config.autoOpenBrowser}`] : []),

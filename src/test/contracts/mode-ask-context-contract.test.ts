@@ -1,22 +1,26 @@
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, spyOn } from "bun:test";
+import { afterAll, afterEach, beforeAll, describe, expect, it } from "bun:test";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { TmuxCommandError } from "libtmux";
 import { Core } from "../../controller/agentic-workspace.ts";
-import * as processTree from "../../lib/process-tree.ts";
 import { AgentSessionService, type ProcessRunner, type TmuxServer } from "../../runtime/sessions.ts";
 import type { WorkspaceContext } from "../../runtime/workspace-context.ts";
 import { getDefaultModeCatalog, initializeAgentConfiguration, upsertAgentConfiguration } from "../../storage/config.ts";
 import { SessionStore } from "../../storage/session-store.ts";
-import { disableHarnessReadiness, writePiCapture } from "../agent-test-helpers.ts";
+import { disableHarnessReadiness, startPaneProcess, writePiCapture } from "../agent-test-helpers.ts";
 import { initializeTestProject } from "../test-utils.ts";
 
 let restoreHarnessReadiness: (() => void) | undefined;
-beforeAll(() => {
+let paneProcess: Awaited<ReturnType<typeof startPaneProcess>>;
+beforeAll(async () => {
 	restoreHarnessReadiness = disableHarnessReadiness();
+	paneProcess = await startPaneProcess();
 });
-afterAll(() => restoreHarnessReadiness?.());
+afterAll(async () => {
+	restoreHarnessReadiness?.();
+	await paneProcess?.stop();
+});
 
 type Pane = {
 	id: string;
@@ -92,11 +96,12 @@ class FakeHarness implements ProcessRunner, TmuxServer {
 		}
 		if (command === "display-message") {
 			if (args.includes("#{pid}")) return ["4242"];
+			if (args.at(-1) === "#{pane_pid}") return [String(paneProcess.pid)];
 			if (args.some((arg) => arg.includes("@agentic_workspace_launch_resources"))) {
 				const paneId = args[args.indexOf("-t") + 1] ?? "";
 				return [this.metadata.get(paneId)?.["@agentic_workspace_launch_resources"] ?? ""];
 			}
-			if (args.includes("#{pane_pid} #{pane_dead}")) return ["4242 0"];
+			if (args.includes("#{pane_pid} #{pane_dead}")) return [`${paneProcess.pid} 0`];
 			return ["%1 0"];
 		}
 		return [];
@@ -137,12 +142,7 @@ class FakeHarness implements ProcessRunner, TmuxServer {
 describe("mode ask ownership through the public service", () => {
 	const roots: string[] = [];
 	const previousConfigHomes: Array<string | undefined> = [];
-	let processMocks: Array<{ mockRestore(): void }> = [];
-	beforeEach(() => {
-		processMocks = [spyOn(processTree, "terminateProcessTree").mockResolvedValue("terminated")];
-	});
 	afterEach(async () => {
-		for (const mock of processMocks) mock.mockRestore();
 		const previous = previousConfigHomes.pop();
 		if (previous === undefined) delete process.env.XDG_CONFIG_HOME;
 		else process.env.XDG_CONFIG_HOME = previous;

@@ -30,7 +30,7 @@ This contract defines task identity and data, project storage, artifacts, work c
 
 ### TASK-001: Task scope and fields
 
-**Description:** A task is a unit of work scoped to a project directory, whether or not that directory uses Git. Its editable business fields are title, description, type, priority, milestone, labels, and assignee; each may be optional, and none is made mandatory by this list. Assignee identity is case-insensitive and accepts an optional leading `@`; display spelling is preserved, and identity comparison does not automatically rewrite stored data. See [identity and reference resolution](../CONVENTIONS.md#identity-and-reference-resolution).
+**Description:** A task is a unit of work scoped to a project directory, whether or not that directory uses Git. Its editable business fields are title, description, type, priority, milestone, and labels; each may be optional, and none is made mandatory by this list. Priority stores and displays one configured label.
 
 **Trigger:** A task is created or edited.
 
@@ -38,25 +38,25 @@ This contract defines task identity and data, project storage, artifacts, work c
 
 **Behavior:**
 1. Scope each task to its project directory, whether or not it uses Git.
-2. Allow each listed editable business field, including assignee, to be optional.
+2. Allow each listed editable business field to be optional.
 
 **Outcome:** No listed field is made mandatory.
 
 **Failures:** None.
 
 **Acceptance Criteria:**
-- A task is scoped to a project directory with or without Git; each listed field may be absent. Assignee matching follows the shared identity-key convention without changing stored display spelling.
+- A task is scoped to a project directory with or without Git; each listed field may be absent. Priority is the exact configured label, with no separate comparison value.
 
 ### TASK-002: Creation and status configuration
 
-**Description:** Task statuses come from project configuration, and the CLI directs users to edit the configured status list in the configuration file. Creation produces a task directly, allocates its ID under a creation lock using the persisted task counter, and saves the new record without overwriting an existing target. Subsequent task actions operate on that task identity. The application does not provide draft promotion or demotion.
+**Description:** Task statuses come from project configuration and use the exact configured labels; status matching does not ignore whitespace or otherwise resolve spelling variants. Existing stored statuses are not rewritten by status matching. The CLI directs users to edit the configured status list in the configuration file. Creation produces a task directly, allocates its ID under a creation lock using the persisted task counter, and saves the new record without overwriting an existing target. Subsequent task actions operate on that task identity. The application does not provide draft promotion or demotion.
 
 **Trigger:** A task is created or its status is used.
 
 **Preconditions:** Project status configuration is available.
 
 **Behavior:**
-1. Use configured statuses and direct CLI users to edit the configured list in the configuration file.
+1. Use exact configured status labels and direct CLI users to edit the configured list in the configuration file; do not match whitespace-insensitive spelling variants or rewrite stored status values.
 2. Create and save a task directly, allocating its ID under the creation lock and persisted-counter procedure in TASK-003.
 3. Use that task identity for subsequent actions; do not provide draft promotion or demotion.
 
@@ -65,7 +65,7 @@ This contract defines task identity and data, project storage, artifacts, work c
 **Failures:** None.
 
 **Acceptance Criteria:**
-- Configured statuses, direct creation under a creation lock, and no draft promotion or demotion are observed.
+- Status values match exact configured labels without whitespace-insensitive lookup or rewriting stored values; direct creation under a creation lock and no draft promotion or demotion are observed.
 
 ### TASK-003: Task identity
 
@@ -78,7 +78,7 @@ This contract defines task identity and data, project storage, artifacts, work c
 **Behavior:**
 1. Accept `PREFIX-NUMBER` with optional dotted numeric subtask segments. Uppercase the complete input ID at the outer API boundary for lookup, write new IDs in uppercase, and compare IDs case-insensitively. Preserve every numeric segment exactly, including leading zeroes; stored casing does not change identity.
 2. Reject alphanumeric IDs. Do not normalize numeric segments, look up bare numbers, infer prefixes, or scan task records for allocation after bootstrap.
-3. Persist `task-counter.json` in the directory that owns the create lock (shared across linked worktrees; otherwise the AgenticWorkspace directory). Its per-prefix shape is `{ "TASK": { "next": 2 }, "OPS": { "next": 2 } }`; each `next` is the last allocated top-level number for that prefix. Under the create lock, increment that prefix's `next`, atomically persist the counter using a temporary file and rename, then attempt a create-only save for the resulting ID. If the target container already exists, consume another number and retry. Never decrement or reuse a number.
+3. Persist `task-counter.json` in the directory that owns the create lock (shared across linked worktrees; otherwise the AgenticWorkspace directory). Its per-prefix shape is `{ "TASK": { "next": 2 }, "OPS": { "next": 2 } }`; each `next` is the next unused top-level number for that prefix. Under the create lock, allocate that number, increment `next`, and atomically persist the counter using a temporary file and rename before attempting a create-only save for the resulting ID. If the target container already exists, consume another number and retry. Existing counter values retain their meaning and are not reinterpreted. Never decrement or reuse a number.
 4. If a prefix entry is missing, bootstrap it once from the maximum existing top-level task number for that prefix across active, completed, and archived task containers, including sibling worktrees as needed (use zero if none exist), and persist it. There is no per-create scan. A corrupt counter is an error; do not scan as a fallback. Never bypass the create lock.
 5. Do not reuse allocated or archived IDs, and do not merge or repair duplicate records.
 6. Report record identity collisions with both record paths and fail closed rather than guessing; reject ambiguous task IDs.
@@ -89,7 +89,7 @@ This contract defines task identity and data, project storage, artifacts, work c
 
 **Acceptance Criteria:**
 - New IDs are uppercase and existing stored casing is preserved; comparisons ignore case. `TASK-01` and `TASK-1` remain distinct; numeric segments are never stripped or padded.
-- Allocation uses the per-prefix counter in `task-counter.json` under the create lock, atomically persists increments before create-only save, and consumes another number on target-container conflict. A missing prefix entry is bootstrapped once from the maximum existing top-level number across active, completed, and archived tasks (including sibling worktrees as needed); allocation does not scan per create. Corrupt counters fail without scanning.
+- Allocation uses the per-prefix next-unused number in `task-counter.json` under the create lock, atomically persists increments before create-only save, and consumes another number on target-container conflict. Existing counter values are not reinterpreted. A missing prefix entry is bootstrapped once from the maximum existing top-level number across active, completed, and archived tasks (including sibling worktrees as needed); allocation does not scan per create. Corrupt counters fail without scanning.
 - Lookup does not normalize numeric segments, accept bare numbers, or infer prefixes; archived IDs are not reused and identity collisions fail closed.
 
 ### TASK-004: Dependencies
@@ -406,7 +406,7 @@ This contract defines task identity and data, project storage, artifacts, work c
 
 ### TASK-020: CLI task operations
 
-**Description:** Tasks can be listed and viewed through the CLI. The CLI supports editing an existing task by replacing its title and description.
+**Description:** Tasks can be listed and viewed through the CLI. `--max-count` and `--skip` accept zero and negative values, with negative values clamped to zero; `--limit` behavior is unchanged. The CLI supports editing an existing task by replacing its title and description.
 
 **Trigger:** The user lists, views, or edits a task through the CLI.
 
@@ -414,14 +414,15 @@ This contract defines task identity and data, project storage, artifacts, work c
 
 **Behavior:**
 1. List and view tasks.
-2. Edit an existing task by replacing its title and description.
+2. For list paging, allow zero and negative `--max-count` and `--skip` values and clamp negative values to zero; leave `--limit` behavior unchanged.
+3. Edit an existing task by replacing its title and description.
 
 **Outcome:** The CLI presents task listings and views and supports title/description replacement.
 
 **Failures:** None.
 
 **Acceptance Criteria:**
-- CLI users can list and view tasks and replace an existing task's title and description.
+- CLI users can list and view tasks, with negative `--max-count` and `--skip` values clamped to zero and unchanged `--limit` behavior, and replace an existing task's title and description.
 
 ### TASK-021: Artifact path containment
 
@@ -464,6 +465,53 @@ This contract defines task identity and data, project storage, artifacts, work c
 - A terminal-status task is refused archive; running sessions must be stopped explicitly, and completed work uses completion/cleanup instead.
 - If archive fails or is cancelled, the operation does not report successful archival unless the task container was moved.
 
+### TASK-023: Explicit task and configuration migration
+
+**Description:** Assignees are not a task field or supported feature. The explicit task/config migration removes task-record assignee and migrates task-record priority values; in root and resolved project configuration it migrates only `default_assignee` and `date_format` as specified by [CONFIG-015](configuration.md#config-015-priority-labels) and [CONFIG-016](configuration.md#config-016-date-format-tokens). Custom task frontmatter named `date_format` or `default_assignee` is preserved unchanged, as are task bodies, other unknown/custom frontmatter, approvals, artifacts, and timestamps. Ordinary loading never rewrites records.
+
+**Trigger:** The explicit task/config migration is run with `bun scripts/migrate-task-config.ts <project target>`.
+
+**Preconditions:** The migration is invoked for a project target. Its bounded scope is the `default_assignee` and `date_format` keys in root and resolved project configuration, plus assignee and priority fields in task records in active, completed, and archived task directories. It does not migrate custom task frontmatter with matching configuration-key names.
+
+**Behavior:**
+1. Remove assignee frontmatter and migrate priority values in each migrated task record.
+2. Preserve task bodies and custom task frontmatter, including `date_format` and `default_assignee`, as well as approvals, artifacts, and timestamps.
+3. Migrate only root/project `default_assignee` and `date_format` values under CONFIG-015 and CONFIG-016; report values that cannot be migrated and leave them unchanged.
+4. An invocation with no migration work writes no manifest and creates no state root or manifest directory. For a nonempty invocation, write the manifest before record rewrites, report partial completion truthfully, and use source/target hashes for exactly-once handling.
+5. Report files or values that cannot be matched or migrated; do not rewrite them speculatively.
+6. Do not perform task/config migration or rewriting during ordinary load.
+
+**Outcome:** The bounded task/config migration completes or reports partial completion; matched records no longer contain assignee data, and unrelated and unrecognized content is preserved.
+
+**Failures:** Report unmatched files/values and partial completion; leave unresolved content untouched.
+
+**Acceptance Criteria:**
+- `bun scripts/migrate-task-config.ts <project target>` migrates only `default_assignee` and `date_format` in root/resolved project configuration, and assignee/priority fields in active/completed/archived task records; custom task frontmatter with matching key names is preserved. Its no-op, manifest, exactly-once, and partial-completion behavior is as specified above; ordinary load does not rewrite records.
+
+### TASK-024: Due-date interpretation
+
+**Description:** Due dates are strictly validated using native Temporal parsing. A timestamp's due day is the calendar day written in the input; an explicit offset does not move that day. Standard offsets accepted by Temporal, including offsets beyond ±14 hours, are accepted. Date parsing and timestamp display follow [ADR-0010](../adr/0010-temporal-due-dates-luxon-display.md).
+
+**Trigger:** A due date is supplied or displayed.
+
+**Preconditions:** The due-date input is available.
+
+**Behavior:**
+1. Strictly validate date-only values and timestamps using native Temporal parsing; accept only forms supported by Temporal, without adding a parallel shape or offset-range grammar.
+2. Preserve the timestamp's written calendar day as its due date; do not convert the due day by applying its offset.
+3. Reject malformed or invalid calendar dates through Temporal parsing; do not add a separate date-shape or offset-range grammar.
+4. Preserve existing UTC timestamp display semantics. A date-only configured display pattern uses Luxon; timestamp time is appended separately as fixed `HH:mm`.
+
+**Outcome:** Due dates retain the written calendar day and invalid date/time input is rejected.
+
+**Failures:** Invalid Temporal date/time input is rejected without changing the stored value.
+
+**Acceptance Criteria:**
+- Date-only and timestamp inputs are strictly validated by native Temporal parsing, without a parallel shape or offset-range grammar.
+- Standard Temporal-supported offsets, including `+15:00`, are accepted; offset magnitude is not restricted by an app-specific ±14-hour cutoff.
+- An explicit offset never changes the due day derived from the timestamp's written date.
+- Timestamp display retains the approved UTC semantics; configured date formatting is date-only Luxon formatting with separately appended fixed `HH:mm`.
+
 ## States and Transitions
 
 ### Task lifecycle
@@ -492,6 +540,8 @@ This contract defines task identity and data, project storage, artifacts, work c
 - Status-only Done retains the worktree; explicit completion/cleanup removes the worktree and branch.
 - Dependencies remain informational and survive completion; they do not automatically gate launch or completion.
 - Archived task IDs remain reserved and are not reused.
+- Assignees are absent from task records and all create/update interfaces; removal uses TASK-023 and is never an ordinary-load side effect.
+- Priority is stored and displayed as one configured label.
 - Provider-owned configuration, data, and state are never managed or modified.
 - When confirmed destructive execution cleanup is required, cleanup precedes tracking/resource removal; failure evidence and truthful reporting are preserved.
 

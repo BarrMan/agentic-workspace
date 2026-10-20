@@ -1,6 +1,6 @@
 import type { Core } from "../../../index.ts";
 import { normalizeStringList, toStringArray } from "../../../lib/string-list.ts";
-import { formatValidPriorityValues, resolvePriorityValue } from "../../../model/task/priority-config.ts";
+import { formatValidPriorityValues, resolvePriorityLabel } from "../../../model/task/priority-config.ts";
 import { formatValidStatuses } from "../../../model/task/status.ts";
 import type { TaskUpdateInput } from "../../../model/types.ts";
 import type { TaskEditArgs } from "../../task-edit-args.ts";
@@ -60,7 +60,7 @@ async function addPriorityOption(
 ): Promise<ParseResult | undefined> {
 	if (!options.priority) return undefined;
 	const config = await context.core.getStoredConfig();
-	const priority = resolvePriorityValue(String(options.priority), config);
+	const priority = resolvePriorityLabel(String(options.priority), config);
 	if (!priority)
 		return { error: `Invalid priority: ${options.priority}. Valid values are: ${formatValidPriorityValues(config)}` };
 	args.priority = priority;
@@ -108,7 +108,6 @@ function parseListOptions(options: Record<string, unknown>): ParseResult | TaskE
 	addListValue(args, "labels", options.label, options.clearLabels);
 	addDelimitedValue(args, "addLabels", options.addLabel);
 	addDelimitedValue(args, "removeLabels", options.removeLabel);
-	addClearableValue(args, "assignee", options.assignee);
 	addClearableValue(
 		args,
 		"dependencies",

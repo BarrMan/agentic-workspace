@@ -1,11 +1,9 @@
 import type { TaskDetail } from "../../controller/task-detail.ts";
-import { formatUtcDateForDisplay, type UtcDateDisplayOptions } from "../../lib/utc-date-display.ts";
-import { formatAssignee } from "../../model/task/assignee-filter.ts";
-import { formatPriorityLabel } from "../../model/task/priority-config.ts";
 import { TaskOrdering } from "../../model/task/task-ordering.ts";
 import { formatDependencyGraphLines } from "./dependency-graph-text.ts";
 import type { TaskArtifactProjection } from "./json-output.ts";
 import { formatStatusWithIcon } from "./status-icon.ts";
+import { formatUtcDateForDisplay, type UtcDateDisplayOptions } from "./utc-date-display.ts";
 
 export type TaskPlainTextOptions = {
 	filePathOverride?: string;
@@ -14,18 +12,9 @@ export type TaskPlainTextOptions = {
 
 const plainDateDisplayOptions: UtcDateDisplayOptions = { appendUtcLabel: true };
 
-export function formatDateForDisplay(dateStr: string, options: UtcDateDisplayOptions = {}): string {
-	return formatUtcDateForDisplay(dateStr, options);
-}
-
 function formatPriority(priority?: string): string | null {
 	if (!priority) return null;
-	return formatPriorityLabel(priority);
-}
-
-function formatAssignees(assignee?: string[]): string | null {
-	const names = assignee?.map(formatAssignee).filter((name) => name !== null) ?? [];
-	return names.length ? names.join(", ") : null;
+	return priority;
 }
 
 function formatSubtaskLines(subtasks: Array<{ id: string; title: string }>): string[] {
@@ -43,17 +32,15 @@ function formatDependencyGraphBlock(task: TaskDetail): string[] {
 
 function taskMetadataLines(task: TaskDetail): Array<string | null> {
 	const priorityLabel = formatPriority(task.priority);
-	const assigneeText = formatAssignees(task.assignee);
 	return [
 		priorityLabel && `Priority: ${priorityLabel}`,
 		task.type ? `Type: ${task.type}` : null,
 		task.project ? `Project: ${task.project}` : null,
 		task.ordinal !== undefined ? `Ordinal: ${task.ordinal}` : null,
-		assigneeText && `Assignee: ${assigneeText}`,
 		task.reporter ? `Reporter: ${task.reporter.startsWith("@") ? task.reporter : `@${task.reporter}`}` : null,
-		`Created: ${formatDateForDisplay(task.createdDate, plainDateDisplayOptions)}`,
-		task.updatedDate ? `Updated: ${formatDateForDisplay(task.updatedDate, plainDateDisplayOptions)}` : null,
-		task.dueDate ? `Due: ${formatDateForDisplay(task.dueDate)}` : null,
+		`Created: ${formatUtcDateForDisplay(task.createdDate, plainDateDisplayOptions)}`,
+		task.updatedDate ? `Updated: ${formatUtcDateForDisplay(task.updatedDate, plainDateDisplayOptions)}` : null,
+		task.dueDate ? `Due: ${formatUtcDateForDisplay(task.dueDate)}` : null,
 		task.labels?.length ? `Labels: ${task.labels.join(", ")}` : null,
 		task.milestone ? `Milestone: ${task.milestone}` : null,
 	];

@@ -18,7 +18,7 @@ async function fixture() {
 describe("generated hook command", () => {
 	it("pins the exact command bytes used by Claude hooks", () => {
 		expect(buildHookCommand("/tmp/owned/activity", "running")).toBe(
-			`sh -c 'unset IFS; set -f; umask 077; D='"'"'/tmp/owned/activity'"'"'; [ -n "$D" ] && [ -d "$D" ] || exit 0; printf %s running > "$D/status" 2>/dev/null; exit 0'`,
+			`sh -c 'set -f; umask 077; D='"'"'/tmp/owned/activity'"'"'; [ -n "$D" ] && [ -d "$D" ] || exit 0; printf %s running > "$D/status" 2>/dev/null; exit 0'`,
 		);
 	});
 

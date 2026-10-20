@@ -20,11 +20,7 @@ import {
 	type SessionSettings,
 } from "../../model/session/types.ts";
 import { profilePermissionSupport } from "../../runtime/agents/core/profile.ts";
-import {
-	AGENT_PRESENTATION_METADATA,
-	validateArtifactPath,
-	YOLO_PRESENTATION_EXPLANATION,
-} from "../../storage/config.ts";
+import { AGENT_PRESENTATION_METADATA, validateArtifactPath } from "../../storage/config.ts";
 import { mountOpenTuiModeModelPicker } from "./mode-model-picker.ts";
 import { ModeSettingsDraft, type ModeSettingsSave } from "./mode-settings-draft.ts";
 
@@ -605,7 +601,9 @@ export function mountOpenTuiAgentSettings(
 		"Create a git worktree per task and remove it when the task reaches Done.",
 	);
 	const yoloRow = new TextRenderable(renderer, { width: "100%", height: 1, wrapMode: "none", fg: text });
-	const yoloDescription = fieldDescription(YOLO_PRESENTATION_EXPLANATION);
+	const yoloDescription = fieldDescription(
+		"Permission bypass flags configured by an agent preset override permission restrictions even when YOLO mode is off. OpenCode uses --auto; Claude may use --dangerously-skip-permissions; Pi has no verified flag. Permission auto-acceptance never approves artifacts; only you may approve them or change .artifacts.json.",
+	);
 	const autoResumeRow = new TextRenderable(renderer, { width: "100%", height: 1, wrapMode: "none", fg: text });
 	const autoResumeDescription = fieldDescription(
 		"Automatically resume eligible native agent sessions after a workspace restart.",

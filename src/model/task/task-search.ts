@@ -7,11 +7,10 @@
  * Callers still decide which corpus to search: the local working copy or the cross-branch store.
  */
 
-import { comparisonKey } from "../../lib/comparison-key.ts";
 import type { LabelMatchMode, Task } from "../types.ts";
 import { matchesConfiguredFilter } from "./config-values.ts";
 import { labelComparisonKey } from "./label-filter.ts";
-import { normalizePriorityValue } from "./priority-config.ts";
+import { prioritiesEqual } from "./priority-config.ts";
 import { statusComparisonKey } from "./status.ts";
 import { taskIdsEqual } from "./task-id.ts";
 
@@ -37,8 +36,6 @@ export interface TaskFilterOptions {
 	type?: string | string[];
 	project?: string | string[];
 	priority?: string | string[];
-	assignee?: string | string[];
-	unassigned?: boolean;
 	labels?: string | string[];
 	labelMatch?: LabelMatchMode;
 	modifiedFiles?: string | string[];
@@ -69,7 +66,7 @@ export class TaskSearchIndex {
 	}
 
 	/**
-	 * Build the searchable text for one task. Labels and assignees are part of the searchable text
+	 * Build the searchable text for one task. Labels are part of the searchable text
 	 * on every surface, so `--search backend` finds a task labelled `backend` everywhere.
 	 */
 	static bodyText(task: TaskWithSearchableArtifacts): string {
@@ -77,7 +74,6 @@ export class TaskSearchIndex {
 		if (task.description) parts.push(task.description);
 		if (task.searchableArtifactText) parts.push(task.searchableArtifactText);
 		if (task.labels?.length) parts.push(task.labels.join("\n"));
-		if (task.assignee?.length) parts.push(task.assignee.join("\n"));
 		if (task.modifiedFiles?.length) parts.push(task.modifiedFiles.join("\n"));
 		return parts.join("\n\n");
 	}
@@ -127,24 +123,9 @@ export class TaskSearchIndex {
 			checks.push((task) => matchesConfiguredFilter(task.project, projects));
 		}
 
-		const priorities = new Set(
-			toList(options.priority)
-				.map((priority) => normalizePriorityValue(priority))
-				.filter((priority): priority is string => Boolean(priority)),
-		);
-		addSetCheck(checks, priorities, (task) => {
-			const priority = normalizePriorityValue(task.priority);
-			return Boolean(priority) && priorities.has(priority as string);
-		});
-
-		const assignees = new Set(toList(options.assignee).map(comparisonKey).filter(Boolean));
-		addSetCheck(checks, assignees, (task) =>
-			(task.assignee ?? []).some((value) => assignees.has(comparisonKey(value))),
-		);
-
-		if (options.unassigned) {
-			checks.push((task) => !(task.assignee ?? []).some((value) => comparisonKey(value).length > 0));
-		}
+		const priorities = toList(options.priority);
+		if (priorities.length)
+			checks.push((task) => priorities.some((priority) => prioritiesEqual(priority, task.priority)));
 
 		const requiredLabels = toList(options.labels)
 			.map(labelComparisonKey)
@@ -186,7 +167,7 @@ function createTaskIdSearchVariants(id: string): string[] {
 
 function normalizeStatusSet(values: string | string[] | undefined): Set<string> {
 	const list = Array.isArray(values) ? values : values ? [values] : [];
-	return new Set(list.map(statusComparisonKey).filter((value) => value.length > 0));
+	return new Set(list.filter((value) => value.trim().length > 0));
 }
 
 function statusMatchesSet(wanted: Set<string>, status: string | null | undefined): boolean {

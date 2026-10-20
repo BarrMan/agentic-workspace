@@ -38,7 +38,6 @@ task_schema_version: 3
 id: ${id}
 title: dependent
 status: To Do
-assignee: []
 created_date: '2026-09-27'
 labels: []
 ${dependencies}

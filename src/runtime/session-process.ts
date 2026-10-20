@@ -192,11 +192,11 @@ function firstLine(lines: readonly string[]): string {
  * tmux failure compares whole strings — the same wording embedded in a transport error must not
  * read as a missing pane.
  */
-export const missingPaneStderr = (sessionId: string): string => `tmux pane for session ${sessionId} not found`;
+const missingPaneStderr = (sessionId: string): string => `tmux pane for session ${sessionId} not found`;
 
 /** Resolve socket identity and routing environment once for both libtmux and bounded execution. */
 const sessionSocket = (requestedSocketName?: string) => {
-	const environment: NodeJS.ProcessEnv = { ...process.env, TMUX: "" };
+	const environment: NodeJS.ProcessEnv = { ...process.env };
 	return {
 		socketName: requestedSocketName ?? (environment.AGENTIC_WORKSPACE_TMUX_SOCKET?.trim() || "default"),
 		environment,
@@ -366,13 +366,16 @@ export class SessionProcess {
 		const pane = paneId ? await this.paneById(paneId) : undefined;
 		if (paneId && !pane) throw new Error(`Owned pane ${paneId} disappeared during stop for session ${session.id}.`);
 		const resources = (pane && (await this.launchResources(pane.id))) ?? this.launches.get(session.id)?.resources;
-		const panePid = pane
-			? Number.parseInt(firstLine(await this.server.cmd("display-message", ["-p", "-t", pane.id, "#{pane_pid}"])), 10)
+		const rawPanePid = pane
+			? firstLine(await this.server.cmd("display-message", ["-p", "-t", pane.id, "#{pane_pid}"])).trim()
 			: undefined;
-		const paneIdentity = processIdentity(panePid);
+		const panePid = rawPanePid !== undefined && /^\d+$/.test(rawPanePid) ? Number(rawPanePid) : undefined;
+		if (pane && (!panePid || !Number.isSafeInteger(panePid) || panePid <= 1))
+			throw new Error(`Could not safely identify pane process for session ${session.id}; refusing pane teardown.`);
+		const paneIdentity = pane ? processIdentity(panePid) : undefined;
 		if (resources) await this.validateLaunchResources(session, resources, true);
 		if (resources) await this.validateLaunchResources(session, resources, false);
-		if (panePid && Number.isSafeInteger(panePid) && paneIdentity) {
+		if (panePid && paneIdentity) {
 			const outcome = await terminateProcessTree(panePid, 1_000, paneIdentity);
 			if (outcome === "survivor")
 				throw new Error(`Could not prove agent process tree stopped for session ${session.id} (${outcome}).`);
@@ -381,7 +384,7 @@ export class SessionProcess {
 			try {
 				await pane.kill();
 			} catch (error) {
-				if (!(await this.sessionAbsent(session)))
+				if (!(await this.sessionAbsent(session, error)))
 					throw fail(
 						resources
 							? `Could not stop session ${session.id}: launch resources were cleaned, but tmux pane teardown failed`
@@ -406,41 +409,58 @@ export class SessionProcess {
 		try {
 			rows = await this.server.cmd(
 				"list-panes",
-				[
-					"-t",
-					`=${session.tmuxName}:`,
-					"-F",
-					"#{session_name}\t#{@agentic_workspace_root}\t#{@agentic_workspace_task}\t#{@agentic_workspace_session}\t#{@agentic_workspace_role}\t#{pane_id}\t#{pane_dead}",
-				],
+				["-t", `=${session.tmuxName}:`, "-F", "#{pane_id}"],
 				timeoutMs === undefined ? undefined : { timeoutMs },
 			);
 		} catch (error) {
 			try {
-				if (await this.sessionAbsent(session)) return undefined;
+				if (await this.sessionAbsent(session, error)) return undefined;
 			} catch {
 				// Keep the failed pane inspection as the diagnostic; a failed absence check is not proof.
 			}
 			const message = error instanceof Error ? error.message : String(error);
 			throw new Error(`Could not inspect tmux instance for session ${session.id}: ${message}`, { cause: error });
 		}
-		if (rows.length !== 1)
+		if (rows.length !== 1 || !/^%\d+$/.test(firstLine(rows)))
 			throw new Error(`Could not inspect tmux instance for session ${session.id}: expected exactly one pane.`);
-		const [name, root, taskId, sessionId, role, paneId, dead] = firstLine(rows).split("\t");
+		const paneId = firstLine(rows);
+		const readValue = async (format: string): Promise<string> => {
+			const values = await this.server.cmd("list-panes", ["-t", paneId, "-F", `#{${format}}`]);
+			if (values.length !== 1)
+				throw new Error(`Could not inspect tmux ownership value ${format} for session ${session.id}.`);
+			return firstLine(values);
+		};
+		let values: string[];
+		try {
+			values = await Promise.all([
+				readValue("session_name"),
+				readValue(PANE_OPTION_ROOT),
+				readValue(PANE_OPTION_TASK),
+				readValue(PANE_OPTION_SESSION),
+				readValue(PANE_OPTION_ROLE),
+				readValue("pane_id"),
+				readValue("pane_dead"),
+			]);
+		} catch (error) {
+			if (await this.sessionAbsent(session, error)) return undefined;
+			throw error;
+		}
+		const [name, root, taskId, sessionId, role, actualPaneId, dead] = values;
 		if (
 			name !== session.tmuxName ||
 			root !== this.rootDir ||
 			!taskIdsEqual(taskId ?? "", session.taskId) ||
 			sessionId !== session.id ||
 			!roles.includes(role ?? "") ||
-			!paneId ||
-			!/^%\d+$/.test(paneId) ||
+			actualPaneId !== paneId ||
 			(dead !== "0" && dead !== "1")
 		)
 			throw new Error(`Tmux instance ownership does not match session ${session.id}; refusing takeover.`);
 		return { paneId, dead: dead === "1" };
 	}
 
-	private async sessionAbsent(session: AgentSession): Promise<boolean> {
+	private async sessionAbsent(session: AgentSession, inspectionError: unknown): Promise<boolean> {
+		if (!(inspectionError instanceof TmuxCommandError) || inspectionError.exitCode === 0) return false;
 		const sessions = await this.server.cmd("list-sessions", ["-F", "#{session_name}"]);
 		return !sessions.some((name) => name === session.tmuxName);
 	}

@@ -90,7 +90,6 @@ async function createTask(
 		id,
 		title,
 		status: extra.status ?? "To Do",
-		assignee: [],
 		labels: [],
 		dependencies: [],
 		createdDate: "2026-08-08",

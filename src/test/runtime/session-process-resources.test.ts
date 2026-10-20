@@ -130,6 +130,17 @@ describe("persisted prepared launch resources", () => {
 							stderr: [`can't find session: ${session.tmuxName}`],
 							target: `=${session.tmuxName}:`,
 						});
+					const format = args.at(-1);
+					const values: Record<string, string> = {
+						"#{pane_id}": currentPaneId,
+						"#{session_name}": session.tmuxName,
+						"#{@agentic_workspace_root}": options.get("@agentic_workspace_root") ?? "",
+						"#{@agentic_workspace_task}": options.get("@agentic_workspace_task") ?? "",
+						"#{@agentic_workspace_session}": options.get("@agentic_workspace_session") ?? "",
+						"#{@agentic_workspace_role}": options.get("@agentic_workspace_role") ?? "",
+						"#{pane_dead}": malformedPaneProbe ? "unknown" : paneDead ? "1" : "0",
+					};
+					if (format && format in values) return [values[format]!];
 					return [
 						[
 							session.tmuxName,
@@ -152,6 +163,7 @@ describe("persisted prepared launch resources", () => {
 					});
 				if (command === "display-message" && args.at(-1) === "#{@agentic_workspace_launch_resources}")
 					return inventoryRows ?? [options.get("@agentic_workspace_launch_resources") ?? ""];
+				if (command === "display-message" && args.at(-1) === "#{pane_pid}") return ["4242"];
 				return [""];
 			},
 		} as unknown as TmuxServer;

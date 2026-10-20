@@ -9,7 +9,6 @@ const task: Task = {
 	id: "TASK-1",
 	title: "Schema-backed task",
 	status: "To Do",
-	assignee: ["@alex"],
 	createdDate: "2026-09-30 12:00",
 	labels: ["schema"],
 	dependencies: ["TASK-0"],
@@ -17,7 +16,7 @@ const task: Task = {
 };
 
 function taskMarkdown(frontmatter: string): string {
-	return `---\ntask_schema_version: 3\nid: TASK-1\ntitle: Schema-backed task\nstatus: To Do\nassignee: []\ncreated_date: '2026-09-30'\nlabels: []\n${frontmatter}\n---\n\nBody\n`;
+	return `---\ntask_schema_version: 3\nid: TASK-1\ntitle: Schema-backed task\nstatus: To Do\ncreated_date: '2026-09-30'\nlabels: []\n${frontmatter}\n---\n\nBody\n`;
 }
 
 describe("declarative task frontmatter schema", () => {
@@ -33,8 +32,12 @@ describe("declarative task frontmatter schema", () => {
 		expect(parseFrontmatter(resaved).data.custom_nested).toEqual({ keep: true });
 	});
 
-	it("rejects scalar assignees and non-string descriptions", () => {
-		expect(() => parseTask(taskMarkdown("assignee: '@alex'"))).toThrow("assignee must be a list");
+	it("preserves assignee frontmatter during an ordinary serialization", () => {
+		const serialized = serializeTask(task, { assignee: "alice" });
+		expect(parseFrontmatter(serialized).data.assignee).toBe("alice");
+	});
+
+	it("rejects non-string descriptions", () => {
 		expect(() => parseTask(taskMarkdown("description:\n  nested: value"))).toThrow("description must be a string");
 	});
 
@@ -44,6 +47,14 @@ describe("declarative task frontmatter schema", () => {
 		expect(() => parseTask(taskMarkdown("worktree_policy: sometimes"))).toThrow(TaskFrontmatterSchemaError);
 		expect(() => parseTask(taskMarkdown("worktree_policy: sometimes"))).toThrow(
 			"worktree_policy must be enabled or disabled",
+		);
+	});
+
+	it("validates real calendar dates in date fields", () => {
+		expect(parseTask(taskMarkdown("created_date: 2024-02-29")).createdDate).toBe("2024-02-29");
+		expect(() => parseTask(taskMarkdown("created_date: 2025-02-29"))).toThrow("created_date must be a date string");
+		expect(() => parseTask(taskMarkdown("created_date: '2026-09-30 24:00'"))).toThrow(
+			"created_date must be a date string",
 		);
 	});
 
@@ -61,7 +72,6 @@ id: TASK-1
 id: TASK-2
 title: Duplicate
 status: To Do
-assignee: []
 created_date: 2026-09-30
 labels: []
 ---

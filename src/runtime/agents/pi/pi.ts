@@ -158,10 +158,6 @@ export class PiAgent implements HarnessInterface {
 		return profile.model.kind === "explicit" ? withExplicitModel(preset, profile.model.id) : preset;
 	}
 
-	sanitizeLaunchPreset(preset: import("../../../model/session/types.ts").AgentPreset) {
-		return preset;
-	}
-
 	yoloFlag(): string | undefined {
 		return undefined;
 	}

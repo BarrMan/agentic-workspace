@@ -33,7 +33,6 @@ const parentTask: Task = {
 	id: "TASK-1",
 	title: "Fast local task",
 	status: "To Do",
-	assignee: [],
 	createdDate: "2026-08-10",
 	labels: ["local"],
 	dependencies: [],

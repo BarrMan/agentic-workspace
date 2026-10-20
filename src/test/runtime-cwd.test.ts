@@ -3,7 +3,7 @@ import { mkdir, mkdtemp, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { $ } from "bun";
-import { getAssignees, getLabels, getStatuses, getTaskIds } from "../cli/completions/data-providers.ts";
+import { getLabels, getStatuses, getTaskIds } from "../cli/completions/data-providers.ts";
 import { CliRuntime } from "../cli/runtime.ts";
 import { Core, createRuntimeCore } from "../controller/agentic-workspace.ts";
 import { AGENTIC_WORKSPACE_CWD_ENV, resolveRuntimeCwd } from "../lib/runtime-cwd.ts";
@@ -168,12 +168,11 @@ describe("resolveRuntimeCwd", () => {
 			const core = new Core(projectDir);
 			await initializeFilesystemTestProject(core, "Completion Project");
 			await mkdir(nestedDir, { recursive: true });
-			await core.createTaskFromInput({ title: "Completion task", labels: ["ui"], assignee: ["@alex"] });
+			await core.createTaskFromInput({ title: "Completion task", labels: ["ui"] });
 			await core.createTask({
 				id: "TASK-2",
 				title: "Completion variant",
 				status: "To Do",
-				assignee: [" Alex ", "@ALEX", "Bob"],
 				createdDate: "2026-01-01",
 				labels: [],
 				dependencies: [],
@@ -183,7 +182,6 @@ describe("resolveRuntimeCwd", () => {
 
 			expect(await getTaskIds()).toEqual(["TASK-1", "TASK-2"]);
 			expect(await getLabels()).toEqual(["ui"]);
-			expect(await getAssignees()).toEqual([" Alex ", "@alex", "Bob"]);
 		});
 
 		it("degrades to static fallbacks when no project is found", async () => {

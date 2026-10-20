@@ -37,12 +37,7 @@ import {
 	prepareAgentLaunchResources,
 } from "./session-launch.ts";
 import type { SessionProcess, TmuxServer } from "./session-process.ts";
-import {
-	deleteWorkspaceRequest,
-	WORKSPACE_CONTEXT_ENV,
-	type WorkspaceContext,
-	workspaceContextInto,
-} from "./workspace-context.ts";
+import { deleteWorkspaceRequest, type WorkspaceContext, workspaceContextInto } from "./workspace-context.ts";
 
 const NATIVE_SESSION_PANE_OPTION = "@agentic_workspace_native_session_id";
 
@@ -121,7 +116,6 @@ export async function prepareSessionLaunch(
 		profile: ModeProfile;
 		intent: SessionIntent;
 		prepare?: string;
-		clearWorkspaceContext?: boolean;
 		bootstrapBeforeCreate?: boolean;
 		preflight?: PreflightedAgentLaunch;
 		environment?: Record<string, string>;
@@ -134,17 +128,36 @@ export async function prepareSessionLaunch(
 		: options.environment
 			? { ...options.environment }
 			: await prepareHarnessEnvironment(preset.env, pathContext, {
+					childEnv: {
+						AGENTIC_WORKSPACE_TASK_ID: task.id,
+						AGENTIC_WORKSPACE_MODE_ID: modeId,
+						AGENTIC_WORKSPACE_SESSION_ID: record.id,
+						AGENTIC_WORKSPACE_CWD: pathContext.worktreeDir,
+						AGENTIC_WORKSPACE_TMUX_SOCKET: globalThis.process.env.AGENTIC_WORKSPACE_TMUX_SOCKET?.trim() || "default",
+					},
 					onWarning: (text) => {
 						warnings.push(text);
 						warnEnvironment(text);
 					},
 				});
+	Object.assign(environment, {
+		AGENTIC_WORKSPACE_PROJECT_DIR: pathContext.projectDir,
+		AGENTIC_WORKSPACE_WORKTREE_DIR: pathContext.worktreeDir,
+		AGENTIC_WORKSPACE_TASK_DIR: pathContext.taskDir,
+		AGENTIC_WORKSPACE_TASK_ID: task.id,
+		AGENTIC_WORKSPACE_MODE_ID: modeId,
+		AGENTIC_WORKSPACE_SESSION_ID: record.id,
+		AGENTIC_WORKSPACE_CWD: pathContext.worktreeDir,
+		AGENTIC_WORKSPACE_TMUX_SOCKET: globalThis.process.env.AGENTIC_WORKSPACE_TMUX_SOCKET?.trim() || "default",
+	});
 	const preflight =
 		options.preflight ??
 		(await preflightAgentLaunch(preset, record.bootstrapPath, {
 			cwd: pathContext.worktreeDir,
 			intent: options.intent,
 			sessionId: record.id,
+			taskId: task.id,
+			modeId,
 			yolo: settings.yoloMode,
 			profile: options.profile,
 			repositoryRoot: pathContext.projectDir,
@@ -154,7 +167,6 @@ export async function prepareSessionLaunch(
 	const nativeProvider = preflight.agent.nativeNamespace;
 	if (record.nativeProvider && nativeProvider && record.nativeProvider !== nativeProvider)
 		throw new Error(`Session ${record.id} belongs to provider ${record.nativeProvider}, not ${nativeProvider}.`);
-	if (options.clearWorkspaceContext) delete environment[WORKSPACE_CONTEXT_ENV];
 	if (options.bootstrapBeforeCreate)
 		await store.write(record.bootstrapPath, renderSessionBootstrap({ taskId: task.id }));
 	await process.assertNoPreparedResources(record);
@@ -513,6 +525,7 @@ export async function resumeExistingTarget(
 	task: Task,
 	target: {
 		record: AgentSession;
+		modeId: ModeId;
 		preset: AgentPreset;
 		profile: ModeProfile;
 		environment: Record<string, string>;
@@ -530,7 +543,9 @@ export async function resumeExistingTarget(
 	const preflight = await preflightAgentLaunch(target.preset, record.bootstrapPath, {
 		cwd: pathContext.worktreeDir,
 		intent: { kind: "resume", nativeSessionId: resumeNativeSessionId ?? "" },
+		taskId: task.id,
 		sessionId: record.id,
+		modeId: target.modeId,
 		yolo: target.settings.yoloMode,
 		profile,
 		repositoryRoot: pathContext.projectDir,

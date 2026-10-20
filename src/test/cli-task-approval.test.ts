@@ -56,7 +56,6 @@ describe("CLI task mode approval", () => {
 			id: "task-1",
 			title: "Approval target",
 			status: "To Do",
-			assignee: [],
 			createdDate: "2026-10-17",
 			labels: [],
 			dependencies: [],

@@ -4,7 +4,7 @@ import picocolors from "picocolors";
 import { normalizeStringList } from "../../../lib/string-list.ts";
 import { DEFAULT_STATUSES, FALLBACK_STATUS } from "../../../model/constants.ts";
 import { normalizeDueDate } from "../../../model/task/due-date.ts";
-import { getPriorityOptions, normalizePriorityValue } from "../../../model/task/priority-config.ts";
+import { getPriorityLabels, resolvePriorityLabel } from "../../../model/task/priority-config.ts";
 import { getProjectValues, resolveProjectValue } from "../../../model/task/project-config.ts";
 import { findCanonicalStatus } from "../../../model/task/status.ts";
 import { getTaskTypeValues, resolveTaskTypeValue } from "../../../model/task/task-type-config.ts";
@@ -20,7 +20,6 @@ interface TaskWizardValues {
 	type: string;
 	project: string;
 	dueDate: string;
-	assignee: string;
 	labels: string;
 	references: string;
 	documentation: string;
@@ -86,7 +85,7 @@ function buildStatusPromptValues(params: { statuses: string[]; mode: "create" | 
 	options: PromptChoice[];
 	initial: string;
 } {
-	const configuredStatuses = normalizeStringList(params.statuses) ?? [];
+	const configuredStatuses = params.statuses;
 	const baseStatuses = configuredStatuses.length > 0 ? configuredStatuses : [...DEFAULT_STATUSES];
 	const selectableStatuses = baseStatuses;
 	const options: PromptChoice[] = selectableStatuses.map((status) => ({
@@ -102,7 +101,7 @@ function buildStatusPromptValues(params: { statuses: string[]; mode: "create" | 
 		};
 	}
 
-	const initialStatus = params.initialStatus.trim();
+	const initialStatus = params.initialStatus;
 	if (!initialStatus) {
 		return {
 			options,
@@ -131,13 +130,10 @@ function buildPriorityPromptValues(
 	options: PromptChoice[];
 	initial: string;
 } {
-	const normalizedInitial = normalizePriorityValue(initialPriority) ?? "";
+	const normalizedInitial = resolvePriorityLabel(initialPriority, priorities) ?? "";
 	const options: PromptChoice[] = [
 		{ label: "None", value: "", hint: "No priority" },
-		...getPriorityOptions(priorities).map((priority) => ({
-			label: priority.label,
-			value: priority.value,
-		})),
+		...getPriorityLabels(priorities).map((priority) => ({ label: priority, value: priority })),
 	];
 	if (!normalizedInitial) {
 		return { options, initial: "" };
@@ -405,7 +401,6 @@ function buildWizardForm(params: Parameters<typeof runTaskWizardValues>[0]) {
 					]
 				: []),
 			field("dueDate", "Due date (YYYY-MM-DD; blank for none)", validateWizardDueDate),
-			field("assignee", unchanged(TASK_FIELD_LABELS.ASSIGNEE)),
 			field("labels", unchanged(TASK_FIELD_LABELS.LABELS)),
 			field("references", unchanged(TASK_FIELD_LABELS.REFERENCES)),
 			field("documentation", unchanged("Documentation")),
@@ -465,10 +460,8 @@ function normalizeWizardValues(
 	return {
 		...values,
 		title: values.title.trim(),
-		status: values.status.trim().length
-			? (findCanonicalStatus(values.status, params.statuses) ?? values.status.trim())
-			: "",
-		priority: normalizePriorityValue(values.priority) ?? "",
+		status: values.status.length ? (findCanonicalStatus(values.status, params.statuses) ?? values.status) : "",
+		priority: resolvePriorityLabel(values.priority, params.priorities) ?? "",
 		type: resolveTaskTypeValue(values.type, params.types) ?? values.type.trim(),
 		project: resolveProjectValue(values.project, params.projects) ?? values.project.trim(),
 		dueDate: normalizeDueDate(values.dueDate, "Due date") ?? "",
@@ -514,7 +507,6 @@ function toInitialWizardValues(input: { title?: string } & Partial<Task>): TaskW
 		type: input.type ?? "",
 		project: input.project ?? "",
 		dueDate: input.dueDate ?? "",
-		assignee: formatListInput(input.assignee),
 		labels: formatListInput(input.labels),
 		references: formatListInput(input.references),
 		documentation: formatListInput(input.documentation),
@@ -552,7 +544,6 @@ function buildTaskCreateInput(values: TaskWizardValues): TaskCreateInput {
 	setCreateText(input, "type", values.type);
 	setCreateText(input, "project", values.project);
 	setCreateValue(input, "dueDate", normalizeDueDate(values.dueDate, "Due date"));
-	setCreateList(input, "assignee", values.assignee);
 	setCreateList(input, "labels", values.labels);
 	setCreateList(input, "dependencies", values.dependencies);
 	setCreateList(input, "references", values.references);
@@ -616,6 +607,6 @@ function applyChangedNonBlankValue(input: TaskUpdateInput, key: string, initial:
 }
 
 function applyChangedListValues(input: TaskUpdateInput, initial: TaskWizardValues, values: TaskWizardValues): void {
-	for (const key of ["assignee", "labels", "dependencies", "references", "documentation"] as const)
+	for (const key of ["labels", "dependencies", "references", "documentation"] as const)
 		applyChangedList(initial[key], values[key], (items) => Object.assign(input, { [key]: items }));
 }

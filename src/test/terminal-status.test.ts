@@ -6,13 +6,13 @@ describe("terminal status helpers", () => {
 		expect(getTerminalStatus(["To Do", "Review", "Closed"])).toBe("Closed");
 	});
 
-	it("compares terminal statuses case-insensitively for URL and user input values", () => {
-		expect(isTerminalStatus("closed", ["To Do", "Review", "Closed"])).toBe(true);
-		expect(isTerminalStatus("CLOSED", ["To Do", "Review", "Closed"])).toBe(true);
+	it("compares terminal statuses exactly", () => {
+		expect(isTerminalStatus("Closed", ["To Do", "Review", "Closed"])).toBe(true);
+		expect(isTerminalStatus("closed", ["To Do", "Review", "Closed"])).toBe(false);
 		expect(isTerminalStatus("review", ["To Do", "Review", "Closed"])).toBe(false);
 	});
 
-	it("preserves internal spaces when comparing status names", () => {
+	it("does not alias internal whitespace", () => {
 		expect(isTerminalStatus("InProgress", ["To Do", "In Progress", "InProgress"])).toBe(true);
 		expect(isTerminalStatus("In Progress", ["To Do", "In Progress", "InProgress"])).toBe(false);
 	});

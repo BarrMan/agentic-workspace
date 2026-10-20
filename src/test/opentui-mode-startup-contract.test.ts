@@ -22,7 +22,6 @@ const task: Task = {
 	id: "BACK-1",
 	title: "Startup contract",
 	status: "To Do",
-	assignee: [],
 	createdDate: "2026-10-10",
 	labels: [],
 	dependencies: [],

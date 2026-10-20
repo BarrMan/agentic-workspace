@@ -6,7 +6,6 @@ import {
 	TextAttributes,
 	TextRenderable,
 } from "@opentui/core";
-import { formatAssignee } from "../../model/task/assignee-filter.ts";
 import type { Task } from "../../model/types.ts";
 import { createKeybindings, formatShortcut, keybindingPropagation, shortcutsConfig } from "./keybindings.ts";
 
@@ -49,14 +48,12 @@ const ACTION_OPTIONS: readonly ActionOption[] = [
 ];
 
 function metadata(task: Task): string {
-	const assignees = task.assignee.map(formatAssignee).filter((assignee) => assignee !== null);
 	const fields = [
 		`ID: ${task.id}`,
 		`Status: ${task.status}`,
 		task.type ? `Type: ${task.type}` : undefined,
 		task.priority ? `Priority: ${task.priority}` : undefined,
 		task.project ? `Project: ${task.project}` : undefined,
-		assignees.length ? `Assignees: ${assignees.join(", ")}` : undefined,
 		task.labels.length ? `Labels: ${task.labels.join(", ")}` : undefined,
 		task.milestone ? `Milestone: ${task.milestone}` : undefined,
 		task.parentTaskId ? `Parent: ${task.parentTaskId}` : undefined,

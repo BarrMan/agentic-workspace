@@ -9,7 +9,6 @@ const task = (id: string, status: string, ordinal: number, branch?: string): Tas
 	status,
 	ordinal,
 	branch,
-	assignee: [],
 	createdDate: "2025-01-01",
 	labels: [],
 	dependencies: [],

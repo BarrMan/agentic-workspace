@@ -6,17 +6,17 @@ describe("task search status filtering", () => {
 		id: `task-${index}`,
 		title: status,
 		status,
-		assignee: [],
 		createdDate: "2025-01-01",
 		labels: [],
 		dependencies: [],
 	}));
 
-	it("trims and matches statuses case-insensitively, dropping blank entries", () => {
-		expect(TaskSearchIndex.apply(tasks, { status: ["  TO DO ", "", "DONE"] }).map((task) => task.status)).toEqual([
+	it("matches exact labels and drops blank entries", () => {
+		expect(TaskSearchIndex.apply(tasks, { status: ["To Do", "", "Done"] }).map((task) => task.status)).toEqual([
 			"To Do",
 			"Done",
 		]);
+		expect(TaskSearchIndex.apply(tasks, { status: ["TO DO", " DONE "] })).toEqual([]);
 	});
 
 	it("keeps internal whitespace significant", () => {

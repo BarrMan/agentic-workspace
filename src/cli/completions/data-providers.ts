@@ -1,5 +1,4 @@
 import { type Core, createRuntimeCore } from "../../controller/agentic-workspace.ts";
-import { comparisonKey } from "../../lib/comparison-key.ts";
 import { DEFAULT_STATUSES } from "../../model/constants.ts";
 import { labelComparisonKey } from "../../model/task/label-filter.ts";
 import type { AgenticWorkspaceConfig } from "../../model/types.ts";
@@ -60,22 +59,5 @@ export async function getLabels(): Promise<string[]> {
 			}
 		}
 		return Array.from(labels.values()).sort();
-	}, []);
-}
-
-/**
- * Get unique assignees from all tasks
- */
-export async function getAssignees(): Promise<string[]> {
-	return await withCore(async (core) => {
-		const tasks = await core.loadStoredTasks();
-		const assignees = new Map<string, string>();
-		for (const task of tasks) {
-			for (const assignee of task.assignee) {
-				const key = comparisonKey(assignee);
-				if (key && !assignees.has(key)) assignees.set(key, assignee);
-			}
-		}
-		return Array.from(assignees.values()).sort();
 	}, []);
 }

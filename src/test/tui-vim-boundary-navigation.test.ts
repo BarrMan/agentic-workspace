@@ -10,7 +10,6 @@ function task(id: string, status = "To Do", visible = true): Task {
 		id,
 		title: `Task ${id}`,
 		status,
-		assignee: [],
 		createdDate: "2026-01-01",
 		labels: visible ? ["visible"] : [],
 		dependencies: [],

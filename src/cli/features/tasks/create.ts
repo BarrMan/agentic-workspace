@@ -1,5 +1,6 @@
 import type { Command, OptionValues } from "commander";
 import { Core } from "../../../index.ts";
+import { formatValidPriorityValues, resolvePriorityLabel } from "../../../model/task/priority-config.ts";
 import { addHelpSchema } from "../../commands/help-schema.ts";
 import type { CliRuntime } from "../../runtime.ts";
 import type { CliReadOutput } from "../read-output.ts";
@@ -19,6 +20,16 @@ async function createTask(
 	}
 	const core = new Core(await runtime.projectRoot());
 	await core.ensureConfigLoaded();
+	if (options.priority) {
+		const config = await core.getStoredConfig();
+		const priority = resolvePriorityLabel(String(options.priority), config);
+		if (!priority) {
+			console.error(`Invalid priority: ${options.priority}. Valid values are: ${formatValidPriorityValues(config)}`);
+			process.exitCode = 1;
+			return;
+		}
+		options.priority = priority;
+	}
 	const input = await buildTaskCreateInput(title, options, async (value) => value);
 	if (!input) return;
 	await createAndReportTask(core, input, {
@@ -31,7 +42,7 @@ export function registerTaskCreate(taskCmd: Command, runtime: CliRuntime, readOu
 		required: [{ name: "title", type: "String", description: "Task title" }],
 		optional: [
 			{ name: "description", type: "Markdown", description: "Task outcome and context" },
-			{ name: "assignee", type: "String[]", description: "Assignees (repeat --assignee)" },
+			{ name: "priority", type: "String", description: "Configured priority label" },
 			{ name: "label", type: "String[]", description: "Labels (repeat --label)" },
 			{ name: "depends-on / dep", type: "Task ID[]", description: "Dependencies (repeat either option)" },
 			{ name: "ref", type: "String[]", description: "References (repeat --ref)" },
@@ -43,12 +54,7 @@ export function registerTaskCreate(taskCmd: Command, runtime: CliRuntime, readOu
 		examples: ['agentic-workspace task create "Fix session expiry" --description "Ensure sessions expire"'],
 	})
 		.option("--description <text>", "task description")
-		.option(
-			"--assignee <name>",
-			"assign task (repeatable)",
-			(value, previous: string[] = []) => [...previous, value],
-			[],
-		)
+		.option("--priority <priority>", "configured priority label")
 		.option(
 			"--label <label>",
 			"add task label (repeatable)",

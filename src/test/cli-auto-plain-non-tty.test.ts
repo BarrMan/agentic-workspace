@@ -78,7 +78,6 @@ describe("CLI auto-plain behavior in non-TTY runs", () => {
 			id: "task-1",
 			title: "First Task",
 			status: "To Do",
-			assignee: [],
 			createdDate: "2026-01-01 00:00",
 			labels: [],
 			dependencies: [],

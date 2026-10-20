@@ -133,7 +133,7 @@ const ModeCatalogSchema = z
 				typeof profile.prompt !== "string" ||
 				!profile.model ||
 				!["default", "explicit"].includes(profile.model.kind) ||
-				(profile.model.kind === "explicit" && (!profile.model.id.trim() || /[\0\r\n]/.test(profile.model.id)))
+				(profile.model.kind === "explicit" && typeof profile.model.id !== "string")
 			) {
 				ctx.addIssue({
 					code: "custom",

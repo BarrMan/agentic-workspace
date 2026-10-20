@@ -13,7 +13,7 @@ const paths = (directory: string) => ({
 });
 
 describe("prepareHarnessEnvironment", () => {
-	it("continues sequential expansion when an earlier preset PATH hides cat", async () => {
+	it("continues sequential expansion with an earlier preset PATH", async () => {
 		const directory = await mkdtemp(join(tmpdir(), "agentic-workspace-harness-env-path-"));
 		try {
 			const warnings: string[] = [];
@@ -24,7 +24,7 @@ describe("prepareHarnessEnvironment", () => {
 			);
 			expect(result.PATH).toBe("/not/a/path");
 			expect(result.SECOND).toBe(join(directory, "task"));
-			expect(warnings).toEqual([]);
+			expect(warnings).toHaveLength(0);
 		} finally {
 			await rm(directory, { recursive: true, force: true });
 		}
@@ -78,17 +78,14 @@ describe("prepareHarnessEnvironment", () => {
 				AGENTIC_WORKSPACE_WORKTREE_DIR: directory,
 				AGENTIC_WORKSPACE_TASK_DIR: join(directory, "task"),
 			});
-			expect(result.AGENTIC_WORKSPACE_CWD).toBeUndefined();
-			expect(result.AGENTIC_WORKSPACE_TASK_ID).toBeUndefined();
+			expect(result.AGENTIC_WORKSPACE_CWD).toBe("/spaced root");
+			expect(result.AGENTIC_WORKSPACE_TASK_ID).toBe("parent-task");
 			expect(result.AGENTIC_WORKSPACE_SESSION_ID).toBe("old-session");
 			expect(result.AGENTIC_WORKSPACE_PROJECT_ROOT).toBe("/old-project");
 			expect(result.TASK_ID).toBe("stale-task");
 			expect(result.SESSION_ID).toBe("stale-session");
 			expect(result.AGENTIC_WORKSPACE_TMUX_SOCKET).toBe("parent-socket");
-			expect(warnings).toHaveLength(3);
-			expect(warnings.join(" ")).toContain("AGENTIC_WORKSPACE_PROJECT_DIR");
-			expect(warnings.join(" ")).toContain("AGENTIC_WORKSPACE_WORKTREE_DIR");
-			expect(warnings.join(" ")).toContain("AGENTIC_WORKSPACE_TASK_DIR");
+			expect(warnings).toEqual([]);
 			expect(inherited).toEqual(originalInherited);
 			expect(preset).toEqual(originalPreset);
 		} finally {

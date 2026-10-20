@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { Writable } from "node:stream";
 import { runCli } from "../cli/register.ts";
 import { Core } from "../index.ts";
-import { coreFileSystem, createUniqueTestDir, initializeFilesystemTestProject, safeCleanup } from "./test-utils.ts";
+import { createUniqueTestDir, initializeFilesystemTestProject, safeCleanup } from "./test-utils.ts";
 
 const cliCommand = ["agentic-workspace"];
 
@@ -72,18 +72,6 @@ async function setupPreservation(): Promise<{ dir: string; core: Core }> {
 }
 
 describe("Task edit section preservation", () => {
-	it("treats assignee casing and surrounding whitespace as a no-op", async () => {
-		const { dir, core } = await setupPreservation();
-		try {
-			await core.createTaskFromInput({ title: "Assignee identity", assignee: ["Alice"] });
-			const updated = await core.updateTaskFromInput("TASK-1", { assignee: ["alice"] });
-			expect(updated.assignee).toEqual(["Alice"]);
-			expect((await coreFileSystem(core).loadTask("TASK-1"))?.assignee).toEqual(["Alice"]);
-		} finally {
-			await safeCleanup(dir);
-		}
-	});
-
 	it("preserves a generic working artifact and description during edits", async () => {
 		const { dir, core } = await setupPreservation();
 		try {
@@ -92,7 +80,6 @@ describe("Task edit section preservation", () => {
 				id: "task-1",
 				title: "Full task test",
 				status: "To Do",
-				assignee: [],
 				createdDate: "2025-07-04",
 				labels: [],
 				dependencies: [],
@@ -125,7 +112,6 @@ describe("Task edit section preservation", () => {
 				id: "task-2",
 				title: "Agent summary update test",
 				status: "To Do",
-				assignee: [],
 				createdDate: "2025-07-04",
 				labels: [],
 				dependencies: [],
@@ -154,7 +140,6 @@ describe("Task edit section preservation", () => {
 				id: "task-3",
 				title: "Agent summary replace test",
 				status: "To Do",
-				assignee: [],
 				createdDate: "2025-07-04",
 				labels: [],
 				dependencies: [],
@@ -181,7 +166,6 @@ describe("Task edit section preservation", () => {
 				id: "task-4",
 				title: "Agent summary clear test",
 				status: "To Do",
-				assignee: [],
 				createdDate: "2025-07-04",
 				labels: [],
 				dependencies: [],
@@ -209,7 +193,6 @@ describe("Task edit section preservation", () => {
 				id: "task-5",
 				title: "Minimal task test",
 				status: "To Do",
-				assignee: [],
 				createdDate: "2025-07-04",
 				labels: [],
 				dependencies: [],

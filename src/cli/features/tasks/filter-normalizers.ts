@@ -1,5 +1,5 @@
 import type { Core } from "../../../index.ts";
-import { formatValidPriorityValues, resolvePriorityValue } from "../../../model/task/priority-config.ts";
+import { formatValidPriorityValues, resolvePriorityLabel } from "../../../model/task/priority-config.ts";
 import {
 	formatValidProjectValues,
 	getProjectValues,
@@ -25,7 +25,7 @@ export async function normalizeCliStatusList(
 
 export async function normalizeCliPriority(core: Core, value: string): Promise<string | null> {
 	const config = await core.getStoredConfig();
-	const normalized = resolvePriorityValue(value, config);
+	const normalized = resolvePriorityLabel(value, config);
 	if (normalized) return normalized;
 	console.error(`Invalid priority: ${value}. Valid values are: ${formatValidPriorityValues(config)}`);
 	process.exitCode = 1;

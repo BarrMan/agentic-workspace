@@ -29,6 +29,8 @@ Define configuration access and precedence, configurable modes and task-scoped a
 
 ## Functional Requirements
 
+`default_assignee` is not a supported configuration key. Assignees are removed from task fields, create/update inputs, frontmatter, plain-text and JSON output, search/filter surfaces, UI, CLI flags, and completions.
+
 ### CONFIG-001: TUI configuration
 
 **Description:** Setup and all settings/configuration are available inside the TUI, not through an `init` command; a future wizard remains deferred.
@@ -190,11 +192,11 @@ Define configuration access and precedence, configurable modes and task-scoped a
 - [ ] Agent settings expose named presets, editable mode prompts, model selection/discovery, and the specified permission controls.
 - [ ] Saving staged settings retains them; canceling discards them.
 
-Agent preset commands are argv arrays: the first item is a non-empty executable and every item is a NUL-free string. Empty later arguments are preserved. Legacy string commands are converted once during selected-workspace startup; normal readers require arrays.
+Agent preset commands are argv arrays: the first item is a non-empty executable and every item is a NUL-free string. Empty later arguments are preserved. Legacy string commands are converted once during selected-workspace startup; this retained startup migration is separate from the explicit task/config migration in [TASK-023](tasks.md#task-023-explicit-task-and-configuration-migration). Normal readers require arrays.
 
 ### CONFIG-009: Permission enforcement disclosure
 
-**Description:** Instruction-only permissions remain available and are clearly identified as guidance, distinct from provider-enforced restrictions. UI describes actual enforcement rather than presenting instructions as filesystem isolation.
+**Description:** Permission controls disclose their actual enforcement. Instruction-only controls are guidance, provider-enforced restrictions constrain execution, and explicit preset bypass flags may override configured permission restrictions even when YOLO is off. YOLO is a separate appended option. The UI must not claim restricted execution when bypass flags are present.
 
 **Trigger:** User views or configures permissions.
 
@@ -203,13 +205,15 @@ Agent preset commands are argv arrays: the first item is a non-empty executable 
 **Behavior:**
 1. Identify instruction-only controls.
 2. Describe their actual enforcement level.
+3. Disclose when explicit preset bypass flags can override configured permission restrictions, independently of YOLO.
+4. Treat YOLO as a separate appended option, not as the condition for preset bypass flags.
 
 **Outcome:** Users can distinguish guidance from provider-enforced restrictions.
 
 **Failures:** None.
 
 **Acceptance Criteria:**
-- [ ] Instruction-only permissions are labeled as guidance and are not described as filesystem isolation.
+- [ ] Instruction-only permissions are labeled as guidance, preset bypass flags are disclosed as overriding configured restrictions even when YOLO is off, and restricted execution is not claimed when bypass flags are present.
 
 ### CONFIG-010: Model discovery and availability
 
@@ -236,21 +240,21 @@ Agent preset commands are argv arrays: the first item is a non-empty executable 
 
 ### CONFIG-011: Capture current model
 
-**Description:** The provider-independent [current-model capture operation](supported-integration-operations.md#supported-integration-operations) sets the specified mode model in project configuration to a caller-supplied model ID.
+**Description:** The provider-independent [current-model capture operation](supported-integration-operations.md#supported-integration-operations) sets the specified mode model in project configuration to a caller-supplied opaque model ID. The workspace does not impose a model-ID character grammar; provider availability and errors are handled as specified by CONFIG-010.
 
 **Trigger:** Calling session invokes model capture.
 
 **Preconditions:** The calling session has a current model and mode.
 
 **Behavior:**
-1. Store the supplied model ID as the specified mode's model in project configuration.
+1. Store the supplied model ID as the specified mode's model in project configuration without applying a local character-grammar validation.
 
 **Outcome:** Project configuration reflects the caller-supplied model ID for the specified mode.
 
 **Failures:** See [error handling](../CONVENTIONS.md#error-handling).
 
 **Acceptance Criteria:**
-- [ ] Invoking capture records the supplied model ID for the specified mode in project configuration.
+- [ ] Invoking capture records the supplied opaque model ID for the specified mode in project configuration without local character-grammar validation; provider availability and errors remain reported under CONFIG-010.
 
 ### CONFIG-012: Confirmed mode deletion cleanup
 
@@ -318,6 +322,51 @@ Agent preset commands are argv arrays: the first item is a non-empty executable 
 **Acceptance Criteria:**
 - [ ] Catalogue load failure prevents startup and reports the load error without substituting a catalogue.
 - [ ] Mode identifiers are unique names and do not use a version scheme.
+
+### CONFIG-015: Priority labels
+
+**Description:** Project configuration defines `priorities` as an ordered `string[]`, defaulting to `["High", "Medium", "Low"]`. A task stores and displays the selected configured label directly; priority has no separate normalized value. Legacy task/config values are migrated only by the explicit invocation and scope in [TASK-023](tasks.md#task-023-explicit-task-and-configuration-migration), never during ordinary Core startup or load.
+
+**Trigger:** Priority configuration is loaded or a task priority is created, edited, or displayed.
+
+**Preconditions:** Project configuration is available.
+
+**Behavior:**
+1. Use the ordered configured priority labels, with the stated default when unspecified.
+2. Store and display a task's priority as the configured label itself.
+3. During the explicit task/config migration, map old priority values to a configured label only when the mapping is unambiguous; report unmatched or ambiguous values and leave them untouched.
+4. Do not migrate or rewrite priority values during ordinary load.
+
+**Outcome:** Supported task priorities are configured labels; unresolved legacy values remain unchanged and reported by migration.
+
+**Failures:** Report unmatched or ambiguous values and do not alter them.
+
+**Acceptance Criteria:**
+- `priorities` is an ordered string array with the stated default; task priority is the label, without paired label/value entries.
+- The explicit task/config migration follows TASK-023, reports and leaves unmatched/ambiguous values untouched; ordinary startup/load does not rewrite them.
+
+### CONFIG-016: Date format tokens
+
+**Description:** `date_format` is a case-sensitive Luxon date-only pattern, defaulting to `yyyy-MM-dd`. Timestamp display appends fixed `HH:mm` separately. Patterns containing time tokens are unsupported. The explicit task/config migration in [TASK-023](tasks.md#task-023-explicit-task-and-configuration-migration) converts legacy syntax only when it resolves to a supported date-only pattern; mixed/time-token formats are reported and left unchanged. Ordinary Core startup and load never rewrite configuration.
+
+**Trigger:** A date is configured or displayed, or the explicit task/config migration is run.
+
+**Preconditions:** Configuration and date values are available.
+
+**Behavior:**
+1. Interpret `date_format` as a case-sensitive Luxon date-only pattern, defaulting to `yyyy-MM-dd`.
+2. Render a date-only value with that pattern. Render a timestamp with the date pattern followed by fixed `HH:mm`; do not accept configured time tokens.
+3. Convert legacy syntax only through the explicit task/config migration when its exact lookup yields a supported date-only pattern. Report mixed/time-token or otherwise unsupported values and leave them unchanged.
+4. Never rewrite date configuration during ordinary startup or load.
+
+**Outcome:** Date formatting uses a date-only Luxon pattern; timestamp time is appended separately as `HH:mm`.
+
+**Failures:** Report unconvertible or unsupported legacy values and leave them unchanged.
+
+**Acceptance Criteria:**
+- `date_format` is a case-sensitive Luxon date-only pattern; default is `yyyy-MM-dd`. Configured time tokens are unsupported.
+- Date-only values use the pattern; timestamps append fixed `HH:mm` separately.
+- The explicit task/config migration uses exact lookup for supported date-only formats and reports/leaves mixed or unsupported values unchanged; ordinary startup/load does not rewrite configuration.
 
 ## States and Transitions
 

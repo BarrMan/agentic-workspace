@@ -69,7 +69,6 @@ describe("Core", () => {
 			id: "task-1",
 			title: "Test Task",
 			status: "To Do",
-			assignee: [],
 			createdDate: "2025-06-07",
 			labels: ["test"],
 			dependencies: [],
@@ -652,30 +651,6 @@ describe("Core", () => {
 			expect(loadedTask?.id).toBe("TASK-1");
 		});
 
-		it("should preserve assignee arrays when creating tasks", async () => {
-			const arrayTask: Task = {
-				...sampleTask,
-				id: "task-3",
-				title: "Array Assignee",
-				assignee: ["@bob"],
-			};
-			await core.createTask(arrayTask);
-			const loadedArray = await coreFileSystem(core).loadTask("task-3");
-			expect(loadedArray?.assignee).toEqual(["@bob"]);
-		});
-
-		it("should replace assignee arrays when updating tasks", async () => {
-			await core.createTask(sampleTask);
-
-			await core.updateTaskFromInput("task-1", { assignee: ["@carol"] });
-			let loaded = await coreFileSystem(core).loadTask("task-1");
-			expect(loaded?.assignee).toEqual(["@carol"]);
-
-			await core.updateTaskFromInput("task-1", { assignee: ["@dave"] });
-			loaded = await coreFileSystem(core).loadTask("task-1");
-			expect(loaded?.assignee).toEqual(["@dave"]);
-		});
-
 		it("matches labels by trimmed case-insensitive identity when adding and removing", async () => {
 			await core.createTask({ ...sampleTask, labels: [" UI "] });
 
@@ -739,7 +714,6 @@ describe("Core", () => {
 				id: "task-990",
 				title: "Custom Task",
 				status: "",
-				assignee: [],
 				createdDate: "2025-06-07",
 				labels: [],
 				dependencies: [],
@@ -767,7 +741,6 @@ describe("Core", () => {
 				id: "task-991",
 				title: "Fallback Task",
 				status: "",
-				assignee: [],
 				createdDate: "2025-06-07",
 				labels: [],
 				dependencies: [],
@@ -778,53 +751,6 @@ describe("Core", () => {
 
 			const loadedTask = await coreFileSystem(core).loadTask("task-991");
 			expect(loadedTask?.status).toBe("To Do");
-		});
-
-		// createTaskFromInput is the shared create path for every surface (CLI, wizard, TUI, Web),
-		// so applying defaultAssignee here is what keeps the surfaces consistent.
-		it("should apply defaultAssignee to tasks created without an assignee", async () => {
-			await initializeTestProject(core, "Default Assignee Project");
-			const config = await coreFileSystem(core).loadConfig();
-			if (!config) throw new Error("Expected config");
-			config.defaultAssignee = ["@alice", "@bob"];
-			await coreFileSystem(core).saveConfig(config);
-
-			const { task } = await core.createTaskFromInput({ title: "Inherits default" });
-			expect(task.assignee).toEqual(["@alice", "@bob"]);
-		});
-
-		it("should let an explicit assignee replace defaultAssignee entirely", async () => {
-			await initializeTestProject(core, "Override Assignee Project");
-			const config = await coreFileSystem(core).loadConfig();
-			if (!config) throw new Error("Expected config");
-			config.defaultAssignee = ["@alice", "@bob"];
-			await coreFileSystem(core).saveConfig(config);
-
-			const { task } = await core.createTaskFromInput({ title: "Explicit assignee", assignee: ["@carol"] });
-			expect(task.assignee).toEqual(["@carol"]);
-		});
-
-		// An explicit empty list is how every surface says "unassigned"; the Web edit payload also reaches this method that way.
-		it("should let an explicit empty assignee override defaultAssignee", async () => {
-			await initializeTestProject(core, "Explicit Unassign Project");
-			const config = await coreFileSystem(core).loadConfig();
-			if (!config) throw new Error("Expected config");
-			config.defaultAssignee = ["@alice", "@bob"];
-			await coreFileSystem(core).saveConfig(config);
-
-			const { task } = await core.createTaskFromInput({ title: "Explicitly unassigned", assignee: [] });
-			expect(task.assignee).toEqual([]);
-		});
-
-		it("should leave new tasks unassigned when defaultAssignee is empty", async () => {
-			await initializeTestProject(core, "Empty Assignee Project");
-			const config = await coreFileSystem(core).loadConfig();
-			if (!config) throw new Error("Expected config");
-			config.defaultAssignee = [];
-			await coreFileSystem(core).saveConfig(config);
-
-			const { task } = await core.createTaskFromInput({ title: "No default assignee" });
-			expect(task.assignee).toEqual([]);
 		});
 	});
 });

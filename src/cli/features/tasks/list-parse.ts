@@ -27,7 +27,6 @@ async function parseTaskListFilters(
 	options: OptionValues,
 	normalize: TaskListNormalizers,
 ): Promise<Pick<TaskListRequest, "filters" | "labels"> | null> {
-	if (!validateAssigneeFilter(options)) return null;
 	const filters: TaskListFilter = {};
 	if (options.status)
 		filters.status = normalizeStringList(toStringArray(options.status)) ?? toStringArray(options.status);
@@ -42,8 +41,6 @@ async function parseTaskListFilters(
 		))
 	)
 		return null;
-	if (options.assignee) filters.assignee = normalizeStringList(toStringArray(options.assignee)) ?? [];
-	if (options.unassigned) filters.unassigned = true;
 	if (options.milestone) filters.milestone = options.milestone;
 	if (options.priority) {
 		const priority = await normalize.priority(core, String(options.priority));
@@ -59,13 +56,6 @@ async function parseTaskListFilters(
 		filters.labelMatch = "all";
 	}
 	return { filters, labels };
-}
-
-function validateAssigneeFilter(options: OptionValues): boolean {
-	if (!(options.assignee && options.unassigned)) return true;
-	console.error("--unassigned cannot be combined with --assignee.");
-	process.exitCode = 1;
-	return false;
 }
 
 async function addNormalizedListFilter(

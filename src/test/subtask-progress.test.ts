@@ -9,7 +9,6 @@ function makeTask(id: string, status: string, parentTaskId?: string): Task {
 		id,
 		title: `Task ${id}`,
 		status,
-		assignee: [],
 		createdDate: "2026-08-17",
 		labels: [],
 		dependencies: [],

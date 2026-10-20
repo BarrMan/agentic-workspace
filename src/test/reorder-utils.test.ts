@@ -16,7 +16,6 @@ const buildTask = (id: string, status: string, ordinal?: number, overrides: Part
 	id,
 	title: `Task ${id}`,
 	status,
-	assignee: [],
 	createdDate: FIXED_DATE,
 	labels: [],
 	dependencies: [],

@@ -60,11 +60,9 @@ export function registerAgentWorkspaceCommands(
 
 	const agentConfig = program.command("agent-config").description("set the calling session's mode model");
 	agentConfig
-		.command("model set <provider/model>")
+		.command("model set <id>")
 		.description("set the calling session's mode model")
 		.action(async (id: string) => {
-			if (!/^[^/]+\/[^/]+$/.test(id))
-				throw new Error("Model ID must contain exactly one '/' with non-empty provider and model.");
 			const core = await getCore.project();
 			const targetModeId = await resolveCallingMode(core);
 			await updateAgentConfiguration(core, "project", (editable) => {

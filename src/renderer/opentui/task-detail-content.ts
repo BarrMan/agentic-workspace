@@ -1,13 +1,11 @@
 import { bold, fg, StyledText } from "@opentui/core";
 import { type TaskDetail, taskDependencyGraph, taskReadiness } from "../../controller/task-detail.ts";
-import { formatAssignee } from "../../model/task/assignee-filter.ts";
-import { formatPriorityLabel, normalizePriorityValue } from "../../model/task/priority-config.ts";
 import { formatReadinessBlockers } from "../../model/task/readiness.ts";
 import type { Task } from "../../model/types.ts";
 import { type DependencyGraphEntry, formatDependencyGraphEntries } from "../formatters/dependency-graph-text.ts";
 import { formatStatusWithIcon, getStatusColor } from "../formatters/status-icon.ts";
 import { TASK_FIELD_LABELS } from "../formatters/task-labels.ts";
-import { formatDateForDisplay } from "../formatters/task-plain-text.ts";
+import { formatUtcDateForDisplay } from "../formatters/utc-date-display.ts";
 
 /**
  * Options for the rich detail renderer so the surface describes a task consistently.
@@ -41,7 +39,7 @@ function statusChunk(text: string, color: string): DetailChunk {
 }
 
 function priorityDot(priority?: string): DetailChunk | undefined {
-	switch (normalizePriorityValue(priority)) {
+	switch (priority?.toLowerCase()) {
 		case "high":
 			return fg("red")("●");
 		case "medium":
@@ -83,29 +81,21 @@ function readOnlyLine(branch: string): DetailChunk[] {
 }
 
 function dateMetadataLine(label: string, value: string, dateFormat: string | undefined): DetailChunk[] {
-	return [bold(`${label}:`), literal(` ${formatDateForDisplay(value, { dateFormat })}`)];
+	return [bold(`${label}:`), literal(` ${formatUtcDateForDisplay(value, { dateFormat })}`)];
 }
 
 function metadataLines(task: Task | TaskDetail, options: TaskDetailStyledOptions): DetailChunk[][] {
 	const lines: DetailChunk[][] = [
-		[bold("Created:"), literal(` ${formatDateForDisplay(task.createdDate, { dateFormat: options.dateFormat })}`)],
+		[bold("Created:"), literal(` ${formatUtcDateForDisplay(task.createdDate, { dateFormat: options.dateFormat })}`)],
 	];
 	if (task.updatedDate && task.updatedDate !== task.createdDate) {
 		lines.push(dateMetadataLine("Updated", task.updatedDate, options.dateFormat));
 	}
 	if (task.priority) {
 		const dot = priorityDot(task.priority);
-		lines.push([
-			bold("Priority:"),
-			literal(` ${formatPriorityLabel(task.priority)}`),
-			...(dot ? [literal(" "), dot] : []),
-		]);
+		lines.push([bold("Priority:"), literal(` ${task.priority}`), ...(dot ? [literal(" "), dot] : [])]);
 	}
 	if (task.type) lines.push([bold("Type:"), literal(" "), taskTypeBadge(task.type)]);
-	const assignees = task.assignee?.map(formatAssignee).filter((assignee) => assignee !== null) ?? [];
-	if (assignees.length) {
-		lines.push([bold(`${TASK_FIELD_LABELS.ASSIGNEE}:`), literal(" "), fg("cyan")(assignees.join(", "))]);
-	}
 	if (task.labels?.length) {
 		const labelChunks: DetailChunk[] = [bold("Labels:"), literal(" ")];
 		task.labels.forEach((label, index) => {

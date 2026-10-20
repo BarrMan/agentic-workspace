@@ -1,4 +1,4 @@
-import { formatStoredDate } from "../lib/date.ts";
+import { DateTime } from "luxon";
 import { FALLBACK_STATUS } from "../model/constants.ts";
 import type { Task, TaskCreateInput } from "../model/types.ts";
 import type { Core } from "./agentic-workspace.ts";
@@ -15,7 +15,7 @@ export class TaskCreationService {
 		const priority = await this.core.normalizePriority(input.priority);
 		const type = await this.core.normalizeTaskType(input.type);
 		const project = await this.core.normalizeProject(input.project);
-		const createdDate = formatStoredDate();
+		const createdDate = DateTime.utc().toFormat("yyyy-MM-dd HH:mm");
 		const config = await this.core.getStoredConfig();
 		const configSnapshot = await this.core.getConfig();
 		const worktreePolicy = configSnapshot.sessionSettings.worktreePerTask ? "enabled" : "disabled";
@@ -30,7 +30,6 @@ export class TaskCreationService {
 				id,
 				title: titledInput.title,
 				status: status || config?.defaultStatus || FALLBACK_STATUS,
-				assignee: [],
 				createdDate,
 				labels: [],
 				dependencies: [],

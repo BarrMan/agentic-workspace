@@ -11,7 +11,6 @@ function task(id: string, dependencies: string[] = [], overrides: Partial<Task> 
 		id,
 		title: `Title ${id}`,
 		status: "To Do",
-		assignee: [],
 		createdDate: "2026-01-01",
 		labels: [],
 		dependencies,

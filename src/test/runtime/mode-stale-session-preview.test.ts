@@ -20,7 +20,6 @@ const processRows: processTree.ProcessRow[] = [
 		ppid: 1,
 		name: "bun",
 		state: "running",
-		start_time_unix_ms: 4242,
 	},
 ];
 mock.module("../../lib/process-tree.ts", () => ({
@@ -113,6 +112,7 @@ class DeadProcessHarness implements ProcessRunner, TmuxServer {
 			});
 		}
 		if (_command === "display-message") {
+			if (args.at(-1) === "#{pane_pid}") return ["4242"];
 			if (args.includes("#{pane_id} #{pane_dead}")) {
 				const dead = target === this.row?.split("\t")[8] && this.row?.split("\t")[7] === "1";
 				return [`${target} ${dead ? "1" : "0"}`];

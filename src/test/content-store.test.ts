@@ -9,7 +9,7 @@ import { coreFileSystem, createUniqueTestDir, safeCleanup } from "./test-utils.t
 const directories: string[] = [];
 
 function task(id: string, title: string): Task {
-	return { id, title, status: "To Do", assignee: [], labels: [], dependencies: [], createdDate: "2026-09-30" };
+	return { id, title, status: "To Do", labels: [], dependencies: [], createdDate: "2026-09-30" };
 }
 
 async function createProject(name: string): Promise<{ core: Core; filesystem: FileSystem }> {

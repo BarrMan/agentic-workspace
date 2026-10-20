@@ -1,6 +1,6 @@
 import type { BoxRenderable, CliRenderer } from "@opentui/core";
 import { type AgentConfiguration, resolveSessionSettings } from "../../model/session/types.ts";
-import { getPriorityOptions } from "../../model/task/priority-config.ts";
+import { getPriorityLabels } from "../../model/task/priority-config.ts";
 import { getProjectValues } from "../../model/task/project-config.ts";
 import { getTaskTypeValues } from "../../model/task/task-type-config.ts";
 import type { Task, TaskCreateInput } from "../../model/types.ts";
@@ -132,10 +132,7 @@ function taskComposerFields(options: OpenTuiTaskComposerOptions): TaskComposerFi
 			label: TASK_FIELD_LABELS.PRIORITY,
 			options: [
 				{ label: "None", value: "" },
-				...getPriorityOptions(options.priorities).map((priority) => ({
-					label: priority.label,
-					value: priority.value,
-				})),
+				...getPriorityLabels(options.priorities).map((priority) => ({ label: priority, value: priority })),
 			],
 			value: "",
 		},

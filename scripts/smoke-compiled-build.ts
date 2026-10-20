@@ -175,7 +175,7 @@ try {
 			'project_name: "Compiled Smoke"',
 			'default_status: "To Do"',
 			'statuses: ["To Do", "Done"]',
-			"date_format: yyyy-mm-dd",
+			"date_format: yyyy-MM-dd",
 			"max_column_width: 20",
 			"remote_operations: false",
 			"filesystem_only: false",

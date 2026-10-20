@@ -80,7 +80,6 @@ function sampleTask(id: string, title: string, status = "To Do"): Task {
 		id,
 		title,
 		status,
-		assignee: [],
 		createdDate: "2026-07-14 00:00",
 		labels: [],
 		dependencies: [],

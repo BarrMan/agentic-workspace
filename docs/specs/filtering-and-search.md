@@ -31,7 +31,7 @@ Let users narrow the workspace task list and find project tasks.
 
 ### IF-FS-001: Task filters
 
-**Description:** Task filters support text, status, type, priority, milestone, label, assignee, and unassigned. Multiple assignee values match tasks assigned to any selected assignee (OR); separate filter dimensions combine with AND. The interface shows a filter summary and provides clear/reset actions. Filter scope is the project directory.
+**Description:** Task filters support text, status, type, priority, milestone, and label; separate filter dimensions combine with AND. The interface shows a filter summary and provides clear/reset actions. Filter scope is the project directory. Assignee and unassigned filters are not supported.
 
 **Trigger:** User enters or changes a task filter, or clears/resets filters.
 
@@ -47,13 +47,13 @@ Let users narrow the workspace task list and find project tasks.
 **Failures:** None specified.
 
 **Acceptance Criteria:**
-- [ ] IF-FS-001-AC-01: Apply each supported filter dimension (text, status, type, priority, milestone, label, assignee, unassigned) and confirm matching tasks are project-scoped; multiple assignees combine with OR.
+- [ ] IF-FS-001-AC-01: Apply each supported filter dimension (text, status, type, priority, milestone, label) and confirm matching tasks are project-scoped.
 - [ ] IF-FS-001-AC-02: Confirm the interface shows a summary of active filters.
 - [ ] IF-FS-001-AC-03: Clear/reset filters and confirm active constraints are removed and project tasks are shown.
 
 ### IF-FS-002: Task search scope and matching
 
-**Description:** Search spans project tasks within the project directory. It uses case-insensitive literal matching over task ids, titles, descriptions, and assignees.
+**Description:** Search spans project tasks within the project directory. It uses case-insensitive literal matching over task IDs, titles, and descriptions; assignees are not searchable fields.
 
 **Trigger:** User or integration submits a task search.
 
@@ -61,7 +61,7 @@ Let users narrow the workspace task list and find project tasks.
 
 **Behavior:**
 1. Search project tasks within the project directory.
-2. Match case-insensitively and literally over task ids, titles, descriptions, and assignees.
+2. Match case-insensitively and literally over task IDs, titles, and descriptions.
 
 **Outcome:** Matching project tasks are returned.
 
@@ -69,7 +69,7 @@ Let users narrow the workspace task list and find project tasks.
 
 **Acceptance Criteria:**
 - [ ] IF-FS-002-AC-01: Search a project and confirm project tasks are covered.
-- [ ] IF-FS-002-AC-02: Confirm matching checks task ids, titles, descriptions, and assignees.
+- [ ] IF-FS-002-AC-02: Confirm matching checks task IDs, titles, and descriptions.
 - [ ] IF-FS-002-AC-03: Confirm matching is case-insensitive and literal.
 - [ ] IF-FS-002-AC-04: Confirm records outside the project directory are excluded.
 
@@ -134,7 +134,7 @@ Let users narrow the workspace task list and find project tasks.
 
 **Invariants:**
 - Search scope is the project directory.
-- Values within one filter, including multiple assignees, combine with OR; separate filters combine with AND.
+- Values within one filter combine with OR; separate filters combine with AND.
 - Archived records are excluded unless explicitly requested.
 - Search matching is literal and case-insensitive; no pagination is supported.
 

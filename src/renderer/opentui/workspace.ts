@@ -20,7 +20,6 @@ import {
 } from "@opentui/core";
 import type { TaskDetail } from "../../controller/task-detail.ts";
 import type { AgentIndication } from "../../model/session/types.ts";
-import { formatAssignee } from "../../model/task/assignee-filter.ts";
 import { statusComparisonKey } from "../../model/task/status.ts";
 import { isTerminalStatus } from "../../model/task/terminal-status.ts";
 import type { AgentHost } from "../../runtime/live/agent-host.ts";
@@ -110,7 +109,6 @@ export type OpenTuiWorkspaceTaskEntry = {
 	readonly title: string;
 	readonly status: string;
 	readonly description?: string;
-	readonly assignees?: readonly string[];
 	readonly labels?: readonly string[];
 	readonly priority?: string;
 };
@@ -241,11 +239,9 @@ function visibleStart(selectedIndex: number, firstVisible: number, visibleRows: 
 
 function taskDetails(task: OpenTuiWorkspaceTaskEntry | undefined): string {
 	if (!task) return "No task selected.";
-	const assignees = task.assignees?.map(formatAssignee).filter((assignee) => assignee !== null) ?? [];
 	const fields = [
 		`Status: ${task.status}`,
 		task.priority ? `Priority: ${task.priority}` : undefined,
-		assignees.length ? `Assignees: ${assignees.join(", ")}` : undefined,
 		task.labels?.length ? `Labels: ${task.labels.join(", ")}` : undefined,
 		"",
 	];
@@ -307,8 +303,7 @@ export function mountOpenTuiWorkspace(
 		statusBuckets = new Map<string, number[]>((opts.statuses ?? []).map((status) => [status, []]));
 		for (const [index, task] of opts.tasks.entries()) {
 			const status =
-				[...statusBuckets.keys()].find((value) => statusComparisonKey(value) === statusComparisonKey(task.status)) ??
-				task.status;
+				[...statusBuckets.keys()].find((value) => statusComparisonKey(value) === task.status) ?? task.status;
 			const bucket = statusBuckets.get(status) ?? [];
 			bucket.push(index);
 			statusBuckets.set(status, bucket);

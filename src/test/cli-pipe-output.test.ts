@@ -21,7 +21,6 @@ describe("finite CLI output to a delayed pipe reader", () => {
 				title: `Task ${index} ${"slow reader é ".repeat(8_000)}`,
 				status: ["To Do", "In Progress", "Done"][index % 3] ?? "To Do",
 				createdDate: "2026-09-27",
-				assignee: [],
 				labels: [],
 				dependencies: [],
 			});

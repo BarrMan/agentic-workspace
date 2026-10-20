@@ -17,7 +17,6 @@ function task(title: string, id = "BACK-1"): Task {
 		id,
 		title,
 		status: "To Do",
-		assignee: [],
 		createdDate: "2026-08-01",
 		labels: [],
 		dependencies: [],

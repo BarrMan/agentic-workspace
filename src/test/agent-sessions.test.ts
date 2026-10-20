@@ -25,6 +25,10 @@ import { isolatedTmuxServer, killTmuxServer, uniqueTmuxSocket } from "./tmux-tes
 const processRows: processTree.ProcessRow[] = [];
 mock.module("../lib/process-tree.ts", () => ({
 	...processTree,
+	processIdentity: (pid: number | undefined) => {
+		const row = processRows.find((process) => process.pid === pid && process.state !== "zombie");
+		return row ? { pid: row.pid, comm: row.name } : undefined;
+	},
 	readProcessTable: () => processRows,
 	terminateProcessTree: async () => "terminated",
 	terminateOwnedDescendants: async () => "terminated",
@@ -225,7 +229,6 @@ class FakeTmux implements ProcessRunner, TmuxServer {
 			ppid: 1,
 			name: "bun",
 			state: "running",
-			start_time_unix_ms: 100_000 + this.createdPanes,
 		});
 		this.paneMetadata.set(id, {});
 		this.actions.push({ type: "newSession", options });
@@ -330,6 +333,7 @@ class FakeTmux implements ProcessRunner, TmuxServer {
 				});
 			if (args.some((arg) => arg.includes("@agentic_workspace_launch_resources")))
 				return [this.paneMetadata.get(target)?.["@agentic_workspace_launch_resources"] ?? ""];
+			if (args.includes("#{pane_pid}")) return [`${this.panePids.get(target) ?? this.serverPid}`];
 			if (args.includes("#{pane_pid} #{pane_dead}"))
 				return [`${this.panePids.get(target) ?? this.serverPid} ${this.missingPanes.has(target) ? "1" : "0"}`];
 			return [`${target} ${this.missingPanes.has(target) ? "1" : "0"}`];
@@ -962,9 +966,9 @@ describe.concurrent("AgentSessionService", () => {
 			AGENTIC_WORKSPACE_TASK_DIR: taskDir,
 			TASK_CONTEXT: taskDir,
 		});
-		expect(created?.options.environment?.AGENTIC_WORKSPACE_CWD).toBeUndefined();
-		expect(created?.options.environment?.AGENTIC_WORKSPACE_TASK_ID).toBeUndefined();
-		expect(created?.options.environment?.AGENTIC_WORKSPACE_SESSION_ID).toBeUndefined();
+		expect(created?.options.environment?.AGENTIC_WORKSPACE_CWD).toBe(session.cwd);
+		expect(created?.options.environment?.AGENTIC_WORKSPACE_TASK_ID).toBe(session.taskId);
+		expect(created?.options.environment?.AGENTIC_WORKSPACE_SESSION_ID).toBe(session.id);
 	});
 
 	it("preserves an unflagged predecessor and activates a new session when replacing", async () => {

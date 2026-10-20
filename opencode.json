@@ -1,0 +1,425 @@
+{
+	"$schema": "https://opencode.ai/config.json",
+	"agent": {
+		"build": {
+			"permission": {
+				"*": "deny",
+				"task": "allow",
+				"task_status": "allow",
+				"task_message": "allow",
+				"task_revive": "allow",
+				"task_cancel": "allow",
+				"wait_for_user": "allow",
+				"question": "allow",
+				"skill": "allow",
+				"todowrite": "allow",
+				"context7_*": "deny",
+				"gh_grep_*": "deny",
+				"serena_*": "deny",
+				"aliexpress_*": "deny"
+			}
+		},
+		"plan": {
+			"permission": {
+				"*": "deny",
+				"task": "allow",
+				"task_status": "allow",
+				"task_message": "allow",
+				"task_revive": "allow",
+				"task_cancel": "allow",
+				"wait_for_user": "allow",
+				"question": "allow",
+				"skill": "allow",
+				"todowrite": "allow",
+				"context7_*": "deny",
+				"gh_grep_*": "deny",
+				"serena_*": "deny",
+				"aliexpress_*": "deny"
+			}
+		},
+		"compaction": {
+			"permission": {
+				"*": "deny",
+				"task": "allow",
+				"task_status": "allow",
+				"task_message": "allow",
+				"task_revive": "allow",
+				"task_cancel": "allow",
+				"wait_for_user": "allow",
+				"question": "allow",
+				"skill": "allow",
+				"todowrite": "allow",
+				"context7_*": "deny",
+				"gh_grep_*": "deny",
+				"serena_*": "deny",
+				"aliexpress_*": "deny"
+			}
+		},
+		"summary": {
+			"permission": {
+				"*": "deny",
+				"task": "allow",
+				"task_status": "allow",
+				"task_message": "allow",
+				"task_revive": "allow",
+				"task_cancel": "allow",
+				"wait_for_user": "allow",
+				"question": "allow",
+				"skill": "allow",
+				"todowrite": "allow",
+				"context7_*": "deny",
+				"gh_grep_*": "deny",
+				"serena_*": "deny",
+				"aliexpress_*": "deny"
+			}
+		},
+		"title": {
+			"permission": {
+				"*": "deny",
+				"task": "allow",
+				"task_status": "allow",
+				"task_message": "allow",
+				"task_revive": "allow",
+				"task_cancel": "allow",
+				"wait_for_user": "allow",
+				"question": "allow",
+				"skill": "allow",
+				"todowrite": "allow",
+				"context7_*": "deny",
+				"gh_grep_*": "deny",
+				"serena_*": "deny",
+				"aliexpress_*": "deny"
+			}
+		},
+		"orchestrator": {
+			"permission": {
+				"*": "deny",
+				"task": "allow",
+				"task_status": "allow",
+				"task_message": "allow",
+				"task_revive": "allow",
+				"task_cancel": "allow",
+				"wait_for_user": "allow",
+				"question": "allow",
+				"skill": "allow",
+				"todowrite": "allow",
+				"context7_*": "deny",
+				"gh_grep_*": "deny",
+				"serena_*": "deny",
+				"aliexpress_*": "deny"
+			}
+		},
+		"oracle": {
+			"permission": {
+				"*": "deny",
+				"bash": "deny",
+				"read": { "*": "allow", "*.env": "ask", "*.env.*": "ask", "*.env.example": "allow" },
+				"glob": "allow",
+				"grep": "allow",
+				"list": "allow",
+				"lsp": "allow",
+				"webfetch": "allow",
+				"websearch": "allow",
+				"skill": "allow",
+				"context7_*": "deny",
+				"gh_grep_*": "deny",
+				"serena_*": "deny",
+				"aliexpress_*": "deny"
+			}
+		},
+		"explorer": {
+			"permission": {
+				"*": "deny",
+				"bash": "deny",
+				"read": { "*": "allow", "*.env": "ask", "*.env.*": "ask", "*.env.example": "allow" },
+				"glob": "allow",
+				"grep": "allow",
+				"list": "allow",
+				"lsp": "allow",
+				"webfetch": "allow",
+				"websearch": "allow",
+				"skill": "allow",
+				"context7_*": "deny",
+				"gh_grep_*": "deny",
+				"serena_*": "deny",
+				"aliexpress_*": "deny"
+			}
+		},
+		"designer": {
+			"permission": {
+				"*": "deny",
+				"bash": "deny",
+				"read": { "*": "allow", "*.env": "ask", "*.env.*": "ask", "*.env.example": "allow" },
+				"glob": "allow",
+				"grep": "allow",
+				"list": "allow",
+				"lsp": "allow",
+				"webfetch": "allow",
+				"websearch": "allow",
+				"skill": "allow",
+				"context7_*": "deny",
+				"gh_grep_*": "deny",
+				"serena_*": "deny",
+				"aliexpress_*": "deny"
+			}
+		},
+		"librarian": {
+			"permission": {
+				"*": "deny",
+				"bash": "deny",
+				"read": { "*": "allow", "*.env": "ask", "*.env.*": "ask", "*.env.example": "allow" },
+				"glob": "allow",
+				"grep": "allow",
+				"list": "allow",
+				"lsp": "allow",
+				"webfetch": "allow",
+				"websearch": "allow",
+				"skill": "allow",
+				"context7_*": "deny",
+				"gh_grep_*": "deny",
+				"serena_*": "deny",
+				"aliexpress_*": "deny"
+			}
+		},
+		"sol6.1-explore": {
+			"permission": {
+				"*": "deny",
+				"bash": "deny",
+				"read": { "*": "allow", "*.env": "ask", "*.env.*": "ask", "*.env.example": "allow" },
+				"glob": "allow",
+				"grep": "allow",
+				"list": "allow",
+				"lsp": "allow",
+				"webfetch": "allow",
+				"websearch": "allow",
+				"skill": "allow",
+				"context7_*": "deny",
+				"gh_grep_*": "deny",
+				"serena_*": "deny",
+				"aliexpress_*": "deny"
+			}
+		},
+		"luna6-explore": {
+			"permission": {
+				"*": "deny",
+				"bash": "deny",
+				"read": { "*": "allow", "*.env": "ask", "*.env.*": "ask", "*.env.example": "allow" },
+				"glob": "allow",
+				"grep": "allow",
+				"list": "allow",
+				"lsp": "allow",
+				"webfetch": "allow",
+				"websearch": "allow",
+				"skill": "allow",
+				"context7_*": "deny",
+				"gh_grep_*": "deny",
+				"serena_*": "deny",
+				"aliexpress_*": "deny"
+			}
+		},
+		"deepseek-explore": {
+			"permission": {
+				"*": "deny",
+				"bash": "deny",
+				"read": { "*": "allow", "*.env": "ask", "*.env.*": "ask", "*.env.example": "allow" },
+				"glob": "allow",
+				"grep": "allow",
+				"list": "allow",
+				"lsp": "allow",
+				"webfetch": "allow",
+				"websearch": "allow",
+				"skill": "allow",
+				"context7_*": "deny",
+				"gh_grep_*": "deny",
+				"serena_*": "deny",
+				"aliexpress_*": "deny"
+			}
+		},
+		"astra-explore": {
+			"permission": {
+				"*": "deny",
+				"bash": "deny",
+				"read": { "*": "allow", "*.env": "ask", "*.env.*": "ask", "*.env.example": "allow" },
+				"glob": "allow",
+				"grep": "allow",
+				"list": "allow",
+				"lsp": "allow",
+				"webfetch": "allow",
+				"websearch": "allow",
+				"skill": "allow",
+				"context7_*": "deny",
+				"gh_grep_*": "deny",
+				"serena_*": "deny",
+				"aliexpress_*": "deny"
+			}
+		},
+		"terra-explore": {
+			"permission": {
+				"*": "deny",
+				"bash": "deny",
+				"read": { "*": "allow", "*.env": "ask", "*.env.*": "ask", "*.env.example": "allow" },
+				"glob": "allow",
+				"grep": "allow",
+				"list": "allow",
+				"lsp": "allow",
+				"webfetch": "allow",
+				"websearch": "allow",
+				"skill": "allow",
+				"context7_*": "deny",
+				"gh_grep_*": "deny",
+				"serena_*": "deny",
+				"aliexpress_*": "deny"
+			}
+		},
+		"sol6.1-general": {
+			"permission": {
+				"*": "deny",
+				"read": { "*": "allow", "*.env": "ask", "*.env.*": "ask", "*.env.example": "allow" },
+				"edit": "allow",
+				"glob": "allow",
+				"grep": "allow",
+				"list": "allow",
+				"lsp": "allow",
+				"bash": {
+					"*": "deny",
+					"bun run check": "allow",
+					"bun run check:types": "allow",
+					"bun run check:fallow": "allow",
+					"bun run test": "allow",
+					"bun run build": "allow",
+					"find src -type f -newer dist/agentic-workspace": "allow"
+				},
+				"skill": "allow",
+				"context7_*": "deny",
+				"gh_grep_*": "deny",
+				"serena_*": "deny",
+				"aliexpress_*": "deny"
+			}
+		},
+		"luna6-general": {
+			"permission": {
+				"*": "deny",
+				"read": { "*": "allow", "*.env": "ask", "*.env.*": "ask", "*.env.example": "allow" },
+				"edit": "allow",
+				"glob": "allow",
+				"grep": "allow",
+				"list": "allow",
+				"lsp": "allow",
+				"bash": {
+					"*": "deny",
+					"bun run check": "allow",
+					"bun run check:types": "allow",
+					"bun run check:fallow": "allow",
+					"bun run test": "allow",
+					"bun run build": "allow",
+					"find src -type f -newer dist/agentic-workspace": "allow"
+				},
+				"skill": "allow",
+				"context7_*": "deny",
+				"gh_grep_*": "deny",
+				"serena_*": "deny",
+				"aliexpress_*": "deny"
+			}
+		},
+		"deepseek-general": {
+			"permission": {
+				"*": "deny",
+				"read": { "*": "allow", "*.env": "ask", "*.env.*": "ask", "*.env.example": "allow" },
+				"edit": "allow",
+				"glob": "allow",
+				"grep": "allow",
+				"list": "allow",
+				"lsp": "allow",
+				"bash": {
+					"*": "deny",
+					"bun run check": "allow",
+					"bun run check:types": "allow",
+					"bun run check:fallow": "allow",
+					"bun run test": "allow",
+					"bun run build": "allow",
+					"find src -type f -newer dist/agentic-workspace": "allow"
+				},
+				"skill": "allow",
+				"context7_*": "deny",
+				"gh_grep_*": "deny",
+				"serena_*": "deny",
+				"aliexpress_*": "deny"
+			}
+		},
+		"astra-general": {
+			"permission": {
+				"*": "deny",
+				"read": { "*": "allow", "*.env": "ask", "*.env.*": "ask", "*.env.example": "allow" },
+				"edit": "allow",
+				"glob": "allow",
+				"grep": "allow",
+				"list": "allow",
+				"lsp": "allow",
+				"bash": {
+					"*": "deny",
+					"bun run check": "allow",
+					"bun run check:types": "allow",
+					"bun run check:fallow": "allow",
+					"bun run test": "allow",
+					"bun run build": "allow",
+					"find src -type f -newer dist/agentic-workspace": "allow"
+				},
+				"skill": "allow",
+				"context7_*": "deny",
+				"gh_grep_*": "deny",
+				"serena_*": "deny",
+				"aliexpress_*": "deny"
+			}
+		},
+		"terra-general": {
+			"permission": {
+				"*": "deny",
+				"read": { "*": "allow", "*.env": "ask", "*.env.*": "ask", "*.env.example": "allow" },
+				"edit": "allow",
+				"glob": "allow",
+				"grep": "allow",
+				"list": "allow",
+				"lsp": "allow",
+				"bash": {
+					"*": "deny",
+					"bun run check": "allow",
+					"bun run check:types": "allow",
+					"bun run check:fallow": "allow",
+					"bun run test": "allow",
+					"bun run build": "allow",
+					"find src -type f -newer dist/agentic-workspace": "allow"
+				},
+				"skill": "allow",
+				"context7_*": "deny",
+				"gh_grep_*": "deny",
+				"serena_*": "deny",
+				"aliexpress_*": "deny"
+			}
+		},
+		"fixer": {
+			"permission": {
+				"*": "deny",
+				"read": { "*": "allow", "*.env": "ask", "*.env.*": "ask", "*.env.example": "allow" },
+				"edit": "allow",
+				"glob": "allow",
+				"grep": "allow",
+				"list": "allow",
+				"lsp": "allow",
+				"bash": {
+					"*": "deny",
+					"bun run check": "allow",
+					"bun run check:types": "allow",
+					"bun run check:fallow": "allow",
+					"bun run test": "allow",
+					"bun run build": "allow",
+					"find src -type f -newer dist/agentic-workspace": "allow"
+				},
+				"skill": "allow",
+				"context7_*": "deny",
+				"gh_grep_*": "deny",
+				"serena_*": "deny",
+				"aliexpress_*": "deny"
+			}
+		}
+	}
+}

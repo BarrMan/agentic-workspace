@@ -6,31 +6,8 @@ import type { AgentModel } from "./agent.ts";
 const modelCache = new Map<string, AgentModel[]>();
 const MODEL_CACHE_LIMIT = 32;
 const MODEL_DISCOVERY_TIMEOUT_LIMIT_MS = 10_000;
-const MODEL_ID = /^[\p{L}\p{N}][\p{L}\p{N}._:/+@-]{0,255}$/u;
-
-export function sanitizeProfilePreset(preset: AgentPreset): AgentPreset {
-	const command: string[] = [];
-	const permissionModes = new Set(["acceptEdits", "auto", "bypassPermissions"]);
-	for (let i = 0; i < preset.command.length; i++) {
-		const arg = preset.command[i];
-		if (arg === undefined) continue;
-		if (["opencode", "opencode-v1", "opencode-v2"].includes(preset.bootstrap) && /^--auto(?:=.*)?$/.test(arg)) continue;
-		if (
-			preset.bootstrap === "claude" &&
-			(/^--(?:allow-)?dangerously-skip-permissions(?:=.*)?$/.test(arg) ||
-				(arg === "--permission-mode" && permissionModes.has(preset.command[i + 1] ?? "")) ||
-				(arg.startsWith("--permission-mode=") && permissionModes.has(arg.slice("--permission-mode=".length))))
-		) {
-			if (arg === "--permission-mode") i++;
-			continue;
-		}
-		command.push(arg);
-	}
-	return command.length === preset.command.length ? preset : { ...preset, command };
-}
 
 export function withExplicitModel(preset: AgentPreset, modelId: string): AgentPreset {
-	if (!MODEL_ID.test(modelId)) throw new Error("Model ID contains unsupported characters.");
 	const [executable, ...args] = preset.command;
 	if (!executable) throw new Error("Harness command is empty.");
 	const filtered: string[] = [];
@@ -179,14 +156,12 @@ export async function discoverModels(
 						.slice(1)
 						.flatMap((line) => {
 							const [provider, model] = line.trim().split(/\s+/);
-							return provider && model && MODEL_ID.test(provider) && MODEL_ID.test(model)
-								? [{ id: `${provider}/${model}` }]
-								: [];
+							return provider && model ? [{ id: `${provider}/${model}` }] : [];
 						})
 				: output
 						.split(/\r?\n/)
 						.map((line) => line.trim())
-						.filter((id) => MODEL_ID.test(id))
+						.filter(Boolean)
 						.map((id) => ({ id }));
 		const unique = deduplicateModels(parsed);
 		if (exitCode === 0) {
