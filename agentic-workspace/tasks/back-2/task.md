@@ -3,7 +3,6 @@ task_schema_version: 3
 id: BACK-2
 title: Status indicator is not updating
 status: Done
-assignee: []
 created_date: '2026-10-07 14:34'
 updated_date: '2026-10-07 15:14'
 labels: []

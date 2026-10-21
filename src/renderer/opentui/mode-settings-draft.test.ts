@@ -83,6 +83,12 @@ describe("mode settings draft", () => {
 		expect(() => draft.validate()).not.toThrow();
 	});
 
+	test("rejects an inherited object property as the default mode ID", () => {
+		const draft = new ModeSettingsDraft(configuration());
+		catalog(draft).defaultModeId = "constructor";
+		expect(() => draft.validate()).toThrow(/defaultModeId/);
+	});
+
 	test("rejects reserved, absolute, and traversing artifact paths for declarations and approval indicators", () => {
 		for (const path of [
 			"task.md",
@@ -102,6 +108,14 @@ describe("mode settings draft", () => {
 			profile(draft, "plan").approvalArtifact = path;
 			expect(() => draft.validate(), path).toThrow();
 		}
+		const duplicate = new ModeSettingsDraft(configuration());
+		profile(duplicate, "plan").artifacts = [
+			{ path: "plan.md", purpose: "Plan" },
+			{ path: "plan.md", purpose: "Another plan" },
+		];
+		expect(() => duplicate.validate()).toThrow(/more than once/);
+		profile(duplicate, "plan").artifacts = [{ path: "plan.md", purpose: " " }];
+		expect(() => duplicate.validate()).toThrow();
 	});
 
 	test("allows None and a valid custom approval path without a matching artifact declaration", () => {
@@ -112,34 +126,25 @@ describe("mode settings draft", () => {
 		expect(() => draft.validate()).not.toThrow();
 	});
 
-	test("requires at least one remaining mode", () => {
+	test("deletion stages only its source mode until Save", async () => {
 		const draft = new ModeSettingsDraft(configuration());
-		draft.deleteMode("plan", "build");
-		draft.deleteMode("research", "build");
-		delete catalog(draft).profiles.build;
-		catalog(draft).order = [];
-		expect(() => draft.validate()).toThrow(/at least one mode/i);
-	});
-
-	test("deletion requires a valid different destination and stages migration until Save", async () => {
-		const draft = new ModeSettingsDraft(configuration());
-		expect(() => draft.deleteMode("research", "missing" as ModeId)).toThrow();
-		expect(() => draft.deleteMode("research", "research")).toThrow();
+		expect(() => draft.deleteMode("missing" as ModeId)).toThrow();
 		const before = structuredClone(draft.baseline);
-		draft.deleteMode("research", "build");
-		expect(draft.moves).toEqual([{ fromModeId: "research", toModeId: "build" }]);
+		draft.deleteMode("research");
+		expect(draft.deletedModeIds).toEqual(["research"]);
+		expect(catalog(draft).profiles.research).toBeDefined();
 		expect(draft.baseline).toEqual(before);
 		const discarded = draft.discard();
 		expect(discarded).toEqual(before);
-		expect(draft.moves).toHaveLength(1);
+		expect(draft.deletedModeIds).toEqual(["research"]);
 	});
 
 	test("restore and save preserve unrelated settings and only Save invokes the side-effect boundary", async () => {
 		const source = configuration();
 		const draft = new ModeSettingsDraft(source);
-		draft.deleteMode("research", "build");
+		draft.deleteMode("research");
 		draft.restoreDeletedMode("research");
-		expect(draft.moves).toEqual([]);
+		expect(draft.deletedModeIds).toEqual([]);
 		expect(draft.configuration.modes?.order).toEqual(source.modes?.order);
 		draft.setModeDefault("build");
 		let calls = 0;
@@ -147,7 +152,7 @@ describe("mode settings draft", () => {
 		await draft.save(async (plan) => {
 			calls++;
 			saved = plan.configuration;
-			expect(plan.moves).toEqual([]);
+			expect(plan.deletedModeIds).toEqual([]);
 		});
 		expect(calls).toBe(1);
 		expect(saved?.sessions).toEqual(source.sessions);

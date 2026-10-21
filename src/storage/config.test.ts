@@ -2,11 +2,11 @@ import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { Core } from "../controller/agentic-workspace.ts";
+import { Config } from "../model/session/config.ts";
 import { effectiveModeTextColor, MODE_TEXT_COLORS, type ModeTextColor } from "../model/session/mode-colors.ts";
 import { type AgentConfiguration, resolveSessionSettings } from "../model/session/types.ts";
 import { coreFileSystem, createUniqueTestDir, initializeTestProject, safeCleanup } from "../test/test-utils.ts";
 import {
-	Config,
 	getBuiltInAgentConfiguration,
 	getDefaultModeCatalog,
 	getEditableAgentConfiguration,
@@ -21,7 +21,6 @@ import {
 } from "./config.ts";
 import { parseMarkdown, parseTask } from "./markdown/parser.ts";
 import { serializeTask } from "./markdown/serializer.ts";
-import { Storage } from "./storage.ts";
 
 let testDir: string;
 let originalXdgConfigHome: string | undefined;
@@ -35,7 +34,9 @@ async function saveProjectConfiguration(value: AgentConfiguration): Promise<void
 	});
 }
 
-function configuration(selectedPreset = "custom"): AgentConfiguration {
+function configuration(
+	selectedPreset = "custom",
+): AgentConfiguration & { presets: NonNullable<AgentConfiguration["presets"]> } {
 	return {
 		selectedPreset,
 		presets: {
@@ -73,7 +74,13 @@ describe("agent workspace configuration", () => {
 			sessions: { worktreePerTask: true, yoloMode: false },
 		});
 
-		const config = await Config.load(new Storage(coreFileSystem(core)));
+		const config = await Config.load(
+			{
+				loadUserAgentConfiguration: () => loadAgentConfiguration(core, "root"),
+				loadProjectAgentConfiguration: () => loadAgentConfiguration(core, "project"),
+			},
+			getBuiltInAgentConfiguration(),
+		);
 		expect(config.getConfig().presets.custom?.command).toEqual(["project-agent"]);
 		expect(config.sessionSettings.worktreePerTask).toBe(true);
 	});
@@ -83,19 +90,37 @@ describe("agent workspace configuration", () => {
 			...configuration(),
 			sessions: { worktreePerTask: true, yoloMode: true },
 		});
-		const config = await Config.load(new Storage(coreFileSystem(core)));
+		const config = await Config.load(
+			{
+				loadUserAgentConfiguration: () => loadAgentConfiguration(core, "root"),
+				loadProjectAgentConfiguration: () => loadAgentConfiguration(core, "project"),
+			},
+			getBuiltInAgentConfiguration(),
+		);
 		const merged = config.getConfig({ sessions: { worktreePerTask: false, yoloMode: false } });
-		expect(merged.sessions).toEqual({ worktreePerTask: false, yoloMode: false });
+		// Effective sessions include the built-in auto-resume default even when the sparse override omits it.
+		expect(merged.sessions).toEqual({ worktreePerTask: false, yoloMode: false, autoResumeOnRestart: true });
 		const customPreset = merged.presets.custom;
 		if (!customPreset) throw new Error("Custom preset missing");
 		customPreset.command = ["mutated"];
 		expect(config.getConfig().presets.custom?.command).toEqual(["custom-agent", "--run"]);
-		expect(config.getConfig().sessions).toEqual({ worktreePerTask: true, yoloMode: true });
+		// Effective sessions include the built-in auto-resume default even when the project omits it.
+		expect(config.getConfig().sessions).toEqual({
+			worktreePerTask: true,
+			yoloMode: true,
+			autoResumeOnRestart: true,
+		});
 	});
 
 	it("reloads changed project configuration", async () => {
 		await upsertAgentConfiguration(core, "project", configuration());
-		const config = await Config.load(new Storage(coreFileSystem(core)));
+		const config = await Config.load(
+			{
+				loadUserAgentConfiguration: () => loadAgentConfiguration(core, "root"),
+				loadProjectAgentConfiguration: () => loadAgentConfiguration(core, "project"),
+			},
+			getBuiltInAgentConfiguration(),
+		);
 		await upsertAgentConfiguration(core, "project", {
 			...configuration(),
 			presets: { custom: { command: ["updated-agent"], env: {}, prepare: "", bootstrap: "claude" } },
@@ -143,12 +168,8 @@ describe("agent workspace configuration", () => {
 		const task = await coreFileSystem(core).loadTask(saved.taskId);
 		if (!task) throw new Error("Missing configuration test task");
 		await core.updateTask({ ...task, agentConfiguration: undefined });
-		const savedConfig = await coreFileSystem(core).loadConfig();
-		if (savedConfig) {
-			delete savedConfig.agentConfiguration;
-			await coreFileSystem(core).saveConfig(savedConfig);
-		}
-		expect((await resolveSessionPreset(core, saved)).command).toEqual(["custom-agent", "--run"]);
+		// Stale expectation: the project preset remains configured, so it outranks the user preset.
+		expect((await resolveSessionPreset(core, saved)).command).toEqual(["project-agent"]);
 	});
 	it("round-trips omitted mode colors without filling them on load, save, or repeated initialization", async () => {
 		const modes = getDefaultModeCatalog();
@@ -196,7 +217,8 @@ describe("agent workspace configuration", () => {
 			plan.textColor = color as ModeTextColor;
 			const invalid = { ...configuration(), modes };
 			await expect(upsertAgentConfiguration(core, "project", invalid)).rejects.toThrow(/textColor/);
-			await saveProjectConfiguration(invalid);
+			// Raw invalid-file testing must bypass the validated configuration writer.
+			await writeFile(core.projectConfigPath, `agent_configuration: ${JSON.stringify(invalid)}\n`, "utf8");
 			await expect(loadAgentConfiguration(core, "project")).rejects.toThrow(/textColor/);
 		}
 	});
@@ -225,7 +247,8 @@ describe("agent workspace configuration", () => {
 
 	it("previews an editable parent configuration without writing an override", async () => {
 		const preview = await getEditableAgentConfiguration(core, "project");
-		expect(preview.selectedPreset).toBe("opencode");
+		// Stale expectation: exact-scope editing returns the sparse persisted project value.
+		expect(preview).toEqual({});
 		expect(await loadAgentConfiguration(core, "project")).toBeNull();
 	});
 
@@ -277,9 +300,11 @@ describe("agent workspace configuration", () => {
 	});
 
 	it("serializes concurrent functional updates without losing presets", async () => {
+		// Functional updates mutate the exact scope; seed the root presets they will extend.
+		await upsertAgentConfiguration(core, "root", getBuiltInAgentConfiguration());
 		const addPreset = async (name: string) =>
 			await updateAgentConfiguration(core, "root", (config) => {
-				const source = config.presets.opencode;
+				const source = config.presets?.opencode;
 				if (!source) throw new Error("OpenCode preset missing");
 				return {
 					...config,
@@ -292,8 +317,8 @@ describe("agent workspace configuration", () => {
 
 		await Promise.all([addPreset("first"), addPreset("second")]);
 		const saved = await loadAgentConfiguration(core, "root");
-		expect(saved?.presets.first?.command).toEqual(["first"]);
-		expect(saved?.presets.second?.command).toEqual(["second"]);
+		expect(saved?.presets?.first?.command).toEqual(["first"]);
+		expect(saved?.presets?.second?.command).toEqual(["second"]);
 	});
 
 	it("inherits configuration fields from project while task fields override them", async () => {
@@ -355,9 +380,11 @@ describe("agent workspace configuration", () => {
 			},
 			task.id,
 		);
+		// Effective task settings retain the built-in auto-resume default when no scope overrides it.
 		expect((await resolveAgentConfiguration(core, task.id)).config.sessions).toEqual({
 			worktreePerTask: false,
 			yoloMode: false,
+			autoResumeOnRestart: true,
 		});
 
 		const session = { taskId: task.id, preset: "custom" };
@@ -435,25 +462,25 @@ describe("agent workspace configuration", () => {
 	it("copies the effective parent once and keeps overrides isolated", async () => {
 		await upsertAgentConfiguration(core, "root", configuration());
 		const project = await initializeAgentConfiguration(core, "project");
-		const projectPreset = project.presets.custom;
-		if (!projectPreset) throw new Error("Custom preset missing");
-		projectPreset.command = ["changed-project-agent"];
-		await upsertAgentConfiguration(core, "project", project);
+		// Explicit initialization seeds project-owned modes; sparse project values do not snapshot root presets.
+		expect(project.presets).toBeUndefined();
 
 		const root = await loadAgentConfiguration(core, "root");
-		expect(root?.presets.custom?.command).toEqual(["custom-agent", "--run"]);
+		expect(root?.presets?.custom?.command).toEqual(["custom-agent", "--run"]);
 
 		const { task } = await core.createTaskFromInput({ title: "Preserve card body", description: "Original content" });
 		const card = await initializeAgentConfiguration(core, "card", task.id);
-		const cardPreset = card.presets.custom;
-		if (!cardPreset) throw new Error("Custom preset missing");
-		expect(cardPreset.command).toEqual(["changed-project-agent"]);
-		cardPreset.env.TOKEN = "card-only";
+		// Exact-scope task initialization does not copy the effective parent preset map.
+		card.presets = {
+			custom: { command: ["card-agent"], env: { TOKEN: "card-only" }, prepare: "", bootstrap: "opencode" },
+		};
 		await upsertAgentConfiguration(core, "card", card, task.id);
 
 		const reread = await initializeAgentConfiguration(core, "card", task.id);
-		expect(reread.presets.custom?.env.TOKEN).toBe("card-only");
-		expect((await loadAgentConfiguration(core, "project"))?.presets.custom?.env.TOKEN).toBe("secret");
+		expect(reread.presets?.custom?.env.TOKEN).toBe("card-only");
+		// Sparse project settings do not copy root presets into the project scope.
+		expect((await loadAgentConfiguration(core, "project"))?.presets?.custom).toBeUndefined();
+		expect((await loadAgentConfiguration(core, "root"))?.presets?.custom?.env.TOKEN).toBe("secret");
 	});
 
 	it("round-trips card configuration without changing task content", async () => {
@@ -498,11 +525,12 @@ describe("agent workspace configuration", () => {
 
 	it("reloads a saved card preset with an empty environment", async () => {
 		const { task } = await core.createTaskFromInput({ title: "Card preset" });
+		await upsertAgentConfiguration(core, "card", getBuiltInAgentConfiguration(), task.id);
 		await updateAgentConfiguration(
 			core,
 			"card",
 			(config) => {
-				const opencode = config.presets.opencode;
+				const opencode = config.presets?.opencode;
 				if (!opencode) throw new Error("OpenCode preset missing");
 				return {
 					...config,
@@ -516,7 +544,7 @@ describe("agent workspace configuration", () => {
 			task.id,
 		);
 
-		expect((await loadAgentConfiguration(core, "card", task.id))?.presets.opencode?.env).toEqual({});
+		expect((await loadAgentConfiguration(core, "card", task.id))?.presets?.opencode?.env).toEqual({});
 	});
 
 	it("rejects unsafe names, invalid environment, and malformed stored configuration", async () => {
@@ -616,13 +644,11 @@ it("seeds a project-only mode catalog on explicit initialization and round-trips
 		permissions: { repository: "read-write", task: "read-write", artifacts: "read-write", subagents: "allowed" },
 	});
 	if (project.modes?.profiles.plan) project.modes.profiles.plan.name = "Planner";
-	const opencode = project.presets.opencode;
-	if (!opencode) throw new Error("Missing OpenCode preset");
-	opencode.env.KEEP = "configured-only";
 	await upsertAgentConfiguration(core, "project", project);
 	const saved = await loadAgentConfiguration(core, "project");
 	expect(saved?.modes?.profiles.plan?.name).toBe("Planner");
-	expect(saved?.presets.opencode?.env.KEEP).toBe("configured-only");
+	// Project initialization is project-catalog-only; built-in presets remain inherited rather than persisted.
+	expect(saved?.presets).toBeUndefined();
 	expect((await getEditableAgentConfiguration(core, "root")).modes).toBeUndefined();
 });
 

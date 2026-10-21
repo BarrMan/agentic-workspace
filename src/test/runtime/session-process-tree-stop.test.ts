@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { TmuxCommandError } from "libtmux";
 import type { AgentSession } from "../../model/session/types.ts";
 import { type ProcessRunner, SessionProcess, type TmuxServer } from "../../runtime/session-process.ts";
+import { Storage } from "../../storage/storage.ts";
 
 describe("SessionProcess tmux instance lifecycle", () => {
 	const roots: string[] = [];
@@ -15,7 +16,6 @@ describe("SessionProcess tmux instance lifecycle", () => {
 		tmuxName: "agentic-workspace-task-1-instance",
 		cwd: process.cwd(),
 		createdAt: "2026-10-12T00:00:00.000Z",
-		status: "running",
 		nativeWorkspace: true,
 		outputPath: join(tmpdir(), "instance.log"),
 		bootstrapPath: join(tmpdir(), "instance.md"),
@@ -98,8 +98,13 @@ describe("SessionProcess tmux instance lifecycle", () => {
 				throw new Error("No OS process probes/signals expected");
 			},
 		};
+		const storage = Storage.open(root);
 		return {
-			process: new SessionProcess(runner, root, server),
+			process: new SessionProcess(
+				runner,
+				{ projectRoot: root, stateRoot: () => storage.sessionStore().stateRoot },
+				server,
+			),
 			events,
 			killedPaneIds,
 			options,

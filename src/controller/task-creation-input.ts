@@ -1,6 +1,7 @@
 import { normalizeStringList } from "../lib/string-list.ts";
 import { FALLBACK_STATUS } from "../model/constants.ts";
 import { normalizeDueDate } from "../model/task/due-date.ts";
+import { labelComparisonKey } from "../model/task/label-filter.ts";
 import type { AgenticWorkspaceConfig, Task, TaskCreateInput } from "../model/types.ts";
 
 export type PreparedTaskCreationInput = {
@@ -30,13 +31,23 @@ export function prepareTaskCreationInput(input: TaskCreateInput): PreparedTaskCr
 	return {
 		title: input.title.trim(),
 		requestedParentTaskId: input.parentTaskId?.trim(),
-		labels: normalizeStringList(input.labels) ?? [],
+		labels: uniqueLabels(normalizeStringList(input.labels) ?? []),
 		dependencies: normalizeStringList(input.dependencies) ?? [],
 		references: normalizeStringList(input.references) ?? [],
 		documentation: normalizeStringList(input.documentation) ?? [],
 		modifiedFiles: normalizeStringList(input.modifiedFiles) ?? [],
 		dueDate: normalizeDueDate(input.dueDate, "Due date"),
 	};
+}
+
+function uniqueLabels(labels: string[]): string[] {
+	const seen = new Set<string>();
+	return labels.filter((label) => {
+		const key = labelComparisonKey(label);
+		if (seen.has(key)) return false;
+		seen.add(key);
+		return true;
+	});
 }
 
 function field(name: string, value: unknown): [string, unknown][] {

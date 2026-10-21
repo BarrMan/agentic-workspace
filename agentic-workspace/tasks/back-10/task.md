@@ -3,7 +3,6 @@ task_schema_version: 3
 id: BACK-10
 title: Add worktree support
 status: Done
-assignee: []
 created_date: '2026-10-07 17:06'
 updated_date: '2026-10-08 09:55'
 labels: []

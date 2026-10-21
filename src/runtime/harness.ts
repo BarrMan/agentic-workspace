@@ -3,12 +3,12 @@ import { watch } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
 import type {
-	AgentActivity,
-	AgentPreset,
 	AgentSession,
-	ModeId,
-	ModeProfile,
-	ResolvedAgentConfiguration,
+	ExecutionIdentity,
+	HarnessProvider,
+	RunningExecution,
+	RunningExecutionEvent,
+	SessionLaunchContext,
 } from "../model/session/types.ts";
 import type {
 	HarnessInterface,
@@ -20,63 +20,13 @@ import type {
 import { resolveLaunchPreset } from "./agents/opencode/opencode-resolution.ts";
 import { harnessRegistry } from "./agents/startup.ts";
 import { preflightAgentLaunch, prepareAgentLaunchResources } from "./session-launch.ts";
-import { BunRunner, SessionProcess } from "./session-process.ts";
+import type { SessionProcess } from "./session-process.ts";
 import { sessionActivityDir } from "./status-hooks.ts";
 import { workspaceContextInto } from "./workspace-context.ts";
-
-type Unsubscribe = () => void;
-
-export interface SessionLaunchContext {
-	readonly taskId: string;
-	readonly modeId: ModeId;
-	readonly sessionId: string;
-	readonly record: Readonly<AgentSession>;
-	readonly configuration: ResolvedAgentConfiguration;
-	readonly profile: Readonly<ModeProfile>;
-	readonly preset: Readonly<AgentPreset>;
-	readonly prompt: string;
-}
-
-export interface ExecutionIdentity {
-	readonly taskId: string;
-	readonly modeId: ModeId;
-	readonly sessionId: string;
-	readonly executionId: string;
-	readonly nativeSessionId?: string;
-}
-
-export interface RunningExecutionEvents {
-	readonly turnCompleted: "supported" | "unsupported";
-	readonly permissionWait: "supported" | "unsupported";
-	readonly executionExit: "supported" | "unsupported";
-	readonly activity: "supported" | "unsupported";
-}
-
-export interface RunningExecutionEvent {
-	readonly kind: "turn-completed" | "permission-wait" | "execution-exit" | "activity";
-	readonly activity?: AgentActivity;
-	readonly exitCode?: number;
-}
-
-export interface RunningExecution {
-	readonly identity: ExecutionIdentity;
-	readonly providerConversationId?: string;
-	readonly events: Readonly<RunningExecutionEvents>;
-	input(text: string): Promise<void>;
-	sendKey(key: string): Promise<void>;
-	stop(): Promise<void>;
-	observe(listener: (event: RunningExecutionEvent) => void): Unsubscribe;
-	teardownListeners(): void;
-}
 
 export interface RecoverableExecutionFailure extends Error {
 	readonly execution?: RunningExecution;
 	readonly identity?: ExecutionIdentity;
-}
-
-export interface HarnessProvider {
-	launch(context: SessionLaunchContext): Promise<RunningExecution>;
-	resume(nativeId: string, context: SessionLaunchContext): Promise<RunningExecution>;
 }
 
 export const PROVIDER_READINESS_DEADLINE_MS = 10_000;
@@ -166,9 +116,9 @@ export class Harness implements HarnessProvider {
 	private readonly process: SessionProcess;
 	private readonly rootDir: string;
 	private readonly readinessDeadlineMs: number;
-	constructor(rootDir: string, process?: SessionProcess, readinessDeadlineMs = PROVIDER_READINESS_DEADLINE_MS) {
+	constructor(rootDir: string, process: SessionProcess, readinessDeadlineMs = PROVIDER_READINESS_DEADLINE_MS) {
 		this.rootDir = rootDir;
-		this.process = process ?? new SessionProcess(new BunRunner(), rootDir);
+		this.process = process;
 		this.readinessDeadlineMs = readinessDeadlineMs;
 	}
 
@@ -357,11 +307,12 @@ export class Harness implements HarnessProvider {
 							.text()
 							.catch(() => "")
 					).trim();
+					const observedAt = Date.now();
 					const map: Record<string, RunningExecutionEvent> = {
-						running: { kind: "activity", activity: "running" },
-						idle: { kind: "turn-completed", activity: "idle" },
-						waiting: { kind: "permission-wait", activity: "waiting" },
-						error: { kind: "activity", activity: "error" },
+						running: { kind: "activity", activity: "running", observedAt },
+						idle: { kind: "turn-completed", activity: "idle", observedAt },
+						waiting: { kind: "permission-wait", activity: "waiting", observedAt },
+						error: { kind: "activity", activity: "error", observedAt },
 					};
 					const event = map[value];
 					if (event) listener(event);
@@ -372,7 +323,11 @@ export class Harness implements HarnessProvider {
 					void this.process.nativeRuntimeClassification(record).then((runtime) => {
 						const exited = runtime.status === "dead" || runtime.status === "missing";
 						if (active && exited) {
-							listener({ kind: "execution-exit", exitCode: runtime.status === "missing" ? 1 : 0 });
+							listener({
+								kind: "execution-exit",
+								exitCode: runtime.status === "missing" ? 1 : 0,
+								observedAt: Date.now(),
+							});
 							active = false;
 							watcher.close();
 							clearInterval(exitProbe);

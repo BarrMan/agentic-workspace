@@ -55,7 +55,10 @@ This document owns repeatable coding, organization, and verification practices. 
 
 ## Review and Verification
 
-- The reviewer owns the judgment: review the whole rejected design, its callers, and tests. For each custom operation, identify the behavior required by its owner contract and why an existing dependency cannot provide it. Remove unnecessary wrappers; do not merely relabel them as domain-specific.
+- Start by identifying the current owning instructions/contracts and mapping the requested scope. Review decisions and policy ownership, not only changed lines or edge cases; ask why each mechanism exists and who owns it.
+- Trace affected designs, callers, and tests through every supported entry point in scope. Compare parallel/compatibility paths and unnecessary mechanisms with their exact rule and real use; preserve required safety and validation when replacing a design.
+- For a whole-code request, inventory disjoint areas and report the files actually read and any coverage gap. Keep bounded reviews proportional to their requested scope.
+- Support each finding with source/line evidence, its owning rule, and a concrete consequence. Separate a hard breach, a Ponytail judgment, and a contract conflict; reconcile reviewer claims against the evidence. Tests are evidence, not authority; report no finding when none is supported.
 - An independent verifier/reviewer is read-only. Assertion changes belong to a separately scoped implementation supported by fixture and contract evidence, not to verification.
 - Limit completion claims to inspected paths and checks actually observed. Summaries and task documents do not authorize Git mutation; follow [AGENTS](../AGENTS.md) for workflow constraints.
 

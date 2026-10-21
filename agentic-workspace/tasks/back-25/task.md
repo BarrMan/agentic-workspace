@@ -3,7 +3,6 @@ task_schema_version: 3
 id: BACK-25
 title: Test env variable injection task
 status: In Progress
-assignee: []
 created_date: '2026-10-10 12:49'
 updated_date: '2026-10-10 14:21'
 labels: []

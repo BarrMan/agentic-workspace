@@ -1,76 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { Writable } from "node:stream";
 import { $ as shell } from "bun";
-import { runCli } from "../cli/register.ts";
 import { Core } from "../index.ts";
+import { runInProcessCli } from "./in-process-cli.ts";
 import { coreFileSystem, createUniqueTestDir, initializeTestProject, safeCleanup } from "./test-utils.ts";
 
 let testDir: string;
 let configHome: string;
 const previousConfigHome = process.env.XDG_CONFIG_HOME;
-const cliCommand = ["agentic-workspace"];
-let cliQueue = Promise.resolve();
-
-function $(parts: TemplateStringsArray, ...values: unknown[]) {
-	const source = parts.reduce(
-		(text, part, index) =>
-			`${text}${part}${Array.isArray(values[index]) ? values[index].map((value) => JSON.stringify(value)).join(" ") : values[index] === undefined ? "" : JSON.stringify(values[index])}`,
-		"",
-	);
-	const args =
-		source
-			.match(/"(?:\\.|[^"\\])*"|'[^']*'|[^\s]+/g)
-			?.map((arg) =>
-				arg.startsWith('"') ? (JSON.parse(arg) as string) : arg.startsWith("'") ? arg.slice(1, -1) : arg,
-			) ?? [];
-	const config: { cwd?: string; nothrow?: boolean } = {};
-	const result = () => {
-		const execution = cliQueue.then(async () => {
-			const stdout: string[] = [];
-			const stderr: string[] = [];
-			const out = new Writable({
-				write: (chunk, _encoding, done) => {
-					stdout.push(chunk.toString());
-					done();
-				},
-			});
-			const err = new Writable({
-				write: (chunk, _encoding, done) => {
-					stderr.push(chunk.toString());
-					done();
-				},
-			});
-			const exitCode = await runCli(args.slice(cliCommand.length), { cwd: config.cwd, stdout: out, stderr: err });
-			const value = { exitCode, stdout: stdout.join(""), stderr: stderr.join("") };
-			if (value.exitCode && !config.nothrow) throw new Error(value.stderr || `CLI exited with ${value.exitCode}`);
-			return value;
-		});
-		cliQueue = execution.then(
-			() => undefined,
-			() => undefined,
-		);
-		return execution;
-	};
-	const chain = {
-		cwd(value: string) {
-			config.cwd = value;
-			return chain;
-		},
-		nothrow() {
-			config.nothrow = true;
-			return chain;
-		},
-		quiet() {
-			return result();
-		},
-		async text() {
-			return (await result()).stdout;
-		},
-	};
-	return chain;
-}
 
 describe("CLI task view and edit", () => {
 	beforeEach(async () => {
@@ -99,9 +37,11 @@ describe("CLI task view and edit", () => {
 			dependencies: [],
 			rawContent: "## Description\n\nBody text",
 		});
-		await $`${[...cliCommand, "task", "edit", "TASK-1", "--title", "Updated", "--description", "Structured description"]}`
-			.cwd(testDir)
-			.quiet();
+		const edit = await runInProcessCli(
+			["task", "edit", "TASK-1", "--title", "Updated", "--description", "Structured description"],
+			{ cwd: testDir },
+		);
+		expect(edit.exitCode).toBe(0);
 		const task = await coreFileSystem(core).loadTask("task-1");
 		expect(task).toMatchObject({
 			title: "Updated",
@@ -113,10 +53,14 @@ describe("CLI task view and edit", () => {
 	});
 
 	it("retains formatted plain task output", async () => {
-		await $`${[...cliCommand, "task", "create", "Visible", "--description", "Description"]}`.cwd(testDir).quiet();
-		const result = await $`${[...cliCommand, "task", "view", "TASK-1", "--plain"]}`.cwd(testDir).quiet();
-		expect(result.stdout.toString()).toContain("Task TASK-1 - Visible");
-		expect(result.stdout.toString()).toContain("Description:");
+		const created = await runInProcessCli(["task", "create", "Visible", "--description", "Description"], {
+			cwd: testDir,
+		});
+		expect(created.exitCode).toBe(0);
+		const result = await runInProcessCli(["task", "view", "TASK-1", "--plain"], { cwd: testDir });
+		expect(result.exitCode).toBe(0);
+		expect(result.stdout).toContain("Task TASK-1 - Visible");
+		expect(result.stdout).toContain("Description:");
 	});
 
 	it("ignores flat records without modifying their bytes", async () => {
@@ -124,9 +68,9 @@ describe("CLI task view and edit", () => {
 			"---\nid: TASK-2\ntitle: Historical\nstatus: To Do\ncreated_date: '2026-10-01'\nlabels: []\ndependencies: []\n---\n\n## Description\n\n<!-- SECTION:DESCRIPTION:BEGIN -->\nPreserved\n<!-- SECTION:DESCRIPTION:END -->\n";
 		const first = `${testDir}/agentic-workspace/tasks/task-2 - First.md`;
 		await writeFile(first, content);
-		const result = await $`${[...cliCommand, "task", "view", "TASK-2", "--plain"]}`.cwd(testDir).nothrow().quiet();
+		const result = await runInProcessCli(["task", "view", "TASK-2", "--plain"], { cwd: testDir });
 		expect(result.exitCode).toBe(1);
-		expect(result.stderr.toString()).not.toContain("Manually convert");
+		expect(result.stderr).not.toContain("Manually convert");
 		expect(await readFile(first, "utf8")).toBe(content);
 	});
 });

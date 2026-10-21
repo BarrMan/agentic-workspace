@@ -11,20 +11,16 @@ function key(sequence: string): KeyEvent {
 	return new KeyEvent(parsed);
 }
 
-const reviewedHash = "a".repeat(64);
-
 describe("workspace artifact shortcut overrides", () => {
 	const renderers: TestRendererSetup[] = [];
 	afterEach(() => {
 		for (const setup of renderers.splice(0)) setup.renderer.destroy();
 	});
 
-	it("opens via a conflict-free project binding and routes approve/revoke only in the artifact viewer", async () => {
+	it("opens artifacts via a conflict-free project binding", async () => {
 		const customBinding = { sequence: [{ key: "o", ctrl: true }] } as const;
 		const overrides = {
 			"workspace.openArtifacts": customBinding,
-			"taskViewer.approveArtifact": { sequence: [{ key: "p", ctrl: true }] },
-			"taskViewer.revokeArtifact": { sequence: [{ key: "r", ctrl: true }] },
 		} as const;
 		expect(
 			findShortcutConflict(shortcutsConfig.workspace.openArtifacts, { key: "o", ctrl: true }, overrides),
@@ -41,18 +37,8 @@ describe("workspace artifact shortcut overrides", () => {
 				listCallStacks.push(new Error().stack ?? "");
 				return [{ path: "plan.md", state: "draft", size: 4, type: "text" }];
 			},
-			read: async () => ({
-				bytes: new TextEncoder().encode("plan"),
-				status: { state: "draft", sha256: reviewedHash } as never,
-			}),
-			approveCurrentVersion: async (_taskId, path, hash) => {
-				calls.push(`approve:${path}:${hash}`);
-				return { state: "approved", sha256: hash } as never;
-			},
-			revokeApproval: async (_taskId, path) => {
-				calls.push(`revoke:${path}`);
-				return { state: "draft" } as never;
-			},
+			read: async () => new TextEncoder().encode("plan"),
+			write: async () => {},
 		};
 		const navigation: string[] = [];
 		const mount = mountOpenTuiWorkspace(setup.renderer, parent, {
@@ -81,17 +67,10 @@ describe("workspace artifact shortcut overrides", () => {
 			expect(calls.filter((call) => call === "list:TASK-1")).toHaveLength(3);
 			expect(listCallStacks[2]).toContain("at navigate (");
 			expect(listCallStacks[2]).toContain("task-artifact-view.ts");
-			send("\x10"); // Ctrl+P approves the displayed reviewed hash
-			await settle();
-			expect(calls).toContain(`approve:plan.md:${reviewedHash}`);
-			send("\x12"); // Ctrl+R revokes
-			await settle();
-			expect(calls).toContain("revoke:plan.md");
 			send("\r");
 			send("\t");
 			await settle();
 			expect(navigation).toEqual(["enter:TASK-1", "tab"]);
-			expect(calls).not.toContain("approve:plan.md:");
 		} finally {
 			mount.dispose();
 		}

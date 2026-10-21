@@ -2,74 +2,12 @@ import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { Writable } from "node:stream";
-import { runCli } from "../cli/register.ts";
 import { formatRootEntry, printRootEntry } from "../cli/root-entry.ts";
 import { Core } from "../index.ts";
+import { runInProcessCli } from "./in-process-cli.ts";
 import { initializeFilesystemTestProject } from "./test-utils.ts";
 
 let TEST_DIR: string;
-const CLI_COMMAND = ["agentic-workspace"];
-let runQueue = Promise.resolve();
-
-function $(parts: TemplateStringsArray, ...values: unknown[]) {
-	const source = parts.reduce(
-		(text, part, index) =>
-			`${text}${part}${Array.isArray(values[index]) ? values[index].map((value) => JSON.stringify(value)).join(" ") : values[index] === undefined ? "" : JSON.stringify(values[index])}`,
-		"",
-	);
-	const args =
-		source
-			.match(/"(?:\\.|[^"\\])*"|'[^']*'|[^\s]+/g)
-			?.map((arg) =>
-				arg.startsWith('"') ? (JSON.parse(arg) as string) : arg.startsWith("'") ? arg.slice(1, -1) : arg,
-			) ?? [];
-	const config: { cwd?: string; nothrow?: boolean } = {};
-	const result = async () => {
-		const stdout: string[] = [];
-		const stderr: string[] = [];
-		const out = new Writable({
-			write: (chunk, _encoding, done) => {
-				stdout.push(chunk.toString());
-				done();
-			},
-		});
-		const err = new Writable({
-			write: (chunk, _encoding, done) => {
-				stderr.push(chunk.toString());
-				done();
-			},
-		});
-		const invocation = runQueue.then(() =>
-			runCli(args.slice(CLI_COMMAND.length), { cwd: config.cwd, stdout: out, stderr: err }),
-		);
-		runQueue = invocation.then(
-			() => undefined,
-			() => undefined,
-		);
-		const exitCode = await invocation;
-		const value = { exitCode, stdout: stdout.join(""), stderr: stderr.join("") };
-		if (value.exitCode && !config.nothrow) throw new Error(value.stderr || `CLI exited with ${value.exitCode}`);
-		return value;
-	};
-	const chain = {
-		cwd(value: string) {
-			config.cwd = value;
-			return chain;
-		},
-		nothrow() {
-			config.nothrow = true;
-			return chain;
-		},
-		quiet() {
-			return result();
-		},
-		async text() {
-			return (await result()).stdout;
-		},
-	};
-	return chain;
-}
 
 describe("CLI root entry (bare run)", () => {
 	beforeEach(async () => {
@@ -114,7 +52,8 @@ describe("CLI root entry (bare run)", () => {
 	});
 
 	it("prints a plain local entry point in non-initialized repo", async () => {
-		const result = await $`${CLI_COMMAND}`.cwd(TEST_DIR).quiet();
+		const result = await runInProcessCli([], { cwd: TEST_DIR });
+		expect(result.exitCode).toBe(0);
 		const out = result.stdout.toString();
 		expect(result.exitCode).toBe(0);
 		expect(out).toContain("██████╗");
@@ -133,7 +72,8 @@ describe("CLI root entry (bare run)", () => {
 		const core = new Core(TEST_DIR);
 		await initializeFilesystemTestProject(core, "Splash Test");
 
-		const result = await $`${CLI_COMMAND}`.cwd(TEST_DIR).quiet();
+		const result = await runInProcessCli([], { cwd: TEST_DIR });
+		expect(result.exitCode).toBe(0);
 		const out = result.stdout.toString();
 		expect(result.exitCode).toBe(0);
 		expect(out).toContain("██████╗");
@@ -151,23 +91,30 @@ describe("CLI root entry (bare run)", () => {
 	});
 
 	it("--help shows commander help, not the root entry", async () => {
-		const result = await $`${CLI_COMMAND} --help`.cwd(TEST_DIR).quiet();
+		const result = await runInProcessCli(["--help"], { cwd: TEST_DIR });
+		expect(result.exitCode).toBe(0);
 		const out = result.stdout.toString();
 		expect(result.exitCode).toBe(0);
 		expect(out).toMatch(/Usage: .*agentic-workspace/);
 		expect(out).not.toContain("agentic-workspace init");
 		expect(out).not.toContain("agentic-workspace cleanup");
 		expect(out).toContain("  workspace");
-		const taskHelp = await $`${CLI_COMMAND} task --help`.cwd(TEST_DIR).text();
+		const taskHelpResult = await runInProcessCli(["task", "--help"], { cwd: TEST_DIR });
+		expect(taskHelpResult.exitCode).toBe(0);
+		const taskHelp = taskHelpResult.stdout;
 		expect(taskHelp).toContain("done");
 		expect(taskHelp).not.toContain("archive");
 		expect(taskHelp).not.toContain("complete");
 		expect(taskHelp).not.toContain("demote");
-		const sessionHelp = await $`${CLI_COMMAND} agent-session --help`.cwd(TEST_DIR).text();
+		const sessionHelpResult = await runInProcessCli(["agent-session", "--help"], { cwd: TEST_DIR });
+		expect(sessionHelpResult.exitCode).toBe(0);
+		const sessionHelp = sessionHelpResult.stdout;
 		expect(sessionHelp).toContain("start");
 		expect(sessionHelp).toContain("ask");
 		expect(sessionHelp).not.toContain("reset");
-		const configHelp = await $`${CLI_COMMAND} agent-config --help`.cwd(TEST_DIR).text();
+		const configHelpResult = await runInProcessCli(["agent-config", "--help"], { cwd: TEST_DIR });
+		expect(configHelpResult.exitCode).toBe(0);
+		const configHelp = configHelpResult.stdout;
 		expect(configHelp).toContain("model");
 		expect(configHelp).not.toContain("init");
 	});

@@ -1,66 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { mkdir } from "node:fs/promises";
-import { Writable } from "node:stream";
 import { hasEditFieldFlags } from "../cli/features/task/edit-fields.ts";
-import { runCli } from "../cli/register.ts";
 import { buildTaskUpdateInput } from "../cli/task-edit-builder.ts";
 import { Core } from "../index.ts";
+import { runInProcessCli } from "./in-process-cli.ts";
 import { coreFileSystem, createUniqueTestDir, initializeFilesystemTestProject, safeCleanup } from "./test-utils.ts";
 
 let TEST_DIR: string;
-const cliCommand = ["agentic-workspace"];
-
-function $(parts: TemplateStringsArray, ...values: unknown[]) {
-	const source = parts.reduce(
-		(text, part, index) =>
-			`${text}${part}${Array.isArray(values[index]) ? values[index].map((value) => JSON.stringify(value)).join(" ") : values[index] === undefined ? "" : JSON.stringify(values[index])}`,
-		"",
-	);
-	const args =
-		source
-			.match(/"(?:\\.|[^"\\])*"|'[^']*'|[^\s]+/g)
-			?.map((arg) =>
-				arg.startsWith('"') ? (JSON.parse(arg) as string) : arg.startsWith("'") ? arg.slice(1, -1) : arg,
-			) ?? [];
-	const config: { cwd?: string; nothrow?: boolean } = {};
-	const result = async () => {
-		const stdout: string[] = [];
-		const stderr: string[] = [];
-		const out = new Writable({
-			write: (chunk, _encoding, done) => {
-				stdout.push(chunk.toString());
-				done();
-			},
-		});
-		const err = new Writable({
-			write: (chunk, _encoding, done) => {
-				stderr.push(chunk.toString());
-				done();
-			},
-		});
-		const exitCode = await runCli(args.slice(cliCommand.length), { cwd: config.cwd, stdout: out, stderr: err });
-		const value = { exitCode, stdout: stdout.join(""), stderr: stderr.join("") };
-		if (value.exitCode && !config.nothrow) throw new Error(value.stderr || `CLI exited with ${value.exitCode}`);
-		return value;
-	};
-	const chain = {
-		cwd(value: string) {
-			config.cwd = value;
-			return chain;
-		},
-		nothrow() {
-			config.nothrow = true;
-			return chain;
-		},
-		quiet() {
-			return result();
-		},
-		async text() {
-			return (await result()).stdout;
-		},
-	};
-	return chain;
-}
 
 describe("CLI task create/edit descriptions", () => {
 	it("distinguishes omitted, explicit empty, and blank-only label lists", () => {
@@ -85,28 +31,59 @@ describe("CLI task create/edit descriptions", () => {
 	});
 
 	it("creates and edits a task description", async () => {
-		await $`${cliCommand} task create "Example" --description "Hello"`.cwd(TEST_DIR).quiet();
+		expect(
+			(await runInProcessCli(["task", "create", "Example", "--description", "Hello"], { cwd: TEST_DIR })).exitCode,
+		).toBe(0);
 		const core = new Core(TEST_DIR);
 		expect((await coreFileSystem(core).loadTask("task-1"))?.description).toBe("Hello");
 
-		await $`${cliCommand} task edit task-1 --description "Updated description"`.cwd(TEST_DIR).quiet();
+		expect(
+			(await runInProcessCli(["task", "edit", "task-1", "--description", "Updated description"], { cwd: TEST_DIR }))
+				.exitCode,
+		).toBe(0);
 		expect((await coreFileSystem(core).loadTask("task-1"))?.description).toBe("Updated description");
 	});
 
 	it("passes repeated create labels through registration into task input", async () => {
-		await $`${cliCommand} task create "Labeled" --label alpha --label beta`.cwd(TEST_DIR).quiet();
+		expect(
+			(await runInProcessCli(["task", "create", "Labeled", "--label", "alpha", "--label", "beta"], { cwd: TEST_DIR }))
+				.exitCode,
+		).toBe(0);
 		expect((await coreFileSystem(new Core(TEST_DIR)).loadTask("task-1"))?.labels).toEqual(["alpha", "beta"]);
 	});
 
-	it("resolves create and edit priorities to configured labels", async () => {
+	it("uses exact configured priorities and leaves priority unchanged on title/description edit", async () => {
 		const core = new Core(TEST_DIR);
 		const config = await coreFileSystem(core).loadConfig();
 		if (!config) throw new Error("Expected initialized configuration");
 		await coreFileSystem(core).saveConfig({ ...config, priorities: ["Urgent"] });
 
-		await $`${cliCommand} task create "Priority" --priority " urgent "`.cwd(TEST_DIR).quiet();
-		await $`${cliCommand} task edit task-1 --priority "URGENT"`.cwd(TEST_DIR).quiet();
+		expect(
+			(await runInProcessCli(["task", "create", "Priority", "--priority", "Urgent"], { cwd: TEST_DIR })).exitCode,
+		).toBe(0);
 		expect((await coreFileSystem(core).loadTask("task-1"))?.priority).toBe("Urgent");
+		for (const priority of [" urgent ", "urgent"]) {
+			expect(
+				(await runInProcessCli(["task", "create", "Invalid priority", "--priority", priority], { cwd: TEST_DIR }))
+					.exitCode,
+			).not.toBe(0);
+		}
+		expect(
+			(
+				await runInProcessCli(
+					["task", "edit", "task-1", "--title", "Updated", "--description", "Updated description"],
+					{ cwd: TEST_DIR },
+				)
+			).exitCode,
+		).toBe(0);
+		expect(await coreFileSystem(core).loadTask("task-1")).toMatchObject({
+			title: "Updated",
+			description: "Updated description",
+			priority: "Urgent",
+		});
+		expect(
+			(await runInProcessCli(["task", "edit", "task-1", "--priority", "Urgent"], { cwd: TEST_DIR })).exitCode,
+		).not.toBe(0);
 	});
 
 	it("treats a task edit with no field options as an interactive edit", () => {

@@ -271,7 +271,7 @@ describe("Cleanup functionality", () => {
 
 	describe("Error handling", () => {
 		it("should handle non-existent task gracefully", async () => {
-			const success = await core.completeTask("non-existent");
+			const success = await core.completeTask("TASK-999");
 			expect(success).toBe(false);
 		});
 

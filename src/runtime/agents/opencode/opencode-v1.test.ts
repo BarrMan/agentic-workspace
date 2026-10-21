@@ -10,6 +10,27 @@ const profile = getDefaultModeCatalog().profiles.build;
 if (!profile) throw new Error("Missing default build mode profile.");
 
 describe("OpenCode 1.19 TUI adapter", () => {
+	it("owns model discovery arguments and parses the provider catalog at its API seam", async () => {
+		const root = await mkdtemp(join(tmpdir(), "agentic-workspace-opencode-v1-models-"));
+		try {
+			const executable = join(root, "fixture");
+			const calls = join(root, "calls");
+			await writeFile(
+				executable,
+				`#!/bin/sh\nprintf '%s\\n' "$*:$DISCOVERY_FIXTURE" >> '${calls}'\nprintf 'openai/fast\\nopenai/fast\\n openai/slow \\n'\n`,
+				{ mode: 0o700 },
+			);
+			const agent = new OpencodeV1Agent();
+			const request = { command: [executable, "--preset"], env: { DISCOVERY_FIXTURE: "selected" }, timeoutMs: 1_000 };
+			const models = await agent.discoverModels(request);
+			expect(models.map(({ id }) => id)).toEqual(["openai/fast", "openai/slow"]);
+			expect(await agent.discoverModels(request)).toEqual(models);
+			expect(await readFile(calls, "utf8")).toBe("--preset models:selected\n");
+		} finally {
+			await rm(root, { recursive: true, force: true });
+		}
+	});
+
 	it("sends the initial prompt once even when using a supplied session ID", () => {
 		const agent = new OpencodeV1Agent();
 		const prompt = "bootstrap file.md";

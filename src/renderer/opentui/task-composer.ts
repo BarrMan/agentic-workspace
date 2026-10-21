@@ -1,5 +1,5 @@
 import type { BoxRenderable, CliRenderer } from "@opentui/core";
-import { type AgentConfiguration, resolveSessionSettings } from "../../model/session/types.ts";
+import { type EffectiveAgentConfiguration, resolveSessionSettings } from "../../model/session/types.ts";
 import { getPriorityLabels } from "../../model/task/priority-config.ts";
 import { getProjectValues } from "../../model/task/project-config.ts";
 import { getTaskTypeValues } from "../../model/task/task-type-config.ts";
@@ -59,7 +59,7 @@ type TaskComposerFields = readonly TaskComposerField[];
 
 export type OpenTuiTaskComposerOptions = Omit<TaskComposerOptions, "screen" | "persist"> & {
 	readonly onResult?: (task: Task | null) => void;
-	readonly agentConfiguration?: AgentConfiguration;
+	readonly agentConfiguration?: EffectiveAgentConfiguration;
 	/** When set, the new task is added to this group unless the user checks Root. */
 	readonly defaultGroupId?: string | null;
 	/** Name of the default group, shown in the Root toggle label. */
@@ -200,21 +200,19 @@ export function mountOpenTuiTaskComposer(
 	};
 	const submit = async (values: TaskFormValues<TaskComposerFields>): Promise<void> => {
 		const input = toTaskCreateInput(values);
-		const sessions = {
-			worktreePerTask: Boolean(values.worktreePerTask),
-			yoloMode: Boolean(values.yoloMode),
-		};
 		const inherited = resolveSessionSettings(options.agentConfiguration);
 		const presetChosen = Boolean(values.agentPreset);
-		const sessionsChanged =
-			sessions.worktreePerTask !== inherited.worktreePerTask || sessions.yoloMode !== inherited.yoloMode;
+		const worktreePerTask = Boolean(values.worktreePerTask);
+		const yoloMode = Boolean(values.yoloMode);
+		const sessions = {
+			...(worktreePerTask !== inherited.worktreePerTask && { worktreePerTask }),
+			...(yoloMode !== inherited.yoloMode && { yoloMode }),
+		};
+		const sessionsChanged = Object.keys(sessions).length > 0;
 		if (options.agentConfiguration && (presetChosen || sessionsChanged)) {
-			if (values.agentPreset && !Object.hasOwn(options.agentConfiguration.presets, values.agentPreset))
-				throw new Error(`Agent preset not found: ${values.agentPreset}`);
 			input.agentConfiguration = {
-				...structuredClone(options.agentConfiguration),
-				selectedPreset: values.agentPreset || options.agentConfiguration.selectedPreset,
-				sessions,
+				...(presetChosen && { selectedPreset: values.agentPreset }),
+				...(Object.keys(sessions).length > 0 && { sessions }),
 			};
 		}
 		const groupId = values.root ? null : (options.defaultGroupId ?? null);

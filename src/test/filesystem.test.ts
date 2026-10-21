@@ -135,12 +135,18 @@ describe("FileSystem", () => {
 			expect(loadedTask?.description).toBe(sampleTask.description);
 		});
 
-		it("stores task IDs without validating generated-ID syntax", async () => {
-			await filesystem.saveTask({ ...sampleTask, id: "TASK-PREFIXED", parentTaskId: "TASK-PARENT" });
-			expect(await filesystem.loadTask("TASK-PREFIXED")).toMatchObject({
-				id: "TASK-PREFIXED",
-				parentTaskId: "TASK-PARENT",
-			});
+		it("rejects malformed task IDs before writing and preserves malformed stored bytes on load", async () => {
+			await expect(filesystem.saveTask({ ...sampleTask, id: "TASK-PREFIXED" })).rejects.toThrow(
+				/Invalid task ID.*PREFIX-NUMBER/,
+			);
+			expect(await readdir(filesystem.tasksDir)).toEqual([]);
+
+			const filepath = join(filesystem.tasksDir, "task-1", "task.md");
+			await mkdir(join(filesystem.tasksDir, "task-1"), { recursive: true });
+			const content = serializeTask({ ...sampleTask, id: "TASK-PREFIXED" });
+			await Bun.write(filepath, content);
+			await expect(filesystem.loadTask("TASK-1")).rejects.toThrow(/TASK-PREFIXED.*PREFIX-NUMBER/);
+			expect(await Bun.file(filepath).text()).toBe(content);
 		});
 
 		it("preserves unknown frontmatter and opaque body when saving an existing task", async () => {
@@ -246,7 +252,7 @@ describe("FileSystem", () => {
 		});
 
 		it("should return null for non-existent task", async () => {
-			const task = await filesystem.loadTask("non-existent");
+			const task = await filesystem.loadTask("TASK-999");
 			expect(task).toBeNull();
 		});
 
@@ -257,7 +263,7 @@ describe("FileSystem", () => {
 			expect((await filesystem.loadTask("back-12"))?.title).toBe("Longer sibling");
 		});
 
-		it("loads each padded spelling from its own container", async () => {
+		it("loads each exact numeric spelling from its own container and rejects surrounding whitespace", async () => {
 			const canonicalPath = join(filesystem.tasksDir, "task-1", "task.md");
 			const twinPath = join(filesystem.tasksDir, "task-001", "task.md");
 			await Bun.write(canonicalPath, serializeTask({ ...sampleTask, id: "TASK-1", title: "Canonical" }));
@@ -266,8 +272,8 @@ describe("FileSystem", () => {
 
 			expect(await filesystem.loadTask("TASK-1")).toMatchObject({ id: "TASK-1", title: "Canonical" });
 			expect(await filesystem.loadTask("TASK-001")).toMatchObject({ id: "TASK-001", title: "Twin" });
-			expect(await filesystem.loadTask(" task-1 ")).toMatchObject({ id: "TASK-1", title: "Canonical" });
-			expect(await filesystem.loadTask(" task-001 ")).toMatchObject({ id: "TASK-001", title: "Twin" });
+			await expect(filesystem.loadTask(" task-1 ")).rejects.toThrow(/Invalid task ID.*PREFIX-NUMBER/);
+			await expect(filesystem.loadTask(" task-001 ")).rejects.toThrow(/Invalid task ID.*PREFIX-NUMBER/);
 			expect(await Promise.all([canonicalPath, twinPath].map(async (path) => await Bun.file(path).text()))).toEqual(
 				before,
 			);
@@ -446,6 +452,12 @@ title: [unterminated
 			expect(config).toBeNull();
 		});
 
+		it("reports an unreadable config path instead of treating it as missing", async () => {
+			await mkdir(filesystem.configFilePath);
+
+			await expect(filesystem.loadConfig()).rejects.toThrow(filesystem.configFilePath);
+		});
+
 		it("should handle defaultReporter field", async () => {
 			const cfg: AgenticWorkspaceConfig = {
 				projectName: "Reporter",
@@ -512,7 +524,7 @@ title: [unterminated
 		});
 
 		it("should return false when archiving non-existent task", async () => {
-			const result = await filesystem.archiveTask("non-existent");
+			const result = await filesystem.archiveTask("TASK-999");
 			expect(result).toBe(false);
 		});
 

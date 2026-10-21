@@ -1,12 +1,10 @@
 import { BoxRenderable, type CliRenderer, TextAttributes, TextRenderable } from "@opentui/core";
-import type { ArtifactStatus } from "../../model/session/types.ts";
 import type { TaskArtifactEntry } from "../../storage/task-artifact-repository.ts";
 
 export interface TaskArtifactViewApi {
 	list(taskId: string): Promise<TaskArtifactEntry[]>;
-	read(taskId: string, path: string): Promise<{ bytes: Uint8Array; status: ArtifactStatus }>;
-	approveCurrentVersion(taskId: string, path: string, reviewedHash: string): Promise<ArtifactStatus>;
-	revokeApproval(taskId: string, path: string): Promise<ArtifactStatus>;
+	read(taskId: string, path: string): Promise<Uint8Array>;
+	write(taskId: string, path: string, bytes: Uint8Array): Promise<void>;
 	subscribeArtifactChanges?(taskId: string, callback: () => void): () => void;
 }
 
@@ -15,11 +13,10 @@ export interface TaskArtifactViewOptions {
 	parent: BoxRenderable;
 	taskId: string;
 	api: TaskArtifactViewApi;
-	declaredPaths?: readonly string[];
 	onError?: (message: string) => void;
 }
 
-/** Render artifact state and a read-only review. Async results are bound to task + selected path. */
+/** Render generic task artifacts. Async results are bound to task + selected path. */
 export class TaskArtifactView {
 	readonly root: BoxRenderable;
 	private readonly listText: TextRenderable;
@@ -27,12 +24,9 @@ export class TaskArtifactView {
 	private readonly footer: TextRenderable;
 	private readonly options: TaskArtifactViewOptions;
 	private taskId: string;
-	private declaredPaths: readonly string[];
 	private entries: TaskArtifactEntry[] = [];
 	private selectedPath?: string;
-	private reviewedHash?: string;
 	private request = 0;
-	private readonly labels = new Map<string, { type: "text" | "binary"; size: number }>();
 	private unsubscribeArtifactChanges?: () => void;
 	private active = true;
 	private disposed = false;
@@ -40,7 +34,6 @@ export class TaskArtifactView {
 	constructor(options: TaskArtifactViewOptions) {
 		this.options = options;
 		this.taskId = options.taskId;
-		this.declaredPaths = options.declaredPaths ?? [];
 		this.root = new BoxRenderable(options.renderer, { width: "100%", height: "100%", flexDirection: "column" });
 		const content = new BoxRenderable(options.renderer, { width: "100%", flexGrow: 1, flexDirection: "row" });
 		this.listText = new TextRenderable(options.renderer, {
@@ -65,8 +58,7 @@ export class TaskArtifactView {
 			height: 2,
 			wrapMode: "word",
 			attributes: TextAttributes.DIM,
-			content:
-				"Artifact review · Approve current version · Revoke approval · use named actions; Enter/Tab remain available to workspace",
+			content: "Artifacts · use workspace navigation; Enter/Tab remain available to workspace",
 		});
 		this.root.add(content);
 		this.root.add(this.footer);
@@ -80,15 +72,13 @@ export class TaskArtifactView {
 	}
 
 	/** Change task identity and reload; pending results from the previous task are discarded. */
-	async setTask(taskId: string, declaredPaths: readonly string[] = []): Promise<void> {
+	async setTask(taskId: string): Promise<void> {
 		const taskChanged = taskId !== this.taskId;
-		this.declaredPaths = declaredPaths;
 		if (!taskChanged) return this.refresh();
 		this.unsubscribeArtifactChanges?.();
 		this.unsubscribeArtifactChanges = undefined;
 		this.taskId = taskId;
 		this.selectedPath = undefined;
-		this.reviewedHash = undefined;
 		if (this.active) this.subscribeToTask();
 		await this.refresh();
 	}
@@ -157,10 +147,6 @@ export class TaskArtifactView {
 		const entries = await this.options.api.list(taskId);
 		if (request !== this.request || taskId !== this.taskId || path !== this.selectedPath || !this.active) return false;
 		const byPath = new Map(entries.map((entry) => [entry.path, entry]));
-		for (const declaredPath of this.declaredPaths) {
-			if (!byPath.has(declaredPath))
-				byPath.set(declaredPath, { path: declaredPath, state: "missing", size: 0, type: "text" });
-		}
 		this.entries = [...byPath.values()].sort((a, b) => a.path.localeCompare(b.path));
 		return true;
 	}
@@ -168,73 +154,29 @@ export class TaskArtifactView {
 	async select(path: string): Promise<void> {
 		if (!this.active || this.disposed || !this.entries.some((entry) => entry.path === path)) return;
 		this.selectedPath = path;
-		this.reviewedHash = undefined;
 		this.renderList();
 		await this.loadSelected(this.taskId, path, ++this.request);
 	}
 
-	/** User-facing named action; only approves the exact text bytes currently displayed. */
-	async approveCurrentVersion(): Promise<void> {
-		const taskId = this.taskId;
-		const path = this.selectedPath;
-		const reviewedHash = this.reviewedHash;
-		if (!path || !reviewedHash) return;
-		const request = ++this.request;
-		try {
-			await this.options.api.approveCurrentVersion(taskId, path, reviewedHash);
-			if (request !== this.request || taskId !== this.taskId || path !== this.selectedPath) return;
-			await this.refresh();
-		} catch (error) {
-			if (request !== this.request || taskId !== this.taskId || path !== this.selectedPath) return;
-			const message = error instanceof Error ? error.message : String(error);
-			if (message.toLowerCase().includes("changed since it was reviewed")) {
-				this.footer.content =
-					"Artifact changed since review; refreshed current version. Approve current version · Revoke approval";
-				await this.refresh();
-				return;
-			}
-			this.showError(error);
-		}
-	}
-
-	/** User-facing named action that revokes approval without editing artifact bytes. */
-	async revokeApproval(): Promise<void> {
-		const taskId = this.taskId;
-		const path = this.selectedPath;
-		if (!path) return;
-		const request = ++this.request;
-		try {
-			await this.options.api.revokeApproval(taskId, path);
-			if (request === this.request && taskId === this.taskId && path === this.selectedPath) await this.refresh();
-		} catch (error) {
-			if (request === this.request && taskId === this.taskId && path === this.selectedPath) this.showError(error);
-		}
-	}
-
 	private async loadSelected(taskId: string, path: string | undefined, request: number): Promise<void> {
-		this.reviewedHash = undefined;
 		if (!path) {
 			this.detailText.content = "No artifacts";
 			return;
 		}
 		const entry = this.entries.find((item) => item.path === path);
-		if (!entry || entry.state === "missing") {
-			this.reviewedHash = undefined;
-			this.detailText.content = `${path}\n\nMissing · declared artifact has not been created`;
+		if (!entry) {
+			this.detailText.content = "No artifacts";
 			return;
 		}
 		try {
-			const result = await this.options.api.read(taskId, path);
+			const bytes = await this.options.api.read(taskId, path);
 			if (request !== this.request || taskId !== this.taskId || path !== this.selectedPath) return;
-			const text = entry.type === "text" ? this.decodeText(result.bytes) : undefined;
+			const text = entry.type === "text" ? this.decodeText(bytes) : undefined;
 			const type = text === undefined ? "binary" : "text/Markdown";
-			this.labels.set(path, { type: text === undefined ? "binary" : "text", size: result.bytes.byteLength });
-			// A review hash is valid only for bytes that were actually rendered above.
-			this.reviewedHash = text === undefined ? undefined : result.status.sha256;
 			this.detailText.content =
 				text === undefined
-					? `${path}\n${type} · ${result.bytes.byteLength} bytes\n\nBinary content is not decoded for review.`
-					: `${path}\n${this.statusLabel(result.status)} · ${type} · ${result.bytes.byteLength} bytes\n\n${text}`;
+					? `${path}\n${type} · ${bytes.byteLength} bytes\n\nBinary content is not decoded.`
+					: `${path}\n${type} · ${bytes.byteLength} bytes\n\n${text}`;
 			this.renderList();
 		} catch (error) {
 			if (request === this.request && taskId === this.taskId && path === this.selectedPath) this.showError(error);
@@ -256,8 +198,7 @@ export class TaskArtifactView {
 			this.entries
 				.map((entry) => {
 					const selected = entry.path === this.selectedPath ? "> " : "  ";
-					const meta = entry.state === "missing" ? "Missing" : entry.state === "approved" ? "Approved" : "Draft";
-					return `${selected}${entry.path} · ${meta}`;
+					return `${selected}${entry.path}`;
 				})
 				.join("\n") || "No artifacts";
 	}
@@ -271,13 +212,9 @@ export class TaskArtifactView {
 		}
 	}
 
-	private statusLabel(status: ArtifactStatus): string {
-		return status.state === "approved" ? "Approved" : status.state === "missing" ? "Missing" : "Draft";
-	}
-
 	private showError(error: unknown): void {
 		const message = error instanceof Error ? error.message : String(error);
-		this.detailText.content = `Artifact review error\n\n${message}`;
+		this.detailText.content = `Artifact error\n\n${message}`;
 		this.options.onError?.(message);
 	}
 }

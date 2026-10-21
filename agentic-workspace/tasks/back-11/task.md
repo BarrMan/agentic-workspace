@@ -3,12 +3,11 @@ task_schema_version: 3
 id: BACK-11
 title: 'Harden the CI test runner: bounded deadline and live-workspace isolation'
 status: Done
-assignee: []
 created_date: '2026-10-07 17:22'
 updated_date: '2026-10-07 17:44'
 labels: []
 dependencies: []
-priority: high
+priority: "High"
 type: task
 ordinal: 11000
 description: >-

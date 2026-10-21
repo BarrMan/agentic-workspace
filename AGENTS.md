@@ -10,6 +10,7 @@ Project documentation lives under `docs/`; the root `README.md` is the user entr
 - **Ownership, interfaces, persistence or refactoring:** read [BLUEPRINT](docs/BLUEPRINT.md) and relevant [ADRs](docs/adr/README.md).
 - **A screen, dialog, focus or key interaction:** read its [screen specification](docs/screens/README.md) and [DESIGN-SYSTEM](docs/DESIGN-SYSTEM.md).
 - **Implementation or tests:** read [CONVENTIONS](docs/CONVENTIONS.md).
+- **Review or audit:** read [Review and Verification](docs/CONVENTIONS.md#review-and-verification).
 - **Scope or product purpose:** read [PRODUCT](docs/PRODUCT.md).
 
 ### Authority and decisions

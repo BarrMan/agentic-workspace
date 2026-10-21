@@ -94,7 +94,7 @@ Fix the login bug that prevents users from signing in.
 			expect(task.modifiedFiles).toEqual(["src/auth/login.ts", "src/web/LoginForm.tsx"]);
 			expect(task.parentTaskId).toBe("task-parent");
 			expect(task.subtasks).toEqual(["task-1.1", "task-1.2"]);
-			expect(task.agentConfiguration?.presets.custom?.command).toEqual(["agent", "", "two words"]);
+			expect(task.agentConfiguration?.presets?.custom?.command).toEqual(["agent", "", "two words"]);
 		});
 
 		it("should parse a task with minimal fields", () => {

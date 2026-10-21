@@ -3,7 +3,6 @@ task_schema_version: 3
 id: BACK-23
 title: Modes
 status: Done
-assignee: []
 created_date: '2026-10-09 07:42'
 updated_date: '2026-10-10 09:15'
 labels: []

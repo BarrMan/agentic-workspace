@@ -3,7 +3,6 @@ task_schema_version: 3
 id: BACK-17
 title: Add groups to task list
 status: Done
-assignee: []
 created_date: '2026-10-08 07:03'
 updated_date: '2026-10-09 04:30'
 labels: []

@@ -11,7 +11,6 @@ import { processIdentity, terminateProcessTree } from "../lib/process-tree.ts";
 import { fail, type SessionCommandResult } from "../model/session/session-utils.ts";
 import type { AgentSession } from "../model/session/types.ts";
 import { taskIdsEqual } from "../model/task/task-id.ts";
-import { resolveProjectStateRoot } from "../storage/session-store.ts";
 import { cleanupPreparedLaunchResources, type PreparedLaunchResources } from "./completion-supervisor-resources.ts";
 import { ConclusiveStartupFailureError } from "./errors/sessions.ts";
 import { createTmuxExec } from "./live/tmux/exec.ts";
@@ -41,6 +40,16 @@ type ProcessOptions = {
 
 export interface ProcessRunner {
 	run(args: string[], options?: ProcessOptions): Promise<SessionCommandResult>;
+}
+
+/** Runtime-owned resource roots used to validate captured launch-resource cleanup. */
+export interface SessionProcessResourceContext {
+	readonly projectRoot: string;
+	readonly stateRoot: () => Promise<string>;
+}
+
+export interface PreparedProcessStop {
+	stop(): Promise<void>;
 }
 
 export class BunRunner implements ProcessRunner {
@@ -221,11 +230,14 @@ export class SessionProcess {
 
 	constructor(
 		private readonly runner: ProcessRunner,
-		rootDir: string,
+		resources: SessionProcessResourceContext,
 		private readonly server: TmuxServer = createSessionServer(),
-		private readonly stateRoot: () => Promise<string> = () => resolveProjectStateRoot(rootDir),
+		private readonly stateRoot: () => Promise<string> = resources.stateRoot,
+		private readonly exec: TmuxExec = createTmuxExec({
+			socketName: process.env.AGENTIC_WORKSPACE_TMUX_SOCKET?.trim() || "default",
+		}),
 	) {
-		this.rootDir = realpathSync(rootDir);
+		this.rootDir = realpathSync(resources.projectRoot);
 	}
 
 	async prepare(command: string, cwd: string, env: Record<string, string>): Promise<void> {
@@ -353,6 +365,17 @@ export class SessionProcess {
 
 	async killCaptured(session: AgentSession, paneId: string): Promise<void> {
 		await this.killPane(session, [LIVE_PREVIEW_ROLE], paneId);
+	}
+
+	async prepareStop(session: AgentSession): Promise<PreparedProcessStop> {
+		const pane = await this.exactPane(session, [LIVE_PREVIEW_ROLE]);
+		if (!pane) return { stop: async () => {} };
+		const resources = await this.launchResources(pane.paneId);
+		if (resources) await this.validateLaunchResources(session, resources, true);
+		const rawPid = firstLine(await this.server.cmd("display-message", ["-p", "-t", pane.paneId, "#{pane_pid}"])).trim();
+		if (!/^\d+$/.test(rawPid) || !processIdentity(Number(rawPid)))
+			throw new Error(`Could not safely identify pane process for session ${session.id}; refusing stop.`);
+		return { stop: async () => await this.killCaptured(session, pane.paneId) };
 	}
 
 	async killRetired(session: AgentSession): Promise<void> {
@@ -528,6 +551,13 @@ export class SessionProcess {
 		await tmux(`Could not attach to session ${session.id}`, () =>
 			this.server.cmd(command, ["-t", paneId], { timeoutMs: null }),
 		);
+	}
+
+	/** Resolve the existing pane for a renderer attachment; this never attaches a TTY client. */
+	async terminalTarget(
+		session: Readonly<AgentSession>,
+	): Promise<{ readonly paneId: string; readonly server: TmuxServer; readonly exec: TmuxExec }> {
+		return { paneId: await this.paneId(session), server: this.server, exec: this.exec };
 	}
 	async sendKey(session: AgentSession, key: string): Promise<void> {
 		const paneId = await this.paneId(session);

@@ -4,10 +4,17 @@ import { resolveRuntimeCwd } from "../lib/runtime-cwd.ts";
 import { DEFAULT_STATUSES, FALLBACK_STATUS } from "../model/constants.ts";
 import { TaskCollectionFilterError } from "../model/errors/task-collection.ts";
 import { AmbiguousTaskIdError } from "../model/errors/task-id.ts";
-import { DependencyValidator } from "../model/task/dependency-validator.ts";
+import {
+	Config,
+	removeMode as removeConfiguredMode,
+	removeAgentPreset as removeExactAgentPreset,
+} from "../model/session/config.ts";
+import type { AgentConfiguration, ModeId, SessionFactory } from "../model/session/types.ts";
+import { requireMilestoneId } from "../model/task/milestones.ts";
 import { formatValidPriorityValues, resolvePriorityLabel } from "../model/task/priority-config.ts";
 import { DEFAULT_ORDINAL_STEP, resolveOrdinalConflicts } from "../model/task/reorder.ts";
 import { formatValidStatuses, getCanonicalStatuses } from "../model/task/status.ts";
+import { Task as TaskModel } from "../model/task/task.ts";
 import { TaskCollection as TaskCollectionModel } from "../model/task/task-collection.ts";
 import { taskIdsEqual } from "../model/task/task-id.ts";
 import { TaskIdentityIndex, type TaskIdentityRecord } from "../model/task/task-identity-index.ts";
@@ -24,16 +31,23 @@ import {
 	type TaskListFilter,
 	type TaskUpdateInput,
 } from "../model/types.ts";
-import { AgentSessionService } from "../runtime/sessions.ts";
-import { Config, resolveAgentConfiguration } from "../storage/config.ts";
-import { FileSystem, isConfigValueError } from "../storage/file-system.ts";
+import {
+	getBuiltInAgentConfiguration,
+	loadAgentConfiguration,
+	loadProjectModeCatalog,
+	patchAgentConfiguration,
+	resolveAgentConfiguration,
+	updateAgentConfiguration,
+} from "../storage/config.ts";
+import { isConfigValueError } from "../storage/file-system.ts";
 import { Storage } from "../storage/storage.ts";
 import type { CreatedTaskRollbackResult, CreatedTaskWrite } from "../storage/types.ts";
-import { type ConfigWatcherCallbacks, watchConfigFile } from "../storage/watchers/config-watcher.ts";
+import type { ConfigWatcherCallbacks } from "../storage/watchers/config-watcher.ts";
 import { type TaskWatcherCallbacks, watchTaskRecords } from "../storage/watchers/task-watcher.ts";
 import { planOrderedTaskPlacement } from "./ordered-task-move-planner.ts";
 import { PersistentTaskRead } from "./persistent-task-read.ts";
 import { searchSnapshot } from "./search-service.ts";
+import { SessionApplication } from "./session-application.ts";
 import { TaskCreationService } from "./task-creation-workflow.ts";
 import { TaskLifecycleService } from "./task-lifecycle-service.ts";
 import type { TaskCorpusSnapshot } from "./task-loader.ts";
@@ -41,6 +55,7 @@ import { ProjectTaskMutations } from "./task-mutation-service.ts";
 import type { TaskQueryOptions, TaskReadOptions } from "./task-query-workflow.ts";
 import { planTaskReorder } from "./task-reorder-plan.ts";
 import { VacatedTaskReferenceService } from "./vacated-task-reference-service.ts";
+import { WorkspaceStateService } from "./workspace-state.ts";
 
 interface MoveTasksPlan {
 	readonly movedTasks: Task[];
@@ -76,13 +91,6 @@ export interface VacatedTaskResult {
 	cleanedTaskIds: string[];
 }
 
-/** Dependencies are validated against the working copy on both the create and the edit path. */
-function formatMissingDependenciesError(invalid: string[]): Error {
-	return new Error(
-		`The following dependencies do not exist: ${invalid.join(", ")}. Please create these tasks first or verify the IDs. ${LOCAL_TASK_LOOKUP_HINT}`,
-	);
-}
-
 /**
  * A board move rewrites the task file, so a task that belongs to another branch can only be moved
  * from that branch. Returns the reason to report, or null when the task is local and writable.
@@ -92,24 +100,10 @@ function crossBranchMoveReason(task: Task, verb: "reordered" | "moved"): string 
 	return `Task ${task.id} exists in branch "${task.branch}" and cannot be ${verb} from the current branch. Switch to that branch to modify it.`;
 }
 
-/**
- * Normalize the milestone a board move targets. A named lane stores its trimmed name, while the
- * board's no-milestone lane arrives as null or a blank string and clears the field.
- */
-function normalizeTargetMilestone(targetMilestone: string | null | undefined): string | undefined {
-	if (typeof targetMilestone !== "string") return undefined;
-	const trimmed = targetMilestone.trim();
-	return trimmed.length > 0 ? trimmed : undefined;
-}
-
 export class Core {
 	readonly git: GitOperations;
-	private readonly filesystem: FileSystem;
-	private agentSessions?: AgentSessionService;
-	get sessions(): AgentSessionService {
-		if (!this.agentSessions) this.agentSessions = new AgentSessionService(this);
-		return this.agentSessions;
-	}
+	readonly sessionApplication: SessionApplication;
+	readonly workspaceState: WorkspaceStateService;
 	private readonly vacatedTaskReferences: VacatedTaskReferenceService;
 	private readonly taskMutations: ProjectTaskMutations;
 	private readonly taskLifecycle: TaskLifecycleService;
@@ -117,16 +111,25 @@ export class Core {
 	private readonly storage: Storage;
 	private configSnapshot?: Promise<Config>;
 
-	constructor(projectRoot: string) {
-		this.filesystem = new FileSystem(projectRoot);
-		this.filesystem.freezeResolution();
-		this.storage = new Storage(this.filesystem);
+	constructor(
+		projectRoot: string,
+		options: { storage?: Storage; sessionFactory?: SessionFactory; maxSessions?: number; stateRoot?: string } = {},
+	) {
+		this.storage =
+			options.storage ??
+			Storage.open(projectRoot, options.stateRoot !== undefined ? { stateRoot: options.stateRoot } : {});
 		void this.storage.startAgentPresetCommandMigration();
-		this.configSnapshot = Config.load(this.storage);
+		this.configSnapshot = Config.load(this.storage, getBuiltInAgentConfiguration());
 		void this.configSnapshot.catch(() => undefined);
 		this.git = new GitOperations(projectRoot, null, () => this.storage.loadConfig());
 		this.persistentReads = new PersistentTaskRead(this.storage, this.git);
 		this.vacatedTaskReferences = new VacatedTaskReferenceService(this.storage);
+		this.sessionApplication = new SessionApplication(this, {
+			storage: this.storage,
+			sessionFactory: options.sessionFactory,
+			maxSessions: options.maxSessions ?? 10,
+		});
+		this.workspaceState = new WorkspaceStateService(this, { sessionApplication: this.sessionApplication });
 		this.taskMutations = new ProjectTaskMutations(
 			this.storage,
 			(id) => this.persistentReads.get(id, { forMutation: true }),
@@ -136,7 +139,7 @@ export class Core {
 	}
 
 	async getConfig(): Promise<Config> {
-		this.configSnapshot ??= Config.load(this.storage);
+		this.configSnapshot ??= Config.load(this.storage, getBuiltInAgentConfiguration());
 		return await this.configSnapshot;
 	}
 
@@ -144,14 +147,164 @@ export class Core {
 		await (await this.getConfig()).reload();
 	}
 
+	async getExactAgentConfiguration(
+		scope: "root" | "project" | "card",
+		taskId?: string,
+	): Promise<AgentConfiguration | null> {
+		return await loadAgentConfiguration(this, scope, taskId);
+	}
+
+	async getEffectiveAgentConfiguration(taskId?: string) {
+		return await resolveAgentConfiguration(this, taskId);
+	}
+
+	async getProjectModeCatalog() {
+		return await loadProjectModeCatalog(this);
+	}
+
+	async patchAgentConfiguration(
+		scope: "root" | "project" | "card",
+		patch: import("../model/session/config.ts").AgentConfigurationPatch,
+		taskId?: string,
+	) {
+		return await patchAgentConfiguration(this, scope, patch, taskId);
+	}
+
+	async removeAgentPreset(
+		scope: "root" | "project" | "card",
+		name: string,
+		taskId?: string,
+	): Promise<AgentConfiguration> {
+		return await updateAgentConfiguration(
+			this,
+			scope,
+			(configuration) => removeExactAgentPreset(configuration, name, scope),
+			taskId,
+		);
+	}
+
+	async setModeModel(modeId: ModeId, modelId: string): Promise<void> {
+		const catalog = await this.getProjectModeCatalog();
+		const profile = catalog.profiles[modeId];
+		if (!profile) throw new Error(`Unknown mode '${modeId}'.`);
+		await this.patchAgentConfiguration("project", {
+			modes: {
+				...catalog,
+				profiles: { ...catalog.profiles, [modeId]: { ...profile, model: { kind: "explicit", id: modelId } } },
+			},
+		});
+	}
+
+	async deleteMode(
+		modeId: ModeId,
+		options: { confirmed: true },
+	): Promise<{ deletedModeId: ModeId; taskIds: string[] }> {
+		if (!options.confirmed) throw new Error("Mode deletion requires explicit confirmation.");
+		const releaseMode = await this.storage.claimModeAdmission(modeId);
+		const taskReleases: Array<() => Promise<void>> = [];
+		const prepared: Array<{
+			taskId: string;
+			record: { id: string };
+			stop: () => Promise<void>;
+			release: () => Promise<void>;
+		}> = [];
+		const completed: string[] = [];
+		const stopped: Array<{ taskId: string; sessionId: string }> = [];
+		let primary: Error | undefined;
+		const partialEffectsMessage = () =>
+			`Mode deletion failed after stopping sessions: ${stopped.map(({ taskId, sessionId }) => `${taskId}/${sessionId}`).join(", ") || "none"}; removed sessions from: ${completed.join(", ") || "none"}.`;
+		try {
+			await this.storage.modeDeletionJournal.withLock(async () => {
+				if (await this.storage.modeDeletionJournal.read())
+					throw new Error("A mode deletion is pending; preserve its journal and recover it before another deletion.");
+				const catalog = await this.getProjectModeCatalog();
+				if (!catalog.profiles[modeId]) throw new Error(`Unknown mode '${modeId}'.`);
+				if (catalog.order.length <= 1) throw new Error("Cannot delete the last configured mode.");
+				const taskIds = (await this.storage.loadProjectTaskIds()).sort((left, right) => left.localeCompare(right));
+				for (const taskId of taskIds) taskReleases.push(await this.storage.claimTaskAdmission(taskId));
+				for (const taskId of taskIds) {
+					for (const entry of await this.sessionApplication.prepareTaskStop(taskId, modeId))
+						prepared.push({ taskId, record: entry.record, stop: entry.stop, release: entry.release });
+				}
+				await this.storage.modeDeletionJournal.write({
+					version: 2,
+					operationId: crypto.randomUUID(),
+					source: modeId,
+					phase: "prepared",
+					tasks: taskIds,
+				});
+				for (const entry of prepared) {
+					await entry.stop();
+					stopped.push({ taskId: entry.taskId, sessionId: entry.record.id });
+				}
+				for (const taskId of taskIds) {
+					await this.sessionApplication.discardModeSessions(taskId, modeId);
+					await this.sessionApplication.forgetTaskSessions(taskId);
+					completed.push(taskId);
+				}
+				const exact = await this.getExactAgentConfiguration("project");
+				if (!exact) throw new Error("Project agent configuration is unavailable.");
+				await updateAgentConfiguration(this, "project", (current) => removeConfiguredMode(current, modeId));
+				await this.storage.modeDeletionJournal.remove();
+			});
+		} catch (error) {
+			primary = error instanceof Error ? error : new Error(String(error));
+			primary = new AggregateError([primary], partialEffectsMessage(), { cause: primary });
+		} finally {
+			const releases = [...prepared.map((entry) => entry.release), ...taskReleases.reverse(), releaseMode];
+			const failures: Error[] = [];
+			for (const release of releases) {
+				try {
+					await release();
+				} catch (error) {
+					failures.push(error instanceof Error ? error : new Error(String(error)));
+				}
+			}
+			if (failures.length)
+				primary = new AggregateError(
+					[...(primary ? [primary] : []), ...failures],
+					primary?.message ?? "Mode deletion claim release failed.",
+					{ cause: primary },
+				);
+		}
+		if (primary) throw primary;
+		return { deletedModeId: modeId, taskIds: completed };
+	}
+
 	private createTaskLifecycleService(): TaskLifecycleService {
 		return new TaskLifecycleService(
 			this.storage,
 			this.taskMutations,
 			this.vacatedTaskReferences,
-			async (taskId, ownedStops) => await this.sessions.cleanupTaskWorktreeSessions(taskId, ownedStops),
-			async (taskId) => await this.sessions.forgetTaskSessions(taskId),
+			async (taskId) => await this.cleanupTaskSessions(taskId),
+			async (taskId) => await this.sessionApplication.forgetTaskSessions(taskId),
 		);
+	}
+
+	private async cleanupTaskSessions(taskId: string): Promise<void> {
+		const prepared = await this.sessionApplication.prepareTaskStop(taskId);
+		let primary: Error | undefined;
+		try {
+			for (const session of prepared) await session.stop();
+		} catch (error) {
+			primary = error instanceof Error ? error : new Error(String(error));
+		} finally {
+			const releaseFailures: Error[] = [];
+			for (const session of prepared) {
+				try {
+					await session.release();
+				} catch (error) {
+					releaseFailures.push(error instanceof Error ? error : new Error(String(error)));
+				}
+			}
+			if (releaseFailures.length)
+				primary = new AggregateError(
+					[...(primary ? [primary] : []), ...releaseFailures],
+					primary ? "Task session cleanup failed." : "Task session cleanup claim release failed.",
+					{ cause: primary },
+				);
+		}
+		if (primary) throw primary;
 	}
 
 	private async buildTaskIdentityIndex(
@@ -188,30 +341,6 @@ export class Core {
 		}
 
 		return Math.max(...ordinals) + DEFAULT_ORDINAL_STEP;
-	}
-
-	async requireCanonicalStatus(status: string): Promise<string> {
-		return await this.taskMutations.requireCanonicalStatus(status);
-	}
-
-	async normalizePriority(value: string | undefined): Promise<string | undefined> {
-		return await this.taskMutations.normalizePriority(value);
-	}
-
-	async normalizeTaskType(value: string | undefined): Promise<string | undefined> {
-		return await this.taskMutations.normalizeTaskType(value);
-	}
-
-	async normalizeProject(value: string | undefined): Promise<string | undefined> {
-		return await this.taskMutations.normalizeProject(value);
-	}
-
-	formatMissingDependenciesError(invalid: string[]): Error {
-		return formatMissingDependenciesError(invalid);
-	}
-
-	async validateTaskDependencies(dependencies: string[], target?: Task) {
-		return await new DependencyValidator(this.storage.dependencyStore).validate(dependencies, target);
 	}
 
 	async queryTasks(options: TaskQueryOptions = {}): Promise<Task[]> {
@@ -412,12 +541,8 @@ export class Core {
 		return await this.taskMutations.setModeApproval(taskId, modeId, { config, scope });
 	}
 
-	async applyTaskUpdateInput(
-		task: Task,
-		input: TaskUpdateInput,
-		statusResolver: (status: string) => Promise<string>,
-	): Promise<{ task: Task; mutated: boolean }> {
-		return await this.taskMutations.applyTaskUpdateInput(task, input, statusResolver);
+	async applyTaskUpdateInput(task: Task, input: TaskUpdateInput): Promise<{ task: Task; mutated: boolean }> {
+		return await this.taskMutations.applyTaskUpdateInput(task, input);
 	}
 
 	async updateTaskFromInput(taskId: string, input: TaskUpdateInput, options: TaskReadOptions = {}): Promise<Task> {
@@ -426,6 +551,10 @@ export class Core {
 
 	async editTask(taskId: string, input: TaskUpdateInput, options: TaskReadOptions = {}): Promise<Task> {
 		return await this.updateTaskFromInput(taskId, input, options);
+	}
+
+	async markTaskDone(taskId: string, options: TaskReadOptions = {}): Promise<{ task: Task; changed: boolean }> {
+		return await this.taskMutations.markDone(taskId, options);
 	}
 
 	private async writeTasksBulk(tasks: Task[]): Promise<void> {
@@ -437,10 +566,13 @@ export class Core {
 			for (const planned of tasks) {
 				const current = await this.storage.loadTask(planned.id, { includeArchived: true });
 				if (!current) throw new Error(`Task not found while applying board move: ${planned.id}`);
-				current.status = planned.status;
-				current.ordinal = planned.ordinal;
-				current.milestone = planned.milestone;
-				await this.updateTask(current);
+				const model = TaskModel.forUpdate(current);
+				model.applyBoardPlacement({
+					status: planned.status,
+					ordinal: planned.ordinal,
+					milestone: planned.milestone,
+				});
+				await this.updateTask(model.serialize());
 			}
 		});
 	}
@@ -501,12 +633,12 @@ export class Core {
 		defaultStep?: number;
 	}): Promise<{ updatedTask: Task; changedTasks: Task[] }> {
 		const taskId = String(params.taskId || "").trim();
-		const targetStatus = String(params.targetStatus || "").trim();
+		const targetStatus = String(params.targetStatus || "");
 		const orderedTaskIds = params.orderedTaskIds.map((id) => String(id || "").trim()).filter(Boolean);
 		const defaultStep = params.defaultStep ?? DEFAULT_ORDINAL_STEP;
 
 		if (!taskId) throw new Error("taskId is required");
-		if (!targetStatus) throw new Error("targetStatus is required");
+		if (!targetStatus.trim()) throw new Error("targetStatus is required");
 		if (orderedTaskIds.length === 0) throw new Error("orderedTaskIds must include at least one task");
 		if (!orderedTaskIds.some((id) => taskIdsEqual(id, taskId))) {
 			throw new Error("orderedTaskIds must include the task being moved");
@@ -532,6 +664,12 @@ export class Core {
 
 		const movedTask = validTasks.find((task) => taskIdsEqual(task.id, taskId));
 		if (!movedTask) throw new Error(`Task ${taskId} not found while reordering`);
+		const targetMilestone = await this.resolveTargetMilestone(params.targetMilestone);
+		const configuration = await this.storage.loadConfig();
+		TaskModel.forUpdate(movedTask).applyUpdate(
+			{ status: targetStatus },
+			{ configuration, projectConfigPath: this.storage.configFilePath },
+		);
 
 		// Reject reordering tasks from other branches - they can only be modified in their source branch
 		const crossBranchReason = crossBranchMoveReason(movedTask, "reordered");
@@ -544,9 +682,9 @@ export class Core {
 			targetStatus,
 			orderedTaskIds,
 			validTasks,
-			params.targetMilestone,
+			targetMilestone,
+			params.targetMilestone !== undefined,
 			defaultStep,
-			normalizeTargetMilestone,
 		);
 
 		if (changedTasks.length > 0) {
@@ -569,9 +707,10 @@ export class Core {
 		targetMilestone?: string | null;
 		defaultStep?: number;
 	}): Promise<{ movedTasks: Task[]; changedTasks: Task[]; failures: Array<{ taskId: string; reason: string }> }> {
-		const targetStatus = String(params.targetStatus || "").trim();
-		if (!targetStatus) throw new Error("targetStatus is required");
-		const plan = await this.planTasksToStatus(params, targetStatus);
+		const targetStatus = String(params.targetStatus || "");
+		if (!targetStatus.trim()) throw new Error("targetStatus is required");
+		const targetMilestone = await this.resolveTargetMilestone(params.targetMilestone);
+		const plan = await this.planTasksToStatus(params, targetStatus, targetMilestone);
 
 		if (plan.changedTasks.length > 0) {
 			await this.writeBoardMoveTasksBulk(plan.changedTasks);
@@ -583,7 +722,9 @@ export class Core {
 	private async planTasksToStatus(
 		params: Parameters<Core["moveTasksToStatus"]>[0],
 		targetStatus: string,
+		targetMilestone: string | undefined,
 	): Promise<MoveTasksPlan> {
+		const configuration = await this.storage.loadConfig();
 		const { store, resolutions } = await this.resolveTasksForBoardMove(params.taskIds);
 		if (resolutions.length === 0) throw new Error("taskIds must include at least one task");
 
@@ -595,18 +736,31 @@ export class Core {
 			else {
 				const crossBranchReason = crossBranchMoveReason(task, "moved");
 				if (crossBranchReason) failures.push({ taskId, reason: crossBranchReason });
-				else tasksToMove.push(task);
+				else {
+					try {
+						TaskModel.forUpdate(task).applyUpdate(
+							{ status: targetStatus },
+							{ configuration, projectConfigPath: this.storage.configFilePath },
+						);
+						tasksToMove.push(task);
+					} catch (error) {
+						failures.push({ taskId, reason: error instanceof Error ? error.message : "Invalid target status." });
+					}
+				}
 			}
 		}
 		if (tasksToMove.length === 0) return { movedTasks: [], changedTasks: [], failures };
 
 		const hasTargetMilestone = params.targetMilestone !== undefined;
-		const normalizedTargetMilestone = normalizeTargetMilestone(params.targetMilestone);
-		const applyMove = (task: Task): Task => ({
-			...task,
-			status: targetStatus,
-			...(hasTargetMilestone ? { milestone: normalizedTargetMilestone } : {}),
-		});
+		const applyMove = (task: Task): Task => {
+			const model = TaskModel.forUpdate(task);
+			model.applyBoardPlacement({
+				status: targetStatus,
+				ordinal: task.ordinal,
+				milestone: hasTargetMilestone ? targetMilestone : task.milestone,
+			});
+			return model.serialize();
+		};
 		const placement = params.orderedTaskIds
 			? this.planOrderedTaskMove(
 					store,
@@ -622,7 +776,7 @@ export class Core {
 					tasksToMove,
 					applyMove,
 					hasTargetMilestone,
-					normalizedTargetMilestone,
+					targetMilestone,
 					params.defaultStep ?? DEFAULT_ORDINAL_STEP,
 				);
 		return { ...placement, failures, changedTasks: placement.changedTasks.filter((task) => !task.branch) };
@@ -663,7 +817,7 @@ export class Core {
 		tasksToMove: Task[],
 		applyMove: (task: Task) => Task,
 		hasTargetMilestone: boolean,
-		normalizedTargetMilestone: string | undefined,
+		targetMilestone: string | undefined,
 		defaultStep: number,
 	): MoveTaskPlacement {
 		const stayingIds = new Set(
@@ -682,10 +836,14 @@ export class Core {
 		}
 
 		const movedIds = new Set(tasksToMove.map((task) => task.id.toUpperCase()));
-		const sanitizeOrdinal = (task: Task): Task =>
-			task.ordinal === undefined || Number.isFinite(task.ordinal) ? task : { ...task, ordinal: undefined };
+		const sanitizeOrdinal = (task: Task): Task => {
+			if (task.ordinal === undefined || Number.isFinite(task.ordinal)) return task;
+			const model = TaskModel.forUpdate(task);
+			model.applyBoardPlacement({ status: task.status, ordinal: undefined, milestone: task.milestone });
+			return model.serialize();
+		};
 		const inTargetLane = (task: Task): boolean =>
-			!hasTargetMilestone || (task.milestone?.trim() || "") === (normalizedTargetMilestone ?? "");
+			!hasTargetMilestone || (task.milestone ?? "") === (targetMilestone ?? "");
 		const columnTasks = TaskOrdering.byOrdinal(
 			store
 				.getTasks({ status: targetStatus })
@@ -696,7 +854,12 @@ export class Core {
 		);
 		const tasksInOrder = [
 			...columnTasks.map((task) => (stayingIds.has(task.id.toUpperCase()) ? applyMove(task) : task)),
-			...arriving.map((task) => ({ ...applyMove(task), ordinal: undefined })),
+			...arriving.map((task) => {
+				const moved = applyMove(task);
+				const model = TaskModel.forUpdate(moved);
+				model.applyBoardPlacement({ status: targetStatus, ordinal: undefined, milestone: moved.milestone });
+				return model.serialize();
+			}),
 		];
 		return this.reconcileMovedTasks(
 			tasksInOrder,
@@ -705,6 +868,11 @@ export class Core {
 			tasksToMove,
 			applyMove,
 		);
+	}
+
+	private async resolveTargetMilestone(targetMilestone: string | null | undefined): Promise<string | undefined> {
+		if (targetMilestone === undefined || targetMilestone === null || targetMilestone.trim() === "") return undefined;
+		return requireMilestoneId(targetMilestone, await this.storage.loadMilestones());
 	}
 
 	private reconcileMovedTasks(
@@ -818,6 +986,10 @@ export class Core {
 		return this.storage.workspaceDirectoryPath;
 	}
 
+	async loadProjectTaskIds(): Promise<string[]> {
+		return await this.storage.loadProjectTaskIds();
+	}
+
 	async findTaskRecordPath(taskId: string): Promise<string | null> {
 		return await this.storage.findTaskRecordPath(taskId);
 	}
@@ -834,34 +1006,16 @@ export class Core {
 		return await this.storage.withTaskLock(task, fn);
 	}
 
-	async taskArtifactContainerPath(taskId: string): Promise<string> {
-		return await this.storage.taskArtifacts.containerPath(taskId);
-	}
-
 	async listTaskArtifacts(taskId: string) {
-		const repository = this.storage.taskArtifacts;
-		const [directory, entries] = await Promise.all([repository.containerPath(taskId), repository.list(taskId)]);
-		return { directory, entries };
+		return await this.storage.taskArtifacts.list(taskId);
 	}
 
-	async readTaskArtifact(taskId: string, path: string) {
+	async readTaskArtifact(taskId: string, path: string): Promise<Uint8Array> {
 		return await this.storage.taskArtifacts.read(taskId, path);
 	}
 
-	async writeTaskArtifact(taskId: string, path: string, bytes: Uint8Array) {
-		return await this.storage.taskArtifacts.write(taskId, path, bytes);
-	}
-
-	async taskArtifactStatus(taskId: string, path: string) {
-		return await this.storage.taskArtifacts.status(taskId, path);
-	}
-
-	async approveTaskArtifactCurrentVersion(taskId: string, path: string, reviewedHash: string) {
-		return await this.storage.taskArtifacts.approveCurrentVersion(taskId, path, reviewedHash);
-	}
-
-	async revokeTaskArtifactApproval(taskId: string, path: string) {
-		return await this.storage.taskArtifacts.revokeApproval(taskId, path);
+	async writeTaskArtifact(taskId: string, path: string, bytes: Uint8Array): Promise<void> {
+		await this.storage.taskArtifacts.write(taskId, path, bytes);
 	}
 
 	watchTasks(callbacks: TaskWatcherCallbacks, initialTasks: readonly Task[] = []) {
@@ -869,7 +1023,7 @@ export class Core {
 	}
 
 	watchConfig(callbacks: ConfigWatcherCallbacks) {
-		return watchConfigFile(this.filesystem, callbacks);
+		return this.storage.watchConfig(callbacks);
 	}
 
 	/** Stored task records, including damaged records that listing skips. */

@@ -67,6 +67,15 @@ function warnEnvironment(text: string): void {
 	process.stderr.write(`warning: ${text}\n`);
 }
 
+async function rethrowAfterCleanup(cause: unknown, cleanup: () => Promise<void>, message: string): Promise<never> {
+	try {
+		await cleanup();
+	} catch (cleanupError) {
+		throw new AggregateError([cause, cleanupError], message, { cause });
+	}
+	throw cause;
+}
+
 async function launchEnvironment(
 	preset: AgentPreset,
 	paths: { projectDir: string; worktreeDir: string; taskDir: string },
@@ -244,8 +253,7 @@ export async function prepareAgentLaunchResources(
 			cleanup,
 		};
 	} catch (error) {
-		await cleanup();
-		throw error;
+		return await rethrowAfterCleanup(error, cleanup, "Could not clean failed agent launch preparation.");
 	}
 }
 
@@ -351,7 +359,6 @@ export async function prepareAgentAsk(
 			cleanup,
 		};
 	} catch (error) {
-		await cleanup();
-		throw error;
+		return await rethrowAfterCleanup(error, cleanup, "Could not clean failed agent ask preparation.");
 	}
 }

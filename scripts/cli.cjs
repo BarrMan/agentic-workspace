@@ -67,24 +67,12 @@ function main() {
 		process.exit(1);
 	}
 
-	// Clean up unexpected args some global shims pass (e.g. bun) like the binary path itself
 	const rawArgs = process.argv.slice(2);
-	const cleanedArgs = rawArgs.filter((arg) => {
-		if (arg === binaryPath) return false;
-		// Filter any accidental deep path to our platform package binary
-		try {
-			const pattern =
-				/node_modules[/\\]agentic-workspace-(darwin|linux|windows)-[^/\\]+[/\\]agentic-workspace(\.exe)?$/i;
-			return !pattern.test(arg);
-		} catch {
-			return true;
-		}
-	});
 
 	// Spawn failures can surface as a synchronous throw (e.g. ENOEXEC) or as an 'error' event
 	let child;
 	try {
-		child = spawn(binaryPath, cleanedArgs, {
+		child = spawn(binaryPath, rawArgs, {
 			stdio: "inherit",
 			windowsHide: true,
 			// Internal: lets a watch end when the process that started this launcher ends.

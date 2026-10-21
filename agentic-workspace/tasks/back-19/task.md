@@ -3,12 +3,11 @@ task_schema_version: 3
 id: BACK-19
 title: Remove the auto-commit feature entirely
 status: Done
-assignee: []
 created_date: '2026-10-08 07:50'
 updated_date: '2026-10-08 09:32'
 labels: []
 dependencies: []
-priority: high
+priority: "High"
 type: task
 ordinal: 19000
 description: >-

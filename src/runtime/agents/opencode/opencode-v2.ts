@@ -3,6 +3,7 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { AgentPreset } from "../../../model/session/types.ts";
 import type {
+	AgentModel,
 	AgentPreparation,
 	AskCommandRequest,
 	HarnessInterface,
@@ -22,6 +23,14 @@ import { createOpencodeV2CliPlugin } from "./opencode-v2-cli-plugin.ts";
 import { openCodeBootstrapForVersion } from "./opencode-version.ts";
 
 const NATIVE_SESSION_ID = /^ses_[A-Za-z0-9_-]+$/;
+
+function parseOpenCodeModels(output: string): AgentModel[] {
+	return output
+		.split(/\r?\n/)
+		.map((line) => line.trim())
+		.filter(Boolean)
+		.map((id) => ({ id }));
+}
 
 function parseCliConfig(content: string | undefined) {
 	let config: unknown;
@@ -139,7 +148,7 @@ export class OpencodeV2Agent implements HarnessInterface {
 	readonly prepareBeforeAsk = true;
 
 	discoverModels(request: import("../core/agent.ts").ModelDiscoveryRequest) {
-		return discoverModels("opencode", request.command, request.env, request.timeoutMs);
+		return discoverModels([...request.command, "models"], request.env, request.timeoutMs, parseOpenCodeModels);
 	}
 
 	prepareProfile(_profile: import("../../../model/session/types.ts").ModeProfile, preset: AgentPreset): AgentPreset {

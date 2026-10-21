@@ -1,4 +1,5 @@
 import { calculateNewOrdinal, resolveOrdinalConflicts } from "../model/task/reorder.ts";
+import { Task as TaskModel } from "../model/task/task.ts";
 import { taskIdsEqual } from "../model/task/task-id.ts";
 import type { Task } from "../model/types.ts";
 
@@ -7,9 +8,9 @@ export function planTaskReorder(
 	targetStatus: string,
 	orderedTaskIds: string[],
 	validTasks: Task[],
-	targetMilestone: string | null | undefined,
+	targetMilestone: string | undefined,
+	hasTargetMilestone: boolean,
 	defaultStep: number,
-	normalizeTargetMilestone: (value: string | null | undefined) => string | undefined,
 ): { updatedTask: Task; changedTasks: Task[] } {
 	const movedTask = validTasks.find((task) => taskIdsEqual(task.id, taskId));
 	if (!movedTask) throw new Error(`Task ${taskId} not found while reordering`);
@@ -29,12 +30,13 @@ export function planTaskReorder(
 				: null,
 		defaultStep,
 	});
-	const updatedMoved: Task = {
-		...movedTask,
+	const movedModel = TaskModel.forUpdate(movedTask);
+	movedModel.applyBoardPlacement({
 		status: targetStatus,
-		...(targetMilestone !== undefined ? { milestone: normalizeTargetMilestone(targetMilestone) } : {}),
 		ordinal,
-	};
+		milestone: hasTargetMilestone ? targetMilestone : movedTask.milestone,
+	});
+	const updatedMoved = movedModel.serialize();
 	const tasksInOrder = orderedTaskIdsInCorpus
 		.map((id) => validTasks.find((task) => taskIdsEqual(task.id, id)))
 		.filter((task): task is Task => Boolean(task))

@@ -3,7 +3,6 @@ task_schema_version: 3
 id: BACK-18
 title: AgenticWorkspace commands should detect worktree main branch
 status: Done
-assignee: []
 created_date: '2026-10-08 07:25'
 updated_date: '2026-10-08 10:29'
 labels: []

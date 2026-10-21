@@ -3,7 +3,6 @@ task_schema_version: 3
 id: BACK-15
 title: Agent session statuses indications bug
 status: Done
-assignee: []
 created_date: '2026-10-08 06:39'
 updated_date: '2026-10-09 04:32'
 labels: []

@@ -28,8 +28,8 @@ async function parseTaskListFilters(
 	normalize: TaskListNormalizers,
 ): Promise<Pick<TaskListRequest, "filters" | "labels"> | null> {
 	const filters: TaskListFilter = {};
-	if (options.status)
-		filters.status = normalizeStringList(toStringArray(options.status)) ?? toStringArray(options.status);
+	if (!(await addNormalizedListFilter(filters, core, options.status, "status", "status", normalize.statusList)))
+		return null;
 	if (
 		!(await addNormalizedListFilter(
 			filters,
@@ -63,15 +63,22 @@ async function addNormalizedListFilter(
 	core: Core,
 	value: unknown,
 	optionName: string,
-	field: "excludeStatus" | "type" | "project",
+	field: "status" | "excludeStatus" | "type" | "project",
 	normalize: (core: Core, values: string[], optionName: string) => Promise<string[] | null>,
 ): Promise<boolean> {
-	const values = normalizeStringList(toStringArray(value)) ?? [];
+	const values =
+		field === "status" || field === "excludeStatus"
+			? toExactNonemptyList(toStringArray(value))
+			: (normalizeStringList(toStringArray(value)) ?? []);
 	if (values.length === 0) return true;
 	const normalized = await normalize(core, values, optionName);
 	if (!normalized) return false;
 	filters[field] = normalized;
 	return true;
+}
+
+function toExactNonemptyList(values: string[]): string[] {
+	return [...new Set(values.filter((value) => value.length > 0))];
 }
 
 export async function parseTaskListRequest(

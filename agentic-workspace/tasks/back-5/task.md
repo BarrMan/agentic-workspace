@@ -3,7 +3,6 @@ task_schema_version: 3
 id: BACK-5
 title: Handoff functionality does not work
 status: Done
-assignee: []
 created_date: '2026-10-07 15:30'
 updated_date: '2026-10-08 04:09'
 labels: []

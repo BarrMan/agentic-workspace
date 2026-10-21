@@ -12,6 +12,27 @@ const profile = getDefaultModeCatalog().profiles.build;
 if (!profile) throw new Error("Missing default build mode profile.");
 
 describe("OpenCode v2 adapter", () => {
+	test("owns model discovery arguments and parses the provider catalog at its API seam", async () => {
+		const root = await mkdtemp(join(tmpdir(), "agentic-workspace-opencode-v2-models-"));
+		try {
+			const executable = join(root, "fixture");
+			const calls = join(root, "calls");
+			await writeFile(
+				executable,
+				`#!/bin/sh\nprintf '%s\\n' "$*:$DISCOVERY_FIXTURE" >> '${calls}'\nprintf 'openai/fast\\nopenai/fast\\nopenai/slow\\n'\n`,
+				{ mode: 0o700 },
+			);
+			const agent = new OpencodeV2Agent();
+			const request = { command: [executable, "--preset"], env: { DISCOVERY_FIXTURE: "selected" }, timeoutMs: 1_000 };
+			const models = await agent.discoverModels(request);
+			expect(models.map(({ id }) => id)).toEqual(["openai/fast", "openai/slow"]);
+			expect(await agent.discoverModels(request)).toEqual(models);
+			expect(await readFile(calls, "utf8")).toBe("--preset models:selected\n");
+		} finally {
+			await rm(root, { recursive: true, force: true });
+		}
+	});
+
 	test("quotes bootstrap paths and keeps the built-in command shell-syntax guard", () => {
 		const agent = new OpencodeV2Agent();
 		const nativeSessionId = "ses_0123456789abcdef0123456789abcdef";

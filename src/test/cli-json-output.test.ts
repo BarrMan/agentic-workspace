@@ -211,9 +211,9 @@ describe("CLI JSON output", () => {
 		expect(JSON.parse(markdown.stdout.toString()).task.description).toBe("First line\n\n- item with `code`");
 	});
 
-	it('resolves a created task priority of "high" to the configured label in JSON', async () => {
+	it('preserves the exact configured task priority label "High" in JSON', async () => {
 		const { runCli } = await makeProject();
-		const created = await runCli(["task", "create", "Priority task", "--priority", "high"]);
+		const created = await runCli(["task", "create", "Priority task", "--priority", "High"]);
 		expect(created.exitCode).toBe(0);
 
 		const viewed = await runCli(["task", "view", "TASK-2", "--json"]);

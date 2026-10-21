@@ -3,7 +3,6 @@ task_schema_version: 3
 id: BACK-6
 title: Implement live view of files diff
 status: In Progress
-assignee: []
 created_date: '2026-10-07 15:44'
 updated_date: '2026-10-07 15:47'
 labels: []

@@ -8,16 +8,19 @@ import { createUniqueTestDir, safeCleanup } from "./test-utils.ts";
 
 describe("Priority functionality", () => {
 	describe("priority configuration", () => {
-		it("normalizes configured priority labels", () => {
+		it("resolves only exact configured priority labels", () => {
 			const config = { priorities: ["Very High", "High", "Medium", "Low", "Very Low"] };
 
-			expect(resolvePriorityLabel("VERY HIGH", config)).toBe("Very High");
+			expect(resolvePriorityLabel("Very High", config)).toBe("Very High");
+			expect(resolvePriorityLabel("VERY HIGH", config)).toBeUndefined();
 			expect(getPriorityRank("Very High", config)).toBe(5);
 			expect(getPriorityRank("Very Low", config)).toBe(1);
 		});
 
-		it("uses configured priority labels directly", () => {
-			expect(resolvePriorityLabel(" urgent   work ", ["Urgent Work", "Normal"])).toBe("Urgent Work");
+		it("keeps case-distinct priorities selectable and exact", () => {
+			expect(resolvePriorityLabel("High", ["High", "high"])).toBe("High");
+			expect(resolvePriorityLabel("high", ["High", "high"])).toBe("high");
+			expect(resolvePriorityLabel(" urgent   work ", ["Urgent Work", "Normal"])).toBeUndefined();
 			expect(resolvePriorityLabel("Urgent", ["Urgent Work", "Normal"])).toBeUndefined();
 		});
 

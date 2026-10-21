@@ -45,7 +45,8 @@ describe("mode text colors", () => {
 		draft.setModeTextColor("plan", "brightgreen");
 		draft.renameMode("plan", "DESIGN");
 		expect(requireProfile(draft.configuration, "plan").textColor).toBe("brightgreen");
-		draft.deleteMode("build", "review");
+		draft.deleteMode("build");
+		expect(draft.deletedModeIds).toContain("build");
 		draft.restoreDeletedMode("build");
 		expect(requireProfile(draft.configuration, "build").textColor).toBe("blue");
 		draft.setModeTextColor("build", undefined);
@@ -63,13 +64,13 @@ describe("mode text colors", () => {
 		expect(() => draft.setModeTextColor("plan", "lightgreen" as ModeTextColor)).toThrow(/text color/);
 		expect(requireProfile(draft.configuration, "plan").textColor).toBe("green");
 		requireProfile(draft.configuration, "plan").textColor = "lightgreen" as ModeTextColor;
-		expect(() => draft.validate()).toThrow(/text color/);
+		expect(() => draft.validate()).toThrow(/text.?color/i);
 		let saved = false;
 		await expect(
 			draft.save(async () => {
 				saved = true;
 			}),
-		).rejects.toThrow(/text color/);
+		).rejects.toThrow(/text.?color/i);
 		expect(saved).toBe(false);
 	});
 });

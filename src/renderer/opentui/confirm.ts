@@ -4,6 +4,8 @@ import { createKeybindings, formatShortcut, shortcutsConfig } from "./keybinding
 export type OpenTuiConfirmOptions = {
 	readonly title?: string;
 	readonly message: string;
+	/** Raise the overlay above another modal surface (for example Settings). */
+	readonly zIndex?: number;
 };
 
 export type OpenTuiConfirmMount = {
@@ -23,6 +25,7 @@ export function mountOpenTuiConfirm(
 	const result = new Promise<boolean>((resolve) => {
 		resolveResult = resolve;
 	});
+	const baseZIndex = options.zIndex ?? 10;
 	const backdrop = new BoxRenderable(renderer, {
 		position: "absolute",
 		top: 0,
@@ -31,14 +34,14 @@ export function mountOpenTuiConfirm(
 		height: "100%",
 		backgroundColor: "black",
 		opacity: 0.55,
-		zIndex: 10,
+		zIndex: baseZIndex,
 	});
 	const surface = new BoxRenderable(renderer, {
 		position: "absolute",
 		top: "40%",
 		left: "25%",
 		width: "50%",
-		zIndex: 11,
+		zIndex: baseZIndex + 1,
 		backgroundColor: "#161616",
 		border: true,
 		borderColor: "cyan",
@@ -96,7 +99,7 @@ export function mountOpenTuiConfirm(
 	};
 	keybindings.on(shortcutsConfig.confirmOverlay.accept, handleAccept);
 	keybindings.on(shortcutsConfig.confirmOverlay.decline, handleDecline);
-	renderer.keyInput.on("keypress", onKeyPress);
+	renderer.keyInput.prependListener("keypress", onKeyPress);
 
 	return {
 		result,

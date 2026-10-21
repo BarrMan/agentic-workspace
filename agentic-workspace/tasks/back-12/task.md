@@ -3,12 +3,11 @@ task_schema_version: 3
 id: BACK-12
 title: Fix pre-existing tui-window-title test failure
 status: Done
-assignee: []
 created_date: '2026-10-07 17:22'
 updated_date: '2026-10-07 17:52'
 labels: []
 dependencies: []
-priority: medium
+priority: "Medium"
 type: bug
 ordinal: 12000
 description: >-

@@ -7,7 +7,7 @@
  * kills a process. The thin tmux probe lives in `agent-status-probe.ts`.
  */
 
-import type { AgentActivity, AgentSessionStatus } from "../model/session/types.ts";
+import type { AgentActivity } from "../model/session/types.ts";
 import type { AgentChromeRule } from "./agents/core/agent.ts";
 import type { HookStatus } from "./status-hooks.ts";
 
@@ -29,8 +29,6 @@ export const ACTIVITY_TIMING = {
 export type PaneProbe = "alive" | "dead" | "absent" | "unreachable";
 
 export interface ActivityObservation {
-	/** Durable lifecycle status; rule 0 short-circuits on a terminal value. */
-	readonly lifecycle: AgentSessionStatus;
 	/** Whether this provider installs a process-scoped status hook (rules 5 and 7). */
 	readonly hookBacked: boolean;
 	/** The last hook write, with its age; `undefined` when no hook file exists. */
@@ -89,9 +87,6 @@ function isStaleRunningHook(observation: ActivityObservation): boolean {
  * Resolve one derived activity value. Pure; never throws for well-formed input.
  */
 export function resolveAgentActivity(observation: ActivityObservation): AgentActivity {
-	// Rule 0: terminal lifecycle short-circuits every other rule.
-	if (observation.lifecycle === "stopped" || observation.lifecycle === "failed") return "stopped";
-
 	// Rule 3: tmux absent is an error; an unreachable probe holds the current value for its window.
 	if (observation.pane === "absent") return "error";
 	if (observation.pane === "unreachable") {

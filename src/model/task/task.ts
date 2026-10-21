@@ -7,11 +7,12 @@ import type {
 	ModeSessionHistory,
 	ResolvedAgentConfiguration,
 } from "../session/types.ts";
-import type { Task as TaskRecord } from "../types.ts";
+import type { Task as TaskRecord, TaskUpdateInput } from "../types.ts";
 import { isLocalEditableTask } from "../types.ts";
 import type { ReadinessGraph, TaskReadiness } from "./readiness.ts";
 import { getTaskReadiness } from "./readiness.ts";
 import { taskIdsEqual } from "./task-id.ts";
+import { applyTaskUpdate, type TaskUpdateContext } from "./task-update/index.ts";
 
 export interface SessionCreationIdentity {
 	readonly taskId: TaskRecord["id"];
@@ -30,9 +31,18 @@ export interface TaskHydrationInput {
 	readonly createSession: (input: { readonly taskId: string; readonly modeId: ModeId }) => Session;
 }
 
+type TaskMutationInput = Pick<TaskHydrationInput, "task">;
+
 export interface TaskSessionCreation {
 	readonly session: Session;
 	readonly creation: SessionCreationIdentity;
+}
+
+/** A board operation has already resolved its configured status and target lane. */
+export interface BoardTaskPlacement {
+	readonly status: string;
+	readonly ordinal: number | undefined;
+	readonly milestone: string | undefined;
 }
 
 export class Task {
@@ -40,13 +50,21 @@ export class Task {
 	readonly modes: Record<ModeId, ModeSessionHistory>;
 	readonly profiles: Record<ModeId, ModeProfile>;
 	readonly task: TaskRecord;
-	readonly configuration: ResolvedAgentConfiguration;
-	readonly createSession: TaskHydrationInput["createSession"];
+	readonly configuration: ResolvedAgentConfiguration | undefined;
+	readonly createSession: TaskHydrationInput["createSession"] | undefined;
 	#selectedModeId: ModeId;
 
-	constructor(input: TaskHydrationInput) {
+	constructor(input: TaskHydrationInput | TaskMutationInput) {
 		this.task = structuredClone(input.task);
 		this.id = input.task.id;
+		if (!("modes" in input)) {
+			this.configuration = undefined;
+			this.createSession = undefined;
+			this.profiles = {};
+			this.modes = {};
+			this.#selectedModeId = "";
+			return;
+		}
 		this.configuration = structuredClone(input.configuration);
 		this.createSession = input.createSession;
 		this.profiles = structuredClone(input.modes);
@@ -65,6 +83,11 @@ export class Task {
 		);
 		this.#selectedModeId =
 			input.selectedModeId in input.modes ? input.selectedModeId : (Object.keys(input.modes)[0] ?? "");
+	}
+
+	/** Hydrates only the record behavior needed for a synchronous task mutation. */
+	static forUpdate(task: TaskRecord): Task {
+		return new Task({ task });
 	}
 
 	get selectedModeId(): ModeId {
@@ -95,6 +118,28 @@ export class Task {
 		return getTaskReadiness(this.task, graph);
 	}
 
+	/** Applies a fully resolved edit without I/O. */
+	applyUpdate(input: TaskUpdateInput, context: TaskUpdateContext): boolean {
+		return applyTaskUpdate(this.task, input, context);
+	}
+
+	/** Applies a resolved board position without I/O or record reconstruction in the controller. */
+	applyBoardPlacement(placement: BoardTaskPlacement): boolean {
+		if (placement.status.trim() === "") throw new Error("Task status must not be empty.");
+		if (placement.ordinal !== undefined && (!Number.isFinite(placement.ordinal) || placement.ordinal < 0)) {
+			throw new Error("Ordinal must be a non-negative number.");
+		}
+		const statusChanged = this.task.status !== placement.status;
+		const ordinalChanged = this.task.ordinal !== placement.ordinal;
+		const milestoneChanged = this.task.milestone !== placement.milestone;
+		this.task.status = placement.status;
+		if (placement.ordinal === undefined) delete this.task.ordinal;
+		else this.task.ordinal = placement.ordinal;
+		if (placement.milestone === undefined) delete this.task.milestone;
+		else this.task.milestone = placement.milestone;
+		return statusChanged || ordinalChanged || milestoneChanged;
+	}
+
 	cycleMode(direction = 1): ModeId {
 		const ids = Object.keys(this.modes);
 		if (ids.length === 0) return this.#selectedModeId;
@@ -106,6 +151,7 @@ export class Task {
 	reserveSession(modeId: ModeId): TaskSessionCreation {
 		const history = this.#requireMode(modeId);
 		const previousActiveSessionId = history.activeSessionId;
+		if (!this.createSession) throw new Error("Session creation is unavailable during task mutation.");
 		const session = this.createSession({ taskId: this.id, modeId });
 		const creation: SessionCreationIdentity = {
 			taskId: this.id,

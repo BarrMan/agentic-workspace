@@ -4,8 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import "../../runtime/agents/core/agents.ts";
-import type { AgentSession } from "../../model/session/types.ts";
-import type { SessionLaunchContext } from "../../runtime/harness.ts";
+import type { AgentSession, SessionLaunchContext } from "../../model/session/types.ts";
 import { Harness } from "../../runtime/harness.ts";
 
 type Provider = "opencode-v1" | "opencode-v2" | "pi";
@@ -37,7 +36,6 @@ async function harnessFixture(provider: Provider, omitted?: OmittedStage) {
 		tmuxName: "readiness-test",
 		cwd: root,
 		createdAt: new Date().toISOString(),
-		status: "starting",
 		outputPath: join(root, "output.log"),
 		bootstrapPath: join(root, "bootstrap.md"),
 	};
@@ -48,7 +46,14 @@ async function harnessFixture(provider: Provider, omitted?: OmittedStage) {
 		modeId: "build",
 		sessionId: record.id,
 		record,
-		configuration: { scope: "root", config: { selectedPreset: "default", presets: { default: preset } } },
+		configuration: {
+			scope: "root",
+			config: {
+				selectedPreset: "default",
+				sessions: { worktreePerTask: false, yoloMode: false, autoResumeOnRestart: true },
+				presets: { default: preset },
+			},
+		},
 		profile: {
 			name: "Build",
 			model: { kind: "default" },

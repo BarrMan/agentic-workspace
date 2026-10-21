@@ -3,100 +3,90 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Core } from "../controller/agentic-workspace.ts";
-import { SessionApplication } from "../controller/session-application.ts";
-import { WorkspaceStateService } from "../controller/workspace-state.ts";
-import type { AgentSessionService, SessionRuntimeOrigin } from "../runtime/sessions.ts";
+import type { Session } from "../model/session/session.ts";
+import type { AgentSession, SessionFactory, SessionLaunchContext, SessionSnapshot } from "../model/session/types.ts";
+import { initializeAgentConfiguration } from "../storage/config.ts";
 import { initializeTestProject } from "./test-utils.ts";
 
 const roots: string[] = [];
 
-async function project(): Promise<Core> {
-	const root = await mkdtemp(join(tmpdir(), "agentic-workspace-workspace-state-"));
-	roots.push(root);
-	const core = new Core(root);
-	await initializeTestProject(core, "Workspace state");
-	return core;
-}
-
-function origin(taskId: string, sessionId: string): SessionRuntimeOrigin {
-	return {
-		paneId: "%1",
-		record: {
-			id: sessionId,
-			taskId,
-			preset: "test",
-			tmuxName: sessionId,
-			cwd: "/tmp",
-			createdAt: "2026-01-01T00:00:00.000Z",
-			status: "running",
-			outputPath: "/tmp/output",
-			bootstrapPath: "/tmp/bootstrap",
-		},
-	};
-}
-
-function service(core: Core, currentTask?: Awaited<ReturnType<Core["loadTaskById"]>>): WorkspaceStateService {
-	// The session record itself is irrelevant to the status policy under test.
-	const sessions = {
-		activateNativeSession: async (
-			_taskId: string,
-			_sessionId: string,
-			_origin: SessionRuntimeOrigin,
-			afterActivate?: (task: NonNullable<typeof currentTask>) => Promise<void>,
-		) => {
-			if (currentTask) await afterActivate?.(currentTask);
-			return currentTask !== undefined;
-		},
-	} as unknown as AgentSessionService;
-	return new WorkspaceStateService(core, { sessions });
+function factory(beforeStart: (context: SessionLaunchContext) => Promise<void> = async () => {}): SessionFactory {
+	return ((_taskId: string, _modeId: string, record?: AgentSession) => {
+		if (!record) throw new Error("Expected a durable session record.");
+		let snapshot: SessionSnapshot = { state: "stopped", activity: "unknown", idleSince: null };
+		return {
+			id: record.id,
+			record,
+			get view() {
+				return snapshot;
+			},
+			async start(context: SessionLaunchContext) {
+				await beforeStart(context);
+				snapshot = { state: "running", activity: "working", idleSince: null };
+			},
+			async stop() {
+				snapshot = { state: "stopped", activity: "unknown", idleSince: null };
+			},
+			async serialize() {
+				return { ...record };
+			},
+		} as unknown as Session;
+	}) as SessionFactory;
 }
 
 afterEach(async () => {
 	await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
 });
 
-describe("WorkspaceStateService.activateSession", () => {
-	test("owns a distinct session application for each workspace context", async () => {
-		const core = await project();
-		const first = new WorkspaceStateService(core);
-		const second = new WorkspaceStateService(core);
-		expect(first.sessionApplication).toBeInstanceOf(SessionApplication);
-		expect(second.sessionApplication).toBeInstanceOf(SessionApplication);
-		expect(first.sessionApplication).not.toBe(second.sessionApplication);
-	});
-
-	test("moves a To Do task into the configured In Progress status", async () => {
-		const core = await project();
+describe("session in-progress status coordination", () => {
+	test("moves an unfinished task before reservation and startup", async () => {
+		const root = await mkdtemp(join(tmpdir(), "agentic-workspace-session-in-progress-"));
+		roots.push(root);
+		let core!: Core;
+		core = new Core(root, {
+			sessionFactory: factory(async ({ taskId, modeId }) => {
+				const history = await core.sessionApplication.store.read(taskId);
+				expect(history.modes[modeId]?.sessions).toHaveLength(1);
+				expect((await core.loadTaskById(taskId))?.status).toBe("In Progress");
+			}),
+		});
+		await initializeTestProject(core, "Session status coordination");
+		await initializeAgentConfiguration(core, "project");
 		const { task } = await core.createTaskFromInput({ title: "Move me", status: "To Do" });
-		const status = await service(core, task).activateSession(task.id, "session-1", origin(task.id, "session-1"));
-		expect(status).toEqual({ activated: true, status: "In Progress" });
+		const session = await core.sessionApplication.newSession(task.id);
+		expect(session.snapshot.state).toBe("running");
 		expect((await core.loadTaskById(task.id))?.status).toBe("In Progress");
 	});
 
-	test("leaves a terminal (Done) task untouched", async () => {
-		const core = await project();
+	test("leaves a terminal task unchanged before starting", async () => {
+		const root = await mkdtemp(join(tmpdir(), "agentic-workspace-session-in-progress-"));
+		roots.push(root);
+		const core = new Core(root, { sessionFactory: factory() });
+		await initializeTestProject(core, "Session status coordination");
+		await initializeAgentConfiguration(core, "project");
 		const { task } = await core.createTaskFromInput({ title: "Already shipped", status: "Done" });
-		const status = await service(core, task).activateSession(task.id, "session-1", origin(task.id, "session-1"));
-		expect(status).toEqual({ activated: true });
+		await core.sessionApplication.newSession(task.id);
 		expect((await core.loadTaskById(task.id))?.status).toBe("Done");
 	});
 
-	test("is idempotent when the task is already In Progress", async () => {
-		const core = await project();
-		const { task } = await core.createTaskFromInput({ title: "Already active", status: "In Progress" });
-		const status = await service(core, task).activateSession(task.id, "session-1", origin(task.id, "session-1"));
-		expect(status).toEqual({ activated: true, status: "In Progress" });
-		expect((await core.loadTaskById(task.id))?.status).toBe("In Progress");
-	});
-
-	test("never nudges a task into the terminal column of a two-status configuration", async () => {
-		const core = {
-			filesystem: { loadConfig: async () => ({ statuses: ["Backlog", "Shipped"] }) },
-		} as unknown as Core;
-		const status = await new WorkspaceStateService(core, {
-			sessions: { activateNativeSession: async () => false } as unknown as AgentSessionService,
-			sessionApplication: {} as SessionApplication,
-		}).activateSession("TASK-1", "session-1", origin("TASK-1", "session-1"));
-		expect(status).toEqual({ activated: false });
+	test("does not reserve or start when status coordination fails", async () => {
+		const root = await mkdtemp(join(tmpdir(), "agentic-workspace-session-in-progress-"));
+		roots.push(root);
+		const core = new Core(root, { sessionFactory: factory() });
+		await initializeTestProject(core, "Session status coordination");
+		await initializeAgentConfiguration(core, "project");
+		const { task } = await core.createTaskFromInput({ title: "Cannot change", status: "To Do" });
+		const update = core.updateTaskFromInput.bind(core);
+		core.updateTaskFromInput = async () => {
+			throw new Error("status write failed");
+		};
+		try {
+			await expect(core.sessionApplication.newSession(task.id)).rejects.toThrow("status write failed");
+			expect(
+				Object.values((await core.sessionApplication.store.read(task.id)).modes).flatMap(({ sessions }) => sessions),
+			).toEqual([]);
+		} finally {
+			core.updateTaskFromInput = update;
+		}
 	});
 });

@@ -71,6 +71,7 @@ function setup(groups: Groups | undefined, runtimeOverrides: Record<string, unkn
 		...runtimeOverrides,
 	} as never;
 	const core = {
+		getProjectModeCatalog: async () => getDefaultModeCatalog(),
 		workspaceDirectory: agenticWorkspaceDir,
 		getStoredConfig: async () => ({
 			agentConfiguration: { ...getBuiltInAgentConfiguration(), modes: getDefaultModeCatalog() },
@@ -95,6 +96,7 @@ function setup(groups: Groups | undefined, runtimeOverrides: Record<string, unkn
 		},
 	} as unknown as Core;
 	const workspace = {
+		sessionApplication: { projectInventory: async () => [] },
 		listTasks: async () => tasks,
 		listSessions: async (taskId: string) => ({ taskId, sessions: [] }),
 		listModeSessions: async (taskId: string, modeId: string) => ({

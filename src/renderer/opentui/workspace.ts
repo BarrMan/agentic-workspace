@@ -32,6 +32,7 @@ import {
 	formatShortcut,
 	matchesShortcut,
 	type ShortcutOverrides,
+	shortcutKeyFromEvent,
 	shortcutsConfig,
 } from "./keybindings.ts";
 import { renderModeRowLabel } from "./mode-row-label.ts";
@@ -214,8 +215,6 @@ export type OpenTuiWorkspaceOptions = OpenTuiWorkspaceCallbacks & {
 	readonly taskDetailOptions?: TaskDetailStyledOptions;
 	/** Canonical artifact repository adapter; when provided, Ctrl+Shift+O opens the selected task's artifacts. */
 	readonly taskArtifactApi?: TaskArtifactViewApi;
-	/** Optional profile-declared artifacts, shown as Missing until created. */
-	readonly taskArtifactPathsByTask?: ReadonlyMap<string, readonly string[]>;
 };
 
 export type OpenTuiWorkspaceMount = {
@@ -362,6 +361,7 @@ export function mountOpenTuiWorkspace(
 		height: "100%",
 		flexDirection: "column",
 		rowGap: 0,
+		focusable: true,
 	});
 	const navbar = new BoxRenderable(renderer, {
 		width: "100%",
@@ -547,7 +547,6 @@ export function mountOpenTuiWorkspace(
 				parent: detailRegion,
 				taskId,
 				api: opts.taskArtifactApi,
-				declaredPaths: opts.taskArtifactPathsByTask?.get(taskId),
 				onError: (message) => {
 					notice = `Artifact review: ${message}`;
 					redraw();
@@ -556,7 +555,7 @@ export function mountOpenTuiWorkspace(
 			artifactView.root.visible = false;
 			artifactView.setOpen(false);
 		} else if (artifactViewTaskId !== taskId) {
-			void artifactView.setTask(taskId, opts.taskArtifactPathsByTask?.get(taskId));
+			void artifactView.setTask(taskId);
 		}
 		artifactViewTaskId = taskId;
 		artifactViewOpen = true;
@@ -699,7 +698,7 @@ export function mountOpenTuiWorkspace(
 			artifactView.root.visible = artifactViewOpen && Boolean(task && opts.taskArtifactApi);
 			if (task && task.id !== artifactViewTaskId) {
 				artifactViewTaskId = task.id;
-				void artifactView.setTask(task.id, opts.taskArtifactPathsByTask?.get(task.id));
+				void artifactView.setTask(task.id);
 			}
 		}
 		detailText.visible = !artifactViewOpen;
@@ -754,40 +753,10 @@ export function mountOpenTuiWorkspace(
 			task && opts.taskArtifactApi
 				? `[${formatShortcut(artifactViewShortcut, opts.keyboardOverrides)}] Artifacts`
 				: undefined,
-			opts.onTaskCreate ? `[${shortcut(shortcutsConfig.workspace.createTask)}] Create` : undefined,
-			opts.onNewGroup ? `[${shortcut(shortcutsConfig.workspace.newGroup)}] Group` : undefined,
-			rows[selectedRow]?.kind === "group" && opts.onGroupToggle
-				? `[${shortcut(shortcutsConfig.workspace.expand)}] Expand · [${shortcut(shortcutsConfig.workspace.collapse)}] Collapse`
-				: undefined,
-			task && !detailsVisible ? `[${shortcut(shortcutsConfig.workspace.toggleDetails)}] Details` : undefined,
-			selectedTaskHasSessions()
-				? opts.onSessionRequest && opts.onHandoffRequest
-					? `[${shortcut(shortcutsConfig.workspace.sessions)}] Sessions · [${shortcut(shortcutsConfig.workspace.handoff)}] Handoff`
-					: opts.onSessionRequest
-						? `[${shortcut(shortcutsConfig.workspace.sessions)}] Sessions`
-						: opts.onHandoffRequest
-							? `[${shortcut(shortcutsConfig.workspace.handoff)}] Handoff`
-							: undefined
-				: task && opts.onAgentStart
-					? `[${shortcut(shortcutsConfig.workspace.select)}] Start`
-					: undefined,
-			task && !isTerminalStatus(task.status, opts.statuses ?? []) && opts.onTaskAction
-				? `[${shortcut(shortcutsConfig.workspace.markDone)}] Done`
-				: undefined,
-			task && opts.onTaskAction ? `[${shortcut(shortcutsConfig.workspace.deleteTask)}] Delete` : undefined,
-			rows[selectedRow]?.kind === "group" && opts.onGroupDelete
-				? `[${shortcut(shortcutsConfig.workspace.deleteTask)}] Delete`
-				: undefined,
-			opts.onFilterRequest ? `[${shortcut(shortcutsConfig.workspace.filter)}] Filter` : undefined,
-			agentMount ? `[${shortcut(shortcutsConfig.workspace.fullscreen)}] Fullscreen` : undefined,
-			opts.onSettingsRequest ? `[${shortcut(shortcutsConfig.workspace.settings)}] Settings` : undefined,
-			opts.onQuit ? `[${shortcut(shortcutsConfig.workspace.quit)}] Exit` : undefined,
+			...actionInventory().map((action) => `[${shortcut(action.shortcut)}] ${action.label}`),
 		].filter((value): value is string => Boolean(value));
-		if (opts.onHelp) {
-			navigationShortcuts.push(`[${shortcut(shortcutsConfig.workspace.help)}] Help`);
-		}
 		const shortcuts = artifactViewOpen
-			? `Artifacts · ${formatShortcut(artifactCloseShortcut, opts.keyboardOverrides)}: close · ↑/↓: select · ${formatShortcut(shortcutsConfig.taskViewer.approveArtifact, opts.keyboardOverrides)}: Approve current version · ${formatShortcut(shortcutsConfig.taskViewer.revokeArtifact, opts.keyboardOverrides)}: Revoke approval`
+			? `Artifacts · ${formatShortcut(artifactCloseShortcut, opts.keyboardOverrides)}: close · ↑/↓: select`
 			: (opts.footer ?? navigationShortcuts.join(" · "));
 		footer.content = agentFocused
 			? ` Agent input · [${shortcut(shortcutsConfig.workspace.quickPreviewExit)}] Leave agent `
@@ -812,8 +781,14 @@ export function mountOpenTuiWorkspace(
 			agentMount?.blur();
 			// Restore pane focus after controller remounts without stealing modal focus.
 			const focused = renderer.currentFocusedRenderable;
-			if (taskPaneVisible && (!focused || surface.focused || surface.hasFocusedDescendant)) taskList.focus();
-			else taskList.blur();
+			if (taskPaneVisible && (!focused || focused.isDestroyed || surface.focused || surface.hasFocusedDescendant)) {
+				taskList.focus();
+			} else {
+				taskList.blur();
+				if (!taskPaneVisible && (!focused || focused.isDestroyed || surface.focused || surface.hasFocusedDescendant)) {
+					surface.focus();
+				}
+			}
 		}
 		renderer.requestRender();
 	};
@@ -872,11 +847,164 @@ export function mountOpenTuiWorkspace(
 	};
 	const keybindings = createKeybindings(() => opts.keyboardOverrides ?? {});
 	const agentKeybindings = createKeybindings(() => opts.keyboardOverrides ?? {});
+	let pendingActionSequence = false;
 	const requestTaskAction = (action: OpenTuiWorkspaceTaskAction): void => {
 		const task = selectedTask();
 		if (!task) return;
 		if (action === "done" && isTerminalStatus(task.status, opts.statuses ?? [])) return;
 		opts.onTaskAction?.(task, action);
+	};
+	// This is the single source for normal-focus discovery and dispatch. Keep it local because
+	// availability depends on the current selected row, session, and terminal attachment.
+	const actionInventory = () => {
+		const task = selectedTask();
+		const selectedRowGroup = rows[selectedRow];
+		const group = selectedRowGroup?.kind === "group" ? selectedRowGroup : undefined;
+		return [
+			{ shortcut: shortcutsConfig.workspace.previousItem, label: "Previous", run: () => select(selectedRow - 1) },
+			{ shortcut: shortcutsConfig.workspace.nextItem, label: "Next", run: () => select(selectedRow + 1) },
+			{ shortcut: shortcutsConfig.workspace.first, label: "First", run: () => select(0) },
+			{ shortcut: shortcutsConfig.workspace.last, label: "Last", run: () => select(rows.length - 1) },
+			opts.onHistoryBack && {
+				shortcut: shortcutsConfig.workspace.historyBack,
+				label: "Back",
+				run: () => opts.onHistoryBack?.(),
+			},
+			opts.onHistoryForward && {
+				shortcut: shortcutsConfig.workspace.historyForward,
+				label: "Forward",
+				run: () => opts.onHistoryForward?.(),
+			},
+			task &&
+				opts.onCycleMode && {
+					shortcut: shortcutsConfig.workspace.cycleMode,
+					label: "Mode",
+					run: () => opts.onCycleMode?.(),
+				},
+			opts.onBoardRequest && {
+				shortcut: shortcutsConfig.workspace.board,
+				label: "Board",
+				run: () => opts.onBoardRequest?.(),
+			},
+			task &&
+				opts.onAgentConfigRequest && {
+					shortcut: shortcutsConfig.workspace.agentConfig,
+					label: "Agent config",
+					run: () => opts.onAgentConfigRequest?.(task),
+				},
+			opts.onTaskCreate && {
+				shortcut: shortcutsConfig.workspace.createTask,
+				label: "Create",
+				run: () => opts.onTaskCreate?.(),
+			},
+			opts.onNewGroup && {
+				shortcut: shortcutsConfig.workspace.newGroup,
+				label: "Group",
+				run: () => opts.onNewGroup?.(),
+			},
+			group &&
+				opts.onGroupToggle && {
+					shortcut: shortcutsConfig.workspace.expand,
+					label: "Expand",
+					run: () => opts.onGroupToggle?.(group.id, "expand"),
+				},
+			group &&
+				opts.onGroupToggle && {
+					shortcut: shortcutsConfig.workspace.collapse,
+					label: "Collapse",
+					run: () => opts.onGroupToggle?.(group.id, "collapse"),
+				},
+			task && { shortcut: shortcutsConfig.workspace.toggleDetails, label: "Details", run: toggleDetails },
+			{ shortcut: shortcutsConfig.workspace.toggleTaskPane, label: "Tasks", run: toggleTaskPane },
+			task &&
+				selectedTaskHasSessions() &&
+				opts.onSessionRequest && {
+					shortcut: shortcutsConfig.workspace.sessions,
+					label: "Sessions",
+					run: () => opts.onSessionRequest?.(task),
+				},
+			task &&
+				selectedTaskHasSessions() &&
+				opts.onHandoffRequest && {
+					shortcut: shortcutsConfig.workspace.handoff,
+					label: "Handoff",
+					run: () => opts.onHandoffRequest?.(task),
+				},
+			task &&
+				!selectedTaskHasSessions() &&
+				opts.onAgentStart && {
+					shortcut: shortcutsConfig.workspace.select,
+					label: "Start",
+					run: () =>
+						opts.onAgentStart?.(task, Math.max(1, agentOutput.width || 1), Math.max(1, agentOutput.height || 1)),
+				},
+			task &&
+				!isTerminalStatus(task.status, opts.statuses ?? []) &&
+				opts.onTaskAction && {
+					shortcut: shortcutsConfig.workspace.markDone,
+					label: "Done",
+					run: () => requestTaskAction("done"),
+				},
+			task &&
+				opts.onTaskAction && {
+					shortcut: shortcutsConfig.workspace.editTask,
+					label: "Edit",
+					run: () => requestTaskAction("edit"),
+				},
+			task &&
+				opts.onTaskAction && {
+					shortcut: shortcutsConfig.workspace.copyTask,
+					label: "Copy",
+					run: () => requestTaskAction("copy"),
+				},
+			task &&
+				opts.onTaskAction && {
+					shortcut: shortcutsConfig.workspace.completeTask,
+					label: "Complete",
+					run: () => requestTaskAction("complete"),
+				},
+			task &&
+				opts.onTaskAction && {
+					shortcut: shortcutsConfig.workspace.archiveTask,
+					label: "Archive",
+					run: () => requestTaskAction("archive"),
+				},
+			task &&
+				opts.onTaskAction && {
+					shortcut: shortcutsConfig.workspace.deleteTask,
+					label: "Delete",
+					run: () => requestTaskAction("delete"),
+				},
+			group &&
+				opts.onGroupDelete && {
+					shortcut: shortcutsConfig.workspace.deleteTask,
+					label: "Delete",
+					run: () => opts.onGroupDelete?.({ id: group.id, name: group.name }),
+				},
+			opts.onFilterRequest && {
+				shortcut: shortcutsConfig.workspace.filter,
+				label: "Filter",
+				run: () => queueMicrotask(() => opts.onFilterRequest?.()),
+			},
+			agentMount && {
+				shortcut: shortcutsConfig.workspace.fullscreen,
+				label: "Fullscreen",
+				run: () => {
+					fullscreen = true;
+					agentFocused = true;
+					redraw();
+					opts.onFullscreenChange?.(true);
+					opts.onAgentFocusChange?.(true);
+				},
+			},
+			opts.onSettingsRequest && {
+				shortcut: shortcutsConfig.workspace.settings,
+				label: "Settings",
+				run: () => opts.onSettingsRequest?.(),
+			},
+			opts.onQuit && { shortcut: shortcutsConfig.workspace.quit, label: "Exit", run: () => opts.onQuit?.() },
+			opts.onHelp && { shortcut: shortcutsConfig.workspace.help, label: "Help", run: () => opts.onHelp?.() },
+		].filter((entry): entry is Exclude<typeof entry, false | undefined> => Boolean(entry));
 	};
 	const onKeyPress = (key: KeyEvent): void => {
 		if (disposed || key.eventType === "release") return;
@@ -898,18 +1026,6 @@ export function mountOpenTuiWorkspace(
 				artifactView?.setOpen(false);
 				redraw();
 				taskList.focus();
-				return;
-			}
-			if (matchesShortcut(shortcutsConfig.taskViewer.approveArtifact, key, opts.keyboardOverrides)) {
-				key.preventDefault();
-				key.stopPropagation();
-				void artifactView?.approveCurrentVersion();
-				return;
-			}
-			if (matchesShortcut(shortcutsConfig.taskViewer.revokeArtifact, key, opts.keyboardOverrides)) {
-				key.preventDefault();
-				key.stopPropagation();
-				void artifactView?.revokeApproval();
 				return;
 			}
 			if (
@@ -935,7 +1051,37 @@ export function mountOpenTuiWorkspace(
 				return;
 			}
 		}
-		keybindings.dispatch(key);
+		const actions = actionInventory();
+		const stroke = shortcutKeyFromEvent(key);
+		const startsActionSequence =
+			stroke !== undefined &&
+			actions.some((action) => {
+				const first = opts.keyboardOverrides?.[action.shortcut.id]?.sequence[0];
+				return (
+					first?.key === stroke.key &&
+					Boolean(first.ctrl) === Boolean(stroke.ctrl) &&
+					Boolean(first.shift) === Boolean(stroke.shift) &&
+					Boolean(first.meta) === Boolean(stroke.meta) &&
+					Boolean(first.super) === Boolean(stroke.super) &&
+					Boolean(first.hyper) === Boolean(stroke.hyper) &&
+					opts.keyboardOverrides?.[action.shortcut.id]?.sequence.length === 2
+				);
+			});
+		if (pendingActionSequence || startsActionSequence) {
+			const wasPending = pendingActionSequence;
+			if (keybindings.dispatch(key)) {
+				pendingActionSequence = !wasPending;
+				key.preventDefault();
+				key.stopPropagation();
+				return;
+			}
+		}
+		const action = actions.find((entry) => matchesShortcut(entry.shortcut, key, opts.keyboardOverrides));
+		if (action) {
+			key.preventDefault();
+			key.stopPropagation();
+			action.run();
+		}
 	};
 	const leaveAgent = (): void => {
 		const wasFullscreen = fullscreen;

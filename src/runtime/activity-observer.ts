@@ -1,4 +1,4 @@
-import type { AgentActivity, AgentSessionStatus } from "../model/session/types.ts";
+import type { AgentActivity } from "../model/session/types.ts";
 import { resolveAgentActivity } from "./agent-status.ts";
 import type { ActivityProbeEvidence } from "./agent-status-probe.ts";
 import { harnessRegistry } from "./agents/startup.ts";
@@ -6,7 +6,6 @@ import { harnessRegistry } from "./agents/startup.ts";
 export interface ActivityObserverTarget {
 	readonly sessionId: string;
 	readonly bootstrap: string;
-	readonly lifecycle: AgentSessionStatus;
 }
 
 export interface ActivityObserver {
@@ -35,7 +34,6 @@ export function createActivityObserver(options: { now?: () => number } = {}): Ac
 			const unreachableConfirmed = (previous?.unreachableConfirmed ?? false) || evidence.pane !== "unreachable";
 			const hookSeen = (previous?.hookSeen ?? false) || evidence.hook !== undefined;
 			const activity = resolveAgentActivity({
-				lifecycle: target.lifecycle,
 				hookBacked: harnessRegistry.find(target.bootstrap)?.hookBacked ?? false,
 				...evidence,
 				hookSeen,

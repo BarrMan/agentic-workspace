@@ -4,8 +4,10 @@ import type { AgentPreset, ModeProfile, RuntimeAgentBootstrap } from "../../../m
 import type { AgentModel } from "./agent.ts";
 
 const modelCache = new Map<string, AgentModel[]>();
+const parserIds = new WeakMap<(output: string) => AgentModel[], number>();
 const MODEL_CACHE_LIMIT = 32;
 const MODEL_DISCOVERY_TIMEOUT_LIMIT_MS = 10_000;
+let nextParserId = 0;
 
 export function withExplicitModel(preset: AgentPreset, modelId: string): AgentPreset {
 	const [executable, ...args] = preset.command;
@@ -97,15 +99,19 @@ export function profileInstructions(
 }
 
 export async function discoverModels(
-	harness: RuntimeAgentBootstrap,
 	command: string[],
 	env: Record<string, string>,
-	timeoutMs = 5_000,
+	timeoutMs: number,
+	parseOutput: (output: string) => AgentModel[],
 ): Promise<AgentModel[]> {
-	if (harness === "claude") return [];
 	const args = [...command];
+	let parserId = parserIds.get(parseOutput);
+	if (parserId === undefined) {
+		parserId = nextParserId++;
+		parserIds.set(parseOutput, parserId);
+	}
 	const key = createHash("sha256")
-		.update(JSON.stringify([harness, args, Object.entries(env).sort()]))
+		.update(JSON.stringify([args, Object.entries(env).sort(), parserId]))
 		.digest("hex");
 	const cached = modelCache.get(key);
 	if (cached) {
@@ -113,7 +119,7 @@ export async function discoverModels(
 		modelCache.set(key, cached);
 		return cached.map((item) => ({ ...item }));
 	}
-	const [executable, ...presetArgs] = args;
+	const [executable, ...argv] = args;
 	if (!executable) return [];
 	let child: {
 		stdout: ReadableStream<Uint8Array<ArrayBufferLike>>;
@@ -121,19 +127,12 @@ export async function discoverModels(
 		kill(exitCode?: number | NodeJS.Signals): void;
 	};
 	try {
-		child = Bun.spawn(
-			[
-				executable,
-				...presetArgs,
-				...(["opencode", "opencode-v1", "opencode-v2"].includes(harness) ? ["models"] : ["--list-models"]),
-			],
-			{
-				env,
-				stdin: "ignore",
-				stdout: "pipe",
-				stderr: "ignore",
-			},
-		);
+		child = Bun.spawn([executable, ...argv], {
+			env,
+			stdin: "ignore",
+			stdout: "pipe",
+			stderr: "ignore",
+		});
 	} catch {
 		return [];
 	}
@@ -149,21 +148,7 @@ export async function discoverModels(
 		const output = await new Response(child.stdout).text();
 		const exitCode = await child.exited;
 		if (timedOut || exitCode !== 0) return [];
-		const parsed =
-			harness === "pi"
-				? output
-						.split(/\r?\n/)
-						.slice(1)
-						.flatMap((line) => {
-							const [provider, model] = line.trim().split(/\s+/);
-							return provider && model ? [{ id: `${provider}/${model}` }] : [];
-						})
-				: output
-						.split(/\r?\n/)
-						.map((line) => line.trim())
-						.filter(Boolean)
-						.map((id) => ({ id }));
-		const unique = deduplicateModels(parsed);
+		const unique = deduplicateModels(parseOutput(output));
 		if (exitCode === 0) {
 			modelCache.set(key, unique);
 			while (modelCache.size > MODEL_CACHE_LIMIT) {

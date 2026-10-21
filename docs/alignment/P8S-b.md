@@ -11,7 +11,7 @@ Presentation-only evidence against [screen contracts](../screens/README.md) and 
 | Mode/model/permission fields and instruction vs native-support explanation | `agent-settings.ts:491-501,829-870`; model picker mounted in this module and mode settings suites exercise editing (`opentui-mode-settings-input.test.ts`, `opentui-mode-settings-contract.test.ts`). **verified** |
 | Validation/save failure visible without losing staged values | Save catch and retained draft `agent-settings.ts:1144-1163`; preset callback failure test `opentui-agent-settings.test.ts:426-490`; field validation flows in `opentui-mode-settings-input.test.ts`. **verified** |
 | Environment multiline paste/Shift+Enter and constrained sizes/selection access | `agent-settings.ts:387-395,706-715`; tests `275-391`. **verified** |
-| Removal/history presentation and behavior | Mode delete shows session count/destination `agent-settings.ts:886-891`; behavior uses draft functions. Exact history/removal presentation and tests are not fully mapped. **unknown** (next trace: follow delete/default/session-count paths and assert rendered history/removal states). |
+| Removal/history presentation and behavior | Delete confirmation is handled in `agent-settings.ts`; confirmed deletion calls `core.deleteMode(modeId, { confirmed: true })` from `workspace-controller.ts`. The UI does not offer a destination mode; deletion/fallback semantics belong to the [configuration contract](../specs/configuration.md#config-013-catalogue-deletion-and-task-fallback). Exact history/removal presentation and tests are not fully mapped. **unknown** (next trace: assert rendered history/removal states). |
 
 ## Sessions and artifacts
 
@@ -20,8 +20,8 @@ Presentation-only evidence against [screen contracts](../screens/README.md) and 
 | Picker selection, identity, newest-first ordering, empty state, resume feedback and retained selection on failure | `session-picker.ts:21-28,51-70,80-100`; `opentui-session-picker.test.ts:27-109,150-176`. **verified** |
 | Picker modal input containment, cancellation and focus return | Key/paste listeners and prior-focus restoration `session-picker.ts:71-79,121-159`; tests `61-109,150-176`. **verified** |
 | Attach/resume captured task/session intent | callbacks receive session ID; selected task captured by options, but end-to-end operation ownership is outside this lane. **blocked** (next trace: P3/P5 attach/resume caller and IF-SI acceptance). |
-| Artifact listing, selection, approval/draft/missing labels; text/binary view; empty/error states | `task-artifact-view.ts:220-247,260-289`; approval projection test `opentui-artifact-approval-projection.test.ts`; live view test `artifact-view-live-refresh-contract.test.ts:63-107`. **verified** |
-| Artifact view keeps selected task/mode context visible | View receives task ID but this component renders no task/mode context (`task-artifact-view.ts:18-24,49-50,260-268`). Caller composition is not in allowlist. **blocked** (next trace: caller's surrounding header/context and a rendered-frame assertion). |
+| Artifact listing, selection, text/binary view; empty/error states | `task-artifact-view.ts:109-120,146-182,196-219`; live view test `artifact-view-live-refresh-contract.test.ts:63-107`. Approval is task/mode-scoped and informational under the [configuration contract](../specs/configuration.md#config-007-task-and-mode-approval), not a file-level artifact state. **verified** |
+| Artifact view keeps selected task/mode context visible | View receives task ID but this component renders no task/mode context (`task-artifact-view.ts:11-17,34-65`). Caller composition is not in allowlist. **blocked** (next trace: caller's surrounding header/context and a rendered-frame assertion). |
 | Artifact storage semantics | Backend-owned; deliberately not changed or evaluated. **blocked** (next trace: backend lane). |
 
 ## Help and dialogs

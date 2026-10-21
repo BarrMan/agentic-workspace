@@ -2,6 +2,7 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { AgentPreset } from "../../../model/session/types.ts";
 import type { InstalledStatusHook } from "../../status-hooks.ts";
+import type { AgentModel } from "../core/agent.ts";
 import {
 	type AgentPreparation,
 	type AskCommandRequest,
@@ -26,6 +27,14 @@ import { OpenCodeSessionCapture } from "./opencode-session-capture.ts";
 import { openCodeBootstrapForVersion } from "./opencode-version.ts";
 
 const NATIVE_SESSION_ID = /^ses_[A-Za-z0-9_-]+$/;
+
+function parseOpenCodeModels(output: string): AgentModel[] {
+	return output
+		.split(/\r?\n/)
+		.map((line) => line.trim())
+		.filter(Boolean)
+		.map((id) => ({ id }));
+}
 
 function parseOpenCodeConfig(content: string | undefined) {
 	const config: unknown = content ? Bun.JSONC.parse(content) : {};
@@ -66,7 +75,7 @@ export class OpencodeV1Agent implements HarnessInterface {
 	readonly prepareBeforeAsk = true;
 
 	discoverModels(request: import("../core/agent.ts").ModelDiscoveryRequest) {
-		return discoverModels("opencode", request.command, request.env, request.timeoutMs);
+		return discoverModels([...request.command, "models"], request.env, request.timeoutMs, parseOpenCodeModels);
 	}
 
 	prepareProfile(profile: import("../../../model/session/types.ts").ModeProfile, preset: AgentPreset): AgentPreset {

@@ -1,72 +1,9 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdir, readdir } from "node:fs/promises";
 import { join } from "node:path";
-import { Writable } from "node:stream";
-import { runCli } from "../cli/register.ts";
 import { Core } from "../controller/agentic-workspace.ts";
+import { runInProcessCli } from "./in-process-cli.ts";
 import { coreFileSystem, createUniqueTestDir, initializeFilesystemTestProject, safeCleanup } from "./test-utils.ts";
-
-const CLI_COMMAND = ["agentic-workspace"];
-let cliQueue = Promise.resolve();
-
-function $(parts: TemplateStringsArray, ...values: unknown[]) {
-	const source = parts.reduce(
-		(text, part, index) =>
-			`${text}${part}${Array.isArray(values[index]) ? values[index].map((value) => JSON.stringify(value)).join(" ") : values[index] === undefined ? "" : JSON.stringify(values[index])}`,
-		"",
-	);
-	const args =
-		source
-			.match(/"(?:\\.|[^"\\])*"|'[^']*'|[^\s]+/g)
-			?.map((arg) =>
-				arg.startsWith('"') ? (JSON.parse(arg) as string) : arg.startsWith("'") ? arg.slice(1, -1) : arg,
-			) ?? [];
-	const config: { cwd?: string; nothrow?: boolean } = {};
-	const result = () => {
-		const execution = cliQueue.then(async () => {
-			const stdout: string[] = [];
-			const stderr: string[] = [];
-			const out = new Writable({
-				write: (chunk, _encoding, done) => {
-					stdout.push(chunk.toString());
-					done();
-				},
-			});
-			const err = new Writable({
-				write: (chunk, _encoding, done) => {
-					stderr.push(chunk.toString());
-					done();
-				},
-			});
-			const exitCode = await runCli(args.slice(CLI_COMMAND.length), { cwd: config.cwd, stdout: out, stderr: err });
-			const value = { exitCode, stdout: stdout.join(""), stderr: stderr.join("") };
-			if (value.exitCode && !config.nothrow) throw new Error(value.stderr || `CLI exited with ${value.exitCode}`);
-			return value;
-		});
-		cliQueue = execution.then(
-			() => undefined,
-			() => undefined,
-		);
-		return execution;
-	};
-	const chain = {
-		cwd(value: string) {
-			config.cwd = value;
-			return chain;
-		},
-		nothrow() {
-			config.nothrow = true;
-			return chain;
-		},
-		quiet() {
-			return result();
-		},
-		async text() {
-			return (await result()).stdout;
-		},
-	};
-	return chain;
-}
 
 let TEST_DIR: string;
 
@@ -91,7 +28,8 @@ describe("CLI Zero Padded IDs Feature", () => {
 	});
 
 	test("should create a task with a zero-padded ID", async () => {
-		const result = await $`${CLI_COMMAND} task create "Padded Task"`.cwd(TEST_DIR).quiet();
+		const result = await runInProcessCli(["task", "create", "Padded Task"], { cwd: TEST_DIR });
+		expect(result.exitCode).toBe(0);
 		expect(result.exitCode).toBe(0);
 
 		const tasksDir = join(TEST_DIR, "agentic-workspace", "tasks");
@@ -101,8 +39,9 @@ describe("CLI Zero Padded IDs Feature", () => {
 	});
 
 	test("should correctly increment a padded task ID", async () => {
-		await $`${CLI_COMMAND} task create "First Padded Task"`.cwd(TEST_DIR).quiet();
-		const result = await $`${CLI_COMMAND} task create "Second Padded Task"`.cwd(TEST_DIR).quiet();
+		expect((await runInProcessCli(["task", "create", "First Padded Task"], { cwd: TEST_DIR })).exitCode).toBe(0);
+		const result = await runInProcessCli(["task", "create", "Second Padded Task"], { cwd: TEST_DIR });
+		expect(result.exitCode).toBe(0);
 		expect(result.exitCode).toBe(0);
 
 		const tasksDir = join(TEST_DIR, "agentic-workspace", "tasks");

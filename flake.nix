@@ -30,13 +30,31 @@
             inherit system;
             overlays = [ bun2nix.overlays.default ];
           };
-          standardBun = pkgs.bun;
-          # Update this version and both archive hashes together when changing Bun.
-          pinnedBunVersion = "1.3.13";
+          # Update this version and every archive hash together when changing Bun.
+          pinnedBunVersion = "1.4.3";
+          standardBun = pkgs.bun.overrideAttrs (bun: {
+            version = pinnedBunVersion;
+            passthru = bun.passthru // {
+              sources = bun.passthru.sources // {
+                x86_64-linux = pkgs.fetchurl {
+                  url = "https://github.com/oven-sh/bun/releases/download/bun-v${pinnedBunVersion}/bun-linux-x64.zip";
+                  sha256 = "3e730528d89775f03f87f05c06787c4df4099d0a37f3f252e7b829cb23816e18";
+                };
+                aarch64-linux = pkgs.fetchurl {
+                  url = "https://github.com/oven-sh/bun/releases/download/bun-v${pinnedBunVersion}/bun-linux-aarch64.zip";
+                  sha256 = "efa9813da5ed72423bf847f916e8d2c47c0d776add972354026a75e10da9aa21";
+                };
+                aarch64-darwin = pkgs.fetchurl {
+                  url = "https://github.com/oven-sh/bun/releases/download/bun-v${pinnedBunVersion}/bun-darwin-aarch64.zip";
+                  sha256 = "80afd4c069b46a6fa8f3ec520bebc750a7843e4a8d5b9583d29ad436c00a3403";
+                };
+              };
+            };
+          });
           avx2BunArchive = pkgs.fetchurl {
             # Pin an AVX2-only control independently of the packaged Bun runtime.
             url = "https://github.com/oven-sh/bun/releases/download/bun-v${pinnedBunVersion}/bun-linux-x64.zip";
-            hash = "sha256-ecB3H6i5LDOq5B4VoODTB+qZ0OLwAxfHHGxTI3p44lo=";
+            sha256 = "3e730528d89775f03f87f05c06787c4df4099d0a37f3f252e7b829cb23816e18";
           };
           packageJson = builtins.fromJSON (builtins.readFile ./package.json);
           bunDeps = pkgs.bun2nix.fetchBunDeps {
@@ -50,7 +68,7 @@
                     x86_64-linux = pkgs.fetchurl {
                       # Keep this on Bun's baseline archive. The normal x64 build requires AVX2.
                       url = "https://github.com/oven-sh/bun/releases/download/bun-v${pinnedBunVersion}/bun-linux-x64-baseline.zip";
-                      hash = "sha256-nYokKSpwaAkCBdqsCloiP19pc29Sh+N7+I07QDHtx1A=";
+                      sha256 = "1fc2edac843102909e3a1be1d8d9802cc6071cf074e67e88231f4ffe0f8b397b";
                     };
                   };
                 };

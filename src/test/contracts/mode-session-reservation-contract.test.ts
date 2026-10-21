@@ -3,16 +3,9 @@ import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { AgentSession } from "../../model/session/types.ts";
-import type { ProcessRunner } from "../../runtime/session-process.ts";
 import { SessionStore } from "../../storage/session-store.ts";
 
-class NoProcess implements ProcessRunner {
-	async run() {
-		return { exitCode: 1, stdout: "", stderr: "unused" };
-	}
-}
-
-function record(id: string, _modeId: string, status: AgentSession["status"], cwd: string): AgentSession {
+function record(id: string, _modeId: string, cwd: string): AgentSession {
 	return {
 		id,
 		taskId: "TASK-23",
@@ -20,7 +13,6 @@ function record(id: string, _modeId: string, status: AgentSession["status"], cwd
 		tmuxName: `pane-${id}`,
 		cwd,
 		createdAt: "2026-10-10T12:00:00.000Z",
-		status,
 		outputPath: `/logs/${id}.log`,
 		bootstrapPath: `/logs/${id}.md`,
 		pathContext: { projectDir: "/repo", worktreeDir: cwd, taskDir: "/repo/tasks/TASK-23" },
@@ -34,7 +26,7 @@ describe("mode session reservation and adoption contract", () => {
 	async function fixture() {
 		const root = await mkdtemp(join(tmpdir(), "mode-session-contract-"));
 		roots.push(root);
-		return { root, store: new SessionStore(root, new NoProcess()) };
+		return { root, store: new SessionStore(root) };
 	}
 
 	it("starts a fresh PLAN history empty and keeps direct BUILD history independent", async () => {
@@ -44,7 +36,7 @@ describe("mode session reservation and adoption contract", () => {
 		await expect(readFile(join(root, "tasks", "TASK-23", "sessions.json"), "utf8")).rejects.toMatchObject({
 			code: "ENOENT",
 		});
-		const build = record("build-run", "build", "running", root);
+		const build = record("build-run", "build", root);
 		await store.mutateMode("TASK-23", "build", async (history) => {
 			history.sessions.push(build);
 			history.activeSessionId = build.id;
@@ -58,7 +50,7 @@ describe("mode session reservation and adoption contract", () => {
 		const entered = Promise.withResolvers<void>();
 		const release = Promise.withResolvers<void>();
 		const first = store.mutateMode("TASK-23", "plan", async (history) => {
-			history.sessions.push(record("plan-first", "plan", "starting", root));
+			history.sessions.push(record("plan-first", "plan", root));
 			history.activeSessionId = "plan-first";
 			entered.resolve();
 			await release.promise;
@@ -68,12 +60,12 @@ describe("mode session reservation and adoption contract", () => {
 		// The store holds one shared state.json lock for the whole callback, so a different-mode
 		// mutation of the same task queues behind it and cannot complete while `first` is in flight.
 		const duplicate = store.mutateMode("TASK-23", "plan", async (history) => {
-			if (history.sessions.some((session) => session.status === "starting")) throw new Error("already reserved");
-			history.sessions.push(record("plan-second", "plan", "starting", root));
+			if (history.sessions.some((session) => session.id === "plan-first")) throw new Error("already reserved");
+			history.sessions.push(record("plan-second", "plan", root));
 			history.activeSessionId = "plan-second";
 		});
 		const build = store.mutateMode("TASK-23", "build", async (history) => {
-			history.sessions.push(record("build-first", "build", "starting", root));
+			history.sessions.push(record("build-first", "build", root));
 			history.activeSessionId = "build-first";
 		});
 		let buildCompleted = false;
@@ -107,9 +99,9 @@ describe("mode session reservation and adoption contract", () => {
 
 	it("keeps active selection mode-scoped and canonical paths unchanged", async () => {
 		const { store, root } = await fixture();
-		const historical = record("old-plan", "plan", "running", root);
-		const selected = record("selected-plan", "plan", "parked", root);
-		const otherMode = record("active-build", "build", "running", root);
+		const historical = record("old-plan", "plan", root);
+		const selected = record("selected-plan", "plan", root);
+		const otherMode = record("active-build", "build", root);
 		await store.mutateMode("TASK-23", "plan", async (history) => {
 			history.sessions.push(historical, selected);
 			history.activeSessionId = selected.id;
@@ -122,7 +114,7 @@ describe("mode session reservation and adoption contract", () => {
 		await store.mutateMode("TASK-23", "plan", async (history) => {
 			const current = history.sessions.find(({ id }) => id === selected.id);
 			if (!current) throw new Error("selected history disappeared");
-			current.status = "running";
+			current.lastUsedAt = "2026-10-10T12:30:00.000Z";
 			history.activeSessionId = current.id;
 		});
 		expect((await store.readMode("TASK-23", "plan")).activeSessionId).toBe(selected.id);
@@ -135,8 +127,8 @@ describe("mode session reservation and adoption contract", () => {
 
 	it("resolves a calling UUID by its current mode membership rather than a selected UI mode", async () => {
 		const { store } = await fixture();
-		const caller = record("caller-uuid", "build", "running", "/work");
-		const plan = record("plan-uuid", "plan", "running", "/work");
+		const caller = record("caller-uuid", "build", "/work");
+		const plan = record("plan-uuid", "plan", "/work");
 		await store.mutateMode("TASK-23", "build", async (history) => {
 			history.sessions.push(caller);
 			history.activeSessionId = caller.id;

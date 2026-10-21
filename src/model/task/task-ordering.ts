@@ -1,4 +1,5 @@
 import { getPriorityRank } from "./priority-config.ts";
+import { statusComparisonKey } from "./status.ts";
 import { parseTaskId as parseTaskIdSegments, taskIdBody } from "./task-id.ts";
 
 /** Ordering and comparison over task IDs, ordinals, and priorities. */
@@ -99,6 +100,59 @@ export class TaskOrdering {
 			default:
 				return TaskOrdering.byOrdinalAndPriority(items, priorityOrder);
 		}
+	}
+
+	/** Projects a corpus into configured status columns with parent/child display order. */
+	static boardColumns<T extends { id: string; status?: string; ordinal?: number; parentTaskId?: string }>(
+		items: readonly T[],
+		statuses: readonly string[],
+	): Array<{ status: string; tasks: T[] }> {
+		const orderedStatuses: string[] = [];
+		const columns = new Map<string, T[]>();
+		for (const status of statuses) {
+			if (columns.has(statusComparisonKey(status))) continue;
+			orderedStatuses.push(status);
+			columns.set(statusComparisonKey(status), []);
+		}
+		for (const task of items) {
+			const status = task.status ?? "";
+			if (!status) continue;
+			const key = statusComparisonKey(status);
+			if (!columns.has(key)) {
+				orderedStatuses.push(status);
+				columns.set(key, []);
+			}
+			columns.get(key)?.push(task);
+		}
+		const byId = new Map(items.map((task) => [task.id, task]));
+		return orderedStatuses.map((status) => ({
+			status,
+			tasks: TaskOrdering.orderColumn(columns.get(statusComparisonKey(status)) ?? [], byId),
+		}));
+	}
+
+	private static orderColumn<T extends { id: string; status?: string; ordinal?: number; parentTaskId?: string }>(
+		items: readonly T[],
+		byId: ReadonlyMap<string, T>,
+	): T[] {
+		const topLevel: T[] = [];
+		const childrenByParent = new Map<string, T[]>();
+		const sorted = [...items].sort((a, b) => {
+			const ordinal = TaskOrdering.compareOrdinals(b, a);
+			return ordinal || TaskOrdering.compareIds(b.id, a.id);
+		});
+		for (const task of sorted) {
+			const parent = task.parentTaskId ? byId.get(task.parentTaskId) : undefined;
+			if (parent && parent.status === task.status) {
+				const children = childrenByParent.get(parent.id) ?? [];
+				children.push(task);
+				childrenByParent.set(parent.id, children);
+			} else topLevel.push(task);
+		}
+		return topLevel.flatMap((task) => [
+			task,
+			...(childrenByParent.get(task.id) ?? []).sort((a, b) => TaskOrdering.compareIds(a.id, b.id)),
+		]);
 	}
 
 	private static isAncestorId(parentId: string, childId: string): boolean {

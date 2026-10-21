@@ -47,6 +47,15 @@ describe("cli launcher", () => {
 		expect(result.status).toBe(7);
 		expect(result.stdout).toContain("args: task list");
 	});
+
+	it.skipIf(isWindows)("forwards positional values that look like launcher binaries", async () => {
+		const dir = await createLauncherDir('#!/bin/sh\necho "args: $@"\nexit 0\n');
+		const binaryPath = join(dir, "node_modules", getCandidatePackageNames()[0], "agentic-workspace");
+		const platformBinaryPath = "/tmp/node_modules/agentic-workspace-linux-x64/agentic-workspace";
+		const result = runLauncher(dir, [binaryPath, platformBinaryPath]);
+		expect(result.status).toBe(0);
+		expect(result.stdout).toContain(`args: ${binaryPath} ${platformBinaryPath}`);
+	});
 });
 
 describe("launcher error and signal mapping", () => {

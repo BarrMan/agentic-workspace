@@ -3,7 +3,6 @@ task_schema_version: 3
 id: BACK-8
 title: Investigate performance degragation of AgenticWorkspace
 status: Done
-assignee: []
 created_date: '2026-10-07 15:52'
 updated_date: '2026-10-08 02:45'
 labels: []

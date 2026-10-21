@@ -2,7 +2,7 @@ import { describe, expect, it } from "bun:test";
 import { createActivityObserver } from "./activity-observer.ts";
 import type { ActivityProbeEvidence } from "./agent-status-probe.ts";
 
-const target = { sessionId: "first", bootstrap: "claude", lifecycle: "running" } as const;
+const target = { sessionId: "first", bootstrap: "claude" } as const;
 
 function evidence(overrides: Partial<ActivityProbeEvidence> = {}): ActivityProbeEvidence {
 	return { hook: undefined, pane: "alive", captureEmpty: true, chrome: undefined, ...overrides };
@@ -25,7 +25,7 @@ describe("shared activity observation history", () => {
 		helper.clear(target.sessionId);
 		expect(helper.snapshot(target.sessionId)).toBeUndefined();
 	});
-	it("preserves running, stale idle, waiting, error, unknown and terminal verdicts", () => {
+	it("preserves running, stale idle, waiting, error, and unknown verdicts", () => {
 		const observer = createActivityObserver();
 		expect(observer.observe(target, evidence())).toBe("unknown");
 		for (const status of ["running", "idle", "waiting", "error"] as const) {
@@ -40,9 +40,6 @@ describe("shared activity observation history", () => {
 				evidence({ hook: { status: "waiting", ageMs: 0 }, captureEmpty: false, chrome: "running" }),
 			),
 		).toBe("running");
-		for (const lifecycle of ["stopped", "failed"] as const) {
-			expect(observer.observe({ ...target, lifecycle }, evidence({ chrome: "running" }))).toBe("stopped");
-		}
 	});
 
 	it("remembers hooks for dead panes and clears only the requested session", () => {

@@ -1,11 +1,23 @@
+import type { TerminalAttachment } from "../../model/session/types.ts";
 import type { AgentHost } from "../../runtime/live/agent-host.ts";
+import type { createExistingAgentHost } from "../../runtime/live/existing-agent-host.ts";
 
 /** Owns the lifetime of this local observer without taking ownership of its shared session. */
 export function createWorkspaceAgentHostOwner(
-	host: AgentHost,
+	attachment: TerminalAttachment,
+	callbacks: Pick<Parameters<typeof createExistingAgentHost>[0], "onOutput" | "onError">,
+	createHost: typeof createExistingAgentHost,
+	detachAttachment: () => Promise<void>,
 	stopSession: () => Promise<void>,
 	onDetached: () => void,
 ) {
+	const host = createHost({
+		server: attachment.server,
+		exec: attachment.exec,
+		paneId: attachment.paneId,
+		outputPath: attachment.outputPath,
+		...callbacks,
+	});
 	let stopped = false;
 	let startupPending = false;
 	let detachRequested = false;
@@ -17,6 +29,7 @@ export function createWorkspaceAgentHostOwner(
 			let state: "retained" | "gone" = "retained";
 			if (detach) state = await detach(history);
 			else await host.stop();
+			await detachAttachment();
 			if (!startupPending) stopped = true;
 			onDetached();
 			return state;
@@ -28,7 +41,7 @@ export function createWorkspaceAgentHostOwner(
 			if (detachPromise === pending) detachPromise = undefined;
 		}
 	};
-	const ownedHost: AgentHost = {
+	const ownedHost: AgentHost & Pick<typeof host, "alive"> = {
 		...host,
 		start: async () => {
 			startupPending = true;

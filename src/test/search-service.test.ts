@@ -59,8 +59,11 @@ describe("snapshot search", () => {
 			"Other",
 		]);
 		expect(
-			titles(await core.searchPersistently({ types: ["task"], filters: { labels: ["web"], priority: "high" } })),
+			titles(await core.searchPersistently({ types: ["task"], filters: { labels: ["web"], priority: "High" } })),
 		).toEqual(["Needle query"]);
+		expect(
+			titles(await core.searchPersistently({ types: ["task"], filters: { labels: ["web"], priority: " high " } })),
+		).toEqual([]);
 	});
 
 	it("applies global limits and reflects the next disk read", async () => {

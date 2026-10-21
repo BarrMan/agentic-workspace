@@ -2,11 +2,15 @@ import { afterEach, describe, expect, it } from "bun:test";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { RunningExecution, RunningExecutionEvent } from "../../runtime/harness.ts";
-import type { ProcessRunner } from "../../runtime/session-process.ts";
 import { SessionStore } from "../../storage/session-store.ts";
 import { Session, type SessionRuntime } from "../session/session.ts";
-import type { AgentSession, ModeProfile, ResolvedAgentConfiguration } from "../session/types.ts";
+import type {
+	AgentSession,
+	ModeProfile,
+	ResolvedAgentConfiguration,
+	RunningExecution,
+	RunningExecutionEvent,
+} from "../session/types.ts";
 import type { Task as TaskRecord } from "../types.ts";
 import { createReadinessGraph } from "./readiness.ts";
 import type { TaskHydrationInput } from "./task.ts";
@@ -19,7 +23,10 @@ const profile: ModeProfile = {
 	permissions: { repository: "read", task: "read", artifacts: "read", subagents: "disabled" },
 	artifacts: [],
 };
-const configuration: ResolvedAgentConfiguration = { scope: "project", config: { selectedPreset: "x", presets: {} } };
+const configuration: ResolvedAgentConfiguration = {
+	scope: "project",
+	config: { selectedPreset: "x", presets: {}, sessions: { worktreePerTask: false, yoloMode: false } },
+};
 
 function fixture(overrides: Partial<TaskHydrationInput> = {}) {
 	let provisions = 0;
@@ -35,7 +42,6 @@ function fixture(overrides: Partial<TaskHydrationInput> = {}) {
 			tmuxName: "",
 			cwd: "/",
 			createdAt: "now",
-			status: "starting",
 			outputPath: "",
 			bootstrapPath: "",
 		};
@@ -46,6 +52,13 @@ function fixture(overrides: Partial<TaskHydrationInput> = {}) {
 			},
 			stop: async () => {},
 			observe: () => () => {},
+			observeRetained: async () => "absent",
+			prepareStop: async () => ({ stop: async () => {} }),
+			attach: async () => {
+				throw new Error("unused");
+			},
+			detach: async () => {},
+			ask: async () => ({ answer: "unused" }),
 		};
 		return new Session(record, modeId, runtime);
 	};
@@ -122,11 +135,44 @@ describe("Task", () => {
 		expect(() => task.setModeApproval(" ")).toThrow("Mode ID must not be empty");
 	});
 
-	it("persists one Task reservation before real Session startup and readiness", async () => {
+	it("applies resolved updates synchronously without changing Done into cleanup", () => {
+		const { task } = fixture();
+		const result = task.applyUpdate(
+			{
+				status: "Done",
+				priority: "High",
+				labels: [" UI ", "ui", "Docs"],
+				dependencies: ["TASK-2"],
+			},
+			{
+				configuration: { statuses: ["To Do", "Done"], priorities: ["High", "Low"] },
+				dependencies: {
+					replacement: { input: ["TASK-2"], valid: ["TASK-2"], invalid: [] },
+				},
+			},
+		);
+		expect(result).toBe(true);
+		expect(task.serialize()).toMatchObject({
+			status: "Done",
+			priority: "High",
+			labels: ["UI", "Docs"],
+			dependencies: ["TASK-2"],
+		});
+		expect(task.serialize().worktreePolicy).toBeUndefined();
+	});
+
+	it("rejects unvalidated dependency updates before mutation", () => {
+		const { task } = fixture();
+		expect(() => task.applyUpdate({ dependencies: ["TASK-2"] }, {})).toThrow(
+			"Dependencies must be validated before updating a task",
+		);
+		expect(task.serialize().dependencies).toEqual([]);
+	});
+
+	it("persists one Task reservation before Session startup", async () => {
 		const root = await mkdtemp(join(tmpdir(), "task-session-store-"));
 		roots.push(root);
-		const runner: ProcessRunner = { run: async () => ({ exitCode: 1, stdout: "", stderr: "unused" }) };
-		const store = new SessionStore(root, runner);
+		const store = new SessionStore(root);
 		const { task, setStartRuntime } = fixture();
 		let session: Session | undefined;
 		let creation: ReturnType<Task["reserveSession"]>["creation"] | undefined;
@@ -166,19 +212,17 @@ describe("Task", () => {
 			return running;
 		});
 		await reservedSession.start({
-			context: { taskId: "T-1", modeId: "a", sessionId: reservedSession.id, record: reservedSession.record } as never,
-			checkpoint: async ({ phase }) => {
-				calls.push(phase);
-				if (phase === "identity" || phase === "ready") {
-					await store.mutate("T-1", async (state) => {
-						const history = state.modes.a;
-						if (!history) throw new Error("missing reservation");
-						history.sessions[0] = reservedSession.serialize();
-					});
-				}
-			},
+			taskId: "T-1",
+			modeId: "a",
+			sessionId: reservedSession.id,
+			record: reservedSession.record,
+			configuration,
+			profile,
+			preset: { command: [], env: {}, prepare: "", bootstrap: "pi" },
+			prompt: "",
 		});
-		expect(calls).toEqual(["launch", "identity", "ready"]);
+		expect(calls).toEqual(["launch"]);
+		expect(reservedSession.view.state).toBe("running");
 		expect((await store.readMode("T-1", "a")).sessions).toHaveLength(1);
 		expect(creationIdentity.createdAt).toBe(reservedSession.record.createdAt);
 	});
@@ -218,7 +262,7 @@ describe("Task", () => {
 	it("prepends one reservation and reloads the same selected session", async () => {
 		const root = await mkdtemp(join(tmpdir(), "task-reservation-reload-"));
 		roots.push(root);
-		const store = new SessionStore(root, { run: async () => ({ exitCode: 1, stdout: "", stderr: "unused" }) });
+		const store = new SessionStore(root);
 		const previous = {
 			id: "previous",
 			taskId: "T-1",
@@ -226,7 +270,6 @@ describe("Task", () => {
 			tmuxName: "",
 			cwd: "/",
 			createdAt: "then",
-			status: "stopped" as const,
 			outputPath: "",
 			bootstrapPath: "",
 		};
@@ -263,7 +306,6 @@ describe("Task", () => {
 			tmuxName: "",
 			cwd: "/",
 			createdAt: "prior-time",
-			status: "stopped" as const,
 			outputPath: "",
 			bootstrapPath: "",
 		};
@@ -305,7 +347,6 @@ describe("Task", () => {
 			tmuxName: "",
 			cwd: "/",
 			createdAt: id,
-			status: "stopped" as const,
 			outputPath: "",
 			bootstrapPath: "",
 		}));
@@ -314,10 +355,10 @@ describe("Task", () => {
 		if (!first) throw new Error("missing fixture session");
 		expect(() => task.updateSessionRecord("a", { ...first, id: "missing" })).toThrow("membership");
 		expect(() => task.updateSessionRecord("a", { ...first, taskId: "foreign" })).toThrow("another task");
-		task.updateSessionRecord("a", { ...first, status: "running" });
+		task.updateSessionRecord("a", { ...first, nativeSessionId: "native" });
 		expect(task.modes.a?.sessions.map(({ id }) => id)).toEqual(["one", "two"]);
 		expect(task.modes.a?.activeSessionId).toBe("two");
-		expect(task.modes.a?.sessions[0]?.status).toBe("running");
+		expect(task.modes.a?.sessions[0]?.nativeSessionId).toBe("native");
 	});
 
 	it("registers durable records without launching and repairs removal selection", () => {
@@ -329,7 +370,6 @@ describe("Task", () => {
 			tmuxName: "",
 			cwd: "/",
 			createdAt: "then",
-			status: "stopped",
 			outputPath: "",
 			bootstrapPath: "",
 		};
@@ -351,7 +391,7 @@ describe("Task", () => {
 		expect(task.modes.a?.activeSessionId).toBe(one.id);
 		const root = await mkdtemp(join(tmpdir(), "task-stop-selection-reload-"));
 		roots.push(root);
-		const store = new SessionStore(root, { run: async () => ({ exitCode: 1, stdout: "", stderr: "unused" }) });
+		const store = new SessionStore(root);
 		await store.mutate("T-1", async (state) => {
 			state.modes = task.serializeSessions();
 		});
@@ -374,7 +414,6 @@ describe("Task", () => {
 			tmuxName: "",
 			cwd: "/",
 			createdAt: "then",
-			status: "stopped",
 			outputPath: "",
 			bootstrapPath: "",
 		});
@@ -403,7 +442,6 @@ describe("Task", () => {
 				tmuxName: "",
 				cwd: "/",
 				createdAt: "now",
-				status: "stopped" as const,
 				outputPath: "",
 				bootstrapPath: "",
 			},
@@ -414,7 +452,6 @@ describe("Task", () => {
 				tmuxName: "",
 				cwd: "/",
 				createdAt: "now",
-				status: "stopped" as const,
 				outputPath: "",
 				bootstrapPath: "",
 			},
@@ -429,7 +466,7 @@ describe("Task", () => {
 	it("round-trips uncatalogued histories, usage, and their active selection from reloaded state", async () => {
 		const root = await mkdtemp(join(tmpdir(), "task-hidden-mode-round-trip-"));
 		roots.push(root);
-		const store = new SessionStore(root, { run: async () => ({ exitCode: 1, stdout: "", stderr: "unused" }) });
+		const store = new SessionStore(root);
 		const hidden: AgentSession = {
 			id: "hidden-session",
 			taskId: "T-1",
@@ -437,7 +474,6 @@ describe("Task", () => {
 			tmuxName: "",
 			cwd: "/",
 			createdAt: "then",
-			status: "stopped",
 			outputPath: "",
 			bootstrapPath: "",
 			useCount: 4,
@@ -455,7 +491,7 @@ describe("Task", () => {
 	it("publishes a record update while preserving unrelated histories, counters, and selection", async () => {
 		const root = await mkdtemp(join(tmpdir(), "task-publication-preserves-history-"));
 		roots.push(root);
-		const store = new SessionStore(root, { run: async () => ({ exitCode: 1, stdout: "", stderr: "unused" }) });
+		const store = new SessionStore(root);
 		const selected = {
 			id: "selected",
 			taskId: "T-1",
@@ -463,7 +499,6 @@ describe("Task", () => {
 			tmuxName: "",
 			cwd: "/",
 			createdAt: "one",
-			status: "stopped" as const,
 			outputPath: "",
 			bootstrapPath: "",
 		};
@@ -476,7 +511,7 @@ describe("Task", () => {
 				hidden: { sessions: [hidden], activeSessionId: hidden.id },
 			},
 		}).task;
-		const updated = { ...selected, status: "running" as const };
+		const updated = { ...selected, nativeSessionId: "native" };
 		task.updateSessionRecord("a", updated);
 		task.selectSession("a", other.id);
 		await store.mutate("T-1", async (state) => {
@@ -486,7 +521,7 @@ describe("Task", () => {
 		expect(reloaded.modes.a).toMatchObject({
 			activeSessionId: other.id,
 			sessions: [
-				{ id: selected.id, status: "running" },
+				{ id: selected.id, nativeSessionId: "native" },
 				{ id: other.id, useCount: 7 },
 			],
 		});

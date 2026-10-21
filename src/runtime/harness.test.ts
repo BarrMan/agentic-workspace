@@ -3,11 +3,10 @@ import { access, chmod, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import "./agents/core/agents.ts";
-import type { AgentSession } from "../model/session/types.ts";
+import type { AgentSession, SessionLaunchContext } from "../model/session/types.ts";
 import { claudeHooksConfig } from "./agents/claude/claude.ts";
 import { OpencodeV1Agent } from "./agents/opencode/opencode-v1.ts";
 import { harnessRegistry } from "./agents/startup.ts";
-import type { SessionLaunchContext } from "./harness.ts";
 import { Harness, PROVIDER_READINESS_DEADLINE_MS } from "./harness.ts";
 import { sessionActivityDir } from "./status-hooks.ts";
 import { WORKSPACE_CONTEXT_ENV } from "./workspace-context.ts";
@@ -37,7 +36,6 @@ async function fixture(omit?: Omitted, resume = false) {
 		tmuxName: "harness-test",
 		cwd: root,
 		createdAt: new Date().toISOString(),
-		status: "starting",
 		outputPath: join(root, "output.log"),
 		bootstrapPath: join(root, "bootstrap.md"),
 	};
@@ -50,6 +48,7 @@ async function fixture(omit?: Omitted, resume = false) {
 			scope: "root",
 			config: {
 				selectedPreset: "default",
+				sessions: { worktreePerTask: false, yoloMode: false, autoResumeOnRestart: true },
 				presets: { default: { command: ["claude"], bootstrap: "claude", env: {}, prepare: "" } },
 			},
 		},

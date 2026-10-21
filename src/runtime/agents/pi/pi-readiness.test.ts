@@ -1,10 +1,10 @@
 import { describe, expect, it } from "bun:test";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import "../startup.ts";
-import { piExtensionSource } from "./pi.ts";
+import { PiAgent, piExtensionSource } from "./pi.ts";
 
 async function extensionFixture() {
 	const directory = await mkdtemp(join(tmpdir(), "agentic-workspace-pi-readiness-"));
@@ -28,6 +28,27 @@ async function extensionFixture() {
 }
 
 describe("Pi launch readiness emitter", () => {
+	it("owns model discovery arguments and parses the provider catalog at its API seam", async () => {
+		const root = await mkdtemp(join(tmpdir(), "agentic-workspace-pi-models-"));
+		try {
+			const executable = join(root, "fixture");
+			const calls = join(root, "calls");
+			await writeFile(
+				executable,
+				`#!/bin/sh\nprintf '%s\\n' "$*:$DISCOVERY_FIXTURE" >> '${calls}'\nprintf 'provider model context\\nopenai fast 128K\\nopenai fast 256K\\nopenai slow 64K\\n'\n`,
+				{ mode: 0o700 },
+			);
+			const agent = new PiAgent();
+			const request = { command: [executable, "--preset"], env: { DISCOVERY_FIXTURE: "selected" }, timeoutMs: 1_000 };
+			const models = await agent.discoverModels(request);
+			expect(models.map(({ id }) => id)).toEqual(["openai/fast", "openai/slow"]);
+			expect(await agent.discoverModels(request)).toEqual(models);
+			expect(await readFile(calls, "utf8")).toBe("--preset --list-models:selected\n");
+		} finally {
+			await rm(root, { recursive: true, force: true });
+		}
+	});
+
 	it("does not allow a prompt event to stand in for session initialization", async () => {
 		const fixture = await extensionFixture();
 		try {

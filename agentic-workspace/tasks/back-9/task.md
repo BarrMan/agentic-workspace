@@ -3,12 +3,11 @@ task_schema_version: 3
 id: BACK-9
 title: Reduce per-agent process and tmux-fork overhead in agentic-workspace workspace
 status: Done
-assignee: []
 created_date: '2026-10-07 17:00'
 updated_date: '2026-10-08 06:32'
 labels: []
 dependencies: []
-priority: medium
+priority: "Medium"
 type: enhancement
 ordinal: 9000
 agentConfiguration:

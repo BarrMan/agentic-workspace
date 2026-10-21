@@ -137,13 +137,17 @@ function normalizeLabelValues(values: readonly string[] | undefined): string[] {
 function normalizeFilters(filters: Partial<OpenTuiFilterState>): OpenTuiFilterState {
 	return {
 		search: filters.search?.trim() ?? "",
-		status: normalizeStringList(filters.status) ?? [],
+		status: exactNonemptyList(filters.status),
 		type: normalizeStringList(filters.type) ?? [],
 		project: normalizeStringList(filters.project) ?? [],
-		priority: filters.priority?.trim() ?? "",
+		priority: filters.priority ?? "",
 		labels: normalizeLabelValues(filters.labels),
 		milestone: filters.milestone?.trim() ?? "",
 	};
+}
+
+function exactNonemptyList(values: readonly string[] | undefined): string[] {
+	return [...new Set((values ?? []).filter((value) => value.length > 0))];
 }
 
 /** Converts editor state to existing pure task filter contract. Search remains a query value. */
@@ -247,7 +251,9 @@ export function mountOpenTuiFilterEditor(
 	const choicesFor = (field: Exclude<OpenTuiFilterField, "search">): string[] =>
 		field === "labels"
 			? normalizeLabelValues(options.choices?.labels)
-			: (normalizeStringList(options.choices?.[field]) ?? []);
+			: field === "status" || field === "priority"
+				? exactNonemptyList(options.choices?.[field])
+				: (normalizeStringList(options.choices?.[field]) ?? []);
 	const currentChoice = (): string[] => (selecting && selecting !== "search" ? choicesFor(selecting) : []);
 	const updateSearch = (): void => {
 		filters = { ...filters, search: search.plainText.trim() };
@@ -437,6 +443,7 @@ export function mountOpenTuiFilterEditor(
 	return {
 		values: () => copyFilters({ ...filters, search: search.plainText.trim() }),
 		focus(field: OpenTuiFilterField): void {
+			selecting = undefined;
 			setFocus(OPEN_TUI_FILTER_FIELDS.indexOf(field));
 		},
 		apply,
