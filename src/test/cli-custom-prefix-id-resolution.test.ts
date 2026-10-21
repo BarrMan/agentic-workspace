@@ -1,65 +1,9 @@
 import { afterAll, describe, expect, it } from "bun:test";
 import { mkdir } from "node:fs/promises";
-import { Writable } from "node:stream";
-import type { ShellExpression } from "bun";
-import { $ as shell } from "bun";
-import { runCli } from "../cli/register.ts";
 import { Core } from "../index.ts";
-import { coreFileSystem, createUniqueTestDir, initializeFilesystemTestProject, safeCleanup } from "./test-utils.ts";
+import { runInProcessCli } from "./in-process-cli.ts";
+import { createUniqueTestDir, initializeFilesystemTestProject, safeCleanup } from "./test-utils.ts";
 
-const CLI_COMMAND = ["agentic-workspace"];
-function $(parts: TemplateStringsArray, ...values: ShellExpression[]) {
-	const source = parts.reduce(
-		(text, part, index) =>
-			`${text}${part}${Array.isArray(values[index]) ? values[index].map((value) => JSON.stringify(value)).join(" ") : values[index] === undefined ? "" : JSON.stringify(values[index])}`,
-		"",
-	);
-	if (!source.includes("agentic-workspace")) return shell(parts, ...values);
-	const args =
-		source
-			.match(/"(?:\\.|[^"\\])*"|'[^']*'|[^\s]+/g)
-			?.map((arg) =>
-				arg.startsWith('"') ? (JSON.parse(arg) as string) : arg.startsWith("'") ? arg.slice(1, -1) : arg,
-			) ?? [];
-	const config: { cwd?: string; nothrow?: boolean } = {};
-	const result = async () => {
-		const stdout: string[] = [];
-		const stderr: string[] = [];
-		const out = new Writable({
-			write: (chunk, _encoding, done) => {
-				stdout.push(chunk.toString());
-				done();
-			},
-		});
-		const err = new Writable({
-			write: (chunk, _encoding, done) => {
-				stderr.push(chunk.toString());
-				done();
-			},
-		});
-		const exitCode = await runCli(args.slice(CLI_COMMAND.length), { cwd: config.cwd, stdout: out, stderr: err });
-		const value = { exitCode, stdout: stdout.join(""), stderr: stderr.join("") };
-		if (value.exitCode && !config.nothrow) throw new Error(value.stderr || `CLI exited with ${value.exitCode}`);
-		return value;
-	};
-	const chain = {
-		cwd(value: string) {
-			config.cwd = value;
-			return chain;
-		},
-		nothrow() {
-			config.nothrow = true;
-			return chain;
-		},
-		quiet() {
-			return result();
-		},
-		async text() {
-			return (await result()).stdout;
-		},
-	};
-	return chain;
-}
 const createdDirs: string[] = [];
 
 /** Creates an empty isolated project directory for one test and remembers it for cleanup. */
@@ -74,9 +18,9 @@ async function makeDir(): Promise<string> {
 async function initCustomPrefixProject(dir: string): Promise<Core> {
 	const core = new Core(dir);
 	await initializeFilesystemTestProject(core, "Custom Prefix ID Resolution");
-	const config = await coreFileSystem(core).loadConfig();
+	const config = await core.getStoredConfig();
 	if (!config) throw new Error("Expected config to be loaded");
-	await coreFileSystem(core).saveConfig({ ...config, prefixes: { ...config.prefixes, task: "BACK" } });
+	await core.saveWorkspaceConfig({ ...config, prefixes: { ...config.prefixes, task: "BACK" } });
 	return core;
 }
 
@@ -86,7 +30,7 @@ async function createTask(
 	title: string,
 	extra: { status?: string; parentTaskId?: string } = {},
 ): Promise<void> {
-	await coreFileSystem(core).saveTask({
+	await core.createTask({
 		id,
 		title,
 		status: extra.status ?? "To Do",
@@ -131,11 +75,11 @@ describe("CLI task ID resolution with a custom ID prefix", () => {
 				const core = await initCustomPrefixProject(TEST_DIR);
 				await testCase.setup(core);
 
-				const result = await $`${CLI_COMMAND} ${testCase.args(id)}`.cwd(TEST_DIR).nothrow().quiet();
+				const result = await runInProcessCli(testCase.args(id), { cwd: TEST_DIR });
 
-				expect(result.stderr.toString()).not.toContain("not found");
+				expect(result.stderr).not.toContain("not found");
 				expect(result.exitCode).toBe(0);
-				expect(result.stdout.toString()).toContain(testCase.expected);
+				expect(result.stdout).toContain(testCase.expected);
 			});
 		}
 	}

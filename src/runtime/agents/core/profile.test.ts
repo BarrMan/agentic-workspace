@@ -1,9 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import type { AgentPreset, ModeProfile } from "../../../model/session/types.ts";
-import { discoverModels, profileInstructions, validateExplicitModel, withExplicitModel } from "./profile.ts";
+import { profileInstructions, validateExplicitModel, withExplicitModel } from "./profile.ts";
 
 const preset: AgentPreset = {
 	bootstrap: "pi",
@@ -40,21 +37,5 @@ describe("harness profile helpers", () => {
 		expect(text).toContain("Do not inspect repository");
 		expect(text).toContain("/repo/tasks/demo");
 		expect(text).toContain("approval is user-only");
-	});
-
-	test("Pi discovery runs selected executable with preset environment and caches canonical IDs", async () => {
-		const directory = await mkdtemp(join(tmpdir(), "agentic-workspace-profile-test-"));
-		try {
-			const executable = join(directory, "pi-fixture");
-			await writeFile(executable, "#!/bin/sh\nprintf 'provider model context\\nexample model-one 128K\\n'\n", {
-				mode: 0o700,
-			});
-			const first = await discoverModels("pi", [executable], { PROFILE_TEST: "isolated" }, 1_000);
-			const second = await discoverModels("pi", [executable], { PROFILE_TEST: "isolated" }, 1_000);
-			expect(first).toEqual([{ id: "example/model-one" }]);
-			expect(second).toEqual(first);
-		} finally {
-			await rm(directory, { recursive: true, force: true });
-		}
 	});
 });

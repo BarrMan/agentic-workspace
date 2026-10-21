@@ -9,19 +9,22 @@ import {
 	validateArtifactPath,
 } from "../model/session/agent-config-schema.ts";
 import {
-	type AgentConfigScope,
-	type AgentConfiguration,
-	type AgentPreset,
-	type ModeCatalog,
-	type ModeProfile,
-	type ResolvedAgentConfiguration,
-	type RuntimeAgentBootstrap,
-	resolveSessionSettings,
-	type SessionSettings,
+	type AgentConfigurationPatch,
+	applyAgentConfigurationPatch,
+	mergeAgentConfigurations,
+} from "../model/session/config.ts";
+import type {
+	AgentConfigScope,
+	AgentConfiguration,
+	AgentPreset,
+	EffectiveAgentConfiguration,
+	ModeCatalog,
+	ModeProfile,
+	ResolvedAgentConfiguration,
+	RuntimeAgentBootstrap,
 } from "../model/session/types.ts";
 import type { AgenticWorkspaceConfig } from "../model/types.ts";
 import { parseConfig, serializeConfig } from "./config-codec.ts";
-import type { Storage } from "./storage.ts";
 
 const ROOT_CONFIGURATION_FILE_NAME = "agentic-workspace.config.yml";
 
@@ -68,8 +71,9 @@ export function resolveSelectedMode(catalog: ModeCatalog, selected?: string): st
 	return selected && catalog.profiles[selected] ? selected : catalog.defaultModeId;
 }
 
-const BUILT_IN_CONFIGURATION: AgentConfiguration = {
+const BUILT_IN_CONFIGURATION: EffectiveAgentConfiguration = {
 	selectedPreset: "opencode",
+	sessions: { worktreePerTask: false, yoloMode: false, autoResumeOnRestart: true },
 	presets: {
 		opencode: {
 			command: ["opencode"],
@@ -106,7 +110,7 @@ function clone<T>(value: T): T {
 }
 
 /** Returns a mutable copy of AgenticWorkspace's canonical agent presets. */
-export function getBuiltInAgentConfiguration(): AgentConfiguration {
+export function getBuiltInAgentConfiguration(): EffectiveAgentConfiguration {
 	return clone(BUILT_IN_CONFIGURATION);
 }
 
@@ -136,61 +140,8 @@ export async function readRootConfiguration(path: string): Promise<AgentConfigur
 		throw new Error(`Invalid agent configuration at ${path}: ${(error as Error).message}`);
 	}
 	if (parsed === undefined) return null;
-	assertAgentConfiguration(parsed, `Invalid agent configuration at ${path}`);
+	assertAgentConfiguration(parsed, "root", `Invalid agent configuration at ${path}`);
 	return clone(parsed);
-}
-
-function mergeAgentConfiguration(base: AgentConfiguration, override: Partial<AgentConfiguration>): AgentConfiguration {
-	return {
-		...base,
-		...override,
-		presets: { ...base.presets, ...override.presets },
-		...(override.sessions !== undefined && { sessions: { ...base.sessions, ...override.sessions } }),
-	};
-}
-
-/** A task-independent startup snapshot of user and project agent configuration. */
-export class Config {
-	private userConfiguration: AgentConfiguration | null = null;
-	private projectConfiguration: AgentConfiguration | null = null;
-	private loaded = false;
-
-	constructor(private readonly storage: Storage) {}
-
-	static async load(storage: Storage): Promise<Config> {
-		const config = new Config(storage);
-		await config.reload();
-		return config;
-	}
-
-	async reload(): Promise<void> {
-		const [user, project] = await Promise.all([
-			this.storage.loadUserAgentConfiguration(),
-			this.storage.loadProjectAgentConfiguration(),
-		]);
-		if (user) assertAgentConfiguration(user, "Invalid user agent configuration");
-		if (project) assertAgentConfiguration(project, "Invalid project agent configuration");
-		this.userConfiguration = user ? clone(user) : null;
-		this.projectConfiguration = project ? clone(project) : null;
-		this.loaded = true;
-	}
-
-	getConfig(...overrides: Array<Partial<AgentConfiguration> | undefined>): AgentConfiguration {
-		if (!this.loaded) throw new Error("Agent configuration has not been loaded; call reload() first.");
-		let config = getBuiltInAgentConfiguration();
-		if (this.userConfiguration) config = mergeAgentConfiguration(config, this.userConfiguration);
-		if (this.projectConfiguration) config = mergeAgentConfiguration(config, this.projectConfiguration);
-		for (const override of overrides) if (override) config = mergeAgentConfiguration(config, override);
-		return clone(config);
-	}
-
-	get sessionSettings(): SessionSettings {
-		return resolveSessionSettings(this.getConfig());
-	}
-
-	get modes(): ModeCatalog | undefined {
-		return this.getConfig().modes;
-	}
 }
 
 async function withConfigurationLock<T>(path: string, operation: () => Promise<T>): Promise<T> {
@@ -229,14 +180,19 @@ async function writeProjectConfiguration(core: Core, config: AgenticWorkspaceCon
 	await core.reloadConfiguration();
 }
 
-async function rootOrBuiltIn(core: Core): Promise<ResolvedAgentConfiguration> {
-	const config = await loadAgentConfiguration(core, "root");
-	return { scope: "root", config: config ?? clone(BUILT_IN_CONFIGURATION) };
-}
-
 async function projectOrParent(core: Core): Promise<ResolvedAgentConfiguration> {
-	const config = await loadAgentConfiguration(core, "project");
-	return config ? { scope: "project", config } : await rootOrBuiltIn(core);
+	const [root, project] = await Promise.all([
+		loadAgentConfiguration(core, "root"),
+		loadAgentConfiguration(core, "project"),
+	]);
+	return {
+		scope: project ? "project" : "root",
+		config: {
+			...mergeAgentConfigurations(getBuiltInAgentConfiguration(), root, project),
+			// Catalogues are a project startup requirement, never inherited from root.
+			modes: project?.modes,
+		},
+	};
 }
 
 export async function loadAgentConfiguration(
@@ -248,14 +204,14 @@ export async function loadAgentConfiguration(
 	if (scope === "project") {
 		const configuration = await core.getStoredConfig();
 		if (!configuration?.agentConfiguration) return null;
-		assertAgentConfiguration(configuration.agentConfiguration, "Invalid project agent configuration");
+		assertAgentConfiguration(configuration.agentConfiguration, "project", "Invalid project agent configuration");
 		return clone(configuration.agentConfiguration);
 	}
 
 	const task = await core.getTask(requireTaskId(scope, taskId));
 	if (!task) throw new Error(`Task not found: ${taskId}`);
 	if (task.agentConfiguration === undefined) return null;
-	assertAgentConfiguration(task.agentConfiguration, `Invalid agent configuration on task ${task.id}`);
+	assertAgentConfiguration(task.agentConfiguration, "card", `Invalid agent configuration on task ${task.id}`);
 	return clone(task.agentConfiguration);
 }
 
@@ -283,10 +239,7 @@ export async function resolveAgentConfiguration(core: Core, taskId?: string): Pr
 	return {
 		scope: "card",
 		config: {
-			...parent.config,
-			...card,
-			presets: { ...parent.config.presets, ...card.presets },
-			sessions: card.sessions ? { ...parent.config.sessions, ...card.sessions } : parent.config.sessions,
+			...mergeAgentConfigurations(parent.config, card),
 			// Modes are project-owned; task/root configuration cannot replace the catalogue.
 			modes: parent.config.modes,
 		},
@@ -319,7 +272,7 @@ export async function initializeAgentConfiguration(
 	);
 }
 
-/** Returns the exact scoped configuration, or a parent copy without persisting it. */
+/** Returns the exact scoped configuration without persisting inherited values. */
 export async function getEditableAgentConfiguration(
 	core: Core,
 	scope: AgentConfigScope,
@@ -327,13 +280,7 @@ export async function getEditableAgentConfiguration(
 ): Promise<AgentConfiguration> {
 	const existing = await loadAgentConfiguration(core, scope, taskId);
 	if (existing) return existing;
-	const parent =
-		scope === "root"
-			? { scope: "root" as const, config: clone(BUILT_IN_CONFIGURATION) }
-			: scope === "project"
-				? await rootOrBuiltIn(core)
-				: await projectOrParent(core);
-	return clone(parent.config);
+	return {};
 }
 
 async function updateAgentConfigurationInternal(
@@ -350,18 +297,18 @@ async function updateAgentConfigurationInternal(
 				scope === "root"
 					? await readRootConfiguration(path)
 					: ((await core.getStoredConfig())?.agentConfiguration ?? null);
-			if (existing) assertAgentConfiguration(existing, `Invalid ${scope} agent configuration`);
+			if (existing) assertAgentConfiguration(existing, scope, `Invalid ${scope} agent configuration`);
 			if (existing && onlyIfAbsent) {
 				if (scope !== "project" || existing.modes !== undefined) return existing;
 				const initialized = clone(updater(clone(existing)));
-				assertAgentConfiguration(initialized);
+				assertAgentConfiguration(initialized, scope);
 				const workspaceConfig = (await core.getStoredConfig()) ?? parseConfig("", path);
 				await writeProjectConfiguration(core, { ...workspaceConfig, agentConfiguration: initialized });
 				return initialized;
 			}
-			const base = existing ?? (await getEditableAgentConfiguration(core, scope, taskId));
+			const base = existing ?? {};
 			const next = clone(updater(clone(base)));
-			assertAgentConfiguration(next);
+			assertAgentConfiguration(next, scope);
 			if (scope === "root") await writeRootConfiguration(path, next);
 			else {
 				const workspaceConfig = (await core.getStoredConfig()) ?? parseConfig("", path);
@@ -383,11 +330,12 @@ async function updateAgentConfigurationInternal(
 		if (!current) throw new Error(`Task not found: ${id}`);
 		const stored = current.agentConfiguration;
 		const existing = stored === undefined ? undefined : clone(stored);
-		if (existing !== undefined) assertAgentConfiguration(existing, `Invalid agent configuration on task ${current.id}`);
+		if (existing !== undefined)
+			assertAgentConfiguration(existing, "card", `Invalid agent configuration on task ${current.id}`);
 		if (existing && onlyIfAbsent) return clone(existing);
-		const base = existing ?? (await getEditableAgentConfiguration(core, scope, id));
+		const base = existing ?? {};
 		const next = clone(updater(clone(base)));
-		assertAgentConfiguration(next);
+		assertAgentConfiguration(next, "card");
 		current.agentConfiguration = next;
 		await core.updateTask(current);
 		return next;
@@ -409,6 +357,30 @@ export async function upsertAgentConfiguration(
 	config: AgentConfiguration,
 	taskId?: string,
 ): Promise<void> {
-	assertAgentConfiguration(config);
+	assertAgentConfiguration(config, scope);
+	const parent =
+		scope === "root"
+			? getBuiltInAgentConfiguration()
+			: scope === "project"
+				? mergeAgentConfigurations(getBuiltInAgentConfiguration(), await loadAgentConfiguration(core, "root"))
+				: (await projectOrParent(core)).config;
+	const effective = mergeAgentConfigurations(parent, config);
+	if (!Object.hasOwn(effective.presets, effective.selectedPreset))
+		throw new Error("selectedPreset must name a configured preset");
 	await updateAgentConfiguration(core, scope, () => clone(config), taskId);
+}
+
+/** Applies a typed sparse patch to the exact persisted scope while holding its existing lock. */
+export async function patchAgentConfiguration(
+	core: Core,
+	scope: AgentConfigScope,
+	patch: AgentConfigurationPatch,
+	taskId?: string,
+): Promise<AgentConfigurationPatch> {
+	return await updateAgentConfiguration(
+		core,
+		scope,
+		(current) => applyAgentConfigurationPatch(current, patch, scope),
+		taskId,
+	);
 }

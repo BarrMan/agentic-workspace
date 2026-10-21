@@ -37,6 +37,22 @@ describe("task container creation recovery contract", () => {
 		}
 	});
 
+	it("retains a committed task when recovery receipt preparation fails", async () => {
+		const { dir, core } = await setup();
+		try {
+			core.prepareCreatedTaskWrite = async () => {
+				throw new Error("injected receipt failure");
+			};
+
+			await expect(core.createTaskFromInput({ title: "Retained task", status: "To Do" })).rejects.toThrow(
+				"was created",
+			);
+			expect(await Bun.file(join(dir, "agentic-workspace", "tasks", "task-1", "task.md")).exists()).toBe(true);
+		} finally {
+			await safeCleanup(dir);
+		}
+	});
+
 	it("skips an occupied task identity without merging its artifacts", async () => {
 		const { dir, core } = await setup();
 		try {

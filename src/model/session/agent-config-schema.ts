@@ -1,6 +1,12 @@
 import { z } from "zod";
 import { isModeTextColor } from "./mode-colors.ts";
-import { AGENT_BOOTSTRAP_TYPES, type AgentConfiguration, type ModeCatalog, type ModeProfile } from "./types.ts";
+import {
+	AGENT_BOOTSTRAP_TYPES,
+	type AgentConfigScope,
+	type AgentConfiguration,
+	type ModeCatalog,
+	type ModeProfile,
+} from "./types.ts";
 
 const SAFE_PRESET_NAME = /^(?!__proto__$|prototype$|constructor$)[A-Za-z_][A-Za-z0-9_-]*$/;
 const POSIX_ENV_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/;
@@ -81,6 +87,8 @@ const sessionSettingsSchema = z.looseObject(
 	{ error: "sessions must be an object." },
 );
 
+const sessionSettingsPatchSchema = sessionSettingsSchema.partial();
+
 const ModeCatalogSchema = z
 	.unknown()
 	.superRefine((value, ctx) => {
@@ -106,7 +114,7 @@ const ModeCatalogSchema = z
 			catalog.order.length !== ids.length ||
 			new Set(catalog.order).size !== ids.length ||
 			ids.some((id) => !SAFE_MODE_ID.test(id) || !catalog.order?.includes(id)) ||
-			!catalog.profiles[catalog.defaultModeId]
+			!Object.hasOwn(catalog.profiles, catalog.defaultModeId)
 		) {
 			ctx.addIssue({
 				code: "custom",
@@ -157,8 +165,9 @@ const ModeCatalogSchema = z
 				});
 				continue;
 			}
+			const artifactPaths = new Set<string>();
 			for (const [index, artifact] of profile.artifacts.entries()) {
-				if (!artifact || typeof artifact.purpose !== "string") {
+				if (!artifact || typeof artifact.purpose !== "string" || !artifact.purpose.trim()) {
 					ctx.addIssue({
 						code: "custom",
 						message: "has an invalid artifact declaration.",
@@ -166,6 +175,14 @@ const ModeCatalogSchema = z
 					});
 					continue;
 				}
+				if (artifactPaths.has(artifact.path)) {
+					ctx.addIssue({
+						code: "custom",
+						message: "must not declare an artifact path more than once.",
+						path: ["profiles", id, "artifacts", index, "path"],
+					});
+				}
+				artifactPaths.add(artifact.path);
 				try {
 					validateArtifactPath(artifact.path);
 				} catch (error) {
@@ -191,42 +208,40 @@ const ModeCatalogSchema = z
 	})
 	.transform((value) => value as ModeCatalog);
 
-export const AgentConfigurationSchema = z
-	.looseObject(
-		{
-			selectedPreset: z
-				.string({ error: "must be a non-empty string." })
-				.regex(SAFE_PRESET_NAME, "must be a non-empty string."),
-			presets: z.record(z.string().regex(SAFE_PRESET_NAME, "presets entries must be named objects."), presetSchema, {
+/** The persisted shape for every exact configuration scope. */
+export const AgentConfigurationSchema = z.looseObject(
+	{
+		selectedPreset: z
+			.string({ error: "must be a non-empty string." })
+			.regex(SAFE_PRESET_NAME, "must be a non-empty string.")
+			.optional(),
+		presets: z
+			.record(z.string().regex(SAFE_PRESET_NAME, "presets entries must be named objects."), presetSchema, {
 				error: "presets must be an object.",
-			}),
-			sessions: sessionSettingsSchema.optional(),
-			modes: ModeCatalogSchema.optional(),
-		},
-		{ error: "must be an object." },
-	)
-	.superRefine((config, ctx) => {
-		if (!Object.hasOwn(config.presets, config.selectedPreset)) {
-			ctx.addIssue({
-				code: "custom",
-				message: "must name a configured preset.",
-				path: ["selectedPreset"],
-			});
-		}
-	});
+			})
+			.optional(),
+		sessions: sessionSettingsPatchSchema.optional(),
+		modes: ModeCatalogSchema.optional(),
+	},
+	{ error: "must be an object." },
+);
 
 function issueMessage(label: string, path: PropertyKey[], message: string): Error {
 	const suffix = path.map(String).join(".");
 	return new Error(`${label}${suffix ? `.${suffix}` : ""} ${message}`);
 }
 
+/** Validates an exact persisted scope. Only projects may own a mode catalogue. */
 export function assertAgentConfiguration(
 	value: unknown,
+	scope: AgentConfigScope,
 	label = "Agent configuration",
 ): asserts value is AgentConfiguration {
 	const result = AgentConfigurationSchema.safeParse(value);
 	if (!result.success)
 		throw issueMessage(label, result.error.issues[0]?.path ?? [], result.error.issues[0]?.message ?? "is invalid.");
+	if (scope !== "project" && result.data.modes !== undefined)
+		throw new Error(`${label}.modes is project-owned and cannot be set in ${scope} configuration.`);
 }
 
 export function assertModeCatalog(value: unknown, label: string): asserts value is ModeCatalog {

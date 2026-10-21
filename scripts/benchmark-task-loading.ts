@@ -1,14 +1,11 @@
 import { createHash } from "node:crypto";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import { Core } from "../src/controller/agentic-workspace.ts";
 import { initializeProject } from "../src/controller/init.ts";
 import type { Task } from "../src/model/types.ts";
-import type { FileSystem } from "../src/storage/file-system.ts";
-import { serializeTask } from "../src/storage/markdown/serializer.ts";
-
-const fileSystemOf = (core: Core): FileSystem => (core as unknown as { filesystem: FileSystem }).filesystem;
+import { Storage } from "../src/storage/storage.ts";
 
 const DEFAULTS = {
 	iterations: 3,
@@ -211,13 +208,6 @@ function benchmarkTask(id: number, title: string, status = "To Do"): Task {
 	};
 }
 
-async function writeTask(directory: string, task: Task): Promise<string> {
-	const path = join(directory, task.id.toLowerCase(), "task.md");
-	await mkdir(join(directory, task.id.toLowerCase()), { recursive: true });
-	await writeFile(path, serializeTask(task));
-	return path;
-}
-
 async function createCorpus(options: Options): Promise<Corpus> {
 	const root = await mkdtemp(join(tmpdir(), "agentic-workspace-task-loading-benchmark-"));
 	try {
@@ -237,7 +227,8 @@ async function populateCorpus(root: string, options: Options): Promise<Corpus> {
 	await runProcess(["git", "init", "-b", "main"], projectRoot);
 	await runProcess(["git", "remote", "add", "origin", originRoot], projectRoot);
 
-	const setupCore = new Core(projectRoot);
+	const storage = Storage.open(projectRoot);
+	const setupCore = new Core(projectRoot, { storage });
 	await initializeProject(setupCore, {
 		projectName: "Task loading benchmark",
 		advancedConfig: {
@@ -246,18 +237,13 @@ async function populateCorpus(root: string, options: Options): Promise<Corpus> {
 		},
 	});
 
-	const activePaths: string[] = [];
 	for (let index = 1; index <= options.localTasks; index += 1) {
-		activePaths.push(
-			await writeTask(fileSystemOf(setupCore).tasksDir, benchmarkTask(index, `Benchmark local task ${index}`)),
-		);
+		await storage.saveTask(benchmarkTask(index, `Benchmark local task ${index}`));
 	}
 	for (let index = 1; index <= options.completedTasks; index += 1) {
 		const id = options.localTasks + index;
-		await writeTask(
-			fileSystemOf(setupCore).completedDir,
-			benchmarkTask(id, `Benchmark completed task ${index}`, "Done"),
-		);
+		await storage.saveTask(benchmarkTask(id, `Benchmark completed task ${index}`, "Done"));
+		if (!(await storage.completeTask(`TASK-${id}`))) throw new Error(`Could not complete benchmark task TASK-${id}.`);
 	}
 
 	await runProcess(["git", "add", "."], projectRoot);
@@ -278,15 +264,12 @@ async function populateCorpus(root: string, options: Options): Promise<Corpus> {
 			const id = localIndex + 1;
 			const variant = benchmarkTask(id, `Benchmark local task ${id}`, "In Progress");
 			variant.updatedDate = "2026-02-01";
-			await writeFile(activePaths[localIndex] as string, serializeTask(variant));
+			await storage.saveTask(variant);
 		}
 
 		for (let taskIndex = 1; taskIndex <= branchOnlyCount; taskIndex += 1) {
 			const id = options.localTasks + options.completedTasks + (branchIndex - 1) * branchOnlyCount + taskIndex;
-			await writeTask(
-				fileSystemOf(setupCore).tasksDir,
-				benchmarkTask(id, `Benchmark branch ${branchIndex} task ${taskIndex}`, "In Progress"),
-			);
+			await storage.saveTask(benchmarkTask(id, `Benchmark branch ${branchIndex} task ${taskIndex}`, "In Progress"));
 		}
 
 		await runProcess(["git", "add", "."], projectRoot);
@@ -327,7 +310,7 @@ function emptyCounters(): CounterMap {
 	return Object.fromEntries(SEMANTIC_OPERATIONS.map((name) => [name, 0])) as CounterMap;
 }
 
-function instrumentCore(core: Core): Instrumentation {
+function instrumentCore(core: Core, storage: Storage): Instrumentation {
 	let counters = emptyCounters();
 	const restores: Array<() => void> = [];
 	const wrap = (target: object, method: string, counter: SemanticOperation) => {
@@ -342,9 +325,9 @@ function instrumentCore(core: Core): Instrumentation {
 			methods[method] = original;
 		});
 	};
-	wrap(fileSystemOf(core), "loadConfig", "configLoads");
-	wrap(fileSystemOf(core), "listTasks", "localTaskScans");
-	wrap(fileSystemOf(core), "listCompletedTasks", "completedTaskScans");
+	wrap(storage, "loadConfig", "configLoads");
+	wrap(storage, "loadTasks", "localTaskScans");
+	wrap(storage, "loadCompletedTasks", "completedTaskScans");
 	wrap(core.git, "fetch", "remoteFetches");
 	wrap(core.git, "listRecentBranchTips", "branchTipSnapshots");
 	wrap(core.git, "getBranchLastModifiedMap", "historyScans");
@@ -422,8 +405,9 @@ function validateOperationResult(surface: SurfaceName, result: OperationResult, 
 }
 
 function coreSurface(projectRoot: string): BenchmarkSurface {
-	const core = new Core(projectRoot);
-	const instrumentation = instrumentCore(core);
+	const storage = Storage.open(projectRoot);
+	const core = new Core(projectRoot, { storage });
+	const instrumentation = instrumentCore(core, storage);
 	return {
 		async operation() {
 			return taskOperationResult(await core.loadTasks(undefined, undefined, { includeCompleted: true }));

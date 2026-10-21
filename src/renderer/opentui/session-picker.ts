@@ -1,9 +1,10 @@
 import { BoxRenderable, type CliRenderer, type KeyEvent, type PasteEvent, TextRenderable } from "@opentui/core";
-import type { AgentSession } from "../../model/session/types.ts";
+import type { AgentSession, SessionSnapshot } from "../../model/session/types.ts";
 
 export type OpenTuiSessionPickerOptions = {
 	readonly taskId: string;
 	readonly sessions: readonly AgentSession[];
+	readonly snapshots: ReadonlyMap<string, SessionSnapshot>;
 	readonly activeSessionId?: string;
 	readonly localSessionIds?: ReadonlySet<string>;
 	readonly onFocusLocal: (sessionId: string) => void;
@@ -54,10 +55,11 @@ export function mountOpenTuiSessionPicker(
 		list.content = sessions.length
 			? sessions
 					.slice(offset, offset + capacity)
-					.map(
-						(session, index) =>
-							`${offset + index === selected ? ">" : " "} ${options.localSessionIds?.has(session.id) ? "[open] " : session.id === options.activeSessionId ? "[active] " : ""}${session.createdAt} ${session.preset} ${session.status}\n  ${session.id}`,
-					)
+					.map((session, index) => {
+						const snapshot = options.snapshots.get(session.id);
+						const idleSince = snapshot?.idleSince;
+						return `${offset + index === selected ? ">" : " "} ${options.localSessionIds?.has(session.id) ? "[open] " : session.id === options.activeSessionId ? "[active] " : ""}${session.createdAt} ${session.preset} ${snapshot?.state ?? "unknown"} ${snapshot?.activity ?? "unknown"}${idleSince === null || idleSince === undefined ? "" : ` idle since ${new Date(idleSince).toISOString()}`}\n  ${session.id}`;
+					})
 					.join("\n")
 			: "No sessions for this task. Press Escape to return.";
 		footer.content =
@@ -85,7 +87,8 @@ export function mountOpenTuiSessionPicker(
 			options.onFocusLocal(session.id);
 			return;
 		}
-		if (session.status !== "stopped" && session.status !== "parked") return;
+		const snapshot = options.snapshots.get(session.id);
+		if (snapshot?.state !== "stopped" && snapshot?.state !== "parked") return;
 		busy = true;
 		error = undefined;
 		render();

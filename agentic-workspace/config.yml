@@ -2,7 +2,7 @@ project_name: "Docs Test"
 default_status: "To Do"
 statuses: ["To Do", "In Progress", "Done"]
 labels: []
-date_format: yyyy-mm-dd
+date_format: "yyyy-MM-dd"
 max_column_width: 20
 auto_open_browser: true
 default_port: 6420

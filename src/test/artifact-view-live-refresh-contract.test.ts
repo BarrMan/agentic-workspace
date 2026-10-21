@@ -20,8 +20,8 @@ afterEach(async () => {
 });
 
 describe("artifact viewer live-refresh contract", () => {
-	it("lists an approved oversized artifact without buffering it all for hashing", async () => {
-		const root = await createUniqueTestDir("artifact-view-oversized-approved");
+	it("lists an oversized artifact", async () => {
+		const root = await createUniqueTestDir("artifact-view-oversized");
 		roots.push(root);
 		const agenticWorkspaceDir = join(root, ".agentic-workspace");
 		const container = join(agenticWorkspaceDir, "tasks", "back-23");
@@ -34,15 +34,10 @@ describe("artifact viewer live-refresh contract", () => {
 		const content = Buffer.alloc(128 * 1024 + 1, 0x61);
 		await writeFile(join(artifactsDir, "large.bin"), content);
 		const repository = new TaskArtifactRepository({ agenticWorkspaceDirectory: agenticWorkspaceDir });
-		const current = await repository.status(taskId, "large.bin");
-		await repository.approveCurrentVersion(taskId, "large.bin", current.sha256!);
-
-		expect(await repository.list(taskId)).toContainEqual(
-			expect.objectContaining({ path: "large.bin", size: content.length, state: "approved", sha256: current.sha256 }),
-		);
+		expect(await repository.list(taskId)).toContainEqual({ path: "large.bin", size: content.length, type: "text" });
 	});
 
-	it("reloads external same-size/same-mtime bytes and sidecar changes, then unsubscribes on close/dispose", async () => {
+	it("reloads external same-size/same-mtime bytes, then unsubscribes on close/dispose", async () => {
 		const root = await createUniqueTestDir("artifact-view-live-refresh");
 		roots.push(root);
 		const agenticWorkspaceDir = join(root, ".agentic-workspace");
@@ -58,15 +53,11 @@ describe("artifact viewer live-refresh contract", () => {
 		const artifactPath = join(artifactsDir, "plan.md");
 		await writeFile(artifactPath, "draft v1\n");
 		const repository = new TaskArtifactRepository({ agenticWorkspaceDirectory: agenticWorkspaceDir });
-		const initial = await repository.status(taskId, "plan.md");
-		await repository.approveCurrentVersion(taskId, "plan.md", initial.sha256!);
-
 		const listeners = new Set<() => void>();
 		const api: TaskArtifactViewApi = {
 			list: (id) => repository.list(id),
 			read: (id, path) => repository.read(id, path),
-			approveCurrentVersion: (id, path, hash) => repository.approveCurrentVersion(id, path, hash),
-			revokeApproval: (id, path) => repository.revokeApproval(id, path),
+			write: (id, path, bytes) => repository.write(id, path, bytes),
 			subscribeArtifactChanges: (id, callback) => {
 				expect(id).toBe(taskId);
 				listeners.add(callback);
@@ -98,22 +89,10 @@ describe("artifact viewer live-refresh contract", () => {
 		};
 		try {
 			await settle(() => setup.captureCharFrame().includes("draft v1"));
-			expect(setup.captureCharFrame()).toContain("Approved");
 			const before = await Bun.file(artifactPath).stat();
 			await writeFile(artifactPath, "draft v2\n");
 			await utimes(artifactPath, before.atime, before.mtime);
-			await settle(() => setup.captureCharFrame().includes("draft v2") && setup.captureCharFrame().includes("Draft"));
-			expect(setup.captureCharFrame()).not.toContain("Approved");
-
-			const current = await repository.status(taskId, "plan.md");
-			await repository.approveCurrentVersion(taskId, "plan.md", current.sha256!);
-			for (const listener of [...listeners]) listener();
-			await settle(() => setup.captureCharFrame().includes("Approved"));
-			const sidecar = join(container, "artifacts", ".artifacts.json");
-			const sidecarStat = await Bun.file(sidecar).stat();
-			await repository.revokeApproval(taskId, "plan.md");
-			await utimes(sidecar, sidecarStat.atime, sidecarStat.mtime);
-			await settle(() => setup.captureCharFrame().includes("Draft"));
+			await settle(() => setup.captureCharFrame().includes("draft v2"));
 
 			view.setOpen(false);
 			expect(listeners.size).toBe(0);

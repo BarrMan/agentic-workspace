@@ -99,13 +99,12 @@ export function formatTaskPlainText(task: TaskDetail, options: TaskPlainTextOpti
 	const description = task.description?.trim();
 	pushSection(lines, "Description:", description && description.length > 0 ? description : "No description provided");
 	if (options.artifacts) {
-		lines.push(`Artifact directory: ${options.artifacts.directory}`);
-		if (options.artifacts.artifacts.length === 0) {
+		if (options.artifacts.length === 0) {
 			lines.push("Artifacts: None");
 		} else {
 			lines.push("Artifacts:");
-			for (const artifact of options.artifacts.artifacts) {
-				lines.push(`- ${artifact.state}\t${artifact.type}\t${artifact.size}\t${artifact.path}`);
+			for (const artifact of options.artifacts) {
+				lines.push(`- ${artifact.type}\t${artifact.size}\t${artifact.path}`);
 			}
 		}
 		lines.push("");

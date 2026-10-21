@@ -1,7 +1,8 @@
-import type { AgentSession, TaskSessions } from "../../model/session/types.ts";
+import type { AgentSession, SessionSnapshot, TaskSessions } from "../../model/session/types.ts";
 
 export interface TaskWorktreeCleanupAdapter {
 	listAllSessions(): Promise<Map<string, TaskSessions>>;
+	readObserved(session: AgentSession): Promise<SessionSnapshot>;
 	cleanup(session: AgentSession): Promise<void>;
 }
 
@@ -17,7 +18,8 @@ export async function cleanupTaskWorktreeSessions(taskId: string, adapter: TaskW
 	for (const session of records) {
 		if (seen.has(session.id)) continue;
 		seen.add(session.id);
-		if (session.status === "running" || session.status === "starting") await adapter.cleanup(session);
+		// SESSION-002 §2: "an old record alone proves neither running nor stopped."
+		if ((await adapter.readObserved(session)).state === "stopped") await adapter.cleanup(session);
 	}
 }
 

@@ -246,10 +246,9 @@ export function mountOpenTuiAgentSettings(
 	let sessionIndex = 0;
 	const modeDraft = draft.modes ? new ModeSettingsDraft(draft) : undefined;
 	const sessionSettings: SessionSettings = { ...resolveSessionSettings(draft) };
-	const names = Object.keys(draft.presets);
-	const states = new Map<string, FormState>(
-		names.map((name) => [name, presetState(draft.presets[name] as AgentPreset)]),
-	);
+	const presets = draft.presets ?? {};
+	const names = Object.keys(presets);
+	const states = new Map<string, FormState>(names.map((name) => [name, presetState(presets[name] as AgentPreset)]));
 	const background = "#18181b";
 	const text = "#d4d4d8";
 	const dimmed = "#a1a1aa";
@@ -519,7 +518,6 @@ export function mountOpenTuiAgentSettings(
 	modeColorPreview.visible = false;
 	modeDetailPane.add(modeColorPreview);
 	let modeActionInput: "add" | "rename" | "delete" | undefined;
-	let deleteDestinationIndex = 0;
 	const modeActionLabel = fieldLabel("");
 	modeActionLabel.flexShrink = 0;
 	modeActionLabel.visible = false;
@@ -655,10 +653,7 @@ export function mountOpenTuiAgentSettings(
 	const values = (): TextRenderable[] => [commandValue, resumeValue, environmentValue];
 	const keyHints = (): string => {
 		if (selectedCategory === "modes" && !categoryFocused) {
-			if (modeActionInput)
-				return modeActionInput === "delete"
-					? "←/→ destination · Enter queue Delete · Esc cancel"
-					: "Name · Enter stage · Esc cancel";
+			if (modeActionInput) return "Name · Enter stage · Esc cancel";
 			if (modeEditing) return "Enter newline · Ctrl+Enter stage · Esc cancel · Ctrl+S Save";
 			if (modeCustomApprovalEditing) return "Artifact path · Enter stage · Esc cancel · Ctrl+S Save";
 			if (modeApprovalEditing || modeColorEditing) return "↑/↓ choose · Enter stage · Esc cancel";
@@ -814,7 +809,7 @@ export function mountOpenTuiAgentSettings(
 				? "Add mode · Name"
 				: modeActionInput === "rename"
 					? "Rename mode · Name"
-					: "Delete mode · Destination";
+					: "Delete mode";
 		modeActionEditor.placeholder = modeActionInput === "rename" ? "Rename mode…" : "Mode name…";
 		modePromptInput.visible = modeEditing && modeField === "prompt";
 		modeArtifactsInput.visible = modeEditing && modeField === "definitions";
@@ -822,7 +817,8 @@ export function mountOpenTuiAgentSettings(
 		if (profile && id) {
 			const model = profile.model.kind === "default" ? "Default" : profile.model.id;
 			const draftConfiguration = modeDraft?.configuration ?? options.configuration;
-			const selectedPreset = draftConfiguration.presets[draftConfiguration.selectedPreset];
+			const selectedPresetName = draftConfiguration.selectedPreset;
+			const selectedPreset = selectedPresetName ? draftConfiguration.presets?.[selectedPresetName] : undefined;
 			const support = options.profilePermissionSupport
 				? options.profilePermissionSupport(profile)
 				: selectedPreset
@@ -878,10 +874,8 @@ export function mountOpenTuiAgentSettings(
 			const choice = modeApprovalChoices[modeApprovalChoiceIndex];
 			modeContextHint.content = `Approval indicator: ${choice === "" ? "Custom path" : (choice ?? "None")} · ↑/↓ choose · Enter select · Esc cancel`;
 		} else if (modeActionInput === "delete" && id) {
-			const destinations = ids.filter((candidate) => candidate !== id);
-			const destination = destinations[deleteDestinationIndex] ?? destinations[0];
 			const count = options.getModeSessionCount?.(id) ?? options.modeSessionCounts?.[id] ?? 0;
-			modeContextHint.content = `Delete ${profile?.name ?? id} (${count} owned sessions). Destination: ${destination ? (catalog?.profiles[destination]?.name ?? destination) : "none"} · ←/→ choose · Enter queue · Esc cancel`;
+			modeContextHint.content = `Delete ${profile?.name ?? id} (${count} workspace-owned sessions). Running agents will be stopped; session history will not be transferred. Save to confirm.`;
 		}
 		modeContextHint.visible = modeApprovalEditing || modeActionInput === "delete";
 		modesPane.borderColor = border;
@@ -964,7 +958,7 @@ export function mountOpenTuiAgentSettings(
 		commandValue.content = state.command || "(not set)";
 		resumeValue.content = state.resumeFlag || "(adapter default)";
 		environmentValue.content = state.environment || "(none)";
-		const preset = draft.presets[name];
+		const preset = presets[name];
 		const documentedResumeFlag = preset ? AGENT_PRESENTATION_METADATA[preset.bootstrap].resumeFlag : undefined;
 		resumeInput.placeholder = preset
 			? preset.resumeFlag === undefined
@@ -1134,10 +1128,11 @@ export function mountOpenTuiAgentSettings(
 		const presets: Record<string, AgentPreset> = {};
 		const selectedPreset = draft.selectedPreset;
 		for (const name of names) {
-			const preset = draft.presets[name] as AgentPreset;
+			const preset = draft.presets?.[name] as AgentPreset;
 			presets[name] = editedPreset(name, preset, states.get(name) as FormState);
 		}
-		if (!Object.hasOwn(presets, selectedPreset)) throw new Error("Choose a configured default preset.");
+		if (!selectedPreset || !Object.hasOwn(presets, selectedPreset))
+			throw new Error("Choose a configured default preset.");
 		const result = { ...draft, selectedPreset, presets, sessions: { ...sessionSettings } };
 		if (modeDraft) result.modes = structuredClone(modeDraft.configuration.modes);
 		if (modeDraft) modeDraft.validate();
@@ -1220,17 +1215,8 @@ export function mountOpenTuiAgentSettings(
 		if (selectedCategory === "modes" && !categoryFocused && (modeApprovalEditing || modeActionInput || modeEditing)) {
 			const currentId = modeIds()[selectedModeIndex];
 			if (modeActionInput === "delete") {
-				const destinations = modeIds().filter((candidate) => candidate !== currentId);
-				if (event.name === "left" || event.name === "up")
-					deleteDestinationIndex = Math.max(0, deleteDestinationIndex - 1);
-				else if (event.name === "right" || event.name === "down")
-					deleteDestinationIndex = Math.min(destinations.length - 1, deleteDestinationIndex + 1);
-				else if (
-					(event.name === "return" || event.name === "linefeed" || event.name === "kpenter") &&
-					currentId &&
-					destinations.length
-				) {
-					modeDraft!.deleteMode(currentId, destinations[deleteDestinationIndex] ?? destinations[0]!);
+				if ((event.name === "return" || event.name === "linefeed" || event.name === "kpenter") && currentId) {
+					modeDraft!.deleteMode(currentId);
 					selectedModeIndex = Math.min(selectedModeIndex, modeIds().length - 1);
 					selectedModeId = modeIds()[selectedModeIndex];
 					modeField = "model";
@@ -1497,7 +1483,6 @@ export function mountOpenTuiAgentSettings(
 				else {
 					modeActionInput = "delete";
 					modeFocus = "profile";
-					deleteDestinationIndex = 0;
 					error = undefined;
 				}
 				render();
@@ -1527,15 +1512,16 @@ export function mountOpenTuiAgentSettings(
 			) {
 				error = undefined;
 				if (modeField === "model") {
-					const preset = draft.presets[draft.selectedPreset];
-					if (!preset) {
+					const selectedPreset = draft.selectedPreset;
+					const preset = selectedPreset ? presets[selectedPreset] : undefined;
+					if (!selectedPreset || !preset) {
 						error = "Choose a configured preset before model discovery.";
 						render();
 						return;
 					}
 					modelPicker = mountOpenTuiModeModelPicker(renderer, parent, {
 						harness: preset.bootstrap,
-						preset: draft.selectedPreset,
+						preset: selectedPreset,
 						selectedModel: currentProfile.model.kind === "explicit" ? currentProfile.model.id : undefined,
 						discover: options.discoverModeModels ?? (async () => []),
 						allowManualModel: AGENT_PRESENTATION_METADATA[preset.bootstrap].allowManualModel,
@@ -1679,7 +1665,7 @@ export function mountOpenTuiPresetPicker(
 ): OpenTuiAgentSettingsMount {
 	const entries = [
 		...(options.inheritLabel ? [{ name: options.inheritLabel, value: undefined }] : []),
-		...Object.keys(options.configuration.presets).map((name) => ({ name, value: name })),
+		...Object.keys(options.configuration.presets ?? {}).map((name) => ({ name, value: name })),
 	];
 	let selected = Math.max(
 		0,

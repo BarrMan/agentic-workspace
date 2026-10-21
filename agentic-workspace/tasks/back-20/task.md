@@ -3,7 +3,6 @@ task_schema_version: 3
 id: BACK-20
 title: Minor Adjustments
 status: Done
-assignee: []
 created_date: '2026-10-08 10:27'
 updated_date: '2026-10-09 04:35'
 labels: []

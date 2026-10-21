@@ -123,7 +123,7 @@ export class TaskSearchIndex {
 			checks.push((task) => matchesConfiguredFilter(task.project, projects));
 		}
 
-		const priorities = toList(options.priority);
+		const priorities = toExactNonemptyList(options.priority);
 		if (priorities.length)
 			checks.push((task) => priorities.some((priority) => prioritiesEqual(priority, task.priority)));
 
@@ -158,6 +158,12 @@ function toList(value: string | string[] | undefined): string[] {
 	if (!value) return [];
 	const values = Array.isArray(value) ? value : [value];
 	return values.map((item) => item.trim()).filter((item) => item.length > 0);
+}
+
+function toExactNonemptyList(value: string | string[] | undefined): string[] {
+	if (!value) return [];
+	const values = Array.isArray(value) ? value : [value];
+	return values.filter((item) => item.length > 0);
 }
 
 function createTaskIdSearchVariants(id: string): string[] {

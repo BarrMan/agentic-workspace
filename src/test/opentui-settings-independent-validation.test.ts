@@ -5,7 +5,6 @@ import { join } from "node:path";
 import { BoxRenderable, InputRenderable, parseColor, type TextRenderable } from "@opentui/core";
 import { createTestRenderer, type TestRendererSetup } from "@opentui/core/testing";
 import { Core } from "../controller/agentic-workspace.ts";
-import type { WorkspaceStateService } from "../controller/workspace-state.ts";
 import type { AgentConfiguration } from "../model/session/types.ts";
 import { mountOpenTuiAgentSettings } from "../renderer/opentui/agent-settings.ts";
 import { createWorkspaceFilters } from "../renderer/opentui/workspace/state.ts";
@@ -218,13 +217,6 @@ describe("independent MAIN settings persistence through public input", () => {
 				recheck: async () => {},
 				close: () => {},
 			},
-			workspaceState: {
-				listTasks: async () => [],
-				listAllSessions: async () => new Map(),
-				listSessions: async (taskId: string) => ({ taskId, sessions: [] }),
-				listModeSessions: async () => ({ sessions: [] }),
-				liveSession: async () => undefined,
-			} as unknown as WorkspaceStateService,
 			runtime: {
 				createHost: async () => ({ renderer: f.setup.renderer, root: f.root, destroy: () => {} }),
 				mountWorkspace: (renderer, root, next) => {
@@ -258,7 +250,7 @@ describe("independent MAIN settings persistence through public input", () => {
 	}
 
 	function expectCombined(configuration: AgentConfiguration | null) {
-		expect(configuration?.presets.fake?.command).toEqual(["fake-edited", "{prompt}"]);
+		expect(configuration?.presets?.fake?.command).toEqual(["fake-edited", "{prompt}"]);
 		expect(configuration?.sessions).toEqual({ worktreePerTask: true, yoloMode: true, autoResumeOnRestart: true });
 		const profile = configuration?.modes?.profiles.plan;
 		expect(profile?.model).toEqual({ kind: "explicit", id: "fake/model-a" });

@@ -1,5 +1,6 @@
 import { AmbiguousTaskIdError } from "../model/errors/task-id.ts";
 import { calculateBlockOrdinals } from "../model/task/reorder.ts";
+import { Task as TaskModel } from "../model/task/task.ts";
 import type { TaskIdentityResolution } from "../model/task/task-identity-index.ts";
 import type { Task } from "../model/types.ts";
 
@@ -70,9 +71,16 @@ function assignOrderedTaskOrdinals(
 		});
 		requiresRebalance ||= block.requiresRebalance;
 		tasksInOrder.push(
-			...rows
-				.slice(index, runEnd)
-				.map((movedRow, offset) => ({ ...applyMove(movedRow.task), ordinal: block.ordinals[offset] })),
+			...rows.slice(index, runEnd).map((movedRow, offset) => {
+				const moved = applyMove(movedRow.task);
+				const model = TaskModel.forUpdate(moved);
+				model.applyBoardPlacement({
+					status: moved.status,
+					ordinal: block.ordinals[offset],
+					milestone: moved.milestone,
+				});
+				return model.serialize();
+			}),
 		);
 		index = runEnd;
 	}

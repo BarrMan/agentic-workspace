@@ -8,23 +8,19 @@ function labels(source?: PrioritySource): readonly string[] {
 	return configured?.length ? configured : DEFAULT_PRIORITIES;
 }
 
-function key(value: string): string {
-	return value.trim().replace(/\s+/g, " ").toLowerCase();
-}
-
 export function getPriorityLabels(source?: PrioritySource): string[] {
 	return [...labels(source)];
 }
 
 export function resolvePriorityLabel(value: string | null | undefined, source?: PrioritySource): string | undefined {
-	const wanted = key(value ?? "");
+	const wanted = value ?? "";
 	if (!wanted) return undefined;
-	const matches = labels(source).filter((label) => key(label) === wanted);
+	const matches = labels(source).filter((label) => label === wanted);
 	return matches.length === 1 ? matches[0] : undefined;
 }
 
 export function prioritiesEqual(first: string | null | undefined, second: string | null | undefined): boolean {
-	return key(first ?? "") === key(second ?? "");
+	return (first ?? "") === (second ?? "");
 }
 
 export function getPriorityRank(value: string | null | undefined, source?: PrioritySource): number {

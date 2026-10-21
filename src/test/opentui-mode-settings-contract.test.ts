@@ -128,15 +128,12 @@ describe("native Modes settings contract", () => {
 		}
 	});
 
-	it("queues PLAN session merge to BUILD on save, without applying it before save", async () => {
+	it("stages mode deletion until save, without transferring session history", async () => {
 		const setup = await createTestRenderer({ width: 120, height: 32, kittyKeyboard: true });
 		renderers.push(setup);
 		const config = configuration();
 		const original = structuredClone(config);
-		const callbacks: Array<{
-			configuration: AgentConfiguration;
-			moves: Array<{ fromModeId: string; toModeId: string }>;
-		}> = [];
+		const callbacks: Array<{ configuration: AgentConfiguration; deletedModeIds: readonly string[] }> = [];
 		const mount = mountOpenTuiAgentSettings(setup.renderer, parent(setup), {
 			configuration: config,
 			modeSessionCounts: { plan: 2 },
@@ -144,7 +141,7 @@ describe("native Modes settings contract", () => {
 				throw new Error("Mode edit must use its atomic save boundary.");
 			},
 			onSaveModeSettings: async (plan) => {
-				callbacks.push({ ...structuredClone(plan), moves: [...plan.moves] });
+				callbacks.push(structuredClone(plan));
 			},
 			onClose: () => {},
 		});
@@ -154,9 +151,7 @@ describe("native Modes settings contract", () => {
 			setup.mockInput.pressArrow("right");
 			setup.mockInput.pressKey("d");
 			await setup.flush();
-			expect(setup.captureCharFrame()).toContain("2 owned sessions");
-			expect(setup.captureCharFrame()).toContain("Destination:");
-			setup.mockInput.pressArrow("right");
+			expect(setup.captureCharFrame()).toContain("2 workspace-owned sessions");
 			setup.mockInput.pressEnter();
 			await setup.flush();
 			expect(callbacks).toHaveLength(0);
@@ -164,8 +159,8 @@ describe("native Modes settings contract", () => {
 			setup.mockInput.pressKey("s", { ctrl: true });
 			await setup.flush();
 			expect(callbacks).toHaveLength(1);
-			expect(callbacks[0]?.moves).toEqual([{ fromModeId: "plan", toModeId: "build" }]);
-			expect(callbacks[0]?.configuration.modes?.order).toEqual(["build"]);
+			expect(callbacks[0]?.configuration.modes?.order).toEqual(["plan", "build"]);
+			expect(callbacks[0]?.deletedModeIds).toEqual(["plan"]);
 			expect(config).toEqual(original);
 		} finally {
 			mount.dispose();

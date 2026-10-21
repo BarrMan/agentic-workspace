@@ -12,7 +12,7 @@ import {
 import { ProjectLayout } from "../filesystem/project-layout.ts";
 import { DEFAULT_DIRECTORIES, DEFAULT_FILES } from "../model/constants.ts";
 import { AmbiguousTaskIdError } from "../model/errors/task-id.ts";
-import { taskIdKey, taskIdsEqual } from "../model/task/task-id.ts";
+import { isValidTaskId, taskIdKey, taskIdsEqual } from "../model/task/task-id.ts";
 import { TaskOrdering } from "../model/task/task-ordering.ts";
 import { TaskSearchIndex } from "../model/task/task-search.ts";
 import {
@@ -544,6 +544,10 @@ export class FileSystem {
 
 	// Task operations
 	private async resolveTaskWriteTarget(task: Task): Promise<{ id: string; filename: string; filePath: string }> {
+		if (!isValidTaskId(task.id))
+			throw new Error(
+				`Invalid task ID ${JSON.stringify(task.id)}; expected PREFIX-NUMBER with optional dotted numeric segments.`,
+			);
 		const id = taskIdKey(task.id);
 		const directory = await this.getTasksDir();
 		const filename = "task.md";
@@ -668,6 +672,10 @@ export class FileSystem {
 	}
 
 	async loadTask(taskId: string, options: { includeArchived?: boolean } = {}): Promise<Task | null> {
+		if (!isValidTaskId(taskId))
+			throw new Error(
+				`Invalid task ID ${JSON.stringify(taskId)}; expected PREFIX-NUMBER with optional dotted numeric segments.`,
+			);
 		const canonicalId = taskIdKey(taskId);
 		const idDirectory = canonicalId.toLowerCase();
 		const directories = await Promise.all([
@@ -865,14 +873,10 @@ export class FileSystem {
 		const configPath = this.resolvedConfigPath;
 		let content: string;
 		try {
-			// Check if file exists first to avoid hanging on Windows
-			const file = Bun.file(configPath);
-			if (!(await file.exists())) {
-				return null;
-			}
-			content = await file.text();
-		} catch (_error) {
-			return null;
+			content = await readFile(configPath, "utf8");
+		} catch (error) {
+			if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
+			throw new Error(`Could not read configuration at ${configPath}.`, { cause: error });
 		}
 
 		// A value AgenticWorkspace cannot read is reported, not swallowed: callers must not silently

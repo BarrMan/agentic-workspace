@@ -39,8 +39,7 @@ describe("generic task artifact CLI contract", () => {
 		expect(initialTaskList.exitCode).toBe(0);
 		const initial = JSON.parse(initialTaskList.stdout.toString());
 		const expectedDirectory = await coreFileSystem(core).taskArtifacts.containerPath(taskId);
-		expect(initial.directory).toBe(expectedDirectory);
-		expect(initial.artifacts).toEqual([]);
+		expect(initial).toEqual({ artifacts: [] });
 
 		const write =
 			await Bun.$`printf 'generic bytes without frontmatter\n' | ${CLI_COMMAND} task artifact write ${taskId} custom/brief.txt`
@@ -48,24 +47,25 @@ describe("generic task artifact CLI contract", () => {
 				.nothrow()
 				.quiet();
 		expect(write.exitCode).toBe(0);
-		expect(write.stdout.toString()).toContain("Draft\tcustom/brief.txt");
+		expect(write.stdout.toString()).toContain("Written\tcustom/brief.txt");
 		const canonicalPath = join(expectedDirectory, "artifacts", "custom", "brief.txt");
 		expect(await readFile(canonicalPath, "utf8")).toBe("generic bytes without frontmatter\n");
 
 		const listing = await Bun.$`${CLI_COMMAND} task artifact list ${taskId} --json`.cwd(worktree).nothrow().quiet();
 		const listed = JSON.parse(listing.stdout.toString());
-		expect(listed.artifacts).toEqual([expect.objectContaining({ path: "custom/brief.txt" })]);
+		expect(listed.artifacts).toEqual([
+			{ path: "custom/brief.txt", size: Buffer.byteLength("generic bytes without frontmatter\n"), type: "text" },
+		]);
 		const read = await Bun.$`${CLI_COMMAND} task artifact read ${taskId} custom/brief.txt --json`
 			.cwd(worktree)
 			.nothrow()
 			.quiet();
-		expect(JSON.parse(read.stdout.toString())).toMatchObject({
-			status: { path: "custom/brief.txt", state: "Draft" },
+		expect(JSON.parse(read.stdout.toString())).toEqual({
 			contentBase64: Buffer.from("generic bytes without frontmatter\n").toString("base64"),
 		});
 		const plain = await Bun.$`${CLI_COMMAND} task artifact list ${taskId} --plain`.cwd(worktree).nothrow().quiet();
-		expect(plain.stdout.toString()).toContain(expectedDirectory);
-		expect(plain.stdout.toString()).toContain("Draft\ttext\t");
+		expect(plain.stdout.toString()).toContain("text\t");
+		expect(plain.stdout.toString()).toContain("custom/brief.txt");
 
 		for (const invalid of ["../escape", ".artifacts.json", "task.md"]) {
 			const rejected = await Bun.$`printf x | ${CLI_COMMAND} task artifact write ${taskId} ${invalid}`

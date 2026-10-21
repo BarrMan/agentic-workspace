@@ -54,18 +54,12 @@ type TaskDetailsJson = TaskSummaryJson & {
 	artifacts?: TaskArtifactProjection;
 };
 
-/** Artifact data fetched by the caller from the canonical task container. */
-export type TaskArtifactProjection = {
-	directory: string;
-	artifacts: Array<{
-		path: string;
-		state: string;
-		sha256?: string;
-		approvedAt?: string;
-		size: number;
-		type: "text" | "binary";
-	}>;
-};
+/** Artifact entries fetched by the caller from the canonical task container. */
+export type TaskArtifactProjection = Array<{
+	path: string;
+	size: number;
+	type: "text" | "binary";
+}>;
 
 type SearchResultJson = { type: "task"; data: TaskSummaryJson };
 

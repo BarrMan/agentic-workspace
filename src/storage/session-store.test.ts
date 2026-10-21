@@ -4,15 +4,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import lockfile from "proper-lockfile";
 import type { AgentSession } from "../model/session/types.ts";
-import type { ProcessRunner } from "../runtime/session-process.ts";
 import { SessionMutationError } from "./errors/session.ts";
 import { type SessionState, SessionStore } from "./session-store.ts";
-
-class FakeRunner implements ProcessRunner {
-	async run(): Promise<{ exitCode: number; stdout: string; stderr: string }> {
-		return { exitCode: 1, stdout: "", stderr: "not a git repository" };
-	}
-}
 
 function sessionsOf(state: SessionState): AgentSession[] {
 	return Object.values(state.modes).flatMap((history) => history.sessions);
@@ -31,7 +24,6 @@ function session(id: string): AgentSession {
 		tmuxName: id,
 		cwd: "/tmp",
 		createdAt: "2026-01-01T00:00:00.000Z",
-		status: "stopped",
 		outputPath: "/tmp/output",
 		bootstrapPath: "/tmp/bootstrap",
 	};
@@ -49,7 +41,7 @@ describe("SessionStore", () => {
 	it("uses task identity keys for paths, reads, and mutations without recasing stored IDs", async () => {
 		const root = await mkdtemp(join(tmpdir(), "agentic-workspace-session-id-key-"));
 		directories.push(root);
-		const store = new SessionStore(root, new FakeRunner());
+		const store = new SessionStore(root);
 		const firstPaths = await store.paths("TASK-01");
 		const variantPaths = await store.paths(" task-01 ");
 		const distinctPaths = await store.paths("TASK-1");
@@ -66,20 +58,24 @@ describe("SessionStore", () => {
 		await store.mutateMode(" task-01 ", "build", async (history) => {
 			const record = history.sessions[0];
 			if (!record) throw new Error("Expected keyed session fixture.");
-			record.status = "parked";
+			record.lastUsedAt = "2026-01-02T00:00:00.000Z";
 		});
 		await store.mutateSession("TASK-01 ", "keyed", async (record) => {
-			record.error = "updated";
+			record.useCount = 2;
 		});
 		const persisted = JSON.parse(await Bun.file(firstPaths.statePath).text());
 		expect(persisted.taskId).toBe("TASK-01");
-		expect(persisted.modes.build.sessions[0]).toMatchObject({ taskId: "TASK-01", status: "parked", error: "updated" });
+		expect(persisted.modes.build.sessions[0]).toMatchObject({
+			taskId: "TASK-01",
+			lastUsedAt: "2026-01-02T00:00:00.000Z",
+			useCount: 2,
+		});
 	});
 
 	it("preserves lowercase task-ID spelling for empty state and subsequent mutations", async () => {
 		const root = await mkdtemp(join(tmpdir(), "agentic-workspace-session-lowercase-id-"));
 		directories.push(root);
-		const store = new SessionStore(root, new FakeRunner());
+		const store = new SessionStore(root);
 		await store.mutate("jira-abc", async () => undefined);
 		expect((await store.read("JIRA-ABC")).taskId).toBe("jira-abc");
 		await store.mutate(" JIRA-ABC ", async () => undefined);
@@ -89,7 +85,7 @@ describe("SessionStore", () => {
 	it("serializes task mutations and rejects malformed durable state", async () => {
 		const root = await mkdtemp(join(tmpdir(), "agentic-workspace-session-store-"));
 		directories.push(root);
-		const store = new SessionStore(root, new FakeRunner());
+		const store = new SessionStore(root);
 
 		await Promise.all(
 			["first", "second"].map(
@@ -171,7 +167,7 @@ describe("SessionStore", () => {
 	it("distinguishes an uncommitted mutation error from a committed write with release failure", async () => {
 		const root = await mkdtemp(join(tmpdir(), "agentic-workspace-session-store-release-"));
 		directories.push(root);
-		const store = new SessionStore(root, new FakeRunner());
+		const store = new SessionStore(root);
 		const before = new Error("callback failed");
 		await expect(
 			store.mutate("TASK-1", async () => {
@@ -205,7 +201,7 @@ describe("SessionStore", () => {
 	it("round-trips optional native providers while preserving older exact-ID histories", async () => {
 		const root = await mkdtemp(join(tmpdir(), "agentic-workspace-native-provider-state-"));
 		directories.push(root);
-		const store = new SessionStore(root, new FakeRunner());
+		const store = new SessionStore(root);
 		const { statePath } = await store.paths("TASK-1");
 		await mkdir(join(root, ".agentic-workspace", "task-1"), { recursive: true });
 		const old = { ...session("old"), nativeSessionId: "Exact-ID/Keep-Bytes" };
@@ -233,102 +229,32 @@ describe("SessionStore", () => {
 		await expect(store.read("TASK-1")).rejects.toThrow("invalid session data");
 	});
 
-	it("round-trips a failed-resume marker, validates it strictly, and preserves malformed bytes", async () => {
+	it("rejects removed runtime-observation fields without changing the state file", async () => {
 		const root = await mkdtemp(join(tmpdir(), "agentic-workspace-resume-marker-state-"));
 		directories.push(root);
-		const store = new SessionStore(root, new FakeRunner());
+		const store = new SessionStore(root);
 		const { statePath } = await store.paths("TASK-1");
-		const record = session("marked");
-		record.resumeProbeFailed = { nativeProvider: "claude", nativeSessionId: "provider-session-1" };
-		await store.mutateMode("TASK-1", "build", async (history) => {
-			history.sessions.push(record);
-			history.activeSessionId = record.id;
-		});
-		const recreated = new SessionStore(root, new FakeRunner());
-		expect((await recreated.read("TASK-1")).modes.build?.sessions[0]?.resumeProbeFailed).toEqual(
-			record.resumeProbeFailed,
-		);
-		const validBytes = await Bun.file(statePath).text();
-		for (const marker of [
-			{ nativeProvider: "claude", nativeSessionId: "sid", extra: true },
-			{ nativeProvider: "unknown", nativeSessionId: "sid" },
-			{ nativeProvider: "pi", nativeSessionId: " " },
-			{ nativeProvider: "pi" },
-			{ nativeSessionId: "sid" },
-			null,
-			[],
-			"marker",
-			42,
-			{ nativeProvider: "pi", nativeSessionId: 7 },
-		]) {
-			const invalid = JSON.parse(validBytes);
-			invalid.modes.build.sessions[0].resumeProbeFailed = marker;
-			const raw = JSON.stringify(invalid);
+		for (const [key, value] of Object.entries({
+			status: "failed",
+			endedAt: "2026-01-02T00:00:00.000Z",
+			error: "probe failed",
+			resumeProbeFailed: { nativeProvider: "claude", nativeSessionId: "provider-session-1" },
+		})) {
+			const raw = JSON.stringify({
+				version: 2,
+				taskId: "TASK-1",
+				modes: { build: { activeSessionId: "marked", sessions: [{ ...session("marked"), [key]: value }] } },
+			});
 			await Bun.write(statePath, raw);
 			await expect(store.read("TASK-1")).rejects.toThrow(/corrupt or contains invalid session data/i);
 			expect(await Bun.file(statePath).text()).toBe(raw);
-		}
-		await Bun.write(statePath, validBytes);
-		const unusual = { nativeProvider: "pi" as const, nativeSessionId: "  old/SID: bytes  " };
-		const validWithUnusualId = JSON.parse(validBytes);
-		validWithUnusualId.modes.build.sessions[0].resumeProbeFailed = unusual;
-		const unusualBytes = JSON.stringify(validWithUnusualId);
-		await Bun.write(statePath, unusualBytes);
-		expect((await store.read("TASK-1")).modes.build?.sessions[0]?.resumeProbeFailed).toEqual(unusual);
-		expect(await Bun.file(statePath).text()).toBe(unusualBytes);
-		await Bun.write(statePath, validBytes);
-		await store.remove("TASK-1", "marked");
-		expect(sessionsOf(await store.read("TASK-1"))).toEqual([]);
-	});
-
-	it("publishes failed resume markers idempotently", async () => {
-		const root = await mkdtemp(join(tmpdir(), "agentic-workspace-resume-policy-store-"));
-		directories.push(root);
-		const store = new SessionStore(root, new FakeRunner(), async () => ({
-			command: ["unused"],
-			env: {},
-			prepare: "",
-			bootstrap: "opencode",
-		}));
-		const { taskDir, statePath } = await store.paths("TASK-1");
-		const record = {
-			...session("policy"),
-			bootstrapPath: join(taskDir, "policy.md"),
-			nativeProvider: "opencode" as const,
-			nativeSessionId: "ses_old",
-		};
-		await store.mutateMode("TASK-1", "plan", async (history) => {
-			history.sessions.push(record);
-			history.activeSessionId = record.id;
-		});
-		const marker = { nativeProvider: "opencode" as const, nativeSessionId: "ses_old" };
-		const expected = (await store.readMode("TASK-1", "plan")).sessions[0];
-		if (!expected) throw new Error("Missing expected session");
-		const release = await store.claimSession(expected.taskId, expected.id);
-		try {
-			await store.markResumeProbeFailed(expected, "plan", marker, "probe failed");
-			const failedBytes = await Bun.file(statePath).text();
-			const failed = (await store.readMode("TASK-1", "plan")).sessions[0];
-			expect(failed).toMatchObject({
-				status: "failed",
-				error: "probe failed",
-				resumeProbeFailed: marker,
-				nativeSessionId: "ses_old",
-			});
-			expect(failed?.ownerPid).toBeUndefined();
-			expect(failed?.endedAt).toEqual(expect.any(String));
-			await store.markResumeProbeFailed(expected, "plan", marker, "probe failed");
-			expect(await Bun.file(statePath).text()).toBe(failedBytes);
-			await expect(store.claimSession(expected.taskId, expected.id)).rejects.toThrow("already being resumed or asked");
-		} finally {
-			await release();
 		}
 	});
 
 	it("loads a current v2 record unchanged", async () => {
 		const root = await mkdtemp(join(tmpdir(), "agentic-workspace-old-v2-state-"));
 		directories.push(root);
-		const store = new SessionStore(root, new FakeRunner());
+		const store = new SessionStore(root);
 		const { statePath } = await store.paths("TASK-1");
 		const raw = JSON.stringify({
 			version: 2,
@@ -343,7 +269,7 @@ describe("SessionStore", () => {
 	it("removing the active session selects a surviving session", async () => {
 		const root = await mkdtemp(join(tmpdir(), "agentic-workspace-session-remove-active-"));
 		directories.push(root);
-		const store = new SessionStore(root, new FakeRunner());
+		const store = new SessionStore(root);
 		await store.mutateMode("TASK-1", "build", async (history) => {
 			history.sessions.push(session("selected"), session("survivor"));
 			history.activeSessionId = "selected";
@@ -360,7 +286,7 @@ describe("SessionStore", () => {
 	it("rejects unsupported v1 session state without changing the file", async () => {
 		const root = await mkdtemp(join(tmpdir(), "agentic-workspace-session-store-modes-"));
 		directories.push(root);
-		const store = new SessionStore(root, new FakeRunner());
+		const store = new SessionStore(root);
 		const { statePath } = await store.paths("TASK-1");
 		await Bun.write(
 			statePath,
@@ -380,7 +306,7 @@ describe("SessionStore", () => {
 	it("serializes the entire mode read-modify-write with session mutations", async () => {
 		const root = await mkdtemp(join(tmpdir(), "agentic-workspace-session-store-lock-"));
 		directories.push(root);
-		const store = new SessionStore(root, new FakeRunner());
+		const store = new SessionStore(root);
 		await store.mutateMode("TASK-1", "build", async (history) => {
 			history.sessions.push(session("existing"));
 			history.activeSessionId = "existing";
@@ -408,7 +334,7 @@ describe("SessionStore", () => {
 			stateLockHeld = await checkLock(statePath, { realpath: false });
 			pending.push(
 				store.mutateSession("TASK-1", "existing", async (record) => {
-					record.status = "running";
+					record.useCount = 1;
 				}),
 			);
 		} finally {
@@ -422,13 +348,13 @@ describe("SessionStore", () => {
 		expect(history.sessions.map((record) => record.id).sort()).toEqual(["existing", "mode-update"]);
 		const existing = history.sessions.find((record) => record.id === "existing");
 		if (!existing) throw new Error("Missing existing session");
-		expect(existing.status).toBe("running");
+		expect(existing.useCount).toBe(1);
 	});
 
 	it("rejects removed configuration snapshots without rewriting historical state", async () => {
 		const root = await mkdtemp(join(tmpdir(), "agentic-workspace-session-history-"));
 		directories.push(root);
-		const store = new SessionStore(root, new FakeRunner());
+		const store = new SessionStore(root);
 		const { statePath } = await store.paths("TASK-1");
 		for (const key of ["presetSnapshot", "configScope", "createdWith", "harness", "agent"]) {
 			const bytes = JSON.stringify({

@@ -2,6 +2,7 @@ import { DateTime } from "luxon";
 import { z } from "zod";
 import { AgentConfigurationSchema } from "../../model/session/agent-config-schema.ts";
 import { normalizeDueDate } from "../../model/task/due-date.ts";
+import { isValidTaskId } from "../../model/task/task-id.ts";
 import { TASK_FRONTMATTER_FIELDS as FIELD } from "./schema.ts";
 
 /** Frontmatter key for each task property the schema owns. Dependencies are decoded separately. */
@@ -78,6 +79,9 @@ function dateField(key: string) {
 }
 
 const requiredText = z.preprocess(textOrEmpty, z.string());
+const taskId = requiredText.refine(isValidTaskId, {
+	error: "must match PREFIX-NUMBER with optional dotted numeric segments",
+});
 const optionalString = z.preprocess(optionalText, z.string().optional());
 
 const dependencies = z
@@ -106,7 +110,7 @@ const modeApprovals = z
 	.optional();
 
 export const TaskFrontmatterSchema = z.object({
-	id: requiredText,
+	id: taskId,
 	title: requiredText,
 	status: requiredText,
 	reporter: optionalString,

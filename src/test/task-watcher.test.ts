@@ -3,13 +3,12 @@ import { EventEmitter } from "node:events";
 import * as nodeFs from "node:fs";
 import { mkdir, rename, unlink } from "node:fs/promises";
 import { join } from "node:path";
-import { Writable } from "node:stream";
-import { runCli } from "../cli/register.ts";
 import { Core } from "../controller/agentic-workspace.ts";
 import * as mainWorktree from "../filesystem/git/main-worktree.ts";
 import type { Task } from "../model/types.ts";
 import { serializeTask } from "../storage/markdown/serializer.ts";
 import { watchTasks } from "../storage/watchers/task-watcher.ts";
+import { runInProcessCli } from "./in-process-cli.ts";
 import {
 	coreFileSystem,
 	createUniqueTestDir,
@@ -18,60 +17,6 @@ import {
 	safeCleanup,
 	withTimeout,
 } from "./test-utils.ts";
-
-const cliCommand = ["agentic-workspace"];
-
-function $(parts: TemplateStringsArray, ...values: unknown[]) {
-	const source = parts.reduce(
-		(text, part, index) =>
-			`${text}${part}${Array.isArray(values[index]) ? values[index].map((value) => JSON.stringify(value)).join(" ") : values[index] === undefined ? "" : JSON.stringify(values[index])}`,
-		"",
-	);
-	const args =
-		source
-			.match(/"(?:\\.|[^"\\])*"|'[^']*'|[^\s]+/g)
-			?.map((arg) =>
-				arg.startsWith('"') ? (JSON.parse(arg) as string) : arg.startsWith("'") ? arg.slice(1, -1) : arg,
-			) ?? [];
-	const config: { cwd?: string; nothrow?: boolean } = {};
-	const result = async () => {
-		const stdout: string[] = [];
-		const stderr: string[] = [];
-		const out = new Writable({
-			write: (chunk, _encoding, done) => {
-				stdout.push(chunk.toString());
-				done();
-			},
-		});
-		const err = new Writable({
-			write: (chunk, _encoding, done) => {
-				stderr.push(chunk.toString());
-				done();
-			},
-		});
-		const exitCode = await runCli(args.slice(cliCommand.length), { cwd: config.cwd, stdout: out, stderr: err });
-		const value = { exitCode, stdout: stdout.join(""), stderr: stderr.join("") };
-		if (value.exitCode && !config.nothrow) throw new Error(value.stderr || `CLI exited with ${value.exitCode}`);
-		return value;
-	};
-	const chain = {
-		cwd(value: string) {
-			config.cwd = value;
-			return chain;
-		},
-		nothrow() {
-			config.nothrow = true;
-			return chain;
-		},
-		quiet() {
-			return result();
-		},
-		async text() {
-			return (await result()).stdout;
-		},
-	};
-	return chain;
-}
 
 type WatchCallback = (eventType: string, filename: string | Buffer | null) => void;
 
@@ -584,7 +529,9 @@ describe("task watcher reconciliation", () => {
 		stopWatcher = handle.stop;
 
 		const idle = armIdle();
-		await $`${cliCommand} task edit task-6 --title ${"Updated by watcher"}`.cwd(testDir).quiet();
+		expect(
+			(await runInProcessCli(["task", "edit", "task-6", "--title", "Updated by watcher"], { cwd: testDir })).exitCode,
+		).toBe(0);
 		await withTimeout(idle, "real atomic CLI edit reconciliation", getPlatformTimeout(2000));
 		const task = await changed;
 		expect(task.title).toBe("Updated by watcher");

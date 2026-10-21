@@ -3,14 +3,7 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { AgentSession } from "../../model/session/types.ts";
-import type { ProcessRunner } from "../../runtime/session-process.ts";
 import { SessionStore } from "../../storage/session-store.ts";
-
-class InertRunner implements ProcessRunner {
-	async run(): Promise<{ exitCode: number; stdout: string; stderr: string }> {
-		return { exitCode: 1, stdout: "", stderr: "not used" };
-	}
-}
 
 function session(id: string, changes: Partial<AgentSession> = {}): AgentSession {
 	return {
@@ -20,7 +13,6 @@ function session(id: string, changes: Partial<AgentSession> = {}): AgentSession 
 		tmuxName: `pane-${id}`,
 		cwd: "/work/TASK-23",
 		createdAt: "2026-10-10T12:00:00.000Z",
-		status: "running",
 		outputPath: `/logs/${id}.log`,
 		bootstrapPath: `/logs/${id}.prompt`,
 		...changes,
@@ -36,7 +28,7 @@ describe("SessionStore mode persistence contract", () => {
 	async function fixture() {
 		const root = await mkdtemp(join(tmpdir(), "agentic-workspace-session-mode-contract-"));
 		roots.push(root);
-		const store = new SessionStore(root, new InertRunner());
+		const store = new SessionStore(root);
 		return { root, store, ...(await store.paths("TASK-23")) };
 	}
 
@@ -93,7 +85,7 @@ describe("SessionStore mode persistence contract", () => {
 			}),
 		]);
 
-		const reopened = new SessionStore(root, new InertRunner());
+		const reopened = new SessionStore(root);
 		expect(await reopened.readMode("TASK-23", "plan")).toEqual({ sessions: [planner], activeSessionId: planner.id });
 		expect((await reopened.readMode("TASK-23", "plan")).sessions[0]?.pathContext).toEqual(planner.pathContext);
 		expect(await reopened.readMode("TASK-23", "build")).toEqual({ sessions: [builder], activeSessionId: builder.id });
@@ -204,7 +196,7 @@ describe("SessionStore mode persistence contract", () => {
 		const owners: string[] = [];
 		await store.mutateSession("TASK-23", "relocated", async (record, history, owner) => {
 			owners.push(owner);
-			record.status = "parked";
+			record.lastUsedAt = "2026-10-10T12:30:00.000Z";
 			history.activeSessionId = record.id;
 		});
 		expect(owners).toEqual(["build"]);
@@ -212,7 +204,7 @@ describe("SessionStore mode persistence contract", () => {
 		expect(await store.readMode("TASK-23", "design")).toEqual({ sessions: [other], activeSessionId: other.id });
 		expect(await store.readMode("TASK-23", "build")).toMatchObject({
 			activeSessionId: "relocated",
-			sessions: [{ id: "relocated", status: "parked" }],
+			sessions: [{ id: "relocated", lastUsedAt: "2026-10-10T12:30:00.000Z" }],
 		});
 	});
 
@@ -281,7 +273,7 @@ describe("SessionStore mode persistence contract", () => {
 			() => store.mutateMode("TASK-23", "plan", async (history) => history.sessions.push(session("mode-write"))),
 			() =>
 				store.mutateSession("TASK-23", "old-id", async (record) => {
-					record.status = "parked";
+					record.lastUsedAt = "2026-10-10T12:30:00.000Z";
 				}),
 		];
 		for (const operation of ordinaryWrites) {

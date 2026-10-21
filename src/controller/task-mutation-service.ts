@@ -1,22 +1,13 @@
 import { DateTime } from "luxon";
+import { normalizeStringList } from "../lib/string-list.ts";
 import { AmbiguousTaskIdError } from "../model/errors/task-id.ts";
 import type { ResolvedAgentConfiguration } from "../model/session/types.ts";
 import { DependencyValidator } from "../model/task/dependency-validator.ts";
 import { generateNextId, generateNextSubtaskId, getPrefixForType } from "../model/task/prefix-config.ts";
-import { formatValidPriorityValues, resolvePriorityLabel } from "../model/task/priority-config.ts";
-import {
-	formatValidProjectValues,
-	getProjectValues,
-	noProjectsConfiguredMessage,
-	resolveProjectValue,
-} from "../model/task/project-config.ts";
-import { getCanonicalStatus, getValidStatuses } from "../model/task/status.ts";
 import { Task as TaskModel } from "../model/task/task.ts";
 import { taskIdsEqual } from "../model/task/task-id.ts";
 import { TaskIdentityIndex, type TaskIdentityResolution } from "../model/task/task-identity-index.ts";
-import { LOCAL_TASK_LOOKUP_HINT } from "../model/task/task-path.ts";
-import { formatValidTaskTypeValues, resolveTaskTypeValue } from "../model/task/task-type-config.ts";
-import { applyTaskUpdate } from "../model/task/task-update/index.ts";
+import { getTerminalStatus } from "../model/task/terminal-status.ts";
 import { EntityType, type Task, type TaskUpdateInput } from "../model/types.ts";
 import type { Storage } from "../storage/storage.ts";
 import { executeStatusCallback } from "./status-callback.ts";
@@ -64,32 +55,20 @@ export class ProjectTaskMutations {
 		private readonly occupiedTaskIds: () => Promise<string[]>,
 	) {}
 
-	async requireCanonicalStatus(status: string): Promise<string> {
-		const canonical = await getCanonicalStatus(status, { getStoredConfig: () => this.storage.loadConfig() });
-		if (canonical) return canonical;
-		const validStatuses = await getValidStatuses({ getStoredConfig: () => this.storage.loadConfig() });
-		throw new Error(`Invalid status: ${status}. Valid statuses are: ${validStatuses.join(", ")}`);
-	}
-
-	async applyTaskUpdateInput(
-		task: Task,
-		input: TaskUpdateInput,
-		statusResolver: (status: string) => Promise<string>,
-	): Promise<{ task: Task; mutated: boolean }> {
-		const mutated = await applyTaskUpdate(task, input, {
-			resolveStatus: statusResolver,
-			normalizePriority: (priority) => this.normalizePriority(priority),
-			normalizeType: (type) => this.normalizeTaskType(type),
-			normalizeProject: (project) => this.normalizeProject(project),
-			validateDependencies: (dependencies, candidate) =>
-				new DependencyValidator(this.storage.dependencyStore).validate(dependencies, candidate),
-			taskIdsEqual,
-			formatMissingDependenciesError: (invalid) =>
-				new Error(
-					`The following dependencies do not exist: ${invalid.join(", ")}. Please create these tasks first or verify the IDs. ${LOCAL_TASK_LOOKUP_HINT}`,
-				),
+	async applyTaskUpdateInput(task: Task, input: TaskUpdateInput): Promise<{ task: Task; mutated: boolean }> {
+		const [configuration, dependencies, milestones] = await Promise.all([
+			this.storage.loadConfig(),
+			this.validateDependencyUpdates(input, task),
+			this.loadMilestonesForUpdate(input),
+		]);
+		const model = TaskModel.forUpdate(task);
+		const mutated = model.applyUpdate(input, {
+			configuration,
+			projectConfigPath: this.storage.configFilePath,
+			dependencies,
+			milestones,
 		});
-		return { task, mutated };
+		return { task: model.serialize(), mutated };
 	}
 
 	async withCreateLock<T>(fn: () => Promise<T>): Promise<T> {
@@ -135,12 +114,29 @@ export class ProjectTaskMutations {
 		return await this.storage.withTaskLock(task, async () => {
 			const current = await this.loadTaskForMutation(taskId, options);
 			if (!current) throw new Error(`Task not found: ${taskId}`);
-			const { mutated } = await this.applyTaskUpdateInput(current, input, (status) =>
-				this.requireCanonicalStatus(status),
-			);
-			if (!mutated) return current;
-			await this.saveTask(current);
-			return current;
+			const updated = await this.applyTaskUpdateInput(current, input);
+			if (!updated.mutated) return current;
+			await this.saveTask(updated.task);
+			return updated.task;
+		});
+	}
+
+	async markDone(taskId: string, options: TaskReadOptions = {}): Promise<{ task: Task; changed: boolean }> {
+		const task = await this.loadTaskForMutation(taskId, options);
+		if (!task) throw new Error(`Task not found: ${taskId}`);
+		return await this.storage.withTaskLock(task, async () => {
+			const current = await this.loadTaskForMutation(taskId, options);
+			if (!current) throw new Error(`Task not found: ${taskId}`);
+			const configuration = await this.storage.loadConfig();
+			const status = getTerminalStatus(configuration?.statuses ?? []);
+			if (!status) throw new Error("No terminal status configured.");
+			if (current.status === status) return { task: current, changed: false };
+			if (current.branch) throw new Error(`Cannot complete task from branch "${current.branch}".`);
+			const model = TaskModel.forUpdate(current);
+			model.applyUpdate({ status }, { configuration, projectConfigPath: this.storage.configFilePath });
+			const updated = model.serialize();
+			await this.saveTask(updated);
+			return { task: updated, changed: true };
 		});
 	}
 
@@ -181,32 +177,28 @@ export class ProjectTaskMutations {
 		}
 	}
 
-	async normalizePriority(value: string | undefined): Promise<string | undefined> {
-		if (value === undefined || value.trim() === "") return undefined;
-		const config = await this.storage.loadConfig();
-		const normalized = resolvePriorityLabel(value, config);
-		if (!normalized)
-			throw new Error(`Invalid priority: ${value}. Valid values are: ${formatValidPriorityValues(config)}`);
-		return normalized;
+	private async validateDependencyUpdates(input: TaskUpdateInput, task: Task) {
+		const replacement = input.dependencies === undefined ? undefined : (normalizeStringList(input.dependencies) ?? []);
+		const additions = input.addDependencies?.length ? (normalizeStringList(input.addDependencies) ?? []) : undefined;
+		if (replacement === undefined && additions === undefined) return {};
+		const validated = await new DependencyValidator(this.storage.dependencyStore).validateUpdates(
+			{ replacement, additions },
+			task,
+		);
+		return {
+			...(replacement === undefined || !validated.replacement
+				? {}
+				: { replacement: { input: replacement, ...validated.replacement } }),
+			...(additions === undefined || !validated.additions
+				? {}
+				: { additions: { input: additions, ...validated.additions } }),
+		};
 	}
 
-	async normalizeTaskType(value: string | undefined): Promise<string | undefined> {
-		if (value === undefined || value === "") return undefined;
-		const config = await this.storage.loadConfig();
-		const canonical = resolveTaskTypeValue(value, config);
-		if (!canonical) throw new Error(`Invalid type: ${value}. Valid types are: ${formatValidTaskTypeValues(config)}`);
-		return canonical;
-	}
-
-	async normalizeProject(value: string | undefined): Promise<string | undefined> {
-		if (value === undefined || value === "") return undefined;
-		const config = await this.storage.loadConfig();
-		const projects = getProjectValues(config);
-		if (projects.length === 0) throw new Error(noProjectsConfiguredMessage(this.storage.configFilePath));
-		const canonical = resolveProjectValue(value, config);
-		if (!canonical)
-			throw new Error(`Invalid project: ${value}. Valid projects are: ${formatValidProjectValues(config)}`);
-		return canonical;
+	private async loadMilestonesForUpdate(input: TaskUpdateInput) {
+		return input.milestone !== undefined && input.milestone !== null && input.milestone.trim() !== ""
+			? await this.storage.loadMilestones()
+			: undefined;
 	}
 
 	private async getExistingIdsForType(type: EntityType): Promise<string[]> {

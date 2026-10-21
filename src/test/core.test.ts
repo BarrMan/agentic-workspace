@@ -151,7 +151,7 @@ describe("Core", () => {
 			);
 		});
 
-		it("updates a resolved task without rescanning padded identities", async () => {
+		it("updates a resolved task while rechecking task identity collections", async () => {
 			await core.createTask(sampleTask);
 			const activePath = (await coreFileSystem(core).loadTask(sampleTask.id))?.filePath;
 			if (!activePath) throw new Error("Expected active task path");
@@ -181,6 +181,8 @@ describe("Core", () => {
 				coreFileSystem(core).listCompletedTasks = originalListCompletedTasks;
 			}
 
+			// Resolution builds an identity index before the write and repeats it under the task lock,
+			// so both active and completed ID collisions fail closed against the current collections.
 			expect(activeLoads).toBe(2);
 			expect(completedLoads).toBe(2);
 			expect(await Bun.file(activePath).text()).toContain("Updated active");
@@ -451,14 +453,14 @@ describe("Core", () => {
 			expect(task?.source).toBe("local");
 		});
 
-		it("loads a task whose ID is not in the generated grammar", async () => {
+		it("rejects a stored task ID outside the numeric ID grammar without changing its bytes", async () => {
 			await mkdir(join(coreFileSystem(core).tasksDir, "task-prefixed"), { recursive: true });
-			await Bun.write(
-				join(coreFileSystem(core).tasksDir, "task-prefixed", "task.md"),
-				serializeTask({ ...sampleTask, id: "TASK-PREFIXED", title: "Historical task" }),
-			);
+			const filepath = join(coreFileSystem(core).tasksDir, "task-prefixed", "task.md");
+			const content = serializeTask({ ...sampleTask, id: "TASK-PREFIXED", title: "Historical task" });
+			await Bun.write(filepath, content);
 
-			expect((await core.getTask("task-prefixed"))?.id).toBe("TASK-PREFIXED");
+			await expect(core.getTask("task-prefixed")).rejects.toThrow(/Invalid task ID.*PREFIX-NUMBER/);
+			expect(await Bun.file(filepath).text()).toBe(content);
 		});
 
 		it("resolves distinct padded task IDs from their own canonical containers", async () => {
@@ -575,15 +577,13 @@ describe("Core", () => {
 			await core.createTask(task);
 
 			// Typos should NOT match (prevent parseInt coercion bug)
-			const withTypo = await core.getTask("358a");
-			expect(withTypo).toBeNull();
+			await expect(core.getTask("358a")).rejects.toThrow(/Invalid task ID.*PREFIX-NUMBER/);
 
-			const withTypo2 = await core.getTask("35x8");
-			expect(withTypo2).toBeNull();
+			await expect(core.getTask("35x8")).rejects.toThrow(/Invalid task ID.*PREFIX-NUMBER/);
 		});
 
 		it("should return false when archiving non-existent task", async () => {
-			const archived = await core.archiveTask("non-existent");
+			const archived = await core.archiveTask("TASK-999");
 			expect(archived.success).toBe(false);
 		});
 

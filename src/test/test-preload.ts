@@ -1,10 +1,8 @@
 import { afterAll } from "bun:test";
 import { randomUUID } from "node:crypto";
-import { existsSync, mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { killTmuxSocketPaneGroups } from "./tmux-pane-groups.ts";
-import { tmuxSocketPath } from "./tmux-test-server.ts";
 
 const testTmpDir = mkdtempSync(join(tmpdir(), "agentic-workspace-test-worker-"));
 process.env.TMPDIR = testTmpDir;
@@ -56,18 +54,3 @@ for (const name of [
  */
 const socket = `agentic-workspace-test-suite-${process.pid.toString(36)}-${randomUUID().slice(0, 8)}`;
 process.env.AGENTIC_WORKSPACE_TMUX_SOCKET = socket;
-afterAll(() => {
-	try {
-		const socketPath = tmuxSocketPath(socket);
-		if (socketPath && !existsSync(socketPath)) return;
-		const tmux = Bun.which("tmux");
-		if (!tmux) return;
-		killTmuxSocketPaneGroups(socket);
-		Bun.spawnSync([tmux, "-f", "/dev/null", "-L", socket, "kill-server"], {
-			stdout: "ignore",
-			stderr: "ignore",
-		});
-	} catch {
-		// Best effort: a missing tmux binary or an already-gone server is success.
-	}
-});

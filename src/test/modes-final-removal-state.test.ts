@@ -61,6 +61,7 @@ describe("final task removal mode state", () => {
 		const renderer = Object.assign(new EventEmitter(), { width: 120, height: 40 });
 		const host = { renderer, root: {}, async destroy() {} } as unknown as OpenTuiHost;
 		const core = {
+			getProjectModeCatalog: async () => modes,
 			getStoredConfig: async () => ({ agentConfiguration }),
 			loadTasks: async () => taskList,
 			loadMilestones: async () => [],
@@ -84,6 +85,7 @@ describe("final task removal mode state", () => {
 		const controller = new OpenTuiWorkspaceController(core, {
 			selectedTaskId: task.id,
 			workspaceState: {
+				sessionApplication: { projectInventory: async () => [] },
 				listTasks: async () => taskList,
 				listSessions: async (taskId: string) => ({ taskId, sessions: [] }),
 				listModeSessions: async (taskId: string, modeId: string) => ({

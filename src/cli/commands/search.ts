@@ -207,22 +207,35 @@ async function resolveSearchFilters(
 	rawSearchProjects: string[],
 	modifiedFileFilters: string[] | undefined,
 ): Promise<SearchFilters | null> {
-	const excludeStatuses = normalizeStringList(toStringArray(options.excludeStatus)) ?? [];
-	const [statuses, taskTypes, projects, priority] = await Promise.all([
+	const statusesToMatch = toExactNonemptyList(toStringArray(options.status));
+	const excludeStatuses = toExactNonemptyList(toStringArray(options.excludeStatus));
+	const [includedStatuses, excludedStatuses, taskTypes, projects, priority] = await Promise.all([
+		statusesToMatch.length > 0 ? dependencies.normalizeStatusList(core, statusesToMatch, "status") : [],
 		excludeStatuses.length > 0 ? dependencies.normalizeStatusList(core, excludeStatuses, "exclude-status") : [],
 		rawTaskTypes.length > 0 ? dependencies.normalizeTaskTypes(core, rawTaskTypes, "task-type") : [],
 		rawSearchProjects.length > 0 ? dependencies.normalizeProjects(core, rawSearchProjects, "project") : [],
 		options.priority ? dependencies.normalizePriority(core, String(options.priority)) : undefined,
 	]);
-	if (statuses === null || taskTypes === null || projects === null || priority === null) return null;
+	if (
+		includedStatuses === null ||
+		excludedStatuses === null ||
+		taskTypes === null ||
+		projects === null ||
+		priority === null
+	)
+		return null;
 	return {
-		...(options.status && { status: normalizeStringList(toStringArray(options.status)) ?? options.status }),
-		...(statuses.length > 0 && { excludeStatus: statuses }),
+		...(includedStatuses.length > 0 && { status: includedStatuses }),
+		...(excludedStatuses.length > 0 && { excludeStatus: excludedStatuses }),
 		...(taskTypes.length > 0 && { type: taskTypes }),
 		...(projects.length > 0 && { project: projects }),
 		...(priority && { priority }),
 		...(modifiedFileFilters?.length && { modifiedFiles: modifiedFileFilters }),
 	};
+}
+
+function toExactNonemptyList(values: string[]): string[] {
+	return [...new Set(values.filter((value) => value.length > 0))];
 }
 
 function printTaskFilterTypeError(option: "--task-type" | "--project"): null {

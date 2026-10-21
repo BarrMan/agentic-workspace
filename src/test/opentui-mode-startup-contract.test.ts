@@ -13,7 +13,7 @@ import type { OpenTuiHost } from "../renderer/opentui/host.ts";
 import { createWorkspaceFilters, type SharedWorkspaceState } from "../renderer/opentui/workspace/state.ts";
 import type { OpenTuiWorkspaceOptions } from "../renderer/opentui/workspace.ts";
 import { OpenTuiWorkspaceController } from "../renderer/opentui/workspace-controller.ts";
-import { getBuiltInAgentConfiguration } from "../storage/config.ts";
+import { getBuiltInAgentConfiguration, requireProjectModeCatalog } from "../storage/config.ts";
 import * as groupStores from "../storage/group-store.ts";
 import * as sessionStores from "../storage/session-store.ts";
 import * as viewStores from "../storage/view-state-store.ts";
@@ -91,6 +91,7 @@ function project(configuration?: AgentConfiguration) {
 		);
 	const core = {
 		getStoredConfig: async () => ({ agentConfiguration: configuration }),
+		getProjectModeCatalog: async () => requireProjectModeCatalog(configuration ?? null),
 		loadTasks: async () => [task],
 		loadMilestones: async () => [],
 		loadArchivedMilestones: async () => [],
@@ -144,6 +145,7 @@ function stores(selectedMode?: string) {
 function workspace() {
 	const listModeSessions = mock(async (_taskId: string, _modeId: string) => ({ sessions: [] }));
 	const service = {
+		sessionApplication: { projectInventory: async () => [] },
 		listTasks: mock(async () => [task]),
 		listAllSessions: mock(async () => new Map<string, TaskSessions>()),
 		listSessions: mock(async () => ({ taskId: task.id, sessions: [] })),

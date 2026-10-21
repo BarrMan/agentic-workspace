@@ -7,13 +7,18 @@ import { randomUUID } from "node:crypto";
 import { cpSync, mkdirSync, realpathSync, rmSync } from "node:fs";
 import { chmod, copyFile, mkdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, relative } from "node:path";
 import { $ } from "bun";
 import type { Core } from "../controller/agentic-workspace.ts";
 import { initializeProject as initializeProjectShared } from "../controller/init.ts";
 import type { Task } from "../model/types.ts";
 import type { FileSystem } from "../storage/file-system.ts";
 import { serializeTask } from "../storage/markdown/serializer.ts";
+
+/** Opens the public persistence API for a Core instance in tests. */
+export function coreFileSystem(core: Core): FileSystem {
+	return (core as unknown as { storage: { filesystem: FileSystem } }).storage.filesystem;
+}
 
 /**
  * Root for every test project and Git template. It lives in the operating-system temp directory,
@@ -22,11 +27,6 @@ import { serializeTask } from "../storage/markdown/serializer.ts";
  * workspace, and every run would leave its fixtures behind in the working tree. The test preload
  * points `TMPDIR` at a disposable worker directory and removes it after the suite completes.
  */
-/** Test-only access to the FileSystem a Core keeps private to Storage. */
-export function coreFileSystem(core: Core): FileSystem {
-	return (core as unknown as { filesystem: FileSystem }).filesystem;
-}
-
 const TEST_TMP_ROOT = ((): string => {
 	try {
 		return join(realpathSync(tmpdir()), "agentic-workspace-tests");
@@ -94,19 +94,19 @@ export async function commitSamePathBranchTaskVariant(
 	branchTask: Task,
 	distinctBranchPath?: string,
 ): Promise<void> {
-	const taskPath = await coreFileSystem(core).saveTask(localTask);
-	await $`git add .`.cwd(coreFileSystem(core).rootDir).quiet();
-	await $`git commit -m "Add local task"`.cwd(coreFileSystem(core).rootDir).quiet();
+	const taskPath = await core.createTask(localTask);
+	await $`git add .`.cwd(core.projectRoot).quiet();
+	await $`git commit -m "Add local task"`.cwd(core.projectRoot).quiet();
 
-	await $`git switch -c progressed-task-variant`.cwd(coreFileSystem(core).rootDir).quiet();
+	await $`git switch -c progressed-task-variant`.cwd(core.projectRoot).quiet();
 	if (distinctBranchPath) {
 		await $`git rm -- ${taskPath}`.cwd(coreFileSystem(core).rootDir).quiet();
 	}
 	const branchTaskPath = distinctBranchPath ?? taskPath;
 	await Bun.write(branchTaskPath, serializeTask(branchTask));
-	await $`git add -- ${branchTaskPath}`.cwd(coreFileSystem(core).rootDir).quiet();
-	await $`git commit -m "Progress padded task variant"`.cwd(coreFileSystem(core).rootDir).quiet();
-	await $`git switch main`.cwd(coreFileSystem(core).rootDir).quiet();
+	await $`git add -- ${branchTaskPath}`.cwd(core.projectRoot).quiet();
+	await $`git commit -m "Progress padded task variant"`.cwd(core.projectRoot).quiet();
+	await $`git switch main`.cwd(core.projectRoot).quiet();
 }
 
 /**
@@ -275,7 +275,7 @@ export async function initializeTestProject(
 ): Promise<void> {
 	await initializeTestProjectWithOptions(core, projectName, { agenticWorkspaceDirectory });
 	if (commitFixture) {
-		const repoRoot = await core.git.stageAgenticWorkspaceDirectory(coreFileSystem(core).agenticWorkspaceDirName);
+		const repoRoot = await core.git.stageAgenticWorkspaceDirectory(relative(core.projectRoot, core.workspaceDirectory));
 		await core.git.commitChanges(`agentic-workspace: Initialize agentic-workspace project: ${projectName}`, repoRoot);
 	}
 }

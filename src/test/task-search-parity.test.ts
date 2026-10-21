@@ -1,67 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { mkdir } from "node:fs/promises";
-import { Writable } from "node:stream";
-import { runCli } from "../cli/register.ts";
 import { Core } from "../controller/agentic-workspace.ts";
 import { withReadiness } from "../controller/task-detail.ts";
 import { NO_MILESTONE_FILTER_VALUE, type TaskFilterOptions, TaskSearchIndex } from "../model/task/task-search.ts";
 import type { Task, TaskSearchResult } from "../model/types.ts";
 import type { FileSystem } from "../storage/file-system.ts";
+import { runInProcessCli } from "./in-process-cli.ts";
 import { coreFileSystem, createUniqueTestDir, initializeFilesystemTestProject, safeCleanup } from "./test-utils.ts";
-
-const cliCommand = ["agentic-workspace"];
-
-function $(parts: TemplateStringsArray, ...values: unknown[]) {
-	const source = parts.reduce(
-		(text, part, index) =>
-			`${text}${part}${Array.isArray(values[index]) ? values[index].map((value) => JSON.stringify(value)).join(" ") : values[index] === undefined ? "" : JSON.stringify(values[index])}`,
-		"",
-	);
-	const args =
-		source
-			.match(/"(?:\\.|[^"\\])*"|'[^']*'|[^\s]+/g)
-			?.map((arg) =>
-				arg.startsWith('"') ? (JSON.parse(arg) as string) : arg.startsWith("'") ? arg.slice(1, -1) : arg,
-			) ?? [];
-	const config: { cwd?: string; nothrow?: boolean } = {};
-	const result = async () => {
-		const stdout: string[] = [];
-		const stderr: string[] = [];
-		const out = new Writable({
-			write: (chunk, _encoding, done) => {
-				stdout.push(chunk.toString());
-				done();
-			},
-		});
-		const err = new Writable({
-			write: (chunk, _encoding, done) => {
-				stderr.push(chunk.toString());
-				done();
-			},
-		});
-		const exitCode = await runCli(args.slice(cliCommand.length), { cwd: config.cwd, stdout: out, stderr: err });
-		const value = { exitCode, stdout: stdout.join(""), stderr: stderr.join("") };
-		if (value.exitCode && !config.nothrow) throw new Error(value.stderr || `CLI exited with ${value.exitCode}`);
-		return value;
-	};
-	const chain = {
-		cwd(value: string) {
-			config.cwd = value;
-			return chain;
-		},
-		nothrow() {
-			config.nothrow = true;
-			return chain;
-		},
-		quiet() {
-			return result();
-		},
-		async text() {
-			return (await result()).stdout;
-		},
-	};
-	return chain;
-}
 
 /**
  * The local one-shot index (`task list --search`, the TUI views) and the
@@ -292,7 +237,7 @@ describe("filter wiring across surfaces", () => {
 	});
 
 	it("does not expose unlisted task-list filters", async () => {
-		const result = await $`${cliCommand} task list --labels backend --plain`.cwd(testDir).nothrow().quiet();
+		const result = await runInProcessCli(["task", "list", "--labels", "backend", "--plain"], { cwd: testDir });
 		expect(result.exitCode).not.toBe(0);
 		expect(result.stderr.toString()).toContain("unknown option '--labels'");
 	});
@@ -309,10 +254,10 @@ describe("filter wiring across surfaces", () => {
 			.map((result) => result.task.title);
 		expect(searchTitles).toEqual(expected);
 
-		const search = await $`${cliCommand} search "Wiring" --project web --plain`.cwd(testDir).quiet();
+		const search = await runInProcessCli(["search", "Wiring", "--project", "web", "--plain"], { cwd: testDir });
 		expect(search.exitCode).toBe(0);
-		expect(search.stdout.toString()).toContain("Wiring both labels");
-		expect(search.stdout.toString()).not.toContain("Wiring one label");
+		expect(search.stdout).toContain("Wiring both labels");
+		expect(search.stdout).not.toContain("Wiring one label");
 	});
 
 	it("keeps OR semantics when several projects are requested", async () => {

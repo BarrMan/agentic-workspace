@@ -3,7 +3,6 @@ task_schema_version: 3
 id: BACK-3
 title: Remove status tabs in workspace view
 status: Done
-assignee: []
 created_date: '2026-10-07 15:06'
 updated_date: '2026-10-08 04:45'
 labels: []

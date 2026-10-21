@@ -1,6 +1,6 @@
 # ADR-0002: Filesystem storage, paths, and formats
 
-**Status:** Accepted  
+**Status:** Accepted; partially superseded by [ADR-0011](0011-task-mode-approval-storage.md) for artifact approval metadata only  
 **Date:** 2026-10-18  
 **Supersedes:** None
 

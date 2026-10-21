@@ -1,7 +1,18 @@
 import { describe, expect, it } from "bun:test";
 import { TmuxCommandError, TmuxTransportError } from "libtmux";
 import type { AgentSession } from "../model/session/types.ts";
-import { BunRunner, type ProcessRunner, SessionProcess, type TmuxServer } from "./session-process.ts";
+import {
+	BunRunner,
+	type ProcessRunner,
+	SessionProcess,
+	type SessionProcessResourceContext,
+	type TmuxServer,
+} from "./session-process.ts";
+
+const resources = (): SessionProcessResourceContext => ({
+	projectRoot: process.cwd(),
+	stateRoot: async () => process.cwd(),
+});
 
 describe("BunRunner timeouts", () => {
 	it("returns the captured output and a timeout marker instead of throwing", async () => {
@@ -33,7 +44,6 @@ describe("native runtime ownership probes", () => {
 		tmuxName: "agentic-workspace-task-23-12345678",
 		cwd: process.cwd(),
 		createdAt: "2026-10-10T00:00:00.000Z",
-		status: "running",
 		nativeWorkspace: true,
 		ownerPid: 1,
 		outputPath: "/unused.log",
@@ -78,9 +88,7 @@ describe("native runtime ownership probes", () => {
 			},
 		};
 		const server = ownedServer({ dead }) as unknown as TmuxServer;
-		expect(await new SessionProcess(runner, process.cwd(), server).nativeRuntimeClassification(record)).toEqual(
-			expected,
-		);
+		expect(await new SessionProcess(runner, resources(), server).nativeRuntimeClassification(record)).toEqual(expected);
 	});
 
 	it("does not interpret an empty or malformed successful probe as absence", async () => {
@@ -92,7 +100,7 @@ describe("native runtime ownership probes", () => {
 		for (const lines of [[], ["malformed"]]) {
 			const server = { cmd: async () => lines } as unknown as TmuxServer;
 			await expect(
-				new SessionProcess(runner, process.cwd(), server).nativeRuntimeClassification(record),
+				new SessionProcess(runner, resources(), server).nativeRuntimeClassification(record),
 			).rejects.toThrow();
 		}
 	});
@@ -104,7 +112,7 @@ describe("native runtime ownership probes", () => {
 				throw new Error("Classification must not probe the OS");
 			},
 		};
-		await expect(new SessionProcess(runner, process.cwd(), server).nativeRuntimeClassification(record)).rejects.toThrow(
+		await expect(new SessionProcess(runner, resources(), server).nativeRuntimeClassification(record)).rejects.toThrow(
 			"ownership",
 		);
 	});
@@ -122,7 +130,7 @@ describe("native runtime ownership probes", () => {
 				throw new Error("Missing targets must not probe a process");
 			},
 		};
-		expect(await new SessionProcess(runner, process.cwd(), server).nativeRuntimeClassification(record)).toEqual({
+		expect(await new SessionProcess(runner, resources(), server).nativeRuntimeClassification(record)).toEqual({
 			status: "missing",
 		});
 	});
@@ -138,7 +146,7 @@ describe("native runtime ownership probes", () => {
 		await expect(
 			new SessionProcess(
 				{ run: async () => ({ exitCode: 0, stdout: "", stderr: "" }) },
-				process.cwd(),
+				resources(),
 				server,
 			).nativeRuntimeClassification(record),
 		).resolves.toEqual({ status: "missing" });
@@ -161,7 +169,7 @@ describe("native runtime ownership probes", () => {
 						throw new Error("No process probe expected");
 					},
 				},
-				process.cwd(),
+				resources(),
 				server,
 			).nativeRuntimeClassification(record),
 		).rejects.toThrow();
@@ -181,9 +189,7 @@ describe("native runtime ownership probes", () => {
 				throw new Error("An unavailable server must not probe the OS");
 			},
 		};
-		await expect(
-			new SessionProcess(runner, process.cwd(), server).nativeRuntimeClassification(record),
-		).rejects.toThrow();
+		await expect(new SessionProcess(runner, resources(), server).nativeRuntimeClassification(record)).rejects.toThrow();
 	});
 
 	it("preserves alive live/dead numeric results and its canonical exact missing stderr", async () => {
@@ -195,7 +201,7 @@ describe("native runtime ownership probes", () => {
 			expect(
 				await new SessionProcess(
 					{ run: async () => ({ exitCode: 0, stdout: "", stderr: "" }) },
-					process.cwd(),
+					resources(),
 					server,
 				).alive(record),
 			).toEqual({
@@ -210,7 +216,7 @@ describe("native runtime ownership probes", () => {
 		expect(
 			await new SessionProcess(
 				{ run: async () => ({ exitCode: 0, stdout: "", stderr: "" }) },
-				process.cwd(),
+				resources(),
 				missingServer,
 			).alive(record),
 		).toEqual({
@@ -241,7 +247,7 @@ describe("native runtime ownership probes", () => {
 							throw error;
 						},
 					},
-					process.cwd(),
+					resources(),
 					server,
 				).nativeRuntimeClassification(record),
 			).rejects.toThrow();
@@ -258,7 +264,7 @@ describe("native runtime ownership probes", () => {
 			await expect(
 				new SessionProcess(
 					{ run: async () => ({ exitCode: 0, stdout: "", stderr: "" }) },
-					process.cwd(),
+					resources(),
 					server as unknown as TmuxServer,
 				).nativeRuntimeClassification(record),
 			).rejects.toThrow();
@@ -270,7 +276,7 @@ describe("native runtime ownership probes", () => {
 		await expect(
 			new SessionProcess(
 				{ run: async () => ({ exitCode: 0, stdout: "", stderr: "" }) },
-				process.cwd(),
+				resources(),
 				server,
 			).nativeRuntimeClassification(record),
 		).rejects.toThrow("ownership");

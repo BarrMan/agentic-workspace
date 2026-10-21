@@ -1,4 +1,6 @@
 import { describe, expect, it } from "bun:test";
+import { parseTaskListRequest } from "../cli/features/tasks/list-parse.ts";
+import type { Core } from "../index.ts";
 import { TaskSearchIndex } from "../model/task/task-search.ts";
 
 describe("task search status filtering", () => {
@@ -27,5 +29,20 @@ describe("task search status filtering", () => {
 	it("treats a skipped empty filter differently from a nonempty selection", () => {
 		expect(TaskSearchIndex.apply(tasks, { status: ["", "  "] })).toHaveLength(3);
 		expect(TaskSearchIndex.apply(tasks, { status: "missing" })).toEqual([]);
+	});
+
+	it("passes original status spelling from list options to exact validation", async () => {
+		const received: string[][] = [];
+		const request = await parseTaskListRequest({} as Core, { status: [" In Progress "] }, [], {
+			statusList: async (_core, values) => {
+				received.push(values);
+				return null;
+			},
+			priority: async () => null,
+			types: async () => null,
+			projects: async () => null,
+		});
+		expect(request).toBeNull();
+		expect(received).toEqual([[" In Progress "]]);
 	});
 });

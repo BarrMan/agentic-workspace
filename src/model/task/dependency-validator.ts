@@ -50,11 +50,38 @@ export class DependencyValidator {
 	 * exactly that ID would become a self-dependency the moment the record is written under it.
 	 */
 	async validate(dependencies: string[], target?: Task): Promise<{ valid: string[]; invalid: string[] }> {
+		const corpus = await this.loadCorpus();
+		return await this.validateAgainstCorpus(dependencies, target, corpus);
+	}
+
+	/** Validates replacement and additive edits against one loaded corpus. */
+	async validateUpdates(
+		updates: { readonly replacement?: string[]; readonly additions?: string[] },
+		target?: Task,
+	): Promise<{
+		replacement?: { valid: string[]; invalid: string[] };
+		additions?: { valid: string[]; invalid: string[] };
+	}> {
+		const corpus = await this.loadCorpus();
+		return {
+			...(updates.replacement === undefined
+				? {}
+				: { replacement: await this.validateAgainstCorpus(updates.replacement, target, corpus) }),
+			...(updates.additions === undefined
+				? {}
+				: { additions: await this.validateAgainstCorpus(updates.additions, target, corpus) }),
+		};
+	}
+
+	private async validateAgainstCorpus(
+		dependencies: string[],
+		target: Task | undefined,
+		corpus: DependencyCorpus,
+	): Promise<{ valid: string[]; invalid: string[] }> {
 		const valid: string[] = [];
 		const invalid: string[] = [];
 		if (dependencies.length === 0) return { valid, invalid };
 
-		const corpus = await this.loadCorpus();
 		const known = [...corpus.tasks, ...corpus.completed, ...corpus.archived];
 		for (const dependency of dependencies) {
 			await this.validateInput(dependency, known, target, valid, invalid);

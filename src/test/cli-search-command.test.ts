@@ -1,72 +1,10 @@
 import { afterAll, beforeAll, describe, expect, it } from "bun:test";
 import { mkdir } from "node:fs/promises";
-import { Writable } from "node:stream";
-import { runCli } from "../cli/register.ts";
 import { Core } from "../index.ts";
+import { runInProcessCli } from "./in-process-cli.ts";
 import { createUniqueTestDir, initializeFilesystemTestProject, safeCleanup } from "./test-utils.ts";
 
 let TEST_DIR: string;
-const cliCommand = ["agentic-workspace"];
-let runQueue = Promise.resolve();
-
-function $(parts: TemplateStringsArray, ...values: unknown[]) {
-	const source = parts.reduce(
-		(text, part, index) =>
-			`${text}${part}${Array.isArray(values[index]) ? values[index].map((value) => JSON.stringify(value)).join(" ") : values[index] === undefined ? "" : JSON.stringify(values[index])}`,
-		"",
-	);
-	const args =
-		source
-			.match(/"(?:\\.|[^"\\])*"|'[^']*'|[^\s]+/g)
-			?.map((arg) =>
-				arg.startsWith('"') ? (JSON.parse(arg) as string) : arg.startsWith("'") ? arg.slice(1, -1) : arg,
-			) ?? [];
-	const config: { cwd?: string; nothrow?: boolean } = {};
-	const result = async () => {
-		const stdout: string[] = [];
-		const stderr: string[] = [];
-		const out = new Writable({
-			write: (chunk, _encoding, done) => {
-				stdout.push(chunk.toString());
-				done();
-			},
-		});
-		const err = new Writable({
-			write: (chunk, _encoding, done) => {
-				stderr.push(chunk.toString());
-				done();
-			},
-		});
-		const invocation = runQueue.then(() =>
-			runCli(args.slice(cliCommand.length), { cwd: config.cwd, stdout: out, stderr: err }),
-		);
-		runQueue = invocation.then(
-			() => undefined,
-			() => undefined,
-		);
-		const exitCode = await invocation;
-		const value = { exitCode, stdout: stdout.join(""), stderr: stderr.join("") };
-		if (value.exitCode && !config.nothrow) throw new Error(value.stderr || `CLI exited with ${value.exitCode}`);
-		return value;
-	};
-	const chain = {
-		cwd(value: string) {
-			config.cwd = value;
-			return chain;
-		},
-		nothrow() {
-			config.nothrow = true;
-			return chain;
-		},
-		quiet() {
-			return result();
-		},
-		async text() {
-			return (await result()).stdout;
-		},
-	};
-	return chain;
-}
 
 describe("CLI search command", () => {
 	beforeAll(async () => {
@@ -97,7 +35,7 @@ describe("CLI search command", () => {
 			dependencies: [],
 			rawContent: "Follow-up work",
 			description: "Follow-up work",
-			priority: "high",
+			priority: "High",
 			modifiedFiles: ["src/core/search-service.ts"],
 		});
 	});
@@ -107,7 +45,7 @@ describe("CLI search command", () => {
 	});
 
 	it("returns matching tasks in plain output", async () => {
-		const result = await $`${cliCommand} search central --plain`.cwd(TEST_DIR).quiet();
+		const result = await runInProcessCli(["search", "central", "--plain"], { cwd: TEST_DIR });
 
 		expect(result.exitCode).toBe(0);
 		const stdout = result.stdout.toString();
@@ -116,43 +54,60 @@ describe("CLI search command", () => {
 	});
 
 	it("honors status and priority filters for task results", async () => {
-		const statusResult = await $`${cliCommand} search follow-up --type task --status "In Progress" --plain`
-			.cwd(TEST_DIR)
-			.quiet();
+		const statusResult = await runInProcessCli(
+			["search", "follow-up", "--type", "task", "--status", "In Progress", "--plain"],
+			{ cwd: TEST_DIR },
+		);
 		expect(statusResult.exitCode).toBe(0);
 		const statusStdout = statusResult.stdout.toString();
 		expect(statusStdout).toContain("TASK-2 - High priority follow-up");
 		expect(statusStdout).not.toContain("TASK-1 - Central search integration");
 
-		const priorityResult = await $`${cliCommand} search follow-up --type task --priority high --plain`
-			.cwd(TEST_DIR)
-			.quiet();
-		expect(priorityResult.exitCode).toBe(0);
-		const priorityStdout = priorityResult.stdout.toString();
+		const priorityResult = await runInProcessCli(
+			["search", "follow-up", "--type", "task", "--priority", "high", "--plain"],
+			{ cwd: TEST_DIR },
+		);
+		expect(priorityResult.exitCode).toBe(1);
+		const exactPriorityResult = await runInProcessCli(
+			["search", "follow-up", "--type", "task", "--priority", "High", "--plain"],
+			{ cwd: TEST_DIR },
+		);
+		expect(exactPriorityResult.exitCode).toBe(0);
+		const priorityStdout = exactPriorityResult.stdout.toString();
 		expect(priorityStdout).toContain("TASK-2 - High priority follow-up");
+
+		const paddedStatusResult = await runInProcessCli(
+			["search", "follow-up", "--type", "task", "--status", " In Progress ", "--plain"],
+			{ cwd: TEST_DIR },
+		);
+		expect(paddedStatusResult.exitCode).toBe(1);
 	});
 
 	it("rejects pagination and result-limit options", async () => {
-		const result = await $`${cliCommand} search search --plain --limit 1`.cwd(TEST_DIR).nothrow().quiet();
+		const result = await runInProcessCli(["search", "search", "--plain", "--limit", "1"], { cwd: TEST_DIR });
 		const output = result.stdout.toString() + result.stderr.toString();
 
 		expect(result.exitCode).toBe(1);
 		expect(output).toContain("unknown option '--limit'");
-		const help = await $`${cliCommand} search --help`.cwd(TEST_DIR).text();
+		const helpResult = await runInProcessCli(["search", "--help"], { cwd: TEST_DIR });
+		expect(helpResult.exitCode).toBe(0);
+		const help = helpResult.stdout;
 		expect(help).not.toContain("--max-count");
 		expect(help).not.toContain("--skip");
 		expect(help).not.toContain("--limit");
 	});
 
 	it("finds tasks by modified file path", async () => {
-		const queryResult = await $`${cliCommand} search "src/web/App.tsx" --type task --plain`.cwd(TEST_DIR).quiet();
+		const queryResult = await runInProcessCli(["search", "src/web/App.tsx", "--type", "task", "--plain"], {
+			cwd: TEST_DIR,
+		});
 		expect(queryResult.exitCode).toBe(0);
 		const queryStdout = queryResult.stdout.toString();
 		expect(queryStdout).toContain("TASK-1 - Central search integration");
 
-		const filterResult = await $`${cliCommand} search --modified-file core/search-service --plain`
-			.cwd(TEST_DIR)
-			.quiet();
+		const filterResult = await runInProcessCli(["search", "--modified-file", "core/search-service", "--plain"], {
+			cwd: TEST_DIR,
+		});
 		expect(filterResult.exitCode).toBe(0);
 		const filterStdout = filterResult.stdout.toString();
 		expect(filterStdout).toContain("TASK-2 - High priority follow-up");

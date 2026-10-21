@@ -16,6 +16,7 @@ it("rejects a mode-less project before acquiring stores or a terminal, without c
 	const core = {
 		projectRoot: root,
 		getStoredConfig: async () => ({ agentConfiguration: getBuiltInAgentConfiguration() }),
+		getProjectModeCatalog: async () => requireProjectModeCatalog(getBuiltInAgentConfiguration()),
 		filesystem: {
 			rootDir: root,
 			agenticWorkspaceDir: root,

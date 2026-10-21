@@ -6,6 +6,7 @@
  */
 
 import { terminateTree } from "@3leaps/sysprims";
+import { isMissingTmuxTarget } from "../lib/process-tree.ts";
 
 /** Prefix every test-owned socket label carries. `default` and `main` can never match. */
 export const TEST_TMUX_SOCKET_PREFIX = "agentic-workspace-test";
@@ -31,15 +32,24 @@ export function killTmuxSocketPaneGroups(
 	if (!tmuxBinary) return;
 	const listed = Bun.spawnSync([tmuxBinary, "-f", "/dev/null", "-L", socket, "list-panes", "-a", "-F", "#{pane_pid}"], {
 		stdout: "pipe",
-		stderr: "ignore",
+		stderr: "pipe",
 	});
-	if (listed.exitCode !== 0) return;
+	if (listed.exitCode !== 0) {
+		const output = `${listed.stdout.toString()}${listed.stderr.toString()}`;
+		if (isMissingTmuxTarget(output)) return;
+		throw new Error(`Could not list panes on isolated tmux socket ${socket} (exit ${listed.exitCode}): ${output}`);
+	}
+	const errors: unknown[] = [];
 	for (const line of listed.stdout.toString().split("\n")) {
 		const pid = Number.parseInt(line.trim(), 10);
 		if (Number.isFinite(pid)) {
 			try {
-				terminateTree(pid, { grace_timeout_ms: 0, kill_timeout_ms: 0 });
-			} catch {}
+				const result = terminateTree(pid, { grace_timeout_ms: 1_000, kill_timeout_ms: 1_000 });
+				if (!result.exited) errors.push(new Error(`Pane process group ${pid} survived termination`));
+			} catch (error) {
+				errors.push(error);
+			}
 		}
 	}
+	if (errors.length) throw new AggregateError(errors, "Failed to terminate every pane process group");
 }

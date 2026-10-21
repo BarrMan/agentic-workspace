@@ -1,83 +1,49 @@
-import type { RunningExecution, RunningExecutionEvent, SessionLaunchContext } from "../../runtime/harness.ts";
-import { AGENT_SESSION_STATUS, type AgentActivity, type AgentSession, type ModeId } from "./types.ts";
-
-export type SessionStartupCheckpointPhase = "identity" | "ready";
-export type SessionCheckpointOrigin = {
-	readonly kind: "session";
-	readonly taskId: string;
-	readonly modeId: ModeId;
-	readonly sessionId: string;
-};
-export type ExpectedSessionMembership = {
-	readonly kind: "present";
-	readonly taskId: string;
-	readonly modeId: ModeId;
-	readonly sessionId: string;
-};
-
-export type Immutable<T> = T extends (...args: never[]) => unknown
-	? T
-	: T extends readonly (infer Item)[]
-		? readonly Immutable<Item>[]
-		: T extends object
-			? { readonly [Key in keyof T]: Immutable<T[Key]> }
-			: T;
-
-/** Startup transitions apply only to an already registered session. */
-export interface SessionStartupCheckpoint {
-	readonly phase: SessionStartupCheckpointPhase;
-	readonly origin: SessionCheckpointOrigin;
-	readonly expectedMembership: ExpectedSessionMembership;
-	readonly record: Immutable<AgentSession>;
-	readonly applyTo: (current: AgentSession) => AgentSession;
-}
-
-export interface SessionUpdateCheckpoint {
-	readonly phase: "update";
-	readonly reason: "activate" | "stop" | "park" | "finish" | "observation";
-	readonly origin: Extract<SessionCheckpointOrigin, { kind: "session" }>;
-	readonly expectedMembership: Extract<ExpectedSessionMembership, { kind: "present" }>;
-	readonly previous: Immutable<AgentSession>;
-	readonly record: Immutable<AgentSession>;
-	readonly applyTo: (current: AgentSession) => AgentSession;
-}
-
-export type LifecycleCheckpoint = SessionStartupCheckpoint | SessionUpdateCheckpoint;
-export type LifecycleCheckpointSink = (checkpoint: LifecycleCheckpoint) => Promise<void>;
-export interface SessionPublication {
-	readonly checkpoint: LifecycleCheckpointSink;
-}
-export interface SessionLaunchOperation extends SessionPublication {
-	readonly context: SessionLaunchContext;
-}
+import type {
+	AgentActivity,
+	AgentSession,
+	ModeId,
+	PreparedSessionStop,
+	RetainedSessionObservation,
+	RunningExecution,
+	RunningExecutionEvent,
+	SessionActivity,
+	SessionAskContext,
+	SessionLaunchContext,
+	SessionSnapshot,
+	TerminalAttachment,
+	Unsubscribe,
+} from "./types.ts";
 /** Provider and execution-host operations are kept behind this SessionRuntime boundary. */
 export interface SessionRuntime {
 	start(context: SessionLaunchContext): Promise<RunningExecution>;
 	resume(providerSessionId: string, context: SessionLaunchContext): Promise<RunningExecution>;
 	stop(execution: RunningExecution): Promise<void>;
 	observe(execution: RunningExecution, listener: (event: RunningExecutionEvent) => void): Unsubscribe;
+	observeRetained(record: Readonly<AgentSession>): Promise<RetainedSessionObservation>;
+	prepareStop(record: Readonly<AgentSession>): Promise<PreparedSessionStop>;
+	attach(record: Readonly<AgentSession>): Promise<TerminalAttachment>;
+	detach(attachment: TerminalAttachment): Promise<void>;
+	ask(providerSessionId: string, context: SessionAskContext): Promise<{ readonly answer: string }>;
 }
 export interface SessionEvent {
 	readonly kind: "turn-completed" | "permission-wait" | "execution-exit" | "activity";
 	readonly activity?: AgentActivity;
-	readonly status: AgentSession["status"];
 	readonly executionIdentity: RunningExecution["identity"];
-	readonly record: Immutable<AgentSession>;
+	readonly snapshot: SessionSnapshot;
 }
-
-type Unsubscribe = () => void;
 
 export class Session {
 	readonly id: string;
 	private currentRecord: Readonly<AgentSession>;
 	private currentExecution?: RunningExecution;
 	private providerSessionId?: string;
-	private executionExitObserved = false;
+	private snapshot: SessionSnapshot = { state: "stopped", activity: "unknown", idleSince: null };
 	private readonly modeId: ModeId;
 	private readonly runtime: SessionRuntime;
 	private stopObserving?: Unsubscribe;
 	private readonly listeners = new Set<(event: SessionEvent) => void>();
 	private disposed = false;
+	private retainedObservation: RetainedSessionObservation = "absent";
 
 	constructor(record: Readonly<AgentSession>, modeId: ModeId, runtime: SessionRuntime) {
 		this.id = record.id;
@@ -95,71 +61,68 @@ export class Session {
 		return this.currentExecution;
 	}
 
-	async start(operation: SessionLaunchOperation): Promise<void> {
-		if (this.modeId !== operation.context.modeId) throw new Error(`Session ${this.id} belongs to another mode`);
-		const execution = await this.runtime.start(operation.context);
-		await this.installExecution(execution);
-		await this.emitCheckpoint(operation, "identity");
-		await this.emitCheckpoint(operation, "ready", AGENT_SESSION_STATUS.RUNNING);
+	get view(): SessionSnapshot {
+		return this.snapshot;
 	}
 
-	async resume(operation: SessionLaunchOperation): Promise<void> {
-		if (this.modeId !== operation.context.modeId) throw new Error(`Session ${this.id} belongs to another mode`);
+	get executionOwnership(): "current" | "external" | "none" | "unknown" {
+		if (this.currentExecution) return "current";
+		if (this.retainedObservation === "live") return "external";
+		return this.retainedObservation === "absent" ? "none" : "unknown";
+	}
+
+	async start(context: SessionLaunchContext): Promise<void> {
+		this.assertMode(context);
+		const execution = await this.runtime.start(context);
+		this.installExecution(execution, { state: "running", activity: "working", idleSince: null });
+	}
+
+	async resume(context: SessionLaunchContext): Promise<void> {
+		this.assertMode(context);
 		if (!this.providerSessionId) throw new Error(`Session ${this.id} has no retained provider conversation`);
-		const execution = await this.runtime.resume(this.providerSessionId, operation.context);
-		await this.installExecution(execution);
-		const resumed = { ...this.currentRecord, endedAt: undefined, error: undefined };
-		delete resumed.endedAt;
-		delete resumed.error;
-		this.currentRecord = resumed;
-		await this.emitCheckpoint(operation, "identity", undefined, true);
-		await this.emitCheckpoint(operation, "ready", AGENT_SESSION_STATUS.RUNNING, true);
+		this.snapshot = { state: "starting", activity: "unknown", idleSince: null };
+		const execution = await this.runtime.resume(this.providerSessionId, context);
+		this.installExecution(execution, { state: "parked", activity: "unknown", idleSince: null });
 	}
 
-	async stop(publication: SessionPublication): Promise<void> {
+	async stop(): Promise<void> {
 		const execution = this.currentExecution;
-		const previous = this.currentRecord;
-		if (execution) {
-			await this.runtime.stop(execution);
-			this.executionExitObserved = true;
-			this.releaseExecution(execution);
-		} else if (!this.executionExitObserved) {
-			throw new Error(`Cannot confirm session ${this.id} stopped without a current execution or observed exit.`);
+		if (!execution) throw new Error(`Session ${this.id} requires prepared stop without a current execution.`);
+		await this.stopCurrent(execution);
+	}
+
+	async observeRetained(): Promise<SessionSnapshot> {
+		if (this.currentExecution) return this.snapshot;
+		this.retainedObservation = await this.runtime.observeRetained(this.currentRecord);
+		this.snapshot =
+			this.retainedObservation === "absent"
+				? { state: "stopped", activity: "unknown", idleSince: null }
+				: this.retainedObservation === "live"
+					? { state: "parked", activity: "unknown", idleSince: null }
+					: { state: "unknown", activity: "unknown", idleSince: null };
+		return this.snapshot;
+	}
+
+	async prepareStop(): Promise<PreparedSessionStop> {
+		if (this.currentExecution) {
+			const execution = this.currentExecution;
+			return { stop: async () => await this.stopCurrent(execution) };
 		}
-		const record = {
-			...previous,
-			status: AGENT_SESSION_STATUS.STOPPED,
-			endedAt: new Date().toISOString(),
-		} as AgentSession;
-		delete record.ownerPid;
-		await this.emitUpdate(publication, "stop", record);
+		const prepared = await this.runtime.prepareStop(this.currentRecord);
+		return { stop: async () => await this.stopPrepared(prepared) };
 	}
 
-	async park(publication: SessionPublication): Promise<void> {
-		const previous = this.currentRecord;
-		const record = {
-			...previous,
-			status: AGENT_SESSION_STATUS.PARKED,
-			ownerPid: undefined,
-		} as AgentSession;
-		delete record.ownerPid;
-		delete record.error;
-		delete record.endedAt;
-		await this.emitUpdate(publication, "park", record);
+	async ask(context: SessionAskContext): Promise<{ readonly answer: string }> {
+		if (!this.providerSessionId) throw new Error(`Session ${this.id} has no retained provider conversation`);
+		return await this.runtime.ask(this.providerSessionId, context);
 	}
 
-	async finish(publication: SessionPublication, error?: string): Promise<void> {
-		const previous = this.currentRecord;
-		const record = {
-			...previous,
-			status: error ? AGENT_SESSION_STATUS.FAILED : AGENT_SESSION_STATUS.STOPPED,
-			error,
-			endedAt: new Date().toISOString(),
-			ownerPid: undefined,
-		} as AgentSession;
-		delete record.ownerPid;
-		if (error === undefined) delete record.error;
-		await this.emitUpdate(publication, "finish", record);
+	async attach(): Promise<TerminalAttachment> {
+		return await this.runtime.attach(this.currentRecord);
+	}
+
+	async detach(attachment: TerminalAttachment): Promise<void> {
+		await this.runtime.detach(attachment);
 	}
 
 	subscribe(listener: (event: SessionEvent) => void): Unsubscribe {
@@ -172,11 +135,16 @@ export class Session {
 		return { ...this.currentRecord };
 	}
 
-	private installExecution(execution: RunningExecution): void {
+	private installExecution(execution: RunningExecution, snapshot: SessionSnapshot): void {
 		const previous = this.currentExecution;
 		this.releaseExecution(previous);
 		this.currentExecution = execution;
-		this.executionExitObserved = false;
+		this.snapshot = snapshot;
+		const providerSessionId = execution.providerConversationId ?? execution.identity.nativeSessionId;
+		if (providerSessionId) {
+			this.providerSessionId = providerSessionId;
+			this.currentRecord = { ...this.currentRecord, nativeSessionId: providerSessionId };
+		}
 		if (this.disposed) return;
 		this.stopObserving = this.runtime.observe(execution, (event) => {
 			if (this.currentExecution !== execution || this.disposed) return;
@@ -192,95 +160,18 @@ export class Session {
 		if (this.currentExecution === execution) this.currentExecution = undefined;
 	}
 
-	private async emitCheckpoint(
-		publication: SessionPublication,
-		phase: SessionStartupCheckpointPhase,
-		status: AgentSession["status"] = this.record.status,
-		clearTerminal = false,
-	): Promise<void> {
-		const record: AgentSession = { ...this.record, status };
-		const providerSessionId =
-			this.currentExecution?.providerConversationId ?? this.currentExecution?.identity.nativeSessionId;
-		if (phase === "identity" && providerSessionId) {
-			this.providerSessionId = providerSessionId;
-			record.nativeSessionId = providerSessionId;
-		}
-		const fields: Partial<AgentSession> = {};
-		const clear: (keyof AgentSession)[] = [];
-		if (phase === "identity" && providerSessionId) fields.nativeSessionId = providerSessionId;
-		if (phase === "ready") fields.status = status;
-		if (clearTerminal) clear.push("error", "endedAt");
-		await publication.checkpoint({
-			phase,
-			origin: { kind: "session", taskId: record.taskId, modeId: this.modeId, sessionId: this.id },
-			expectedMembership: {
-				kind: "present",
-				taskId: record.taskId,
-				modeId: this.modeId,
-				sessionId: this.id,
-			},
-			record,
-			applyTo: (current) => this.applyLifecycleFields(current, fields, clear),
-		});
-		this.currentRecord = record;
+	private async stopCurrent(execution: RunningExecution): Promise<void> {
+		if (this.currentExecution !== execution) throw new Error(`Session ${this.id} execution changed before stop.`);
+		await this.runtime.stop(execution);
+		this.releaseExecution(execution);
+		this.snapshot = { state: "stopped", activity: "unknown", idleSince: null };
+		this.retainedObservation = "absent";
 	}
 
-	private async emitUpdate(
-		publication: SessionPublication,
-		reason: "activate" | "stop" | "park" | "finish" | "observation",
-		record: AgentSession,
-	): Promise<void> {
-		const previous = this.currentRecord;
-		const fields: Partial<AgentSession> = {};
-		const clear: (keyof AgentSession)[] = [];
-		switch (reason) {
-			case "activate":
-				fields.status = record.status;
-				clear.push("error", "endedAt");
-				break;
-			case "stop":
-				fields.status = record.status;
-				fields.endedAt = record.endedAt;
-				clear.push("ownerPid");
-				break;
-			case "park":
-				fields.status = record.status;
-				clear.push("ownerPid", "error", "endedAt");
-				break;
-			case "finish":
-				fields.status = record.status;
-				fields.endedAt = record.endedAt;
-				if (record.error === undefined) clear.push("error");
-				else fields.error = record.error;
-				clear.push("ownerPid");
-				break;
-			case "observation":
-				fields.status = record.status;
-				if (record.endedAt !== undefined) fields.endedAt = record.endedAt;
-				if (record.error === undefined) clear.push("error");
-				else fields.error = record.error;
-				break;
-		}
-		await publication.checkpoint({
-			phase: "update",
-			reason,
-			origin: { kind: "session", taskId: record.taskId, modeId: this.modeId, sessionId: this.id },
-			expectedMembership: { kind: "present", taskId: record.taskId, modeId: this.modeId, sessionId: this.id },
-			previous,
-			record,
-			applyTo: (current) => this.applyLifecycleFields(current, fields, clear),
-		});
-		this.currentRecord = record;
-	}
-
-	private applyLifecycleFields(
-		current: AgentSession,
-		fields: Partial<AgentSession>,
-		clear: (keyof AgentSession)[],
-	): AgentSession {
-		const result = { ...current, ...fields };
-		for (const key of clear) delete result[key];
-		return result;
+	private async stopPrepared(prepared: PreparedSessionStop): Promise<void> {
+		await prepared.stop();
+		this.snapshot = { state: "stopped", activity: "unknown", idleSince: null };
+		this.retainedObservation = "absent";
 	}
 
 	private publish(event: RunningExecutionEvent, execution: RunningExecution): void {
@@ -292,19 +183,37 @@ export class Session {
 		}[event.kind];
 		if (capability !== "supported") return;
 		if (event.kind === "execution-exit") {
-			this.executionExitObserved = true;
-			const failed = event.exitCode !== undefined && event.exitCode !== 0;
-			this.currentRecord = {
-				...this.currentRecord,
-				status: failed ? AGENT_SESSION_STATUS.FAILED : AGENT_SESSION_STATUS.STOPPED,
-				endedAt: new Date().toISOString(),
-				...(failed ? { error: `Execution exited with code ${event.exitCode}` } : { error: undefined }),
-			};
+			this.snapshot = { state: "stopped", activity: "unknown", idleSince: null };
 			this.releaseExecution(execution);
+		} else {
+			const activity = this.normalizedActivity(event);
+			this.snapshot = {
+				state: this.snapshot.state === "unknown" ? "unknown" : "running",
+				activity,
+				idleSince:
+					activity === "idle" ? (this.snapshot.activity === "idle" ? this.snapshot.idleSince : event.observedAt) : null,
+			};
 		}
-		const snapshot = { ...this.currentRecord };
 		const executionIdentity = execution.identity;
-		for (const listener of this.listeners)
-			listener({ ...event, status: snapshot.status, executionIdentity, record: snapshot });
+		for (const listener of this.listeners) listener({ ...event, executionIdentity, snapshot: { ...this.snapshot } });
+	}
+
+	private assertMode(context: SessionLaunchContext): void {
+		if (this.modeId !== context.modeId) throw new Error(`Session ${this.id} belongs to another mode`);
+	}
+
+	private normalizedActivity(event: RunningExecutionEvent): SessionActivity {
+		if (event.kind === "turn-completed") return "idle";
+		if (event.kind === "permission-wait") return "waiting";
+		switch (event.activity) {
+			case "running":
+				return "working";
+			case "waiting":
+				return "waiting";
+			case "idle":
+				return "idle";
+			default:
+				return "unknown";
+		}
 	}
 }

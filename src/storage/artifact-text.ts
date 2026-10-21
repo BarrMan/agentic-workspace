@@ -19,7 +19,7 @@ export async function addSearchableArtifactText<T extends Task>(
 			let remainingBytes = MAX_SEARCHABLE_ARTIFACT_BYTES;
 			for (const entry of entries) {
 				if (remainingBytes <= 0) break;
-				const { bytes } = await artifacts.read(task.id, entry.path);
+				const bytes = await artifacts.read(task.id, entry.path);
 				const bounded = bytes.subarray(0, remainingBytes);
 				contents.push(new TextDecoder("utf-8").decode(bounded));
 				remainingBytes -= bounded.byteLength;

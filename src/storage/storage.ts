@@ -22,9 +22,11 @@ import { readRootConfiguration, rootConfigFilePath } from "./config.ts";
 import { FileSystem, type FileSystemSelection, isTaskLockError } from "./file-system.ts";
 import { parseFrontmatter, stringifyFrontmatter } from "./markdown/frontmatter.ts";
 import { parseTask } from "./markdown/parser.ts";
-import { resolveProjectStateRoot } from "./session-store.ts";
+import { type ProjectStateRootOptions, resolveProjectStateRoot, SessionStore } from "./session-store.ts";
 import { migrateTaskAndConfigFiles, type TaskConfigMigrationReport } from "./task-config-migration.ts";
 import type { CreatedTaskRollbackResult, CreatedTaskWrite } from "./types.ts";
+import { type ConfigWatcherCallbacks, watchConfigFile } from "./watchers/config-watcher.ts";
+import { ModeDeletionJournalStore, WorkspaceRequestStore } from "./workspace-control-store.ts";
 
 export interface ScannedTaskRecord {
 	location: "active" | "completed";
@@ -36,8 +38,23 @@ export interface ScannedTaskRecord {
 /** The persistence boundary for workspace records, configuration, locks, and transactions. */
 export class Storage {
 	private agentPresetMigration?: Promise<{ migratedFiles: string[] }>;
+	private sessionState?: SessionStore;
+	readonly modeDeletionJournal: ModeDeletionJournalStore;
+	readonly workspaceRequests: WorkspaceRequestStore;
 
-	constructor(private readonly filesystem: FileSystem) {}
+	static open(projectRoot: string, options: ProjectStateRootOptions = {}): Storage {
+		const filesystem = new FileSystem(projectRoot);
+		filesystem.freezeResolution();
+		return new Storage(filesystem, options);
+	}
+
+	constructor(
+		private readonly filesystem: FileSystem,
+		private readonly stateRootOptions: ProjectStateRootOptions = {},
+	) {
+		this.modeDeletionJournal = new ModeDeletionJournalStore(filesystem.rootDir);
+		this.workspaceRequests = new WorkspaceRequestStore(filesystem.rootDir);
+	}
 
 	startAgentPresetCommandMigration(): Promise<{ migratedFiles: string[] }> {
 		if (!this.agentPresetMigration) this.agentPresetMigration = this.migrateAgentPresetCommands();
@@ -45,7 +62,7 @@ export class Storage {
 	}
 
 	async migrateTaskAndConfig(): Promise<TaskConfigMigrationReport> {
-		const stateRoot = await resolveProjectStateRoot(this.filesystem.rootDir);
+		const stateRoot = await resolveProjectStateRoot(this.filesystem.rootDir, this.stateRootOptions);
 		return await migrateTaskAndConfigFiles({
 			rootConfigPath: rootConfigFilePath(),
 			projectConfigPath: this.configFilePath,
@@ -82,6 +99,26 @@ export class Storage {
 
 	get taskArtifacts() {
 		return this.filesystem.taskArtifacts;
+	}
+
+	/** Durable session histories are Storage records, not runtime-owned filesystem state. */
+	sessionStore(options: ProjectStateRootOptions = {}): SessionStore {
+		const stateRootOptions = Object.keys(options).length > 0 ? options : this.stateRootOptions;
+		if (Object.keys(stateRootOptions).length > 0) return new SessionStore(this.filesystem.rootDir, stateRootOptions);
+		if (!this.sessionState) this.sessionState = new SessionStore(this.filesystem.rootDir, stateRootOptions);
+		return this.sessionState;
+	}
+
+	async claimTaskAdmission(taskId: string): Promise<() => Promise<void>> {
+		return await this.sessionStore().claimTaskAdmission(taskId);
+	}
+
+	async claimModeAdmission(modeId: string): Promise<() => Promise<void>> {
+		return await this.sessionStore().claimModeAdmission(modeId);
+	}
+
+	watchConfig(callbacks: ConfigWatcherCallbacks): ReturnType<typeof watchConfigFile> {
+		return watchConfigFile(this.filesystem, callbacks);
 	}
 
 	async findTaskRecordPath(taskId: string): Promise<string | null> {
@@ -418,6 +455,15 @@ export class Storage {
 	async loadArchivedTasks(): Promise<Task[]> {
 		await this.waitForAgentPresetMigration();
 		return await this.filesystem.listArchivedTasks();
+	}
+
+	async loadProjectTaskIds(): Promise<string[]> {
+		const [active, completed, archived] = await Promise.all([
+			this.loadTasks(),
+			this.loadCompletedTasks(),
+			this.loadArchivedTasks(),
+		]);
+		return [...new Set([...active, ...completed, ...archived].map((task) => task.id))];
 	}
 
 	get dependencyStore(): DependencyStore {

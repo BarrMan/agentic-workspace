@@ -107,10 +107,7 @@ describe("BACK-23 canonical task container and artifact path contract", () => {
 		await mkdir(container, { recursive: true });
 		await writeFile(join(container, "task.md"), serializeTask(task("BACK-23", "Existing task")));
 		const repository = new TaskArtifactRepository({ agenticWorkspaceDirectory });
-		await expect(repository.status("BACK-23", "optional/spec.md")).resolves.toEqual({
-			path: "optional/spec.md",
-			state: "missing",
-		});
+		await expect(repository.read("BACK-23", "optional/spec.md")).rejects.toThrow();
 		expect(await Bun.file(join(container, "task.md")).exists()).toBe(true);
 		expect(await Bun.file(join(container, ".artifacts.json")).exists()).toBe(false);
 		expect(await Bun.file(join(container, "optional")).exists()).toBe(false);

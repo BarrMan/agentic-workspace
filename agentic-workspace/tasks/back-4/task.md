@@ -3,7 +3,6 @@ task_schema_version: 3
 id: BACK-4
 title: Make agentic-workspace globally available
 status: Done
-assignee: []
 created_date: '2026-10-07 15:09'
 updated_date: '2026-10-07 15:40'
 labels: []

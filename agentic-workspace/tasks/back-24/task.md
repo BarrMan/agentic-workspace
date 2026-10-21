@@ -3,7 +3,6 @@ task_schema_version: 3
 id: BACK-24
 title: Task execution loop
 status: In Progress
-assignee: []
 created_date: '2026-10-10 05:05'
 updated_date: '2026-10-10 05:06'
 labels: []

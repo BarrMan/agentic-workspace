@@ -3,7 +3,6 @@ task_schema_version: 3
 id: BACK-27
 title: Delete tasks without stopping linked sessions
 status: In Progress
-assignee: []
 created_date: '2026-10-10 17:24'
 updated_date: '2026-10-11 04:49'
 labels: []

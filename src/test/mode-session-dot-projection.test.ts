@@ -7,19 +7,12 @@ import { createTestRenderer } from "@opentui/core/testing";
 import type { AgentSession } from "../model/session/types.ts";
 import { mountOpenTuiWorkspace } from "../renderer/opentui/workspace.ts";
 import { modeSessionIndication } from "../renderer/opentui/workspace-controller.ts";
-import type { ProcessRunner } from "../runtime/session-process.ts";
 import { SessionStore } from "../storage/session-store.ts";
 
 /**
  * A row dot comes only from that task's active session in its selected mode. The compatibility
  * flattened session list is deliberately not the source of the active pointer.
  */
-class FakeRunner implements ProcessRunner {
-	async run(): Promise<{ exitCode: number; stdout: string; stderr: string }> {
-		return { exitCode: 1, stdout: "", stderr: "not a git repository" };
-	}
-}
-
 function session(id: string, taskId: string): AgentSession {
 	return {
 		id,
@@ -28,7 +21,6 @@ function session(id: string, taskId: string): AgentSession {
 		tmuxName: id,
 		cwd: "/tmp",
 		createdAt: "2026-01-01T00:00:00.000Z",
-		status: "parked",
 		outputPath: "/tmp/output",
 		bootstrapPath: "/tmp/bootstrap",
 	};
@@ -46,7 +38,7 @@ describe("workspace row dot projection", () => {
 	it("renders a plan-mode active session dot from idle activity", async () => {
 		const root = await mkdtemp(join(tmpdir(), "agentic-workspace-dot-"));
 		directories.push(root);
-		const store = new SessionStore(root, new FakeRunner());
+		const store = new SessionStore(root);
 		const id = "plan-session";
 		// Production stores a task's session under its owning mode; the default catalog mode is "plan"
 		// (config.ts getDefaultModeCatalog), not the hardcoded compatibility lane "build".
@@ -58,7 +50,7 @@ describe("workspace row dot projection", () => {
 		const plan = await store.readMode("TASK-1", "plan");
 		const active = plan.sessions.find((candidate) => candidate.id === plan.activeSessionId);
 		expect(active?.id).toBe(id);
-		const indication = modeSessionIndication(active, "idle");
+		const indication = modeSessionIndication({ state: "running", activity: "idle", idleSince: 1 });
 		expect(indication).toBe("parked");
 		const setup = await createTestRenderer({ width: 120, height: 40, exitOnCtrlC: false });
 		const mount = mountOpenTuiWorkspace(setup.renderer, setup.renderer.root as unknown as BoxRenderable, {
@@ -80,7 +72,7 @@ describe("workspace row dot projection", () => {
 	it("does not project a dot when the selected mode has no active session", async () => {
 		const root = await mkdtemp(join(tmpdir(), "agentic-workspace-dot-"));
 		directories.push(root);
-		const store = new SessionStore(root, new FakeRunner());
+		const store = new SessionStore(root);
 		const id = "build-session";
 		await store.mutateMode("TASK-1", "build", async (history) => {
 			history.sessions.push(session(id, "TASK-1"));

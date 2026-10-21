@@ -4,10 +4,9 @@ import { Console } from "node:console";
 import type { Writable } from "node:stream";
 import { Command } from "commander";
 import { findLocalDuplicateTaskIds } from "../controller/duplicate-task-detection.ts";
-import { Core } from "../index.ts";
+import { Core, createApplication, createCore } from "../index.ts";
 import { getVersion } from "../lib/version.ts";
 import { formatDuplicateTaskIdWarning } from "../model/task/duplicate-detection.ts";
-import { loadProjectModeCatalog } from "../storage/config.ts";
 import { isConfigValueError } from "../storage/file-system.ts";
 import { registerAgentWorkspaceCommands } from "./commands/agent-workspace.ts";
 import { configureHelpValues } from "./commands/help-schema.ts";
@@ -125,7 +124,7 @@ export async function runCli(
 			command.name() === "workspace" ||
 			(hasInteractiveTTY &&
 				(command.name() === "board" || (command.name() === "view" && command.parent?.name() === "board")));
-		if (opensWorkspace) await loadProjectModeCatalog(new Core(await requireProjectRoot()));
+		if (opensWorkspace) await new Core(await requireProjectRoot()).getProjectModeCatalog();
 	});
 	registerTaskCommands(program, { runtime, readOutput });
 	registerSearchCommand(program, {
@@ -145,7 +144,8 @@ export async function runCli(
 	});
 
 	registerAgentWorkspaceCommands(program, {
-		project: async () => new Core(await requireProjectRoot()),
+		project: async () => createCore(await requireProjectRoot()),
+		workspace: async () => createApplication(await requireProjectRoot()),
 	});
 	try {
 		await program.parseAsync([process.execPath, "agentic-workspace", ...argv]);

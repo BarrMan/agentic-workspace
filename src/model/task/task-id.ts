@@ -13,6 +13,10 @@ export function parseTaskId(value: string, prefix?: string): ParsedTaskId | null
 	return { prefix: idPrefix, segments: body.split(".") };
 }
 
+export function isValidTaskId(value: string): boolean {
+	return parseTaskId(value) !== null;
+}
+
 export function taskIdBody(value: string, prefix?: string): string | null {
 	if (prefix) {
 		if (!value.toLowerCase().startsWith(`${prefix.toLowerCase()}-`)) return null;

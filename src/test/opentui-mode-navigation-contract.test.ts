@@ -47,6 +47,7 @@ function setup() {
 		})}\n`,
 	);
 	const core = {
+		getProjectModeCatalog: async () => modes,
 		getStoredConfig: async () => ({
 			agentConfiguration: {
 				selectedPreset: "opencode",
@@ -95,6 +96,7 @@ function setup() {
 		},
 	} as unknown as Core;
 	const workspace = {
+		sessionApplication: { projectInventory: async () => [] },
 		listTasks: async () => [task],
 		listSessions: async (taskId: string) => ({ taskId, sessions: [] }),
 		listModeSessions: async (taskId: string, modeId: string) => ({

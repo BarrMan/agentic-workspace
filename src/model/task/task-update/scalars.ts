@@ -1,14 +1,24 @@
-import type { Task, TaskUpdateInput } from "../../types.ts";
+import { DEFAULT_STATUSES } from "../../constants.ts";
+import type { AgenticWorkspaceConfig, Milestone, Task, TaskUpdateInput } from "../../types.ts";
 import { normalizeDueDate } from "../due-date.ts";
+import { requireMilestoneId } from "../milestones.ts";
+import { formatValidPriorityValues, resolvePriorityLabel } from "../priority-config.ts";
+import {
+	formatValidProjectValues,
+	getProjectValues,
+	noProjectsConfiguredMessage,
+	resolveProjectValue,
+} from "../project-config.ts";
+import { findCanonicalStatus, formatValidStatuses } from "../status.ts";
+import { formatValidTaskTypeValues, resolveTaskTypeValue } from "../task-type-config.ts";
 
 export interface ScalarUpdateContext {
-	resolveStatus(status: string): Promise<string>;
-	normalizePriority(priority: string): Promise<string | undefined>;
-	normalizeType(type: string): Promise<string | undefined>;
-	normalizeProject(project: string): Promise<string | undefined>;
+	readonly configuration?: Pick<AgenticWorkspaceConfig, "statuses" | "priorities" | "types" | "projects"> | null;
+	readonly projectConfigPath?: string;
+	readonly milestones?: readonly Milestone[];
 }
 
-type ScalarRule = (task: Task, input: TaskUpdateInput, context: ScalarUpdateContext) => Promise<boolean>;
+type ScalarRule = (task: Task, input: TaskUpdateInput, context: ScalarUpdateContext) => boolean;
 
 function replaceString(
 	value: string | undefined,
@@ -33,7 +43,7 @@ function replaceOptional<T>(
 }
 
 const scalarRules: readonly ScalarRule[] = [
-	async (task, input) => {
+	(task, input) => {
 		if (input.title === undefined) return false;
 		const title = input.title.trim();
 		if (title.length === 0) throw new Error("Title cannot be empty.");
@@ -41,11 +51,11 @@ const scalarRules: readonly ScalarRule[] = [
 			task.title = value;
 		});
 	},
-	async (task, input) =>
+	(task, input) =>
 		replaceString(input.description, task.description, (value) => {
 			task.description = value;
 		}),
-	async (task, input) => {
+	(task, input) => {
 		if (input.dueDate === undefined) return false;
 		const dueDate = input.dueDate === null ? undefined : normalizeDueDate(input.dueDate, "Due date");
 		return replaceOptional(
@@ -57,29 +67,49 @@ const scalarRules: readonly ScalarRule[] = [
 			() => delete task.dueDate,
 		);
 	},
-	async (task, input, context) => {
+	(task, input, context) => {
 		if (input.status === undefined) return false;
-		return replaceString(await context.resolveStatus(input.status), task.status, (value) => {
+		const statuses = context.configuration?.statuses?.length ? context.configuration.statuses : DEFAULT_STATUSES;
+		const status = findCanonicalStatus(input.status, statuses);
+		if (!status)
+			throw new Error(`Invalid status: ${input.status}. Valid statuses are: ${formatValidStatuses([...statuses])}`);
+		return replaceString(status, task.status, (value) => {
 			task.status = value;
 		});
 	},
-	async (task, input, context) => {
+	(task, input, context) => {
 		if (input.priority === undefined) return false;
-		const priority = await context.normalizePriority(String(input.priority));
+		const value = String(input.priority);
+		const priority = value === "" ? undefined : resolvePriorityLabel(value, context.configuration);
+		if (value !== "" && !priority)
+			throw new Error(
+				`Invalid priority: ${value}. Valid values are: ${formatValidPriorityValues(context.configuration)}`,
+			);
 		if (task.priority === priority) return false;
 		task.priority = priority;
 		return true;
 	},
-	async (task, input, context) => {
+	(task, input, context) => {
 		if (input.type === undefined) return false;
-		const type = await context.normalizeType(String(input.type));
+		const value = String(input.type);
+		const type = value === "" ? undefined : resolveTaskTypeValue(value, context.configuration);
+		if (value !== "" && !type)
+			throw new Error(`Invalid type: ${value}. Valid types are: ${formatValidTaskTypeValues(context.configuration)}`);
 		if (task.type === type) return false;
 		task.type = type;
 		return true;
 	},
-	async (task, input, context) => {
+	(task, input, context) => {
 		if (input.project === undefined) return false;
-		const project = input.project === null ? undefined : await context.normalizeProject(input.project);
+		const value = input.project;
+		if (value !== null && value !== "" && getProjectValues(context.configuration).length === 0) {
+			throw new Error(noProjectsConfiguredMessage(context.projectConfigPath));
+		}
+		const project = value === null || value === "" ? undefined : resolveProjectValue(value, context.configuration);
+		if (value !== null && value !== "" && !project)
+			throw new Error(
+				`Invalid project: ${value}. Valid projects are: ${formatValidProjectValues(context.configuration)}`,
+			);
 		return replaceOptional(
 			task.project,
 			project,
@@ -89,9 +119,14 @@ const scalarRules: readonly ScalarRule[] = [
 			() => delete task.project,
 		);
 	},
-	async (task, input) => {
+	(task, input, context) => {
 		if (input.milestone === undefined) return false;
-		const milestone = input.milestone === null ? undefined : input.milestone.trim() || undefined;
+		const requested = input.milestone;
+		const milestone = requested === null || requested.trim() === "" ? undefined : requested;
+		if (milestone) {
+			if (!context.milestones) throw new Error("Milestones must be loaded before assigning one to a task.");
+			requireMilestoneId(milestone, context.milestones);
+		}
 		return replaceOptional(
 			task.milestone,
 			milestone,
@@ -101,7 +136,7 @@ const scalarRules: readonly ScalarRule[] = [
 			() => delete task.milestone,
 		);
 	},
-	async (task, input) => {
+	(task, input) => {
 		if (input.ordinal === undefined) return false;
 		if (typeof input.ordinal !== "number" || !Number.isFinite(input.ordinal) || input.ordinal < 0) {
 			throw new Error("Ordinal must be a non-negative number.");
@@ -115,7 +150,7 @@ const scalarRules: readonly ScalarRule[] = [
 			() => delete task.ordinal,
 		);
 	},
-	async (task, input) => {
+	(task, input) => {
 		if (input.agentConfiguration === undefined) return false;
 		const configuration = input.agentConfiguration ?? undefined;
 		if (JSON.stringify(task.agentConfiguration) === JSON.stringify(configuration)) return false;
@@ -125,12 +160,8 @@ const scalarRules: readonly ScalarRule[] = [
 	},
 ];
 
-export async function applyScalarTaskUpdates(
-	task: Task,
-	input: TaskUpdateInput,
-	context: ScalarUpdateContext,
-): Promise<boolean> {
+export function applyScalarTaskUpdates(task: Task, input: TaskUpdateInput, context: ScalarUpdateContext): boolean {
 	let mutated = false;
-	for (const rule of scalarRules) mutated = (await rule(task, input, context)) || mutated;
+	for (const rule of scalarRules) mutated = rule(task, input, context) || mutated;
 	return mutated;
 }

@@ -8,16 +8,12 @@ import { GitOperations } from "../filesystem/git/operations.ts";
 import { count, debug, isEnabled } from "../lib/debug-log.ts";
 import { slug } from "../model/session/session-utils.ts";
 import {
-	AGENT_SESSION_STATUS,
-	type AgentPreset,
 	type AgentSession,
 	type AgentSessionPathContext,
 	NATIVE_AGENT_NAMESPACES,
-	type NativeAgentNamespace,
 	type TaskSessions,
 } from "../model/session/types.ts";
 import { taskIdKey, taskIdsEqual } from "../model/task/task-id.ts";
-import type { ProcessRunner } from "../runtime/session-process.ts";
 import { SessionMutationError } from "./errors/session.ts";
 
 const stateLockQueues = new Map<string, Promise<void>>();
@@ -262,53 +258,30 @@ const SESSION_KEYS = new Set([
 	"nativeWorkspace",
 	"cwd",
 	"createdAt",
-	"status",
 	"ownerPid",
 	"outputPath",
 	"bootstrapPath",
-	"endedAt",
-	"error",
 	"lastUsedAt",
 	"useCount",
 	"pathContext",
-	"resumeProbeFailed",
 ]);
 
 function isSession(value: unknown, taskId: string): value is AgentSession {
 	if (!isRecord(value)) return false;
 	if (!Object.keys(value).every((key) => SESSION_KEYS.has(key))) return false;
-	if (
-		typeof value.taskId !== "string" ||
-		!taskIdsEqual(value.taskId, taskId) ||
-		!Object.values(AGENT_SESSION_STATUS).includes(value.status as AgentSession["status"])
-	)
-		return false;
+	if (typeof value.taskId !== "string" || !taskIdsEqual(value.taskId, taskId)) return false;
 	for (const key of ["id", "preset", "tmuxName", "cwd", "createdAt", "outputPath", "bootstrapPath"]) {
 		if (typeof value[key] !== "string") return false;
 	}
 	return (
 		(value.pathContext === undefined || isAgentSessionPathContext(value.pathContext)) &&
-		(value.resumeProbeFailed === undefined || isResumeProbeFailed(value.resumeProbeFailed)) &&
 		(value.nativeWorkspace === undefined || typeof value.nativeWorkspace === "boolean") &&
 		(value.nativeProvider === undefined ||
 			(typeof value.nativeProvider === "string" &&
 				NATIVE_AGENT_NAMESPACES.includes(value.nativeProvider as (typeof NATIVE_AGENT_NAMESPACES)[number]))) &&
-		["nativeSessionId", "endedAt", "error", "lastUsedAt"].every(
-			(key) => value[key] === undefined || typeof value[key] === "string",
-		) &&
+		["nativeSessionId", "lastUsedAt"].every((key) => value[key] === undefined || typeof value[key] === "string") &&
 		(value.ownerPid === undefined || typeof value.ownerPid === "number") &&
 		(value.useCount === undefined || (typeof value.useCount === "number" && value.useCount >= 0))
-	);
-}
-
-function isResumeProbeFailed(value: unknown): boolean {
-	return (
-		isRecord(value) &&
-		hasOnlyKeys(value, ["nativeProvider", "nativeSessionId"]) &&
-		typeof value.nativeProvider === "string" &&
-		NATIVE_AGENT_NAMESPACES.includes(value.nativeProvider as (typeof NATIVE_AGENT_NAMESPACES)[number]) &&
-		typeof value.nativeSessionId === "string" &&
-		value.nativeSessionId.trim().length > 0
 	);
 }
 
@@ -324,12 +297,7 @@ export class SessionStore {
 	private readonly rootContext: ReturnType<typeof stateRootContext>;
 	private stateRootResolution?: Promise<string>;
 
-	constructor(
-		rootDir: string,
-		protected readonly runner: ProcessRunner,
-		_resolvePreset?: (session: AgentSession) => Promise<AgentPreset>,
-		options: ProjectStateRootOptions = {},
-	) {
+	constructor(rootDir: string, options: ProjectStateRootOptions = {}) {
 		this.rootContext = stateRootContext(rootDir, options);
 	}
 
@@ -383,7 +351,7 @@ export class SessionStore {
 
 	async mutate<T>(taskId: string, fn: (state: SessionState) => Promise<T>): Promise<T> {
 		// The single store-mutation chokepoint: lock, read, apply, validate, write, unlock.
-		// `sessions.ts` calls this from 13 sites, several inside loops.
+		// Session operations share this chokepoint, including batched cleanup.
 		count("store");
 		const startedAt = Date.now();
 		if (isEnabled("store")) debug("store", "mutate.begin", { taskId });
@@ -427,11 +395,15 @@ export class SessionStore {
 		await Bun.write(modeLockPath, "");
 		const releaseMode = await acquireStateLock(modeLockPath);
 		let releaseState: (() => Promise<void>) | undefined;
+		let operationError: unknown;
+		let releaseError: unknown;
+		let writeCommitted = false;
+		let result: T | undefined;
 		try {
 			releaseState = await acquireStateLock(paths.statePath);
 			const state = await this.readPersisted(taskId);
 			const history = state.modes[modeId] ?? { sessions: [] };
-			const result = await fn(history);
+			result = await fn(history);
 			if (
 				!history.sessions.every((session) => isSession(session, taskId)) ||
 				(history.sessions.length > 0 && history.activeSessionId === undefined) ||
@@ -443,14 +415,28 @@ export class SessionStore {
 			const output = this.toVersioned(state);
 			this.validate(output, taskId);
 			await this.write(paths.statePath, `${JSON.stringify(output, null, "\t")}\n`);
+			writeCommitted = true;
 			return result;
+		} catch (error) {
+			operationError = error;
 		} finally {
+			const releaseFailures: unknown[] = [];
 			try {
 				await releaseState?.();
-			} finally {
-				await releaseMode();
+			} catch (error) {
+				releaseFailures.push(error);
 			}
+			try {
+				await releaseMode();
+			} catch (error) {
+				releaseFailures.push(error);
+			}
+			if (releaseFailures.length)
+				releaseError = releaseFailures.length === 1 ? releaseFailures[0] : new AggregateError(releaseFailures);
 		}
+		if (releaseError !== undefined) throw new SessionMutationError(operationError, releaseError, writeCommitted);
+		if (operationError !== undefined) throw operationError;
+		return result as T;
 	}
 
 	/** Resolve a session's current owning mode and mutate it under the same task lock. */
@@ -466,6 +452,10 @@ export class SessionStore {
 		const paths = await this.paths(taskId);
 		await mkdir(paths.taskDir, { recursive: true });
 		const release = await acquireStateLock(paths.statePath);
+		let operationError: unknown;
+		let releaseError: unknown;
+		let writeCommitted = false;
+		let result: T | undefined;
 		try {
 			const state = await this.readPersisted(taskId);
 			const owner = Object.entries(state.modes).find(([, candidate]) =>
@@ -475,15 +465,25 @@ export class SessionStore {
 			const [currentModeId, history] = owner;
 			const session = history.sessions.find((candidate) => candidate.id === sessionId);
 			if (!session) throw new Error(`Agent session not found: ${sessionId}`);
-			const result = await fn(session, history, currentModeId);
+			result = await fn(session, history, currentModeId);
 			if (!history.sessions.every((candidate) => isSession(candidate, taskId))) throw new Error("invalid state");
 			const output = this.toVersioned(state);
 			this.validate(output, taskId);
 			await this.write(paths.statePath, `${JSON.stringify(output, null, "\t")}\n`);
+			writeCommitted = true;
 			return result;
+		} catch (error) {
+			operationError = error;
 		} finally {
-			await release();
+			try {
+				await release();
+			} catch (error) {
+				releaseError = error;
+			}
 		}
+		if (releaseError !== undefined) throw new SessionMutationError(operationError, releaseError, writeCommitted);
+		if (operationError !== undefined) throw operationError;
+		return result as T;
 	}
 
 	async paths(taskId: string): Promise<SessionPaths> {
@@ -514,53 +514,16 @@ export class SessionStore {
 		};
 	}
 
-	/** The caller holds the session claim through failure publication and runtime cleanup. */
-	async markResumeProbeFailed(
-		expected: AgentSession,
-		modeId: string,
-		marker: { nativeProvider: NativeAgentNamespace; nativeSessionId: string },
-		error: string,
-	): Promise<void> {
-		await this.mutateSession(expected.taskId, expected.id, async (session, _history, currentModeId) => {
-			this.assertExpectedSession(session, expected, modeId, currentModeId);
-			if (session.nativeProvider !== marker.nativeProvider || session.nativeSessionId !== marker.nativeSessionId)
-				throw new Error(`Session ${expected.id} native identity changed before resume failure publication.`);
-			if (
-				session.status === AGENT_SESSION_STATUS.FAILED &&
-				session.error === error &&
-				session.resumeProbeFailed?.nativeProvider === marker.nativeProvider &&
-				session.resumeProbeFailed.nativeSessionId === marker.nativeSessionId &&
-				session.endedAt !== undefined &&
-				session.ownerPid === undefined
-			)
-				return;
-			session.resumeProbeFailed = marker;
-			session.status = AGENT_SESSION_STATUS.FAILED;
-			session.error = error;
-			session.endedAt = new Date().toISOString();
-			delete session.ownerPid;
-		});
+	/** Cross-process admission for all operations targeting one task. */
+	async claimTaskAdmission(taskId: string): Promise<() => Promise<void>> {
+		const canonicalTaskId = taskIdKey(taskId);
+		return await this.claimAdmission("task", canonicalTaskId, `Task ${taskId} is already being changed.`);
 	}
 
-	private assertExpectedSession(
-		current: AgentSession,
-		expected: AgentSession,
-		modeId: string,
-		currentModeId: string,
-	): void {
-		if (
-			currentModeId !== modeId ||
-			current.taskId !== expected.taskId ||
-			current.id !== expected.id ||
-			current.tmuxName !== expected.tmuxName ||
-			current.createdAt !== expected.createdAt ||
-			current.nativeWorkspace !== expected.nativeWorkspace ||
-			current.nativeProvider !== expected.nativeProvider ||
-			current.nativeSessionId !== expected.nativeSessionId ||
-			current.cwd !== expected.cwd ||
-			JSON.stringify(current.pathContext) !== JSON.stringify(expected.pathContext)
-		)
-			throw new Error(`Session ${expected.id} was removed, replaced, or changed before store publication.`);
+	/** Cross-process admission for all operations targeting one configured mode. */
+	async claimModeAdmission(modeId: string): Promise<() => Promise<void>> {
+		if (!/^[a-z][a-z0-9-]*$/.test(modeId)) throw new Error(`Invalid mode admission id: ${modeId}`);
+		return await this.claimAdmission("mode", modeId, `Mode ${modeId} is already being changed.`);
 	}
 
 	async reset(taskId: string): Promise<void> {
@@ -625,6 +588,32 @@ export class SessionStore {
 
 	private projectStateRoot(): Promise<string> {
 		return this.stateRoot;
+	}
+
+	private async claimAdmission(
+		scope: "mode" | "task",
+		id: string,
+		contendedMessage: string,
+	): Promise<() => Promise<void>> {
+		const directory = join(await this.projectStateRoot(), "admission");
+		await mkdir(directory, { recursive: true });
+		const path = join(directory, `${scope}-${createHash("sha256").update(id).digest("hex")}.claim`);
+		await Bun.write(path, "");
+		let release: (() => Promise<void>) | undefined;
+		try {
+			release = await lockfile.lock(path, {
+				realpath: false,
+				stale: 30_000,
+				update: 5_000,
+				retries: { retries: 0, minTimeout: 0, maxTimeout: 0 },
+			});
+		} catch {
+			throw new Error(contendedMessage);
+		}
+		return async () => {
+			await release?.();
+			await rm(path, { force: true });
+		};
 	}
 
 	private empty(taskId: string): SessionState {

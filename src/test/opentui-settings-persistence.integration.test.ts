@@ -1,21 +1,15 @@
 import { afterEach, describe, expect, it, spyOn } from "bun:test";
-import { createHash } from "node:crypto";
-import { existsSync } from "node:fs";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { BoxRenderable } from "@opentui/core";
 import { createTestRenderer, type TestRendererSetup } from "@opentui/core/testing";
 import { Core } from "../controller/agentic-workspace.ts";
-import { WorkspaceStateService } from "../controller/workspace-state.ts";
 import { MODE_TEXT_COLORS } from "../model/session/mode-colors.ts";
 import type { AgentConfiguration, AgentSession } from "../model/session/types.ts";
 import { mountOpenTuiWorkspace, type OpenTuiWorkspaceOptions } from "../renderer/opentui/workspace.ts";
 import { OpenTuiWorkspaceController } from "../renderer/opentui/workspace-controller.ts";
-import { BunRunner } from "../runtime/session-process.ts";
-import { AgentSessionService } from "../runtime/sessions.ts";
 import { loadAgentConfiguration, upsertAgentConfiguration } from "../storage/config.ts";
-import { SessionStore } from "../storage/session-store.ts";
 import { getTestCliCommand } from "./test-cli.ts";
 import { coreFileSystem, initializeTestProject } from "./test-utils.ts";
 
@@ -71,7 +65,7 @@ describe("real WorkspaceController Settings persistence", () => {
 		const { task } = await core.createTaskFromInput({ title: "Settings fixture", status: "To Do" });
 		await upsertAgentConfiguration(core, "project", initialConfiguration());
 		const path = coreFileSystem(core).configFilePath;
-		let workspaceState: WorkspaceStateService | undefined;
+		let workspaceState: Core["workspaceState"] | undefined;
 		if (pinExternalRoot) {
 			const storageHome = await mkdtemp(join(tmpdir(), "settings-pinned-home-"));
 			cleanups.push(async () => await rm(storageHome, { recursive: true, force: true }));
@@ -86,8 +80,7 @@ describe("real WorkspaceController Settings persistence", () => {
 				else process.env.AGENTIC_WORKSPACE_CWD = originalAgenticWorkspaceCwd;
 			});
 			process.env.HOME = storageHome;
-			const hash = createHash("sha256").update(coreFileSystem(core).rootDir).digest("hex").slice(0, 16);
-			workspaceState = new WorkspaceStateService(core, { stateRoot: join(storageHome, ".agentic-workspace", hash) });
+			workspaceState = core.workspaceState;
 			await workspaceState.stateRoot;
 			process.env.HOME = join(storageHome, "changed-home");
 			process.env.AGENTIC_WORKSPACE_CWD = storageHome;
@@ -164,6 +157,16 @@ describe("real WorkspaceController Settings persistence", () => {
 		}
 		throw new Error("Settings integration condition did not settle");
 	}
+	async function confirmModeDeletion(setup: TestRendererSetup) {
+		for (let attempt = 0; attempt < 300; attempt++) {
+			await setup.flush();
+			if (setup.captureCharFrame().includes("Delete mode")) break;
+			if (attempt === 299) throw new Error(`Mode deletion confirmation did not settle:\n${setup.captureCharFrame()}`);
+			await Bun.sleep(10);
+		}
+		setup.mockInput.pressKey("y");
+		await setup.flush();
+	}
 	function down(setup: TestRendererSetup, count = 1) {
 		for (let i = 0; i < count; i++) setup.mockInput.pressArrow("down");
 	}
@@ -185,15 +188,14 @@ describe("real WorkspaceController Settings persistence", () => {
 		const pinnedRoot = f.stateRoot;
 		if (!pinnedRoot) throw new Error("Fixture did not pin a state root.");
 		expect(await readFile(join(pinnedRoot, "view-state.json"), "utf8")).toContain('"state"');
-		expect(existsSync(join(coreFileSystem(f.core).rootDir, ".agentic-workspace", "view-state.json"))).toBe(false);
-		const originalDelete = AgentSessionService.prototype.deleteMode;
-		const deletion = spyOn(AgentSessionService.prototype, "deleteMode").mockImplementation(async function (
-			this: AgentSessionService,
+		const originalDelete = Core.prototype.deleteMode;
+		const deletion = spyOn(Core.prototype, "deleteMode").mockImplementation(async function (
+			this: Core,
 			modeId,
-			destinationModeId,
+			options,
 		) {
-			expect(await this.stateRoot).toBe(pinnedRoot);
-			await originalDelete.call(this, modeId, destinationModeId);
+			expect(await this.workspaceState.stateRoot).toBe(pinnedRoot);
+			return await originalDelete.call(this, modeId, options);
 		});
 		try {
 			await f.open();
@@ -202,10 +204,10 @@ describe("real WorkspaceController Settings persistence", () => {
 			f.setup.mockInput.pressKey("d");
 			f.setup.mockInput.pressEnter();
 			save(f.setup);
+			await confirmModeDeletion(f.setup);
 			await f.saved();
 			expect(deletion).toHaveBeenCalledTimes(1);
 			expect((await f.json()).modes?.profiles.plan).toBeUndefined();
-			expect(existsSync(join(coreFileSystem(f.core).rootDir, ".agentic-workspace", "view-state.json"))).toBe(false);
 		} finally {
 			deletion.mockRestore();
 		}
@@ -304,14 +306,14 @@ describe("real WorkspaceController Settings persistence", () => {
 			approvalArtifact: "approved.md",
 			textColor: "brightgreen",
 		});
-		expect(raw.presets.contract).toMatchObject({
+		expect(raw.presets?.contract).toMatchObject({
 			command: ["false", "changed", "{prompt}"],
 			resumeFlag: "--continue",
 			env: { RAW: "kept=exact", NEW: "value" },
 			prepare: "kept",
 			bootstrap: "claude",
 		});
-		expect(raw.presets.concurrent?.command).toEqual(["concurrent", "{prompt}"]);
+		expect(raw.presets?.concurrent?.command).toEqual(["concurrent", "{prompt}"]);
 		expect(raw.sessions).toEqual({ worktreePerTask: true, yoloMode: true, autoResumeOnRestart: true });
 		expect(await loadAgentConfiguration(f.core, "project")).toEqual(raw);
 		await f.open();
@@ -336,7 +338,7 @@ describe("real WorkspaceController Settings persistence", () => {
 
 	it("refuses session moves, then saves empty-mode deletion, added modes and color", async () => {
 		const f = await fixture();
-		const store = new SessionStore(coreFileSystem(f.core).rootDir, new BunRunner());
+		const store = f.core.sessionApplication.store;
 		const session: AgentSession = {
 			id: "persisted-session",
 			taskId: f.task.id,
@@ -346,7 +348,6 @@ describe("real WorkspaceController Settings persistence", () => {
 			outputPath: join(coreFileSystem(f.core).rootDir, "output.log"),
 			bootstrapPath: join(coreFileSystem(f.core).rootDir, "bootstrap.sh"),
 			createdAt: "2026-10-10T10:00:00.000Z",
-			status: "stopped",
 		};
 		await store.mutateMode(f.task.id, "plan", async (history) => {
 			history.sessions.push(session);
@@ -366,19 +367,24 @@ describe("real WorkspaceController Settings persistence", () => {
 		f.setup.mockInput.pressArrow("up");
 		f.setup.mockInput.pressKey("d");
 		await f.setup.flush();
-		expect(f.setup.captureCharFrame()).toContain("1 owned sessions");
+		expect(f.setup.captureCharFrame()).toContain("Delete PLAN");
 		f.setup.mockInput.pressEnter();
 		expect((await store.readMode(f.task.id, "plan")).sessions.map((item) => item.id)).toEqual([session.id]);
 		expect((await f.json()).modes?.profiles.review).toBeUndefined();
 		save(f.setup);
+		await confirmModeDeletion(f.setup);
 		await eventually(async () => {
 			await f.setup.flush();
-			return f.setup.captureCharFrame().includes("sessions cannot change modes");
+			return f.setup.captureCharFrame().includes("Error:");
 		});
+		expect(f.setup.captureCharFrame()).toContain(
+			"Mode deletion failed after stopping sessions: none; removed sessions from: none.",
+		);
 		expect((await store.readMode(f.task.id, "plan")).sessions.map((item) => item.id)).toEqual([session.id]);
 		expect((await f.json()).modes?.profiles.plan).toBeDefined();
 		await store.remove(f.task.id, session.id);
 		save(f.setup);
+		await confirmModeDeletion(f.setup);
 		await f.saved();
 		const raw = await f.json();
 		expect(raw.modes?.order).toEqual(["build", "review"]);
@@ -397,9 +403,6 @@ describe("real WorkspaceController Settings persistence", () => {
 	it("keeps real serialization errors visible without closing, permits retry, and discards without writing", async () => {
 		const f = await fixture();
 		await f.open();
-		modes(f.setup);
-		down(f.setup);
-		f.setup.mockInput.pressEnter();
 		const original = await readFile(f.path, "utf8");
 		await writeFile(f.path, "agent_configuration: 123\n");
 		coreFileSystem(f.core).invalidateConfigCache();
@@ -415,7 +418,7 @@ describe("real WorkspaceController Settings persistence", () => {
 		coreFileSystem(f.core).invalidateConfigCache();
 		save(f.setup);
 		await f.saved();
-		expect((await f.json()).modes?.profiles.plan?.permissions.repository).toBe("read-write");
+		expect((await f.json()).modes?.profiles.plan?.permissions.repository).toBe("read");
 		await f.open();
 		modes(f.setup);
 		f.setup.mockInput.pressKey("a");

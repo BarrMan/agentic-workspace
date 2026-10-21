@@ -4,9 +4,7 @@ import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { Core } from "../controller/agentic-workspace.ts";
 import { ensureTaskWorktree, taskWorktreeExists, taskWorktreePath } from "../filesystem/git/task-worktree.ts";
-import { resolveSessionSettings } from "../model/session/types.ts";
 import type { Task } from "../model/types.ts";
-import { sessionCwdFor } from "../runtime/session-service-mechanics.ts";
 import { getBuiltInAgentConfiguration, upsertAgentConfiguration } from "../storage/config.ts";
 import { coreFileSystem, createUniqueTestDir, initGitRepo, initializeTestProject, safeCleanup } from "./test-utils.ts";
 
@@ -130,103 +128,6 @@ describe("task worktree lifecycle", () => {
 		expect(task.worktreePolicy).toBe("disabled");
 		expect(await taskWorktreeExists(TEST_DIR, task)).toBe(false);
 		expect(existsSync(taskWorktreePath(TEST_DIR, task))).toBe(false);
-	});
-
-	it("creates and uses the worktree at the first session cwd resolution", async () => {
-		const current = await setupCore({ worktreePerTask: true });
-		const task = newTask("TASK-1", "Finish the worktree lifecycle");
-		await current.createTask(task);
-		expect(await taskWorktreeExists(TEST_DIR, task)).toBe(false);
-		expect(await sessionCwdFor(current, task, resolveSessionSettings(undefined))).toBe(
-			taskWorktreePath(TEST_DIR, task),
-		);
-		expect(await taskWorktreeExists(TEST_DIR, task)).toBe(true);
-	});
-
-	it("fails path-specifically rather than using project root when allocation fails", async () => {
-		const current = await setupCore({ worktreePerTask: true });
-		const task = newTask("TASK-1", "Cannot allocate");
-		await current.createTask(task);
-		await safeCleanup(TEST_DIR);
-		await expect(sessionCwdFor(current, task, resolveSessionSettings(undefined))).rejects.toThrow(
-			taskWorktreePath(TEST_DIR, task),
-		);
-	});
-
-	it("keeps creation policy after configuration changes", async () => {
-		const current = await setupCore({ worktreePerTask: true });
-		const task = newTask("TASK-1", "Frozen enabled policy");
-		await current.createTask(task);
-		await upsertAgentConfiguration(current, "project", {
-			...getBuiltInAgentConfiguration(),
-			sessions: { worktreePerTask: false, yoloMode: false },
-		});
-		expect(await sessionCwdFor(current, task, resolveSessionSettings(undefined))).toBe(
-			taskWorktreePath(TEST_DIR, task),
-		);
-	});
-
-	it("retains the worktree when task status becomes Done", async () => {
-		const current = await setupCore({ worktreePerTask: true });
-		const task = newTask("TASK-1", "Finish the worktree lifecycle");
-		await current.createTask(task);
-		await sessionCwdFor(current, task, resolveSessionSettings(undefined));
-
-		await current.updateTaskFromInput(task.id, { status: "Done" });
-
-		expect(await taskWorktreeExists(TEST_DIR, task)).toBe(true);
-		expect(existsSync(taskWorktreePath(TEST_DIR, task))).toBe(true);
-	});
-
-	it("keeps the renamed task worktree until explicit destructive deletion", async () => {
-		const current = await setupCore({ worktreePerTask: true });
-		const task = newTask("TASK-1", "Original title");
-		await current.createTask(task);
-		await sessionCwdFor(current, task, resolveSessionSettings(undefined));
-		const originalPath = taskWorktreePath(TEST_DIR, task);
-		expect(existsSync(originalPath)).toBe(true);
-
-		await current.updateTaskFromInput(task.id, { title: "Renamed after worktree" });
-		const renamed = (await current.loadTaskById(task.id)) as Task;
-		// The slug changed, so a path recomputation no longer matches the on-disk directory.
-		expect(taskWorktreePath(TEST_DIR, renamed)).not.toBe(originalPath);
-
-		await current.updateTaskFromInput(task.id, { status: "Done" });
-
-		expect(await taskWorktreeExists(TEST_DIR, renamed)).toBe(true);
-		expect(existsSync(originalPath)).toBe(true);
-		await current.deleteTask(task.id);
-		expect(await taskWorktreeExists(TEST_DIR, renamed)).toBe(false);
-		expect(existsSync(originalPath)).toBe(false);
-	});
-
-	it("preserves uncommitted work and task tracking when worktree removal is refused", async () => {
-		const current = await setupCore({ worktreePerTask: true });
-		const task = newTask("TASK-1", "Keep uncommitted work");
-		await current.createTask(task);
-		await sessionCwdFor(current, task, resolveSessionSettings(undefined));
-		const worktree = taskWorktreePath(TEST_DIR, task);
-		const userFile = join(worktree, "uncommitted.txt");
-		await Bun.write(userFile, "preserve this data\n");
-
-		await expect(current.deleteTask(task.id)).rejects.toThrow("Could not remove worktree");
-
-		expect(await coreFileSystem(current).loadTask(task.id)).not.toBeNull();
-		expect(await Bun.file(userFile).text()).toBe("preserve this data\n");
-		expect(await taskWorktreeExists(TEST_DIR, task)).toBe(true);
-	});
-
-	it("is idempotent when the worktree already exists", async () => {
-		const current = await setupCore({ worktreePerTask: true });
-		const task = newTask("TASK-1", "Idempotent worktree");
-		await current.createTask(task);
-
-		const firstPath = taskWorktreePath(TEST_DIR, task);
-		await sessionCwdFor(current, task, resolveSessionSettings(undefined));
-
-		expect(await taskWorktreeExists(TEST_DIR, task)).toBe(true);
-		expect(taskWorktreePath(TEST_DIR, task)).toBe(firstPath);
-		expect(existsSync(firstPath)).toBe(true);
 	});
 
 	it("resolves lowercase and whitespace task IDs by identity", async () => {

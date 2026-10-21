@@ -3,7 +3,6 @@ task_schema_version: 3
 id: BACK-21
 title: CLI for agent task to communicate with previous session
 status: Done
-assignee: []
 created_date: '2026-10-08 14:54'
 updated_date: '2026-10-08 16:03'
 labels: []

@@ -1,64 +1,9 @@
 import { describe, expect, it } from "bun:test";
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
-import { Writable } from "node:stream";
-import { runCli } from "../cli/register.ts";
 import { Core } from "../index.ts";
+import { runInProcessCli } from "./in-process-cli.ts";
 import { createUniqueTestDir, initializeFilesystemTestProject, safeCleanup } from "./test-utils.ts";
-
-const cliCommand = ["agentic-workspace"];
-
-function $(parts: TemplateStringsArray, ...values: unknown[]) {
-	const source = parts.reduce(
-		(text, part, index) =>
-			`${text}${part}${Array.isArray(values[index]) ? values[index].map((value) => JSON.stringify(value)).join(" ") : values[index] === undefined ? "" : JSON.stringify(values[index])}`,
-		"",
-	);
-	const args =
-		source
-			.match(/"(?:\\.|[^"\\])*"|'[^']*'|[^\s]+/g)
-			?.map((arg) =>
-				arg.startsWith('"') ? (JSON.parse(arg) as string) : arg.startsWith("'") ? arg.slice(1, -1) : arg,
-			) ?? [];
-	const config: { cwd?: string; nothrow?: boolean } = {};
-	const result = async () => {
-		const stdout: string[] = [];
-		const stderr: string[] = [];
-		const out = new Writable({
-			write: (chunk, _encoding, done) => {
-				stdout.push(chunk.toString());
-				done();
-			},
-		});
-		const err = new Writable({
-			write: (chunk, _encoding, done) => {
-				stderr.push(chunk.toString());
-				done();
-			},
-		});
-		const exitCode = await runCli(args.slice(cliCommand.length), { cwd: config.cwd, stdout: out, stderr: err });
-		const value = { exitCode, stdout: stdout.join(""), stderr: stderr.join("") };
-		if (value.exitCode && !config.nothrow) throw new Error(value.stderr || `CLI exited with ${value.exitCode}`);
-		return value;
-	};
-	const chain = {
-		cwd(value: string) {
-			config.cwd = value;
-			return chain;
-		},
-		nothrow() {
-			config.nothrow = true;
-			return chain;
-		},
-		quiet() {
-			return result();
-		},
-		async text() {
-			return (await result()).stdout;
-		},
-	};
-	return chain;
-}
 
 /** Every case owns its project directory. */
 async function setupPreservation(): Promise<{ dir: string; core: Core }> {
@@ -90,9 +35,14 @@ describe("Task edit section preservation", () => {
 			await Bun.write(artifactPath, "Opaque working state.\n");
 
 			// Update just the description
-			await $`${cliCommand} task edit TASK-1 --description "UPDATED description"`.cwd(dir).quiet();
+			const edit = await runInProcessCli(["task", "edit", "TASK-1", "--description", "UPDATED description"], {
+				cwd: dir,
+			});
+			expect(edit.exitCode).toBe(0);
 
-			const result = await $`${cliCommand} task view TASK-1 --plain`.cwd(dir).text();
+			const viewed = await runInProcessCli(["task", "view", "TASK-1", "--plain"], { cwd: dir });
+			expect(viewed.exitCode).toBe(0);
+			const result = viewed.stdout;
 
 			expect(result).toContain("UPDATED description");
 			expect(await Bun.file(artifactPath).text()).toBe("Opaque working state.\n");
@@ -120,10 +70,15 @@ describe("Task edit section preservation", () => {
 
 			const artifactPath = join(dir, "agentic-workspace", "tasks", "task-2", "working-state.md");
 			await Bun.write(artifactPath, "Working notes remain opaque.\n");
-			await $`${cliCommand} task edit TASK-2 --description "Updated description"`.cwd(dir).quiet();
+			expect(
+				(await runInProcessCli(["task", "edit", "TASK-2", "--description", "Updated description"], { cwd: dir }))
+					.exitCode,
+			).toBe(0);
 
 			// Verify the task description and independent artifact survive canonical saves.
-			const result = await $`${cliCommand} task view TASK-2 --plain`.cwd(dir).text();
+			const viewed = await runInProcessCli(["task", "view", "TASK-2", "--plain"], { cwd: dir });
+			expect(viewed.exitCode).toBe(0);
+			const result = viewed.stdout;
 
 			expect(result).toContain("Updated description");
 			expect(await Bun.file(artifactPath).text()).toBe("Working notes remain opaque.\n");
@@ -146,9 +101,14 @@ describe("Task edit section preservation", () => {
 				description: "Test description",
 			});
 
-			await $`${cliCommand} task edit TASK-3 --description "Updated description"`.cwd(dir).quiet();
+			expect(
+				(await runInProcessCli(["task", "edit", "TASK-3", "--description", "Updated description"], { cwd: dir }))
+					.exitCode,
+			).toBe(0);
 
-			const result = await $`${cliCommand} task view TASK-3 --plain`.cwd(dir).text();
+			const viewed = await runInProcessCli(["task", "view", "TASK-3", "--plain"], { cwd: dir });
+			expect(viewed.exitCode).toBe(0);
+			const result = viewed.stdout;
 			const taskContent = await Bun.file(join(dir, "agentic-workspace", "tasks", "task-3", "task.md")).text();
 
 			expect(result).toContain("Updated description");
@@ -174,9 +134,14 @@ describe("Task edit section preservation", () => {
 
 			const artifactPath = join(dir, "agentic-workspace", "tasks", "task-4", "working-state.md");
 			await Bun.write(artifactPath, "Pending work.\n");
-			await $`${cliCommand} task edit TASK-4 --description "Updated description"`.cwd(dir).quiet();
+			expect(
+				(await runInProcessCli(["task", "edit", "TASK-4", "--description", "Updated description"], { cwd: dir }))
+					.exitCode,
+			).toBe(0);
 
-			const result = await $`${cliCommand} task view TASK-4 --plain`.cwd(dir).text();
+			const viewed = await runInProcessCli(["task", "view", "TASK-4", "--plain"], { cwd: dir });
+			expect(viewed.exitCode).toBe(0);
+			const result = viewed.stdout;
 
 			expect(result).toContain("Updated description");
 			expect(await Bun.file(artifactPath).text()).toBe("Pending work.\n");
@@ -200,9 +165,17 @@ describe("Task edit section preservation", () => {
 			});
 
 			// Update description
-			await $`${cliCommand} task edit TASK-5 --description "Updated minimal description"`.cwd(dir).quiet();
+			expect(
+				(
+					await runInProcessCli(["task", "edit", "TASK-5", "--description", "Updated minimal description"], {
+						cwd: dir,
+					})
+				).exitCode,
+			).toBe(0);
 
-			const result = await $`${cliCommand} task view TASK-5 --plain`.cwd(dir).text();
+			const viewed = await runInProcessCli(["task", "view", "TASK-5", "--plain"], { cwd: dir });
+			expect(viewed.exitCode).toBe(0);
+			const result = viewed.stdout;
 			const taskContent = await Bun.file(join(dir, "agentic-workspace", "tasks", "task-5", "task.md")).text();
 
 			expect(result).toContain("Updated minimal description");

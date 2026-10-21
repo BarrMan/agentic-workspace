@@ -165,7 +165,7 @@ SessionRuntime.observe(execution) {
 }
 
 SessionRuntime.attach(session) {
-  return this.terminalHost.attach(session.execution)
+	return this.terminalAttachment(session) // pane target, transport, output path, bootstrap text
 }
 
 SessionRuntime.detach(attachment) {

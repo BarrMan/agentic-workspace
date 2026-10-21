@@ -3,7 +3,6 @@ task_schema_version: 3
 id: BACK-13
 title: Session tokens too high
 status: Done
-assignee: []
 created_date: '2026-10-08 03:13'
 updated_date: '2026-10-08 03:40'
 labels: []

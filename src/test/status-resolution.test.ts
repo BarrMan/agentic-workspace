@@ -1,7 +1,25 @@
-import { describe, expect, it } from "bun:test";
+import { afterEach, describe, expect, it } from "bun:test";
+import { mkdir } from "node:fs/promises";
+import { Core } from "../controller/agentic-workspace.ts";
 import { findCanonicalStatus, resolveInProgressStatus, statusComparisonKey } from "../model/task/status.ts";
+import { createUniqueTestDir, initializeFilesystemTestProject, safeCleanup } from "./test-utils.ts";
 
 describe("exact status matching", () => {
+	const roots: string[] = [];
+	afterEach(async () => await Promise.all(roots.splice(0).map((root) => safeCleanup(root))));
+
+	it("passes the original status spelling from creation to canonical validation", async () => {
+		const root = createUniqueTestDir("status-resolution");
+		roots.push(root);
+		await mkdir(root, { recursive: true });
+		const core = new Core(root);
+		await initializeFilesystemTestProject(core, "Status resolution");
+
+		await expect(core.createTaskFromInput({ title: "Task", status: " In Progress " })).rejects.toThrow(
+			"Invalid status:  In Progress ",
+		);
+	});
+
 	it("preserves labels exactly", () => {
 		expect(statusComparisonKey("  In Progress ")).toBe("  In Progress ");
 		expect(statusComparisonKey("InProgress")).toBe("InProgress");

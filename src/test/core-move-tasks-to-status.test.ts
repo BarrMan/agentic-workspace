@@ -28,6 +28,9 @@ const createTasks = async (tasks: Array<[string, string, number?]>) => {
 	}
 };
 
+const createMilestone = async (title: string): Promise<string> =>
+	(await coreFileSystem(core).createMilestone(title)).id;
+
 beforeEach(async () => {
 	TEST_DIR = createUniqueTestDir("move-tasks-to-status");
 	await mkdir(TEST_DIR, { recursive: true });
@@ -139,17 +142,18 @@ describe("Core.moveTasksToStatus", () => {
 	});
 
 	it("applies a named lane to an already-in-status task without touching its ordinal", async () => {
+		const release = await createMilestone("Release 1");
 		await createTasks([["task-1", "In Progress", 500]]);
 
 		const result = await core.moveTasksToStatus({
 			taskIds: ["task-1"],
 			targetStatus: "In Progress",
-			targetMilestone: "Release 1",
+			targetMilestone: release,
 		});
 
 		expect(result.failures).toHaveLength(0);
 		const task = await coreFileSystem(core).loadTask("task-1");
-		expect(task?.milestone).toBe("Release 1");
+		expect(task?.milestone).toBe(release);
 		expect(task?.ordinal).toBe(500);
 	});
 
@@ -212,8 +216,29 @@ describe("Core.moveTasksToStatus", () => {
 		await expect(core.moveTasksToStatus({ taskIds: ["task-1"], targetStatus: "  " })).rejects.toThrow();
 	});
 
+	it("rejects padded status labels without writing on either board path", async () => {
+		await createTasks([
+			["task-1", "To Do", 1000],
+			["task-2", "To Do", 2000],
+		]);
+
+		await expect(
+			core.reorderTask({
+				taskId: "task-1",
+				targetStatus: " In Progress ",
+				orderedTaskIds: ["task-1", "task-2"],
+			}),
+		).rejects.toThrow("Invalid status");
+		expect((await coreFileSystem(core).loadTask("task-1"))?.status).toBe("To Do");
+
+		const moved = await core.moveTasksToStatus({ taskIds: ["task-1"], targetStatus: " In Progress " });
+		expect(moved.failures[0]?.reason).toContain("Invalid status");
+		expect((await coreFileSystem(core).loadTask("task-1"))?.status).toBe("To Do");
+	});
+
 	describe("milestone lanes", () => {
 		it("applies the lane milestone the same way a single-task reorder does", async () => {
+			const release = await createMilestone("Release 1");
 			await createTasks([
 				["task-1", "To Do", 1000],
 				["task-2", "To Do", 2000],
@@ -223,7 +248,7 @@ describe("Core.moveTasksToStatus", () => {
 			const batch = await core.moveTasksToStatus({
 				taskIds: ["task-1", "task-2"],
 				targetStatus: "In Progress",
-				targetMilestone: "  Release 1  ",
+				targetMilestone: release,
 			});
 			expect(batch.failures).toHaveLength(0);
 
@@ -232,24 +257,25 @@ describe("Core.moveTasksToStatus", () => {
 				taskId: "task-3",
 				targetStatus: "In Progress",
 				orderedTaskIds: ["task-3"],
-				targetMilestone: "  Release 1  ",
+				targetMilestone: release,
 			});
 
 			for (const id of ["task-1", "task-2", "task-3"]) {
 				const task = await coreFileSystem(core).loadTask(id);
 				expect(task?.status).toBe("In Progress");
-				expect(task?.milestone).toBe("Release 1");
+				expect(task?.milestone).toBe(release);
 			}
 		});
 
 		it("clears the milestone when the batch lands in the no-milestone lane", async () => {
+			const release = await createMilestone("Release 1");
 			await createTasks([["task-1", "To Do", 1000]]);
 			await core.moveTasksToStatus({
 				taskIds: ["task-1"],
 				targetStatus: "To Do",
-				targetMilestone: "Release 1",
+				targetMilestone: release,
 			});
-			expect((await coreFileSystem(core).loadTask("task-1"))?.milestone).toBe("Release 1");
+			expect((await coreFileSystem(core).loadTask("task-1"))?.milestone).toBe(release);
 
 			await core.moveTasksToStatus({
 				taskIds: ["task-1"],
@@ -261,39 +287,65 @@ describe("Core.moveTasksToStatus", () => {
 		});
 
 		it("scopes append ordering to the target lane instead of the whole status", async () => {
+			const releaseOne = await createMilestone("Release 1");
+			const releaseTwo = await createMilestone("Release 2");
 			await createTasks([["task-1", "To Do", 1000]]);
-			await core.createTask(buildTask("task-3", "In Progress", 1000, { milestone: "Release 1" }));
+			await core.createTask(buildTask("task-3", "In Progress", 1000, { milestone: releaseOne }));
 			// Same status, different lane, and no ordinal: a drop into Release 1 must not touch it.
-			await core.createTask(buildTask("task-4", "In Progress", undefined, { milestone: "Release 2" }));
+			await core.createTask(buildTask("task-4", "In Progress", undefined, { milestone: releaseTwo }));
 
 			const result = await core.moveTasksToStatus({
 				taskIds: ["task-1"],
 				targetStatus: "In Progress",
-				targetMilestone: "Release 1",
+				targetMilestone: releaseOne,
 			});
 
 			expect(result.failures).toHaveLength(0);
 			expect(result.changedTasks.map((task) => task.id)).toEqual(["TASK-1"]);
 			const moved = await coreFileSystem(core).loadTask("task-1");
-			expect(moved?.milestone).toBe("Release 1");
+			expect(moved?.milestone).toBe(releaseOne);
 			expect(moved?.ordinal ?? 0).toBeGreaterThan(1000);
 			// The other lane keeps its ordinal-less card exactly as it was.
 			expect((await coreFileSystem(core).loadTask("task-4"))?.ordinal).toBeUndefined();
 		});
 
 		it("leaves the milestone alone when the caller names no lane", async () => {
+			const release = await createMilestone("Release 1");
 			await createTasks([["task-1", "To Do", 1000]]);
 			await core.moveTasksToStatus({
 				taskIds: ["task-1"],
 				targetStatus: "To Do",
-				targetMilestone: "Release 1",
+				targetMilestone: release,
 			});
 
 			await core.moveTasksToStatus({ taskIds: ["task-1"], targetStatus: "Done" });
 
 			const task = await coreFileSystem(core).loadTask("task-1");
 			expect(task?.status).toBe("Done");
-			expect(task?.milestone).toBe("Release 1");
+			expect(task?.milestone).toBe(release);
+		});
+
+		it("rejects milestone titles and unknown IDs before writing", async () => {
+			const release = await coreFileSystem(core).createMilestone("Release One");
+			await createTasks([["task-1", "To Do", 1000]]);
+			const stored = await coreFileSystem(core).loadTask("task-1");
+			if (!stored?.filePath) throw new Error("missing task record path");
+			const before = await Bun.file(stored.filePath).text();
+
+			await expect(
+				core.reorderTask({
+					taskId: "task-1",
+					targetStatus: "In Progress",
+					orderedTaskIds: ["task-1"],
+					targetMilestone: release.title,
+				}),
+			).rejects.toThrow("Unknown milestone ID");
+			await expect(
+				core.moveTasksToStatus({ taskIds: ["task-1"], targetStatus: "In Progress", targetMilestone: "MISSING" }),
+			).rejects.toThrow("Unknown milestone ID");
+			expect((await coreFileSystem(core).loadTask("task-1"))?.milestone).toBeUndefined();
+			expect((await coreFileSystem(core).loadTask("task-1"))?.status).toBe("To Do");
+			expect(await Bun.file(stored.filePath).text()).toBe(before);
 		});
 	});
 

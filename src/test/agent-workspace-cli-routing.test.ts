@@ -3,7 +3,6 @@ import { join } from "node:path";
 import { Command } from "commander";
 import { registerAgentWorkspaceCommands } from "../cli/commands/agent-workspace.ts";
 import type { Core } from "../controller/agentic-workspace.ts";
-import { AgentSessionService } from "../runtime/sessions.ts";
 
 describe("agent-workspace CLI routing", () => {
 	afterEach(() => {
@@ -13,7 +12,7 @@ describe("agent-workspace CLI routing", () => {
 
 	const mocks: Array<{ mockRestore(): void }> = [];
 
-	const register = () => {
+	const register = (newSession: (...args: unknown[]) => Promise<unknown>) => {
 		const program = new Command();
 		program.exitOverride();
 		registerAgentWorkspaceCommands(program, {
@@ -21,7 +20,15 @@ describe("agent-workspace CLI routing", () => {
 				({
 					projectRoot: process.cwd(),
 					workspaceDirectory: join(process.cwd(), ".agentic-workspace"),
+					sessionApplication: { newSession },
 				}) as unknown as Core,
+			workspace: async () => ({
+				core: {
+					projectRoot: process.cwd(),
+					workspaceDirectory: join(process.cwd(), ".agentic-workspace"),
+				} as Core,
+				sessionRuntime: {} as never,
+			}),
 		});
 		return program;
 	};
@@ -48,17 +55,21 @@ describe("agent-workspace CLI routing", () => {
 		return { stdout, stderr };
 	};
 
-	it("routes agent-session start to AgentSessionService", async () => {
-		const mockStart = spyOn(AgentSessionService.prototype, "start").mockResolvedValue({
-			id: "session-1",
-			preset: "opencode",
-		} as never);
-		mocks.push(mockStart);
-		const program = register();
+	it("routes agent-session start to the Controller session application", async () => {
+		const newSession = spyOn(
+			{
+				newSession: async (..._args: unknown[]) => ({
+					record: { id: "session-1", preset: "opencode" },
+				}),
+			},
+			"newSession",
+		);
+		mocks.push(newSession);
+		const program = register(newSession);
 
 		const output = await captureOutput(program, ["node", "test", "agent-session", "start", "BACK-1"]);
 
-		expect(mockStart).toHaveBeenCalledWith("BACK-1", { preset: undefined, modeId: undefined });
+		expect(newSession).toHaveBeenCalledWith("BACK-1", undefined, undefined);
 		expect(output.stdout).toBe("Started session session-1 (preset: opencode).\n");
 	});
 });

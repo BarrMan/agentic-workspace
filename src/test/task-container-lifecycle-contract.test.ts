@@ -41,19 +41,13 @@ function container(location: string, id: string): string {
 async function addArtifacts(id: string): Promise<void> {
 	const artifacts = coreFileSystem(core).taskArtifacts;
 	await artifacts.write(id, "design/plan.md", new TextEncoder().encode("the plan\n"));
-	const plan = await artifacts.read(id, "design/plan.md");
-	await artifacts.approveCurrentVersion(id, "design/plan.md", plan.status.sha256!);
 	await artifacts.write(id, "evidence/result.bin", new Uint8Array([0, 12, 255, 3]));
 }
 
 async function expectArtifacts(id: string, location: string): Promise<void> {
 	const repository = coreFileSystem(core).taskArtifacts;
-	const plan = await repository.read(id, "design/plan.md", location as never);
-	expect(new TextDecoder().decode(plan.bytes)).toBe("the plan\n");
-	expect(plan.status.state).toBe("approved");
-	expect((await repository.read(id, "evidence/result.bin", location as never)).bytes).toEqual(
-		new Uint8Array([0, 12, 255, 3]),
-	);
+	expect(new TextDecoder().decode(await repository.read(id, "design/plan.md", location as never))).toBe("the plan\n");
+	expect(await repository.read(id, "evidence/result.bin", location as never)).toEqual(new Uint8Array([0, 12, 255, 3]));
 }
 
 describe("MAIN task-container lifecycle contract", () => {

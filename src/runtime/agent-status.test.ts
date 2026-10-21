@@ -9,7 +9,6 @@ import {
 
 function observation(overrides: Partial<ActivityObservation> = {}): ActivityObservation {
 	return {
-		lifecycle: "running",
 		hookBacked: true,
 		hook: undefined,
 		hookSeen: false,
@@ -24,12 +23,6 @@ function observation(overrides: Partial<ActivityObservation> = {}): ActivityObse
 }
 
 describe("resolveAgentActivity precedence", () => {
-	it("short-circuits terminal lifecycle values to stopped without probing", () => {
-		for (const lifecycle of ["stopped", "failed"] as const) {
-			expect(resolveAgentActivity(observation({ lifecycle, pane: "alive", chrome: "running" }))).toBe("stopped");
-		}
-	});
-
 	it("treats an absent pane as an error and an unreachable pane as a held window", () => {
 		expect(resolveAgentActivity(observation({ pane: "absent" }))).toBe("error");
 		const held = observation({

@@ -1,38 +1,16 @@
-import type { Core } from "../../controller/agentic-workspace.ts";
-import { BunRunner } from "../../runtime/session-process.ts";
-import { readWorkspaceContext } from "../../runtime/workspace-context.ts";
-import { resolveSessionPreset } from "../../storage/config.ts";
-import { SessionStore } from "../../storage/session-store.ts";
 import type { AgentSession } from "./types.ts";
 
-export interface CurrentModelDependencies {
-	context?: typeof readWorkspaceContext;
-	readSessions?: (taskId: string) => Promise<Awaited<ReturnType<SessionStore["read"]>>>;
-}
-
-async function resolveCallingSession(
-	core: Core,
-	dependencies: CurrentModelDependencies = {},
-): Promise<{ modeId: string; session: AgentSession }> {
-	const context = await (dependencies.context ?? readWorkspaceContext)({ rootDir: core.projectRoot });
-	const conversation = context?.conversation;
+/** Resolve ownership from controller-supplied durable records without reading runtime or storage. */
+export function resolveCallingMode(
+	conversation: { readonly sessionId: string } | undefined,
+	modes: Readonly<Record<string, { readonly sessions: readonly AgentSession[] }>>,
+): string {
 	if (!conversation) throw new Error("A valid calling workspace conversation context is required.");
-	const state = dependencies.readSessions
-		? await dependencies.readSessions(conversation.taskId)
-		: await new SessionStore(core.projectRoot, new BunRunner(), (session) => resolveSessionPreset(core, session)).read(
-				conversation.taskId,
-			);
-	const owners = Object.entries(state.modes ?? {}).flatMap(([modeId, history]) =>
-		history.sessions
-			.filter((candidate) => candidate.id === conversation.sessionId)
-			.map((session) => ({ modeId, session })),
+	const owners = Object.entries(modes).flatMap(([modeId, history]) =>
+		history.sessions.filter((candidate) => candidate.id === conversation.sessionId).map(() => modeId),
 	);
-	const owner = owners[0];
-	if (owners.length !== 1 || !owner)
+	const modeId = owners[0];
+	if (owners.length !== 1 || !modeId)
 		throw new Error("Could not uniquely identify the calling session in its task history.");
-	return owner;
-}
-
-export async function resolveCallingMode(core: Core, dependencies: CurrentModelDependencies = {}): Promise<string> {
-	return (await resolveCallingSession(core, dependencies)).modeId;
+	return modeId;
 }

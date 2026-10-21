@@ -3,7 +3,6 @@ task_schema_version: 3
 id: BACK-14
 title: Remove legacy blessed TUI code and dependency
 status: Done
-assignee: []
 created_date: '2026-10-08 06:34'
 updated_date: '2026-10-08 11:05'
 labels:

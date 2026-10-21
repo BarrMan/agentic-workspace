@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { constants } from "node:fs";
-import { access, lstat, mkdir, readFile, realpath, rename, stat } from "node:fs/promises";
+import { access, lstat, mkdir, readFile, realpath, stat } from "node:fs/promises";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { LockOwner } from "../filesystem/lock-owner.ts";
 import { type ProjectStateRootOptions, resolveProjectStateRoot, writeFileAtomic } from "./session-store.ts";
@@ -112,7 +112,6 @@ class ViewStateStoreImpl<T extends object> implements ViewStateStore<T> {
 	private rev = 0;
 	private path = "";
 	private externalStateRoot?: string;
-	private recoveredNotice?: string;
 
 	constructor(
 		private readonly rootDir: string,
@@ -124,10 +123,6 @@ class ViewStateStoreImpl<T extends object> implements ViewStateStore<T> {
 
 	get current(): T {
 		return this.state;
-	}
-
-	get recoveryNotice(): string | undefined {
-		return this.recoveredNotice;
 	}
 
 	async open(): Promise<void> {
@@ -180,18 +175,7 @@ class ViewStateStoreImpl<T extends object> implements ViewStateStore<T> {
 	/** Creates the file with the default state if no one else has written it yet. */
 	private async seed(): Promise<void> {
 		await this.withLock(async () => {
-			let disk: ViewStateEnvelope<T> | undefined;
-			try {
-				disk = await this.readEnvelope();
-			} catch (error) {
-				const corrupt =
-					error instanceof SyntaxError ||
-					(error instanceof Error && error.message.startsWith("Invalid workspace view-state"));
-				if (!corrupt) throw error;
-				const corruptPath = `${this.path}.corrupt-${Date.now()}`;
-				await rename(this.path, corruptPath);
-				this.recoveredNotice = `Recovered corrupt workspace view state; moved it to ${corruptPath}`;
-			}
+			const disk = await this.readEnvelope();
 			if (disk) {
 				this.state = disk.state;
 				this.rev = disk.rev;

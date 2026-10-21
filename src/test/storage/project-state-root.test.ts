@@ -5,17 +5,10 @@ import { chmod, mkdir, mkdtemp, readdir, readFile, realpath, rm, symlink, writeF
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Core } from "../../controller/agentic-workspace.ts";
-import { WorkspaceStateService } from "../../controller/workspace-state.ts";
 import { findGitWorktreeRoot } from "../../filesystem/git/main-worktree.ts";
 import { GitOperations } from "../../filesystem/git/operations.ts";
-import type { ProcessRunner } from "../../runtime/session-process.ts";
-import { AgentSessionService } from "../../runtime/sessions.ts";
 import { resolveProjectStateRoot, SessionStore } from "../../storage/session-store.ts";
 import { openViewStateStore } from "../../storage/view-state-store.ts";
-
-const runner: ProcessRunner = {
-	run: async () => ({ exitCode: 1, stdout: "", stderr: "not used" }),
-};
 
 function external(root: string, home: string): string {
 	return join(home, ".agentic-workspace", createHash("sha256").update(root).digest("hex").slice(0, 16));
@@ -85,7 +78,7 @@ describe("pinned project state root", () => {
 		const execution = await worktree();
 		process.env.AGENTIC_WORKSPACE_CWD = execution;
 		process.chdir(execution);
-		const store = new SessionStore(root, runner);
+		const store = new SessionStore(root);
 		expect(await store.stateRoot).toBe(join(root, ".agentic-workspace"));
 		expect((await store.paths("TASK-1")).taskDir).toBe(join(root, ".agentic-workspace", "task-1"));
 		expect(await readdir(execution)).not.toContain(".agentic-workspace");
@@ -93,7 +86,7 @@ describe("pinned project state root", () => {
 
 	it("captures HOME and cwd at construction, pins once, and caches rejection", async () => {
 		await writeFile(join(root, ".agentic-workspace"), "primary blocked");
-		const store = new SessionStore(".", runner);
+		const store = new SessionStore(".");
 		process.env.HOME = join(sandbox, "different-home");
 		process.env.AGENTIC_WORKSPACE_CWD = home;
 		process.chdir(home);
@@ -102,7 +95,7 @@ describe("pinned project state root", () => {
 		await rm(join(root, ".agentic-workspace"));
 		expect(store.stateRoot).toBe(resolution);
 		expect(await store.stateRoot).toBe(external(root, home));
-		const bad = new SessionStore(root, runner, undefined, { stateRoot: "relative" });
+		const bad = new SessionStore(root, { stateRoot: "relative" });
 		const rejected = bad.stateRoot;
 		await expect(rejected).rejects.toThrow("Invalid agent state root");
 		expect(bad.stateRoot).toBe(rejected);
@@ -120,16 +113,16 @@ describe("pinned project state root", () => {
 	it("shares explicit root across session history, claims, services, and view state", async () => {
 		const saved = external(root, home);
 		const options = { stateRoot: saved };
-		const store = new SessionStore(root, runner, undefined, options);
+		const store = new SessionStore(root, options);
 		options.stateRoot = join(root, ".agentic-workspace");
-		const service = new AgentSessionService(new Core(root), { runner, stateRoot: saved });
-		const workspace = new WorkspaceStateService(new Core(root), { sessions: service });
+		const core = new Core(root, { stateRoot: saved });
+		const workspace = core.workspaceState;
 		expect(await workspace.stateRoot).toBe(saved);
 		await store.mutateMode("TASK-1", "build", async () => undefined);
-		expect((await new SessionStore(root, runner).read("TASK-1")).modes?.build).toBeDefined();
+		expect((await new SessionStore(root).read("TASK-1")).modes?.build).toBeDefined();
 		const release = await store.claimSession("TASK-1", "session-1");
 		try {
-			await expect(new SessionStore(root, runner).claimSession("TASK-1", "session-1")).rejects.toThrow("already being");
+			await expect(new SessionStore(root).claimSession("TASK-1", "session-1")).rejects.toThrow("already being");
 		} finally {
 			await release();
 		}
@@ -163,7 +156,7 @@ describe("pinned project state root", () => {
 			await mkdir(candidate, { recursive: true });
 			await writeFile(join(candidate, "view-state.json"), "preserve");
 		}
-		const store = new SessionStore(root, runner, undefined, { stateRoot: join(root, ".agentic-workspace") });
+		const store = new SessionStore(root, { stateRoot: join(root, ".agentic-workspace") });
 		await expect(store.claimSession("TASK-1", "session-1")).rejects.toThrow("Ambiguous agent state");
 		await expect(openViewStateStore(root, () => ({}))).rejects.toThrow("Ambiguous agent state");
 		for (const candidate of [join(root, ".agentic-workspace"), external(root, home)]) {
@@ -177,7 +170,7 @@ describe("pinned project state root", () => {
 		const old = join(execution, ".agentic-workspace", "task-1");
 		await mkdir(old, { recursive: true });
 		await writeFile(join(old, "state.json"), "historical bytes");
-		const store = new SessionStore(root, runner);
+		const store = new SessionStore(root);
 		await expect(store.mutateMode("TASK-1", "build", async () => undefined)).rejects.toThrow("Ambiguous agent state");
 		expect(await readFile(join(old, "state.json"), "utf8")).toBe("historical bytes");
 		expect(await readdir(root)).not.toContain(".agentic-workspace");
@@ -228,9 +221,7 @@ describe("pinned project state root", () => {
 		await writeFile(join(target, "state.json"), "preserve");
 		await mkdir(old);
 		await symlink(target, join(old, "task-1"), "dir");
-		await expect(new SessionStore(root, runner).claimSession("TASK-1", "session-1")).rejects.toThrow(
-			"Ambiguous agent state",
-		);
+		await expect(new SessionStore(root).claimSession("TASK-1", "session-1")).rejects.toThrow("Ambiguous agent state");
 		expect(await readFile(join(target, "state.json"), "utf8")).toBe("preserve");
 		await rm(join(old, "task-1"));
 		await symlink(join(sandbox, "missing"), join(old, "task-1"), "dir");
@@ -254,9 +245,9 @@ describe("pinned project state root", () => {
 			await expect(findGitWorktreeRoot(join(hidden, "project"), { strict: true })).rejects.toThrow(
 				"Cannot inspect Git worktree marker",
 			);
-			await expect(
-				new SessionStore(join(hidden, "project"), runner).claimSession("TASK-1", "session-1"),
-			).rejects.toThrow("Cannot inspect Git worktree marker");
+			await expect(new SessionStore(join(hidden, "project")).claimSession("TASK-1", "session-1")).rejects.toThrow(
+				"Cannot inspect Git worktree marker",
+			);
 			expect(await readdir(home)).toEqual([]);
 		} finally {
 			await chmod(hidden, 0o700);
@@ -310,7 +301,7 @@ describe("pinned project state root", () => {
 		await mkdir(old, { recursive: true });
 		await writeFile(join(old, "owner.claim"), "preserve claim");
 		process.env.HOME = join(sandbox, "new-home");
-		const store = new SessionStore(root, runner, undefined, { stateRoot: saved });
+		const store = new SessionStore(root, { stateRoot: saved });
 		await expect(store.claimSession("TASK-1", "session-1")).rejects.toThrow("Ambiguous agent state");
 		expect(await readFile(join(old, "owner.claim"), "utf8")).toBe("preserve claim");
 		expect(await readFile(join(saved, "view-state.json"), "utf8")).toBe("preserve");
@@ -322,7 +313,7 @@ describe("pinned project state root", () => {
 		await chmod(root, 0o500);
 		const saved = external(root, home);
 		expect(await resolveProjectStateRoot(root)).toBe(saved);
-		const store = new SessionStore(root, runner);
+		const store = new SessionStore(root);
 		await store.mutateMode("TASK-1", "build", async () => undefined);
 		expect(await store.stateRoot).toBe(saved);
 		const first = await openViewStateStore(root, () => ({ count: 0 }));

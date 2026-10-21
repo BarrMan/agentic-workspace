@@ -5,6 +5,7 @@ import { dirname, join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import type { ModeProfile } from "../../../model/session/types.ts";
 import type { InstalledStatusHook } from "../../status-hooks.ts";
+import type { AgentModel } from "../core/agent.ts";
 import {
 	type AgentPreparation,
 	type AskCommandRequest,
@@ -25,6 +26,16 @@ import {
 } from "../core/agent.ts";
 import { PI_CHROME_RULES } from "../core/chrome-rules.ts";
 import { discoverModels, withExplicitModel } from "../core/profile.ts";
+
+function parsePiModels(output: string): AgentModel[] {
+	return output
+		.split(/\r?\n/)
+		.slice(1)
+		.flatMap((line) => {
+			const [provider, model] = line.trim().split(/\s+/);
+			return provider && model ? [{ id: `${provider}/${model}` }] : [];
+		});
+}
 
 /** Pi extension source. Non-throwing, same contract as the OpenCode plugin. */
 export function piExtensionSource(statusDir: string, launchDirectory = ""): string {
@@ -151,7 +162,7 @@ export class PiAgent implements HarnessInterface {
 	readonly prepareBeforeAsk = false;
 
 	discoverModels(request: import("../core/agent.ts").ModelDiscoveryRequest) {
-		return discoverModels("pi", request.command, request.env, request.timeoutMs);
+		return discoverModels([...request.command, "--list-models"], request.env, request.timeoutMs, parsePiModels);
 	}
 
 	prepareProfile(profile: ModeProfile, preset: import("../../../model/session/types.ts").AgentPreset) {

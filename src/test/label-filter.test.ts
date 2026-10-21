@@ -1,5 +1,7 @@
 import { describe, expect, test } from "bun:test";
+import { prepareTaskCreationInput } from "../controller/task-creation-input.ts";
 import { collectAvailableLabels, labelComparisonKey } from "../model/task/label-filter.ts";
+import { Task as TaskModel } from "../model/task/task.ts";
 import type { Task } from "../model/types.ts";
 
 describe("label filter utilities", () => {
@@ -47,5 +49,24 @@ describe("label filter utilities", () => {
 	test("labelComparisonKey trims and lowercases without changing display values", () => {
 		expect(labelComparisonKey("  UI ")).toBe("ui");
 		expect(collectAvailableLabels([], [" UI ", "ui"])).toEqual([" UI "]);
+	});
+
+	test("creation and replacement deduplicate labels by label comparison key", () => {
+		expect(prepareTaskCreationInput({ title: "Labels", labels: [" UI ", "ui", "Docs"] }).labels).toEqual([
+			"UI",
+			"Docs",
+		]);
+
+		const task: Task = {
+			id: "task-1",
+			title: "Labels",
+			status: "To Do",
+			labels: ["old"],
+			createdDate: "2025-01-01",
+			dependencies: [],
+		};
+		const model = TaskModel.forUpdate(task);
+		model.applyUpdate({ labels: [" UI ", "ui", "Docs"] }, {});
+		expect(model.serialize().labels).toEqual(["UI", "Docs"]);
 	});
 });

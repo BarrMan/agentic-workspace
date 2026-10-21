@@ -1,461 +1,262 @@
 import { afterEach, describe, expect, it } from "bun:test";
-import { createHash } from "node:crypto";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import lockfile from "proper-lockfile";
-import type { HarnessProvider, RunningExecution, SessionLaunchContext } from "../runtime/harness.ts";
-import { BunRunner } from "../runtime/session-process.ts";
-import { initializeAgentConfiguration, upsertAgentConfiguration } from "../storage/config.ts";
-import { SessionMutationError } from "../storage/errors/session.ts";
-import { type SessionState, SessionStore } from "../storage/session-store.ts";
+import { Session, type SessionRuntime } from "../model/session/session.ts";
+import type {
+	RunningExecution,
+	RunningExecutionEvent,
+	SessionFactory,
+	SessionLaunchContext,
+} from "../model/session/types.ts";
+import { initializeAgentConfiguration, loadAgentConfiguration, upsertAgentConfiguration } from "../storage/config.ts";
+import { Storage } from "../storage/storage.ts";
 import { initializeTestProject } from "../test/test-utils.ts";
 import { Core } from "./agentic-workspace.ts";
 import { SessionApplication } from "./session-application.ts";
-
-class TrackingStore extends SessionStore {
-	mutating = false;
-	writes = 0;
-	failWrites = new Set<number>();
-
-	override async mutate<T>(taskId: string, fn: (state: SessionState) => Promise<T>): Promise<T> {
-		return await super.mutate(taskId, async (state) => {
-			this.mutating = true;
-			try {
-				return await fn(state);
-			} finally {
-				this.mutating = false;
-			}
-		});
-	}
-
-	override async write(path: string, content: string): Promise<void> {
-		this.writes++;
-		if (this.failWrites.has(this.writes)) throw new Error(`write ${this.writes} failed`);
-		await super.write(path, content);
-	}
-}
-
-class Runtime implements RunningExecution {
-	readonly identity;
-	readonly events = {
-		turnCompleted: "unsupported",
-		permissionWait: "unsupported",
-		executionExit: "supported",
-		activity: "unsupported",
-	} as const;
-	private listeners = new Set<(event: never) => void>();
-	stopError?: Error;
-	stops = 0;
-	constructor(context: SessionLaunchContext, suffix: string) {
-		this.identity = {
-			taskId: context.taskId,
-			modeId: context.modeId,
-			sessionId: context.sessionId,
-			executionId: suffix,
-		};
-	}
-	async input(): Promise<void> {}
-	async sendKey(): Promise<void> {}
-	async stop(): Promise<void> {
-		this.stops++;
-		if (this.stopError) throw this.stopError;
-	}
-	observe(listener: (event: never) => void): () => void {
-		this.listeners.add(listener);
-		return () => this.listeners.delete(listener);
-	}
-	teardownListeners(): void {
-		this.listeners.clear();
-	}
-	exit(): void {
-		for (const listener of this.listeners) listener({ kind: "execution-exit", exitCode: 0 } as never);
-	}
-}
-
-class Provider implements HarnessProvider {
-	calls = 0;
-	lastExecution?: Runtime;
-	constructor(
-		readonly store: TrackingStore,
-		private readonly fail?: Error,
-		private readonly beforeLaunch?: (context: SessionLaunchContext) => Promise<void>,
-	) {}
-	async launch(context: SessionLaunchContext): Promise<RunningExecution> {
-		this.calls++;
-		if (this.store.mutating) throw new Error("provider called during mutation");
-		const durable = await this.store.read(context.taskId);
-		if (!durable.modes[context.modeId]?.sessions.some(({ id }) => id === context.sessionId))
-			throw new Error("startup preceded durable reservation");
-		await this.beforeLaunch?.(context);
-		if (this.fail) {
-			throw this.fail;
-		}
-		const execution = new Runtime(context, `execution-${this.calls}`);
-		this.lastExecution = execution;
-		return execution;
-	}
-	async resume(_nativeId: string, context: SessionLaunchContext): Promise<RunningExecution> {
-		this.calls++;
-		if (this.store.mutating) throw new Error("provider called during mutation");
-		const execution = new Runtime(context, `execution-${this.calls}`);
-		this.lastExecution = execution;
-		return execution;
-	}
-}
 
 const roots: string[] = [];
 afterEach(
 	async () => await Promise.all(roots.splice(0).map(async (root) => await rm(root, { recursive: true, force: true }))),
 );
 
-async function fixture(providerFailure?: Error, beforeFailure?: (context: SessionLaunchContext) => Promise<void>) {
+function controlledRuntime(
+	beforeStart: (context: SessionLaunchContext) => Promise<void>,
+	options: { resumeError?: Error } = {},
+) {
+	let starts = 0;
+	const listeners = new Map<string, (event: RunningExecutionEvent) => void>();
+	const stopped: string[] = [];
+	const stopErrorFor = new Set<string>();
+	const execution = (context: SessionLaunchContext): RunningExecution => ({
+		identity: {
+			taskId: context.taskId,
+			modeId: context.modeId,
+			sessionId: context.sessionId,
+			executionId: context.sessionId,
+		},
+		events: {
+			turnCompleted: "supported",
+			permissionWait: "supported",
+			executionExit: "supported",
+			activity: "supported",
+		},
+		async input() {},
+		async sendKey() {},
+		async stop() {},
+		observe(listener) {
+			listeners.set(context.sessionId, listener);
+			return () => listeners.delete(context.sessionId);
+		},
+		teardownListeners() {},
+	});
+	const runtime: SessionRuntime = {
+		async start(context) {
+			await beforeStart(context);
+			starts++;
+			return execution(context);
+		},
+		async resume(_providerSessionId, context) {
+			if (options.resumeError) throw options.resumeError;
+			starts++;
+			return execution(context);
+		},
+		async stop(current) {
+			stopped.push(current.identity.sessionId);
+			if (stopErrorFor.has(current.identity.sessionId)) throw new Error("eviction stop failed");
+		},
+		observe(current, listener) {
+			listeners.set(current.identity.sessionId, listener);
+			return () => listeners.delete(current.identity.sessionId);
+		},
+		async observeRetained() {
+			return "live";
+		},
+		async prepareStop(record) {
+			return {
+				stop: async () => {
+					stopped.push(record.id);
+					if (stopErrorFor.has(record.id)) throw new Error("prepared stop failed");
+				},
+			};
+		},
+		async attach() {
+			throw new Error("unused");
+		},
+		async detach() {},
+		async ask() {
+			return { answer: "answer" };
+		},
+	};
+	const factory: SessionFactory = (_taskId, modeId, record) => {
+		if (!record) throw new Error("Expected durable record.");
+		return new Session(record, modeId, runtime);
+	};
+	return {
+		factory,
+		starts: () => starts,
+		stopped,
+		stopErrorFor,
+		emit(sessionId: string, activity: RunningExecutionEvent["activity"], observedAt: number) {
+			listeners.get(sessionId)?.({ kind: "activity", activity, observedAt });
+		},
+	};
+}
+
+async function fixture(options: { startError?: Error; resumeError?: Error; maxSessions?: number } = {}) {
 	const root = await mkdtemp(join(tmpdir(), "session-application-"));
 	roots.push(root);
 	const core = new Core(root);
 	await initializeTestProject(core, "Session application");
 	const { task } = await core.createTaskFromInput({ title: "Application task", status: "To Do" });
 	await initializeAgentConfiguration(core, "project");
-	const loaded = (await import("../storage/config.ts")).loadAgentConfiguration;
-	const config = await loaded(core, "project");
-	if (!config?.modes) throw new Error("Expected initialized project mode catalog");
+	const config = await loadAgentConfiguration(core, "project");
+	if (!config) throw new Error("Expected initialized configuration.");
 	await upsertAgentConfiguration(core, "project", {
 		...config,
 		selectedPreset: "test",
-		presets: { test: { command: ["agent", "{prompt}", "{skill}"], env: {}, prepare: "", bootstrap: "pi" } },
+		presets: { test: { command: ["agent"], env: {}, prepare: "", bootstrap: "pi" } },
 	});
-	const store = new TrackingStore(root, new BunRunner());
-	const provider = new Provider(store, providerFailure, beforeFailure);
-	const application = new SessionApplication(core, { store, harness: provider });
-	return { core, store, provider, application, task };
+	const storage = Storage.open(root);
+	const store = storage.sessionStore();
+	const controlled = controlledRuntime(
+		async (context) => {
+			const state = await store.read(context.taskId);
+			expect(state.modes[context.modeId]?.sessions.some((session) => session.id === context.sessionId)).toBe(true);
+			if (options.startError) throw options.startError;
+		},
+		{ resumeError: options.resumeError },
+	);
+	return {
+		application: new SessionApplication(core, {
+			storage,
+			sessionFactory: controlled.factory,
+			maxSessions: options.maxSessions,
+		}),
+		core,
+		controlled,
+		store,
+		task,
+	};
 }
 
 describe("SessionApplication", () => {
-	it("publishes one Task-owned reservation before startup through real models and store", async () => {
-		const { store, provider, application, task } = await fixture();
-		const session = await application.newSession(task.id);
-		const reloaded = await store.read(task.id);
-		const published = Object.values(reloaded.modes)
-			.flatMap(({ sessions }) => sessions)
-			.filter(({ id }) => id === session.id);
-		expect(provider.calls).toBe(1);
-		expect(published).toHaveLength(1);
-		expect(published[0]?.status).toBe("running");
-		expect(published[0]?.nativeWorkspace).toBe(true);
+	it("coordinates task status and persists the Task reservation before launch", async () => {
+		const { application, core, controlled, task } = await fixture();
+		const created = await application.newSession(task.id);
+		expect(controlled.starts()).toBe(1);
+		expect(created.snapshot.state).toBe("running");
+		expect((await core.loadTaskById(task.id))?.status).not.toBe("To Do");
 	});
 
-	it("creates a session from the unresolved public OpenCode preset", async () => {
-		const { core, store, provider, application, task } = await fixture();
-		const existing = await (await import("../storage/config.ts")).loadAgentConfiguration(core, "project");
-		if (!existing) throw new Error("Expected initialized project configuration");
-		await upsertAgentConfiguration(core, "project", {
-			...existing,
-			selectedPreset: "opencode",
-			presets: { opencode: { command: ["opencode"], env: {}, prepare: "", bootstrap: "opencode" } },
+	it("resumes the exact durable conversation without another reservation", async () => {
+		const { application, store, task } = await fixture();
+		const created = await application.newSession(task.id);
+		await store.mutate(task.id, async (state) => {
+			const record = Object.values(state.modes)
+				.flatMap(({ sessions }) => sessions)
+				.find((session) => session.id === created.record.id);
+			if (!record) throw new Error("Expected session reservation.");
+			record.nativeSessionId = "exact-native-id";
 		});
-		const session = await application.newSession(task.id);
-		const saved = (await store.read(task.id)).modes.build?.sessions.find(({ id }) => id === session.id);
-		expect(provider.calls).toBe(1);
-		expect(saved?.nativeProvider).toBeUndefined();
-	});
-
-	it("hydrates a fresh Task for rollback and rejects a replaced incarnation", async () => {
-		const { core, store, application, task } = await fixture(new Error("provider startup failed"));
-		await expect(application.newSession(task.id)).rejects.toThrow("provider startup failed");
-		expect(Object.values((await store.read(task.id)).modes).flatMap(({ sessions }) => sessions)).toHaveLength(0);
-		const replacementProvider = new Provider(store, undefined, async (context) => {
-			await store.mutate(context.taskId, async (state) => {
-				const history = state.modes[context.modeId];
-				const provisional = history?.sessions.find(({ id }) => id === context.sessionId);
-				if (!history || !provisional) throw new Error("Expected durable provisional membership");
-				provisional.createdAt = "2099-01-01T00:00:00.000Z";
-			});
-		});
-		const replacedApplication = new SessionApplication(core, { store, harness: replacementProvider });
-		await expect(replacedApplication.newSession(task.id)).rejects.toBeInstanceOf(AggregateError);
-		const persisted = Object.values((await store.read(task.id)).modes).flatMap(({ sessions }) => sessions);
-		expect(persisted).toHaveLength(1);
-		expect(persisted[0]?.createdAt).toBe("2099-01-01T00:00:00.000Z");
-	});
-
-	it("attempts execution cleanup and full rollback after the final durable write fails", async () => {
-		const { store, provider, application, task } = await fixture();
-		store.failWrites.add(3);
-		await expect(application.newSession(task.id)).rejects.toThrow(/write 3 failed/);
-		expect(provider.lastExecution).toBeDefined();
-		expect(provider.lastExecution?.stops).toBe(1);
-		expect(Object.values((await store.read(task.id)).modes).flatMap(({ sessions }) => sessions)).toHaveLength(0);
-	});
-
-	it("retains tracking when execution cleanup fails and reports rollback-write failure with the original error", async () => {
-		const { core, store, provider, task } = await fixture();
-		store.failWrites.add(3);
-		const cleanupFailure = new Error("runtime cleanup failed");
-		const customProvider: HarnessProvider = {
-			launch: async (context) => {
-				const execution = new Runtime(context, "cleanup");
-				execution.stopError = cleanupFailure;
-				return execution;
-			},
-			resume: async (nativeId, context) => await provider.resume(nativeId, context),
-		};
-		const cleanupApp = new SessionApplication(core, { store, harness: customProvider });
-		const cleanupError = await cleanupApp.newSession(task.id).catch((cause) => cause);
-		expect(cleanupError).toBeInstanceOf(AggregateError);
-		expect((cleanupError as AggregateError).errors).toHaveLength(2);
-		expect((cleanupError as AggregateError).errors.map(String).join(" ")).toContain("write 3 failed");
-		expect((cleanupError as AggregateError).errors.map(String).join(" ")).toContain("runtime cleanup failed");
+		const resumed = await application.resumeSession(task.id, created.record.id);
+		expect(resumed.record.id).toBe(created.record.id);
 		expect(Object.values((await store.read(task.id)).modes).flatMap(({ sessions }) => sessions)).toHaveLength(1);
-
-		const rollbackStoreFixture = await fixture();
-		rollbackStoreFixture.store.failWrites.add(3);
-		rollbackStoreFixture.store.failWrites.add(4);
-		const error = await rollbackStoreFixture.application
-			.newSession(rollbackStoreFixture.task.id)
-			.catch((cause) => cause);
-		expect(error).toBeInstanceOf(AggregateError);
-		expect((error as AggregateError).errors).toHaveLength(2);
-		const failures = (error as AggregateError).errors.map((entry) => String(entry));
-		expect(failures.some((message) => message.includes("write 3 failed"))).toBe(true);
-		expect(failures.some((message) => message.includes("write 4 failed"))).toBe(true);
-		expect(
-			Object.values((await rollbackStoreFixture.store.read(rollbackStoreFixture.task.id)).modes).flatMap(
-				({ sessions }) => sessions,
-			),
-		).toHaveLength(1);
 	});
 
-	it("makes creation rollback idempotent when the provisional relationship is already absent", async () => {
-		const { core, store, task } = await fixture();
-		let creation: { taskId: string; modeId: string; provisionalSessionId: string; createdAt: string } | undefined;
-		const provider: HarnessProvider = {
-			launch: async (context) => {
-				creation = {
-					taskId: context.taskId,
-					modeId: context.modeId,
-					provisionalSessionId: context.sessionId,
-					createdAt: context.record.createdAt,
-				};
-				throw new Error("startup failed");
-			},
-			resume: async () => {
-				throw new Error("unused");
-			},
-		};
-		const application = new SessionApplication(core, { store, harness: provider });
-		await expect(application.newSession(task.id)).rejects.toThrow("startup failed");
-		if (!creation) throw new Error("Expected creation identity");
-		await (
-			application as unknown as {
-				rollbackCreation: (
-					session: { execution?: undefined },
-					identity: NonNullable<typeof creation>,
-					original: unknown,
-				) => Promise<void>;
-			}
-		).rollbackCreation({ execution: undefined }, creation, new Error("repeat"));
-		expect(Object.values((await store.read(task.id)).modes).flatMap(({ sessions }) => sessions)).toHaveLength(0);
+	it("enforces the session limit after resume without failing the resume", async () => {
+		const { application, controlled, store, task } = await fixture({ maxSessions: 1 });
+		const idle = await application.newSession(task.id);
+		const resumedTarget = await application.newSession(task.id);
+		controlled.emit(idle.record.id, "idle", 10);
+		await store.mutate(task.id, async (state) => {
+			const record = Object.values(state.modes)
+				.flatMap(({ sessions }) => sessions)
+				.find((session) => session.id === resumedTarget.record.id);
+			if (!record) throw new Error("Expected session reservation.");
+			record.nativeSessionId = "exact-native-id";
+		});
+		await expect(application.resumeSession(task.id, resumedTarget.record.id)).resolves.toMatchObject({
+			record: { id: resumedTarget.record.id },
+		});
+		expect(controlled.stopped).toContain(idle.record.id);
 	});
 
-	it("does not replace a newer active pointer while rolling back a failed creation", async () => {
-		const { core, store, application, task } = await fixture();
+	it("rolls back a pre-execution start failure instead of retaining a provisional session", async () => {
+		const { application, store, task } = await fixture({ startError: new Error("pre-start failed") });
+		await expect(application.newSession(task.id)).rejects.toThrow("pre-start failed");
+		expect(Object.values((await store.read(task.id)).modes).flatMap((history) => history.sessions)).toEqual([]);
+	});
+
+	it("does not retain a local session when exact resume fails before execution", async () => {
+		const { application, store, task } = await fixture({ resumeError: new Error("resume failed") });
+		const created = await application.newSession(task.id);
+		await store.mutate(task.id, async (state) => {
+			const record = Object.values(state.modes)
+				.flatMap(({ sessions }) => sessions)
+				.find((session) => session.id === created.record.id);
+			if (!record) throw new Error("Expected session reservation.");
+			record.nativeSessionId = "exact-native-id";
+		});
+		await application.forgetTaskSessions(task.id);
+		await expect(application.resumeSession(task.id, created.record.id)).rejects.toThrow("resume failed");
+		expect((await application.attachmentContext(task.id, created.record.id)).ownedByThisApplication).toBe(false);
+	});
+
+	it("does not stop sessions below the configured limit", async () => {
+		const { application, controlled, task } = await fixture({ maxSessions: 2 });
+		await application.newSession(task.id);
+		expect(controlled.stopped).toEqual([]);
+	});
+
+	it("evicts the longest continuously idle session when over the limit", async () => {
+		const { application, controlled, task } = await fixture({ maxSessions: 2 });
+		const oldest = await application.newSession(task.id);
+		controlled.emit(oldest.record.id, "idle", 10);
+		const newer = await application.newSession(task.id);
+		controlled.emit(newer.record.id, "idle", 20);
+		await application.newSession(task.id);
+		expect(controlled.stopped).toEqual([oldest.record.id]);
+	});
+
+	it("counts other-task sessions while never evicting the newly started session", async () => {
+		const { application, controlled, core, task } = await fixture({ maxSessions: 1 });
 		const existing = await application.newSession(task.id);
-		await store.mutate(task.id, async (state) => {
-			const history = Object.values(state.modes).find(({ sessions }) => sessions.some(({ id }) => id === existing.id));
-			if (!history) throw new Error("Expected existing session");
-			const record = history.sessions.find(({ id }) => id === existing.id);
-			if (record) record.status = "parked";
-		});
-		const provider = new Provider(store, new Error("startup failed"), async (context) => {
-			await store.mutate(context.taskId, async (state) => {
-				const history = state.modes[context.modeId];
-				if (!history) throw new Error("Expected mode history");
-				history.activeSessionId = existing.id;
-			});
-		});
-		const failingApplication = new SessionApplication(core, { store, harness: provider });
-		await expect(failingApplication.newSession(task.id)).rejects.toThrow("startup failed");
-		const persisted = await store.read(task.id);
-		const history = Object.values(persisted.modes).find(({ sessions }) =>
-			sessions.some(({ id }) => id === existing.id),
-		);
-		expect(history?.activeSessionId).toBe(existing.id);
-		expect(history?.sessions.map(({ id }) => id)).toEqual([existing.id]);
+		controlled.emit(existing.record.id, "idle", 10);
+		const { task: otherTask } = await core.createTaskFromInput({ title: "Other task", status: "To Do" });
+		const created = await application.newSession(otherTask.id);
+		expect(controlled.stopped).toEqual([existing.record.id]);
+		expect(created.record.id).not.toBe(existing.record.id);
 	});
 
-	it("distinguishes an unpublished flush from a committed write whose lock release failed", async () => {
-		const { store, task } = await fixture();
-		const noWrite = new Error("callback failed");
-		const unpublished = await store
-			.mutate(task.id, async () => {
-				throw noWrite;
-			})
-			.catch((error) => error);
-		expect(unpublished).toBe(noWrite);
-		expect(unpublished).not.toBeInstanceOf(SessionMutationError);
-		const originalLock = lockfile.lock;
+	it("keeps working, permission-waiting, and unknown sessions when the limit is exceeded", async () => {
+		const { application, controlled, task } = await fixture({ maxSessions: 3 });
+		const waiting = await application.newSession(task.id);
+		controlled.emit(waiting.record.id, "waiting", 10);
+		const unknown = await application.newSession(task.id);
+		controlled.emit(unknown.record.id, "unknown", 20);
+		const created = await application.newSession(task.id);
+		const extra = await application.newSession(task.id);
+		expect(created.snapshot.state).toBe("running");
+		expect(extra.snapshot.state).toBe("running");
+		expect(controlled.stopped).toEqual([]);
+	});
+
+	it("reports an eviction failure while leaving the started session successful", async () => {
+		const { application, controlled, task } = await fixture({ maxSessions: 1 });
+		const idle = await application.newSession(task.id);
+		controlled.emit(idle.record.id, "idle", 10);
+		controlled.stopErrorFor.add(idle.record.id);
+		const warning = console.warn;
+		const warnings: unknown[][] = [];
+		console.warn = (...args) => warnings.push(args);
 		try {
-			lockfile.lock = (async (...args: Parameters<typeof lockfile.lock>) => {
-				const release = await originalLock(...args);
-				return async () => {
-					await release();
-					throw new Error("release failed");
-				};
-			}) as typeof lockfile.lock;
-			const committed = await store
-				.mutate(task.id, async (state) => {
-					state.hasSuccessfulSession = true;
-				})
-				.catch((error) => error);
-			expect(committed).toBeInstanceOf(SessionMutationError);
-			expect((committed as SessionMutationError).writeCommitted).toBe(true);
+			const created = await application.newSession(task.id);
+			expect(created.snapshot.state).toBe("running");
 		} finally {
-			lockfile.lock = originalLock;
+			console.warn = warning;
 		}
-		expect((await store.read(task.id)).hasSuccessfulSession).toBe(true);
-	});
-
-	it("leaves selection alone when stopping a non-active record and chooses Task's survivor on explicit stop", async () => {
-		const { application, store, task } = await fixture();
-		const first = await application.newSession(task.id);
-		await store.mutate(task.id, async (state) => {
-			const history = Object.values(state.modes).find(({ sessions }) => sessions.some(({ id }) => id === first.id));
-			const record = history?.sessions.find(({ id }) => id === first.id);
-			if (record) record.status = "parked";
-		});
-		const second = await application.newSession(task.id);
-		const before = await store.read(task.id);
-		const selected = Object.values(before.modes).find(({ sessions }) =>
-			sessions.some(({ id }) => id === second.id),
-		)?.activeSessionId;
-		await application.stopSession(task.id, first.id);
-		expect(
-			Object.values((await store.read(task.id)).modes).find(({ sessions }) =>
-				sessions.some(({ id }) => id === second.id),
-			)?.activeSessionId,
-		).toBe(selected);
-		await application.stopSession(task.id, second.id);
-		expect(
-			Object.values((await store.read(task.id)).modes).find(({ sessions }) =>
-				sessions.some(({ id }) => id === first.id),
-			)?.activeSessionId,
-		).toBe(first.id);
-	});
-
-	it("rejects a delayed publication after concurrent deletion and clears resume terminal fields durably", async () => {
-		const { application, store, provider, task } = await fixture();
-		const current = await application.newSession(task.id);
-		await store.mutate(task.id, async (state) => {
-			const history = Object.values(state.modes).find(({ sessions }) => sessions.some(({ id }) => id === current.id));
-			if (!history) throw new Error("Expected current record");
-			const record = history.sessions.find(({ id }) => id === current.id);
-			if (!record) throw new Error("Expected current record");
-			record.status = "stopped";
-			record.nativeSessionId = "native-exact";
-			record.error = "old failure";
-			record.endedAt = "2026-01-01T00:00:00.000Z";
-		});
-		await application.resumeSession(task.id, current.id);
-		const reloaded = await store.read(task.id);
-		const resumed = Object.values(reloaded.modes)
-			.flatMap(({ sessions }) => sessions)
-			.find(({ id }) => id === current.id);
-		expect(resumed?.error).toBeUndefined();
-		expect(resumed?.endedAt).toBeUndefined();
-		expect(provider.calls).toBe(2);
-		await store.mutate(task.id, async (state) => {
-			for (const history of Object.values(state.modes)) {
-				history.sessions = history.sessions.filter(({ id }) => id !== current.id);
-				if (history.activeSessionId === current.id) history.activeSessionId = history.sessions[0]?.id;
-			}
-		});
-		await expect(application.stopSession(task.id, current.id)).rejects.toThrow();
-		expect(Object.values((await store.read(task.id)).modes).flatMap(({ sessions }) => sessions)).toHaveLength(0);
-	});
-
-	it("preserves exact-resume confirmation errors and rejects changed durable stop authority", async () => {
-		const { application, store, provider, task } = await fixture();
-		const current = await application.newSession(task.id);
-		await store.mutate(task.id, async (state) => {
-			const entry = Object.values(state.modes)
-				.flatMap(({ sessions }) => sessions)
-				.find(({ id }) => id === current.id);
-			if (!entry) throw new Error("Expected session");
-			entry.status = "stopped";
-			entry.nativeSessionId = "native-exact";
-			entry.resumeProbeFailed = { nativeProvider: "pi", nativeSessionId: "native-exact" };
-		});
-		await expect(application.resumeSession(task.id, current.id)).rejects.toMatchObject({
-			name: "ExactResumeUnavailableError",
-			reason: "previous-resume-failed",
-		});
-		await store.mutate(task.id, async (state) => {
-			const entry = Object.values(state.modes)
-				.flatMap(({ sessions }) => sessions)
-				.find(({ id }) => id === current.id);
-			if (!entry) throw new Error("Expected session");
-			entry.resumeProbeFailed = undefined;
-			entry.ownerPid = process.pid + 1;
-		});
-		await expect(application.stopSession(task.id, current.id)).rejects.toThrow(/authority changed/);
-		expect(provider.lastExecution?.stops).toBe(0);
-	});
-
-	it("rejects a launch publication when durable owner authority changes under the store lock", async () => {
-		const { core, store, task } = await fixture();
-		const provider = new Provider(store, undefined, async (context) => {
-			await store.mutate(context.taskId, async (state) => {
-				const current = Object.values(state.modes)
-					.flatMap(({ sessions }) => sessions)
-					.find(({ id }) => id === context.sessionId);
-				if (!current) throw new Error("Expected reserved session");
-				current.ownerPid = process.pid + 1;
-			});
-		});
-		const application = new SessionApplication(core, { store, harness: provider });
-		await expect(application.newSession(task.id)).rejects.toThrow(/removed or replaced before publication/);
-		expect(Object.values((await store.read(task.id)).modes).flatMap(({ sessions }) => sessions)).toHaveLength(0);
-	});
-
-	it("retries a stopped lifecycle publication after its durable write fails", async () => {
-		const { application, store, task } = await fixture();
-		const session = await application.newSession(task.id);
-		store.failWrites.add(store.writes + 1);
-		await expect(application.stopSession(task.id, session.id)).rejects.toThrow(/write .* failed/);
-		await application.stopSession(task.id, session.id);
-		const persisted = Object.values((await store.read(task.id)).modes)
-			.flatMap(({ sessions }) => sessions)
-			.find(({ id }) => id === session.id);
-		expect(persisted?.status).toBe("stopped");
-		expect(persisted?.ownerPid).toBeUndefined();
-	});
-
-	it("explicitly stops and durably settles after the execution exit was observed", async () => {
-		const { application, store, provider, task } = await fixture();
-		const session = await application.newSession(task.id);
-		provider.lastExecution?.exit();
-		await application.stopSession(task.id, session.id);
-		const persisted = Object.values((await store.read(task.id)).modes)
-			.flatMap(({ sessions }) => sessions)
-			.find(({ id }) => id === session.id);
-		expect(persisted?.status).toBe("stopped");
-		expect(persisted?.endedAt).toBeString();
-	});
-
-	it("uses the configured state root for application persistence", async () => {
-		const root = await mkdtemp(join(tmpdir(), "session-application-root-"));
-		roots.push(root);
-		const core = new Core(root);
-		await initializeTestProject(core, "Pinned state root");
-		const hash = createHash("sha256").update(root).digest("hex").slice(0, 16);
-		const stateRoot = join(process.env.HOME ?? "/tmp", ".agentic-workspace", hash);
-		const application = new SessionApplication(core, { stateRoot });
-		expect(await application.store.stateRoot).toBe(stateRoot);
-	});
-
-	it("accepts the provider boundary option without leaking a second controller path", async () => {
-		const { application, task } = await fixture();
-		expect(application.compatibility).toBeInstanceOf((await import("../runtime/sessions.ts")).AgentSessionService);
-		expect(task.id).toBe("TASK-1");
+		expect(controlled.stopped).toEqual([idle.record.id]);
+		expect(warnings[0]?.[0]).toBe(`Failed to evict idle session ${idle.record.id}:`);
 	});
 });

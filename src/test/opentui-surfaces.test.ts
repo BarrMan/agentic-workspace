@@ -93,7 +93,7 @@ describe("OpenTUI surfaces", () => {
 			await setup.flush();
 			expect(taskPaneVisible).toBe(false);
 			expect(selectedTaskIndex).toBe(1);
-			expect(setup.captureCharFrame()).not.toContain("First");
+			expect(setup.captureCharFrame()).not.toContain("BACK-1");
 			expect(setup.captureCharFrame()).toContain("Second task details");
 			setup.mockInput.pressKey(" ");
 			await setup.flush();

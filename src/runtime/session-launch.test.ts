@@ -373,13 +373,12 @@ describe("session-local agent launch", () => {
 		}
 	});
 
-	it("reuses the resolved preflight environment without expanding shell values twice", async () => {
+	it("reuses the resolved preflight environment rather than replacing it", async () => {
 		const { root, bootstrapPath } = await fixture();
-		const counter = join(root, "expansion-count");
 		const configured: AgentPreset = {
 			command: ["claude"],
 			bootstrap: "claude",
-			env: { EXPANDED: `$(printf x >> ${quote(counter)}; printf once)` },
+			env: { VALUE: "$AGENTIC_WORKSPACE_PROJECT_DIR" },
 			prepare: "",
 		};
 		const options = {
@@ -390,13 +389,14 @@ describe("session-local agent launch", () => {
 		};
 		try {
 			const preflight = await preflightAgentLaunch(configured, bootstrapPath, options);
+			expect(preflight.environment.VALUE).toBe(root);
 			const launch = await prepareAgentLaunch(
 				configured,
 				bootstrapPath,
 				{
 					...options,
 					environment: {
-						EXPANDED: "tampered",
+						VALUE: "tampered",
 						AGENTIC_WORKSPACE_PROJECT_DIR: "/untrusted",
 						AGENTIC_WORKSPACE_WORKSPACE_CONTEXT: "context",
 					},
@@ -404,10 +404,9 @@ describe("session-local agent launch", () => {
 				preflight,
 			);
 			try {
-				expect(launch.env.EXPANDED).toBe("once");
+				expect(launch.env.VALUE).toBe(root);
 				expect(launch.env.AGENTIC_WORKSPACE_PROJECT_DIR).toBe(root);
 				expect(launch.env.AGENTIC_WORKSPACE_WORKSPACE_CONTEXT).toBe("context");
-				expect(await readFile(counter, "utf8")).toBe("x");
 			} finally {
 				await launch.cleanup();
 			}
@@ -521,7 +520,7 @@ describe("session-local agent launch", () => {
 		}
 	});
 
-	it("does not warn for reserved preset overrides and restores reserved paths after adapter preparation", async () => {
+	it("rejects reserved preset path overrides and protects paths from adapter preparation", async () => {
 		const { root, bootstrapPath } = await fixture();
 		const projectDir = join(root, "project-root");
 		const taskDir = join(root, "canonical-task");
@@ -530,11 +529,8 @@ describe("session-local agent launch", () => {
 			...preset,
 			bootstrap: "claude",
 			command: [process.execPath],
-			env: { AGENTIC_WORKSPACE_PROJECT_DIR: "/preset-override" },
+			env: {},
 		};
-		const warnings: string[] = [];
-		const stderrWrites: string[] = [];
-		const stderrWrite = process.stderr.write;
 		const original = harnessRegistry.forPreset("claude");
 		const overridingAdapter = Object.create(original) as HarnessInterface;
 		overridingAdapter.prepare = async (request) => {
@@ -550,17 +546,12 @@ describe("session-local agent launch", () => {
 			};
 		};
 		harnessRegistry.replace(overridingAdapter);
-		process.stderr.write = ((chunk: string | Uint8Array) => {
-			stderrWrites.push(String(chunk));
-			return true;
-		}) as typeof process.stderr.write;
 		try {
+			await expect(
+				prepareHarnessEnvironment({ AGENTIC_WORKSPACE_PROJECT_DIR: "/preset-override" }, paths, { inherited: {} }),
+			).rejects.toThrow("cannot override reserved workspace path AGENTIC_WORKSPACE_PROJECT_DIR");
 			const environment = await prepareHarnessEnvironment(configured.env, paths, {
 				inherited: {},
-				onWarning: (message) => {
-					warnings.push(message);
-					process.stderr.write(`warning: ${message}\n`);
-				},
 			});
 			const launch = await prepareAgentLaunch(configured, bootstrapPath, {
 				cwd: root,
@@ -571,8 +562,6 @@ describe("session-local agent launch", () => {
 				environment,
 			});
 			try {
-				expect(warnings).toHaveLength(0);
-				expect(stderrWrites).toHaveLength(0);
 				expect(launch.env).toMatchObject({
 					AGENTIC_WORKSPACE_PROJECT_DIR: projectDir,
 					AGENTIC_WORKSPACE_WORKTREE_DIR: root,
@@ -582,7 +571,6 @@ describe("session-local agent launch", () => {
 				await launch.cleanup();
 			}
 		} finally {
-			process.stderr.write = stderrWrite;
 			harnessRegistry.replace(original);
 			await rm(root, { recursive: true, force: true });
 		}

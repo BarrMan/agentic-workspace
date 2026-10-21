@@ -2,18 +2,10 @@ import type { Command, OptionValues } from "commander";
 import { findLocalDuplicateTaskIds } from "../../../controller/duplicate-task-detection.ts";
 import { loadTaskDetail } from "../../../controller/task-detail.ts";
 import { Core } from "../../../index.ts";
-import { DEFAULT_DONE_STATUS } from "../../../model/constants.ts";
 import { formatDuplicateTaskIdWarning } from "../../../model/task/duplicate-detection.ts";
-import { getCanonicalStatus, getValidStatuses } from "../../../model/task/status.ts";
 import { taskIdsEqual } from "../../../model/task/task-id.ts";
 import { LOCAL_TASK_LOOKUP_HINT } from "../../../model/task/task-path.ts";
-import { getTerminalStatus } from "../../../model/task/terminal-status.ts";
-import {
-	printJson,
-	type TaskArtifactProjection,
-	taskListJson,
-	taskViewJson,
-} from "../../../renderer/formatters/json-output.ts";
+import { printJson, taskListJson, taskViewJson } from "../../../renderer/formatters/json-output.ts";
 import { formatTaskPlainText } from "../../../renderer/formatters/task-plain-text.ts";
 import { addHelpSchema } from "../../commands/help-schema.ts";
 import { addListWindowOptions, LIST_WINDOW_OUTPUT_HELP, printListWindow, selectListWindow } from "../../list-window.ts";
@@ -32,7 +24,7 @@ import {
 import { parseTaskListRequest } from "./list-parse.ts";
 import { queryTaskList } from "./list-query.ts";
 import { formatTaskListRow, groupTaskListByStatus, printTaskListGroupedByStatus } from "./list-render.ts";
-import { formatTaskEditError, printMissingRequiredArgument, TASK_SORT_FIELDS } from "./policies.ts";
+import { formatTaskEditError, TASK_SORT_FIELDS } from "./policies.ts";
 
 export type TaskRuntime = {
 	runtime: CliRuntime;
@@ -66,7 +58,7 @@ function printTaskViewOutput(
 	detail: Awaited<ReturnType<typeof loadTaskDetail>>,
 	cwd: string,
 	outputMode: ReadOutputMode,
-	artifacts: TaskArtifactProjection,
+	artifacts: Array<{ path: string; size: number; type: "text" | "binary" }>,
 ): boolean {
 	if (outputMode === "json") {
 		printJson(taskViewJson(detail, cwd, artifacts));
@@ -95,14 +87,7 @@ export function registerTaskCommands(program: Command, { runtime, readOutput }: 
 			const taskId = process.env.AGENTIC_WORKSPACE_TASK_ID;
 			if (!taskId) throw new Error("No current task is available in this session.");
 			const core = new Core(await requireProjectRoot());
-			const task = await core.loadTaskById(taskId);
-			if (!task) throw new Error(`Current task not found: ${taskId}`);
-			const validStatuses = await getValidStatuses(core);
-			const doneStatus =
-				(await getCanonicalStatus(DEFAULT_DONE_STATUS, core)) ??
-				getTerminalStatus(validStatuses) ??
-				DEFAULT_DONE_STATUS;
-			await core.updateTaskFromInput(task.id, { status: doneStatus });
+			const { task } = await core.markTaskDone(taskId);
 			process.stdout.write(`Marked task ${task.id} Done.\n`);
 		});
 	addHelpSchema(taskCmd.command("approve <taskId> <modeId>"), {
@@ -188,9 +173,7 @@ export function registerTaskCommands(program: Command, { runtime, readOutput }: 
 
 	const editRuntime = {
 		createCore: async () => new Core(await requireProjectRoot()),
-		hasInteractiveTTY: runtime.hasInteractiveTTY,
 		isPlainRequested: (options: { plain?: boolean }) => isPlainRequested(options, readOutput),
-		printMissingRequiredArgument,
 		formatError: formatTaskEditError,
 	};
 	const taskEditCommand = addHelpSchema(taskCmd.command("edit <taskId>"), {
@@ -212,49 +195,7 @@ export function registerTaskCommands(program: Command, { runtime, readOutput }: 
 	taskEditCommand
 		.option("--title <title>", "replacement task title")
 		.option("--description <description>", "replacement description")
-		.option("--status <status>", "replacement status")
-		.option("--priority <priority>", "replacement priority")
-		.option("--type <type>", "replacement task type")
-		.option("--project <project>", "replacement project")
-		.option("--label <label>", "replace labels (repeatable)", (value, previous: string[] = []) => [...previous, value])
-		.option("--add-label <label>", "add label (repeatable)", (value, previous: string[] = []) => [...previous, value])
-		.option("--remove-label <label>", "remove label (repeatable)", (value, previous: string[] = []) => [
-			...previous,
-			value,
-		])
-		.option("--clear-labels", "clear all labels")
-		.option("--depends-on <taskId>", "replace dependencies (repeatable)", (value, previous: string[] = []) => [
-			...previous,
-			value,
-		])
-		.option("--dep <taskId>", "replace dependencies (repeatable)", (value, previous: string[] = []) => [
-			...previous,
-			value,
-		])
-		.option("--clear-deps", "clear dependencies")
-		.option("--ref <reference>", "replace references (repeatable)", (value, previous: string[] = []) => [
-			...previous,
-			value,
-		])
-		.option("--add-ref <reference>", "add reference (repeatable)", (value, previous: string[] = []) => [
-			...previous,
-			value,
-		])
-		.option("--remove-ref <reference>", "remove reference (repeatable)", (value, previous: string[] = []) => [
-			...previous,
-			value,
-		])
-		.option("--clear-refs", "clear references")
-		.option("--doc <path>", "replace documentation paths (repeatable)", (value, previous: string[] = []) => [
-			...previous,
-			value,
-		])
-		.option("--clear-docs", "clear documentation paths")
-		.option("--modified-file <path>", "add modified file (repeatable)", (value, previous: string[] = []) => [
-			...previous,
-			value,
-		])
-		.action(async (taskId: string, options) => runTaskEdit([taskId], options, editRuntime));
+		.action(async (taskId: string, options) => runTaskEdit(taskId, options, editRuntime));
 
 	addHelpSchema(taskCmd.command("view <taskId>"), {
 		reads: "Task metadata, description, references, documentation, and canonical task artifacts",
@@ -276,17 +217,7 @@ export function registerTaskCommands(program: Command, { runtime, readOutput }: 
 			const core = new Core(cwd);
 			const taskView = await loadLocalTaskView(core, taskId);
 			if (!taskView) return;
-			const { directory, entries } = await core.listTaskArtifacts(taskView.task.id);
-			printTaskViewOutput(taskView.detail, cwd, outputMode, {
-				directory,
-				artifacts: entries.map(({ path, state, sha256, approvedAt, size, type }) => ({
-					path,
-					state,
-					...(sha256 ? { sha256 } : {}),
-					...(approvedAt ? { approvedAt } : {}),
-					size,
-					type,
-				})),
-			});
+			const artifacts = await core.listTaskArtifacts(taskView.task.id);
+			printTaskViewOutput(taskView.detail, cwd, outputMode, artifacts);
 		});
 }

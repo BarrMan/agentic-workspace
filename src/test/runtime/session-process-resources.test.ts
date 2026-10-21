@@ -7,6 +7,7 @@ import type { AgentSession } from "../../model/session/types.ts";
 import { preparedLaunchResources } from "../../runtime/completion-supervisor-resources.ts";
 import { ConclusiveStartupFailureError } from "../../runtime/errors/sessions.ts";
 import type { ProcessRunner, TmuxServer } from "../../runtime/session-process.ts";
+import { Storage } from "../../storage/storage.ts";
 
 let resourceMarker = "";
 const { SessionProcess } = await import("../../runtime/session-process.ts");
@@ -31,9 +32,8 @@ describe("persisted prepared launch resources", () => {
 		const createdRoot = await mkdtemp(join(tmpdir(), "agentic-workspace-resource-root-"));
 		roots.push(createdRoot);
 		const root = await realpath(createdRoot);
-		const createdStateRoot = await mkdtemp(join(tmpdir(), "agentic-workspace-external-agent-state-"));
-		roots.push(createdStateRoot);
-		const stateRoot = await realpath(createdStateRoot);
+		const storage = Storage.open(root);
+		const stateRoot = await storage.sessionStore().stateRoot;
 		const taskDir = join(stateRoot, "TASK-1");
 		await mkdir(taskDir, { recursive: true });
 		const outputPath = join(taskDir, "session.log");
@@ -52,7 +52,6 @@ describe("persisted prepared launch resources", () => {
 			nativeSessionId: "native-resource-session",
 			cwd: root,
 			createdAt: "2026-10-12T00:00:00.000Z",
-			status: "starting",
 			nativeWorkspace: true,
 			outputPath,
 			bootstrapPath,
@@ -172,7 +171,8 @@ describe("persisted prepared launch resources", () => {
 				throw new Error("Fake resource tests must not run processes");
 			},
 		};
-		const makeProcess = () => new SessionProcess(runner, root, server, async () => stateRoot);
+		const makeProcess = () =>
+			new SessionProcess(runner, { projectRoot: root, stateRoot: () => storage.sessionStore().stateRoot }, server);
 		const launch = {
 			command: "fake-agent",
 			env: {},

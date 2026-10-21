@@ -1,3 +1,5 @@
+import type { TmuxExec } from "../../runtime/live/tmux/types.ts";
+import type { TmuxServer } from "../../runtime/session-process.ts";
 import type { ModeTextColor } from "./mode-colors.ts";
 
 /** Public harness choices shown by the TUI. */
@@ -53,59 +55,24 @@ export interface ModeSessionHistory {
 	activeSessionId?: string;
 }
 
-/** Target artifact contract; service implementation is introduced with task containers in Phase 2. */
-export type ArtifactApprovalState = "missing" | "draft" | "approved";
-export interface ArtifactApproval {
-	sha256: string;
-	approvedAt: string;
-}
-export interface ArtifactApprovalSidecar {
-	version: 1;
-	approvals: Record<string, ArtifactApproval>;
-}
-export interface ArtifactStatus {
-	path: string;
-	state: ArtifactApprovalState;
-	sha256?: string;
-	approvedAt?: string;
-}
-
 export interface AgentConversationContext {
 	taskId: string;
 	modeId: ModeId;
 	sessionId: string;
 }
 
-export const AGENT_SESSION_STATUS = {
-	STARTING: "starting",
-	RUNNING: "running",
-	/**
-	 * The session exists and is the task's active conversation, but its process is not running
-	 * (for example because the workspace killed it on exit to free memory). A parked session is
-	 * resumable and is never terminal; it renders as the blue "parked" indication.
-	 */
-	PARKED: "parked",
-	STOPPED: "stopped",
-	FAILED: "failed",
-} as const;
-export type AgentSessionStatus = (typeof AGENT_SESSION_STATUS)[keyof typeof AGENT_SESSION_STATUS];
+export type SessionState = "starting" | "running" | "parked" | "stopped" | "unknown";
+export type SessionActivity = "working" | "waiting" | "idle" | "unknown";
 
-/**
- * Derived, in-memory agent activity overlay. It is a second axis beside the durable
- * {@link AgentSessionStatus}: it never replaces the lifecycle status and is never persisted
- * (`[D2]`). The vocabulary mirrors AOE's hook status set plus the derived `starting`/`unknown`/
- * `stopped` values; there is deliberately no `Done`.
- */
-const AGENT_ACTIVITY_STATUS = {
-	STARTING: "starting",
-	RUNNING: "running",
-	WAITING: "waiting",
-	IDLE: "idle",
-	UNKNOWN: "unknown",
-	ERROR: "error",
-	STOPPED: "stopped",
-} as const;
-export type AgentActivity = (typeof AGENT_ACTIVITY_STATUS)[keyof typeof AGENT_ACTIVITY_STATUS];
+/** Provider-facing activity is normalized by Session before consumers observe it. */
+export type AgentActivity = "starting" | "running" | "waiting" | "idle" | "unknown" | "error" | "stopped";
+
+export interface SessionSnapshot {
+	readonly state: SessionState;
+	readonly activity: SessionActivity;
+	/** Timestamp of the current uninterrupted positive idle observation. */
+	readonly idleSince: number | null;
+}
 
 /**
  * The row indication shown for a task's active agent session, derived from activity events.
@@ -120,24 +87,19 @@ const AGENT_INDICATION = {
 export type AgentIndication = (typeof AGENT_INDICATION)[keyof typeof AGENT_INDICATION];
 
 /**
- * Map a derived activity to the settled row indication. `running` is the only green; every
+ * Map a normalized activity to the settled row indication. `working` is the only green; every
  * non-working active state is the blue parked indication; no activity evidence means no indication.
  */
-export function activityToIndication(activity: AgentActivity | undefined): AgentIndication | undefined {
+export function activityToIndication(activity: SessionActivity | undefined): AgentIndication | undefined {
 	switch (activity) {
-		case "running":
+		case "working":
 			return "working";
 		case "waiting":
 			return "waiting";
-		case "error":
-			return "error";
 		case "idle":
 		case "unknown":
-		case "starting":
 			return "parked";
 		case undefined:
-			return undefined;
-		case "stopped":
 			return undefined;
 	}
 }
@@ -153,7 +115,7 @@ export interface ActivityMetadata {
 	readonly windowActivity: number;
 }
 
-/** Complete configurations replace their parent; fields are never inherited. */
+/** A preset is complete when defined; preset fields are not inherited independently. */
 export interface AgentPreset {
 	command: string[];
 	env: Record<string, string>;
@@ -169,8 +131,7 @@ export interface AgentPreset {
 
 /**
  * Session-wide behavior shared by every preset, editable from the Settings "Sessions" tab.
- * Stored on {@link AgentConfiguration} so project and card scopes inherit it through the normal
- * complete-scope replacement rules.
+ * Persisted scopes may override individual fields; effective configuration resolves them field by field.
  */
 export interface SessionSettings {
 	/** Create a task-owned git worktree on task creation and remove it when the task reaches Done. */
@@ -189,7 +150,7 @@ const DEFAULT_SESSION_SETTINGS: SessionSettings = {
 
 /** Missing settings use built-in defaults; stored booleans are never re-interpreted. */
 export function resolveSessionSettings(
-	config: Pick<AgentConfiguration, "sessions"> | undefined | null,
+	config: { sessions?: Partial<SessionSettings> } | undefined | null,
 ): SessionSettings {
 	return {
 		...DEFAULT_SESSION_SETTINGS,
@@ -199,17 +160,25 @@ export function resolveSessionSettings(
 }
 
 export interface AgentConfiguration {
+	/** Exact persisted scope values. Absent fields inherit in the effective configuration. */
+	selectedPreset?: string;
+	presets?: Record<string, AgentPreset>;
+	sessions?: Partial<SessionSettings>;
+	/** Project-owned only; root and card records are rejected by the configuration schema. */
+	modes?: ModeCatalog;
+}
+
+/** Fresh field-wise resolution of built-in, root, project, and optional task overrides. */
+export interface EffectiveAgentConfiguration {
 	selectedPreset: string;
 	presets: Record<string, AgentPreset>;
-	/** Optional so pre-existing scoped files without it keep loading unchanged. */
-	sessions?: SessionSettings;
-	/** Project-scoped catalog. It is intentionally not resolved from root/card preset scopes. */
+	sessions: SessionSettings;
 	modes?: ModeCatalog;
 }
 
 export interface ResolvedAgentConfiguration {
 	scope: AgentConfigScope;
-	config: AgentConfiguration;
+	config: EffectiveAgentConfiguration;
 }
 
 export interface AgentSession {
@@ -222,22 +191,102 @@ export interface AgentSession {
 	nativeSessionId?: string;
 	/** Adapter namespace recorded when this native conversation was first launched. */
 	nativeProvider?: NativeAgentNamespace;
-	/** Older binaries reject records containing this marker. */
-	resumeProbeFailed?: { nativeProvider: NativeAgentNamespace; nativeSessionId: string };
-	/** Native workspace owns this session's private tmux server, not the shared CLI backend. */
+	/** Provenance: this session's private tmux server belongs to the native workspace. */
 	nativeWorkspace?: boolean;
 	cwd: string;
 	/** Immutable canonical project, session worktree, and task-artifact roots captured at creation. */
 	pathContext?: AgentSessionPathContext;
 	createdAt: string;
-	endedAt?: string;
-	status: AgentSessionStatus;
 	ownerPid?: number;
 	outputPath: string;
 	bootstrapPath: string;
-	error?: string;
 	lastUsedAt?: string;
 	useCount?: number;
+}
+
+export type Unsubscribe = () => void;
+
+/** Runtime-owned pane identity and renderer-owned terminal transport inputs. */
+export interface TerminalAttachment {
+	readonly record: Readonly<AgentSession>;
+	readonly paneId: string;
+	readonly server: TmuxServer;
+	readonly exec: TmuxExec;
+	readonly outputPath: string;
+	readonly bootstrap: string;
+}
+
+export type SessionFactory = (taskId: string, modeId: ModeId, record?: AgentSession) => import("./session.ts").Session;
+
+export type RetainedSessionObservation = "absent" | "live" | "unknown";
+
+export interface PreparedSessionStop {
+	stop(): Promise<void>;
+}
+
+export interface SessionAskContext {
+	readonly preset: AgentPreset;
+	readonly question: string;
+	readonly profile: ModeProfile;
+	readonly roots: {
+		readonly repositoryRoot: string;
+		readonly taskRoot: string;
+		readonly cwd: string;
+		readonly taskId?: string;
+		readonly modeId?: string;
+		readonly sessionId?: string;
+	};
+}
+
+export interface SessionLaunchContext {
+	readonly taskId: string;
+	readonly modeId: ModeId;
+	readonly sessionId: string;
+	readonly record: Readonly<AgentSession>;
+	readonly configuration: ResolvedAgentConfiguration;
+	readonly profile: Readonly<ModeProfile>;
+	readonly preset: Readonly<AgentPreset>;
+	readonly prompt: string;
+}
+
+export interface ExecutionIdentity {
+	readonly taskId: string;
+	readonly modeId: ModeId;
+	readonly sessionId: string;
+	readonly executionId: string;
+	readonly nativeSessionId?: string;
+}
+
+export interface RunningExecutionEvents {
+	readonly turnCompleted: "supported" | "unsupported";
+	readonly permissionWait: "supported" | "unsupported";
+	readonly executionExit: "supported" | "unsupported";
+	readonly activity: "supported" | "unsupported";
+}
+
+export interface RunningExecutionEvent {
+	readonly kind: "turn-completed" | "permission-wait" | "execution-exit" | "activity";
+	readonly activity?: AgentActivity;
+	readonly exitCode?: number;
+	/** Supplied by the runtime when it observed the provider evidence. */
+	readonly observedAt: number;
+}
+
+export interface RunningExecution {
+	readonly identity: ExecutionIdentity;
+	readonly providerConversationId?: string;
+	readonly events: Readonly<RunningExecutionEvents>;
+	input(text: string): Promise<void>;
+	sendKey(key: string): Promise<void>;
+	stop(): Promise<void>;
+	observe(listener: (event: RunningExecutionEvent) => void): Unsubscribe;
+	teardownListeners(): void;
+}
+
+/** Genuine provider variation point implemented by Harness. */
+export interface HarnessProvider {
+	launch(context: SessionLaunchContext): Promise<RunningExecution>;
+	resume(nativeId: string, context: SessionLaunchContext): Promise<RunningExecution>;
 }
 
 export interface AgentSessionPathContext {

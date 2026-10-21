@@ -1,13 +1,7 @@
-import { afterEach, describe, expect, test } from "bun:test";
-import { mkdtemp, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-import type { RunningExecution, RunningExecutionEvent, SessionLaunchContext } from "../../runtime/harness.ts";
-import type { ProcessRunner } from "../../runtime/session-process.ts";
-import { SessionStore } from "../../storage/session-store.ts";
-import type { LifecycleCheckpoint, SessionLaunchOperation, SessionPublication, SessionRuntime } from "./session.ts";
+import { describe, expect, test } from "bun:test";
+import type { SessionRuntime } from "./session.ts";
 import { Session } from "./session.ts";
-import { AGENT_SESSION_STATUS, type AgentSession } from "./types.ts";
+import type { AgentSession, RunningExecution, RunningExecutionEvent, SessionLaunchContext } from "./types.ts";
 
 const record: AgentSession = {
 	id: "app-id",
@@ -16,10 +10,10 @@ const record: AgentSession = {
 	tmuxName: "tmux",
 	cwd: "/tmp",
 	createdAt: "now",
-	status: AGENT_SESSION_STATUS.STARTING,
 	outputPath: "/tmp/out",
 	bootstrapPath: "/tmp/bootstrap",
 };
+
 const context = { taskId: "task", modeId: "mode", sessionId: record.id, record } as SessionLaunchContext;
 
 function execution(id: string, nativeId = id) {
@@ -30,37 +24,30 @@ function execution(id: string, nativeId = id) {
 		providerConversationId: nativeId,
 		events: {
 			turnCompleted: "supported",
-			permissionWait: "unsupported",
+			permissionWait: "supported",
 			executionExit: "supported",
 			activity: "supported",
 		},
 		input: async () => {},
 		sendKey: async () => {},
-		stop: async () => {
-			calls.stop++;
-		},
+		stop: async () => void calls.stop++,
 		observe: (listener) => {
 			observers.add(listener);
 			return () => observers.delete(listener);
 		},
-		teardownListeners: () => {
-			calls.teardown++;
-		},
+		teardownListeners: () => void calls.teardown++,
 	};
 	return {
 		value,
 		calls,
-		emit(event: RunningExecutionEvent) {
-			for (const observer of observers) observer(event);
+		emit: (event: Omit<RunningExecutionEvent, "observedAt"> & { observedAt?: number }) => {
+			for (const observer of observers) observer({ ...event, observedAt: event.observedAt ?? 1 });
 		},
 		observerCount: () => observers.size,
 	};
 }
 
-function operation(checkpoint: SessionPublication["checkpoint"] = async () => {}): SessionLaunchOperation {
-	return { context, checkpoint };
-}
-function unusedRuntime(): SessionRuntime {
+function runtime(overrides: Partial<SessionRuntime> = {}): SessionRuntime {
 	return {
 		start: async () => {
 			throw new Error("unused");
@@ -68,422 +55,97 @@ function unusedRuntime(): SessionRuntime {
 		resume: async () => {
 			throw new Error("unused");
 		},
-		stop: async (execution) => execution.stop(),
-		observe: (execution, listener) => execution.observe(listener),
+		stop: async (running) => running.stop(),
+		observe: (running, listener) => running.observe(listener),
+		observeRetained: async () => "absent",
+		prepareStop: async () => ({ stop: async () => {} }),
+		attach: async () => {
+			throw new Error("unused");
+		},
+		detach: async () => {},
+		ask: async () => ({ answer: "unused" }),
+		...overrides,
 	};
 }
 
-describe("Session lifecycle", () => {
-	const roots: string[] = [];
-	afterEach(async () => await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true }))));
-
-	test("start waits for readiness and checkpoints in order", async () => {
-		let ready!: (value: RunningExecution) => void;
-		const launched = new Promise<RunningExecution>((resolve) => {
-			ready = resolve;
-		});
-		const phases: LifecycleCheckpoint["phase"][] = [];
-		const runtime: SessionRuntime = {
-			...unusedRuntime(),
-			start: () => launched,
-			observe: (e, listener) => e.observe(listener),
-		};
-		const session = new Session(record, "mode", runtime);
-		let settled = false;
-		const starting = session
-			.start(
-				operation(async ({ phase }) => {
-					phases.push(phase);
-				}),
-			)
-			.then(() => {
-				settled = true;
-			});
-		await Promise.resolve();
-		expect(settled).toBe(false);
-		const running = execution("exec");
-		ready(running.value);
-		await starting;
-		expect(phases).toEqual(["identity", "ready"]);
+describe("Session", () => {
+	test("owns the current execution and durable provider identity", async () => {
+		const running = execution("one", "native-1");
+		const session = new Session(record, "mode", runtime({ start: async () => running.value }));
+		await session.start(context);
 		expect(session.execution).toBe(running.value);
+		expect(session.serialize()).toEqual({ ...record, nativeSessionId: "native-1" });
+		expect(session.view).toEqual({ state: "running", activity: "working", idleSince: null });
 	});
 
-	test("checkpoint rejection propagates after installing execution", async () => {
-		const failure = new Error("identity checkpoint failed");
-		let launches = 0;
-		const launched = execution("x");
-		const runtime: SessionRuntime = {
-			...unusedRuntime(),
-			start: async () => {
-				launches++;
-				return launched.value;
-			},
-		};
-		const session = new Session(record, "mode", runtime);
-		await expect(
-			session.start(
-				operation(async () => {
-					throw failure;
-				}),
-			),
-		).rejects.toBe(failure);
-		expect(launches).toBe(1);
-		expect(session.execution).toBe(launched.value);
+	test("filters stale-incarnation events after execution replacement", async () => {
+		const first = execution("first", "native-1");
+		const second = execution("second", "native-1");
+		const session = new Session(
+			record,
+			"mode",
+			runtime({ start: async () => first.value, resume: async () => second.value }),
+		);
+		await session.start(context);
+		await session.resume(context);
+		first.emit({ kind: "execution-exit", exitCode: 1, observedAt: 2 });
+		expect(session.execution).toBe(second.value);
+		expect(session.view).toEqual({ state: "parked", activity: "unknown", idleSince: null });
 	});
 
-	test("stop retains conversation and releases execution listeners", async () => {
-		const running = execution("exec", "native-conversation");
-		const session = new Session({ ...record, nativeSessionId: "native-conversation" }, "mode", {
-			...unusedRuntime(),
-			resume: async () => running.value,
-		});
-		await session.resume(operation());
-		const publications: LifecycleCheckpoint[] = [];
-		await session.stop({
-			checkpoint: async (checkpoint) => {
-				publications.push(checkpoint);
-			},
-		});
-		expect(session.serialize()).toMatchObject({
-			id: "app-id",
-			nativeSessionId: "native-conversation",
-			status: AGENT_SESSION_STATUS.STOPPED,
-		});
-		expect(session.execution).toBeUndefined();
+	test("keeps idleSince only through uninterrupted positive idle evidence", async () => {
+		const running = execution("one");
+		const session = new Session(record, "mode", runtime({ start: async () => running.value }));
+		await session.start(context);
+		running.emit({ kind: "turn-completed", observedAt: 10 });
+		expect(session.view).toEqual({ state: "running", activity: "idle", idleSince: 10 });
+		running.emit({ kind: "activity", activity: "idle", observedAt: 11 });
+		expect(session.view.idleSince).toBe(10);
+		for (const activity of ["running", "waiting", "unknown"] as const) {
+			running.emit({ kind: "activity", activity, observedAt: 12 });
+			expect(session.view.idleSince).toBeNull();
+			running.emit({ kind: "turn-completed", observedAt: 13 });
+		}
+	});
+
+	test("stops actual execution and exposes only an ephemeral stopped view", async () => {
+		const running = execution("one");
+		const session = new Session(record, "mode", runtime({ start: async () => running.value }));
+		await session.start(context);
+		await session.stop();
 		expect(running.calls.stop).toBe(1);
 		expect(running.observerCount()).toBe(0);
-		expect(publications).toHaveLength(1);
-		expect(publications[0]).toMatchObject({ phase: "update", reason: "stop", expectedMembership: { kind: "present" } });
+		expect(session.view).toEqual({ state: "stopped", activity: "unknown", idleSince: null });
+		expect(session.serialize()).toEqual({ ...record, nativeSessionId: "one" });
 	});
 
-	test("stop without an installed execution or observed exit cannot claim stopped", async () => {
-		const session = new Session(record, "mode", unusedRuntime());
-		let publications = 0;
-		await expect(session.stop({ checkpoint: async () => void publications++ })).rejects.toThrow(
-			"without a current execution or observed exit",
-		);
-		expect(publications).toBe(0);
+	test("keeps retained absence, verified liveness, and unknown inspection distinct", async () => {
+		let observation: "absent" | "live" | "unknown" = "absent";
+		const session = new Session(record, "mode", runtime({ observeRetained: async () => observation }));
+		await session.observeRetained();
+		expect(session.view.state).toBe("stopped");
+		expect(session.executionOwnership).toBe("none");
+		observation = "live";
+		await session.observeRetained();
+		expect(session.view.state).toBe("parked");
+		expect(session.executionOwnership).toBe("external");
+		observation = "unknown";
+		await session.observeRetained();
+		expect(session.view.state).toBe("unknown");
+		expect(session.executionOwnership).toBe("unknown");
 	});
 
-	test("stop failure retains execution tracking and does not publish a stopped record", async () => {
-		const running = execution("exec");
-		const failure = new Error("stop failed");
-		running.value.stop = async () => {
-			running.calls.stop++;
-			throw failure;
-		};
-		const session = new Session({ ...record, nativeSessionId: "native" }, "mode", {
-			...unusedRuntime(),
-			resume: async () => running.value,
-		});
-		await session.resume(operation());
-		let publications = 0;
-		await expect(session.stop({ checkpoint: async () => void publications++ })).rejects.toBe(failure);
-		expect(session.execution).toBe(running.value);
-		expect(running.observerCount()).toBe(1);
-		expect(publications).toBe(0);
-	});
-
-	test("stop retries durable publication after execution has been released", async () => {
-		const running = execution("retry-stop");
-		const session = new Session({ ...record, nativeSessionId: "native" }, "mode", {
-			...unusedRuntime(),
-			resume: async () => running.value,
-		});
-		await session.resume(operation());
-		const failure = new Error("publication failed");
-		await expect(
-			session.stop({
-				checkpoint: async () => {
-					throw failure;
-				},
-			}),
-		).rejects.toBe(failure);
-		expect(session.execution).toBeUndefined();
-		let published: LifecycleCheckpoint | undefined;
-		await session.stop({
-			checkpoint: async (checkpoint) => {
-				published = checkpoint;
-			},
-		});
-		expect(published).toMatchObject({
-			phase: "update",
-			reason: "stop",
-			record: { status: AGENT_SESSION_STATUS.STOPPED },
-		});
-	});
-
-	test("park settles without signalling and finish carries its error", async () => {
-		const session = new Session(record, "mode", unusedRuntime());
-		const checkpoints: LifecycleCheckpoint[] = [];
-		const publication = {
-			checkpoint: async (checkpoint: LifecycleCheckpoint) => {
-				checkpoints.push(checkpoint);
-			},
-		};
-		await session.park(publication);
-		await session.finish(publication, "provider failed");
-		expect(checkpoints).toMatchObject([
-			{ phase: "update", reason: "park", record: { status: AGENT_SESSION_STATUS.PARKED } },
-			{ phase: "update", reason: "finish", record: { status: AGENT_SESSION_STATUS.FAILED, error: "provider failed" } },
-		]);
-	});
-
-	test("park clears obsolete lifecycle fields while retaining unrelated record data", async () => {
+	test("prepares retained stop before applying the stopped view", async () => {
+		let stops = 0;
 		const session = new Session(
-			{ ...record, ownerPid: 42, endedAt: "then", error: "old failure", useCount: 9, nativeSessionId: "native" },
+			record,
 			"mode",
-			unusedRuntime(),
+			runtime({ prepareStop: async () => ({ stop: async () => void stops++ }) }),
 		);
-		let published: LifecycleCheckpoint | undefined;
-		await session.park({
-			checkpoint: async (checkpoint) => {
-				published = checkpoint;
-			},
-		});
-		expect(published).toMatchObject({
-			phase: "update",
-			reason: "park",
-			record: { status: AGENT_SESSION_STATUS.PARKED, useCount: 9, nativeSessionId: "native" },
-		});
-		expect(published?.record.ownerPid).toBeUndefined();
-		expect(published?.record.endedAt).toBeUndefined();
-		expect(published?.record.error).toBeUndefined();
-	});
-
-	test("resume replaces execution, clears prior terminal fields, and ignores obsolete events", async () => {
-		const first = execution("first");
-		const second = execution("second", "same-conversation");
-		const runtime: SessionRuntime = {
-			...unusedRuntime(),
-			start: async () => first.value,
-			resume: async () => second.value,
-		};
-		const session = new Session({ ...record, endedAt: "then", error: "old failure" }, "mode", runtime);
-		const received: string[] = [];
-		session.subscribe((event) => received.push(event.kind));
-		await session.start(operation());
-		await session.resume(operation());
-		expect(first.observerCount()).toBe(0);
-		expect(first.calls.teardown).toBe(1);
-		first.emit({ kind: "turn-completed" });
-		second.emit({ kind: "turn-completed" });
-		expect(received).toEqual(["turn-completed"]);
-		expect(session.serialize()).toMatchObject({
-			id: "app-id",
-			nativeSessionId: "same-conversation",
-			status: AGENT_SESSION_STATUS.RUNNING,
-		});
-		expect(session.serialize().endedAt).toBeUndefined();
-		expect(session.serialize().error).toBeUndefined();
-	});
-
-	test("resume durably clears prior terminal fields in reloaded state", async () => {
-		const root = await mkdtemp(join(tmpdir(), "session-resume-reload-"));
-		roots.push(root);
-		const runner: ProcessRunner = { run: async () => ({ exitCode: 1, stdout: "", stderr: "unused" }) };
-		const store = new SessionStore(root, runner);
-		await store.mutateMode("task", "mode", async (history) => {
-			history.sessions.push({ ...record, endedAt: "then", error: "old failure" });
-			history.activeSessionId = record.id;
-		});
-		const running = execution("resume");
-		const resumed = new Session(
-			{ ...record, nativeSessionId: "native", endedAt: "then", error: "old failure" },
-			"mode",
-			{ ...unusedRuntime(), resume: async () => running.value },
-		);
-		await resumed.resume(
-			operation(async (checkpoint) => {
-				await store.mutateMode("task", "mode", async (history) => {
-					const index = history.sessions.findIndex(({ id }) => id === checkpoint.record.id);
-					if (index < 0) throw new Error("missing session");
-					history.sessions[index] = structuredClone(checkpoint.record) as AgentSession;
-				});
-			}),
-		);
-		const reloaded = (await store.readMode("task", "mode")).sessions[0];
-		expect(reloaded?.endedAt).toBeUndefined();
-		expect(reloaded?.error).toBeUndefined();
-	});
-
-	test("lifecycle publication applies owned changes to newer durable data", async () => {
-		const root = await mkdtemp(join(tmpdir(), "session-lifecycle-current-record-"));
-		roots.push(root);
-		const store = new SessionStore(root, { run: async () => ({ exitCode: 1, stdout: "", stderr: "unused" }) });
-		const running = execution("resume", "resumed-native");
-		const session = new Session(
-			{ ...record, nativeSessionId: "resumed-native", error: "old failure", endedAt: "then" },
-			"mode",
-			{ ...unusedRuntime(), resume: async () => running.value },
-		);
-		const resumeCheckpoints: LifecycleCheckpoint[] = [];
-		await session.resume(
-			operation(async (checkpoint) => {
-				resumeCheckpoints.push(checkpoint);
-			}),
-		);
-		await store.mutateMode("task", "mode", async (history) => {
-			history.sessions.push({
-				...record,
-				useCount: 17,
-				lastUsedAt: "concurrent-use",
-				error: "old failure",
-				endedAt: "then",
-				ownerPid: 123,
-			});
-			history.activeSessionId = record.id;
-		});
-		for (const checkpoint of resumeCheckpoints) {
-			await store.mutateMode("task", "mode", async (history) => {
-				const index = history.sessions.findIndex(({ id }) => id === record.id);
-				if (index < 0) throw new Error("missing session");
-				const current = history.sessions[index];
-				if (!current) throw new Error("missing session");
-				history.sessions[index] = checkpoint.applyTo(current);
-			});
-		}
-		const durable = (await store.readMode("task", "mode")).sessions[0];
-		if (!durable) throw new Error("missing durable session");
-		expect(durable).toMatchObject({
-			status: AGENT_SESSION_STATUS.RUNNING,
-			nativeSessionId: "resumed-native",
-			useCount: 17,
-			lastUsedAt: "concurrent-use",
-			ownerPid: 123,
-		});
-		expect(durable.error).toBeUndefined();
-		expect(durable.endedAt).toBeUndefined();
-
-		const finishing = new Session({ ...record, error: "stale", endedAt: "old-end" }, "mode", unusedRuntime());
-		let finishCheckpoint: LifecycleCheckpoint | undefined;
-		await finishing.finish({
-			checkpoint: async (checkpoint) => {
-				finishCheckpoint = checkpoint;
-			},
-		});
-		await store.mutateMode("task", "mode", async (history) => {
-			const index = history.sessions.findIndex(({ id }) => id === record.id);
-			if (index < 0) throw new Error("missing session");
-			const current = history.sessions[index];
-			if (!current) throw new Error("missing session");
-			history.sessions[index] = { ...current, error: "stale", useCount: 18 };
-		});
-		let finished: AgentSession | undefined;
-		if (!finishCheckpoint) throw new Error("missing finish checkpoint");
-		const checkpoint = finishCheckpoint;
-		await store.mutateMode("task", "mode", async (history) => {
-			const index = history.sessions.findIndex(({ id }) => id === record.id);
-			if (index < 0) throw new Error("missing session");
-			const current = history.sessions[index];
-			if (!current) throw new Error("missing session");
-			const result = checkpoint.applyTo(current);
-			finished = result;
-			history.sessions[index] = result;
-		});
-		expect(finished).toMatchObject({
-			status: AGENT_SESSION_STATUS.STOPPED,
-			useCount: 18,
-			lastUsedAt: "concurrent-use",
-		});
-		expect(finished?.error).toBeUndefined();
-		expect(finished?.endedAt).toBeString();
-		expect(finished?.ownerPid).toBeUndefined();
-	});
-
-	test("an obsolete execution event cannot replace durable state after resume", async () => {
-		const root = await mkdtemp(join(tmpdir(), "session-stale-event-reload-"));
-		roots.push(root);
-		const runner: ProcessRunner = { run: async () => ({ exitCode: 1, stdout: "", stderr: "unused" }) };
-		const store = new SessionStore(root, runner);
-		await store.mutateMode("task", "mode", async (history) => {
-			history.sessions.push(record);
-			history.activeSessionId = record.id;
-		});
-		const first = execution("first", "old-native");
-		const second = execution("second", "current-native");
-		const session = new Session(record, "mode", {
-			...unusedRuntime(),
-			start: async () => first.value,
-			resume: async () => second.value,
-		});
-		session.subscribe(async ({ record: eventRecord }) => {
-			await store.mutateMode("task", "mode", async (history) => {
-				const index = history.sessions.findIndex(({ id }) => id === eventRecord.id);
-				if (index >= 0) history.sessions[index] = structuredClone(eventRecord) as AgentSession;
-			});
-		});
-		const persist = async (checkpoint: LifecycleCheckpoint) => {
-			await store.mutateMode("task", "mode", async (history) => {
-				const index = history.sessions.findIndex(({ id }) => id === checkpoint.record.id);
-				if (index < 0) throw new Error("missing session");
-				history.sessions[index] = structuredClone(checkpoint.record) as AgentSession;
-			});
-		};
-		await session.start(operation(persist));
-		await session.resume(operation(persist));
-		first.emit({ kind: "execution-exit", exitCode: 1 });
-		const reloaded = (await store.readMode("task", "mode")).sessions[0];
-		expect(reloaded).toMatchObject({ nativeSessionId: "current-native", status: AGENT_SESSION_STATUS.RUNNING });
-	});
-
-	test("execution exit updates record and emits its snapshot without publishing", async () => {
-		const running = execution("exec");
-		const session = new Session(record, "mode", { ...unusedRuntime(), start: async () => running.value });
-		const events: Array<{ record: Readonly<AgentSession>; kind: string }> = [];
-		const checkpoints: LifecycleCheckpoint[] = [];
-		session.subscribe((event) => events.push(event));
-		await session.start(
-			operation(async (checkpoint) => {
-				checkpoints.push(checkpoint);
-			}),
-		);
-		const before = checkpoints.length;
-		running.emit({ kind: "execution-exit", exitCode: 1 });
-		expect(session.serialize()).toMatchObject({
-			status: AGENT_SESSION_STATUS.FAILED,
-			error: "Execution exited with code 1",
-		});
-		expect(session.serialize().endedAt).toBeString();
-		expect(session.execution).toBeUndefined();
-		expect(running.observerCount()).toBe(0);
-		expect(events.at(-1)).toMatchObject({
-			kind: "execution-exit",
-			executionIdentity: running.value.identity,
-			record: { status: AGENT_SESSION_STATUS.FAILED },
-		});
-		expect(checkpoints).toHaveLength(before);
-	});
-
-	test("explicit stop publishes lifecycle after the execution has exited", async () => {
-		const running = execution("exited-stop");
-		const session = new Session(record, "mode", { ...unusedRuntime(), start: async () => running.value });
-		await session.start(operation());
-		running.emit({ kind: "execution-exit", exitCode: 0 });
-		let published: LifecycleCheckpoint | undefined;
-		await session.stop({
-			checkpoint: async (checkpoint) => {
-				published = checkpoint;
-			},
-		});
-		expect(published).toMatchObject({
-			phase: "update",
-			reason: "stop",
-			record: { status: AGENT_SESSION_STATUS.STOPPED },
-		});
-	});
-
-	test("unsupported events are suppressed without synthetic activity", async () => {
-		const running = execution("exec");
-		const session = new Session({ ...record, nativeSessionId: "exec" }, "mode", {
-			...unusedRuntime(),
-			resume: async () => running.value,
-		});
-		const received: string[] = [];
-		session.subscribe((event) => received.push(event.kind));
-		await session.resume(operation());
-		running.emit({ kind: "permission-wait" });
-		running.emit({ kind: "activity", activity: "running" });
-		expect(received).toEqual(["activity"]);
+		const prepared = await session.prepareStop();
+		expect(session.view.state).toBe("stopped");
+		await prepared.stop();
+		expect(stops).toBe(1);
+		expect(session.executionOwnership).toBe("none");
 	});
 });
