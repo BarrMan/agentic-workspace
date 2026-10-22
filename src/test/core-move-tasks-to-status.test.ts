@@ -157,6 +157,22 @@ describe("Core.moveTasksToStatus", () => {
 		expect(task?.ordinal).toBe(500);
 	});
 
+	it("does not rebalance an already-in-status subset with duplicate or missing ordinals", async () => {
+		await createTasks([
+			["task-1", "In Progress", 500],
+			["task-2", "In Progress", 500],
+			["task-3", "In Progress"],
+		]);
+
+		const result = await core.moveTasksToStatus({ taskIds: ["task-1"], targetStatus: "In Progress" });
+
+		expect(result.failures).toHaveLength(0);
+		expect(result.changedTasks).toHaveLength(0);
+		expect((await coreFileSystem(core).loadTask("task-1"))?.ordinal).toBe(500);
+		expect((await coreFileSystem(core).loadTask("task-2"))?.ordinal).toBe(500);
+		expect((await coreFileSystem(core).loadTask("task-3"))?.ordinal).toBeUndefined();
+	});
+
 	it("appends after ordinal-less tasks the way the board renders them", async () => {
 		await createTasks([
 			["task-1", "To Do", 1000],

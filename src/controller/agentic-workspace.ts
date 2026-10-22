@@ -12,7 +12,7 @@ import {
 import type { AgentConfiguration, ModeId, SessionFactory } from "../model/session/types.ts";
 import { requireMilestoneId } from "../model/task/milestones.ts";
 import { formatValidPriorityValues, resolvePriorityLabel } from "../model/task/priority-config.ts";
-import { DEFAULT_ORDINAL_STEP, resolveOrdinalConflicts } from "../model/task/reorder.ts";
+import { DEFAULT_ORDINAL_STEP, reconcileBoardPlacement } from "../model/task/reorder.ts";
 import { formatValidStatuses, getCanonicalStatuses } from "../model/task/status.ts";
 import { Task as TaskModel } from "../model/task/task.ts";
 import { TaskCollection as TaskCollectionModel } from "../model/task/task-collection.ts";
@@ -904,17 +904,14 @@ export class Core {
 			applyMove,
 			defaultStep,
 		});
-		return this.reconcileMovedTasks(
-			tasksInOrder,
-			resolveOrdinalConflicts(tasksInOrder, {
-				defaultStep,
-				startOrdinal: defaultStep,
-				forceSequential: requiresRebalance,
-			}),
-			originalTasks,
-			tasksToMove,
-			applyMove,
-		);
+		const originals = new Map([...originalTasks, ...tasksToMove].map((task) => [taskIdKey(task.id), task]));
+		const placement = reconcileBoardPlacement(tasksInOrder, [...originals.values()], defaultStep, requiresRebalance);
+		return {
+			movedTasks: tasksToMove.map(
+				(task) => placement.tasks.find((placed) => taskIdsEqual(placed.id, task.id)) ?? applyMove(task),
+			),
+			changedTasks: placement.changedTasks,
+		};
 	}
 
 	private planAppendedTaskMove(
@@ -967,46 +964,21 @@ export class Core {
 				return model.serialize();
 			}),
 		];
-		return this.reconcileMovedTasks(
-			tasksInOrder,
-			resolveOrdinalConflicts(tasksInOrder, { defaultStep, startOrdinal: defaultStep }),
-			store.getTasks({ status: targetStatus }),
-			tasksToMove,
-			applyMove,
+		const originals = new Map(
+			[...store.getTasks({ status: targetStatus }), ...tasksToMove].map((task) => [taskIdKey(task.id), task]),
 		);
+		const placement = reconcileBoardPlacement(tasksInOrder, [...originals.values()], defaultStep);
+		return {
+			movedTasks: tasksToMove.map(
+				(task) => placement.tasks.find((placed) => taskIdsEqual(placed.id, task.id)) ?? applyMove(task),
+			),
+			changedTasks: placement.changedTasks,
+		};
 	}
 
 	private async resolveTargetMilestone(targetMilestone: string | null | undefined): Promise<string | undefined> {
 		if (targetMilestone === undefined || targetMilestone === null || targetMilestone.trim() === "") return undefined;
 		return requireMilestoneId(targetMilestone, await this.storage.loadMilestones());
-	}
-
-	private reconcileMovedTasks(
-		tasksInOrder: Task[],
-		resolutionUpdates: Task[],
-		originalTasks: Task[],
-		tasksToMove: Task[],
-		applyMove: (task: Task) => Task,
-	): { movedTasks: Task[]; changedTasks: Task[] } {
-		const updatesMap = new Map(tasksInOrder.map((task) => [task.id.toUpperCase(), task]));
-		for (const update of resolutionUpdates) {
-			updatesMap.set(update.id.toUpperCase(), update);
-		}
-		const originalMap = new Map([
-			...originalTasks.map((task) => [task.id.toUpperCase(), task] as const),
-			...tasksToMove.map((task) => [task.id.toUpperCase(), task] as const),
-		]);
-		const movedTasks = tasksToMove.map((task) => updatesMap.get(task.id.toUpperCase()) ?? applyMove(task));
-		const changedTasks = Array.from(updatesMap.values()).filter((task) => {
-			const original = originalMap.get(task.id.toUpperCase());
-			return (
-				!original ||
-				(original.status ?? "") !== (task.status ?? "") ||
-				(original.ordinal ?? null) !== (task.ordinal ?? null) ||
-				(original.milestone ?? "") !== (task.milestone ?? "")
-			);
-		});
-		return { movedTasks, changedTasks };
 	}
 
 	async archiveTask(taskId: string, options: TaskReadOptions = {}): Promise<VacatedTaskResult> {
