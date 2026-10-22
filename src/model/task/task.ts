@@ -171,6 +171,7 @@ export class Task {
 			throw new Error(`Creation belongs to another task: ${creation.taskId}`);
 		const history = this.#requireMode(creation.modeId);
 		const matches = history.sessions.filter(({ id }) => id === creation.provisionalSessionId);
+		if (matches.length === 0) return;
 		if (matches.length !== 1) throw new Error(`Expected one provisional session: ${creation.provisionalSessionId}`);
 		const provisional = matches[0];
 		if (!provisional) throw new Error(`Missing provisional session: ${creation.provisionalSessionId}`);
@@ -233,6 +234,18 @@ export class Task {
 		delete this.modes[modeId];
 		delete this.profiles[modeId];
 		if (this.#selectedModeId === modeId) this.#selectedModeId = Object.keys(this.modes)[0] ?? "";
+	}
+
+	moveModeSessions(sourceModeId: ModeId, destinationModeId: ModeId): void {
+		if (sourceModeId === destinationModeId) throw new Error("Session destination must be another mode.");
+		const source = this.#requireMode(sourceModeId);
+		const destination = this.#requireMode(destinationModeId);
+		if (source.sessions.some(({ id }) => destination.sessions.some((record) => record.id === id)))
+			throw new Error("Session already belongs to the destination mode.");
+		destination.sessions.push(...source.sessions);
+		destination.activeSessionId ??= source.activeSessionId;
+		source.sessions = [];
+		source.activeSessionId = undefined;
 	}
 
 	setModeApproval(modeId: ModeId): void {

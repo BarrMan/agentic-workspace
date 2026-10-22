@@ -1,6 +1,15 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
+import {
+	getEditableAgentConfiguration,
+	initializeAgentConfiguration,
+	loadAgentConfiguration,
+	resolveAgentConfiguration,
+	resolveSessionPreset,
+	updateAgentConfiguration,
+	upsertAgentConfiguration,
+} from "../controller/agent-configuration.ts";
 import { Core } from "../controller/agentic-workspace.ts";
 import { Config } from "../model/session/config.ts";
 import { effectiveModeTextColor, MODE_TEXT_COLORS, type ModeTextColor } from "../model/session/mode-colors.ts";
@@ -9,14 +18,7 @@ import { coreFileSystem, createUniqueTestDir, initializeTestProject, safeCleanup
 import {
 	getBuiltInAgentConfiguration,
 	getDefaultModeCatalog,
-	getEditableAgentConfiguration,
-	initializeAgentConfiguration,
-	loadAgentConfiguration,
-	resolveAgentConfiguration,
 	resolveSelectedMode,
-	resolveSessionPreset,
-	updateAgentConfiguration,
-	upsertAgentConfiguration,
 	validateArtifactPath,
 } from "./config.ts";
 import { parseMarkdown, parseTask } from "./markdown/parser.ts";

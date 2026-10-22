@@ -130,7 +130,7 @@ Define configuration access and precedence, configurable modes and task-scoped a
 
 ### CONFIG-006: Task mode and session ownership
 
-**Description:** Each task session belongs to one fixed mode. Changing a task's selected mode changes its context without changing session execution; sessions retain their owning mode. `Tab` changes the selected mode for the selected task, and each task remembers its own selection.
+**Description:** Each task session belongs to one mode. Changing a task's selected mode changes its context without changing session execution or membership. Only the explicit move choice during [mode deletion](#config-012-confirmed-mode-deletion-cleanup) changes session membership. `Tab` changes the selected mode for the selected task, and each task remembers its own selection.
 
 **Trigger:** User presses `Tab` to change the selected task's mode.
 
@@ -140,7 +140,7 @@ Define configuration access and precedence, configurable modes and task-scoped a
 1. Update and remember that task's selection.
 2. Leave existing session ownership and execution unchanged.
 
-**Outcome:** The task uses its selected context while sessions retain their fixed owning modes.
+**Outcome:** The task uses its selected context while sessions retain their owning modes.
 
 **Failures:** None.
 
@@ -258,26 +258,28 @@ Agent preset commands are argv arrays: the first item is a non-empty executable 
 
 ### CONFIG-012: Confirmed mode deletion cleanup
 
-**Description:** Before deletion, ask for confirmation and explain that workspace-owned sessions will be removed and running agents killed. After confirmation, validate all relevant native cleanup targets before any batch stop effects, following [native cleanup preflight](sessions.md#session-013-stop-while-retaining-identity). Rejection precedes effects. On later failure or interruption, report the error and completed effects. Remove the mode and its sessions and kill its running agents; sessions are removed, not transferred. Never modify provider-owned configuration, data, or state.
+**Description:** Before deletion, let the user choose to discard the mode's sessions or move them into another chosen existing mode, and confirm the selected effects. Discard kills the affected running agents and removes their workspace-owned sessions; move preserves their identities, conversations, and executions. Sessions in other modes remain owned and unchanged. Never modify provider-owned configuration, data, or state.
 
 **Trigger:** User requests mode deletion.
 
-**Preconditions:** The mode exists and user confirms deletion.
+**Preconditions:** The mode exists, another mode remains, and the user confirms discard or selects a different existing destination mode and confirms move.
 
 **Behavior:**
-1. Explain deletion effects and request confirmation.
-2. After confirmation, preflight all relevant native cleanup targets before batch stop effects.
-3. After successful validation, kill running agents and remove workspace-owned sessions and the mode.
-4. Preserve provider-owned state and do not transfer session history.
+1. Offer discard or move to a chosen remaining mode, explain the selected effects, and request confirmation.
+2. For discard, preflight all affected native cleanup targets before any batch stop effects under [native cleanup preflight](sessions.md#session-013-stop-while-retaining-identity). Kill affected running agents before removing their workspace-owned sessions and tracking.
+3. For move, transfer each affected session to the chosen mode on the same task without stopping, resuming, or replacing its execution. Preserve existing destination sessions; no particular transfer ordering is required.
+4. Remove the source mode only after its sessions have been discarded or transferred. Keep ownership and observers for surviving sessions, including those in unaffected modes. Apply catalogue and task-selection fallback under CONFIG-013.
+5. Preserve provider-owned state.
 
-**Outcome:** The mode and its sessions are removed; session history is not transferred.
+**Outcome:** The source mode is removed; its sessions are either discarded or retained in the chosen destination, and unrelated sessions remain intact.
 
 **Failures:** Rejection or failed preflight causes no deletion/batch stop effects. A later failure or interruption is reported with completed effects.
 
 **Acceptance Criteria:**
-- [ ] The confirmation explains session removal and running-agent termination.
+- [ ] The user can choose discard or move to another existing mode; confirmation explains the selected effects.
 - [ ] Rejection or failed preflight occurs before effects.
-- [ ] Successful deletion removes the mode and its sessions and kills its running agents without transferring session history.
+- [ ] Discard kills affected running agents before removing their workspace-owned sessions; move preserves each affected session's identity, conversation, and live execution in the chosen mode.
+- [ ] Existing destination and unrelated-mode sessions retain their ownership and observers; no particular transfer ordering is required.
 - [ ] Provider-owned configuration, data, and state are unchanged.
 - [ ] Later failure or interruption reports the error and completed effects.
 
@@ -394,7 +396,7 @@ Agent preset commands are argv arrays: the first item is a non-empty executable 
 | State | Meaning |
 |---|---|
 | Selected task mode | The task's independently remembered context selection. |
-| Session owning mode | The fixed mode assigned to an existing session. |
+| Session owning mode | The mode containing an existing session; only confirmed mode-deletion transfer changes membership. |
 
 **Transitions:**
 
@@ -403,7 +405,7 @@ Agent preset commands are argv arrays: the first item is a non-empty executable 
 | Selected task mode | User presses `Tab` | New selected mode | Change only that task's context; existing sessions retain their owning mode. |
 
 **Invariants:**
-- A session's owning mode remains fixed; task selection does not change session execution.
+- Task selection changes neither a session's owning mode nor execution; membership changes only under CONFIG-012.
 - Modes are user-defined categories without prescribed sequence or required deliverable set.
 
 ### Task/mode approval
@@ -471,7 +473,7 @@ Agent preset commands are argv arrays: the first item is a non-empty executable 
 
 **Action:** User edits settings and saves or cancels; changes a selected task mode with `Tab`; or confirms mode deletion after reviewing its effects. An agent sets task-and-mode approval at user direction.
 
-**Response:** Settings are retained on Save and discarded on cancel; each task remembers its own mode selection; deletion removes the mode and its sessions and refuses deletion of the last mode. Approval applies only to the specified task/mode, and further session activity in that mode clears it.
+**Response:** Settings are retained on Save and discarded on cancel; each task remembers its own mode selection; mode deletion follows CONFIG-012's discard-or-move choice and refuses deletion of the last mode. Approval applies only to the specified task/mode, and further session activity in that mode clears it.
 
 **Feedback:** Deletion effects are explained before confirmation; catalogue load, model discovery, model availability, and deletion failures are reported as specified above. No other interaction feedback is specified.
 

@@ -1,6 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdir, readdir } from "node:fs/promises";
-import { join } from "node:path";
 import { Core } from "../controller/agentic-workspace.ts";
 import { runInProcessCli } from "./in-process-cli.ts";
 import { coreFileSystem, createUniqueTestDir, initializeFilesystemTestProject, safeCleanup } from "./test-utils.ts";
@@ -32,7 +31,7 @@ describe("CLI Zero Padded IDs Feature", () => {
 		expect(result.exitCode).toBe(0);
 		expect(result.exitCode).toBe(0);
 
-		const tasksDir = join(TEST_DIR, "agentic-workspace", "tasks");
+		const tasksDir = coreFileSystem(new Core(TEST_DIR)).tasksDir;
 		const files = await readdir(tasksDir);
 		expect(files.length).toBe(1);
 		expect(files[0]).toStartWith("task-001");
@@ -44,7 +43,7 @@ describe("CLI Zero Padded IDs Feature", () => {
 		expect(result.exitCode).toBe(0);
 		expect(result.exitCode).toBe(0);
 
-		const tasksDir = join(TEST_DIR, "agentic-workspace", "tasks");
+		const tasksDir = coreFileSystem(new Core(TEST_DIR)).tasksDir;
 		const files = await readdir(tasksDir);
 		expect(files.length).toBe(2);
 		expect(files.some((file) => file.startsWith("task-002"))).toBe(true);

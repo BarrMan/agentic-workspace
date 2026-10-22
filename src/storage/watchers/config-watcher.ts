@@ -1,6 +1,5 @@
 import { type FSWatcher, unwatchFile, watch, watchFile } from "node:fs";
 import { basename, dirname } from "node:path";
-import type { Core } from "../../controller/agentic-workspace.ts";
 import type { AgenticWorkspaceConfig } from "../../model/types.ts";
 import type { FileSystem } from "../file-system.ts";
 
@@ -157,8 +156,4 @@ export function watchConfigFile(filesystem: FileSystem, callbacks: ConfigWatcher
 	scheduleStableRead();
 
 	return { stop };
-}
-
-export function watchConfig(core: Core, callbacks: ConfigWatcherCallbacks): ConfigWatcherHandle {
-	return core.watchConfig(callbacks);
 }

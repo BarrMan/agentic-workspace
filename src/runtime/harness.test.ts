@@ -64,7 +64,9 @@ async function fixture(omit?: Omitted, resume = false) {
 	};
 	const fakeProcess = {
 		prepare: async () => {},
-		create: async () => {},
+		create: async (_record: AgentSession, _env: Record<string, string>, acquired?: (paneId?: string) => void) => {
+			acquired?.("%42");
+		},
 		preparePane: async () => {},
 		paneId: async () => "%42",
 		assertNoPreparedResources: async () => {
@@ -120,6 +122,65 @@ async function fixture(omit?: Omitted, resume = false) {
 }
 
 describe("provider prompt-acceptance receipts", () => {
+	it("fails resume with the unavailable recorded directory named before preparing resources", async () => {
+		const test = await fixture();
+		const missing = join(test.root, "missing-worktree");
+		try {
+			await expect(
+				new Harness(test.root, test.process).resume("native", {
+					...test.context,
+					record: { ...test.record, cwd: missing },
+				}),
+			).rejects.toThrow(missing);
+			expect(test.emitted.order).toEqual([]);
+		} finally {
+			await test.cleanup();
+		}
+	});
+	it("cleans an acquired pane after preparation failure without another pane lookup", async () => {
+		const test = await fixture();
+		test.process.preparePane = async () => {
+			throw new Error("pane preparation failed");
+		};
+		test.process.paneId = async () => {
+			throw new Error("lookup unavailable");
+		};
+		try {
+			await expect(new Harness(test.root, test.process).launch(test.context)).rejects.toThrow(
+				"pane preparation failed",
+			);
+			expect(test.state.capturedPaneIds).toEqual(["%42"]);
+		} finally {
+			await test.cleanup();
+		}
+	});
+
+	it("protects child task and mode identities against inherited and preset values", async () => {
+		const test = await fixture();
+		const previousTask = process.env.AGENTIC_WORKSPACE_TASK_ID;
+		const previousMode = process.env.AGENTIC_WORKSPACE_MODE_ID;
+		process.env.AGENTIC_WORKSPACE_TASK_ID = "parent-task";
+		process.env.AGENTIC_WORKSPACE_MODE_ID = "parent-mode";
+		test.context = {
+			...test.context,
+			preset: {
+				...test.context.preset,
+				env: { AGENTIC_WORKSPACE_TASK_ID: "preset-task", AGENTIC_WORKSPACE_MODE_ID: "preset-mode" },
+			},
+		};
+		try {
+			const execution = await new Harness(test.root, test.process).launch(test.context);
+			expect(test.emitted.launchEnvironment.AGENTIC_WORKSPACE_TASK_ID).toBe("TASK-1");
+			expect(test.emitted.launchEnvironment.AGENTIC_WORKSPACE_MODE_ID).toBe("build");
+			await execution.stop();
+		} finally {
+			if (previousTask === undefined) delete process.env.AGENTIC_WORKSPACE_TASK_ID;
+			else process.env.AGENTIC_WORKSPACE_TASK_ID = previousTask;
+			if (previousMode === undefined) delete process.env.AGENTIC_WORKSPACE_MODE_ID;
+			else process.env.AGENTIC_WORKSPACE_MODE_ID = previousMode;
+			await test.cleanup();
+		}
+	});
 	it("launch resolves only after generated Claude hooks acknowledge the composed prompt", async () => {
 		const test = await fixture();
 		try {

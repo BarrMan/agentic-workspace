@@ -4,12 +4,12 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { BoxRenderable } from "@opentui/core";
 import { createTestRenderer, type TestRendererSetup } from "@opentui/core/testing";
+import { loadAgentConfiguration, upsertAgentConfiguration } from "../controller/agent-configuration.ts";
 import { Core } from "../controller/agentic-workspace.ts";
 import { MODE_TEXT_COLORS } from "../model/session/mode-colors.ts";
 import type { AgentConfiguration, AgentSession } from "../model/session/types.ts";
 import { mountOpenTuiWorkspace, type OpenTuiWorkspaceOptions } from "../renderer/opentui/workspace.ts";
 import { OpenTuiWorkspaceController } from "../renderer/opentui/workspace-controller.ts";
-import { loadAgentConfiguration, upsertAgentConfiguration } from "../storage/config.ts";
 import { getTestCliCommand } from "./test-cli.ts";
 import { coreFileSystem, initializeTestProject } from "./test-utils.ts";
 
@@ -129,13 +129,16 @@ describe("real WorkspaceController Settings persistence", () => {
 				return setup.captureCharFrame().includes("Settings") && setup.captureCharFrame().includes("Categories");
 			});
 		};
-		const saved = async () =>
-			await eventually(async () => {
+		const saved = async () => {
+			for (let attempt = 0; attempt < 300; attempt++) {
 				await setup.flush();
 				const frame = setup.captureCharFrame();
 				if (frame.includes("Error:")) throw new Error(frame.split("\n").slice(-4).join("\n").trim());
-				return !frame.includes("Categories");
-			});
+				if (!frame.includes("Categories")) return;
+				await Bun.sleep(10);
+			}
+			throw new Error(`Settings did not close after save:\n${setup.captureCharFrame()}`);
+		};
 		return {
 			core,
 			stateRoot: await workspaceState?.stateRoot,
@@ -165,6 +168,19 @@ describe("real WorkspaceController Settings persistence", () => {
 			await Bun.sleep(10);
 		}
 		setup.mockInput.pressKey("y");
+		await setup.flush();
+		await eventually(async () => {
+			await setup.flush();
+			return setup.captureCharFrame().includes("Choose an action");
+		});
+	}
+	async function chooseModeDeletion(setup: TestRendererSetup, choice: "discard" | "build" | "review") {
+		const steps = choice === "discard" ? 1 : choice === "build" ? 2 : 3;
+		for (let i = 0; i < steps; i++) {
+			setup.mockInput.pressArrow("down");
+			await setup.flush();
+		}
+		setup.mockInput.pressKey("s", { ctrl: true });
 		await setup.flush();
 	}
 	function down(setup: TestRendererSetup, count = 1) {
@@ -205,6 +221,7 @@ describe("real WorkspaceController Settings persistence", () => {
 			f.setup.mockInput.pressEnter();
 			save(f.setup);
 			await confirmModeDeletion(f.setup);
+			await chooseModeDeletion(f.setup, "discard");
 			await f.saved();
 			expect(deletion).toHaveBeenCalledTimes(1);
 			expect((await f.json()).modes?.profiles.plan).toBeUndefined();
@@ -336,7 +353,7 @@ describe("real WorkspaceController Settings persistence", () => {
 		f.setup.mockInput.pressEscape();
 	});
 
-	it("refuses session moves, then saves empty-mode deletion, added modes and color", async () => {
+	it("moves sessions to the chosen mode and saves deletion, added modes and color", async () => {
 		const f = await fixture();
 		const store = f.core.sessionApplication.store;
 		const session: AgentSession = {
@@ -373,18 +390,7 @@ describe("real WorkspaceController Settings persistence", () => {
 		expect((await f.json()).modes?.profiles.review).toBeUndefined();
 		save(f.setup);
 		await confirmModeDeletion(f.setup);
-		await eventually(async () => {
-			await f.setup.flush();
-			return f.setup.captureCharFrame().includes("Error:");
-		});
-		expect(f.setup.captureCharFrame()).toContain(
-			"Mode deletion failed after stopping sessions: none; removed sessions from: none.",
-		);
-		expect((await store.readMode(f.task.id, "plan")).sessions.map((item) => item.id)).toEqual([session.id]);
-		expect((await f.json()).modes?.profiles.plan).toBeDefined();
-		await store.remove(f.task.id, session.id);
-		save(f.setup);
-		await confirmModeDeletion(f.setup);
+		await chooseModeDeletion(f.setup, "build");
 		await f.saved();
 		const raw = await f.json();
 		expect(raw.modes?.order).toEqual(["build", "review"]);
@@ -392,7 +398,8 @@ describe("real WorkspaceController Settings persistence", () => {
 		expect(raw.modes?.profiles.plan).toBeUndefined();
 		expect(raw.modes?.profiles.review?.textColor).toBe("brightblue");
 		expect((await store.readMode(f.task.id, "plan")).sessions).toEqual([]);
-		expect((await store.readMode(f.task.id, "build")).sessions).toEqual([]);
+		expect((await store.readMode(f.task.id, "build")).sessions.map((item) => item.id)).toEqual([session.id]);
+		await store.remove(f.task.id, session.id);
 		await f.open();
 		modes(f.setup);
 		await f.setup.flush();

@@ -13,6 +13,23 @@ const SIGNAL_NAMES = [
 ] satisfies SignalName[];
 
 describe("Signals", () => {
+	test("attempts every subscriber before surfacing delivery failures", () => {
+		const signals = new Signals();
+		const failure = new Error("subscriber failed");
+		const delivered: unknown[] = [];
+		signals.subscribe("TasksChanged", () => {
+			throw failure;
+		});
+		signals.subscribe("TasksChanged", (task) => delivered.push(task));
+		try {
+			signals.publish("TasksChanged", "TASK-1");
+			throw new Error("Expected delivery error");
+		} catch (error) {
+			expect(error).toBeInstanceOf(AggregateError);
+			expect((error as AggregateError).errors).toEqual([failure]);
+		}
+		expect(delivered).toEqual(["TASK-1"]);
+	});
 	test("publishes each signal to its subscribers with the payload", () => {
 		const signals = new Signals();
 

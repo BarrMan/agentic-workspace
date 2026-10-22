@@ -1,6 +1,7 @@
 import { bold, fg, StyledText } from "@opentui/core";
-import { type TaskDetail, taskDependencyGraph, taskReadiness } from "../../controller/task-detail.ts";
+import { taskDependencyGraph, taskReadiness } from "../../controller/task-detail.ts";
 import { formatReadinessBlockers } from "../../model/task/readiness.ts";
+import type { TaskDetail } from "../../model/task/task-projection.ts";
 import type { Task } from "../../model/types.ts";
 import { type DependencyGraphEntry, formatDependencyGraphEntries } from "../formatters/dependency-graph-text.ts";
 import { formatStatusWithIcon, getStatusColor } from "../formatters/status-icon.ts";

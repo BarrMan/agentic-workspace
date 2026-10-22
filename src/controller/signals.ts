@@ -15,7 +15,15 @@ export class Signals {
 	readonly #subscribers = new Map<SignalName, Set<SignalHandler>>();
 
 	publish(name: SignalName, ...payload: unknown[]): void {
-		for (const handler of [...(this.#subscribers.get(name) ?? [])]) handler(...payload);
+		const errors: unknown[] = [];
+		for (const handler of [...(this.#subscribers.get(name) ?? [])]) {
+			try {
+				handler(...payload);
+			} catch (error) {
+				errors.push(error);
+			}
+		}
+		if (errors.length) throw new AggregateError(errors, `Post-commit ${name} delivery failed.`);
 	}
 
 	subscribe(name: SignalName, handler: SignalHandler): () => void {

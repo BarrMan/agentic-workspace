@@ -25,8 +25,4 @@ export class HarnessRegistry {
 		if (!this.#harnesses.has(harness.name)) throw new Error(`Unknown harness preset: ${harness.name}`);
 		this.#harnesses.set(harness.name, harness);
 	}
-
-	all(): readonly HarnessInterface[] {
-		return [...this.#harnesses.values()];
-	}
 }

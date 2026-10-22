@@ -1,7 +1,6 @@
 import type { BoxRenderable, CliRenderer } from "@opentui/core";
 import { type EffectiveAgentConfiguration, resolveSessionSettings } from "../../model/session/types.ts";
 import { getPriorityLabels } from "../../model/task/priority-config.ts";
-import { getProjectValues } from "../../model/task/project-config.ts";
 import { getTaskTypeValues } from "../../model/task/task-type-config.ts";
 import type { Task, TaskCreateInput } from "../../model/types.ts";
 import { TASK_FIELD_LABELS } from "../formatters/task-labels.ts";
@@ -19,7 +18,6 @@ export type TaskComposerOptions = {
 	statuses: readonly string[];
 	types?: readonly string[];
 	priorities?: readonly string[];
-	projects?: readonly string[];
 	persist: (input: TaskCreateInput) => Promise<Task>;
 };
 
@@ -30,7 +28,6 @@ const FIELD_NAMES = [
 	"status",
 	"type",
 	"priority",
-	"project",
 	"agentPreset",
 	"worktreePerTask",
 	"yoloMode",
@@ -104,7 +101,7 @@ function taskComposerFields(options: OpenTuiTaskComposerOptions): TaskComposerFi
 			label: options.defaultGroupId ? `Root (uncheck to add inside "${options.defaultGroupName ?? "group"}")` : "Root",
 			value: !options.defaultGroupId,
 		},
-		{ kind: "input", name: "title", label: TASK_FIELD_LABELS.TITLE, required: true },
+		{ kind: "input", name: "title", label: TASK_FIELD_LABELS.TITLE },
 		{
 			kind: "textarea",
 			name: "description",
@@ -137,16 +134,6 @@ function taskComposerFields(options: OpenTuiTaskComposerOptions): TaskComposerFi
 			value: "",
 		},
 	];
-	const projects = getProjectValues(options.projects);
-	if (projects.length > 0) {
-		fields.push({
-			kind: "select",
-			name: "project",
-			label: TASK_FIELD_LABELS.PROJECT,
-			options: selectOptions(projects, true),
-			value: "",
-		});
-	}
 	if (options.agentConfiguration) {
 		fields.push({
 			kind: "select",
@@ -175,7 +162,6 @@ function toTaskCreateInput(values: TaskFormValues<TaskComposerFields>): TaskCrea
 		...(description && { description }),
 		...(values.type && { type: values.type }),
 		...(values.priority && { priority: values.priority }),
-		...(values.project && { project: values.project }),
 	};
 }
 

@@ -59,8 +59,8 @@ import { connect, createServer, type Server, type Socket } from "node:net";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { isMissingTmuxTarget } from "../../../lib/process-tree.ts";
 import type { ActivityMetadata } from "../../../model/session/types.ts";
+import { isMissingTmuxTarget } from "./missing-target.ts";
 import type { TmuxExec, VtInputPort } from "./types.ts";
 import { TMUX_COMMAND_TIMEOUT_MS } from "./types.ts";
 

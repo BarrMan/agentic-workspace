@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "bun:test";
-import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, stat, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { createUniqueTestDir, safeCleanup } from "../test/test-utils.ts";
 import { FileSystem } from "./file-system.ts";
@@ -37,17 +37,19 @@ describe("explicit task/config migration", () => {
 		expect(report.migratedFiles).toContain(taskPath);
 	});
 
-	it("does not create state or manifest for a no-op; maintenance script requires a target and reports results", async () => {
+	it("leaves existing task storage unchanged for a no-op; maintenance script requires a target and reports results", async () => {
 		const root = createUniqueTestDir("task-config-noop");
 		roots.push(root);
 		process.env.XDG_CONFIG_HOME = join(root, "config-home");
 		const filesystem = new FileSystem(root);
 		await filesystem.ensureAgenticWorkspaceStructure();
+		const before = (await readdir(root, { recursive: true })).sort();
 		const stateRoot = await resolveProjectStateRoot(root);
 		const storage = new Storage(filesystem);
 		const report = await storage.migrateTaskAndConfig();
 		expect(report).toEqual({ migratedFiles: [], skippedFiles: [], issues: [] });
-		await expect(stat(stateRoot)).rejects.toMatchObject({ code: "ENOENT" });
+		expect((await readdir(root, { recursive: true })).sort()).toEqual(before);
+		await expect(stat(join(stateRoot, "task-config-migration.json"))).rejects.toMatchObject({ code: "ENOENT" });
 
 		const script = new URL("../../scripts/migrate-task-config.ts", import.meta.url).pathname;
 		const missingTarget = Bun.spawnSync([process.execPath, script], { cwd: root });
@@ -59,5 +61,6 @@ describe("explicit task/config migration", () => {
 		});
 		expect(invocation.exitCode).toBe(0);
 		expect(invocation.stdout.toString()).toContain('"migratedFiles": []');
+		expect((await readdir(root, { recursive: true })).sort()).toEqual(before);
 	});
 });

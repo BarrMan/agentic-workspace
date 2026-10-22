@@ -16,6 +16,14 @@ class TaskFileParseError extends Error {
 	}
 }
 
+export function validateTaskRecordIdentity(task: Task, filepath: string): void {
+	const containerName = basename(dirname(filepath));
+	if (basename(filepath) === "task.md" && !taskIdsEqual(task.id, containerName))
+		throw new Error(
+			`${filepath}: Task record identity ${JSON.stringify(task.id)} does not match container ${JSON.stringify(containerName)}.`,
+		);
+}
+
 function warnUnparseableTaskFile(filepath: string, error: unknown): void {
 	const problem = (error instanceof Error ? error.message : String(error)).replace(/[\r\n]+/g, " ");
 	console.warn(`Warning: Skipping unparseable task file ${filepath}: ${problem}`);
@@ -73,6 +81,7 @@ export class TaskRepository {
 		let task: Task;
 		try {
 			task = parseTask(content);
+			validateTaskRecordIdentity(task, filepath);
 		} catch (error) {
 			const parseError = new TaskFileParseError(error);
 			if (epoch === this.cacheEpoch && this.fileReadGenerations.get(cacheKey) === generation) {
@@ -122,10 +131,6 @@ export class TaskRepository {
 						warnUnparseableTaskFile(filepath, error);
 					}
 					continue;
-				}
-				const containerName = basename(file) === "task.md" ? dirname(file) : null;
-				if (containerName !== null) {
-					if (!taskIdsEqual(parsed.id, containerName)) continue;
 				}
 				tasks[index] = { ...parsed, filePath: filepath };
 			}

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "bun:test";
-import { mkdir, mkdtemp, readdir, readFile, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, readFile, realpath, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Task } from "../model/types.ts";
@@ -90,7 +90,7 @@ describe("BACK-23 canonical task creation contract", () => {
 		await filesystem.ensureAgenticWorkspaceStructure();
 
 		const savedPath = await filesystem.saveTask(task("BACK-23", "Configured root task"));
-		expect(savedPath).toBe(join(root, "work", "agentic-workspace", "tasks", "back-23", "task.md"));
+		expect(savedPath).toBe(join(await realpath(root), "work", "agentic-workspace", "tasks", "back-23", "task.md"));
 		expect((await filesystem.listTasks()).map(({ title }) => title)).toEqual(["Configured root task"]);
 		expect(await Bun.file(join(root, ".agentic-workspace", "tasks", "back-23", "task.md")).exists()).toBe(false);
 	});

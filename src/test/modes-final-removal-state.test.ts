@@ -72,6 +72,11 @@ describe("final task removal mode state", () => {
 				config: { statuses: ["To Do", "Done"] },
 				identityIndex: { getTasks: () => taskList, getContestedIds: () => new Set() },
 			}),
+			watchTasks: (callbacks: { onTaskRemoved?: (id: string) => void | Promise<void> }) => {
+				removed = callbacks.onTaskRemoved;
+				return { stop() {} };
+			},
+			watchConfig: () => ({ stop() {} }),
 			filesystem: {
 				agenticWorkspaceDir: join(directory, ".agentic-workspace"),
 				tasksDir: join(directory, "agentic-workspace", "tasks"),
@@ -116,10 +121,6 @@ describe("final task removal mode state", () => {
 					return { dispose() {} };
 				},
 				createActivityProbe: () => ({ probe: async () => new Map() }),
-				watchTasks(_core: Core, callbacks: { onTaskRemoved?: (id: string) => void | Promise<void> }) {
-					removed = callbacks.onTaskRemoved;
-					return { stop() {} } as never;
-				},
 			} as never,
 		} as never);
 		const running = controller.run();

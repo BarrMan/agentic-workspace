@@ -3,7 +3,7 @@
  */
 export const DEFAULT_DIRECTORIES = {
 	/** Main AgenticWorkspace directory */
-	AGENTIC_WORKSPACE: "agentic-workspace",
+	AGENTIC_WORKSPACE: ".agentic-workspace",
 	/** Hidden AgenticWorkspace directory */
 	HIDDEN_AGENTIC_WORKSPACE: ".agentic-workspace",
 	/** Active tasks directory */

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "bun:test";
-import { readFile } from "node:fs/promises";
+import { readFile, symlink } from "node:fs/promises";
 import { join } from "node:path";
 import { Core } from "../controller/agentic-workspace.ts";
 import { getTestCliCommand } from "./test-cli.ts";
@@ -67,7 +67,19 @@ describe("generic task artifact CLI contract", () => {
 		expect(plain.stdout.toString()).toContain("text\t");
 		expect(plain.stdout.toString()).toContain("custom/brief.txt");
 
-		for (const invalid of ["../escape", ".artifacts.json", "task.md"]) {
+		const taskBefore = await readFile(join(expectedDirectory, "task.md"), "utf8");
+		for (const ordinaryName of [".artifacts.json", "task.md"]) {
+			const written = await Bun.$`printf x | ${CLI_COMMAND} task artifact write ${taskId} ${ordinaryName}`
+				.cwd(worktree)
+				.nothrow()
+				.quiet();
+			expect(written.exitCode).toBe(0);
+			expect(await readFile(join(expectedDirectory, "artifacts", ordinaryName), "utf8")).toBe("x");
+		}
+		expect(await readFile(join(expectedDirectory, "task.md"), "utf8")).toBe(taskBefore);
+
+		await symlink(root, join(expectedDirectory, "artifacts", "outside"), "dir");
+		for (const invalid of ["../escape", "/escape", "outside/escape"]) {
 			const rejected = await Bun.$`printf x | ${CLI_COMMAND} task artifact write ${taskId} ${invalid}`
 				.cwd(worktree)
 				.nothrow()

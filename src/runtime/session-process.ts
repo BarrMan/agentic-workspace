@@ -245,7 +245,11 @@ export class SessionProcess {
 		if (result.exitCode !== 0) throw fail("Agent preparation failed", result);
 	}
 
-	async create(session: AgentSession, env: Record<string, string>): Promise<void> {
+	async create(
+		session: AgentSession,
+		env: Record<string, string>,
+		acquired?: (paneId?: string) => void,
+	): Promise<void> {
 		const created = await tmux(`Could not start tmux session ${session.id}`, () =>
 			this.server.newSession({
 				name: session.tmuxName,
@@ -255,6 +259,7 @@ export class SessionProcess {
 			}),
 		);
 		const pane = created.activePane;
+		acquired?.(pane?.id);
 		if (!pane?.id || !/^%\d+$/.test(pane.id))
 			throw new Error(`Could not determine tmux pane for session ${session.id}.`);
 		for (const [option, value] of [
@@ -312,9 +317,10 @@ export class SessionProcess {
 		await this.launchCommand(session, `exec env ${environment.join(" ")} ${launch.command}`, options);
 	}
 
-	/** Clean the outgoing owned instance and its known launch resources before preparing a replacement. */
+	/** Only a positively dead or absent instance may be replaced. */
 	async assertNoPreparedResources(session: AgentSession): Promise<void> {
 		const pane = await this.exactPane(session, [LIVE_PREVIEW_ROLE]);
+		if (pane && !pane.dead) throw new Error(`Session ${session.id} is live; refusing replacement.`);
 		if (pane || this.launches.has(session.id)) await this.kill(session);
 	}
 
@@ -372,9 +378,15 @@ export class SessionProcess {
 		if (!pane) return { stop: async () => {} };
 		const resources = await this.launchResources(pane.paneId);
 		if (resources) await this.validateLaunchResources(session, resources, true);
-		const rawPid = firstLine(await this.server.cmd("display-message", ["-p", "-t", pane.paneId, "#{pane_pid}"])).trim();
-		if (!/^\d+$/.test(rawPid) || !processIdentity(Number(rawPid)))
-			throw new Error(`Could not safely identify pane process for session ${session.id}; refusing stop.`);
+		if (!pane.dead) {
+			const rawPid = firstLine(
+				await this.server.cmd("display-message", ["-p", "-t", pane.paneId, "#{pane_pid}"]),
+			).trim();
+			const pid = /^\d+$/.test(rawPid) ? Number(rawPid) : undefined;
+			if (!pid || !Number.isSafeInteger(pid) || pid <= 1)
+				throw new Error(`Could not safely identify pane process for session ${session.id}; refusing stop.`);
+			processIdentity(pid);
+		}
 		return { stop: async () => await this.killCaptured(session, pane.paneId) };
 	}
 
@@ -384,7 +396,7 @@ export class SessionProcess {
 
 	private async killPane(session: AgentSession, roles: string[], expectedPaneId?: string): Promise<void> {
 		const paneId = await this.ownedInstancePane(session, roles);
-		if (expectedPaneId !== undefined && paneId !== expectedPaneId)
+		if (paneId !== undefined && expectedPaneId !== undefined && paneId !== expectedPaneId)
 			throw new Error(`Session ${session.id} pane incarnation changed; refusing to stop a replacement.`);
 		const pane = paneId ? await this.paneById(paneId) : undefined;
 		if (paneId && !pane) throw new Error(`Owned pane ${paneId} disappeared during stop for session ${session.id}.`);
@@ -395,7 +407,9 @@ export class SessionProcess {
 		const panePid = rawPanePid !== undefined && /^\d+$/.test(rawPanePid) ? Number(rawPanePid) : undefined;
 		if (pane && (!panePid || !Number.isSafeInteger(panePid) || panePid <= 1))
 			throw new Error(`Could not safely identify pane process for session ${session.id}; refusing pane teardown.`);
-		const paneIdentity = pane ? processIdentity(panePid) : undefined;
+		const dead = paneId ? (await this.exactPane(session, roles))?.dead : false;
+		// A successful lookup returning no identity proves exit; inspection/name failures throw.
+		const paneIdentity = pane && !dead ? processIdentity(panePid) : undefined;
 		if (resources) await this.validateLaunchResources(session, resources, true);
 		if (resources) await this.validateLaunchResources(session, resources, false);
 		if (panePid && paneIdentity) {

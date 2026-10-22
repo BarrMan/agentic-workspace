@@ -169,6 +169,7 @@ export function registerTaskCommands(program: Command, { runtime, readOutput }: 
 		.description("list tasks grouped by status")
 		.option("--plain", "use plain text output")
 		.option("--json", "print versioned machine-readable JSON output")
+		.option("--limit <n>", "limit the number of matching tasks")
 		.action((options) => runTaskList(options));
 
 	const editRuntime = {

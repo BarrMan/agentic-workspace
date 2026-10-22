@@ -4,12 +4,13 @@ import { Task as TaskModel } from "../model/task/task.ts";
 import type { Task, TaskCreateInput, TaskUpdateInput } from "../model/types.ts";
 import type { Core } from "./agentic-workspace.ts";
 import { buildCreatedTask, generatedTaskTitle, prepareTaskCreationInput } from "./task-creation-input.ts";
+import type { CommittedTaskChange } from "./task-mutation-service.ts";
 
 /** Owns one allocation and write transaction against a Core project session. */
 export class TaskCreationService {
 	constructor(private readonly core: Core) {}
 
-	async create(input: TaskCreateInput): Promise<{ task: Task; filePath?: string }> {
+	async create(input: TaskCreateInput, changes: CommittedTaskChange[]): Promise<{ task: Task; filePath?: string }> {
 		const prepared = prepareTaskCreationInput(input);
 		const createdDate = DateTime.utc().toFormat("yyyy-MM-dd HH:mm");
 		const [config, configSnapshot] = await Promise.all([this.core.getStoredConfig(), this.core.getConfig()]);
@@ -36,12 +37,12 @@ export class TaskCreationService {
 					ordinal: await this.core.resolveCreateOrdinal(input.ordinal),
 					createdDate,
 				});
-				const validated = await new DependencyValidator({
-					listTasks: () => this.core.loadTasks(),
-					listCompletedTasks: () => this.core.loadCompletedTaskRecords(),
-					listArchivedTasks: () => this.core.loadArchivedTaskRecords(),
-					loadTask: (taskId) => this.core.getTask(taskId),
-				}).validate(prepared.dependencies, draft);
+				const corpora = await Promise.all([
+					this.core.loadStoredTasks(),
+					this.core.loadCompletedTaskRecords(),
+					this.core.loadArchivedTaskRecords(),
+				]);
+				const validated = new DependencyValidator(corpora.flat()).validate(prepared.dependencies, draft);
 				const model = TaskModel.forUpdate(draft);
 				const update: TaskUpdateInput = {
 					...(input.status ? { status: input.status } : {}),
@@ -72,17 +73,21 @@ export class TaskCreationService {
 			return { task: result, filePath: write.filePath };
 		} catch (error) {
 			if (!committed) throw error;
+			const committedTaskId = committed.task.id;
 			if (!committed.write) {
+				changes.push({ task: committed.task.id });
 				throw new Error(
 					`Task ${committed.task.id} was created at ${committed.filePath}, but its recovery receipt could not be prepared. The task was retained; review it before retrying because its ID remains in use.`,
 					{ cause: error },
 				);
 			}
 			const rollback = await this.core.rollbackCreatedTask(committed.write).catch((rollbackError) => {
+				changes.push({ task: committedTaskId });
 				const message = rollbackError instanceof Error ? rollbackError.message : String(rollbackError);
 				throw new Error(`Task creation failed and cleanup also failed: ${message}`, { cause: error });
 			});
 			if (!rollback.workingPathRestored) {
+				changes.push({ task: committed.task.id });
 				throw new Error(
 					`Task creation failed, and cleanup could not safely remove the changed file at ${committed.filePath}. Your changes were preserved. Review or remove the preserved file before retrying because ${committed.task.id} remains in use.`,
 					{ cause: error },

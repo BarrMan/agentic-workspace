@@ -1,7 +1,8 @@
-import { afterEach, describe, expect, it } from "bun:test";
+import { afterEach, describe, expect, it, mock, spyOn } from "bun:test";
 import { mkdtemp, realpath, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import * as sysprims from "@3leaps/sysprims";
 import { TmuxCommandError } from "libtmux";
 import type { AgentSession } from "../../model/session/types.ts";
 import { type ProcessRunner, SessionProcess, type TmuxServer } from "../../runtime/session-process.ts";
@@ -20,9 +21,16 @@ describe("SessionProcess tmux instance lifecycle", () => {
 		outputPath: join(tmpdir(), "instance.log"),
 		bootstrapPath: join(tmpdir(), "instance.md"),
 	};
-	afterEach(async () => await Promise.all(roots.splice(0).map((path) => rm(path, { recursive: true, force: true }))));
+	afterEach(async () => {
+		mock.restore();
+		await Promise.all(roots.splice(0).map((path) => rm(path, { recursive: true, force: true })));
+	});
 
-	async function fixture(state: "live" | "dead" | "absent" = "live", role = "live-preview") {
+	async function fixture(state: "live" | "dead" | "absent" = "live", role = "live-preview", realProcesses = false) {
+		if (!realProcesses) {
+			const table = sysprims.processList();
+			spyOn(sysprims, "processList").mockReturnValue({ ...table, processes: [] });
+		}
 		const root = await realpath(await mkdtemp(join(tmpdir(), "agentic-workspace-tmux-lifecycle-")));
 		roots.push(root);
 		const events: string[] = [];
@@ -117,7 +125,7 @@ describe("SessionProcess tmux instance lifecycle", () => {
 	}
 
 	it("stops the confirmed pane process tree before removing its owned pane", async () => {
-		const f = await fixture();
+		const f = await fixture("live", "live-preview", true);
 		const child = Bun.spawn(["/bin/sleep", "60"], { detached: true, stdout: "ignore", stderr: "ignore" });
 		f.setPanePid(String(child.pid));
 		try {
@@ -131,6 +139,7 @@ describe("SessionProcess tmux instance lifecycle", () => {
 			} catch {
 				// The confirmed process tree may already have exited.
 			}
+			await child.exited;
 		}
 	});
 
@@ -170,10 +179,66 @@ describe("SessionProcess tmux instance lifecycle", () => {
 	});
 
 	it("treats an already-exited pane process as stopped and still removes the pane", async () => {
-		const f = await fixture();
-		f.setPanePid("2147483647");
-		await f.process.kill({ ...session, cwd: await realpath(session.cwd) });
+		const f = await fixture("live", "live-preview", true);
+		const child = Bun.spawn(["/usr/bin/true"], { stdout: "ignore", stderr: "ignore" });
+		await child.exited;
+		f.setPanePid(String(child.pid));
+		const terminate = spyOn(sysprims, "terminateTree").mockImplementation(() => {
+			throw new Error("An absent process must not be signalled.");
+		});
+		const record = { ...session, cwd: await realpath(session.cwd) };
+		const prepared = await f.process.prepareStop(record);
+		await prepared.stop();
+		await prepared.stop();
 		expect(f.events).toEqual(["kill-pane"]);
+		expect(terminate).not.toHaveBeenCalled();
+	});
+
+	it.each(["kill", "prepareStop"] as const)("refuses unknown process inspection during %s", async (operation) => {
+		const f = await fixture();
+		spyOn(sysprims, "processList").mockImplementation(() => {
+			throw new Error("process inspection denied");
+		});
+		await expect(f.process[operation]({ ...session, cwd: await realpath(session.cwd) })).rejects.toThrow(
+			"Could not inspect process identity",
+		);
+		expect(f.events).toEqual([]);
+	});
+
+	it.each([
+		"kill",
+		"prepareStop",
+	] as const)("refuses a process with an unreadable name during %s", async (operation) => {
+		const table = sysprims.processList();
+		const row = table.processes[0];
+		if (!row) throw new Error("Expected a process snapshot.");
+		const f = await fixture();
+		spyOn(sysprims, "processList").mockReturnValue({
+			...table,
+			processes: [{ ...row, pid: 4242, name: "", state: "running" }],
+		});
+		await expect(f.process[operation]({ ...session, cwd: await realpath(session.cwd) })).rejects.toThrow(
+			"Could not read process name",
+		);
+		expect(f.events).toEqual([]);
+	});
+
+	it("refuses a changed process name before signalling or pane teardown", async () => {
+		const table = sysprims.processList();
+		const row = table.processes[0];
+		if (!row) throw new Error("Expected a process snapshot.");
+		const f = await fixture();
+		let probes = 0;
+		spyOn(sysprims, "processList").mockImplementation(() => ({
+			...table,
+			processes: [{ ...row, pid: 4242, name: probes++ === 0 ? "agent" : "replacement", state: "running" }],
+		}));
+		const terminate = spyOn(sysprims, "terminateTree").mockImplementation(() => {
+			throw new Error("A replacement process must not be signalled.");
+		});
+		await expect(f.process.kill({ ...session, cwd: await realpath(session.cwd) })).rejects.toThrow("survivor");
+		expect(terminate).not.toHaveBeenCalled();
+		expect(f.events).toEqual([]);
 	});
 
 	it("treats a conclusive absent instance as already stopped", async () => {

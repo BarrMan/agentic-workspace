@@ -10,7 +10,7 @@ import {
 	TextRenderable,
 } from "@opentui/core";
 import { slug } from "../../lib/slug.ts";
-import { agentCommandArgvSchema } from "../../model/session/agent-config-schema.ts";
+import { agentCommandArgvSchema, validateArtifactPath } from "../../model/session/agent-config-schema.ts";
 import { effectiveModeTextColor, MODE_TEXT_COLORS } from "../../model/session/mode-colors.ts";
 import {
 	type AgentConfiguration,
@@ -20,7 +20,7 @@ import {
 	type SessionSettings,
 } from "../../model/session/types.ts";
 import { profilePermissionSupport } from "../../runtime/agents/core/profile.ts";
-import { AGENT_PRESENTATION_METADATA, validateArtifactPath } from "../../storage/config.ts";
+import { AGENT_PRESENTATION_METADATA } from "../../storage/config.ts";
 import { mountOpenTuiModeModelPicker } from "./mode-model-picker.ts";
 import { ModeSettingsDraft, type ModeSettingsSave } from "./mode-settings-draft.ts";
 

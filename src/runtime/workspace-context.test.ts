@@ -1,19 +1,13 @@
 import { describe, expect, it } from "bun:test";
-import { existsSync, mkdtempSync, rmSync } from "node:fs";
-import { mkdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
-	deleteWorkspaceRequest,
 	isProcessAlive,
 	parseWorkspaceContext,
 	readWorkspaceContext,
-	readWorkspaceRequests,
 	serializeWorkspaceContext,
 	WORKSPACE_CONTEXT_ENV,
 	workspaceContextInto,
-	workspaceRequestDir,
-	writeWorkspaceRequest,
 } from "./workspace-context.ts";
 
 const ROOT = process.cwd();
@@ -106,43 +100,5 @@ describe("isProcessAlive", () => {
 		expect(isProcessAlive(undefined)).toBeFalse();
 		expect(isProcessAlive(0)).toBeFalse();
 		expect(isProcessAlive(2 ** 30)).toBeFalse();
-	});
-});
-
-describe("workspace request markers", () => {
-	function fixture(): { root: string; cleanup: () => void } {
-		const root = mkdtempSync(join(tmpdir(), "workspace-request-"));
-		return { root, cleanup: () => rmSync(root, { recursive: true, force: true }) };
-	}
-
-	it("round-trips a request and removes the directory with its last marker", async () => {
-		const { root, cleanup } = fixture();
-		try {
-			const request = { taskId: "TASK-1", sessionId: "session-1", pid: 1234 };
-			await writeWorkspaceRequest(root, request);
-			expect(await readWorkspaceRequests(root)).toEqual([request]);
-			await deleteWorkspaceRequest(root, "session-1");
-			expect(await readWorkspaceRequests(root)).toEqual([]);
-			expect(existsSync(workspaceRequestDir(root))).toBeFalse();
-		} finally {
-			cleanup();
-		}
-	});
-
-	it("ignores malformed markers and refuses path traversal", async () => {
-		const { root, cleanup } = fixture();
-		try {
-			const directory = workspaceRequestDir(root);
-			await mkdir(directory, { recursive: true });
-			await Bun.write(join(directory, "broken.json"), "{not json");
-			const valid = { taskId: "TASK-2", sessionId: "valid-1", pid: 1 };
-			await writeWorkspaceRequest(root, valid);
-			expect(await readWorkspaceRequests(root)).toEqual([valid]);
-			await expect(writeWorkspaceRequest(root, { ...valid, sessionId: "../escape" })).rejects.toThrow(
-				"Invalid workspace request",
-			);
-		} finally {
-			cleanup();
-		}
 	});
 });

@@ -1,7 +1,8 @@
 import { randomUUID } from "node:crypto";
 import { watch } from "node:fs";
-import { readFile } from "node:fs/promises";
+import { readFile, stat } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
+import type { RecoverableExecutionFailure } from "../model/session/session.ts";
 import type {
 	AgentSession,
 	ExecutionIdentity,
@@ -23,11 +24,6 @@ import { preflightAgentLaunch, prepareAgentLaunchResources } from "./session-lau
 import type { SessionProcess } from "./session-process.ts";
 import { sessionActivityDir } from "./status-hooks.ts";
 import { workspaceContextInto } from "./workspace-context.ts";
-
-export interface RecoverableExecutionFailure extends Error {
-	readonly execution?: RunningExecution;
-	readonly identity?: ExecutionIdentity;
-}
 
 export const PROVIDER_READINESS_DEADLINE_MS = 10_000;
 
@@ -133,6 +129,11 @@ export class Harness implements HarnessProvider {
 
 	private async start(context: SessionLaunchContext, intent: SessionIntent): Promise<RunningExecution> {
 		const record = context.record as AgentSession;
+		try {
+			if (!(await stat(record.cwd)).isDirectory()) throw new Error("Not a directory.");
+		} catch (cause) {
+			throw new Error(`Session working directory is unavailable: ${record.cwd}`, { cause });
+		}
 		const executionId = randomUUID();
 		const env = { ...context.configuration.config.presets[record.preset]?.env, ...context.preset.env };
 		const preset = await resolveLaunchPreset(context.preset, { cwd: record.cwd, env });
@@ -142,6 +143,8 @@ export class Harness implements HarnessProvider {
 			cwd: record.cwd,
 			intent,
 			sessionId: record.id,
+			taskId: context.taskId,
+			modeId: context.modeId,
 			profile: context.profile,
 			prompt: context.prompt,
 			repositoryRoot: record.pathContext?.projectDir,
@@ -150,16 +153,21 @@ export class Harness implements HarnessProvider {
 		};
 		const preflight = await preflightAgentLaunch(preset, record.bootstrapPath, options);
 		let owned = false;
+		let paneId: string | undefined;
 		let prepared: Awaited<ReturnType<typeof prepareAgentLaunchResources>> | undefined;
 		try {
 			if (intent.kind === "resume") await this.process.assertNoPreparedResources(record);
 			prepared = await prepareAgentLaunchResources(record.bootstrapPath, preflight);
 			await this.process.prepare(preset.prepare, record.cwd, prepared.env);
-			await this.process.create(record, prepared.env);
+			await this.process.create(record, prepared.env, (captured) => {
+				owned = true;
+				paneId = captured;
+			});
 			owned = true;
 			await this.process.preparePane(record);
+			paneId ??= await this.process.paneId(record);
 			prepared.env = workspaceContextInto(prepared.env, {
-				paneId: await this.process.paneId(record),
+				paneId,
 				rootDir: record.pathContext?.projectDir ?? this.rootDir,
 				conversation: { taskId: context.taskId, modeId: context.modeId, sessionId: record.id },
 				...(intent.kind === "resume" ? { nativeSessionId: intent.nativeSessionId } : {}),
@@ -198,12 +206,12 @@ export class Harness implements HarnessProvider {
 				throw new Error(
 					`Provider returned native identity '${identity.id}' instead of resumed session '${intent.nativeSessionId}'.`,
 				);
-			return await this.execution(agent, context, record, identity.id, prepared, executionId);
+			return this.execution(agent, context, record, identity.id, prepared, executionId, paneId);
 		} catch (cause) {
 			let startupError = cause;
 			let execution: RunningExecution | undefined;
 			if (owned && prepared) {
-				execution = await this.execution(agent, context, record, prepared.identity?.id ?? "", prepared, executionId);
+				execution = this.execution(agent, context, record, prepared.identity?.id ?? "", prepared, executionId, paneId);
 				try {
 					await execution.stop();
 					execution = undefined;
@@ -221,6 +229,10 @@ export class Harness implements HarnessProvider {
 						[cause, cleanupError],
 						`Could not clean failed startup for session ${record.id}`,
 					);
+					execution = {
+						...this.execution(agent, context, record, prepared.identity?.id ?? "", prepared, executionId),
+						stop: prepared.cleanup,
+					};
 				}
 			}
 			const failure = Object.assign(
@@ -262,15 +274,15 @@ export class Harness implements HarnessProvider {
 		}
 	}
 
-	private async execution(
+	private execution(
 		agent: HarnessInterface,
 		context: SessionLaunchContext,
 		record: AgentSession,
 		nativeId: string,
 		prepared: Awaited<ReturnType<typeof prepareAgentLaunchResources>>,
 		executionId: string,
-	): Promise<RunningExecution> {
-		const paneId = await this.process.paneId(record, { roles: ["live-preview"] });
+		paneId?: string,
+	): RunningExecution {
 		const identity: ExecutionIdentity = {
 			taskId: context.taskId,
 			modeId: context.modeId,
@@ -291,14 +303,12 @@ export class Harness implements HarnessProvider {
 			input: (text) => this.process.input(record, text),
 			sendKey: (key) => this.process.sendKey(record, key),
 			stop: async () => {
-				await this.process.killCaptured(record, paneId);
+				if (paneId) await this.process.killCaptured(record, paneId);
+				else await this.process.kill(record);
 				await prepared.cleanup();
 			},
 			observe: (listener) => {
-				const statusPath = join(
-					sessionActivityDir(context.record.pathContext?.taskDir ?? dirname(record.bootstrapPath), record.id),
-					"status",
-				);
+				const statusPath = join(sessionActivityDir(dirname(record.bootstrapPath), record.id), "status");
 				let active = true;
 				const emit = async () => {
 					if (!active) return;
@@ -314,8 +324,7 @@ export class Harness implements HarnessProvider {
 						waiting: { kind: "permission-wait", activity: "waiting", observedAt },
 						error: { kind: "activity", activity: "error", observedAt },
 					};
-					const event = map[value];
-					if (event) listener(event);
+					listener(map[value] ?? { kind: "activity", activity: "unknown", observedAt });
 				};
 				const watcher = watch(dirname(statusPath), emit);
 				watcher.on("error", () => {});

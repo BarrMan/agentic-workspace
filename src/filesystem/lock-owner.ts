@@ -36,15 +36,27 @@ export class LockOwner {
 			throw toError(error);
 		}
 
+		let result: T | undefined;
+		let operationError: unknown;
+		let operationFailed = false;
 		try {
-			const result = await operation();
-			await release?.().catch((error: unknown) => {
-				throw toError(error);
-			});
-			return result;
+			result = await operation();
 		} catch (error) {
-			if (release) await release().catch(() => undefined);
-			throw error;
+			operationFailed = true;
+			operationError = error;
 		}
+		let releaseError: unknown;
+		try {
+			await release?.();
+		} catch (error) {
+			releaseError = toError(error);
+		}
+		if (releaseError !== undefined) {
+			if (operationFailed)
+				throw new AggregateError([operationError, releaseError], "Operation and lock release failed.");
+			throw releaseError;
+		}
+		if (operationFailed) throw operationError;
+		return result as T;
 	}
 }

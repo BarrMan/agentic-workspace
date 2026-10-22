@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { join } from "node:path";
+import { ensureTaskWorktree, taskWorktreePath } from "../filesystem/git/task-worktree.ts";
 import { DEFAULT_STATUSES } from "../model/constants.ts";
 import type { Session } from "../model/session/session.ts";
 import { nativeSessionName } from "../model/session/session-utils.ts";
@@ -12,13 +13,14 @@ import type {
 	SessionLaunchContext,
 	SessionSnapshot,
 } from "../model/session/types.ts";
+import type { WorkspaceRequestMarker } from "../model/session/workspace-request.ts";
 import { resolveInProgressStatus } from "../model/task/status.ts";
 import { type SessionCreationIdentity, Task } from "../model/task/task.ts";
 import { taskIdKey, taskIdsEqual } from "../model/task/task-id.ts";
 import { getTerminalStatus, isTerminalStatus } from "../model/task/terminal-status.ts";
-import { loadProjectModeCatalog, resolveAgentConfiguration } from "../storage/config.ts";
 import type { SessionStore } from "../storage/session-store.ts";
 import type { Storage } from "../storage/storage.ts";
+import { loadProjectModeCatalog, resolveAgentConfiguration } from "./agent-configuration.ts";
 import type { Core } from "./agentic-workspace.ts";
 
 export interface ObservedSession {
@@ -26,7 +28,7 @@ export interface ObservedSession {
 	readonly snapshot: SessionSnapshot;
 }
 
-export interface PreparedSessionStop {
+export interface PreparedApplicationSessionStop {
 	readonly record: AgentSession;
 	stop(): Promise<void>;
 	release(): Promise<void>;
@@ -56,6 +58,9 @@ export class SessionApplication {
 	private readonly sessionFactory?: SessionFactory;
 	private readonly maxSessions: number;
 	private readonly sessions = new Map<string, Session>();
+	private readonly launches = new Set<Promise<ObservedSession>>();
+	private closing = false;
+	private shutdownOperation?: Promise<void>;
 
 	constructor(
 		private readonly core: Core,
@@ -67,7 +72,15 @@ export class SessionApplication {
 		this.maxSessions = options.maxSessions ?? 10;
 	}
 
-	async newSession(taskId: string, modeId?: ModeId, presetName?: string): Promise<ObservedSession> {
+	newSession(taskId: string, modeId?: ModeId, presetName?: string): Promise<ObservedSession> {
+		return this.trackLaunch(async () => {
+			const created = await this.createSession(taskId, modeId, presetName);
+			await this.enforceSessionLimit(created.record);
+			return created;
+		});
+	}
+
+	private async createSession(taskId: string, modeId?: ModeId, presetName?: string): Promise<ObservedSession> {
 		this.requireSessionFactory();
 		const requestedMode = modeId ?? (await loadProjectModeCatalog(this.core)).defaultModeId;
 		return await this.withAdmissions(requestedMode, taskId, async () => {
@@ -81,7 +94,7 @@ export class SessionApplication {
 				const presetNameResolved = presetName ?? resolved.config.selectedPreset;
 				const configuredPreset = resolved.config.presets[presetNameResolved];
 				if (!configuredPreset) throw new Error(`Agent preset not found: ${presetNameResolved}`);
-				const record = await this.newRecord(taskId, presetNameResolved);
+				const record = await this.newRecord(taskRecord, presetNameResolved, resolved.config.sessions.worktreePerTask);
 				const session = this.newModelSession(record, selectedMode);
 				let creation: SessionCreationIdentity | undefined;
 				let release: (() => Promise<void>) | undefined;
@@ -100,7 +113,6 @@ export class SessionApplication {
 					await session.start(this.launchContext(record, selectedMode, resolved, configuredPreset, configuredMode));
 					await this.publish(session, selectedMode, taskRecord, catalog.profiles, resolved);
 					const created = this.view(session);
-					await this.enforceSessionLimit(record);
 					return created;
 				} catch (error) {
 					primary = error;
@@ -128,7 +140,15 @@ export class SessionApplication {
 		});
 	}
 
-	async resumeSession(taskId: string, sessionId: string): Promise<ObservedSession> {
+	resumeSession(taskId: string, sessionId: string): Promise<ObservedSession> {
+		return this.trackLaunch(async () => {
+			const resumed = await this.resumeRetainedSession(taskId, sessionId);
+			await this.enforceSessionLimit(resumed.record);
+			return resumed;
+		});
+	}
+
+	private async resumeRetainedSession(taskId: string, sessionId: string): Promise<ObservedSession> {
 		this.requireSessionFactory();
 		const initial = await this.requireRecord(taskId, sessionId);
 		return await this.withAdmissions(
@@ -141,6 +161,8 @@ export class SessionApplication {
 					let session: Session | undefined;
 					try {
 						const { record, modeId } = await this.requireRecord(taskId, sessionId);
+						if ((await this.readObserved(taskId, sessionId)).snapshot.state !== "stopped")
+							throw new Error(`Session ${sessionId} is not positively stopped; refusing resume.`);
 						if (!record.nativeSessionId)
 							throw new Error(`Session ${sessionId} has no exact native conversation identity to resume.`);
 						const resolved = await resolveAgentConfiguration(this.core, taskId);
@@ -155,7 +177,6 @@ export class SessionApplication {
 						await this.publish(resumedSession, modeId, taskRecord, catalog.profiles, resolved);
 						this.sessions.set(this.key(taskId, sessionId), resumedSession);
 						const resumed = this.view(resumedSession);
-						await this.enforceSessionLimit(record);
 						return resumed;
 					} catch (error) {
 						primary = error;
@@ -184,7 +205,7 @@ export class SessionApplication {
 		return successor;
 	}
 
-	async prepareStop(taskId: string, sessionId: string): Promise<PreparedSessionStop> {
+	async prepareStop(taskId: string, sessionId: string): Promise<PreparedApplicationSessionStop> {
 		this.requireSessionFactory();
 		const releaseClaim = await this.store.claimSession(taskId, sessionId);
 		let released = false;
@@ -194,10 +215,9 @@ export class SessionApplication {
 			await releaseClaim();
 		};
 		try {
-			const { record } = await this.requireRecord(taskId, sessionId);
-			const session =
-				this.sessions.get(this.key(taskId, sessionId)) ??
-				this.newModelSession(record, (await this.requireRecord(taskId, sessionId)).modeId);
+			const { record, modeId } = await this.requireRecord(taskId, sessionId);
+			const session = this.sessions.get(this.key(taskId, sessionId)) ?? this.newModelSession(record, modeId);
+			session.moveToMode(modeId);
 			const prepared = await session.prepareStop();
 			return { record, stop: async () => await prepared.stop(), release };
 		} catch (error) {
@@ -207,12 +227,12 @@ export class SessionApplication {
 	}
 
 	/** Preflight every retained task session before a destructive caller performs any stop effect. */
-	async prepareTaskStop(taskId: string, modeId?: ModeId): Promise<PreparedSessionStop[]> {
+	async prepareTaskStop(taskId: string, modeId?: ModeId): Promise<PreparedApplicationSessionStop[]> {
 		const state = await this.store.read(taskId);
 		const records = modeId
 			? (state.modes[modeId]?.sessions ?? [])
 			: Object.values(state.modes).flatMap((history) => history.sessions);
-		const prepared: PreparedSessionStop[] = [];
+		const prepared: PreparedApplicationSessionStop[] = [];
 		try {
 			for (const record of records) prepared.push(await this.prepareStop(taskId, record.id));
 			return prepared;
@@ -269,15 +289,67 @@ export class SessionApplication {
 		return Promise.resolve();
 	}
 
+	async forgetModeSessions(taskId: string, modeId: ModeId): Promise<void> {
+		for (const [key, session] of this.sessions)
+			if (taskIdsEqual(session.record.taskId, taskId) && session.modeId === modeId) this.sessions.delete(key);
+	}
+
+	/** Called under the mode-deletion admission after the destination was confirmed. */
+	async moveModeSessions(taskId: string, sourceModeId: ModeId, destinationModeId: ModeId): Promise<void> {
+		try {
+			await this.withTaskAdmission(taskId, async (taskRecord) => {
+				const [resolved, catalog] = await Promise.all([
+					resolveAgentConfiguration(this.core, taskId),
+					loadProjectModeCatalog(this.core),
+				]);
+				await this.store.mutate(taskId, async (state) => {
+					const task = this.hydrate(taskRecord, catalog.profiles, resolved, state);
+					task.moveModeSessions(sourceModeId, destinationModeId);
+					task.removeMode(sourceModeId);
+					state.modes = task.serializeSessions();
+				});
+			});
+		} catch (cause) {
+			throw new Error(
+				`Session move failed for ${taskId} (${sourceModeId} -> ${destinationModeId}); any committed membership changes are retained: ${cause instanceof Error ? cause.message : String(cause)}`,
+				{ cause },
+			);
+		}
+		for (const session of this.sessions.values())
+			if (taskIdsEqual(session.record.taskId, taskId) && session.modeId === sourceModeId)
+				session.moveToMode(destinationModeId);
+	}
+
 	async stopSession(taskId: string, sessionId: string): Promise<void> {
 		const prepared = await this.prepareStop(taskId, sessionId);
 		let primary: unknown;
+		let executionStopped = false;
 		try {
 			await prepared.stop();
+			executionStopped = true;
 			this.sessions.delete(this.key(taskId, sessionId));
+			await this.withTaskAdmission(taskId, async (taskRecord) => {
+				const [resolved, catalog] = await Promise.all([
+					resolveAgentConfiguration(this.core, taskId),
+					loadProjectModeCatalog(this.core),
+				]);
+				await this.store.mutate(taskId, async (state) => {
+					const owner = Object.entries(state.modes).find(([, history]) =>
+						history.sessions.some(({ id }) => id === sessionId),
+					);
+					if (!owner) throw new Error(`Stopped session membership no longer exists: ${sessionId}`);
+					const task = this.hydrate(taskRecord, catalog.profiles, resolved, state);
+					task.selectSurvivorAfterStop(owner[0], sessionId);
+					state.modes = task.serializeSessions();
+				});
+			});
 		} catch (error) {
-			primary = error;
-			throw error;
+			primary = executionStopped
+				? new Error(`Session ${taskId}/${sessionId} stopped, but survivor selection could not be persisted.`, {
+						cause: error,
+					})
+				: error;
+			throw primary;
 		} finally {
 			await this.releaseWithPrimary(prepared.release, primary);
 		}
@@ -288,9 +360,9 @@ export class SessionApplication {
 		let primary: unknown;
 		try {
 			const observed = await this.readObserved(taskId, sessionId);
-			if (observed.snapshot.state === "running" && !options.force)
-				throw new Error(`Session ${sessionId} is running; use force to delete it.`);
-			if (options.force) await prepared.stop();
+			if (observed.snapshot.state !== "stopped" && !options.force)
+				throw new Error(`Session ${sessionId} is not positively absent; use force to delete it.`);
+			await prepared.stop();
 			await this.withTaskAdmission(taskId, async (taskRecord) => {
 				const [resolved, catalog] = await Promise.all([
 					resolveAgentConfiguration(this.core, taskId),
@@ -324,10 +396,13 @@ export class SessionApplication {
 
 	async readObserved(taskId: string, sessionId: string): Promise<ObservedSession> {
 		this.requireSessionFactory();
-		const { record } = await this.requireRecord(taskId, sessionId);
+		const { record, modeId } = await this.requireRecord(taskId, sessionId);
 		const local = this.sessions.get(this.key(taskId, sessionId));
-		if (local) return this.view(local);
-		const session = this.newModelSession(record, (await this.requireRecord(taskId, sessionId)).modeId);
+		if (local) {
+			local.moveToMode(modeId);
+			return this.view(local);
+		}
+		const session = this.newModelSession(record, modeId);
 		return { record, snapshot: await session.observeRetained() };
 	}
 
@@ -365,17 +440,68 @@ export class SessionApplication {
 		return resumed;
 	}
 
-	async shutdown(): Promise<void> {
+	pendingRequests(): Promise<WorkspaceRequestMarker[]> {
+		return this.storage.workspaceRequests.read();
+	}
+
+	shutdown(): Promise<void> {
+		if (this.shutdownOperation) return this.shutdownOperation;
+		this.closing = true;
+		const operation = this.stopForShutdown();
+		this.shutdownOperation = operation;
+		void operation.then(
+			() => {
+				this.shutdownOperation = undefined;
+			},
+			() => {
+				this.shutdownOperation = undefined;
+				this.closing = false;
+			},
+		);
+		return operation;
+	}
+
+	private async stopForShutdown(): Promise<void> {
 		const failures: unknown[] = [];
-		for (const [key, session] of this.sessions) {
-			try {
-				await this.stopSession(session.record.taskId, session.id);
-			} catch (error) {
-				failures.push(error);
-			}
-			if (!this.sessions.has(key)) continue;
+		const stopped: string[] = [];
+		for (const result of await Promise.allSettled([...this.launches]))
+			if (result.status === "rejected")
+				failures.push(
+					new Error(
+						`Pending launch failed during shutdown: ${result.reason instanceof Error ? result.reason.message : String(result.reason)}`,
+						{ cause: result.reason },
+					),
+				);
+		const targets = new Map(
+			[...this.sessions].map(([key, session]) => [key, { taskId: session.record.taskId, sessionId: session.id }]),
+		);
+		try {
+			if (this.sessionFactory)
+				for (const { taskId, sessions } of await this.projectInventory())
+					for (const { record, snapshot } of sessions)
+						if (snapshot.state !== "stopped")
+							targets.set(this.key(taskId, record.id), { taskId, sessionId: record.id });
+		} catch (error) {
+			failures.push(new Error("Retained-session inventory failed during shutdown.", { cause: error }));
 		}
-		if (failures.length) throw new AggregateError(failures, "Some session shutdown operations failed.");
+		for (const { taskId, sessionId } of targets.values()) {
+			try {
+				await this.stopSession(taskId, sessionId);
+				stopped.push(`${taskId}/${sessionId}`);
+			} catch (error) {
+				failures.push(
+					new Error(
+						`Shutdown settlement failed for ${taskId}/${sessionId}: ${error instanceof Error ? error.message : String(error)}`,
+						{ cause: error },
+					),
+				);
+			}
+		}
+		if (failures.length)
+			throw new AggregateError(
+				failures,
+				`Some session shutdown operations failed. Completed stops: ${stopped.join(", ") || "none"}. ${failures.map((error) => (error instanceof Error ? error.message : String(error))).join("; ")}`,
+			);
 	}
 
 	async ask(taskId: string, sessionId: string, question: string): Promise<{ answer: string }> {
@@ -467,6 +593,11 @@ export class SessionApplication {
 				await session.stop();
 			} catch (error) {
 				failures.push(error);
+				try {
+					await this.publish(session, creation.modeId, taskRecord, profiles, configuration);
+				} catch (publicationError) {
+					failures.push(publicationError);
+				}
 				throw new AggregateError(failures, "Creation failed and execution cleanup failed; reservation retained.", {
 					cause: original,
 				});
@@ -492,13 +623,23 @@ export class SessionApplication {
 		try {
 			await session.stop();
 		} catch (cleanupError) {
-			throw new AggregateError(
-				[original, cleanupError],
-				"Resume failed and execution cleanup failed; tracking retained.",
-				{
-					cause: original,
-				},
-			);
+			this.sessions.set(this.key(session.record.taskId, session.id), session);
+			const failures: unknown[] = [original, cleanupError];
+			try {
+				await this.store.mutate(session.record.taskId, async (state) => {
+					const record = Object.values(state.modes)
+						.flatMap(({ sessions }) => sessions)
+						.find(({ id }) => id === session.id);
+					if (!record || record.createdAt !== session.record.createdAt)
+						throw new Error("Resume tracking incarnation changed.");
+					Object.assign(record, session.serialize());
+				});
+			} catch (publicationError) {
+				failures.push(publicationError);
+			}
+			throw new AggregateError(failures, "Resume failed and execution cleanup failed; tracking retained.", {
+				cause: original,
+			});
 		}
 	}
 
@@ -514,7 +655,7 @@ export class SessionApplication {
 				.filter(
 					({ taskId, record, snapshot }) =>
 						!(taskIdsEqual(taskId, started.taskId) && record.id === started.id) &&
-						snapshot.state === "running" &&
+						(snapshot.state === "running" || snapshot.state === "parked") &&
 						snapshot.activity === "idle" &&
 						snapshot.idleSince !== null,
 				)
@@ -545,7 +686,26 @@ export class SessionApplication {
 		return { record, modeId };
 	}
 
-	private async newRecord(taskId: string, preset: string): Promise<AgentSession> {
+	private async newRecord(
+		task: NonNullable<Awaited<ReturnType<Core["loadTaskForMutation"]>>>,
+		preset: string,
+		defaultWorktree: boolean,
+	): Promise<AgentSession> {
+		const taskId = task.id;
+		let cwd = this.core.projectRoot;
+		if (task.worktreePolicy === "enabled" || (task.worktreePolicy === undefined && defaultWorktree)) {
+			const expected = taskWorktreePath(this.core.projectRoot, task);
+			try {
+				const worktree = await ensureTaskWorktree(this.core.projectRoot, task);
+				if (!worktree) throw new Error("Project is not a Git worktree.");
+				cwd = worktree;
+			} catch (cause) {
+				throw new Error(
+					`Could not prepare task worktree at ${expected}: ${cause instanceof Error ? cause.message : String(cause)}`,
+					{ cause },
+				);
+			}
+		}
 		const { taskDir } = await this.store.paths(taskId);
 		const id = randomUUID();
 		return {
@@ -553,10 +713,10 @@ export class SessionApplication {
 			taskId,
 			preset,
 			tmuxName: nativeSessionName(taskId, id),
-			cwd: this.core.projectRoot,
+			cwd,
 			pathContext: {
 				projectDir: this.core.projectRoot,
-				worktreeDir: this.core.projectRoot,
+				worktreeDir: cwd,
 				taskDir: await this.storage.taskArtifacts.containerPath(taskId),
 			},
 			createdAt: new Date().toISOString(),
@@ -685,5 +845,16 @@ export class SessionApplication {
 
 	private key(taskId: string, sessionId: string): string {
 		return `${taskIdKey(taskId)}:${sessionId}`;
+	}
+
+	private trackLaunch(operation: () => Promise<ObservedSession>): Promise<ObservedSession> {
+		if (this.closing) return Promise.reject(new Error("Session application is shutting down."));
+		const launch = operation();
+		this.launches.add(launch);
+		void launch.then(
+			() => this.launches.delete(launch),
+			() => this.launches.delete(launch),
+		);
+		return launch;
 	}
 }

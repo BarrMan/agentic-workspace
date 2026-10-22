@@ -174,7 +174,7 @@ export function openCodeV1PluginSource(
 ): string {
 	return `// agentic-workspace-hooks
 // Process-scoped status plugin for OpenCode 1.19.
-import { existsSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 const STATUS_DIR = ${JSON.stringify(statusDir)};
@@ -186,7 +186,10 @@ const PROMPT_ACCEPTED = ${JSON.stringify(join(launchDirectory, "prompt-accepted"
 function emit(status, sessionID) {
   try {
     if (!SESSION_ID || !STATUS_DIR || sessionID !== NATIVE_SESSION_ID || !existsSync(join(STATUS_DIR, ".agentic-workspace-launch-owner"))) return;
-    writeFileSync(join(STATUS_DIR, "status"), status, { mode: 0o600 });
+    const path = join(STATUS_DIR, "status");
+    let alreadyIdle = false;
+    if (status === "idle") try { alreadyIdle = readFileSync(path, "utf8") === "idle"; } catch {}
+    if (!alreadyIdle) writeFileSync(path, status, { mode: 0o600 });
   } catch {
     // A throwing plugin can block the agent's tool calls; never propagate.
   }

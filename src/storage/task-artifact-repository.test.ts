@@ -27,10 +27,38 @@ async function repository() {
 }
 
 describe("TaskArtifactRepository", () => {
-	it("validates relative paths and rejects reserved metadata", () => {
-		for (const path of ["../x", "/tmp/x", "task.md", ".artifacts.json", "a//b", "a\\b", "C:/x"])
+	it("validates relative paths and protects internal temporary files", () => {
+		for (const path of [
+			"../x",
+			"/tmp/x",
+			".agentic-workspace-artifact-temp",
+			"nested/.agentic-workspace-artifact-temp",
+			"a//b",
+			"a\\b",
+			"C:/x",
+		])
 			expect(() => validateTaskArtifactPath(path)).toThrow();
 		expect(validateTaskArtifactPath("notes/plan.md")).toBe("notes/plan.md");
+	});
+
+	it("round-trips arbitrary user filenames in the isolated artifact namespace", async () => {
+		const { service, agenticWorkspaceDirectory, taskContent } = await repository();
+		const paths = [
+			"task.md",
+			".artifacts.json",
+			".artifacts.json.lock",
+			".task-notes",
+			"nested/task.md",
+			"nested/.artifacts.json",
+			".agentic-workspace-artifacts-notes",
+		];
+		for (const path of paths) {
+			const bytes = new TextEncoder().encode(path);
+			await service.write("BACK-23", path, bytes);
+			expect(await service.read("BACK-23", path)).toEqual(bytes);
+		}
+		expect((await service.list("BACK-23")).map(({ path }) => path).sort()).toEqual(paths.sort());
+		expect(await readFile(join(agenticWorkspaceDirectory, "tasks", "back-23", "task.md"), "utf8")).toBe(taskContent);
 	});
 
 	it("stores and reads generic artifacts without changing task.md", async () => {

@@ -1,8 +1,10 @@
 import { createHash } from "node:crypto";
 import { mkdir, readdir, readFile, stat } from "node:fs/promises";
 import { dirname, join } from "node:path";
+import { z } from "zod";
 import { DEFAULT_PRIORITIES } from "../model/constants.ts";
 import { writeAtomically } from "./atomic-write.ts";
+import { parseFrontmatter } from "./markdown/frontmatter.ts";
 
 export interface TaskConfigMigrationOptions {
 	rootConfigPath: string;
@@ -34,6 +36,16 @@ interface Manifest {
 	version: 1;
 	files: Record<string, { source: string; target: string }>;
 }
+const manifestSchema = z.strictObject({
+	version: z.literal(1),
+	files: z.record(
+		z.string(),
+		z.strictObject({
+			source: z.string().regex(/^[a-f0-9]{64}$/),
+			target: z.string().regex(/^[a-f0-9]{64}$/),
+		}),
+	),
+});
 const hash = (value: string) => createHash("sha256").update(value).digest("hex");
 const LEGACY_DATE_FORMATS = new Map([
 	["yyyy-mm-dd", "yyyy-MM-dd"],
@@ -45,10 +57,15 @@ const LEGACY_DATE_FORMATS = new Map([
 ]);
 
 function frontmatter(content: string): { start: number; end: number; text: string } | null {
-	const match = /^(\uFEFF?---[^\r\n]*\r?\n)([\s\S]*?)(^---\s*(?:\r?\n|$))/m.exec(content);
-	return match?.[2] === undefined
-		? null
-		: { start: match.index + match[1]!.length, end: match.index + match[0].length - match[3]!.length, text: match[2] };
+	const opening = /^\uFEFF?---[\t ]*\r?\n/.exec(content);
+	if (!opening) return null;
+	const body = parseFrontmatter(content).content;
+	const prefix = content.slice(0, content.length - body.length);
+	if (!/\n---[\t ]*(?:\r?\n)?$/.test(prefix)) return null;
+	const start = opening[0].length;
+	const end = prefix.lastIndexOf("---");
+	if (end < start) return null;
+	return { start, end, text: content.slice(start, end) };
 }
 
 function parseYamlValue(content: string, key: string): unknown {
@@ -66,11 +83,7 @@ function editYamlText(
 	path = "",
 	issues: TaskConfigMigrationReport["issues"] = [],
 ): string {
-	const fm = frontmatter(content);
-	const regionStart = fm?.start ?? 0;
-	const regionEnd = fm?.end ?? content.length;
-	const block = content.slice(regionStart, regionEnd);
-	const lines = block.split(/(?<=\n)/);
+	const lines = content.split(/(?<=\n)/);
 	const kept: string[] = [];
 	for (const line of lines) {
 		const keyMatch = /^([\w-]+):\s*(.*?)(\r?\n)?$/.exec(line);
@@ -78,8 +91,8 @@ function editYamlText(
 			kept.push(line);
 			continue;
 		}
-		const [, key, raw, ending = ""] = keyMatch;
-		if (keys.has(key!)) continue;
+		const [, key = "", raw, ending = ""] = keyMatch;
+		if (keys.has(key)) continue;
 		if (key === "priority" && priorityLabels) {
 			let value: unknown;
 			value = parseYamlValue(`priority: ${raw}`, "priority");
@@ -105,10 +118,49 @@ function editYamlText(
 		kept.push(line);
 	}
 	const rewritten = kept.join("");
-	return content.slice(0, regionStart) + rewritten + content.slice(regionEnd);
+	return rewritten;
 }
 
-function migrateDateFormat(value: string): { value?: string; reason?: string } {
+/** Raw line edits are safe only for explicit, single-line top-level scalar nodes. */
+function editableMapping(
+	content: string,
+	keys: readonly string[],
+	path: string,
+	issues: TaskConfigMigrationReport["issues"],
+): Record<string, unknown> | null {
+	let parsed: unknown;
+	try {
+		parsed = Bun.YAML.parse(content);
+	} catch (error) {
+		issues.push({ path, field: "yaml", value: "", reason: String(error) });
+		return null;
+	}
+	if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+		issues.push({ path, field: "yaml", value: "", reason: "expected a top-level mapping" });
+		return null;
+	}
+	for (const key of keys) {
+		if (!Object.hasOwn(parsed, key)) continue;
+		const matches = [...content.matchAll(new RegExp(`^${key}:[\\t ]*(.*?)(?:\\r?\\n|$)`, "gm"))];
+		if (
+			matches.length !== 1 ||
+			!matches[0]?.[1] ||
+			/^[|>&*!{[]/.test(matches[0][1]) ||
+			JSON.stringify(parseYamlValue(matches[0][0], key)) !== JSON.stringify((parsed as Record<string, unknown>)[key])
+		) {
+			issues.push({
+				path,
+				field: key,
+				value: "",
+				reason: "ambiguous or non-single-line top-level field; file preserved",
+			});
+			return null;
+		}
+	}
+	return parsed as Record<string, unknown>;
+}
+
+function migrateDateFormat(value: string): { value: string } | { reason: string } {
 	const migrated = LEGACY_DATE_FORMATS.get(value);
 	return migrated === undefined ? { reason: "unsupported or ambiguous legacy date format" } : { value: migrated };
 }
@@ -141,13 +193,11 @@ export async function migrateTaskAndConfigFiles(
 	const paths = [...new Set([...configPaths, ...(await Promise.all(options.tasksDirectories.map(taskFiles))).flat()])];
 	let manifest: Manifest = { version: 1, files: {} };
 	try {
-		manifest = JSON.parse(await readFile(options.manifestPath, "utf8")) as Manifest;
+		manifest = manifestSchema.parse(JSON.parse(await readFile(options.manifestPath, "utf8")));
 	} catch (error) {
 		if ((error as NodeJS.ErrnoException).code !== "ENOENT")
 			throw new Error(`Invalid migration manifest: ${options.manifestPath}`, { cause: error });
 	}
-	if (manifest.version !== 1 || !manifest.files)
-		throw new Error(`Unsupported migration manifest: ${options.manifestPath}`);
 	let projectLabels: readonly string[] = DEFAULT_PRIORITIES;
 	try {
 		const config = Bun.YAML.parse(await readFile(options.projectConfigPath, "utf8")) as Record<string, unknown> | null;
@@ -180,36 +230,28 @@ export async function migrateTaskAndConfigFiles(
 		}
 		let target: string;
 		if (configPaths.includes(path)) {
-			let parsed: any;
-			try {
-				parsed = Bun.YAML.parse(source);
-			} catch (error) {
-				throw new Error(`Cannot preflight ${path}`, { cause: error });
-			}
-			const labels =
-				Array.isArray(parsed?.priorities) && parsed.priorities.length ? parsed.priorities : DEFAULT_PRIORITIES;
+			if (!editableMapping(source, ["default_assignee", "date_format"], path, report.issues)) continue;
 			target = editYamlText(source, new Set(["default_assignee"]), undefined, path, report.issues);
-			// Config format token conversion uses the same raw-preserving editor; priority labels are project-owned.
-			if (path === options.projectConfigPath) {
-				for (const [project, values] of Object.entries(options.priorityLabelsByProject ?? {}))
-					if (!Array.isArray(values) || !project) throw new Error("Invalid priority label mapping");
-				void labels;
-			}
 			target = editDateConfig(target, path, report.issues);
 		} else {
-			const parsed = frontmatter(source);
+			let parsed: ReturnType<typeof frontmatter>;
+			try {
+				parsed = frontmatter(source);
+			} catch (error) {
+				report.issues.push({ path, field: "frontmatter", value: "", reason: String(error) });
+				continue;
+			}
 			if (!parsed) {
 				report.issues.push({ path, field: "frontmatter", value: "", reason: "missing task frontmatter" });
 				continue;
 			}
-			let data: any;
-			try {
-				data = Bun.YAML.parse(parsed.text);
-			} catch (error) {
-				throw new Error(`Cannot preflight ${path}`, { cause: error });
-			}
+			const data = editableMapping(parsed.text, ["assignee", "priority"], path, report.issues);
+			if (!data) continue;
 			const labels = options.priorityLabelsByProject?.[String(data?.project ?? "")] ?? projectLabels;
-			target = editYamlText(source, new Set(["assignee"]), labels, path, report.issues);
+			target =
+				source.slice(0, parsed.start) +
+				editYamlText(parsed.text, new Set(["assignee"]), labels, path, report.issues) +
+				source.slice(parsed.end);
 		}
 		if (target !== source) plans.push({ path, source, target });
 		else report.skippedFiles.push(path);
@@ -241,13 +283,13 @@ function editDateConfig(content: string, path: string, issues: TaskConfigMigrati
 	const lines = content.split(/(?<=\n)/);
 	return lines
 		.map((line) => {
-			const match = /^(\s*date_format:\s*)(.*?)(\r?\n)?$/.exec(line);
+			const match = /^(date_format:[\t ]*)(.*?)(\r?\n)?$/.exec(line);
 			if (!match) return line;
 			const value = parseYamlValue(`date_format: ${match[2]}`, "date_format");
 			if (typeof value !== "string") return line;
 			const migrated = migrateDateFormat(value);
-			if (migrated.value === undefined) {
-				issues.push({ path, field: "date_format", value, reason: migrated.reason! });
+			if ("reason" in migrated) {
+				issues.push({ path, field: "date_format", value, reason: migrated.reason });
 				return line;
 			}
 			return `${match[1]}${JSON.stringify(migrated.value)}${match[3] ?? ""}`;

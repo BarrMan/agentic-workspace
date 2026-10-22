@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { AgentPreset, ModeProfile } from "../../../model/session/types.ts";
-import { profileInstructions, validateExplicitModel, withExplicitModel } from "./profile.ts";
+import { discoverModels, profileInstructions, validateExplicitModel, withExplicitModel } from "./profile.ts";
 
 const preset: AgentPreset = {
 	bootstrap: "pi",
@@ -18,6 +18,18 @@ const profile: ModeProfile = {
 };
 
 describe("harness profile helpers", () => {
+	test("model discovery distinguishes failed commands from a successful empty catalogue", async () => {
+		await expect(discoverModels(["/missing/model-discovery-command"], {}, 1_000, () => [])).rejects.toThrow(
+			"Model discovery could not start",
+		);
+		await expect(discoverModels([process.execPath, "-e", "process.exit(7)"], {}, 1_000, () => [])).rejects.toThrow(
+			"exited with code 7",
+		);
+		await expect(
+			discoverModels([process.execPath, "-e", "process.stdout.write('')"], {}, 1_000, () => []),
+		).resolves.toEqual([]);
+	});
+
 	test("explicit model replaces existing preset model switches exactly once", () => {
 		const modeled = withExplicitModel(preset, "provider/new-model");
 		expect(modeled.command.filter((arg) => arg === "--model" || arg.startsWith("--model="))).toHaveLength(1);

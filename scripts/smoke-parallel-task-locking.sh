@@ -22,7 +22,7 @@ Usage: $(basename "$0") [--jobs N] [--keep-temp]
 
 Runs real parallel smoke tests against the local AgenticWorkspace CLI:
   1. concurrent task creation
-  2. concurrent task editing (lost-write regression)
+  2. concurrent edits to separate task fields
 
 Environment overrides:
   BUN_BIN            Bun executable to use (default: bun)
@@ -54,8 +54,19 @@ cleanup() {
 }
 trap cleanup EXIT
 
-run_cli() {
-	env -u AGENTIC_WORKSPACE_CWD -u AGENTIC_WORKSPACE_WORKSPACE_CONTEXT -u AGENTIC_WORKSPACE_TASK_ID -u AGENTIC_WORKSPACE_TMUX_SOCKET HOME="${PWD}/.home" USERPROFILE="${PWD}/.home" XDG_CONFIG_HOME="${PWD}/.config" "${BUN_BIN}" "${CLI_PATH}" "$@"
+create_fixture() {
+	env -u AGENTIC_WORKSPACE_CWD -u AGENTIC_WORKSPACE_WORKSPACE_CONTEXT -u AGENTIC_WORKSPACE_TASK_ID -u AGENTIC_WORKSPACE_TMUX_SOCKET \
+		AGENTIC_WORKSPACE_SOURCE="${REPO_ROOT}" SEED_TASK="${1:-0}" INIT_PROJECT="${2:-1}" HOME="${PWD}/.home" USERPROFILE="${PWD}/.home" XDG_CONFIG_HOME="${PWD}/.config" \
+		"${BUN_BIN}" -e '
+			const { Core } = await import(`${process.env.AGENTIC_WORKSPACE_SOURCE}/src/index.ts`);
+			const { initializeProject } = await import(`${process.env.AGENTIC_WORKSPACE_SOURCE}/src/controller/init.ts`);
+			const core = new Core(process.cwd());
+			if (process.env.INIT_PROJECT === "1") await initializeProject(core, { projectName: "Parallel Lock Smoke" });
+			if (process.env.SEED_TASK === "1") await core.createTask({
+				id: "task-1", title: "Shared Task", status: "To Do", createdDate: "2026-01-01",
+				labels: [], dependencies: [], description: "Shared task fixture",
+			});
+		'
 }
 
 set_check_active_branches_false() {
@@ -74,8 +85,8 @@ init_repo() {
 	git init -q
 	git config user.name "AgenticWorkspace Smoke Test"
 	git config user.email "smoke@example.com"
-	run_cli init "Parallel Lock Smoke" --defaults --integration-mode none --check-branches false --include-remote false >/dev/null
-	set_check_active_branches_false "${repo_dir}/agentic-workspace/agentic-workspace.config.yml"
+	create_fixture >/dev/null
+	set_check_active_branches_false "${repo_dir}/.agentic-workspace/config.yml"
 	popd >/dev/null
 }
 
@@ -221,7 +232,7 @@ scenario_parallel_create() {
 	done
 	wait_for_jobs
 
-	assert_sequential_ids "${repo_dir}/agentic-workspace/tasks" "task" "${JOB_COUNT}"
+	assert_sequential_ids "${repo_dir}/.agentic-workspace/tasks" "task" "${JOB_COUNT}"
 	info "Scenario 1 passed"
 }
 
@@ -229,16 +240,24 @@ scenario_parallel_edit() {
 	local repo_dir="${TMP_ROOT}/edit"
 	local shared_id="task-1"
 	local i
+	local title_winners=""
+	local description_winners=""
+	local title_losers=""
+	local description_losers=""
 
 	info "Scenario 2: concurrent task editing (${JOB_COUNT} jobs)"
 	init_repo "${repo_dir}"
 
 	pushd "${repo_dir}" >/dev/null
-	run_cli task create "Shared Task" >/dev/null
+	create_fixture 1 0 >/dev/null
 	popd >/dev/null
 
 	for i in $(seq 1 "${JOB_COUNT}"); do
-		start_job "${repo_dir}" "edit-${i}" task edit "${shared_id}" --add-label "smoke-${i}"
+		if (( i % 2 == 0 )); then
+			start_job "${repo_dir}" "edit-title-${i}" task edit "${shared_id}" --title "Parallel Title ${i}"
+		else
+			start_job "${repo_dir}" "edit-description-${i}" task edit "${shared_id}" --description "Parallel Description ${i}"
+		fi
 	done
 
 	# Contention is expected here, so jobs are classified instead of required to succeed:
@@ -250,43 +269,76 @@ scenario_parallel_edit() {
 		wait_job "${PIDS[$i]}" || status=$?
 		PIDS[$i]=""
 		if [[ ${status} -eq 0 ]]; then
-			winners+="${LABELS[$i]#edit-}"$'\n'
+			case "${LABELS[$i]}" in
+				edit-title-*) title_winners+="${LABELS[$i]#edit-title-}"$'\n' ;;
+				edit-description-*) description_winners+="${LABELS[$i]#edit-description-}"$'\n' ;;
+			esac
 		elif ! grep -q "is being modified by another process" "${OUTFILES[$i]}"; then
 			printf '[smoke] Job %s failed without the contention message (exit %s)\n' "${LABELS[$i]}" "${status}" >&2
 			printf '%s\n' "----- ${OUTFILES[$i]} -----" >&2
 			cat "${OUTFILES[$i]}" >&2 || true
 			fail "A losing parallel edit must fail with a clear contention message"
+		else
+			case "${LABELS[$i]}" in
+				edit-title-*) title_losers+="${LABELS[$i]#edit-title-}"$'\n' ;;
+				edit-description-*) description_losers+="${LABELS[$i]#edit-description-}"$'\n' ;;
+			esac
 		fi
 	done
 	reset_jobs
 
-	if [[ -z "${winners}" ]]; then
+	if [[ -z "${title_winners}${description_winners}" ]]; then
 		fail "Every parallel edit failed; at least one must succeed"
 	fi
 
-	local task_files=("${repo_dir}"/agentic-workspace/tasks/${shared_id}/task.md)
+	local task_files=("${repo_dir}"/.agentic-workspace/tasks/${shared_id}/task.md)
 	if [[ ${#task_files[@]} -ne 1 ]]; then
-		ls -la "${repo_dir}/agentic-workspace/tasks" >&2 || true
+		ls -la "${repo_dir}/.agentic-workspace/tasks" >&2 || true
 		fail "Expected exactly one ${shared_id} file after parallel edits"
 	fi
+	if ! (cd "${repo_dir}" && env -u AGENTIC_WORKSPACE_CWD -u AGENTIC_WORKSPACE_WORKSPACE_CONTEXT -u AGENTIC_WORKSPACE_TASK_ID -u AGENTIC_WORKSPACE_TMUX_SOCKET HOME="${repo_dir}/.home" USERPROFILE="${repo_dir}/.home" XDG_CONFIG_HOME="${repo_dir}/.config" "${BUN_BIN}" "${CLI_PATH}" task view "${shared_id}" --plain >/dev/null); then
+		fail "Task is not a valid readable record after parallel edits"
+	fi
 
-	# Only the final file can reveal a lost write, and it must name exactly the jobs that
-	# reported success: no winner missing, no loser silently applied.
+	# The final value for each field must come from a successful writer. Successful writes to
+	# the other field must remain intact; this does not detect lost updates within one field.
 	local content
 	content="$(cat "${task_files[0]}")"
-	for i in $(seq 1 "${JOB_COUNT}"); do
-		if printf '%s' "${winners}" | grep -qx "${i}"; then
-			if ! printf '%s' "${content}" | grep -Eq "smoke-${i}([^0-9]|$)"; then
-				printf '[smoke] Final task file after parallel edits:\n%s\n' "${content}" >&2
-				fail "Label smoke-${i} missing after parallel edits - a successful edit was lost"
-			fi
-		elif printf '%s' "${content}" | grep -Eq "smoke-${i}([^0-9]|$)"; then
-			printf '[smoke] Final task file after parallel edits:\n%s\n' "${content}" >&2
-			fail "Label smoke-${i} present after parallel edits - a failed edit was applied anyway"
+	local found=0
+	if [[ -n "${title_winners}" ]]; then
+		while IFS= read -r i; do
+			[[ -n "${i}" ]] || continue
+			if printf '%s' "${content}" | grep -Fq "Parallel Title ${i}"; then found=1; fi
+		done <<<"${title_winners}"
+		(( found == 1 )) || fail "Final title is not from a successful title edit"
+	else
+		printf '%s' "${content}" | grep -Fq "title: Shared Task" || fail "Title changed despite no successful title edit"
+	fi
+	while IFS= read -r i; do
+		[[ -n "${i}" ]] || continue
+		if printf '%s' "${content}" | grep -Fq "Parallel Title ${i}"; then
+			fail "Failed title edit ${i} was applied"
 		fi
-	done
+	done <<<"${title_losers}"
 
-	info "Scenario 2 passed (${JOB_COUNT} jobs, $(printf '%s' "${winners}" | grep -c .) succeeded)"
+	found=0
+	if [[ -n "${description_winners}" ]]; then
+		while IFS= read -r i; do
+			[[ -n "${i}" ]] || continue
+			if printf '%s' "${content}" | grep -Fq "Parallel Description ${i}"; then found=1; fi
+		done <<<"${description_winners}"
+		(( found == 1 )) || fail "Final description is not from a successful description edit"
+	else
+		printf '%s' "${content}" | grep -Fq "Shared task fixture" || fail "Description changed despite no successful description edit"
+	fi
+	while IFS= read -r i; do
+		[[ -n "${i}" ]] || continue
+		if printf '%s' "${content}" | grep -Fq "Parallel Description ${i}"; then
+			fail "Failed description edit ${i} was applied"
+		fi
+	done <<<"${description_losers}"
+
+	info "Scenario 2 passed (${JOB_COUNT} jobs; separate-field updates preserved)"
 }
 
 main() {

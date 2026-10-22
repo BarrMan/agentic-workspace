@@ -21,10 +21,6 @@ Renderer.bindKeys() {
   this.onKey("task.update", (change) => {
     this.controller.updateTask(this.controller.selectedTask.id, change)
   })
-
-  this.onKey("app.close", () => {
-    this.controller.shutdown()
-  })
 }
 
 Renderer.onKey(key, handler) {
@@ -62,3 +58,4 @@ Renderer.detach(attachment) {
 - Keybindings call Controller methods only.
 - Renderer may use filesystem or socket APIs for its own terminal transport, but never reads workspace records or constructs workspace storage paths.
 - Detach never stops execution.
+- The close modal follows [Workspace](../screens/workspace.md#focus-and-constrained-terminals); execution lifetime is owned by [SESSION-018](../specs/sessions.md#session-018-close-the-app-with-or-without-stopping-sessions) and [Controller close/shutdown](controller.md#shutdown).

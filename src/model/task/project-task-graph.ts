@@ -1,10 +1,9 @@
-import type { TaskDetail, TaskListItem } from "../../controller/task-detail.ts";
-import type { TaskCorpusSnapshot } from "../../controller/task-loader.ts";
 import { TaskCollectionParentNotFoundError } from "../errors/task-collection.ts";
 import { AmbiguousTaskIdError } from "../errors/task-id.ts";
 import { TASK_SOURCE, type Task } from "../types.ts";
 import { buildDependencyGraph, createDependencyGraphContext, type DependencyGraphContext } from "./dependency-graph.ts";
 import { createReadinessGraph, getTaskReadiness, type ReadinessGraph } from "./readiness.ts";
+import type { TaskCorpusSnapshot, TaskDetail, TaskListItem } from "./task-projection.ts";
 import { createTaskRecordIndex } from "./task-record-index.ts";
 
 /**

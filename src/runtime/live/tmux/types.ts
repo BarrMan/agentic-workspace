@@ -12,13 +12,6 @@ export type TmuxResult = {
 /** Spec §4.8: TMUX_COMMAND_TIMEOUT = 10s (`src/tmux/mod.rs:287`). */
 export const TMUX_COMMAND_TIMEOUT_MS = 10_000;
 
-/**
- * Spec §6: pane identity for keying. AoE uses `format!("{name}:^.0")` to mean
- * "pane 0 of window 0's active window in session {name}" (`src/tmux/vt.rs:2013`,
- * `live_send.rs:2072`). We keep the same shape so argv stays comparable.
- */
-export const paneTarget = (sessionName: string): string => `${sessionName}:^.0`;
-
 /** Every transport invocation is awaited and bounded by one timeout. */
 export type TmuxExec = {
 	/** Awaited form, bounded by TMUX_COMMAND_TIMEOUT_MS. Never called on a paint path. */

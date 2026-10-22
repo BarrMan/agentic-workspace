@@ -1,13 +1,5 @@
 import { join } from "node:path";
-import type {
-	AgentActivity,
-	AgentPreset,
-	AgentSession,
-	ModeId,
-	ModeProfile,
-	NativeAgentNamespace,
-} from "../../../model/session/types.ts";
-import type { PreparedLaunchResources } from "../../completion-supervisor-resources.ts";
+import type { AgentActivity, AgentPreset, ModeProfile, NativeAgentNamespace } from "../../../model/session/types.ts";
 import type { InstalledStatusHook } from "../../status-hooks.ts";
 
 export interface AgentChromeRule {
@@ -49,22 +41,6 @@ export type AgentEventCapabilities = {
 	readonly executionExit: "supported" | "unsupported";
 	readonly activity: "supported" | "unsupported";
 };
-
-/**
- * Everything a deferred identity delivery needs to reconcile one launch.
- * It identifies the exact expected record, its owning mode, the exact owned pane, and the
- * launch-resource provenance that distinguishes this launch from a replacement.
- */
-export interface LaunchOrigin {
-	/** Exact durable record this launch owns; membership and generation are checked against it. */
-	record: AgentSession;
-	/** Owning mode of the record. */
-	modeId: ModeId;
-	/** Exact owned pane for this launch. */
-	paneId: string;
-	/** Launch provenance: the resource inventory recorded on the pane for this launch. */
-	resources: PreparedLaunchResources;
-}
 
 export interface PreparationResources {
 	/** Command already includes the provider-agnostic yolo flag when yolo mode is on. */

@@ -168,9 +168,9 @@ fixtureEnv.XDG_CONFIG_HOME = join(smokeRoot, ".config");
 await Bun.$`mkdir -p ${fixtureEnv.HOME} ${fixtureEnv.XDG_CONFIG_HOME}`;
 let smokeFailure: CapturedFailure | undefined;
 try {
-	await mkdir(join(smokeRoot, "agentic-workspace"), { recursive: true });
+	await mkdir(join(smokeRoot, ".agentic-workspace"), { recursive: true });
 	await writeFile(
-		join(smokeRoot, "agentic-workspace", "config.yml"),
+		join(smokeRoot, ".agentic-workspace", "config.yml"),
 		[
 			'project_name: "Compiled Smoke"',
 			'default_status: "To Do"',

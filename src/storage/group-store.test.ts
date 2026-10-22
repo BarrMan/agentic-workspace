@@ -90,26 +90,40 @@ describe("openGroupStore", () => {
 		expect(await readFile(groupsFileOf(root), "utf8")).toBe("{ this is not json");
 	});
 
-	it("4. drops invalid group entries and non-string memberships instead of throwing", async () => {
+	it("4. rejects the whole invalid record and preserves its bytes on open and update", async () => {
 		const root = await makeRoot("defensive");
-		await mkdir(agenticWorkspaceOf(root), { recursive: true });
-		await writeFile(
-			groupsFileOf(root),
-			`${JSON.stringify({
-				groups: [
-					group("keep", 0),
-					{ id: "missing-fields" },
-					{ id: "bad-order", name: "n", parentId: null, order: "x", collapsed: false },
-					null,
-				],
-				membership: { t1: "keep", t2: 42 },
-			})}\n`,
-			"utf8",
-		);
-
 		const store = await open(root);
-		expect(store.current.groups).toEqual([group("keep", 0)]);
-		expect(store.current.membership).toEqual({ t1: "keep" });
+		const raw = `${JSON.stringify({
+			groups: [
+				group("keep", 0),
+				{ id: "missing-fields" },
+				{ id: "bad-order", name: "n", parentId: null, order: "x", collapsed: false },
+				null,
+			],
+			membership: { t1: "keep", t2: 42 },
+		})}\n`;
+		await writeFile(groupsFileOf(root), raw);
+		await expect(open(root)).rejects.toThrow(groupsFileOf(root));
+		await expect(store.update(() => sampleState())).rejects.toThrow(groupsFileOf(root));
+		expect(await readFile(groupsFileOf(root), "utf8")).toBe(raw);
+	});
+
+	it.each(
+		[
+			[],
+			{},
+			{ groups: [], membership: [] },
+			{ groups: [], membership: { t1: 1 } },
+			{ groups: [], membership: {}, unknown: true },
+			{ groups: [{ ...group("g1", 0), extra: true }], membership: {} },
+		].map((state) => ({ state })),
+	)("rejects invalid group-state shape %j unchanged", async ({ state }) => {
+		const root = await makeRoot("schema");
+		await mkdir(agenticWorkspaceOf(root), { recursive: true });
+		const raw = JSON.stringify(state);
+		await writeFile(groupsFileOf(root), raw);
+		await expect(open(root)).rejects.toThrow(groupsFileOf(root));
+		expect(await readFile(groupsFileOf(root), "utf8")).toBe(raw);
 	});
 
 	it("5. accumulates sequential updates and does not notify on an unchanged patch", async () => {

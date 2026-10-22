@@ -120,7 +120,7 @@ export async function discoverModels(
 		return cached.map((item) => ({ ...item }));
 	}
 	const [executable, ...argv] = args;
-	if (!executable) return [];
+	if (!executable) throw new Error("Model discovery failed: command is empty.");
 	let child: {
 		stdout: ReadableStream<Uint8Array<ArrayBufferLike>>;
 		exited: Promise<number>;
@@ -133,8 +133,13 @@ export async function discoverModels(
 			stdout: "pipe",
 			stderr: "ignore",
 		});
-	} catch {
-		return [];
+	} catch (error) {
+		throw new Error(
+			`Model discovery could not start '${executable}': ${error instanceof Error ? error.message : String(error)}`,
+			{
+				cause: error,
+			},
+		);
 	}
 	const boundedTimeout = Number.isFinite(timeoutMs)
 		? Math.max(100, Math.min(timeoutMs, MODEL_DISCOVERY_TIMEOUT_LIMIT_MS))
@@ -147,7 +152,8 @@ export async function discoverModels(
 	try {
 		const output = await new Response(child.stdout).text();
 		const exitCode = await child.exited;
-		if (timedOut || exitCode !== 0) return [];
+		if (timedOut) throw new Error(`Model discovery timed out after ${boundedTimeout}ms running '${executable}'.`);
+		if (exitCode !== 0) throw new Error(`Model discovery command '${executable}' exited with code ${exitCode}.`);
 		const unique = deduplicateModels(parseOutput(output));
 		if (exitCode === 0) {
 			modelCache.set(key, unique);
@@ -158,8 +164,14 @@ export async function discoverModels(
 			}
 		}
 		return unique.map((item) => ({ ...item }));
-	} catch {
-		return [];
+	} catch (error) {
+		if (error instanceof Error && error.message.startsWith("Model discovery ")) throw error;
+		throw new Error(
+			`Model discovery failed while reading '${executable}': ${error instanceof Error ? error.message : String(error)}`,
+			{
+				cause: error,
+			},
+		);
 	} finally {
 		clearTimeout(timer);
 	}

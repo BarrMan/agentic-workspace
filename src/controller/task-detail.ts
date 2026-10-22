@@ -5,6 +5,7 @@ import {
 } from "../model/task/dependency-graph.ts";
 import { createReadinessGraph, getTaskReadiness, type TaskReadiness } from "../model/task/readiness.ts";
 import { taskIdsEqual } from "../model/task/task-id.ts";
+import type { TaskDetail, TaskListItem } from "../model/task/task-projection.ts";
 import { createTaskRecordIndex } from "../model/task/task-record-index.ts";
 import { TASK_SOURCE, type Task } from "../model/types.ts";
 import type { Core } from "./agentic-workspace.ts";
@@ -47,20 +48,6 @@ async function loadTaskCorpus(core: Core): Promise<TaskCorpus> {
  * verdict a list renders. The blockers behind the verdict belong to the detail read, so a list of
  * any size stays the size it already was.
  */
-export type TaskListItem = Task & { isReady: boolean };
-
-/**
- * A task as a detail read returns it: the stored record plus the relationships derived from the
- * corpus around it. The derived fields exist only in the read; they are never written back to the
- * Markdown record, and edit confirmations and other non-detail output return plain `Task`s so they
- * cannot pick them up by accident.
- *
- * Surfaces receive this already built and only render it. A function that returns a `TaskDetail`
- * cannot forget to populate the fields, which is why they are required here rather than optional
- * on `Task`.
- */
-export type TaskDetail = Task & { dependencyGraph: DependencyGraph; readiness: TaskReadiness };
-
 /**
  * Attach the derived relationships using a corpus the caller already holds.
  *

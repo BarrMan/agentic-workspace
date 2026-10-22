@@ -26,4 +26,4 @@ class Signals {
 | `IndicationsChanged` | SessionId, SessionState, SessionActivity | runtime/activity indication changed |
 | `NoticeChanged` | Notice | result or error |
 | `ViewChanged` | View | explicit navigation |
-| `Closed` | none | shutdown completed |
+| `Closed` | none | app close completed; force-close shutdown succeeded if requested |

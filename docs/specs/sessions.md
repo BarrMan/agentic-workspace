@@ -371,32 +371,35 @@ Sessions let users launch and continue agent conversations attached to tasks, ob
 **Acceptance Criteria:**
 - [ ] The live terminal is seeded from the current screen and updated while running; conversation history and ask operation remain separate from terminal capture.
 
-### SESSION-018: Stop sessions when the app closes
+### SESSION-018: Close the app with or without stopping sessions
 
-**Description:** Normal app close stops every session; all harness processes and terminal panes are gone. On reopen, every session is stopped and must be resumed explicitly. Detaching alone never stops execution. A crash is not a normal close and cleanup cannot be guaranteed; on reopen, current evidence decides liveness and stored state never proves running.
+**Description:** Ordinary app close preserves live executions and panes. If any session is observed working (the green RUNNING indication), ask whether to force close or close without stopping executions. Force close kills owned executions; ordinary close lets them continue. Reopening attaches to surviving live panes without resume. Detaching presentation alone never stops execution.
 
 **Trigger:** The user closes the app, or the app reopens after a crash.
 
 **Preconditions:** Sessions may be running when the app closes or crashes.
 
 **Behavior:**
-1. On normal app close, stop every session and ensure all harness processes and terminal panes are gone.
-2. On reopen after normal close, treat all sessions as stopped; each requires explicit exact-conversation resume before use.
-3. Detaching alone never stops execution.
-4. A crash does not guarantee cleanup. On reopen after a crash, establish liveness only from current evidence; stored state never proves running, and uncertain evidence is unknown.
+1. When any session is currently observed working (green RUNNING, not merely a live idle or parked pane), show a confirmation offering force close or ordinary close with execution preserved.
+2. Ordinary close, including close with no working sessions, preserves live harnesses, processes, and panes; releasing presentation resources must not stop them.
+3. Force close stops every owned execution and removes its harness processes and terminal panes. Attempt all stops even if one fails; report aggregate failures only after all attempts, retain tracking for failed or uncertain cleanup, and never claim complete shutdown on failure.
+4. On reopen, establish liveness from current evidence. Attach to a surviving live pane without resume, restart, or replacement. A positively stopped session requires explicit exact-conversation resume; uncertain evidence is unknown. Stored state never proves running.
+5. A crash does not guarantee cleanup. Apply the same evidence-based reopen behavior; detaching presentation alone never stops execution.
 
-**Outcome:** Normal app close leaves no session runtime; after reopen all sessions require explicit resume. After a crash, only current evidence determines reported liveness.
+**Outcome:** Ordinary close allows ongoing execution to continue; successful force close leaves no owned execution runtime. Reopen uses current evidence and attaches to surviving panes without resume.
 
 **Failures:** If close cleanup or post-crash liveness cannot be established, report the failure or unknown/unavailable under SESSION-002; never claim stopped or running from uncertain or stored evidence.
 
 **Acceptance Criteria:**
-- [ ] Normal app close stops every session and leaves no harness process or terminal pane; on reopen each is stopped and requires explicit exact-conversation resume.
+- [ ] A working/green RUNNING session triggers the close confirmation with force-close and execution-preserving choices; live idle or parked sessions alone do not trigger it.
+- [ ] Ordinary close preserves live processes and panes; reopening attaches to surviving panes without resume or restart.
+- [ ] Force close attempts every owned stop, leaves no owned harness process or pane on success, and reports aggregate failure only after all attempts while retaining tracking for unsuccessful cleanup.
 - [ ] Detach alone does not stop execution.
 - [ ] After a crash, cleanup is not assumed; current evidence alone determines liveness and stored state never proves running.
 
 ### SESSION-019: Settle terminal input on close or deletion
 
-**Description:** On app close or task deletion, terminal input already in flight is allowed up to two seconds to land before session shutdown completes.
+**Description:** On app close or task deletion, terminal input already in flight is allowed up to two seconds to land before close or required session shutdown completes.
 
 **Trigger:** The app closes or a task is deleted while terminal input is queued or in flight.
 
@@ -475,7 +478,7 @@ Parked is a loaded runtime state, distinct from stopped. Activity indications ar
 - Session identity is distinct from observed runtime state; unknown/unavailable evidence never authorizes stopping or declaring stopped.
 - No session is automatically resumed or started. Each explicit user action makes exactly one attempt; failure remains visible and requires another explicit action to retry.
 - Selecting a running or parked session only switches presentation to its live pane; it sends no input and changes no control state.
-- Normal app close stops every session and leaves no harness process or terminal pane; park is not stop.
+- App close and reopen follow [SESSION-018](#session-018-close-the-app-with-or-without-stopping-sessions); park is not stop.
 - Uncertain evidence never authorizes stopping or a stopped claim.
 
 ### Session creation and handoff
@@ -514,7 +517,7 @@ Parked is a loaded runtime state, distinct from stopped. Activity indications ar
 
 **Action:** Explicitly start or resume, observe, stop, hand off, attach to, detach from, or delete a session; provide terminal input where supported; close the app.
 
-**Response:** Create one session for the selected mode only on explicit start; coordinate unfinished task status before startup and show readiness only after required initialization, identity, accepted initial delivery, and durable publication. Resume stopped sessions only on explicit action and continue the exact conversation. Selecting a parked session switches to its live pane without resuming. Each start/resume action makes one attempt, with visible failure and no automatic retry. Detaching alone does not stop execution. Normal app close stops every session and leaves no harness process or terminal pane; after reopen all sessions require explicit resume.
+**Response:** Create one session for the selected mode only on explicit start; coordinate unfinished task status before startup and show readiness only after required initialization, identity, accepted initial delivery, and durable publication. Resume stopped sessions only on explicit action and continue the exact conversation. Selecting a parked session switches to its live pane without resuming. Each start/resume action makes one attempt, with visible failure and no automatic retry. App close and reopen follow [SESSION-018](#session-018-close-the-app-with-or-without-stopping-sessions).
 
 **Feedback:** Report operation errors and completed effects truthfully; show unknown/unavailable when liveness cannot be established, and explain when exact resume is impossible.
 
@@ -560,7 +563,8 @@ Parked is a loaded runtime state, distinct from stopped. Activity indications ar
 | A session is stopped | Require explicit resume of the exact retained conversation before use. |
 | A session is starting | Keep it unavailable and never present it as running. |
 | A start or resume attempt fails | Keep the failure visible and do not retry without another explicit user action. |
-| The app closes normally | Stop all sessions; no harness process or terminal pane remains, and sessions require explicit resume after reopen. |
+| The user closes the app | Apply the confirmation, ordinary-close preservation, and force-close cleanup in SESSION-018. |
+| The app reopens with a surviving live pane | Attach without resume, restart, or replacement. |
 | The app crashes | Do not assume cleanup; establish liveness after reopen only from current evidence, never stored state. |
 | Task cannot be moved to its configured in-progress status | Fail the start and show an error before reservation or startup. |
 | Startup or initial instruction delivery fails | Fail creation, report the error and completed effects, and preserve tracking for any execution that may remain active; startup/readiness failures may require cleanup. |

@@ -48,7 +48,7 @@ See the verifiable criteria in the [Tasks and storage contract](specs/tasks.md).
 
 #### Open Decisions
 
-None recorded in the [Tasks and storage contract](specs/tasks.md).
+See [Tasks and storage: Open Questions](specs/tasks.md#open-questions).
 
 ### Sessions
 
@@ -252,4 +252,4 @@ None recorded in the [Supported Integration Operations contract](specs/supported
 
 ## Open Product Decisions
 
-None recorded. Each feature contract records its own constraints and resolved behavior.
+Each feature contract owns its open questions and resolved behavior; see the [feature index](#features).

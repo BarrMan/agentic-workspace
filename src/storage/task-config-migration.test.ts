@@ -27,6 +27,71 @@ async function setup() {
 }
 
 describe("standalone task/config migration", () => {
+	it("edits only root config scalars and leading task frontmatter", async () => {
+		const { tasks, options } = await setup();
+		const nested =
+			"agent_configuration:\n  presets:\n    p:\n      env:\n        date_format: yyyy-mm-dd\n        default_assignee: keep\n";
+		await writeFile(options.projectConfigPath, `${nested}date_format: yyyy-mm-dd\n`);
+		const path = join(tasks[0], "one", "task.md");
+		await mkdir(dirname(path), { recursive: true });
+		const body = "\nBody\n---\nassignee: keep\npriority: urgent\n---\n";
+		await writeFile(path, `---\nid: ONE\nassignee: remove\n---\n${body}`);
+		await migrateTaskAndConfigFiles(options);
+		expect(await readFile(options.projectConfigPath, "utf8")).toBe(`${nested}date_format: "yyyy-MM-dd"\n`);
+		expect(await readFile(path, "utf8")).toBe(`---\nid: ONE\n---\n${body}`);
+	});
+
+	it.each([
+		"Heading\n---\nid: ONE\nassignee: keep\n---\n",
+		"---\nid: ONE\nassignee: keep\n",
+	])("reports malformed/nonleading frontmatter unchanged", async (source) => {
+		const { tasks, options } = await setup();
+		const path = join(tasks[0], "one", "task.md");
+		await mkdir(dirname(path), { recursive: true });
+		await writeFile(path, source);
+		const report = await migrateTaskAndConfigFiles(options);
+		expect(report.issues).toContainEqual(expect.objectContaining({ path, field: "frontmatter" }));
+		expect(await readFile(path, "utf8")).toBe(source);
+		expect(await Bun.file(options.manifestPath).exists()).toBe(false);
+	});
+
+	it.each([
+		"{date_format: yyyy-mm-dd, default_assignee: keep}\n",
+		'"date_format": yyyy-mm-dd\ndefault_assignee: keep\n',
+		"date_format: |\n  yyyy-mm-dd\ndefault_assignee: keep\n",
+		"  date_format: yyyy-mm-dd\n  default_assignee: keep\n",
+		"date_format: yyyy-mm-dd\ndate_format: dd-mm-yyyy\n",
+	])("reports ambiguous top-level structures without rewriting the file", async (source) => {
+		const { options } = await setup();
+		await writeFile(options.rootConfigPath, source);
+		const report = await migrateTaskAndConfigFiles(options);
+		expect(report.issues.length).toBeGreaterThan(0);
+		expect(await readFile(options.rootConfigPath, "utf8")).toBe(source);
+		expect(await Bun.file(options.manifestPath).exists()).toBe(false);
+	});
+
+	it("rejects malformed manifests before changing any files", async () => {
+		const { options } = await setup();
+		const source = "date_format: yyyy-mm-dd\n";
+		const manifest = '{"version":1,"files":{"bad":{"source":"x","target":"y"}}}';
+		await writeFile(options.rootConfigPath, source);
+		await writeFile(options.manifestPath, manifest);
+		await expect(migrateTaskAndConfigFiles(options)).rejects.toThrow(options.manifestPath);
+		expect(await readFile(options.rootConfigPath, "utf8")).toBe(source);
+		expect(await readFile(options.manifestPath, "utf8")).toBe(manifest);
+	});
+
+	it("preserves BOM, CRLF delimiters, nested fields and opaque body bytes", async () => {
+		const { tasks, options } = await setup();
+		const path = join(tasks[0], "one", "task.md");
+		await mkdir(dirname(path), { recursive: true });
+		const preserved = "custom:\r\n  assignee: keep\r\n  priority: urgent\r\n";
+		const body = "\r\n---\r\nassignee: body-owner\r\n";
+		await writeFile(path, `\uFEFF---\r\nid: ONE\r\nassignee: remove\r\n${preserved}---\r\n${body}`);
+		await migrateTaskAndConfigFiles(options);
+		expect(await readFile(path, "utf8")).toBe(`\uFEFF---\r\nid: ONE\r\n${preserved}---\r\n${body}`);
+	});
+
 	it("preserves opaque task content while removing assignee and mapping priority", async () => {
 		const options = await setup();
 		const path = join(options.tasks[0], "one", "task.md");

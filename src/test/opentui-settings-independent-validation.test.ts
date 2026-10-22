@@ -4,13 +4,14 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { BoxRenderable, InputRenderable, parseColor, type TextRenderable } from "@opentui/core";
 import { createTestRenderer, type TestRendererSetup } from "@opentui/core/testing";
+import { loadAgentConfiguration, upsertAgentConfiguration } from "../controller/agent-configuration.ts";
 import { Core } from "../controller/agentic-workspace.ts";
 import type { AgentConfiguration } from "../model/session/types.ts";
 import { mountOpenTuiAgentSettings } from "../renderer/opentui/agent-settings.ts";
 import { createWorkspaceFilters } from "../renderer/opentui/workspace/state.ts";
 import { mountOpenTuiWorkspace, type OpenTuiWorkspaceOptions } from "../renderer/opentui/workspace.ts";
 import { OpenTuiWorkspaceController } from "../renderer/opentui/workspace-controller.ts";
-import { getDefaultModeCatalog, loadAgentConfiguration, upsertAgentConfiguration } from "../storage/config.ts";
+import { getDefaultModeCatalog } from "../storage/config.ts";
 import type { GroupStore } from "../storage/group-store.ts";
 import { coreFileSystem, initializeFilesystemTestProject } from "./test-utils.ts";
 
@@ -231,8 +232,6 @@ describe("independent MAIN settings persistence through public input", () => {
 					};
 				},
 				createActivityProbe: () => ({ probe: async () => new Map() }),
-				watchTasks: () => ({ stop: () => {} }),
-				watchConfig: () => ({ stop: () => {} }),
 			},
 		});
 		const running = controller.run();
@@ -427,11 +426,10 @@ def field(label):
         if "> " + label + ":" in frame(): break
         send(b"\x1b[B")
     require("> " + label + ":")
-def replace(text, multiline=False):
-    if multiline:
-        send(b"\x01\x0b")
-    else:
-        send(b"\x1b[F\x1b[1;2H")
+def replace(text, previous=""):
+    send(b"\x1b[F")
+    for _ in previous:
+        send(b"\x7f")
     paste(text)
 before = pathlib.Path(configuration_path).read_bytes()
 signal.signal(signal.SIGTERM, lambda *_: sys.exit(143))
@@ -453,7 +451,7 @@ try:
                         ("Artifact definitions", "notes/custom.md — independent purpose\nreports/final.md — final result")]:
         field(label)
         send(b"\r")
-        replace(text, True)
+        replace(text, "original" if label == "Prompt" else "")
         send(b"\x1b[13;5u")
     field("Color")
     send(b"\r")
@@ -475,8 +473,12 @@ try:
             send(f"\x1b[<0;{x};{y+1}M\x1b[<0;{x};{y+1}m".encode())
             break
     send(b"\r")
-    replace("fake-edited {prompt}")
+    replace('["fake-edited","{prompt}"]',
+            json.dumps([str(root / "fake-models"), "{prompt}"], separators=(",", ":"), ensure_ascii=False))
+    require("fake-edited")
     send(b"\r")
+    require("fake-edited")
+    assert "Error:" not in frame(), "command edit was rejected: " + frame()
     category("Sessions")
     for label in ["Worktree per task", "YOLO mode"]:
         for _ in range(3):
@@ -497,8 +499,7 @@ try:
     assert pathlib.Path(configuration_path).read_bytes() == before, "staging wrote configuration"
     send(b"\x1b[115;5u", 1)
     assert "Categories" not in frame(), "Save did not close Settings"
-    saved = json.loads(pathlib.Path(configuration_path).read_text())
-    print(json.dumps(saved))
+    assert pathlib.Path(configuration_path).read_bytes() != before, "Save did not persist configuration"
     send(b",", 0.5)
     require("Categories")
     category("Modes")
@@ -530,7 +531,12 @@ finally:
 			]);
 			expect(stderr).toBe("");
 			expect(code).toBe(0);
-			expectCombined(JSON.parse(stdout));
+			expect(stdout).toBe("");
+			expectCombined(
+				(Bun.YAML.parse(await readFile(f.path, "utf8")) as { agent_configuration: AgentConfiguration })
+					.agent_configuration,
+			);
+			coreFileSystem(f.core).invalidateConfigCache();
 			expectCombined(await loadAgentConfiguration(f.core, "project"));
 		},
 		60000,

@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { Writable } from "node:stream";
 import { runCli } from "../cli/register.ts";
 import { Core } from "../index.ts";
-import { createUniqueTestDir, initializeFilesystemTestProject, safeCleanup } from "./test-utils.ts";
+import { coreFileSystem, createUniqueTestDir, initializeFilesystemTestProject, safeCleanup } from "./test-utils.ts";
 
 let TEST_DIR: string;
 
@@ -43,7 +43,7 @@ describe("task id generation", () => {
 		const result = await runCliCommand(["task", "create", "First"], TEST_DIR);
 		expect(result.exitCode).toBe(0);
 
-		const task = await Bun.file(join(TEST_DIR, "agentic-workspace", "tasks", "task-1", "task.md")).exists();
+		const task = await Bun.file(join(coreFileSystem(new Core(TEST_DIR)).tasksDir, "task-1", "task.md")).exists();
 		expect(task).toBe(true);
 	});
 });

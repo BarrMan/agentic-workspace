@@ -96,6 +96,7 @@ export function registerSearchCommand(program: Command, dependencies: SearchComm
 			},
 			{ name: "plain", type: "Boolean", description: "Use plain text output" },
 			{ name: "json", type: "Boolean", description: "Use versioned machine-readable JSON output" },
+			{ name: "include-archived", type: "Boolean", description: "Include archived tasks" },
 		],
 		output: "All matching results in plain text by default, or versioned JSON with --json.",
 		examples: [
@@ -127,6 +128,7 @@ export function registerSearchCommand(program: Command, dependencies: SearchComm
 		)
 		.option("--plain", "print plain text output")
 		.option("--json", "print versioned machine-readable JSON output")
+		.option("--include-archived", "include archived tasks in search results")
 		.action((query: string | undefined, options: OptionValues) =>
 			runSearch(query, options, searchCommand, dependencies),
 		);
@@ -146,7 +148,11 @@ async function runSearch(
 	if (hasDuplicateIds && listOutput.outputMode === "json") return;
 	const parsed = await parseSearchOptions(core, options, dependencies);
 	if (!parsed) return;
-	const searchResults = await core.searchPersistently({ query: query ?? "", ...parsed });
+	const searchResults = await core.searchPersistently({
+		query: query ?? "",
+		...parsed,
+		includeArchived: options.includeArchived === true,
+	});
 	const outputMode = listOutput.outputMode === "json" ? "json" : "plain";
 	return renderSearchResults(searchResults, outputMode, listOutput.listWindow, core);
 }

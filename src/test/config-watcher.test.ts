@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { Core } from "../controller/agentic-workspace.ts";
 import type { AgenticWorkspaceConfig } from "../model/types.ts";
 import { FileSystem } from "../storage/file-system.ts";
-import { watchConfig, watchConfigFile } from "../storage/watchers/config-watcher.ts";
+import { watchConfigFile } from "../storage/watchers/config-watcher.ts";
 import { coreFileSystem, createUniqueTestDir, getPlatformTimeout, safeCleanup } from "./test-utils.ts";
 
 let testDir: string;
@@ -138,7 +138,7 @@ describe("config watcher", () => {
 		const publishedConfig = new Promise<AgenticWorkspaceConfig>((resolve) => {
 			resolvePublished = resolve;
 		});
-		const configWatcher = watchConfig(core, {
+		const configWatcher = core.watchConfig({
 			onConfigChanged: (config) => {
 				if (!config) return;
 				published.push(config);
@@ -204,7 +204,7 @@ describe("config watcher", () => {
 		].join("\n");
 		const invalidPointerContent = [
 			'project_name: "Broken pointer"',
-			'agentic_workspace_directory: "../escape"',
+			'agentic_workspace_directory: ".git/workspace-data"',
 			'statuses: ["To Do", "Done"]',
 			"labels: []",
 			"date_format: yyyy-MM-dd",
@@ -230,15 +230,10 @@ describe("config watcher", () => {
 		expect((await rootFilesystem.loadConfig())?.projectName).toBe("Initial");
 		const originalParseConfig = rootFilesystem.parseConfig.bind(rootFilesystem);
 		let injectedInterveningContent = false;
-		let sparseRootAttempts = 0;
 		let malformedPointerAttempts = 0;
 		let invalidPointerAttempts = 0;
-		let resolveSparseRootAttempts: () => void = () => {};
 		let resolveMalformedPointerAttempts: () => void = () => {};
 		let resolveInvalidPointerAttempts: () => void = () => {};
-		const sparseRootAttemptsExhausted = new Promise<void>((resolve) => {
-			resolveSparseRootAttempts = resolve;
-		});
 		const invalidPointerAttemptsExhausted = new Promise<void>((resolve) => {
 			resolveInvalidPointerAttempts = resolve;
 		});
@@ -247,10 +242,6 @@ describe("config watcher", () => {
 		});
 		rootFilesystem.parseConfig = (content) => {
 			// Count read attempts before parsing: a malformed document fails the whole parse.
-			if (content === sparseRootContent) {
-				sparseRootAttempts += 1;
-				if (sparseRootAttempts >= 8) resolveSparseRootAttempts();
-			}
 			if (content === malformedPointerContent) {
 				malformedPointerAttempts += 1;
 				if (malformedPointerAttempts >= 8) resolveMalformedPointerAttempts();
@@ -270,11 +261,15 @@ describe("config watcher", () => {
 		let callbackCount = 0;
 		let resolveFirstPublished: (snapshot: RootConfigSnapshot) => void = () => {};
 		let resolveSecondPublished: (snapshot: RootConfigSnapshot) => void = () => {};
+		let resolveThirdPublished: (snapshot: RootConfigSnapshot) => void = () => {};
 		const firstPublished = new Promise<RootConfigSnapshot>((resolve) => {
 			resolveFirstPublished = resolve;
 		});
 		const secondPublished = new Promise<RootConfigSnapshot>((resolve) => {
 			resolveSecondPublished = resolve;
+		});
+		const thirdPublished = new Promise<RootConfigSnapshot>((resolve) => {
+			resolveThirdPublished = resolve;
 		});
 		const configWatcher = watchConfigFile(rootFilesystem, {
 			onConfigChanged: (config) => {
@@ -287,6 +282,7 @@ describe("config watcher", () => {
 				};
 				if (callbackCount === 1) resolveFirstPublished(snapshot);
 				if (callbackCount === 2) resolveSecondPublished(snapshot);
+				if (callbackCount === 3) resolveThirdPublished(snapshot);
 			},
 		});
 
@@ -305,38 +301,46 @@ describe("config watcher", () => {
 
 			await Bun.write(replacementPath, sparseRootContent);
 			await rename(replacementPath, rootConfigPath);
-			await withTimeout(sparseRootAttemptsExhausted, "sparse root config attempts");
-			expect(callbackCount).toBe(1);
-			expect((await rootFilesystem.loadConfig())?.projectName).toBe("Candidate");
-			expect(rootFilesystem.agenticWorkspaceDirName).toBe("custom/a");
+			const sparseSnapshot = await withTimeout(secondPublished, "sparse root config publication");
+			expect(sparseSnapshot.config.projectName).toBe("Sparse root");
+			expect(sparseSnapshot.config.agenticWorkspaceDirectory).toBeUndefined();
+			expect(sparseSnapshot.agenticWorkspaceDirName).toBe(".agentic-workspace");
+			expect(sparseSnapshot.configPath).toBe(rootConfigPath);
+			expect(callbackCount).toBe(2);
+			expect((await rootFilesystem.loadConfig())?.projectName).toBe("Sparse root");
+			expect(rootFilesystem.agenticWorkspaceDirName).toBe(".agentic-workspace");
 			expect(rootFilesystem.configFilePath).toBe(rootConfigPath);
 
 			await mkdir(join(rootDir, "agentic-workspace"), { recursive: true });
 			await Bun.write(replacementPath, malformedPointerContent);
 			await rename(replacementPath, rootConfigPath);
 			await withTimeout(malformedPointerAttemptsExhausted, "malformed root pointer attempts");
-			expect(callbackCount).toBe(1);
-			expect((await rootFilesystem.loadConfig())?.projectName).toBe("Candidate");
-			expect(rootFilesystem.agenticWorkspaceDirName).toBe("custom/a");
+			expect(callbackCount).toBe(2);
+			expect((await rootFilesystem.loadConfig())?.projectName).toBe("Sparse root");
+			expect(rootFilesystem.agenticWorkspaceDirName).toBe(".agentic-workspace");
 			expect(rootFilesystem.configFilePath).toBe(rootConfigPath);
 
 			await Bun.write(replacementPath, invalidPointerContent);
 			await rename(replacementPath, rootConfigPath);
-			await withTimeout(invalidPointerAttemptsExhausted, "invalid root pointer attempts");
-			expect(callbackCount).toBe(1);
-			expect((await rootFilesystem.loadConfig())?.projectName).toBe("Candidate");
-			expect(rootFilesystem.agenticWorkspaceDirName).toBe("custom/a");
+			const invalidPointerWasPublished = await withTimeout(
+				Promise.race([thirdPublished.then(() => true), invalidPointerAttemptsExhausted.then(() => false)]),
+				"invalid root pointer rejection",
+			);
+			expect(invalidPointerWasPublished).toBe(false);
+			expect(callbackCount).toBe(2);
+			expect((await rootFilesystem.loadConfig())?.projectName).toBe("Sparse root");
+			expect(rootFilesystem.agenticWorkspaceDirName).toBe(".agentic-workspace");
 			expect(rootFilesystem.configFilePath).toBe(rootConfigPath);
 
 			await Bun.write(replacementPath, nextValidContent);
 			await rename(replacementPath, rootConfigPath);
-			const nextSnapshot = await withTimeout(secondPublished, "next valid root config publication");
+			const nextSnapshot = await withTimeout(thirdPublished, "next valid root config publication");
 			expect(nextSnapshot.config.projectName).toBe("Next valid");
 			expect(nextSnapshot.config.agenticWorkspaceDirectory).toBe("custom/b");
 			expect(nextSnapshot.agenticWorkspaceDirName).toBe("custom/b");
 			expect(nextSnapshot.configPath).toBe(rootConfigPath);
 			expect((await rootFilesystem.loadConfig())?.projectName).toBe("Next valid");
-			expect(callbackCount).toBe(2);
+			expect(callbackCount).toBe(3);
 		} finally {
 			configWatcher.stop();
 			rootFilesystem.parseConfig = originalParseConfig;
@@ -351,7 +355,7 @@ describe("config watcher", () => {
 		const publishedConfig = new Promise<AgenticWorkspaceConfig>((resolve) => {
 			resolvePublished = resolve;
 		});
-		const configWatcher = watchConfig(core, {
+		const configWatcher = core.watchConfig({
 			onConfigChanged: (config) => {
 				if (config) resolvePublished(config);
 			},
@@ -372,7 +376,7 @@ describe("config watcher", () => {
 		const publishedConfig = new Promise<AgenticWorkspaceConfig>((resolve) => {
 			resolvePublished = resolve;
 		});
-		const configWatcher = watchConfig(core, {
+		const configWatcher = core.watchConfig({
 			onConfigChanged: (config) => {
 				if (config) resolvePublished(config);
 			},
@@ -408,7 +412,7 @@ describe("config watcher", () => {
 		const nextPublished = new Promise<AgenticWorkspaceConfig>((resolve) => {
 			resolveNextPublished = resolve;
 		});
-		const configWatcher = watchConfig(core, {
+		const configWatcher = core.watchConfig({
 			onConfigChanged: (config) => {
 				if (!config) return;
 				callbackCount += 1;
@@ -450,7 +454,7 @@ describe("config watcher", () => {
 		const callbackRelease = new Promise<void>((resolve) => {
 			releaseCallback = resolve;
 		});
-		const configWatcher = watchConfig(core, {
+		const configWatcher = core.watchConfig({
 			onConfigChanged: async (config) => {
 				expect(config?.projectName).toBe("Held publication");
 				callbackCount += 1;
@@ -492,7 +496,7 @@ describe("config watcher", () => {
 		const newestPublished = new Promise<void>((resolve) => {
 			resolveNewestPublished = resolve;
 		});
-		const configWatcher = watchConfig(core, {
+		const configWatcher = core.watchConfig({
 			onConfigChanged: async (config) => {
 				if (!config) return;
 				publishedNames.push(config.projectName);
@@ -535,7 +539,7 @@ describe("config watcher", () => {
 		const nextPublished = new Promise<AgenticWorkspaceConfig | null>((resolve) => {
 			resolveNextPublished = resolve;
 		});
-		const configWatcher = watchConfig(core, {
+		const configWatcher = core.watchConfig({
 			onConfigChanged: async (config) => {
 				callbackAttempts += 1;
 				cachedProjectNames.push((await coreFileSystem(core).loadConfig())?.projectName ?? "");

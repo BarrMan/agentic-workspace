@@ -67,8 +67,10 @@ describe("OpenCode provider-owned session capture", () => {
 			const executable = await fakeOpenCode(directory);
 			const wrapper = join(directory, "package-runner");
 			const requests = join(directory, "wrapper.requests");
-			await writeFile(wrapper, `#!/bin/sh\n'${executable}' "$@" &\nwait\n`);
-			await chmod(wrapper, 0o700);
+			await writeFile(
+				wrapper,
+				`const child = Bun.spawn([${JSON.stringify(process.execPath)}, ${JSON.stringify(executable)}, ...process.argv.slice(2)], { env: process.env, stdin: "ignore", stdout: "ignore", stderr: "ignore" });\nawait child.exited;\n`,
+			);
 			await new OpenCodeSessionCapture().preassignSession(preset(wrapper), directory, {
 				PATH: process.env.PATH ?? "",
 				CAPTURE_MODE: "success",
@@ -83,7 +85,7 @@ describe("OpenCode provider-owned session capture", () => {
 });
 
 const preset = (executable: string) => ({
-	command: [executable],
+	command: [process.execPath, executable],
 	env: {},
 	prepare: "",
 	bootstrap: "opencode" as const,

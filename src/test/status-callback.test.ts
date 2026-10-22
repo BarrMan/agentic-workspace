@@ -7,6 +7,10 @@ import { executeStatusCallback } from "../controller/status-callback.ts";
 import { serializeTask } from "../storage/markdown/serializer.ts";
 import { coreFileSystem } from "./test-utils.ts";
 
+function projectDataDir(root: string): string {
+	return join(root, ".agentic-workspace");
+}
+
 describe("Status Change Callbacks", () => {
 	describe("executeStatusCallback", () => {
 		const testCwd = process.cwd();
@@ -96,7 +100,7 @@ describe("Status Change Callbacks", () => {
 			previousHookOptIn = process.env.AGENTIC_WORKSPACE_ALLOW_STATUS_HOOK;
 			testDir = join(tmpdir(), `agentic-workspace-callback-test-${Date.now()}`);
 			await mkdir(testDir, { recursive: true });
-			await mkdir(join(testDir, "agentic-workspace", "tasks"), { recursive: true });
+			await mkdir(join(projectDataDir(testDir), "tasks"), { recursive: true });
 
 			callbackOutputFile = join(testDir, "callback-output.txt");
 			callbackOutputPath = callbackOutputFile.replace(/\\/g, "/");
@@ -121,11 +125,11 @@ milestones: []
 date_format: yyyy-mm-dd
 on_status_change: 'echo "$TASK_ID:$OLD_STATUS->$NEW_STATUS" > "${callbackOutputPath}"'
 `;
-			await writeFile(join(testDir, "agentic-workspace", "config.yml"), configContent);
+			await writeFile(join(projectDataDir(testDir), "config.yml"), configContent);
 			core = new Core(testDir);
 
 			// Verify config was written correctly
-			const writtenConfig = await Bun.file(join(testDir, "agentic-workspace", "config.yml")).text();
+			const writtenConfig = await Bun.file(join(projectDataDir(testDir), "config.yml")).text();
 			expect(writtenConfig).toContain("on_status_change");
 
 			// Create a task
@@ -158,7 +162,7 @@ milestones: []
 date_format: yyyy-mm-dd
 on_status_change: 'echo "global" > "${callbackOutputPath}"'
 `;
-			await writeFile(join(testDir, "agentic-workspace", "config.yml"), configContent);
+			await writeFile(join(projectDataDir(testDir), "config.yml"), configContent);
 			core = new Core(testDir);
 
 			// Create a task with per-task callback
@@ -170,8 +174,8 @@ on_status_change: 'echo "global" > "${callbackOutputPath}"'
 				labels: [],
 				dependencies: [],
 			}).replace("---\n", `---\nonStatusChange: 'echo legacy > "${callbackOutputPath}"'\n`);
-			await mkdir(join(testDir, "agentic-workspace", "tasks", "task-1"), { recursive: true });
-			await writeFile(join(testDir, "agentic-workspace", "tasks", "task-1", "task.md"), taskContent);
+			await mkdir(join(projectDataDir(testDir), "tasks", "task-1"), { recursive: true });
+			await writeFile(join(projectDataDir(testDir), "tasks", "task-1", "task.md"), taskContent);
 
 			// Update status
 			await core.updateTaskFromInput("task-1", { status: "Done" });
@@ -183,7 +187,7 @@ on_status_change: 'echo "global" > "${callbackOutputPath}"'
 
 		test("does not execute a project hook without explicit opt-in", async () => {
 			const config = `project_name: Test\nstatuses: [To Do, Done]\non_status_change: 'echo executed > "${callbackOutputPath}"'\n`;
-			await writeFile(join(testDir, "agentic-workspace", "config.yml"), config);
+			await writeFile(join(projectDataDir(testDir), "config.yml"), config);
 			core = new Core(testDir);
 			const { task } = await core.createTaskFromInput({ title: "Opt-in gate", status: "To Do" });
 			await core.updateTaskFromInput(task.id, { status: "Done" });
@@ -203,7 +207,7 @@ milestones: []
 date_format: yyyy-mm-dd
 on_status_change: 'echo "callback-ran" > "${callbackOutputPath}"'
 `;
-			await writeFile(join(testDir, "agentic-workspace", "config.yml"), configContent);
+			await writeFile(join(projectDataDir(testDir), "config.yml"), configContent);
 			core = new Core(testDir);
 
 			// Create a task
@@ -231,7 +235,7 @@ labels: []
 milestones: []
 date_format: yyyy-mm-dd
 `;
-			await writeFile(join(testDir, "agentic-workspace", "config.yml"), configContent);
+			await writeFile(join(projectDataDir(testDir), "config.yml"), configContent);
 			core = new Core(testDir);
 
 			// Create a task
@@ -258,7 +262,7 @@ milestones: []
 date_format: yyyy-mm-dd
 on_status_change: 'exit 1'
 `;
-			await writeFile(join(testDir, "agentic-workspace", "config.yml"), configContent);
+			await writeFile(join(projectDataDir(testDir), "config.yml"), configContent);
 			core = new Core(testDir);
 
 			// Create a task
@@ -267,9 +271,10 @@ on_status_change: 'exit 1'
 				status: "To Do",
 			});
 
-			// Update status - should succeed even if callback fails
-			const result = await core.updateTaskFromInput(task.id, { status: "Done" });
-			expect(result.status).toBe("Done");
+			await expect(core.updateTaskFromInput(task.id, { status: "Done" })).rejects.toThrow(
+				"Task changes were committed; post-commit delivery failed.",
+			);
+			expect(await coreFileSystem(core).loadTask(task.id)).toMatchObject({ status: "Done" });
 		});
 
 		test("triggers callback when reorderTask changes status", async () => {
@@ -285,7 +290,7 @@ milestones: []
 date_format: yyyy-mm-dd
 on_status_change: 'echo "$TASK_ID:$OLD_STATUS->$NEW_STATUS" >> "${callbackOutputPath}"'
 `;
-			await writeFile(join(testDir, "agentic-workspace", "config.yml"), configContent);
+			await writeFile(join(projectDataDir(testDir), "config.yml"), configContent);
 			core = new Core(testDir);
 
 			// Create a task in "To Do"

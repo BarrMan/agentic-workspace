@@ -7,7 +7,6 @@ import { Core } from "../controller/agentic-workspace.ts";
 import * as mainWorktree from "../filesystem/git/main-worktree.ts";
 import type { Task } from "../model/types.ts";
 import { serializeTask } from "../storage/markdown/serializer.ts";
-import { watchTasks } from "../storage/watchers/task-watcher.ts";
 import { runInProcessCli } from "./in-process-cli.ts";
 import {
 	coreFileSystem,
@@ -148,8 +147,7 @@ describe("task watcher reconciliation", () => {
 		const idle = () => {
 			idleCount += 1;
 		};
-		const handle = watchTasks(
-			core,
+		const handle = core.watchTasks(
 			{
 				onReconciliationIdle: idle,
 				onArtifactChanged(event) {
@@ -168,6 +166,15 @@ describe("task watcher reconciliation", () => {
 			{ event: "TASK-199", kind: "directory" },
 			{ event: "TASK-199/task.md", kind: "record" },
 			{ event: "TASK-199/.artifacts.json", kind: "artifact", path: ".artifacts.json" },
+			{ event: "TASK-199/artifacts/task.md", kind: "artifact", path: "task.md" },
+			{ event: "TASK-199/artifacts/.task-atomic-write", kind: "artifact", path: ".task-atomic-write" },
+			{
+				event: "TASK-199/artifacts/.agentic-workspace-artifacts-stage",
+				kind: "artifact",
+				path: ".agentic-workspace-artifacts-stage",
+			},
+			{ event: "TASK-199/artifacts/.agentic-workspace-artifact-stage", kind: "ignore" },
+			{ event: "TASK-199/artifacts/unknown.extension", kind: "artifact", path: "unknown.extension" },
 			{ event: "TASK-199/.task-atomic-write", kind: "ignore" },
 			{ event: "TASK-199/notes/nested.txt", kind: "artifact", path: "notes/nested.txt" },
 		];
@@ -206,7 +213,7 @@ describe("task watcher reconciliation", () => {
 		const fileName = "task-1/task.md";
 		const filePath = await taskFilePath(core, "task-1");
 		const added: Task[] = [];
-		const handle = watchTasks(core, {
+		const handle = core.watchTasks({
 			onReconciliationIdle: signalIdle,
 			onTaskAdded(task) {
 				added.push(task);
@@ -238,7 +245,7 @@ describe("task watcher reconciliation", () => {
 		const added = new Promise<Task>((resolve) => {
 			resolveAdded = resolve;
 		});
-		const handle = watchTasks(core, {
+		const handle = core.watchTasks({
 			onReconciliationIdle: signalIdle,
 			onTaskAdded(task) {
 				resolveAdded?.(task);
@@ -272,8 +279,7 @@ describe("task watcher reconciliation", () => {
 		const changed = new Promise<Task>((resolve) => {
 			resolveChanged = resolve;
 		});
-		const handle = watchTasks(
-			core,
+		const handle = core.watchTasks(
 			{
 				onReconciliationIdle: signalIdle,
 				onTaskChanged(task) {
@@ -307,8 +313,7 @@ describe("task watcher reconciliation", () => {
 		await Promise.all(paths.map((path, index) => Bun.write(path, serializeTask(tasks[index] as Task))));
 		const initialTasks = await coreFileSystem(core).listTasks();
 		const removed: string[] = [];
-		const handle = watchTasks(
-			core,
+		const handle = core.watchTasks(
 			{
 				onReconciliationIdle: signalIdle,
 				onTaskRemoved(taskId) {
@@ -338,7 +343,7 @@ describe("task watcher reconciliation", () => {
 		const filePath = await taskFilePath(core, "task-5");
 		await Bun.write(filePath, "---\nid: task-5\n");
 		const publications: string[] = [];
-		const handle = watchTasks(core, {
+		const handle = core.watchTasks({
 			onReconciliationIdle: signalIdle,
 			onTaskAdded: (task) => {
 				publications.push(task.id);
@@ -375,8 +380,7 @@ describe("task watcher reconciliation", () => {
 		if (!initial) throw new Error("Expected initial task");
 
 		const removed: string[] = [];
-		const handle = watchTasks(
-			core,
+		const handle = core.watchTasks(
 			{
 				onReconciliationIdle: signalIdle,
 				onTaskRemoved(taskId) {
@@ -405,8 +409,7 @@ describe("task watcher reconciliation", () => {
 			return null;
 		});
 		const removed: string[] = [];
-		const handle = watchTasks(
-			core,
+		const handle = core.watchTasks(
 			{
 				onReconciliationIdle: signalIdle,
 				onTaskRemoved(taskId) {
@@ -432,8 +435,7 @@ describe("task watcher reconciliation", () => {
 		const initial = await coreFileSystem(core).loadTask(task.id);
 		if (!initial) throw new Error("Expected initial task");
 		const removed: string[] = [];
-		const handle = watchTasks(
-			core,
+		const handle = core.watchTasks(
 			{
 				onReconciliationIdle: signalIdle,
 				onTaskRemoved(taskId) {
@@ -460,8 +462,7 @@ describe("task watcher reconciliation", () => {
 	it("does not reconcile branch-only tasks from the current checkout watcher", async () => {
 		const removed: string[] = [];
 		const branchTask = { ...sampleTask("task-8", "Other branch"), branch: "feature/other-worktree" };
-		const handle = watchTasks(
-			core,
+		const handle = core.watchTasks(
 			{
 				onReconciliationIdle: signalIdle,
 				onTaskRemoved(taskId) {
@@ -482,7 +483,7 @@ describe("task watcher reconciliation", () => {
 		const filePath = await taskFilePath(core, "task-13");
 		await Bun.write(filePath, serializeTask(sampleTask("task-13", "Observer failure")));
 		const added: Task[] = [];
-		const handle = watchTasks(core, {
+		const handle = core.watchTasks({
 			onReconciliationIdle() {
 				signalIdle();
 				throw new Error("observer failure");
@@ -516,8 +517,7 @@ describe("task watcher reconciliation", () => {
 		const changed = new Promise<Task>((resolve) => {
 			resolveChanged = resolve;
 		});
-		const handle = watchTasks(
-			core,
+		const handle = core.watchTasks(
 			{
 				onReconciliationIdle: signalIdle,
 				onTaskChanged(task) {

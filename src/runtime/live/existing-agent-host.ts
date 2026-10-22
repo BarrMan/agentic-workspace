@@ -34,14 +34,11 @@ export function createExistingAgentHost(options: {
 	const buffer = Buffer.allocUnsafe(64 * 1024);
 	const exec: TmuxExec = {
 		run: async (argv, runOptions) => {
-			const args = [...argv.slice(1)];
-			const target = args.indexOf("-t");
-			if (target >= 0) args[target + 1] = options.paneId;
 			const at = performance.now();
 			try {
-				if (options.exec) return await options.exec.run([argv[0] ?? "", ...args], runOptions);
+				if (options.exec) return await options.exec.run(argv, runOptions);
 				if (!options.server) throw new Error("Existing agent host needs a tmux executor");
-				const output = await options.server.cmd(argv[0] ?? "", args);
+				const output = await options.server.cmd(argv[0] ?? "", argv.slice(1));
 				return { exitCode: 0, stdout: output.join("\n"), stderr: "", durationMs: performance.now() - at };
 			} catch (error) {
 				return { exitCode: 1, stdout: "", stderr: String(error), durationMs: performance.now() - at };
@@ -124,7 +121,7 @@ export function createExistingAgentHost(options: {
 				if (snapshot.exitCode !== 0) throw new Error(snapshot.stderr);
 				options.onOutput(new TextEncoder().encode(`\x1b[2J\x1b[H${snapshot.stdout.replaceAll("\n", "\r\n")}`));
 				if (!options.readOnly) {
-					worker = createInputWorker(exec, { sessionName: "external" });
+					worker = createInputWorker(exec, { target: options.paneId });
 					worker.onDispatch((_report, error) => {
 						if (error) options.onError(error);
 					});

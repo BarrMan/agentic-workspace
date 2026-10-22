@@ -4,7 +4,7 @@ import { Writable } from "node:stream";
 import { runCli } from "../cli/register.ts";
 import { Core } from "../index.ts";
 import { taskListJson } from "../renderer/formatters/json-output.ts";
-import { createUniqueTestDir, initializeFilesystemTestProject, safeCleanup } from "./test-utils.ts";
+import { coreFileSystem, createUniqueTestDir, initializeFilesystemTestProject, safeCleanup } from "./test-utils.ts";
 
 const createdDirs: string[] = [];
 
@@ -73,7 +73,11 @@ async function makeProject() {
 	});
 
 	createdDirs.push(TEST_DIR);
-	return { dir: TEST_DIR, runCli: (args: string[], cwd = TEST_DIR) => runCommand(args, cwd) };
+	return {
+		dir: TEST_DIR,
+		taskDataDirectory: coreFileSystem(core).agenticWorkspaceDirName,
+		runCli: (args: string[], cwd = TEST_DIR) => runCommand(args, cwd),
+	};
 }
 
 // runCli temporarily mutates process globals, so invocations in this suite stay serial.
@@ -162,14 +166,14 @@ describe("CLI JSON output", () => {
 	});
 
 	it("returns curated task details for view", async () => {
-		const { runCli } = await makeProject();
+		const { runCli, taskDataDirectory } = await makeProject();
 		for (const args of [["task", "view", "TASK-1", "--json"]]) {
 			const result = await runCli(args);
 			expect(result.exitCode).toBe(0);
 			const output = JSON.parse(result.stdout.toString());
 			expect(output.schemaVersion).toBe(1);
 			expect(output.kind).toBe("task-view");
-			expect(output.task.path).toBe("agentic-workspace/tasks/task-1/task.md");
+			expect(output.task.path).toBe(`${taskDataDirectory}/tasks/task-1/task.md`);
 			expect(output.task.description).toBe("Machine-readable output");
 			expect(output.task.dependencies).toEqual(["TASK-2"]);
 			// The summary verdict and the detail explanation behind it, from the same derivation.

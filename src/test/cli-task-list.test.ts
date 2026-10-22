@@ -80,6 +80,57 @@ describe("CLI Integration", () => {
 			expect(doneTasks.map((t) => t.id)).toEqual(["TASK-2"]); // IDs normalized to uppercase
 		});
 
+		it("honors the retained --limit option", async () => {
+			const core = new Core(TEST_DIR);
+			const fixtures = [
+				["task-1", "First limited task"],
+				["task-2", "Second limited task"],
+			] as const;
+			for (const [id, title] of fixtures) {
+				await core.createTask({
+					id,
+					title,
+					status: "To Do",
+					createdDate: "2025-06-08",
+					labels: [],
+					dependencies: [],
+					rawContent: title,
+				});
+			}
+
+			const result = await runInProcessCli(["task", "list", "--plain", "--limit", "1"], { cwd: TEST_DIR });
+			expect(result.exitCode).toBe(0);
+			const output = result.stdout.toString();
+			expect(output.includes("First limited task")).not.toBe(output.includes("Second limited task"));
+		});
+
+		it("rejects malformed and unsafe list-window integers", async () => {
+			for (const value of ["2junk", "nope", "9007199254740992"]) {
+				const result = await runInProcessCli(["task", "list", "--max-count", value], { cwd: TEST_DIR });
+				expect(result.exitCode).toBe(1);
+				expect(result.stderr.toString()).toContain("--max-count must be a signed safe integer");
+			}
+		});
+
+		it("clamps negative list-window values to zero", async () => {
+			const core = new Core(TEST_DIR);
+			await core.createTask({
+				id: "task-1",
+				title: "First task",
+				status: "To Do",
+				createdDate: "2025-06-08",
+				labels: [],
+				dependencies: [],
+				rawContent: "First task",
+			});
+
+			const result = await runInProcessCli(["task", "list", "--plain", "--skip", "-1", "--max-count", "1"], {
+				cwd: TEST_DIR,
+			});
+			expect(result.exitCode).toBe(0);
+			expect(result.stdout).toContain("First task");
+		});
+
 		it("should respect config status order", async () => {
 			const core = new Core(TEST_DIR);
 

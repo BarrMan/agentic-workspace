@@ -1,6 +1,6 @@
 import { getPriorityRank } from "./priority-config.ts";
 import { statusComparisonKey } from "./status.ts";
-import { parseTaskId as parseTaskIdSegments, taskIdBody } from "./task-id.ts";
+import { parseTaskId as parseTaskIdSegments, taskIdBody, taskIdKey } from "./task-id.ts";
 
 /** Ordering and comparison over task IDs, ordinals, and priorities. */
 export class TaskOrdering {
@@ -124,7 +124,7 @@ export class TaskOrdering {
 			}
 			columns.get(key)?.push(task);
 		}
-		const byId = new Map(items.map((task) => [task.id, task]));
+		const byId = new Map(items.map((task) => [taskIdKey(task.id), task]));
 		return orderedStatuses.map((status) => ({
 			status,
 			tasks: TaskOrdering.orderColumn(columns.get(statusComparisonKey(status)) ?? [], byId),
@@ -142,17 +142,27 @@ export class TaskOrdering {
 			return ordinal || TaskOrdering.compareIds(b.id, a.id);
 		});
 		for (const task of sorted) {
-			const parent = task.parentTaskId ? byId.get(task.parentTaskId) : undefined;
+			const parent = task.parentTaskId ? byId.get(taskIdKey(task.parentTaskId)) : undefined;
 			if (parent && parent.status === task.status) {
-				const children = childrenByParent.get(parent.id) ?? [];
+				const children = childrenByParent.get(taskIdKey(parent.id)) ?? [];
 				children.push(task);
-				childrenByParent.set(parent.id, children);
+				childrenByParent.set(taskIdKey(parent.id), children);
 			} else topLevel.push(task);
 		}
-		return topLevel.flatMap((task) => [
-			task,
-			...(childrenByParent.get(task.id) ?? []).sort((a, b) => TaskOrdering.compareIds(a.id, b.id)),
-		]);
+		const result: T[] = [];
+		const seen = new Set<string>();
+		const visit = (task: T): void => {
+			const key = taskIdKey(task.id);
+			if (seen.has(key)) return;
+			seen.add(key);
+			result.push(task);
+			for (const child of (childrenByParent.get(key) ?? []).sort((a, b) => TaskOrdering.compareIds(a.id, b.id)))
+				visit(child);
+		};
+		for (const task of topLevel) visit(task);
+		// Cycles have no root; still display each task once.
+		for (const task of sorted) visit(task);
+		return result;
 	}
 
 	private static isAncestorId(parentId: string, childId: string): boolean {

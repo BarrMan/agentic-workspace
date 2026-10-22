@@ -57,6 +57,11 @@ describe("existing CLI agent host", () => {
 			expect(commands.filter((entry) => entry.command === "send-keys").flatMap((entry) => entry.args.slice(3))).toEqual(
 				["1b", "5b", "41"],
 			);
+			host.sendBytes(new Uint8Array(1024).fill(0x61));
+			await host.flushInput();
+			const paste = commands.find((entry) => entry.command === "send-keys" && entry.args.includes(";"));
+			expect(paste?.args.filter((arg) => arg === "%42")).toHaveLength(2);
+			expect(paste?.args.filter((arg) => arg === ";")).toHaveLength(1);
 			await host.resize(91, 27);
 			expect(commands).toContainEqual({ command: "resize-window", args: ["-t", "%42", "-x", "91", "-y", "27"] });
 			expect(commands).toContainEqual({ command: "resize-pane", args: ["-t", "%42", "-x", "91", "-y", "27"] });
@@ -69,6 +74,9 @@ describe("existing CLI agent host", () => {
 				["display-message", "capture-pane", "send-keys", "resize-window", "resize-pane"].includes(entry.command),
 			),
 		).toBeTrue();
+		expect(
+			commands.filter(({ args }) => args.includes("-t")).every(({ args }) => args[args.indexOf("-t") + 1] === "%42"),
+		).toBe(true);
 		const count = commands.length;
 		host.sendBytes(new Uint8Array([0x42]));
 		await host.flushInput();

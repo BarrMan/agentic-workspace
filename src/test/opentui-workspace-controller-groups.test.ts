@@ -85,6 +85,8 @@ function setup(groups: Groups | undefined, runtimeOverrides: Record<string, unkn
 			config: { statuses: ["To Do"] },
 			identityIndex: { getTasks: () => tasks, getContestedIds: () => new Set() },
 		}),
+		watchTasks: () => ({ stop() {} }),
+		watchConfig: () => ({ stop() {} }),
 		filesystem: {
 			agenticWorkspaceDir,
 			loadConfig: async () => ({

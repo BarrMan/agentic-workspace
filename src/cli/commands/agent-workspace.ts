@@ -1,6 +1,5 @@
 import type { Command } from "commander";
 import type { Core } from "../../controller/agentic-workspace.ts";
-import { resolveCallingMode } from "../../model/session/mode-model.ts";
 import type { SessionRuntime } from "../../model/session/session.ts";
 import { OpenTuiWorkspaceController } from "../../renderer/opentui/workspace-controller.ts";
 import { addHelpSchema } from "./help-schema.ts";
@@ -58,11 +57,10 @@ export function registerAgentWorkspaceCommands(
 		.description("ask the previous saved session in the current mode and print its answer")
 		.action(async (taskId: string, question: string) => {
 			const core = await getCore.project();
-			const modeId = resolveCallingMode(
-				process.env.AGENTIC_WORKSPACE_SESSION_ID ? { sessionId: process.env.AGENTIC_WORKSPACE_SESSION_ID } : undefined,
-				(await core.sessionApplication.store.read(taskId)).modes,
-			);
-			const result = await core.sessionApplication.askPrevious(taskId, modeId, question);
+			const result = await core.callingSession.ask(taskId, question, {
+				taskId: process.env.AGENTIC_WORKSPACE_TASK_ID,
+				sessionId: process.env.AGENTIC_WORKSPACE_SESSION_ID,
+			});
 			process.stdout.write(`${result.answer}\n`);
 		});
 
@@ -72,12 +70,10 @@ export function registerAgentWorkspaceCommands(
 		.description("set the calling session's mode model")
 		.action(async (id: string) => {
 			const core = await getCore.project();
-			const taskId = process.env.AGENTIC_WORKSPACE_TASK_ID;
-			const targetModeId = resolveCallingMode(
-				process.env.AGENTIC_WORKSPACE_SESSION_ID ? { sessionId: process.env.AGENTIC_WORKSPACE_SESSION_ID } : undefined,
-				taskId ? (await core.sessionApplication.store.read(taskId)).modes : {},
-			);
-			await core.setModeModel(targetModeId, id);
+			await core.callingSession.setModel(id, {
+				taskId: process.env.AGENTIC_WORKSPACE_TASK_ID,
+				sessionId: process.env.AGENTIC_WORKSPACE_SESSION_ID,
+			});
 		});
 }
 

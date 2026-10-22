@@ -2,7 +2,9 @@ import { describe, expect, it } from "bun:test";
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { $ } from "bun";
+import { updateAgentConfiguration } from "../controller/agent-configuration.ts";
 import { Core } from "../controller/agentic-workspace.ts";
+import { getDefaultModeCatalog } from "../storage/config.ts";
 import { getTestCliCommand } from "./test-cli.ts";
 import { coreFileSystem, createUniqueTestDir, initializeTestProject, safeCleanup } from "./test-utils.ts";
 
@@ -53,8 +55,12 @@ async function runLiveRefreshScenario(): Promise<{ title: string; transcriptPath
 	const expectScriptPath = join(testDir, `${scenario}.expect`);
 
 	await $`git init -b main`.cwd(testDir).quiet();
+	await initializeTestProject(new Core(testDir), "Interactive live refresh", false, "test-data");
 	const core = new Core(testDir);
-	await initializeTestProject(core, "Interactive live refresh");
+	await updateAgentConfiguration(core, "project", (configuration) => ({
+		...configuration,
+		modes: getDefaultModeCatalog(),
+	}));
 	const config = await coreFileSystem(core).loadConfig();
 	if (!config) throw new Error("Failed to load live refresh config");
 	await core.createTask({
@@ -78,18 +84,18 @@ set env(COLUMNS) {120}
 set env(LINES) {40}
 set env(NO_COLOR) {1}
 set stty_init {rows 40 columns 120}
-${buildSpawnCommand(["board"])}
+${buildSpawnCommand(["workspace"])}
 expect {
 	-re {before-refresh} {}
 	timeout { exit 91 }
 }
-set mutation_code [catch {${buildExecCommand(["task", "edit", "task-1", "--title", "LIVE_REFRESHED", "--plain"])} } mutation_output]
-if {$mutation_code != 0} { exit 92 }
+set mutation_code [catch {${buildExecCommand(["task", "edit", "task-1", "--title", "LIVE_REFRESHED"])} } mutation_output]
+if {$mutation_code != 0} { puts stderr $mutation_output; exit 92 }
 expect {
 	-re {LIVE_REFRESHED} {}
 	timeout { exit 93 }
 }
-send -- "q"
+send -- "\\x03"
 expect eof
 set wait_status [wait]
 set exit_code [lindex $wait_status 3]

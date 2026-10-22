@@ -136,11 +136,13 @@ collection = new TaskCollection(tasks)
 collection.directSubtasks(task)               // parent and direct-subtask relationships
 collection.subtaskProgress(task, statuses)
 TaskSearchIndex.apply(tasks, filter)          // shared search and filter predicates
-validator = new DependencyValidator(store)
-await validator.validate(dependencies, target) // dependency existence and cycle rules
+validator = new DependencyValidator(tasks)
+validator.validate(dependencies, target)       // dependency existence and cycle rules
 ```
 
 Searchable-field extraction, task-ID variants, status-set matching, and modified-file matching are private to `TaskSearchIndex`; they are not separate model surfaces. There is no separate statistics or status-ordering module.
+
+Controller loads the required corpus through Storage before invoking DependencyValidator. The validator owns existence and cycle rules over that corpus; it receives neither a store nor a persistence callback and performs no persistence I/O.
 
 ## Invariants
 
@@ -150,6 +152,6 @@ Searchable-field extraction, task-ID variants, status-set matching, and modified
 - Task never starts or stops execution; it creates Session records and receives Session operations from Controller.
 - Selection is Task and Controller state, not a preference.
 - A nonempty history's active ID names a retained member; an empty history has no active ID.
-- Sessions never move between modes.
+- Session mode membership changes only through the explicit move choice during [mode deletion](../specs/configuration.md#config-012-confirmed-mode-deletion-cleanup); ordinary mode selection never moves sessions.
 - Removing a mode requires an empty history.
 - Identity comparison, value equality, and readiness are Task operations. Readiness takes the corpus graph because it is derived from more than one record.
