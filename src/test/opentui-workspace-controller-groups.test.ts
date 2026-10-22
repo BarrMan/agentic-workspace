@@ -21,9 +21,14 @@ afterEach(() => {
 class Groups implements GroupStore {
 	constructor(public current: GroupState) {}
 	readonly updates: GroupState[] = [];
+	#updateWaiters: (() => void)[] = [];
 	async update(patch: (state: GroupState) => GroupState): Promise<void> {
 		this.current = patch(this.current);
 		this.updates.push(this.current);
+		for (const resolve of this.#updateWaiters.splice(0)) resolve();
+	}
+	waitForUpdate(): Promise<void> {
+		return new Promise((resolve) => this.#updateWaiters.push(resolve));
 	}
 	subscribe(): () => void {
 		return () => {};
@@ -48,6 +53,18 @@ function setup(groups: Groups | undefined, runtimeOverrides: Record<string, unkn
 		`agent_configuration: ${JSON.stringify({ ...getBuiltInAgentConfiguration(), modes: getDefaultModeCatalog() })}\n`,
 	);
 	let mounted!: OpenTuiWorkspaceOptions;
+	let resolveMounted!: () => void;
+	const mountedPromise = new Promise<void>((resolve) => (resolveMounted = resolve));
+	const projectionWaiters: { predicate: (options: OpenTuiWorkspaceOptions) => boolean; resolve: () => void }[] = [];
+	const publish = (options: OpenTuiWorkspaceOptions): void => {
+		mounted = options;
+		resolveMounted();
+		for (const waiter of [...projectionWaiters]) {
+			if (!waiter.predicate(options)) continue;
+			projectionWaiters.splice(projectionWaiters.indexOf(waiter), 1);
+			waiter.resolve();
+		}
+	};
 	const renderer = new EventEmitter();
 	const host = { renderer, root: {}, async destroy() {} } as unknown as OpenTuiHost;
 	const runtime = {
@@ -55,10 +72,10 @@ function setup(groups: Groups | undefined, runtimeOverrides: Record<string, unkn
 			return host;
 		},
 		mountWorkspace(_renderer: unknown, _root: unknown, options: OpenTuiWorkspaceOptions) {
-			mounted = options;
+			publish(options);
 			return {
 				update(next: OpenTuiWorkspaceOptions) {
-					mounted = next;
+					publish(next);
 				},
 				dispose() {},
 				setIndication() {},
@@ -131,6 +148,11 @@ function setup(groups: Groups | undefined, runtimeOverrides: Record<string, unkn
 		get mounted() {
 			return mounted;
 		},
+		waitForMounted: () => mountedPromise,
+		waitForProjection: (predicate: (options: OpenTuiWorkspaceOptions) => boolean) => {
+			if (mounted && predicate(mounted)) return Promise.resolve();
+			return new Promise<void>((resolve) => projectionWaiters.push({ predicate, resolve }));
+		},
 	};
 }
 
@@ -140,7 +162,7 @@ describe("workspace controller group deletion", () => {
 		writeFileSync(join(workspace.agenticWorkspaceDir, "groups.json"), "{");
 		const run = workspace.controller.run();
 		try {
-			while (!workspace.mounted) await Bun.sleep(1);
+			await workspace.waitForMounted();
 			expect(workspace.mounted.notice).toContain("JSON");
 			expect(workspace.mounted.groups).toEqual([]);
 			expect(workspace.mounted.groupMembership).toEqual({});
@@ -150,33 +172,42 @@ describe("workspace controller group deletion", () => {
 		}
 	});
 
-	it("confirms empty groups and moves direct contents while preserving child order", async () => {
+	it("confirms empty groups", async () => {
 		const emptyStore = new Groups({
 			groups: [{ id: "empty", name: "Empty", parentId: null, order: 0, collapsed: false }],
 			membership: {},
 		});
 		let confirmed!: () => void;
+		let resolveConfirmMounted!: () => void;
+		const confirmMounted = new Promise<void>((resolve) => (resolveConfirmMounted = resolve));
 		const empty = setup(emptyStore, {
-			mountConfirm: () => ({
-				result: new Promise<boolean>((resolve) => {
+			mountConfirm: () => {
+				const result = new Promise<boolean>((resolve) => {
 					confirmed = () => resolve(true);
-				}),
-				dispose() {},
-			}),
+				});
+				resolveConfirmMounted();
+				return { result, dispose() {} };
+			},
 		});
 		const emptyRun = empty.controller.run();
 		try {
-			while (!empty.mounted) await Bun.sleep(1);
+			await empty.waitForMounted();
 			empty.mounted.onGroupDelete?.({ id: "empty", name: "Empty" });
-			await Bun.sleep(0);
+			await confirmMounted;
+			const update = emptyStore.waitForUpdate();
 			confirmed();
-			await Bun.sleep(20);
+			await update;
 			expect(emptyStore.current.groups).toEqual([]);
 		} finally {
 			empty.controller.destroy();
 			await emptyRun;
 		}
+	});
 
+	it.each([
+		["another group", "other", { T1: "other", T2: "parent" }, "other"],
+		["ungrouped root", null, { T2: "parent" }, null],
+	] as const)("moves populated group contents to %s while preserving child order", async (_destination, destination, membership, parentId) => {
 		const store = new Groups({
 			groups: [
 				{ id: "parent", name: "Parent", parentId: null, order: 0, collapsed: false },
@@ -189,17 +220,20 @@ describe("workspace controller group deletion", () => {
 			membership: { T1: "doomed", T2: "parent" },
 		});
 		let modalOptions: Record<string, unknown> | undefined;
+		let resolveModal!: () => void;
+		const modalMounted = new Promise<void>((resolve) => (resolveModal = resolve));
 		const moving = setup(store, {
 			mountGroupDelete: (_renderer: unknown, _root: unknown, options: Record<string, unknown>) => {
 				modalOptions = options;
+				resolveModal();
 				return { dispose() {} };
 			},
 		});
 		const movingRun = moving.controller.run();
 		try {
-			while (!moving.mounted) await Bun.sleep(1);
+			await moving.waitForMounted();
 			moving.mounted.onGroupDelete?.({ id: "doomed", name: "Doomed" });
-			await Bun.sleep(0);
+			await modalMounted;
 			expect(modalOptions).toMatchObject({
 				taskCount: 1,
 				childGroupCount: 2,
@@ -210,22 +244,67 @@ describe("workspace controller group deletion", () => {
 				],
 			});
 			const onConfirm = (modalOptions as { onConfirm: (destination: string | null) => Promise<void> }).onConfirm;
-			await onConfirm("other");
+			await onConfirm(destination);
 			expect(store.updates).toHaveLength(1);
-			expect(store.current.membership).toEqual({ T1: "other", T2: "parent" });
-			expect(store.current.groups.filter((group) => group.parentId === "other").map((group) => group.id)).toEqual([
-				"child-b",
-				"child-a",
-			]);
+			expect(store.current.membership).toEqual(membership);
+			const movedChildren = store.current.groups.filter((group) => group.id === "child-b" || group.id === "child-a");
+			expect(movedChildren.map((group) => group.id)).toEqual(["child-b", "child-a"]);
+			expect(movedChildren.map((group) => group.parentId)).toEqual([parentId, parentId]);
 			expect(store.current.groups.find((group) => group.id === "grandchild")?.parentId).toBe("child-b");
 			expect(store.current.groups.map((group) => group.id)).not.toContain("doomed");
-			for (let attempt = 0; attempt < 100 && moving.mounted.groupMembership?.T1 !== "other"; attempt++)
-				await Bun.sleep(2);
-			expect(moving.mounted.groupMembership).toEqual({ T1: "other", T2: "parent" });
+			const updatedProjection = moving.waitForProjection((options) =>
+				destination === null ? options.groupMembership?.T1 === undefined : options.groupMembership?.T1 === destination,
+			);
+			await updatedProjection;
+			expect(moving.mounted.groupMembership).toEqual(membership);
 			expect(moving.mounted.groups?.map((group) => group.id)).not.toContain("doomed");
 		} finally {
 			moving.controller.destroy();
 			await movingRun;
+		}
+	});
+
+	it("cancels populated-group deletion without changing its projection or contents", async () => {
+		const store = new Groups({
+			groups: [
+				{ id: "parent", name: "Parent", parentId: null, order: 0, collapsed: false },
+				{ id: "doomed", name: "Doomed", parentId: "parent", order: 0, collapsed: false },
+				{ id: "child", name: "Child", parentId: "doomed", order: 0, collapsed: false },
+			],
+			membership: { T1: "doomed" },
+		});
+		let modalOptions: Record<string, unknown> | undefined;
+		let resolveModal!: () => void;
+		const modalMounted = new Promise<void>((resolve) => (resolveModal = resolve));
+		const workspace = setup(store, {
+			mountGroupDelete: (_renderer: unknown, _root: unknown, options: Record<string, unknown>) => {
+				modalOptions = options;
+				resolveModal();
+				return { dispose() {} };
+			},
+		});
+		const run = workspace.controller.run();
+		try {
+			await workspace.waitForMounted();
+			const originalGroups = workspace.mounted.groups;
+			const originalMembership = workspace.mounted.groupMembership;
+			workspace.mounted.onGroupDelete?.({ id: "doomed", name: "Doomed" });
+			await modalMounted;
+			(modalOptions as { onCancel: () => void }).onCancel();
+			expect(store.updates).toHaveLength(0);
+			expect(store.current).toEqual({
+				groups: [
+					{ id: "parent", name: "Parent", parentId: null, order: 0, collapsed: false },
+					{ id: "doomed", name: "Doomed", parentId: "parent", order: 0, collapsed: false },
+					{ id: "child", name: "Child", parentId: "doomed", order: 0, collapsed: false },
+				],
+				membership: { T1: "doomed" },
+			});
+			expect(workspace.mounted.groups).toEqual(originalGroups);
+			expect(workspace.mounted.groupMembership).toEqual(originalMembership);
+		} finally {
+			workspace.controller.destroy();
+			await run;
 		}
 	});
 });

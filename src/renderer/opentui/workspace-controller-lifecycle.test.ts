@@ -77,6 +77,10 @@ async function fixture(
 	let polls = 0;
 	let deliverRequest: (() => void) | undefined;
 	let requestPending = false;
+	let requestStarted!: () => void;
+	const requestStartedPromise = new Promise<void>((resolve) => (requestStarted = resolve));
+	let pickerMounted!: () => void;
+	const pickerMountedPromise = new Promise<void>((resolve) => (pickerMounted = resolve));
 	const adopted: string[] = [];
 	let successorAttach: (() => void) | undefined;
 	let successorAttachStarted!: () => void;
@@ -114,6 +118,7 @@ async function fixture(
 				: [],
 		pendingRequests: async () => {
 			polls++;
+			requestStarted();
 			if (options.deferShutdown && polls === 1) {
 				await new Promise<void>(
 					(resolve) =>
@@ -213,6 +218,7 @@ async function fixture(
 				next: Parameters<typeof mountOpenTuiSessionPicker>[2],
 			) => {
 				pickerMounts++;
+				pickerMounted();
 				const index = pickerMounts;
 				pickerOptions = next;
 				return {
@@ -314,6 +320,7 @@ async function fixture(
 		},
 		adopted,
 		waitForPoll: (count: number) => waitFor(() => polls >= count),
+		requestStartedPromise,
 		deliverRequest: () => deliverRequest?.(),
 		waitForShutdown: (count: number) => waitFor(() => shutdowns >= count),
 		finishShutdown: (error?: Error) => finishShutdown?.(error),
@@ -328,6 +335,7 @@ async function fixture(
 		get pickerOptions() {
 			return pickerOptions;
 		},
+		pickerMountedPromise,
 		disposedPickers,
 		waitForResume: () => waitFor(() => resumeAttempts > 0),
 		failResume: () => rejectResume?.(new Error("resume failed")),
@@ -337,6 +345,39 @@ async function fixture(
 }
 
 describe("workspace controller attachment lifecycle", () => {
+	it("disposes an open session picker on public destroy", async () => {
+		const test = await fixture();
+		try {
+			const task = test.workspace.tasks[0];
+			if (!task) throw new Error("Fixture task missing.");
+			test.workspace.onSessionRequest?.(task);
+			await test.pickerMountedPromise;
+			test.controller.destroy();
+			await test.running;
+			expect(test.disposedPickers.has(1)).toBe(true);
+		} finally {
+			test.controller.destroy();
+			await test.running;
+		}
+	});
+
+	it("ignores a pending-request result delivered after public destroy", async () => {
+		const test = await fixture({ deferShutdown: true });
+		try {
+			await test.requestStartedPromise;
+			test.controller.destroy();
+			await test.running;
+			test.deliverRequest();
+			// Drain the resolved request's promise continuations without depending on how its array is consumed.
+			await new Promise<void>((resolve) => setImmediate(resolve));
+			expect(test.adopted).toEqual([]);
+		} finally {
+			test.deliverRequest();
+			test.controller.destroy();
+			await test.running;
+		}
+	});
+
 	it.each([
 		"navigation",
 		"view-state",

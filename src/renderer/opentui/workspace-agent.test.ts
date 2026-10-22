@@ -355,26 +355,12 @@ describe("native workspace terminal", () => {
 			for (const name of ["Alpha (0)", "Beta (0)", "Gamma (0)"]) expect(frame).toContain(name);
 			expect(anchors).toContain(0);
 			expect(anchors.every((index) => index >= 0)).toBe(true);
-			const findMouseUp = (
-				renderable: object,
-			): { readonly target: object; readonly handler: (event: unknown) => void } | undefined => {
-				const handler = Reflect.get(Reflect.get(renderable, "_mouseListeners") ?? {}, "up");
-				if (typeof handler === "function") return { target: renderable, handler };
-				const children = Reflect.get(renderable, "_childrenInLayoutOrder") as object[] | undefined;
-				for (const child of children ?? []) {
-					const found = findMouseUp(child);
-					if (found) return found;
-				}
-				return undefined;
-			};
-			const mouseUp = findMouseUp(parent);
-			expect(mouseUp).toBeDefined();
-			mouseUp?.handler({
-				button: 0,
-				y: Reflect.get(mouseUp.target, "screenY") as number,
-				preventDefault: () => {},
-				stopPropagation: () => {},
-			});
+			const lines = frame.split("\n");
+			const alphaRow = lines.findIndex((line) => line.includes("Alpha (0)"));
+			const alphaColumn = lines[alphaRow]?.indexOf("Alpha (0)") ?? -1;
+			expect(alphaRow).toBeGreaterThanOrEqual(0);
+			expect(alphaColumn).toBeGreaterThanOrEqual(0);
+			await setup.mockMouse.click(alphaColumn, alphaRow);
 			await setup.flush();
 			expect(selected).toEqual(["alpha"]);
 		} finally {
