@@ -57,13 +57,13 @@ describe("real WorkspaceController Settings persistence", () => {
 		for (const cleanup of cleanups.splice(0).reverse()) await cleanup();
 	});
 
-	async function fixture(pinExternalRoot = false) {
+	async function fixture(pinExternalRoot = false, configuration = initialConfiguration()) {
 		const rootDir = await mkdtemp(join(tmpdir(), "settings-persistence-"));
 		cleanups.push(async () => await rm(rootDir, { recursive: true, force: true }));
 		const core = new Core(rootDir);
 		await initializeTestProject(core, "Settings persistence");
 		const { task } = await core.createTaskFromInput({ title: "Settings fixture", status: "To Do" });
-		await upsertAgentConfiguration(core, "project", initialConfiguration());
+		await upsertAgentConfiguration(core, "project", configuration);
 		const path = coreFileSystem(core).configFilePath;
 		let workspaceState: Core["workspaceState"] | undefined;
 		if (pinExternalRoot) {
@@ -174,14 +174,39 @@ describe("real WorkspaceController Settings persistence", () => {
 			return setup.captureCharFrame().includes("Choose an action");
 		});
 	}
+	async function confirmMultiple(setup: TestRendererSetup, count: number) {
+		for (let i = 0; i < count; i++) {
+			await eventually(async () => {
+				await setup.flush();
+				return setup.captureCharFrame().includes("Delete mode");
+			});
+			setup.mockInput.pressKey("y");
+			await setup.flush();
+		}
+		await eventually(async () => {
+			await setup.flush();
+			return setup.captureCharFrame().includes("Choose an action");
+		});
+	}
 	async function chooseModeDeletion(setup: TestRendererSetup, choice: "discard" | "build" | "review") {
-		const steps = choice === "discard" ? 1 : choice === "build" ? 2 : 3;
+		await eventually(async () => {
+			await setup.flush();
+			return setup.captureCharFrame().includes("Delete mode");
+		});
+		const currentMode = setup.captureCharFrame().match(/Delete mode (\S+)/)?.[1];
+		const steps = choice === "discard" ? 1 : 2;
 		for (let i = 0; i < steps; i++) {
 			setup.mockInput.pressArrow("down");
 			await setup.flush();
 		}
+		expect(setup.captureCharFrame()).toContain(choice === "discard" ? "Discard sessions" : `Move to ${choice}`);
 		setup.mockInput.pressKey("s", { ctrl: true });
-		await setup.flush();
+		await eventually(async () => {
+			await setup.flush();
+			const frame = setup.captureCharFrame();
+			if (currentMode === "plan") return frame.includes("Delete mode build");
+			return !frame.includes("Delete mode ") || frame.includes("Error:");
+		});
 	}
 	function down(setup: TestRendererSetup, count = 1) {
 		for (let i = 0; i < count; i++) setup.mockInput.pressArrow("down");
@@ -405,6 +430,139 @@ describe("real WorkspaceController Settings persistence", () => {
 		await f.setup.flush();
 		expect(f.setup.captureCharFrame()).toContain("REVIEW");
 		expect(f.setup.captureCharFrame()).toContain("BUILD ● default");
+	});
+
+	it("saves two staged deletions and preserves edits to the remaining default", async () => {
+		const config = initialConfiguration();
+		const catalog = config.modes;
+		if (!catalog?.profiles.build) throw new Error("Fixture requires the build mode.");
+		catalog.order.push("review");
+		catalog.profiles.review = { ...catalog.profiles.build, name: "REVIEW", prompt: "Original" };
+		const f = await fixture(false, config);
+		const originalDelete = Core.prototype.deleteMode;
+		const deletion = spyOn(Core.prototype, "deleteMode").mockImplementation(async function (this: Core, id, options) {
+			return await originalDelete.call(this, id, options);
+		});
+		try {
+			await f.open();
+			modes(f.setup);
+			f.setup.mockInput.pressArrow("left");
+			down(f.setup, 2);
+			f.setup.mockInput.pressArrow("right");
+			f.setup.mockInput.pressKey("n");
+			clear(f.setup);
+			await f.setup.mockInput.typeText("REVISED REVIEW");
+			f.setup.mockInput.pressEnter();
+			f.setup.mockInput.pressArrow("left");
+			f.setup.mockInput.pressArrow("up");
+			f.setup.mockInput.pressArrow("up");
+			f.setup.mockInput.pressKey("d");
+			f.setup.mockInput.pressEnter();
+			f.setup.mockInput.pressArrow("left");
+			f.setup.mockInput.pressArrow("down");
+			f.setup.mockInput.pressKey("d");
+			f.setup.mockInput.pressEnter();
+			save(f.setup);
+			await eventually(async () => {
+				await f.setup.flush();
+				return f.setup.captureCharFrame().includes("Delete mode");
+			});
+			f.setup.mockInput.pressKey("y");
+			await f.setup.flush();
+			expect(deletion).not.toHaveBeenCalled();
+			await eventually(async () => {
+				await f.setup.flush();
+				return f.setup.captureCharFrame().includes("Delete mode");
+			});
+			f.setup.mockInput.pressKey("y");
+			await eventually(async () => {
+				await f.setup.flush();
+				return f.setup.captureCharFrame().includes("Choose an action");
+			});
+			await chooseModeDeletion(f.setup, "review");
+			await chooseModeDeletion(f.setup, "review");
+			await f.saved();
+			const saved = await f.json();
+			expect(saved.modes?.order).toEqual(["review"]);
+			expect(saved.modes?.defaultModeId).toBe("review");
+			expect(saved.modes?.profiles.review?.name).toBe("REVISED REVIEW");
+			expect(saved.modes?.profiles.review?.prompt).toBe("Original");
+			expect(saved.presets).toEqual(config.presets);
+			expect(deletion).toHaveBeenCalledTimes(2);
+		} finally {
+			deletion.mockRestore();
+		}
+	});
+
+	it("reports partial progress when the second staged deletion fails", async () => {
+		const config = initialConfiguration();
+		const catalog = config.modes;
+		if (!catalog?.profiles.build) throw new Error("Fixture requires the build mode.");
+		catalog.order.push("review");
+		catalog.profiles.review = { ...catalog.profiles.build, name: "REVIEW" };
+		const f = await fixture(false, config);
+		const originalDelete = Core.prototype.deleteMode;
+		const deletion = spyOn(Core.prototype, "deleteMode").mockImplementation(async function (this: Core, id, options) {
+			if (id === "build") throw new Error("second deletion failed");
+			return await originalDelete.call(this, id, options);
+		});
+		try {
+			await f.open();
+			modes(f.setup);
+			f.setup.mockInput.pressArrow("left");
+			f.setup.mockInput.pressKey("d");
+			f.setup.mockInput.pressEnter();
+			f.setup.mockInput.pressArrow("left");
+			f.setup.mockInput.pressArrow("down");
+			f.setup.mockInput.pressKey("d");
+			f.setup.mockInput.pressEnter();
+			save(f.setup);
+			await confirmMultiple(f.setup, 2);
+			await chooseModeDeletion(f.setup, "review");
+			await chooseModeDeletion(f.setup, "review");
+			await eventually(async () => {
+				await f.setup.flush();
+				return f.setup.captureCharFrame().includes("Mode settings save failed after deleting modes: plan.");
+			});
+			expect(deletion).toHaveBeenCalledTimes(2);
+			expect((await f.json()).modes?.profiles.plan).toBeUndefined();
+			expect((await f.json()).modes?.profiles.build).toBeDefined();
+		} finally {
+			deletion.mockRestore();
+		}
+	});
+
+	it("refuses staged deletion of every mode before calling Core deletion", async () => {
+		const f = await fixture();
+		const deletion = spyOn(Core.prototype, "deleteMode");
+		try {
+			await f.open();
+			modes(f.setup);
+			f.setup.mockInput.pressArrow("left");
+			f.setup.mockInput.pressKey("d");
+			f.setup.mockInput.pressEnter();
+			f.setup.mockInput.pressArrow("left");
+			f.setup.mockInput.pressArrow("down");
+			f.setup.mockInput.pressKey("d");
+			f.setup.mockInput.pressEnter();
+			save(f.setup);
+			for (let i = 0; i < 2; i++) {
+				await eventually(async () => {
+					await f.setup.flush();
+					return f.setup.captureCharFrame().includes("Delete mode");
+				});
+				f.setup.mockInput.pressKey("y");
+				await f.setup.flush();
+			}
+			await eventually(async () => {
+				await f.setup.flush();
+				return f.setup.captureCharFrame().includes("Cannot delete the last configured mode.");
+			});
+			expect(deletion).not.toHaveBeenCalled();
+			expect((await f.json()).modes?.order).toEqual(["plan", "build"]);
+		} finally {
+			deletion.mockRestore();
+		}
 	});
 
 	it("keeps real serialization errors visible without closing, permits retry, and discards without writing", async () => {

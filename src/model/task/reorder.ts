@@ -1,4 +1,5 @@
 import type { Task } from "../types.ts";
+import { taskIdKey } from "./task-id.ts";
 
 export const DEFAULT_ORDINAL_STEP = 1000;
 const EPSILON = 1e-6;
@@ -132,4 +133,32 @@ export function resolveOrdinalConflicts<T extends { id: string; ordinal?: number
 	}
 
 	return updates;
+}
+
+export function reconcileBoardPlacement(
+	tasksInOrder: Task[],
+	originalTasks: Task[],
+	defaultStep: number,
+	forceSequential = false,
+): { tasks: Task[]; changedTasks: Task[] } {
+	const ordinalUpdates = resolveOrdinalConflicts(tasksInOrder, {
+		defaultStep,
+		startOrdinal: defaultStep,
+		forceSequential,
+	});
+	const updates = new Map(ordinalUpdates.map((task) => [taskIdKey(task.id), task]));
+	const tasks = tasksInOrder.map((task) => updates.get(taskIdKey(task.id)) ?? task);
+	const originals = new Map(originalTasks.map((task) => [taskIdKey(task.id), task]));
+	return {
+		tasks,
+		changedTasks: tasks.filter((task) => {
+			const original = originals.get(taskIdKey(task.id));
+			return (
+				!original ||
+				(original.status ?? "") !== (task.status ?? "") ||
+				(original.ordinal ?? null) !== (task.ordinal ?? null) ||
+				(original.milestone ?? "") !== (task.milestone ?? "")
+			);
+		}),
+	};
 }

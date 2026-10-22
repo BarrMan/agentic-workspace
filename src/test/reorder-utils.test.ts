@@ -1,7 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { mkdir } from "node:fs/promises";
 import { Core } from "../controller/agentic-workspace.ts";
-import { calculateNewOrdinal, DEFAULT_ORDINAL_STEP, resolveOrdinalConflicts } from "../model/task/reorder.ts";
+import {
+	calculateNewOrdinal,
+	DEFAULT_ORDINAL_STEP,
+	reconcileBoardPlacement,
+	resolveOrdinalConflicts,
+} from "../model/task/reorder.ts";
 import type { Task } from "../model/types.ts";
 import { coreFileSystem, createUniqueTestDir, initializeFilesystemTestProject, safeCleanup } from "./test-utils.ts";
 
@@ -84,6 +89,25 @@ describe("resolveOrdinalConflicts", () => {
 		expect(updates).toHaveLength(2);
 		expect(updates[0]).toEqual({ id: "b", ordinal: 2000 });
 		expect(updates[1]).toEqual({ id: "c", ordinal: 3000 });
+	});
+});
+
+describe("reconcileBoardPlacement", () => {
+	it("reconciles sparse ordinals while changing only neighbor ordinals", () => {
+		const first = buildTask("TASK-1", "To Do", 1000);
+		const second = buildTask("TASK-2", "Doing", 1000, { title: "Keep this title", milestone: "milestone-1" });
+		const third = buildTask("TASK-3", "To Do");
+		const originals = [first, second, third];
+		const placed: Task[] = [first, second, third];
+
+		const result = reconcileBoardPlacement(placed, originals, DEFAULT_ORDINAL_STEP);
+
+		expect(result.tasks.map((task) => task.ordinal)).toEqual([1000, 2000, 3000]);
+		expect(result.tasks[1]).toMatchObject({ title: "Keep this title", status: "Doing", milestone: "milestone-1" });
+		expect(result.changedTasks).toEqual([
+			{ ...second, ordinal: 2000 },
+			{ ...third, ordinal: 3000 },
+		]);
 	});
 });
 
@@ -231,6 +255,24 @@ describe("Core.reorderTask", () => {
 		expect(task1?.ordinal).toBe(1000);
 		expect(task2?.ordinal).toBe(3000);
 		expect(task3?.ordinal).toBe(2000);
+	});
+
+	it("ignores stale IDs in the supplied order", async () => {
+		await createTasks([
+			["task-1", "To Do", 1000],
+			["task-2", "To Do", 2000],
+			["task-3", "To Do", 3000],
+		]);
+
+		const result = await core.reorderTask({
+			taskId: "task-3",
+			targetStatus: "To Do",
+			orderedTaskIds: ["TASK-1", "TASK-9", "TASK-3", "TASK-2"],
+		});
+
+		expect(result.updatedTask.ordinal).toBeGreaterThan(1000);
+		expect(result.updatedTask.ordinal).toBeLessThan(2000);
+		expect(result.changedTasks.map((task) => task.id)).toEqual(["TASK-3"]);
 	});
 
 	it("updates status and ordinal when moving across columns", async () => {

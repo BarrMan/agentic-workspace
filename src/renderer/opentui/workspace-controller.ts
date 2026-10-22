@@ -12,6 +12,7 @@ import type { ObservedSession } from "../../controller/session-application.ts";
 import { loadTaskDetail } from "../../controller/task-detail.ts";
 import type { WorkspaceStateService } from "../../controller/workspace-state.ts";
 import { copyToClipboard } from "../../lib/clipboard.ts";
+import { removeMode } from "../../model/session/config.ts";
 import { effectiveModeTextColor } from "../../model/session/mode-colors.ts";
 import type { SessionRuntime } from "../../model/session/session.ts";
 import type { ActivityMetadata, ModeCatalog, SessionSnapshot, TerminalAttachment } from "../../model/session/types.ts";
@@ -2507,11 +2508,10 @@ export class OpenTuiWorkspaceController {
 						await saveConfiguration(next);
 						return;
 					}
-					const catalog = next.modes;
-					if (!catalog) throw new Error("Mode catalog is unavailable.");
-					const deleted = new Set(confirmedDeletions);
-					const order = catalog.order.filter((modeId) => !deleted.has(modeId));
-					if (order.length === 0) throw new Error("Cannot delete the last configured mode.");
+					let editedConfiguration = next;
+					for (const modeId of confirmedDeletions) editedConfiguration = removeMode(editedConfiguration, modeId);
+					const order = editedConfiguration.modes?.order;
+					if (!order) throw new Error("Mode catalog is unavailable.");
 					const completedDeletions: string[] = [];
 					try {
 						for (const modeId of confirmedDeletions) {
@@ -2533,18 +2533,8 @@ export class OpenTuiWorkspaceController {
 							},
 						);
 					}
-					const { ...profiles } = catalog.profiles;
-					for (const modeId of deleted) delete profiles[modeId];
 					try {
-						await saveConfiguration({
-							...next,
-							modes: {
-								...catalog,
-								order,
-								profiles,
-								defaultModeId: deleted.has(catalog.defaultModeId) ? order[0]! : catalog.defaultModeId,
-							},
-						});
+						await saveConfiguration(editedConfiguration);
 					} catch (cause) {
 						throw new AggregateError(
 							[cause],
