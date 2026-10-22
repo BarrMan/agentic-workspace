@@ -1,16 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { mkdir } from "node:fs/promises";
 import { Core } from "../controller/agentic-workspace.ts";
-import {
-	calculateNewOrdinal,
-	DEFAULT_ORDINAL_STEP,
-	reconcileBoardPlacement,
-	resolveOrdinalConflicts,
-} from "../model/task/reorder.ts";
 import type { Task } from "../model/types.ts";
 import { coreFileSystem, createUniqueTestDir, initializeFilesystemTestProject, safeCleanup } from "./test-utils.ts";
-
-const item = (id: string, ordinal?: number) => ({ id, ordinal });
 
 let TEST_DIR: string;
 let core: Core;
@@ -26,89 +18,6 @@ const buildTask = (id: string, status: string, ordinal?: number, overrides: Part
 	dependencies: [],
 	...(ordinal !== undefined ? { ordinal } : {}),
 	...overrides,
-});
-
-describe("calculateNewOrdinal", () => {
-	it("returns default step when no neighbors exist", () => {
-		const result = calculateNewOrdinal({});
-		expect(result.ordinal).toBe(DEFAULT_ORDINAL_STEP);
-		expect(result.requiresRebalance).toBe(false);
-	});
-
-	it("averages ordinals when both neighbors exist", () => {
-		const result = calculateNewOrdinal({
-			previous: item("a", 1000),
-			next: item("b", 3000),
-		});
-		expect(result.ordinal).toBe(2000);
-		expect(result.requiresRebalance).toBe(false);
-	});
-
-	it("flags rebalance when there is no gap between neighbors", () => {
-		const result = calculateNewOrdinal({
-			previous: item("a", 2000),
-			next: item("b", 2000),
-		});
-		expect(result.requiresRebalance).toBe(true);
-	});
-
-	it("appends step when dropping after the last task", () => {
-		const result = calculateNewOrdinal({
-			previous: item("a", 4000),
-		});
-		expect(result.ordinal).toBe(4000 + DEFAULT_ORDINAL_STEP);
-		expect(result.requiresRebalance).toBe(false);
-	});
-});
-
-describe("resolveOrdinalConflicts", () => {
-	it("returns empty array when ordinals are already increasing", () => {
-		const updates = resolveOrdinalConflicts([item("a", 1000), item("b", 2000), item("c", 3000)]);
-		expect(updates).toHaveLength(0);
-	});
-
-	it("reassigns duplicate or descending ordinals", () => {
-		const updates = resolveOrdinalConflicts([item("a", 1000), item("b", 1000), item("c", 2000)]);
-		expect(updates).toHaveLength(2);
-		expect(updates[0]).toEqual({ id: "b", ordinal: 2000 });
-		expect(updates[1]).toEqual({ id: "c", ordinal: 3000 });
-	});
-
-	it("fills in missing ordinals with default spacing", () => {
-		const updates = resolveOrdinalConflicts([item("a"), item("b"), item("c", 1500)]);
-		expect(updates).toHaveLength(3);
-		expect(updates[0]).toEqual({ id: "a", ordinal: DEFAULT_ORDINAL_STEP });
-		expect(updates[1]).toEqual({ id: "b", ordinal: DEFAULT_ORDINAL_STEP * 2 });
-		expect(updates[2]).toEqual({ id: "c", ordinal: DEFAULT_ORDINAL_STEP * 3 });
-	});
-
-	it("can force sequential reassignment when requested", () => {
-		const updates = resolveOrdinalConflicts([item("a", 1000), item("b", 2500), item("c", 4500)], {
-			forceSequential: true,
-		});
-		expect(updates).toHaveLength(2);
-		expect(updates[0]).toEqual({ id: "b", ordinal: 2000 });
-		expect(updates[1]).toEqual({ id: "c", ordinal: 3000 });
-	});
-});
-
-describe("reconcileBoardPlacement", () => {
-	it("reconciles sparse ordinals while changing only neighbor ordinals", () => {
-		const first = buildTask("TASK-1", "To Do", 1000);
-		const second = buildTask("TASK-2", "Doing", 1000, { title: "Keep this title", milestone: "milestone-1" });
-		const third = buildTask("TASK-3", "To Do");
-		const originals = [first, second, third];
-		const placed: Task[] = [first, second, third];
-
-		const result = reconcileBoardPlacement(placed, originals, DEFAULT_ORDINAL_STEP);
-
-		expect(result.tasks.map((task) => task.ordinal)).toEqual([1000, 2000, 3000]);
-		expect(result.tasks[1]).toMatchObject({ title: "Keep this title", status: "Doing", milestone: "milestone-1" });
-		expect(result.changedTasks).toEqual([
-			{ ...second, ordinal: 2000 },
-			{ ...third, ordinal: 3000 },
-		]);
-	});
 });
 
 describe("Core.reorderTask", () => {

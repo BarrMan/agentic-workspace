@@ -2,7 +2,8 @@ import { afterEach, describe, expect, it } from "bun:test";
 import { BoxRenderable, InputRenderable, rgbToHex, TextareaRenderable } from "@opentui/core";
 import { createTestRenderer, type TestRendererSetup } from "@opentui/core/testing";
 import type { AgentConfiguration } from "../../model/session/types.ts";
-import { mountOpenTuiAgentSettings, mountOpenTuiPresetPicker, parseAgentPresetEnvironment } from "./agent-settings.ts";
+import { parseAgentPresetEnvironment } from "./agent-presets-editor.ts";
+import { mountOpenTuiAgentSettings, mountOpenTuiPresetPicker } from "./agent-settings.ts";
 
 function configuration(): AgentConfiguration & { presets: NonNullable<AgentConfiguration["presets"]> } {
 	return {
@@ -220,6 +221,153 @@ describe("native agent settings", () => {
 		}
 	});
 
+	it("copies the selected preset under a new name on Enter without changing the default", async () => {
+		const setup = await createTestRenderer({ width: 100, height: 28, kittyKeyboard: true });
+		renderers.push(setup);
+		const config = configuration();
+		const original = structuredClone(config);
+		let saved: AgentConfiguration | undefined;
+		const mount = mountOpenTuiAgentSettings(setup.renderer, parent(setup), {
+			configuration: config,
+			onSave: async (next) => {
+				saved = next;
+			},
+			onClose: () => {},
+		});
+		try {
+			setup.mockInput.pressArrow("right");
+			setup.mockInput.pressKey("n");
+			expect(setup.renderer.currentFocusedRenderable).toBeInstanceOf(InputRenderable);
+			await setup.mockInput.typeText("copied");
+			setup.mockInput.pressEnter();
+			await setup.flush();
+			expect(setup.captureCharFrame()).toContain("copied");
+			expect(setup.captureCharFrame()).not.toContain("copied ● default");
+			expect(saved).toBeUndefined();
+			setup.mockInput.pressKey("s", { ctrl: true });
+			await setup.flush();
+			expect(saved?.selectedPreset).toBe("existing");
+			expect(saved?.presets?.copied).toEqual(original.presets.existing);
+			expect(saved?.presets?.existing).toEqual(original.presets.existing);
+			expect(config).toEqual(original);
+		} finally {
+			mount.dispose();
+		}
+	});
+
+	it("cancels an entered name and does not save a pending preset-name buffer", async () => {
+		const setup = await createTestRenderer({ width: 100, height: 28, kittyKeyboard: true });
+		renderers.push(setup);
+		const config = configuration();
+		let saved: AgentConfiguration | undefined;
+		const mount = mountOpenTuiAgentSettings(setup.renderer, parent(setup), {
+			configuration: config,
+			onSave: async (next) => {
+				saved = next;
+			},
+			onClose: () => {},
+		});
+		try {
+			setup.mockInput.pressArrow("right");
+			setup.mockInput.pressKey("n");
+			await setup.mockInput.typeText("cancelled");
+			setup.mockInput.pressEscape();
+			await setup.flush();
+			expect(setup.captureCharFrame()).not.toContain("cancelled");
+			expect(setup.renderer.currentFocusedRenderable).toBeInstanceOf(BoxRenderable);
+			setup.mockInput.pressArrow("right");
+			setup.mockInput.pressKey("n");
+			await setup.mockInput.typeText("pending");
+			expect(setup.renderer.currentFocusedRenderable).toBeInstanceOf(InputRenderable);
+			expect((setup.renderer.currentFocusedRenderable as InputRenderable).value).toBe("pending");
+			setup.mockInput.pressKey("s", { ctrl: true });
+			await setup.flush();
+			expect(saved?.presets).toEqual(config.presets);
+			expect(saved?.selectedPreset).toBe("existing");
+		} finally {
+			mount.dispose();
+		}
+	});
+
+	it("cancels a pending preset name when mouse focus moves to another field", async () => {
+		const setup = await createTestRenderer({ width: 100, height: 28, kittyKeyboard: true });
+		renderers.push(setup);
+		let saved: AgentConfiguration | undefined;
+		const mount = mountOpenTuiAgentSettings(setup.renderer, parent(setup), {
+			configuration: configuration(),
+			onSave: async (next) => {
+				saved = next;
+			},
+			onClose: () => {},
+		});
+		const clickVisibleText = async (text: string): Promise<void> => {
+			const rows = setup.captureCharFrame().split("\n");
+			const y = rows.findIndex((row) => row.includes(text));
+			const x = rows[y]?.indexOf(text) ?? -1;
+			if (x < 0) throw new Error(`Expected visible text: ${text}`);
+			await setup.mockMouse.click(x + 1, y);
+			await setup.flush();
+		};
+		try {
+			setup.mockInput.pressArrow("right");
+			setup.mockInput.pressKey("n");
+			await setup.mockInput.typeText("abandoned");
+			await setup.flush();
+			await clickVisibleText("Command");
+			expect(setup.captureCharFrame()).not.toContain("abandoned");
+			expect(setup.renderer.currentFocusedRenderable).toBeInstanceOf(BoxRenderable);
+			setup.mockInput.pressEnter();
+			expect(setup.renderer.currentFocusedRenderable).toBeInstanceOf(InputRenderable);
+			setup.mockInput.pressKey("END");
+			setup.mockInput.pressKey("HOME", { shift: true });
+			await setup.mockInput.pasteBracketedText('["clicked", "{prompt}"]');
+			setup.mockInput.pressEnter();
+			setup.mockInput.pressKey("s", { ctrl: true });
+			await setup.flush();
+			expect(saved?.presets?.abandoned).toBeUndefined();
+			expect(saved?.presets?.existing?.command).toEqual(["clicked", "{prompt}"]);
+		} finally {
+			mount.dispose();
+		}
+	});
+
+	it("keeps the name editor focused after empty or duplicate names and permits recovery", async () => {
+		const setup = await createTestRenderer({ width: 100, height: 28, kittyKeyboard: true });
+		renderers.push(setup);
+		const config = configuration();
+		let saved: AgentConfiguration | undefined;
+		const mount = mountOpenTuiAgentSettings(setup.renderer, parent(setup), {
+			configuration: config,
+			onSave: async (next) => {
+				saved = next;
+			},
+			onClose: () => {},
+		});
+		try {
+			setup.mockInput.pressArrow("right");
+			setup.mockInput.pressKey("n");
+			setup.mockInput.pressEnter();
+			await setup.flush();
+			expect(setup.captureCharFrame()).toContain("must not be empty");
+			expect(setup.renderer.currentFocusedRenderable).toBeInstanceOf(InputRenderable);
+			await setup.mockInput.typeText("existing");
+			setup.mockInput.pressEnter();
+			await setup.flush();
+			expect(setup.captureCharFrame()).toContain("already exists");
+			expect((setup.renderer.currentFocusedRenderable as InputRenderable).value).toBe("existing");
+			setup.mockInput.pressKey("a", { ctrl: true });
+			setup.mockInput.pressKey("k", { ctrl: true });
+			await setup.mockInput.typeText("recovered");
+			setup.mockInput.pressEnter();
+			setup.mockInput.pressKey("s", { ctrl: true });
+			await setup.flush();
+			expect(saved?.presets?.recovered).toEqual(config.presets.existing);
+			expect(saved?.presets?.existing).toEqual(config.presets.existing);
+		} finally {
+			mount.dispose();
+		}
+	});
+
 	it("commits text with Enter, cancels only field edits with Escape, and discards the whole draft in navigation", async () => {
 		const setup = await createTestRenderer({ width: 100, height: 28, kittyKeyboard: true });
 		renderers.push(setup);
@@ -414,6 +562,46 @@ describe("native agent settings", () => {
 				...existing,
 				command: ["committed", "{prompt}"],
 			});
+		} finally {
+			mount.dispose();
+		}
+	});
+
+	it("keeps an invalid command editor focused, then lets Escape cancel and a valid Enter commit save", async () => {
+		const setup = await createTestRenderer({ width: 100, height: 28, kittyKeyboard: true });
+		renderers.push(setup);
+		let saved: AgentConfiguration | undefined;
+		const mount = mountOpenTuiAgentSettings(setup.renderer, parent(setup), {
+			configuration: configuration(),
+			onSave: async (next) => {
+				saved = next;
+			},
+			onClose: () => {},
+		});
+		try {
+			setup.mockInput.pressArrow("right");
+			setup.mockInput.pressTab();
+			setup.mockInput.pressEnter();
+			setup.mockInput.pressKey("a", { ctrl: true });
+			setup.mockInput.pressKey("k", { ctrl: true });
+			await setup.mockInput.typeText("not-json");
+			setup.mockInput.pressEnter();
+			await setup.flush();
+			expect(setup.captureCharFrame()).toContain("Error:");
+			expect(setup.renderer.currentFocusedRenderable).toBeInstanceOf(InputRenderable);
+			expect((setup.renderer.currentFocusedRenderable as InputRenderable).value).toBe("not-json");
+			setup.mockInput.pressEscape();
+			await setup.flush();
+			expect(setup.captureCharFrame()).not.toContain("Error:");
+			expect(setup.renderer.currentFocusedRenderable).toBeInstanceOf(BoxRenderable);
+			setup.mockInput.pressEnter();
+			setup.mockInput.pressKey("a", { ctrl: true });
+			setup.mockInput.pressKey("k", { ctrl: true });
+			await setup.mockInput.typeText('["fixed", "{prompt}"]');
+			setup.mockInput.pressEnter();
+			setup.mockInput.pressKey("s", { ctrl: true });
+			await setup.flush();
+			expect(saved?.presets?.existing?.command).toEqual(["fixed", "{prompt}"]);
 		} finally {
 			mount.dispose();
 		}

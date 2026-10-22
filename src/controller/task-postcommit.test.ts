@@ -80,6 +80,15 @@ describe("task post-commit operations", () => {
 		await expect(core.deleteMode("plan", { confirmed: true, moveToModeId: "build" })).rejects.toMatchObject({
 			committedTaskIds: ["TASK-1"],
 		});
+		const releases: Array<() => Promise<void>> = [];
+		try {
+			releases.push(await storage.claimModeAdmission("plan"));
+			releases.push(await storage.claimModeAdmission("build"));
+			releases.push(await storage.claimTaskAdmission("TASK-1"));
+			releases.push(await storage.claimTaskAdmission("TASK-2"));
+		} finally {
+			for (const release of releases.reverse()) await release();
+		}
 		expect(await storage.modeDeletionJournal.read()).toMatchObject({
 			source: "plan",
 			destination: "build",

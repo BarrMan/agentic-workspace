@@ -2,7 +2,8 @@ import { afterEach, describe, expect, it } from "bun:test";
 import { BoxRenderable } from "@opentui/core";
 import { createTestRenderer, type TestRendererSetup } from "@opentui/core/testing";
 import type { AgentConfiguration } from "../model/session/types.ts";
-import { mountOpenTuiAgentSettings, parseModeArtifactDefinitions } from "../renderer/opentui/agent-settings.ts";
+import { mountOpenTuiAgentSettings } from "../renderer/opentui/agent-settings.ts";
+import { parseModeArtifactDefinitions } from "../renderer/opentui/modes-editor.ts";
 
 function configuration(): AgentConfiguration {
 	return {
@@ -200,6 +201,166 @@ describe("native Modes settings contract", () => {
 			expect(saved?.presets).toEqual(original.presets);
 			expect(saved?.sessions).toEqual(original.sessions);
 			expect(config).toEqual(original);
+		} finally {
+			mount.dispose();
+		}
+	});
+
+	for (const field of [
+		{
+			name: "prompt",
+			index: 5,
+			editor: "settings-mode-prompt-editor",
+			buffer: "Pending prompt\ns d j [ ]",
+			change: { prompt: "Pending prompt\ns d j [ ]" },
+		},
+		{
+			name: "artifacts",
+			index: 6,
+			editor: "settings-mode-artifacts-editor",
+			buffer: "draft.md — pending purpose",
+			change: { artifacts: [{ path: "draft.md", purpose: "pending purpose" }] },
+		},
+		{
+			name: "approval",
+			index: 7,
+			editor: "settings-mode-approval-editor",
+			buffer: "pending.md",
+			change: { approvalArtifact: "pending.md" },
+		},
+	]) {
+		it(`saves only committed ${field.name} and persists its buffer only after explicit field commit`, async () => {
+			const setup = await createTestRenderer({ width: 100, height: 28, kittyKeyboard: true });
+			renderers.push(setup);
+			const root = parent(setup);
+			const original = configuration();
+			const originalProfile = original.modes?.profiles.plan;
+			if (!originalProfile) throw new Error("Fixture requires PLAN.");
+			let persisted = structuredClone(original);
+			let saves = 0;
+			let closed = 0;
+			const open = async (buffer = field.buffer) => {
+				const mount = mountOpenTuiAgentSettings(setup.renderer, root, {
+					configuration: persisted,
+					onSave: async () => {
+						throw new Error("Expected the mode settings save boundary.");
+					},
+					onSaveModeSettings: async (plan) => {
+						saves++;
+						if (saves === 2) throw new Error("Save rejected; buffer retained.");
+						persisted = structuredClone(plan.configuration);
+					},
+					onClose: () => closed++,
+				});
+				setup.mockInput.pressArrow("down");
+				setup.mockInput.pressArrow("down");
+				setup.mockInput.pressArrow("right");
+				setup.mockInput.pressArrow("right");
+				for (let index = 0; index < field.index; index++) setup.mockInput.pressArrow("down");
+				setup.mockInput.pressEnter();
+				if (field.name === "approval") {
+					setup.mockInput.pressArrow("down");
+					setup.mockInput.pressEnter();
+				}
+				await setup.flush();
+				expect(setup.renderer.currentFocusedRenderable?.id).toBe(field.editor);
+				setup.mockInput.pressKey("a", { ctrl: true });
+				setup.mockInput.pressKey("k", { ctrl: true });
+				await setup.mockInput.pasteBracketedText(buffer);
+				return mount;
+			};
+			let mount = await open(field.name === "prompt" ? field.buffer : "../uncommitted.md");
+			try {
+				setup.mockInput.pressKey("s", { ctrl: true });
+				await setup.flush();
+				expect(saves).toBe(1);
+				expect(closed).toBe(1);
+				expect(persisted).toEqual(original);
+				mount = await open();
+				setup.mockInput.pressKey("s", { ctrl: true });
+				await setup.flush();
+				expect(saves).toBe(2);
+				expect(closed).toBe(1);
+				expect(persisted).toEqual(original);
+				expect(setup.renderer.currentFocusedRenderable?.id).toBe(field.editor);
+				expect(setup.captureCharFrame()).toContain("Save rejected; buffer retained.");
+				setup.mockInput.pressEnter(field.name === "approval" ? {} : { ctrl: true });
+				await setup.flush();
+				expect(setup.renderer.currentFocusedRenderable?.id).toBe("settings-mode-profile");
+				setup.mockInput.pressKey("s", { ctrl: true });
+				await setup.flush();
+				expect(saves).toBe(3);
+				expect(closed).toBe(2);
+				expect(persisted.modes?.profiles.plan).toEqual({ ...originalProfile, ...field.change });
+			} finally {
+				mount.dispose();
+			}
+		});
+	}
+
+	it("retains the committed draft and uncommitted prompt on save failure; Escape cancels only the editor", async () => {
+		const setup = await createTestRenderer({ width: 100, height: 28, kittyKeyboard: true });
+		renderers.push(setup);
+		const config = configuration();
+		const attempts: AgentConfiguration[] = [];
+		let closed = 0;
+		const mount = mountOpenTuiAgentSettings(setup.renderer, parent(setup), {
+			configuration: config,
+			onSave: async () => {
+				throw new Error("Expected the mode settings save boundary.");
+			},
+			onSaveModeSettings: async (plan) => {
+				attempts.push(structuredClone(plan.configuration));
+				if (attempts.length === 1) throw new Error("Save rejected; retry available.");
+			},
+			onClose: () => closed++,
+		});
+		try {
+			setup.mockInput.pressArrow("down");
+			setup.mockInput.pressArrow("down");
+			setup.mockInput.pressArrow("right");
+			setup.mockInput.pressArrow("right");
+			setup.mockInput.pressArrow("down");
+			setup.mockInput.pressEnter();
+			setup.mockInput.pressArrow("up");
+			for (let index = 0; index < 5; index++) setup.mockInput.pressArrow("down");
+			setup.mockInput.pressEnter();
+			await setup.flush();
+			expect(setup.renderer.currentFocusedRenderable?.id).toBe("settings-mode-prompt-editor");
+			setup.mockInput.pressKey("a", { ctrl: true });
+			setup.mockInput.pressKey("k", { ctrl: true });
+			await setup.mockInput.pasteBracketedText("Staged prompt\ns d j [ ]");
+			setup.mockInput.pressKey("s", { ctrl: true });
+			await setup.flush();
+			expect(attempts).toHaveLength(1);
+			expect(attempts[0]?.modes?.profiles.plan?.prompt).toBe("plan prompt");
+			expect(attempts[0]?.modes?.profiles.plan?.permissions.repository).toBe("read-write");
+			expect(setup.captureCharFrame()).toContain("Save rejected; retry available.");
+			expect(closed).toBe(0);
+			expect(setup.renderer.currentFocusedRenderable?.id).toBe("settings-mode-prompt-editor");
+			expect(setup.captureCharFrame()).toContain("Staged prompt");
+			setup.mockInput.pressKey("a", { ctrl: true });
+			setup.mockInput.pressKey("k", { ctrl: true });
+			await setup.mockInput.pasteBracketedText("Canceled replacement");
+			await setup.flush();
+			const rows = setup.captureCharFrame().split("\n");
+			const categoryRow = rows.findIndex((row) => row.includes("Categories"));
+			expect(categoryRow).toBeGreaterThanOrEqual(0);
+			await setup.mockMouse.click(2, categoryRow + 1);
+			await setup.flush();
+			expect(setup.captureCharFrame()).toContain("> Modes");
+			setup.mockInput.pressEscape();
+			await setup.flush();
+			expect(closed).toBe(0);
+			expect(setup.captureCharFrame()).not.toContain("Canceled replacement");
+			setup.mockInput.pressArrow("left");
+			setup.mockInput.pressArrow("left");
+			setup.mockInput.pressKey("s", { ctrl: true });
+			await setup.flush();
+			expect(attempts).toHaveLength(2);
+			expect(attempts[1]).toEqual(attempts[0]);
+			expect(closed).toBe(1);
+			expect(config.modes?.profiles.plan?.prompt).toBe("plan prompt");
 		} finally {
 			mount.dispose();
 		}

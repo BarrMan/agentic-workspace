@@ -1,5 +1,7 @@
 import type { Task } from "../types.ts";
-import { taskIdKey } from "./task-id.ts";
+import { Task as TaskModel } from "./task.ts";
+import { taskIdKey, taskIdsEqual } from "./task-id.ts";
+import { TaskOrdering } from "./task-ordering.ts";
 
 export const DEFAULT_ORDINAL_STEP = 1000;
 const EPSILON = 1e-6;
@@ -160,5 +162,181 @@ export function reconcileBoardPlacement(
 				(original.milestone ?? "") !== (task.milestone ?? "")
 			);
 		}),
+	};
+}
+
+export function planTaskReorder({
+	taskId,
+	targetStatus,
+	orderedTaskIds,
+	validTasks,
+	targetMilestone,
+	hasTargetMilestone,
+	defaultStep,
+}: {
+	taskId: string;
+	targetStatus: string;
+	orderedTaskIds: string[];
+	validTasks: Task[];
+	targetMilestone: string | undefined;
+	hasTargetMilestone: boolean;
+	defaultStep: number;
+}): { updatedTask: Task; changedTasks: Task[] } {
+	const movedTask = validTasks.find((task) => taskIdsEqual(task.id, taskId));
+	if (!movedTask) throw new Error(`Task ${taskId} not found while reordering`);
+	const orderedTasks = orderedTaskIds
+		.map((id) => validTasks.find((task) => taskIdsEqual(task.id, id)))
+		.filter((task): task is Task => task !== undefined);
+	const movedIndex = orderedTasks.findIndex((task) => taskIdsEqual(task.id, taskId));
+	if (movedIndex < 0) throw new Error("Implementation error: Task found in validTasks but index missing");
+	const { ordinal, requiresRebalance } = calculateNewOrdinal({
+		previous: movedIndex > 0 ? (orderedTasks[movedIndex - 1] ?? null) : null,
+		next: movedIndex < orderedTasks.length - 1 ? (orderedTasks[movedIndex + 1] ?? null) : null,
+		defaultStep,
+	});
+	const movedModel = TaskModel.forUpdate(movedTask);
+	movedModel.applyBoardPlacement({
+		status: targetStatus,
+		ordinal,
+		milestone: hasTargetMilestone ? targetMilestone : movedTask.milestone,
+	});
+	const updatedMoved = movedModel.serialize();
+	const tasksInOrder = orderedTasks.map((task) => (taskIdsEqual(task.id, taskId) ? updatedMoved : task));
+	const { tasks, changedTasks } = reconcileBoardPlacement(tasksInOrder, validTasks, defaultStep, requiresRebalance);
+	return { updatedTask: tasks.find((task) => taskIdsEqual(task.id, taskId)) ?? updatedMoved, changedTasks };
+}
+
+export interface OrderedTaskPlacementRow {
+	task: Task;
+	moved: boolean;
+}
+
+export interface BoardPlacementOptions {
+	targetStatus: string;
+	targetMilestone: string | undefined;
+	hasTargetMilestone: boolean;
+	defaultStep: number;
+}
+
+function applyBoardMove(
+	task: Task,
+	{ targetStatus, targetMilestone, hasTargetMilestone }: BoardPlacementOptions,
+): Task {
+	const model = TaskModel.forUpdate(task);
+	model.applyBoardPlacement({
+		status: targetStatus,
+		ordinal: task.ordinal,
+		milestone: hasTargetMilestone ? targetMilestone : task.milestone,
+	});
+	return model.serialize();
+}
+
+export function planOrderedTaskPlacement(
+	rows: OrderedTaskPlacementRow[],
+	tasksToMove: Task[],
+	options: BoardPlacementOptions,
+): { movedTasks: Task[]; changedTasks: Task[] } {
+	const movedIds = new Set(rows.filter(({ moved }) => moved).map(({ task }) => taskIdKey(task.id)));
+	if (tasksToMove.some((task) => !movedIds.has(taskIdKey(task.id)))) {
+		throw new Error("orderedTaskIds must include every task being moved");
+	}
+	let requiresRebalance = false;
+	const tasksInOrder: Task[] = [];
+	for (let index = 0; index < rows.length; ) {
+		const row = rows[index];
+		if (!row) break;
+		if (!row.moved) {
+			tasksInOrder.push(row.task);
+			index += 1;
+			continue;
+		}
+		let runEnd = index;
+		while (runEnd < rows.length && rows[runEnd]?.moved) runEnd += 1;
+		const block = calculateBlockOrdinals({
+			previous: index > 0 ? (rows[index - 1]?.task ?? null) : null,
+			next: rows[runEnd]?.task ?? null,
+			count: runEnd - index,
+			defaultStep: options.defaultStep,
+		});
+		requiresRebalance ||= block.requiresRebalance;
+		for (const [offset, { task }] of rows.slice(index, runEnd).entries()) {
+			const moved = applyBoardMove(task, options);
+			const model = TaskModel.forUpdate(moved);
+			model.applyBoardPlacement({
+				status: moved.status,
+				ordinal: block.ordinals[offset],
+				milestone: moved.milestone,
+			});
+			tasksInOrder.push(model.serialize());
+		}
+		index = runEnd;
+	}
+	const originals = new Map(rows.map(({ task }) => [taskIdKey(task.id), task]));
+	for (const task of tasksToMove) originals.set(taskIdKey(task.id), task);
+	const placement = reconcileBoardPlacement(
+		tasksInOrder,
+		[...originals.values()],
+		options.defaultStep,
+		requiresRebalance,
+	);
+	return {
+		movedTasks: tasksToMove.map(
+			(task) => placement.tasks.find((placed) => taskIdsEqual(placed.id, task.id)) ?? applyBoardMove(task, options),
+		),
+		changedTasks: placement.changedTasks,
+	};
+}
+
+export function planAppendedTaskPlacement(
+	targetColumnTasks: Task[],
+	tasksToMove: Task[],
+	options: BoardPlacementOptions,
+): { movedTasks: Task[]; changedTasks: Task[] } {
+	const { targetStatus, targetMilestone, hasTargetMilestone, defaultStep } = options;
+	const stayingIds = new Set(
+		tasksToMove.filter((task) => task.status === targetStatus).map((task) => taskIdKey(task.id)),
+	);
+	const arriving = tasksToMove.filter((task) => !stayingIds.has(taskIdKey(task.id)));
+	if (arriving.length === 0) {
+		const movedTasks = tasksToMove.map((task) => applyBoardMove(task, options));
+		return {
+			movedTasks,
+			changedTasks: movedTasks.filter((task, index) => {
+				const original = tasksToMove[index];
+				return !original || original.status !== task.status || (original.milestone ?? "") !== (task.milestone ?? "");
+			}),
+		};
+	}
+
+	const movedIds = new Set(tasksToMove.map((task) => taskIdKey(task.id)));
+	const inTargetLane = (task: Task): boolean =>
+		!hasTargetMilestone || (task.milestone ?? "") === (targetMilestone ?? "");
+	const columnTasks = TaskOrdering.byOrdinal(
+		targetColumnTasks
+			.filter((task) => stayingIds.has(taskIdKey(task.id)) || (!movedIds.has(taskIdKey(task.id)) && inTargetLane(task)))
+			.map((task) => {
+				if (task.ordinal === undefined || Number.isFinite(task.ordinal)) return task;
+				const model = TaskModel.forUpdate(task);
+				model.applyBoardPlacement({ status: task.status, ordinal: undefined, milestone: task.milestone });
+				return model.serialize();
+			}),
+	);
+	const tasksInOrder = [
+		...columnTasks.map((task) => (stayingIds.has(taskIdKey(task.id)) ? applyBoardMove(task, options) : task)),
+		...arriving.map((task) => {
+			const moved = applyBoardMove(task, options);
+			const model = TaskModel.forUpdate(moved);
+			model.applyBoardPlacement({ status: targetStatus, ordinal: undefined, milestone: moved.milestone });
+			return model.serialize();
+		}),
+	];
+	const originals = new Map(targetColumnTasks.map((task) => [taskIdKey(task.id), task]));
+	for (const task of tasksToMove) originals.set(taskIdKey(task.id), task);
+	const placement = reconcileBoardPlacement(tasksInOrder, [...originals.values()], defaultStep);
+	return {
+		movedTasks: tasksToMove.map(
+			(task) => placement.tasks.find((placed) => taskIdsEqual(placed.id, task.id)) ?? applyBoardMove(task, options),
+		),
+		changedTasks: placement.changedTasks,
 	};
 }

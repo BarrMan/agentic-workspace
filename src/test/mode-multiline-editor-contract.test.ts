@@ -2,7 +2,8 @@ import { afterEach, describe, expect, it } from "bun:test";
 import { BoxRenderable, TextareaRenderable } from "@opentui/core";
 import { createTestRenderer, type TestRendererSetup } from "@opentui/core/testing";
 import type { AgentConfiguration } from "../model/session/types.ts";
-import { mountOpenTuiAgentSettings, parseModeArtifactDefinitions } from "../renderer/opentui/agent-settings.ts";
+import { mountOpenTuiAgentSettings } from "../renderer/opentui/agent-settings.ts";
+import { parseModeArtifactDefinitions } from "../renderer/opentui/modes-editor.ts";
 import { getDefaultModeCatalog } from "../storage/config.ts";
 
 function configuration(): AgentConfiguration {
