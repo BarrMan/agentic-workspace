@@ -48,6 +48,12 @@ function classifyTaskWatchEvent(eventType: string, filename: string | Buffer | n
 	if (segments.length > 1) {
 		const [taskId, ...containerSegments] = segments;
 		if (containerSegments.join("/") === "task.md" && taskId) return { kind: "record", taskId };
+		if (taskId && containerSegments[0] === "artifacts") {
+			const parts = containerSegments.slice(1);
+			if (!parts.length || parts.some((part) => part.startsWith(".agentic-workspace-artifact-")))
+				return { kind: "ignore" };
+			return { kind: "artifact", taskId, path: parts.join("/") };
+		}
 		const artifactSegments = containerSegments[0] === "artifacts" ? containerSegments.slice(1) : containerSegments;
 		const path = artifactSegments.join("/");
 		if (
@@ -371,13 +377,4 @@ export function watchTaskRecords(
 			} catch {}
 		},
 	};
-}
-
-/** Controller-owned subscription, kept for callers that already hold a Core. */
-export function watchTasks(
-	core: import("../../controller/agentic-workspace.ts").Core,
-	callbacks: TaskWatcherCallbacks,
-	initialTasks: readonly Task[] = [],
-): { stop: () => void } {
-	return core.watchTasks(callbacks, initialTasks);
 }

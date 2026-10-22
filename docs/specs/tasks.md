@@ -78,10 +78,11 @@ This contract defines task identity and data, project storage, artifacts, work c
 **Behavior:**
 1. Accept `PREFIX-NUMBER` with optional dotted numeric subtask segments. Uppercase the complete input ID at the outer API boundary for lookup, write new IDs in uppercase, and compare IDs case-insensitively. Preserve every numeric segment exactly, including leading zeroes; stored casing does not change identity.
 2. Reject alphanumeric IDs. Do not normalize numeric segments, look up bare numbers, infer prefixes, or scan task records for allocation after bootstrap.
-3. Persist `task-counter.json` in the directory that owns the create lock (shared across linked worktrees; otherwise the AgenticWorkspace directory). Its per-prefix shape is `{ "TASK": { "next": 2 }, "OPS": { "next": 2 } }`; each `next` is the next unused top-level number for that prefix. Under the create lock, allocate that number, increment `next`, and atomically persist the counter using a temporary file and rename before attempting a create-only save for the resulting ID. If the target container already exists, consume another number and retry. Existing counter values retain their meaning and are not reinterpreted. Never decrement or reuse a number.
+3. Persist `task-counter.json` in the directory that owns the create lock (shared across linked worktrees; otherwise the AgenticWorkspace directory). Its per-prefix shape is `{ "TASK": { "lastAllocated": 2 }, "OPS": { "lastAllocated": 2 } }`; `lastAllocated` is the last allocated top-level number for that prefix. Under the create lock, increment `lastAllocated`, allocate the incremented number, and atomically persist the counter using a temporary file and rename before attempting a create-only save for the resulting ID. If the target container already exists, consume another number and retry. Never decrement or reuse an allocated number.
 4. If a prefix entry is missing, bootstrap it once from the maximum existing top-level task number for that prefix across active, completed, and archived task containers, including sibling worktrees as needed (use zero if none exist), and persist it. There is no per-create scan. A corrupt counter is an error; do not scan as a fallback. Never bypass the create lock.
 5. Do not reuse allocated or archived IDs, and do not merge or repair duplicate records.
 6. Report record identity collisions with both record paths and fail closed rather than guessing; reject ambiguous task IDs.
+7. A one-time, [explicitly invoked counter conversion](#explicit-counter-conversion) is authorized: convert valid existing next-unused entries to the distinct `lastAllocated` field by subtracting one (for example, `{"next":3}` becomes `{"lastAllocated":2}`), preserving the next ID to allocate. Use the create lock and atomic persistence. Ordinary startup, load, and allocation must reject the old schema rather than convert, reinterpret, delete, or reconstruct it. Malformed entries remain unchanged; already-converted entries must not be converted again.
 
 **Outcome:** Task IDs remain distinct and unambiguous.
 
@@ -89,8 +90,13 @@ This contract defines task identity and data, project storage, artifacts, work c
 
 **Acceptance Criteria:**
 - New IDs are uppercase and existing stored casing is preserved; comparisons ignore case. `TASK-01` and `TASK-1` remain distinct; numeric segments are never stripped or padded.
-- Allocation uses the per-prefix next-unused number in `task-counter.json` under the create lock, atomically persists increments before create-only save, and consumes another number on target-container conflict. Existing counter values are not reinterpreted. A missing prefix entry is bootstrapped once from the maximum existing top-level number across active, completed, and archived tasks (including sibling worktrees as needed); allocation does not scan per create. Corrupt counters fail without scanning.
+- Allocation increments the per-prefix `lastAllocated` in `task-counter.json` under the create lock, atomically persists it before create-only save, and consumes another number on target-container conflict. A missing prefix entry is bootstrapped once from the maximum existing top-level number across active, completed, and archived tasks (including sibling worktrees as needed); allocation does not scan per create. Corrupt counters fail without scanning.
+- Explicit conversion of `next: 3` to `lastAllocated: 2` preserves the next allocated number as 3; subsequent invocation does not decrement it again. Ordinary startup/load/allocation performs no conversion or deletion, and malformed counters remain unchanged.
 - Lookup does not normalize numeric segments, accept bare numbers, or infer prefixes; archived IDs are not reused and identity collisions fail closed.
+
+#### Explicit counter conversion
+
+From the repository root, run `bun scripts/migrate-task-counter.ts <project-root>` ([script](../../scripts/migrate-task-counter.ts)) against the project's existing directory, with its task-data location explicitly configured where required by TASK-006. The command resolves that store, takes the create lock, validates the whole counter record, and atomically converts valid next-unused records. Missing or already-current counters are unchanged; malformed or mixed-schema records fail unchanged. It reports `{ "path": "…", "converted": true|false }`. No startup or allocation path invokes conversion automatically.
 
 ### TASK-004: Dependencies
 
@@ -140,16 +146,18 @@ This contract defines task identity and data, project storage, artifacts, work c
 **Preconditions:** A task-data location is selected in project configuration.
 
 **Behavior:**
-1. Support the default project `.agentic-workspace`, application user-level location, or a user-selected path.
+1. The project setting `agentic_workspace_directory` accepts a project-relative path, an absolute path, `~/…` relative to the user's home, or `user:` for the application user location `~/.agentic-workspace/<project-hash>` keyed by the canonical project root. Fresh projects default to `.agentic-workspace`.
 2. Keep the task data folder outside `.git`; give each task an `artifacts/` directory.
 3. Store each task as `task.md` in its container, serialized as Markdown with frontmatter.
+4. Keep existing task folders at their current locations, selected through explicit project configuration for the old path. An existing unconfigured `agentic-workspace` folder causes a location error; select it with `agentic_workspace_directory: agentic-workspace`. The fresh default does not authorize relocation, deletion, or automatic fallback discovery. If an existing literal project folder is named `user:` or lies under literal `~/…`, select it by absolute path rather than reinterpreting it as a selector.
 
 **Outcome:** Task data follows the configured storage structure.
 
-**Failures:** None.
+**Failures:** Reject invalid locations or locations resolving inside Git metadata. An unconfigured old folder or a selector conflicting with an existing literal path requires explicit configuration; leave existing data in place.
 
 **Acceptance Criteria:**
 - Supported locations, outside-`.git` storage, task `artifacts/` directories, and Markdown-frontmatter `task.md` records are present.
+- Existing task folders remain at their explicitly configured old paths; fresh projects use `.agentic-workspace` by default, without automatic relocation or deletion.
 
 ### TASK-007: Malformed records
 

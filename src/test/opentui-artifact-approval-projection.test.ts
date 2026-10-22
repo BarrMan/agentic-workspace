@@ -147,6 +147,8 @@ async function setup() {
 				config: { statuses: ["To Do"] },
 				identityIndex: { getTasks: () => [task], getContestedIds: () => new Set() },
 			}),
+			watchTasks: () => ({ stop() {} }),
+			watchConfig: () => ({ stop() {} }),
 			filesystem: {
 				rootDir: root,
 				agenticWorkspaceDir,
@@ -219,8 +221,6 @@ async function setup() {
 					return { dispose() {} };
 				},
 				createActivityProbe: () => ({ probe: async () => new Map() }),
-				watchTasks: () => ({ stop() {} }),
-				watchConfig: () => ({ stop() {} }),
 			},
 		} as never,
 	);

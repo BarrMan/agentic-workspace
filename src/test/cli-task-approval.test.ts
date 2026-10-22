@@ -1,11 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { mkdir, mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { Writable } from "node:stream";
 import { $ as shell } from "bun";
 import { runCli } from "../cli/register.ts";
+import { updateAgentConfiguration } from "../controller/agent-configuration.ts";
 import { Core } from "../index.ts";
-import { getDefaultModeCatalog, updateAgentConfiguration } from "../storage/config.ts";
+import { getDefaultModeCatalog } from "../storage/config.ts";
 import { coreFileSystem, createUniqueTestDir, initializeTestProject, safeCleanup } from "./test-utils.ts";
 
 let testDir: string;
@@ -75,7 +77,7 @@ describe("CLI task mode approval", () => {
 		const result = await runTaskCommand(["task", "approve", "TASK-1", "build"]);
 		expect(result.exitCode, result.stderr).toBe(0);
 		expect(result.stdout).toContain("task TASK-1 for mode build");
-		const content = await readFile(`${testDir}/agentic-workspace/tasks/task-1/task.md`, "utf8");
+		const content = await readFile(join(coreFileSystem(new Core(testDir)).tasksDir, "task-1", "task.md"), "utf8");
 		expect(content).toContain("mode_approvals:\n  build: true");
 		const task = await coreFileSystem(new Core(testDir)).loadTask("task-1");
 		expect(task?.modeApprovals).toEqual({ build: true });

@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
+import { mkdir, rm } from "node:fs/promises";
 import { $ } from "bun";
 import { Core } from "../controller/agentic-workspace.ts";
 import type { AgenticWorkspaceConfig, Task } from "../model/types.ts";
@@ -58,7 +59,9 @@ describe("Board Loading", () => {
 
 		it("should handle empty task list gracefully", async () => {
 			// Remove all tasks
-			await $`rm -rf agentic-workspace/tasks/*`.cwd(TEST_DIR).quiet();
+			const tasksDir = coreFileSystem(core).tasksDir;
+			await rm(tasksDir, { recursive: true, force: true });
+			await mkdir(tasksDir, { recursive: true });
 
 			const tasks = await core.loadTasks();
 			expect(tasks).toEqual([]);

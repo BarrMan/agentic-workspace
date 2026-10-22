@@ -1,6 +1,6 @@
-import { randomUUID } from "node:crypto";
-import { mkdir, readdir, readFile, rename, rm, rmdir, writeFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, rename, rm, unlink, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
+import type { WorkspaceRequestMarker } from "../model/session/workspace-request.ts";
 
 export interface ModeDeletionJournal {
 	version: 2;
@@ -9,20 +9,6 @@ export interface ModeDeletionJournal {
 	destination?: string;
 	phase: "prepared" | "histories" | "view" | "configuration";
 	tasks: string[];
-}
-
-export interface SessionHandoffMarker {
-	modeId: string;
-	predecessor?: { id: string; createdAt: string; tmuxName: string };
-	priorActiveSessionId?: string;
-}
-
-export interface WorkspaceRequestMarker {
-	taskId: string;
-	sessionId: string;
-	pid: number;
-	handoff?: SessionHandoffMarker;
-	createdAt?: string;
 }
 
 const SAFE_MARKER_ID = /^[A-Za-z0-9._-]+$/;
@@ -34,25 +20,20 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 function validateJournal(value: unknown): ModeDeletionJournal {
-	if (isRecord(value) && value.version === 1)
-		throw new Error(
-			"Pending moving mode-deletion journal requires an explicit recovery decision; preserve it unchanged.",
-		);
 	if (
 		!isRecord(value) ||
 		value.version !== 2 ||
 		typeof value.operationId !== "string" ||
+		!value.operationId.trim() ||
 		typeof value.source !== "string" ||
-		(value.destination !== undefined && typeof value.destination !== "string") ||
+		!value.source.trim() ||
+		(value.destination !== undefined &&
+			(typeof value.destination !== "string" || !value.destination.trim() || value.destination === value.source)) ||
 		!Array.isArray(value.tasks) ||
-		!value.tasks.every((taskId) => typeof taskId === "string") ||
+		!value.tasks.every((taskId) => typeof taskId === "string" && taskId.trim()) ||
 		!JOURNAL_PHASES.includes(value.phase as (typeof JOURNAL_PHASES)[number])
 	)
 		throw new Error("Invalid mode-deletion journal; preserve it and inspect runtime state before recovery");
-	if (value.destination !== undefined)
-		throw new Error(
-			"Pending destination-based mode-deletion journal cannot be replayed by the current operation; preserve it unchanged.",
-		);
 	return {
 		version: 2,
 		operationId: value.operationId,
@@ -154,8 +135,9 @@ export class ModeDeletionJournalStore {
 		}
 	}
 
-	async write(journal: Omit<ModeDeletionJournal, "destination">): Promise<void> {
-		await writeAtomic(this.path, `${JSON.stringify(journal, null, 2)}\n`, `${this.path}.${process.pid}.tmp`);
+	async write(journal: ModeDeletionJournal): Promise<void> {
+		const validated = validateJournal(journal);
+		await writeAtomic(this.path, `${JSON.stringify(validated, null, 2)}\n`, `${this.path}.${process.pid}.tmp`);
 	}
 
 	async remove(): Promise<void> {
@@ -163,7 +145,7 @@ export class ModeDeletionJournalStore {
 	}
 }
 
-/** Storage ownership of established project-local unadopted-session request markers. */
+/** Recovery of existing request markers. No current production operation produces markers. */
 export class WorkspaceRequestStore {
 	readonly directory: string;
 
@@ -171,20 +153,14 @@ export class WorkspaceRequestStore {
 		this.directory = join(projectRoot, ".agentic-workspace", "agent-requests");
 	}
 
-	async write(request: WorkspaceRequestMarker): Promise<void> {
-		const path = this.path(request.sessionId);
-		if (!path) throw new Error(`Invalid workspace request for session ${request.sessionId}.`);
-		await writeAtomic(path, `${JSON.stringify(request)}\n`, `${path}.${randomUUID()}.tmp`);
-	}
-
 	async delete(sessionId: string): Promise<void> {
 		const path = this.path(sessionId);
-		if (!path) return;
+		if (!path) throw new Error(`Invalid workspace request for session ${sessionId}.`);
 		try {
-			await rm(path, { force: true });
-			await rmdir(this.directory);
-		} catch {
-			// The marker is already gone, or another request still needs the directory.
+			await unlink(path);
+		} catch (error) {
+			if ((error as NodeJS.ErrnoException).code !== "ENOENT")
+				throw new Error(`Could not remove workspace request at ${path}.`, { cause: error });
 		}
 	}
 
@@ -192,17 +168,22 @@ export class WorkspaceRequestStore {
 		let entries: string[];
 		try {
 			entries = await readdir(this.directory);
-		} catch {
-			return [];
+		} catch (error) {
+			if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
+			throw new Error(`Could not list workspace requests at ${this.directory}.`, { cause: error });
 		}
 		const requests: WorkspaceRequestMarker[] = [];
 		for (const entry of entries) {
 			if (!entry.endsWith(".json")) continue;
+			const path = join(this.directory, entry);
 			try {
-				const request = parseWorkspaceRequest(JSON.parse(await readFile(join(this.directory, entry), "utf8")));
-				if (request && request.sessionId === entry.slice(0, -".json".length)) requests.push(request);
-			} catch {
-				// Ignore a marker that cannot be read or parsed.
+				const request = parseWorkspaceRequest(JSON.parse(await readFile(path, "utf8")));
+				if (!request || request.sessionId !== entry.slice(0, -".json".length))
+					throw new Error("Invalid workspace request marker; preserve it for explicit recovery.");
+				requests.push(request);
+			} catch (error) {
+				if ((error as NodeJS.ErrnoException).code === "ENOENT") continue;
+				throw new Error(`Could not read workspace request at ${path}.`, { cause: error });
 			}
 		}
 		return requests;

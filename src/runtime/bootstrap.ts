@@ -1,17 +1,8 @@
-import type { AgentBootstrap, AgentPreset } from "../model/session/types.ts";
+import type { AgentPreset } from "../model/session/types.ts";
 import { harnessRegistry } from "./agents/startup.ts";
 
 export interface SessionBootstrapInput {
 	taskId: string;
-}
-
-/**
- * The provider's verified auto-approval flag, or `undefined` when the provider has no documented
- * flag. Returning `undefined` is deliberate: AgenticWorkspace never invents a flag for a provider whose
- * auto-approval option is not confirmed.
- */
-export function yoloFlagFor(bootstrap: AgentBootstrap): string | undefined {
-	return harnessRegistry.find(bootstrap)?.yoloFlag();
 }
 
 /** Startup supplies identity only; task work begins after an explicit user request. */

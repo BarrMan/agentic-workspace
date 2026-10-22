@@ -18,9 +18,9 @@ import {
 	TextRenderable,
 	t,
 } from "@opentui/core";
-import type { TaskDetail } from "../../controller/task-detail.ts";
 import type { AgentIndication } from "../../model/session/types.ts";
 import { statusComparisonKey } from "../../model/task/status.ts";
+import type { TaskDetail } from "../../model/task/task-projection.ts";
 import { isTerminalStatus } from "../../model/task/terminal-status.ts";
 import type { AgentHost } from "../../runtime/live/agent-host.ts";
 import type { GroupMembership, TaskGroup } from "../../storage/group-store.ts";

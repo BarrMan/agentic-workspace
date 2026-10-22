@@ -2,6 +2,11 @@ import { afterEach, describe, expect, it } from "bun:test";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import {
+	initializeAgentConfiguration,
+	loadAgentConfiguration,
+	upsertAgentConfiguration,
+} from "../controller/agent-configuration.ts";
 import { Core } from "../controller/agentic-workspace.ts";
 import type { SessionRuntime } from "../model/session/session.ts";
 import { Session } from "../model/session/session.ts";
@@ -14,7 +19,6 @@ import type {
 	SessionLaunchContext,
 	Unsubscribe,
 } from "../model/session/types.ts";
-import { initializeAgentConfiguration, loadAgentConfiguration, upsertAgentConfiguration } from "../storage/config.ts";
 import { Storage } from "../storage/storage.ts";
 import { initializeTestProject } from "./test-utils.ts";
 

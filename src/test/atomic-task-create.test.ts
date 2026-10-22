@@ -3,10 +3,10 @@ import * as fsPromises from "node:fs/promises";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
+import { resolveAgentConfiguration, upsertAgentConfiguration } from "../controller/agent-configuration.ts";
 import { Core } from "../controller/agentic-workspace.ts";
 import type { AgentConfiguration } from "../model/session/types.ts";
 import type { Task } from "../model/types.ts";
-import { resolveAgentConfiguration, upsertAgentConfiguration } from "../storage/config.ts";
 import { CREATE_LOCK_ERROR_MESSAGE } from "../storage/file-system.ts";
 import { coreFileSystem, initializeTestProject, withTimeout } from "./test-utils.ts";
 
@@ -132,7 +132,7 @@ describe("atomic task creation", () => {
 		const releaseFirstWrite = createDeferred<void>();
 		let writeEntries = 0;
 		const originalWrite = fsPromises.writeFile;
-		const milestonePathPrefix = `${testDir}/agentic-workspace/milestones/`.replace(/\\/g, "/");
+		const milestonePathPrefix = `${join(coreFileSystem(first).agenticWorkspaceDir, "milestones")}/`.replace(/\\/g, "/");
 
 		const writeSpy = spyOn(fsPromises, "writeFile").mockImplementation(async (...args) => {
 			const targetPath = String(args[0]).replace(/\\/g, "/");
@@ -203,7 +203,7 @@ describe("atomic task creation", () => {
 
 		const renamedPath = await fs.getMilestoneFilePath(milestone.id);
 		if (!renamedPath) throw new Error("Renamed milestone missing");
-		const archive = join(testDir, "agentic-workspace", "archive", "milestones", basename(renamedPath));
+		const archive = join(fs.agenticWorkspaceDir, "archive", "milestones", basename(renamedPath));
 		await Bun.write(archive, "existing archive must survive");
 		const archiveResult = await fs.archiveMilestone(milestone.id);
 		expect(archiveResult.success).toBe(false);

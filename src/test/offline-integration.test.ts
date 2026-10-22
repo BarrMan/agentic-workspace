@@ -38,7 +38,7 @@ describe("Offline Integration Tests", () => {
 		};
 
 		await writeFile(
-			join(agenticWorkspaceDir, "config.yml"),
+			join(tempDir, "agentic-workspace.config.yml"),
 			`project_name: "${config.projectName}"
 statuses: ["To Do", "In Progress", "Done"]
 labels: ["bug", "feature"]

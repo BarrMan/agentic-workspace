@@ -2,8 +2,8 @@ import { access, chmod, mkdir, readdir, readFile, rename, rmdir, stat, unlink, w
 import { basename, dirname, join, relative, sep } from "node:path";
 import lockfile from "proper-lockfile";
 import { agentCommandArgvSchema } from "../model/session/agent-config-schema.ts";
+import type { SessionConfigurationReader } from "../model/session/config.ts";
 import type { AgentConfiguration } from "../model/session/types.ts";
-import type { DependencyStore } from "../model/task/dependency-validator.ts";
 import { taskIdKey } from "../model/task/task-id.ts";
 import {
 	completedTaskIdentityRecord,
@@ -36,7 +36,7 @@ export interface ScannedTaskRecord {
 }
 
 /** The persistence boundary for workspace records, configuration, locks, and transactions. */
-export class Storage {
+export class Storage implements SessionConfigurationReader {
 	private agentPresetMigration?: Promise<{ migratedFiles: string[] }>;
 	private sessionState?: SessionStore;
 	readonly modeDeletionJournal: ModeDeletionJournalStore;
@@ -464,15 +464,6 @@ export class Storage {
 			this.loadArchivedTasks(),
 		]);
 		return [...new Set([...active, ...completed, ...archived].map((task) => task.id))];
-	}
-
-	get dependencyStore(): DependencyStore {
-		return {
-			listTasks: () => this.loadTasks(),
-			listCompletedTasks: () => this.loadCompletedTasks(),
-			listArchivedTasks: () => this.loadArchivedTasks(),
-			loadTask: (taskId: string) => this.loadTask(taskId),
-		};
 	}
 
 	async loadTask(taskId: string, options: { includeArchived?: boolean } = {}): Promise<Task | null> {

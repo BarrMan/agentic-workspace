@@ -46,7 +46,7 @@ statuses: ["To Do", "In Progress", "Done"]
 `,
 		);
 
-		await symlink(agenticWorkspaceDir, join(repoDir, "agentic-workspace"));
+		await symlink(agenticWorkspaceDir, join(repoDir, ".agentic-workspace"));
 
 		const core = new Core(repoDir);
 		const { task } = await core.createTaskFromInput({ title: "Symlink root task" });

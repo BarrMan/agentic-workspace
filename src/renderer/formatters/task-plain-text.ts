@@ -1,5 +1,5 @@
-import type { TaskDetail } from "../../controller/task-detail.ts";
 import { TaskOrdering } from "../../model/task/task-ordering.ts";
+import type { TaskDetail } from "../../model/task/task-projection.ts";
 import { formatDependencyGraphLines } from "./dependency-graph-text.ts";
 import type { TaskArtifactProjection } from "./json-output.ts";
 import { formatStatusWithIcon } from "./status-icon.ts";

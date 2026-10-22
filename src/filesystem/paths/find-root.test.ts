@@ -31,15 +31,15 @@ describe("findAgenticWorkspaceRoot", () => {
 	}
 
 	async function addMarker(root: string): Promise<void> {
-		await mkdir(join(root, "agentic-workspace", "tasks"), { recursive: true });
-		await writeFile(join(root, "agentic-workspace", "config.yml"), "project_name: Test\n");
+		await mkdir(join(root, ".agentic-workspace", "tasks"), { recursive: true });
+		await writeFile(join(root, ".agentic-workspace", "config.yml"), "project_name: Test\n");
 	}
 
 	it("prefers main tasks over a stale linked checkout", async () => {
 		const { main, linked } = await createWorktree();
 		await addMarker(main);
 		await addMarker(linked);
-		await writeFile(join(main, "agentic-workspace", "tasks", "task-1.md"), "Main-only task");
+		await writeFile(join(main, ".agentic-workspace", "tasks", "task-1.md"), "Main-only task");
 		expect(await findAgenticWorkspaceRoot(linked)).toBe(main);
 		expect(await findAgenticWorkspaceRoot(main)).toBe(main);
 	});
@@ -76,11 +76,11 @@ describe("findAgenticWorkspaceRoot", () => {
 		const nested = join(linkedPackage, "src");
 		await mkdir(nested);
 		expect(await findAgenticWorkspaceRoot(nested)).toBe(mainPackage);
-		await rm(join(linkedPackage, "agentic-workspace"), { recursive: true });
-		await rm(join(main, "agentic-workspace"), { recursive: true });
+		await rm(join(linkedPackage, ".agentic-workspace"), { recursive: true });
+		await rm(join(main, ".agentic-workspace"), { recursive: true });
 		await addMarker(testDir);
 		expect(await findAgenticWorkspaceRoot(nested)).toBe(mainPackage);
-		await rm(join(mainPackage, "agentic-workspace"), { recursive: true });
+		await rm(join(mainPackage, ".agentic-workspace"), { recursive: true });
 		expect(await findAgenticWorkspaceRoot(nested)).toBe(await realpath(testDir));
 	});
 
@@ -104,9 +104,13 @@ describe("findAgenticWorkspaceRoot", () => {
 		expect(await findAgenticWorkspaceRoot(linked)).toBeNull();
 	});
 
-	it("should find root when agentic-workspace/ directory with config exists at start dir", async () => {
+	it("should find root when an explicitly selected agentic-workspace directory exists at start dir", async () => {
 		await mkdir(join(testDir, "agentic-workspace", "tasks"), { recursive: true });
 		await writeFile(join(testDir, "agentic-workspace", "config.yml"), "project_name: Test\n");
+		await writeFile(
+			join(testDir, "agentic-workspace.config.yml"),
+			'project_name: Test\nagentic_workspace_directory: "agentic-workspace"\n',
+		);
 
 		const result = await findAgenticWorkspaceRoot(testDir);
 		expect(result).toBe(testDir);
@@ -120,8 +124,8 @@ describe("findAgenticWorkspaceRoot", () => {
 		expect(result).toBe(testDir);
 	});
 
-	it("should NOT find root for bare agentic-workspace/ directory without config", async () => {
-		await mkdir(join(testDir, "agentic-workspace", "tasks"), { recursive: true });
+	it("should NOT find root for a bare default task-data directory without config", async () => {
+		await mkdir(join(testDir, ".agentic-workspace", "tasks"), { recursive: true });
 
 		const result = await findAgenticWorkspaceRoot(testDir);
 		expect(result).toBeNull();
@@ -136,8 +140,8 @@ describe("findAgenticWorkspaceRoot", () => {
 	});
 
 	it("should find root from a subfolder", async () => {
-		await mkdir(join(testDir, "agentic-workspace", "tasks"), { recursive: true });
-		await writeFile(join(testDir, "agentic-workspace", "config.yml"), "project_name: Test\n");
+		await mkdir(join(testDir, ".agentic-workspace", "tasks"), { recursive: true });
+		await writeFile(join(testDir, ".agentic-workspace", "config.yml"), "project_name: Test\n");
 
 		const subfolder = join(testDir, "src", "components", "ui");
 		await mkdir(subfolder, { recursive: true });
@@ -169,13 +173,13 @@ describe("findAgenticWorkspaceRoot", () => {
 		expect(result).toBeNull();
 	});
 
-	it("should prefer agentic-workspace/ directory over git root", async () => {
+	it("should prefer a default task-data directory over git root", async () => {
 		initGitRepo(testDir);
 
-		// Create agentic-workspace with config in a subfolder (simulating monorepo)
+		// Create the default task-data directory with config in a subfolder (simulating monorepo)
 		const projectFolder = join(testDir, "packages", "my-project");
-		await mkdir(join(projectFolder, "agentic-workspace", "tasks"), { recursive: true });
-		await writeFile(join(projectFolder, "agentic-workspace", "config.yml"), "project_name: Test\n");
+		await mkdir(join(projectFolder, ".agentic-workspace", "tasks"), { recursive: true });
+		await writeFile(join(projectFolder, ".agentic-workspace", "config.yml"), "project_name: Test\n");
 
 		const searchDir = join(projectFolder, "src");
 		await mkdir(searchDir, { recursive: true });
@@ -184,10 +188,10 @@ describe("findAgenticWorkspaceRoot", () => {
 		expect(result).toBe(projectFolder);
 	});
 
-	it("should find git root with agentic-workspace as fallback", async () => {
+	it("should find git root with the default task-data directory as fallback", async () => {
 		initGitRepo(testDir);
-		await mkdir(join(testDir, "agentic-workspace", "tasks"), { recursive: true });
-		await writeFile(join(testDir, "agentic-workspace", "config.yml"), "project_name: Test\n");
+		await mkdir(join(testDir, ".agentic-workspace", "tasks"), { recursive: true });
+		await writeFile(join(testDir, ".agentic-workspace", "config.yml"), "project_name: Test\n");
 
 		const subfolder = join(testDir, "packages", "lib");
 		await mkdir(subfolder, { recursive: true });
@@ -210,14 +214,14 @@ describe("findAgenticWorkspaceRoot", () => {
 
 	it("should handle nested git repos - find nearest agentic-workspace root", async () => {
 		initGitRepo(testDir);
-		await mkdir(join(testDir, "agentic-workspace", "tasks"), { recursive: true });
-		await writeFile(join(testDir, "agentic-workspace", "config.yml"), "project_name: Outer\n");
+		await mkdir(join(testDir, ".agentic-workspace", "tasks"), { recursive: true });
+		await writeFile(join(testDir, ".agentic-workspace", "config.yml"), "project_name: Outer\n");
 
 		const innerProject = join(testDir, "packages", "inner");
 		await mkdir(innerProject, { recursive: true });
 		initGitRepo(innerProject);
-		await mkdir(join(innerProject, "agentic-workspace", "tasks"), { recursive: true });
-		await writeFile(join(innerProject, "agentic-workspace", "config.yml"), "project_name: Inner\n");
+		await mkdir(join(innerProject, ".agentic-workspace", "tasks"), { recursive: true });
+		await writeFile(join(innerProject, ".agentic-workspace", "config.yml"), "project_name: Inner\n");
 
 		const innerSrc = join(innerProject, "src");
 		await mkdir(innerSrc, { recursive: true });
@@ -226,10 +230,10 @@ describe("findAgenticWorkspaceRoot", () => {
 		expect(result).toBe(innerProject);
 	});
 
-	it("should handle agentic-workspace/ with config.yaml", async () => {
-		// Create agentic-workspace structure with config.yaml instead of tasks/
-		await mkdir(join(testDir, "agentic-workspace"), { recursive: true });
-		await writeFile(join(testDir, "agentic-workspace", "config.yaml"), "name: Test");
+	it("should handle the default task-data directory with config.yaml", async () => {
+		// Create task-data structure with config.yaml instead of tasks/
+		await mkdir(join(testDir, ".agentic-workspace"), { recursive: true });
+		await writeFile(join(testDir, ".agentic-workspace", "config.yaml"), "name: Test");
 
 		const result = await findAgenticWorkspaceRoot(testDir);
 		expect(result).toBe(testDir);
@@ -253,14 +257,14 @@ describe("findAgenticWorkspaceRoot", () => {
 		expect(result).toBeNull();
 	});
 
-	it("should not stop at nested custom agentic-workspace directories without a config marker", async () => {
-		await mkdir(join(testDir, "planning", "agentic-workspace", "tasks"), { recursive: true });
+	it("should not stop at a nested custom task-data directory without a config marker", async () => {
+		await mkdir(join(testDir, "planning", ".agentic-workspace", "tasks"), { recursive: true });
 		await writeFile(
 			join(testDir, "agentic-workspace.config.yml"),
-			'project_name: "Test"\nagentic_workspace_directory: "planning/agentic-workspace"\n',
+			'project_name: "Test"\nagentic_workspace_directory: "planning/.agentic-workspace"\n',
 		);
 
-		const nestedStart = join(testDir, "planning", "agentic-workspace", "tasks");
+		const nestedStart = join(testDir, "planning", ".agentic-workspace", "tasks");
 		const result = await findAgenticWorkspaceRoot(nestedStart);
 		expect(result).toBe(testDir);
 	});

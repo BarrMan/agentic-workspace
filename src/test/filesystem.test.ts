@@ -24,13 +24,14 @@ describe("FileSystem", () => {
 
 	describe("ensureAgenticWorkspaceStructure", () => {
 		it("should create all required directories", async () => {
+			const workspaceDir = filesystem.agenticWorkspaceDir;
 			const expectedDirs = [
-				join(TEST_DIR, "agentic-workspace"),
-				join(TEST_DIR, "agentic-workspace", "tasks"),
-				join(TEST_DIR, "agentic-workspace", "completed"),
-				join(TEST_DIR, "agentic-workspace", "archive", "tasks"),
-				join(TEST_DIR, "agentic-workspace", "milestones"),
-				join(TEST_DIR, "agentic-workspace", "archive", "milestones"),
+				workspaceDir,
+				filesystem.tasksDir,
+				filesystem.completedDir,
+				join(workspaceDir, "archive", "tasks"),
+				join(workspaceDir, "milestones"),
+				join(workspaceDir, "archive", "milestones"),
 			];
 
 			for (const dir of expectedDirs) {
@@ -41,13 +42,15 @@ describe("FileSystem", () => {
 
 		it("should ignore EEXIST for existing directories", async () => {
 			const projectDir = join(TEST_DIR, "onedrive-project");
+			const projectFilesystem = new FileSystem(projectDir);
+			const workspaceDir = projectFilesystem.agenticWorkspaceDir;
 			const expectedDirs = [
-				join(projectDir, "agentic-workspace"),
-				join(projectDir, "agentic-workspace", "tasks"),
-				join(projectDir, "agentic-workspace", "completed"),
-				join(projectDir, "agentic-workspace", "archive", "tasks"),
-				join(projectDir, "agentic-workspace", "milestones"),
-				join(projectDir, "agentic-workspace", "archive", "milestones"),
+				workspaceDir,
+				projectFilesystem.tasksDir,
+				projectFilesystem.completedDir,
+				join(workspaceDir, "archive", "tasks"),
+				join(workspaceDir, "milestones"),
+				join(workspaceDir, "archive", "milestones"),
 			];
 
 			for (const dir of expectedDirs) {
@@ -85,8 +88,9 @@ describe("FileSystem", () => {
 
 		it("should not ignore EEXIST when the path is not a directory", async () => {
 			const projectDir = join(TEST_DIR, "file-conflict-project");
-			const agenticWorkspaceDir = join(projectDir, "agentic-workspace");
-			const tasksPath = join(agenticWorkspaceDir, "tasks");
+			const projectFilesystem = new FileSystem(projectDir);
+			const agenticWorkspaceDir = projectFilesystem.agenticWorkspaceDir;
+			const tasksPath = projectFilesystem.tasksDir;
 			await mkdir(agenticWorkspaceDir, { recursive: true });
 			await Bun.write(tasksPath, "not a directory");
 
@@ -411,7 +415,7 @@ title: [unterminated
 			expect(task).toBeNull();
 
 			// Check that file exists in archive
-			const archiveFiles = await readdir(join(TEST_DIR, "agentic-workspace", "archive", "tasks"));
+			const archiveFiles = await readdir(join(filesystem.agenticWorkspaceDir, "archive", "tasks"));
 			expect(archiveFiles.some((f) => f.startsWith("task-1"))).toBe(true);
 		});
 	});
@@ -434,7 +438,7 @@ title: [unterminated
 		});
 
 		it("should create config with mode 0600 and preserve its mode when saving", async () => {
-			const configPath = join(TEST_DIR, "agentic-workspace", "config.yml");
+			const configPath = filesystem.configFilePath;
 			await filesystem.saveConfig(sampleConfig);
 			expect((await stat(configPath)).mode & 0o777).toBe(0o600);
 

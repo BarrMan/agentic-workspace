@@ -1,5 +1,6 @@
 import { mkdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
+import { z } from "zod";
 import { LockOwner } from "../filesystem/lock-owner.ts";
 import { writeFileAtomic } from "./session-store.ts";
 import { StateStoreLifecycle } from "./state-store-lifecycle.ts";
@@ -38,43 +39,21 @@ export type GroupStore = {
 	close(): void;
 };
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-	return typeof value === "object" && value !== null;
-}
-
-function parseGroup(value: unknown): TaskGroup | undefined {
-	if (!isRecord(value)) return undefined;
-	const { id, name, parentId, order, collapsed } = value;
-	if (typeof id !== "string" || typeof name !== "string") return undefined;
-	if (parentId !== null && typeof parentId !== "string") return undefined;
-	if (typeof order !== "number" || !Number.isFinite(order)) return undefined;
-	if (typeof collapsed !== "boolean") return undefined;
-	return { id, name, parentId, order, collapsed };
-}
-
-function parseGroups(value: unknown): readonly TaskGroup[] {
-	if (!Array.isArray(value)) return [];
-	const groups: TaskGroup[] = [];
-	for (const entry of value) {
-		const group = parseGroup(entry);
-		if (group) groups.push(group);
-	}
-	return groups;
-}
-
-function parseMembership(value: unknown): GroupMembership {
-	if (!isRecord(value)) return {};
-	const membership: Record<string, string> = {};
-	for (const [taskId, groupId] of Object.entries(value)) {
-		if (typeof groupId === "string") membership[taskId] = groupId;
-	}
-	return membership;
-}
+const groupStateSchema = z.strictObject({
+	groups: z.array(
+		z.strictObject({
+			id: z.string(),
+			name: z.string(),
+			parentId: z.string().nullable(),
+			order: z.number(),
+			collapsed: z.boolean(),
+		}),
+	),
+	membership: z.record(z.string(), z.string()),
+});
 
 function parseState(raw: string): GroupState {
-	const parsed: unknown = JSON.parse(raw);
-	if (!isRecord(parsed)) throw new Error("Invalid workspace group state.");
-	return { groups: parseGroups(parsed.groups), membership: parseMembership(parsed.membership) };
+	return groupStateSchema.parse(JSON.parse(raw));
 }
 
 async function readStateFile(path: string): Promise<GroupState | undefined> {
@@ -185,7 +164,7 @@ class GroupStoreImpl implements GroupStore {
 	}
 
 	private async writeState(state: GroupState): Promise<void> {
-		const payload = { groups: state.groups, membership: state.membership };
+		const payload = groupStateSchema.parse(state);
 		await writeFileAtomic(this.path, `${JSON.stringify(payload, null, "\t")}\n`);
 	}
 

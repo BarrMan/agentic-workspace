@@ -1,7 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import { spawnSync } from "node:child_process";
 import { existsSync } from "node:fs";
-import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, readFile, rm, stat, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import "./agents/startup.ts";
@@ -18,7 +18,7 @@ async function fixture() {
 describe("generated hook command", () => {
 	it("pins the exact command bytes used by Claude hooks", () => {
 		expect(buildHookCommand("/tmp/owned/activity", "running")).toBe(
-			`sh -c 'set -f; umask 077; D='"'"'/tmp/owned/activity'"'"'; [ -n "$D" ] && [ -d "$D" ] || exit 0; printf %s running > "$D/status" 2>/dev/null; exit 0'`,
+			`sh -c 'set -f; umask 077; D='"'"'/tmp/owned/activity'"'"'; [ -n "$D" ] && [ -d "$D" ] || exit 0; if [ running = idle ] && [ "$(cat "$D/status" 2>/dev/null)" = idle ]; then :; else printf %s running > "$D/status" 2>/dev/null; fi; exit 0'`,
 		);
 	});
 
@@ -62,6 +62,96 @@ describe("generated hook command", () => {
 			const command = buildHookCommand(join(root, "missing"), "idle");
 			const result = spawnSync("/bin/sh", ["-c", command], { encoding: "utf8" });
 			expect(result.status).toBe(0);
+		} finally {
+			await cleanup();
+		}
+	});
+
+	it("preserves mtime for repeated idle but updates it when entering idle", async () => {
+		const { root, cleanup } = await fixture();
+		const statusDir = join(root, "activity");
+		const statusPath = join(statusDir, "status");
+		const old = new Date(1_000);
+		await mkdir(statusDir);
+		try {
+			await writeFile(statusPath, "idle");
+			await utimes(statusPath, old, old);
+			const idleMtime = (await stat(statusPath)).mtimeMs;
+			spawnSync("/bin/sh", ["-c", buildHookCommand(statusDir, "idle")]);
+			expect((await stat(statusPath)).mtimeMs).toBe(idleMtime);
+
+			await writeFile(statusPath, "running");
+			await utimes(statusPath, old, old);
+			spawnSync("/bin/sh", ["-c", buildHookCommand(statusDir, "idle")]);
+			expect((await stat(statusPath)).mtimeMs).not.toBe(old.getTime());
+			expect(await readFile(statusPath, "utf8")).toBe("idle");
+		} finally {
+			await cleanup();
+		}
+	});
+});
+
+describe("provider idle status emitters", () => {
+	it("preserves Pi idle mtime until a running-to-idle transition", async () => {
+		const { root, cleanup } = await fixture();
+		const statusDir = join(root, "activity");
+		const statusPath = join(statusDir, "status");
+		const old = new Date(1_000);
+		await mkdir(statusDir);
+		await writeFile(join(statusDir, ".agentic-workspace-launch-owner"), "owned");
+		const modulePath = join(root, "pi.mjs");
+		await writeFile(modulePath, piExtensionSource(statusDir));
+		try {
+			const module = (await import(`${new URL(`file://${modulePath}`).href}?${Date.now()}`)) as {
+				default(pi: { on(name: string, handler: () => void): void }): void;
+			};
+			const handlers = new Map<string, () => void>();
+			module.default({ on: (name, handler) => handlers.set(name, handler) });
+			await writeFile(statusPath, "idle");
+			await utimes(statusPath, old, old);
+			const idleMtime = (await stat(statusPath)).mtimeMs;
+			handlers.get("turn_end")?.();
+			expect((await stat(statusPath)).mtimeMs).toBe(idleMtime);
+
+			await writeFile(statusPath, "running");
+			await utimes(statusPath, old, old);
+			handlers.get("turn_end")?.();
+			expect((await stat(statusPath)).mtimeMs).not.toBe(old.getTime());
+			expect(await readFile(statusPath, "utf8")).toBe("idle");
+		} finally {
+			await cleanup();
+		}
+	});
+
+	it("preserves OpenCode idle mtime until a busy-to-idle transition", async () => {
+		const { root, cleanup } = await fixture();
+		const statusDir = join(root, "activity");
+		const statusPath = join(statusDir, "status");
+		const old = new Date(1_000);
+		await mkdir(statusDir);
+		await writeFile(join(statusDir, ".agentic-workspace-launch-owner"), "owned");
+		const modulePath = join(root, "opencode.mjs");
+		await writeFile(modulePath, openCodeV1PluginSource(statusDir, "workspace-session", "ses_parent"));
+		try {
+			const module = (await import(`${new URL(`file://${modulePath}`).href}?${Date.now()}`)) as {
+				AgenticWorkspaceStatus(): Promise<{ event(input: unknown): Promise<void> }>;
+			};
+			const plugin = await module.AgenticWorkspaceStatus();
+			const event = (status: "busy" | "idle") =>
+				plugin.event({
+					event: { type: "session.status", properties: { sessionID: "ses_parent", status: { type: status } } },
+				});
+			await writeFile(statusPath, "idle");
+			await utimes(statusPath, old, old);
+			const idleMtime = (await stat(statusPath)).mtimeMs;
+			await event("idle");
+			expect((await stat(statusPath)).mtimeMs).toBe(idleMtime);
+
+			await writeFile(statusPath, "running");
+			await utimes(statusPath, old, old);
+			await event("idle");
+			expect((await stat(statusPath)).mtimeMs).not.toBe(old.getTime());
+			expect(await readFile(statusPath, "utf8")).toBe("idle");
 		} finally {
 			await cleanup();
 		}

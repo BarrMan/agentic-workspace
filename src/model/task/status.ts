@@ -29,26 +29,9 @@ export function findCanonicalStatus(input: string, statuses: readonly string[]):
 /**
  * Load valid statuses from project configuration.
  */
-export async function getValidStatuses(core: StatusConfigReader): Promise<string[]> {
+async function getValidStatuses(core: StatusConfigReader): Promise<string[]> {
 	const config = await core.getStoredConfig();
 	return config?.statuses && config.statuses.length > 0 ? config.statuses : [...DEFAULT_STATUSES];
-}
-
-/**
- * Find the configured status for an exact input.
- * `allowedStatuses` narrows the match set.
- * Returns the canonical value or null if no match is found.
- *
- * Examples:
- */
-export async function getCanonicalStatus(
-	input: string | undefined,
-	core: StatusConfigReader,
-	allowedStatuses?: string[],
-): Promise<string | null> {
-	if (!input) return null;
-	const statuses = allowedStatuses ?? (await getValidStatuses(core));
-	return findCanonicalStatus(input, statuses);
 }
 
 export async function getCanonicalStatuses(

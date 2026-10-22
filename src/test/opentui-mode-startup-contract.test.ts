@@ -72,16 +72,16 @@ function snapshot(root: string): Record<string, { bytes?: string; mtime: number;
 
 function project(configuration?: AgentConfiguration) {
 	const rootDir = mkdtempSync(join(tmpdir(), "agentic-workspace-mode-startup-contract-"));
-	const agenticWorkspaceDir = join(rootDir, "agentic-workspace");
+	const agenticWorkspaceDir = join(rootDir, ".agentic-workspace");
 	mkdirSync(join(agenticWorkspaceDir, "tasks"), { recursive: true });
-	mkdirSync(join(rootDir, ".agentic-workspace", "sessions", task.id), { recursive: true });
+	mkdirSync(join(agenticWorkspaceDir, "sessions", task.id), { recursive: true });
 	writeFileSync(join(agenticWorkspaceDir, "config.yml"), "project_name: Startup contract\nstatuses: [To Do]\n");
 	writeFileSync(
 		join(agenticWorkspaceDir, "tasks", "back-1.md"),
 		"---\nid: BACK-1\ntitle: Startup contract\nstatus: To Do\n---\nKeep task bytes.\n",
 	);
 	writeFileSync(
-		join(rootDir, ".agentic-workspace", "sessions", task.id, "state.json"),
+		join(agenticWorkspaceDir, "sessions", task.id, "state.json"),
 		'{"version":1,"taskId":"BACK-1","sessions":[]}\n',
 	);
 	if (configuration)
@@ -101,6 +101,8 @@ function project(configuration?: AgentConfiguration) {
 			config: { statuses: ["To Do"] },
 			identityIndex: { getTasks: () => [task], getContestedIds: () => new Set<string>() },
 		}),
+		watchTasks: () => ({ stop() {} }),
+		watchConfig: () => ({ stop() {} }),
 		filesystem: {
 			rootDir,
 			projectRoot: rootDir,

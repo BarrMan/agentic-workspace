@@ -294,6 +294,7 @@ describe("Task", () => {
 		if (!history) throw new Error("missing mode");
 		const rehydrated = fixture({ sessionRecords: { a: structuredClone(history) } }).task;
 		rehydrated.rollbackSession(creation);
+		rehydrated.rollbackSession(creation);
 		expect(rehydrated.modes.a?.sessions.map(({ id }) => id)).toEqual([newer.id]);
 		expect(rehydrated.modes.a?.activeSessionId).toBe(newer.id);
 	});
@@ -311,6 +312,7 @@ describe("Task", () => {
 		};
 		const { task } = fixture({ sessionRecords: { a: { sessions: [prior], activeSessionId: prior.id } } });
 		const { creation, session } = task.reserveSession("a");
+		task.rollbackSession(creation);
 		task.rollbackSession(creation);
 		expect(task.modes.a?.activeSessionId).toBe(prior.id);
 		expect(task.modes.a?.sessions.map(({ id }) => id)).toEqual([prior.id]);

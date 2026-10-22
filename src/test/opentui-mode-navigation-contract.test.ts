@@ -72,6 +72,8 @@ function setup() {
 			config: { statuses: ["To Do"] },
 			identityIndex: { getTasks: () => [task], getContestedIds: () => new Set() },
 		}),
+		watchTasks: () => ({ stop() {} }),
+		watchConfig: () => ({ stop() {} }),
 		filesystem: {
 			agenticWorkspaceDir: join(directory, ".agentic-workspace"),
 			projectRoot: directory,

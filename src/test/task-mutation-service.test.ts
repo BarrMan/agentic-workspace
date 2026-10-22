@@ -16,7 +16,6 @@ describe("ProjectTaskMutations", () => {
 		} as Task;
 		const storage = {
 			loadConfig: async () => ({ statuses: ["To Do"], priorities: ["High"] }),
-			dependencyStore: {},
 		};
 		const mutations = new ProjectTaskMutations(
 			storage as never,
@@ -41,7 +40,7 @@ describe("ProjectTaskMutations", () => {
 			rawContent: "",
 		} as Task;
 		const mutations = new ProjectTaskMutations(
-			{ loadConfig: async () => ({ statuses: ["To Do"] }), dependencyStore: {} } as never,
+			{ loadConfig: async () => ({ statuses: ["To Do"] }) } as never,
 			async () => null,
 			async () => [],
 		);
@@ -65,7 +64,6 @@ describe("ProjectTaskMutations", () => {
 			{
 				loadConfig: async () => ({ statuses: ["To Do"] }),
 				loadMilestones: async () => [{ id: "M-1", title: "Release One", description: "" }],
-				dependencyStore: {},
 			} as never,
 			async () => null,
 			async () => [],

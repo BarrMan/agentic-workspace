@@ -91,6 +91,37 @@ describe("native runtime ownership probes", () => {
 		expect(await new SessionProcess(runner, resources(), server).nativeRuntimeClassification(record)).toEqual(expected);
 	});
 
+	it("rejects replacement of a live owned pane before cleanup effects", async () => {
+		const process = new SessionProcess(
+			{
+				run: async () => {
+					throw new Error("No process effects allowed");
+				},
+			},
+			resources(),
+			ownedServer() as unknown as TmuxServer,
+		);
+		await expect(process.assertNoPreparedResources(record)).rejects.toThrow("live; refusing replacement");
+	});
+
+	it("rejects uncertain replacement inspection before cleanup effects", async () => {
+		const server = {
+			cmd: async () => {
+				throw new TmuxTransportError("inspection unavailable", { kind: "spawn", delivery: "not_started" });
+			},
+		} as unknown as TmuxServer;
+		const process = new SessionProcess(
+			{
+				run: async () => {
+					throw new Error("No process effects allowed");
+				},
+			},
+			resources(),
+			server,
+		);
+		await expect(process.assertNoPreparedResources(record)).rejects.toThrow();
+	});
+
 	it("does not interpret an empty or malformed successful probe as absence", async () => {
 		const runner: ProcessRunner = {
 			run: async () => {

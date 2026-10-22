@@ -38,6 +38,28 @@ describe("CLI search command", () => {
 			priority: "High",
 			modifiedFiles: ["src/core/search-service.ts"],
 		});
+
+		await core.createTask({
+			id: "task-3",
+			title: "Completed archive-scope marker",
+			status: "To Do",
+			createdDate: "2025-09-18",
+			labels: [],
+			dependencies: [],
+			description: "Completed archive-scope marker",
+		});
+		expect(await core.completeTask("task-3")).toBe(true);
+
+		await core.createTask({
+			id: "task-4",
+			title: "Archived archive-scope marker",
+			status: "To Do",
+			createdDate: "2025-09-18",
+			labels: [],
+			dependencies: [],
+			description: "Archived archive-scope marker",
+		});
+		expect((await core.archiveTask("task-4")).success).toBe(true);
 	});
 
 	afterAll(async () => {
@@ -51,6 +73,20 @@ describe("CLI search command", () => {
 		const stdout = result.stdout.toString();
 		expect(stdout).toContain("Tasks:");
 		expect(stdout).toContain("TASK-1 - Central search integration");
+	});
+
+	it("includes completed tasks by default and archived tasks only when requested", async () => {
+		const defaultResult = await runInProcessCli(["search", "archive-scope", "--plain"], { cwd: TEST_DIR });
+		expect(defaultResult.exitCode).toBe(0);
+		expect(defaultResult.stdout).toContain("TASK-3 - Completed archive-scope marker");
+		expect(defaultResult.stdout).not.toContain("TASK-4 - Archived archive-scope marker");
+
+		const archivedResult = await runInProcessCli(["search", "archive-scope", "--include-archived", "--plain"], {
+			cwd: TEST_DIR,
+		});
+		expect(archivedResult.exitCode).toBe(0);
+		expect(archivedResult.stdout).toContain("TASK-3 - Completed archive-scope marker");
+		expect(archivedResult.stdout).toContain("TASK-4 - Archived archive-scope marker");
 	});
 
 	it("honors status and priority filters for task results", async () => {

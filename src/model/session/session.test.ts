@@ -69,6 +69,39 @@ function runtime(overrides: Partial<SessionRuntime> = {}): SessionRuntime {
 }
 
 describe("Session", () => {
+	test("keeps a recoverable failed execution without registering observers", async () => {
+		const running = execution("failed", "captured");
+		const failure = Object.assign(new Error("launch failed"), { execution: running.value });
+		const session = new Session(
+			record,
+			"mode",
+			runtime({
+				start: async () => {
+					throw failure;
+				},
+			}),
+		);
+		await expect(session.start(context)).rejects.toBe(failure);
+		expect(session.execution).toBe(running.value);
+		expect(session.serialize().nativeSessionId).toBe("captured");
+		expect(session.view.state).toBe("unknown");
+		expect(running.observerCount()).toBe(0);
+		await session.stop();
+	});
+
+	test("moves membership without replacing execution or its observers", async () => {
+		const running = execution("one");
+		const session = new Session(record, "mode", runtime({ start: async () => running.value }));
+		await session.start(context);
+		session.moveToMode("destination");
+		running.emit({ kind: "turn-completed", observedAt: 10 });
+		expect(session.modeId).toBe("destination");
+		expect(session.execution).toBe(running.value);
+		expect(running.observerCount()).toBe(1);
+		expect(session.view.activity).toBe("idle");
+		expect(session.serialize().nativeSessionId).toBe("one");
+		await session.stop();
+	});
 	test("owns the current execution and durable provider identity", async () => {
 		const running = execution("one", "native-1");
 		const session = new Session(record, "mode", runtime({ start: async () => running.value }));
@@ -87,6 +120,7 @@ describe("Session", () => {
 			runtime({ start: async () => first.value, resume: async () => second.value }),
 		);
 		await session.start(context);
+		await session.stop();
 		await session.resume(context);
 		first.emit({ kind: "execution-exit", exitCode: 1, observedAt: 2 });
 		expect(session.execution).toBe(second.value);

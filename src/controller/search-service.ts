@@ -1,6 +1,8 @@
 import { type TaskSearchFields, TaskSearchIndex } from "../model/task/task-search.ts";
 import type { SearchOptions, SearchResult, SearchResultType, Task } from "../model/types.ts";
 
+export type PersistentSearchOptions = SearchOptions & { includeArchived?: boolean };
+
 interface TaskSearchEntity extends TaskSearchFields {
 	readonly type: "task";
 	readonly task: Task;

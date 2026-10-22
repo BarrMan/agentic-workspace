@@ -1,11 +1,9 @@
 /** Inherited context identifies the shared workspace pane and conversation, not its frontend. */
 
 import { realpathSync } from "node:fs";
-import { readdir, rm, rmdir } from "node:fs/promises";
-import { isAbsolute, join } from "node:path";
+import { isAbsolute } from "node:path";
 import type { AgentConversationContext } from "../model/session/types.ts";
 import { taskIdsEqual } from "../model/task/task-id.ts";
-import { writeFileAtomic } from "../storage/session-store.ts";
 import { createSessionTransport } from "./session-process.ts";
 
 /** The environment variable a workspace sets in its agent panes and the CLI reads back. */
@@ -186,124 +184,4 @@ export async function readWorkspaceContext(
 	if (!(await (options.paneMatches ?? defaultPaneMatches)(context.paneId, context)))
 		throw new Error("Workspace pane identity does not match its tags.");
 	return context;
-}
-
-/* ------------------------------------------------------------------------------------------------
- * Request markers
- *
- * The durable session record is the request, but a workspace cannot wait for user input to notice
- * one: refresh is event-driven, so an idle TUI would never re-read the records. `agent-session start`
- * therefore also drops one small marker per request, and the workspace's timer dir-lists only that
- * directory — never the whole task-state tree — to learn a request exists.
- * ---------------------------------------------------------------------------------------------- */
-
-/** One unadopted `agent-session start` request, mirrored to disk for the owning workspace to poll. */
-export interface SessionHandoff {
-	modeId: string;
-	predecessor?: { id: string; createdAt: string; tmuxName: string };
-	priorActiveSessionId?: string;
-}
-
-export interface WorkspaceRequest {
-	taskId: string;
-	sessionId: string;
-	/** Requester PID; not runtime authority. */
-	pid: number;
-	handoff?: SessionHandoff;
-	createdAt?: string;
-}
-
-/** The directory holding one marker per unadopted request, inside the project's own state directory. */
-export function workspaceRequestDir(rootDir: string): string {
-	return join(rootDir, ".agentic-workspace", "agent-requests");
-}
-
-/** Marker file names are session ids; this also stops a crafted id from escaping the directory. */
-const SAFE_MARKER_ID = /^[A-Za-z0-9._-]+$/;
-
-function markerPath(rootDir: string, sessionId: string): string | undefined {
-	if (typeof rootDir !== "string" || rootDir.length === 0) return undefined;
-	if (!SAFE_MARKER_ID.test(sessionId)) return undefined;
-	return join(workspaceRequestDir(rootDir), `${sessionId}.json`);
-}
-
-function parseWorkspaceRequest(value: unknown): WorkspaceRequest | undefined {
-	if (typeof value !== "object" || value === null) return undefined;
-	const candidate = value as Record<string, unknown>;
-	if (typeof candidate.taskId !== "string" || candidate.taskId.length === 0) return undefined;
-	if (typeof candidate.sessionId !== "string" || !SAFE_MARKER_ID.test(candidate.sessionId)) return undefined;
-	if (typeof candidate.pid !== "number" || !Number.isInteger(candidate.pid) || candidate.pid <= 0) return undefined;
-	if (candidate.handoff !== undefined) {
-		if (typeof candidate.createdAt !== "string" || !candidate.createdAt) return undefined;
-		if (typeof candidate.handoff !== "object" || candidate.handoff === null) return undefined;
-		const handoff = candidate.handoff as Record<string, unknown>;
-		if (typeof handoff.modeId !== "string" || !handoff.modeId) return undefined;
-		if (handoff.priorActiveSessionId !== undefined && typeof handoff.priorActiveSessionId !== "string")
-			return undefined;
-		if (handoff.predecessor !== undefined) {
-			if (typeof handoff.predecessor !== "object" || handoff.predecessor === null) return undefined;
-			const predecessor = handoff.predecessor as Record<string, unknown>;
-			if (["id", "createdAt", "tmuxName"].some((key) => typeof predecessor[key] !== "string" || !predecessor[key]))
-				return undefined;
-			if (predecessor.id === candidate.sessionId) return undefined;
-		}
-	}
-	return {
-		taskId: candidate.taskId,
-		sessionId: candidate.sessionId,
-		pid: candidate.pid,
-		...(candidate.handoff
-			? { handoff: candidate.handoff as SessionHandoff, createdAt: candidate.createdAt as string }
-			: {}),
-	};
-}
-
-/** Write the marker for a registered request. Only this path ever creates the marker directory. */
-export async function writeWorkspaceRequest(rootDir: string, request: WorkspaceRequest): Promise<void> {
-	const path = markerPath(rootDir, request.sessionId);
-	if (!path) throw new Error(`Invalid workspace request for session ${request.sessionId}.`);
-	await writeFileAtomic(path, `${JSON.stringify(request)}\n`);
-}
-
-/**
- * Remove one request marker. Never throws: a marker that is already gone is the desired state, and
- * the now-empty directory is removed so an idle project keeps no marker directory behind.
- */
-export async function deleteWorkspaceRequest(rootDir: string, sessionId: string): Promise<void> {
-	const path = markerPath(rootDir, sessionId);
-	if (!path) return;
-	try {
-		await rm(path, { force: true });
-		await rmdir(workspaceRequestDir(rootDir));
-	} catch {
-		// The marker is already gone, or another request still needs the directory.
-	}
-}
-
-/**
- * Read every request marker. Never creates the directory and never throws: an absent or unreadable
- * directory is simply "no requests", and a malformed marker is ignored (its record is still covered
- * by the workspace's refresh scan).
- */
-export async function readWorkspaceRequests(rootDir: string): Promise<WorkspaceRequest[]> {
-	if (typeof rootDir !== "string" || rootDir.length === 0) return [];
-	const directory = workspaceRequestDir(rootDir);
-	let entries: string[];
-	try {
-		entries = await readdir(directory);
-	} catch {
-		return [];
-	}
-	const requests: WorkspaceRequest[] = [];
-	for (const entry of entries) {
-		if (!entry.endsWith(".json")) continue;
-		try {
-			const parsed: unknown = JSON.parse(await Bun.file(join(directory, entry)).text());
-			const request = parseWorkspaceRequest(parsed);
-			if (request && request.sessionId === entry.slice(0, -".json".length)) requests.push(request);
-		} catch {
-			// Ignore a marker that cannot be read or parsed.
-		}
-	}
-	return requests;
 }

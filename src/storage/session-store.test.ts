@@ -5,13 +5,13 @@ import { join } from "node:path";
 import lockfile from "proper-lockfile";
 import type { AgentSession } from "../model/session/types.ts";
 import { SessionMutationError } from "./errors/session.ts";
-import { type SessionState, SessionStore } from "./session-store.ts";
+import { type PersistedSessionState, SessionStore } from "./session-store.ts";
 
-function sessionsOf(state: SessionState): AgentSession[] {
+function sessionsOf(state: PersistedSessionState): AgentSession[] {
 	return Object.values(state.modes).flatMap((history) => history.sessions);
 }
 
-function buildHistory(state: SessionState) {
+function buildHistory(state: PersistedSessionState) {
 	state.modes.build ??= { sessions: [] };
 	return state.modes.build;
 }
@@ -196,6 +196,41 @@ describe("SessionStore", () => {
 			lockfile.lock = originalLock;
 		}
 		expect((await store.read("TASK-1")).modes.build?.sessions.map(({ id }) => id)).toEqual(["committed"]);
+	});
+
+	it("reports committed mode and session writes when lock release fails", async () => {
+		const root = await mkdtemp(join(tmpdir(), "agentic-workspace-session-store-mode-release-"));
+		directories.push(root);
+		const store = new SessionStore(root);
+		const originalLock = lockfile.lock;
+		try {
+			lockfile.lock = (async (...args: Parameters<typeof lockfile.lock>) => {
+				const release = await originalLock(...args);
+				return async () => {
+					await release();
+					throw new Error("release failed");
+				};
+			}) as typeof lockfile.lock;
+			const modeFailure = await store
+				.mutateMode("TASK-1", "build", async (history) => {
+					history.sessions.push(session("mode"));
+					history.activeSessionId = "mode";
+				})
+				.catch((error: unknown) => error);
+			expect(modeFailure).toBeInstanceOf(SessionMutationError);
+			expect((modeFailure as SessionMutationError).writeCommitted).toBe(true);
+
+			const sessionFailure = await store
+				.mutateSession("TASK-1", "mode", async (record) => {
+					record.useCount = 1;
+				})
+				.catch((error: unknown) => error);
+			expect(sessionFailure).toBeInstanceOf(SessionMutationError);
+			expect((sessionFailure as SessionMutationError).writeCommitted).toBe(true);
+		} finally {
+			lockfile.lock = originalLock;
+		}
+		expect((await store.readMode("TASK-1", "build")).sessions[0]?.useCount).toBe(1);
 	});
 
 	it("round-trips optional native providers while preserving older exact-ID histories", async () => {

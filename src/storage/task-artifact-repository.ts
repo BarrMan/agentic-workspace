@@ -5,8 +5,6 @@ import { resolveMainWorktreeRoot } from "../filesystem/git/main-worktree.ts";
 import { taskIdKey, taskIdsEqual } from "../model/task/task-id.ts";
 import { parseTask } from "./markdown/parser.ts";
 
-const SIDECAR = ".artifacts.json";
-const SIDECAR_LOCK = ".artifacts.json.lock";
 const TASK_RECORD = "task.md";
 const MAX_ARTIFACT_INSPECTION_BYTES = 128 * 1024;
 const TASK_CONTAINER_LOCATIONS = ["tasks", "completed", "archive/tasks"] as const;
@@ -21,14 +19,7 @@ export function validateTaskArtifactPath(path: string): string {
 		isAbsolute(path) ||
 		/^[A-Za-z]:/.test(path) ||
 		path.split("/").some((part) => !part || part === "." || part === "..") ||
-		path === TASK_RECORD ||
-		path === SIDECAR ||
-		path === SIDECAR_LOCK ||
-		path
-			.split("/")
-			.some(
-				(part) => part.startsWith(".agentic-workspace-artifact-") || part.startsWith(".agentic-workspace-artifacts-"),
-			)
+		path.split("/").some((part) => part.startsWith(".agentic-workspace-artifact-"))
 	)
 		throw new Error(`Invalid task artifact path: ${String(path)}`);
 	return path;
@@ -76,7 +67,7 @@ export class TaskArtifactRepository {
 		if (main) {
 			const configuredRelative = relative(this.projectRoot, this.agenticWorkspaceDirectory);
 			if (configuredRelative.startsWith(`..${sep}`) || configuredRelative === ".." || isAbsolute(configuredRelative))
-				throw new Error("Configured AgenticWorkspace directory is outside the project root.");
+				return this.agenticWorkspaceDirectory;
 			return resolve(main, configuredRelative);
 		}
 		try {
@@ -263,14 +254,7 @@ export class TaskArtifactRepository {
 			for (const entry of entries) {
 				if (entry.isSymbolicLink()) continue;
 				const path = prefix ? `${prefix}/${entry.name}` : entry.name;
-				if (
-					path === SIDECAR ||
-					path === SIDECAR_LOCK ||
-					entry.name.startsWith(".agentic-workspace-artifact-") ||
-					entry.name.startsWith(".agentic-workspace-artifacts-") ||
-					entry.name.startsWith(".task-")
-				)
-					continue;
+				if (entry.name.startsWith(".agentic-workspace-artifact-")) continue;
 				if (entry.isDirectory()) {
 					await visit(resolve(directory, entry.name), path);
 					continue;

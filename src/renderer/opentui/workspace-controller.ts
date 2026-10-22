@@ -1,9 +1,15 @@
 import { randomUUID } from "node:crypto";
 import { watch } from "node:fs";
 import { dirname } from "node:path";
+import {
+	getEditableAgentConfiguration,
+	loadProjectModeCatalog,
+	resolveAgentConfiguration,
+	resolveSessionPreset,
+} from "../../controller/agent-configuration.ts";
 import type { Core } from "../../controller/agentic-workspace.ts";
 import type { ObservedSession } from "../../controller/session-application.ts";
-import { loadTaskDetail, type TaskDetail } from "../../controller/task-detail.ts";
+import { loadTaskDetail } from "../../controller/task-detail.ts";
 import type { WorkspaceStateService } from "../../controller/workspace-state.ts";
 import { copyToClipboard } from "../../lib/clipboard.ts";
 import { effectiveModeTextColor } from "../../model/session/mode-colors.ts";
@@ -16,9 +22,14 @@ import {
 	activityToIndication,
 	type TaskSessions,
 } from "../../model/session/types.ts";
+import type {
+	SessionHandoffMarker as SessionHandoff,
+	WorkspaceRequestMarker as WorkspaceRequest,
+} from "../../model/session/workspace-request.ts";
 import { getMilestoneLabel } from "../../model/task/milestones.ts";
 import { getPriorityLabels } from "../../model/task/priority-config.ts";
 import { TaskOrdering } from "../../model/task/task-ordering.ts";
+import type { TaskDetail } from "../../model/task/task-projection.ts";
 import { TaskSearchIndex } from "../../model/task/task-search.ts";
 import { getTaskTypeValues } from "../../model/task/task-type-config.ts";
 import { isTerminalStatus } from "../../model/task/terminal-status.ts";
@@ -38,14 +49,6 @@ import { createExistingAgentHost } from "../../runtime/live/existing-agent-host.
 import { createTmuxExec } from "../../runtime/live/tmux/exec.ts";
 import type { TmuxResult } from "../../runtime/live/tmux/types.ts";
 import { sessionActivityDir } from "../../runtime/status-hooks.ts";
-import type { SessionHandoff, WorkspaceRequest } from "../../runtime/workspace-context.ts";
-import { readWorkspaceRequests } from "../../runtime/workspace-context.ts";
-import {
-	getEditableAgentConfiguration,
-	loadProjectModeCatalog,
-	resolveAgentConfiguration,
-	resolveSessionPreset,
-} from "../../storage/config.ts";
 import {
 	emptyGroupState,
 	type GroupState,
@@ -54,8 +57,6 @@ import {
 	type TaskGroup,
 } from "../../storage/group-store.ts";
 import { openViewStateStore, type ViewStateStore } from "../../storage/view-state-store.ts";
-import { watchConfig } from "../../storage/watchers/config-watcher.ts";
-import { watchTasks } from "../../storage/watchers/task-watcher.ts";
 import { mountOpenTuiAgentSettings, mountOpenTuiPresetPicker } from "./agent-settings.ts";
 import { Board, type BoardMoveCommit } from "./board/models/board.ts";
 import { mountOpenTuiBoard, type OpenTuiBoardMount, type OpenTuiBoardProps } from "./board.ts";
@@ -73,6 +74,7 @@ import { mountOpenTuiGroupModal, type OpenTuiGroupModalMount } from "./group-mod
 import { collectDescendantGroupIds, findGroup, setCollapsed } from "./groups.ts";
 import { createOpenTuiHost, type OpenTuiHost } from "./host.ts";
 import { shortcutHelpItems } from "./keybindings.ts";
+import { deleteModeFromChoice, type ModeDeletionPickerMount, mountModeDeletionPicker } from "./mode-deletion-picker.ts";
 import { WorkspaceNavigationHistory, type WorkspaceNavigationSnapshot } from "./navigation-history.ts";
 import { mountOpenTuiSessionPicker } from "./session-picker.ts";
 import { mountOpenTuiTaskComposer, type OpenTuiTaskComposerMount } from "./task-composer.ts";
@@ -96,6 +98,7 @@ import {
 } from "./workspace.ts";
 import { createWorkspaceAgent } from "./workspace-agent.ts";
 import { createWorkspaceAgentHostOwner } from "./workspace-agent-host-owner.ts";
+import { settleWorkspaceClose } from "./workspace-close.ts";
 
 type OpenTuiWorkspaceRuntime = {
 	readonly createHost: () => Promise<OpenTuiHost>;
@@ -118,10 +121,6 @@ type OpenTuiWorkspaceRuntime = {
 	) => OpenTuiBoardMount;
 	/** Creates the batched tmux/filesystem activity probe used by the status poller. */
 	readonly createActivityProbe: () => ActivityProbe;
-	/** Subscribes to external task-file edits; injectable so tests never start a real watcher. */
-	readonly watchTasks: typeof watchTasks;
-	/** Subscribes to external config edits; injectable so tests never start a real watcher. */
-	readonly watchConfig: typeof watchConfig;
 };
 
 type RetainedWorkspaceAgent = OpenTuiWorkspaceLiveAgent & {
@@ -150,8 +149,6 @@ const defaultRuntime: OpenTuiWorkspaceRuntime = {
 	mountWorkspace: mountOpenTuiWorkspace,
 	mountBoard: mountOpenTuiBoard,
 	createActivityProbe,
-	watchTasks,
-	watchConfig,
 };
 
 /** Coalescing window for sidecar `fs.watch` events, so a burst of hook writes causes one poll. */
@@ -306,7 +303,7 @@ function editorFields(
 	currentGroupId: string,
 ): readonly TaskFormField<TaskEditorField>[] {
 	return [
-		{ kind: "input", name: "title", label: "Title", value: draft.values.title, required: true },
+		{ kind: "input", name: "title", label: "Title", value: draft.values.title },
 		{ kind: "textarea", name: "description", label: "Description", value: draft.values.description, height: 4 },
 		{
 			kind: "select",
@@ -362,6 +359,7 @@ export class OpenTuiWorkspaceController {
 	#helpOverlay: OpenTuiHelpOverlayMount | undefined;
 	#sessionPicker: { dispose(): void } | undefined;
 	#confirm: OpenTuiConfirmMount | undefined;
+	#modeDeletionForm: ModeDeletionPickerMount | undefined;
 	#agentSettings: { dispose(): void } | undefined;
 	#configurationLoading = false;
 	readonly #sessionTaskIds = new Set<string>();
@@ -391,6 +389,7 @@ export class OpenTuiWorkspaceController {
 	#config: AgenticWorkspaceConfig | null = null;
 	#notice: string | undefined;
 	#closed = false;
+	#quitting = false;
 	#refreshLoop: Promise<void> | undefined;
 	#refreshRequested = false;
 	#completion: Promise<void> | undefined;
@@ -532,8 +531,7 @@ export class OpenTuiWorkspaceController {
 			void this.#scheduleRefresh().catch(() => undefined);
 		};
 		try {
-			this.#taskWatcher = this.#runtime.watchTasks(
-				this.#core,
+			this.#taskWatcher = this.#core.watchTasks(
 				{
 					onTaskAdded: refresh,
 					onTaskChanged: refresh,
@@ -564,7 +562,7 @@ export class OpenTuiWorkspaceController {
 			process.stderr.write(`Could not watch tasks for live updates: ${String(error)}\n`);
 		}
 		try {
-			this.#configWatcher = this.#runtime.watchConfig(this.#core, { onConfigChanged: refresh });
+			this.#configWatcher = this.#core.watchConfig({ onConfigChanged: refresh });
 		} catch (error) {
 			process.stderr.write(`Could not watch config for live updates: ${String(error)}\n`);
 		}
@@ -608,6 +606,8 @@ export class OpenTuiWorkspaceController {
 		this.#sessionPicker = undefined;
 		this.#confirm?.dispose();
 		this.#confirm = undefined;
+		this.#modeDeletionForm?.dispose();
+		this.#modeDeletionForm = undefined;
 		this.#agentSettings?.dispose();
 		this.#agentSettings = undefined;
 		this.#groupModal?.dispose();
@@ -677,6 +677,7 @@ export class OpenTuiWorkspaceController {
 				this.#helpOverlay ||
 				this.#sessionPicker ||
 				this.#confirm ||
+				this.#modeDeletionForm ||
 				(!exceptSettings && this.#agentSettings) ||
 				this.#configurationLoading ||
 				this.#sessionPickerLoading,
@@ -1605,18 +1606,18 @@ export class OpenTuiWorkspaceController {
 
 	/**
 	 * Adopt registered requests without waiting for user input.
-	 *
-	 * The tick dir-lists only the marker directory; each marker's own task is the only session state
-	 * it reads, so the cost stays bounded by the number of outstanding requests.
 	 */
 	async #pollRequests(): Promise<void> {
 		if (this.#closed || this.#requestPolling) return;
 		this.#requestPolling = true;
 		try {
-			for (const request of await readWorkspaceRequests(this.#core.projectRoot)) {
+			for (const request of await this.#workspaceState.sessionApplication.pendingRequests()) {
 				if (this.#closed) return;
 				await this.#adoptRequest(request);
 			}
+		} catch (error) {
+			this.#notice = `Could not check pending session requests: ${error instanceof Error ? error.message : String(error)}`;
+			if (!this.#closed) void this.#scheduleRefresh();
 		} finally {
 			this.#requestPolling = false;
 			if (!this.#closed) this.#scheduleRequestPoll(Math.min(this.#activityInterval(), 1_000));
@@ -2273,7 +2274,6 @@ export class OpenTuiWorkspaceController {
 				statuses: this.#config?.statuses ?? [],
 				types: this.#config?.types,
 				priorities: this.#config?.priorities,
-				projects: this.#config?.projects,
 				agentConfiguration: resolved.config,
 				defaultGroupId: parent?.id ?? null,
 				defaultGroupName: parent?.name,
@@ -2498,7 +2498,7 @@ export class OpenTuiWorkspaceController {
 					for (const modeId of deletedModeIds) {
 						const confirmed = await this.#openConfirm(
 							"Delete mode",
-							`Delete ${modeId}? Running agents will be stopped and workspace-owned sessions removed. Session history will not be transferred.`,
+							`Delete ${modeId}? Discarding stops agents and removes their session history. Moving keeps sessions and execution alive in the chosen mode.`,
 						);
 						if (!confirmed) throw new Error("Mode deletion cancelled.");
 						confirmedDeletions.push(modeId);
@@ -2515,7 +2515,12 @@ export class OpenTuiWorkspaceController {
 					const completedDeletions: string[] = [];
 					try {
 						for (const modeId of confirmedDeletions) {
-							await this.#core.deleteMode(modeId, { confirmed: true });
+							const deletedMode = await deleteModeFromChoice(
+								modeId,
+								async () => await this.#chooseModeDeletionDestination(modeId, order),
+								async (id, options) => await this.#core.deleteMode(id, options),
+							);
+							if (!deletedMode) throw new Error("Mode deletion cancelled.");
 							completedDeletions.push(modeId);
 						}
 					} catch (cause) {
@@ -2699,6 +2704,18 @@ export class OpenTuiWorkspaceController {
 		}
 	}
 
+	async #chooseModeDeletionDestination(modeId: string, remainingModeIds: readonly string[]): Promise<string | null> {
+		const host = this.#host;
+		if (!host || this.#closed || !this.#agentSettings || remainingModeIds.length === 0) return null;
+		const picker = mountModeDeletionPicker(host.renderer, host.root, { modeId, remainingModeIds });
+		this.#modeDeletionForm = picker;
+		try {
+			return await picker.result;
+		} finally {
+			if (this.#modeDeletionForm === picker) this.#modeDeletionForm = undefined;
+		}
+	}
+
 	async #setHideEmptyColumns(hideEmpty: boolean): Promise<void> {
 		try {
 			const config = await this.#core.getStoredConfig();
@@ -2764,8 +2781,35 @@ export class OpenTuiWorkspaceController {
 		}
 	}
 
-	#quit(): void {
-		this.destroy();
-		void this.#options.onQuit?.();
+	async #quit(): Promise<void> {
+		if (this.#closed || this.#confirm || this.#quitting) return;
+		this.#quitting = true;
+		const hasWorkingSessions = [...this.#sessionSnapshots.values()].some(
+			(snapshot) => snapshot.state === "running" && snapshot.activity === "working",
+		);
+		try {
+			await settleWorkspaceClose({
+				hasWorkingSessions,
+				confirm: () =>
+					this.#openConfirm(
+						"Running sessions",
+						"Working sessions are still running. Yes: force close and stop all sessions. No: close while keeping execution alive; reopening will attach to the existing pane.",
+					),
+				settlePending: async () => {
+					await Promise.allSettled([...this.#agentStarts, ...this.#attachStarts]);
+				},
+				shutdown: () => this.#workspaceState.sessionApplication.shutdown(),
+				close: async () => {
+					if (this.#closed) return;
+					this.destroy();
+					await this.#options.onQuit?.();
+				},
+			});
+		} catch (error) {
+			this.#quitting = false;
+			this.#notice = `Could not close sessions: ${error instanceof Error ? error.message : String(error)}`;
+			void this.#scheduleRefresh();
+			return;
+		}
 	}
 }

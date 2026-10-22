@@ -3,11 +3,9 @@ import { mkdir, utimes, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { BoxRenderable } from "@opentui/core";
 import { createTestRenderer, type TestRendererSetup } from "@opentui/core/testing";
+import { Core } from "../controller/agentic-workspace.ts";
 import { TaskArtifactView, type TaskArtifactViewApi } from "../renderer/opentui/task-artifact-view.ts";
-import { FileSystem } from "../storage/file-system.ts";
-import { Storage } from "../storage/storage.ts";
 import { TaskArtifactRepository } from "../storage/task-artifact-repository.ts";
-import { watchTaskRecords } from "../storage/watchers/task-watcher.ts";
 import { createUniqueTestDir, getPlatformTimeout, safeCleanup } from "./test-utils.ts";
 
 const taskId = "BACK-23";
@@ -64,7 +62,7 @@ describe("artifact viewer live-refresh contract", () => {
 				return () => listeners.delete(callback);
 			},
 		};
-		const watcher = watchTaskRecords(new Storage(new FileSystem(root)), {
+		const watcher = new Core(root).watchTasks({
 			onArtifactChanged: ({ taskId: changedTask }) => {
 				if (changedTask.toLowerCase() === taskId.toLowerCase()) {
 					for (const listener of [...listeners]) listener();

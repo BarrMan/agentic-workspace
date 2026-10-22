@@ -233,37 +233,6 @@ export async function waitUntil(
 }
 
 /**
- * Caps how many cases of one suite run at once. Bun executes every case of a
- * `describe.concurrent` block inside a single process, so a suite whose cases copy projects,
- * spawn processes or write Git state can oversubscribe a loaded machine and miss its own
- * real-time deadlines while other lanes are running.
- *
- * Each case keeps its own assertions and integration; only the overlap shrinks. Cases queue
- * first-in-first-out behind a private pool of `width` slots, so a case can wait for a slot and
- * the wait still counts against Bun's per-test timeout: pick a width whose queue drains well
- * inside that budget.
- */
-export function createConcurrencyLimiter(width: number): <T>(task: () => T | Promise<T>) => Promise<T> {
-	if (!Number.isInteger(width) || width < 1) {
-		throw new Error(`Concurrency width must be a positive integer, received ${width}`);
-	}
-	let availableSlots = width;
-	const waiters: Array<() => void> = [];
-	return async <T>(task: () => T | Promise<T>): Promise<T> => {
-		while (availableSlots === 0) {
-			await new Promise<void>((resolve) => waiters.push(resolve));
-		}
-		availableSlots -= 1;
-		try {
-			return await task();
-		} finally {
-			availableSlots += 1;
-			waiters.shift()?.();
-		}
-	};
-}
-
-/**
  * Shared test helper for project initialization.
  * Uses the same init path as CLI/web and optionally commits the fixture's initial state.
  */

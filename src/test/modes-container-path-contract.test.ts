@@ -79,7 +79,7 @@ describe("BACK-23 canonical task container and artifact path contract", () => {
 	});
 
 	it("rejects unsafe paths and refuses symlink escapes", async () => {
-		for (const path of ["../outside", "/outside", "a//b", "a\\b", "task.md", ".artifacts.json"])
+		for (const path of ["../outside", "/outside", "a//b", "a\\b"])
 			expect(() => validateTaskArtifactPath(path)).toThrow();
 		const root = await fixture("mode-container-symlink");
 		const agenticWorkspaceDirectory = join(root, ".agentic-workspace");

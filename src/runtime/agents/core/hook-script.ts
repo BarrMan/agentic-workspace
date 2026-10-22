@@ -13,7 +13,7 @@ function hookScript(directoryExpression: string, status: HookStatus): string {
 		"umask 077",
 		`D=${directoryExpression}`,
 		'[ -n "$D" ] && [ -d "$D" ] || exit 0',
-		`printf %s ${status} > "$D/status" 2>/dev/null`,
+		`if [ ${status} = idle ] && [ "$(cat "$D/status" 2>/dev/null)" = idle ]; then :; else printf %s ${status} > "$D/status" 2>/dev/null; fi`,
 		"exit 0",
 	].join("; ");
 }

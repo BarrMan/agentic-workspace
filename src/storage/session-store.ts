@@ -49,7 +49,7 @@ async function acquireStateLock(path: string): Promise<() => Promise<void>> {
 	};
 }
 
-export interface SessionState {
+export interface PersistedSessionState {
 	version: 2;
 	taskId: string;
 	modes: NonNullable<TaskSessions["modes"]>;
@@ -306,11 +306,11 @@ export class SessionStore {
 		return this.stateRootResolution;
 	}
 
-	async read(taskId: string): Promise<SessionState> {
+	async read(taskId: string): Promise<PersistedSessionState> {
 		return await this.readPersisted(taskId);
 	}
 
-	private async readPersisted(taskId: string): Promise<SessionState> {
+	private async readPersisted(taskId: string): Promise<PersistedSessionState> {
 		const { statePath } = await this.paths(taskId);
 		let raw: string;
 		try {
@@ -349,7 +349,7 @@ export class SessionStore {
 		}
 	}
 
-	async mutate<T>(taskId: string, fn: (state: SessionState) => Promise<T>): Promise<T> {
+	async mutate<T>(taskId: string, fn: (state: PersistedSessionState) => Promise<T>): Promise<T> {
 		// The single store-mutation chokepoint: lock, read, apply, validate, write, unlock.
 		// Session operations share this chokepoint, including batched cleanup.
 		count("store");
@@ -416,7 +416,6 @@ export class SessionStore {
 			this.validate(output, taskId);
 			await this.write(paths.statePath, `${JSON.stringify(output, null, "\t")}\n`);
 			writeCommitted = true;
-			return result;
 		} catch (error) {
 			operationError = error;
 		} finally {
@@ -471,7 +470,6 @@ export class SessionStore {
 			this.validate(output, taskId);
 			await this.write(paths.statePath, `${JSON.stringify(output, null, "\t")}\n`);
 			writeCommitted = true;
-			return result;
 		} catch (error) {
 			operationError = error;
 		} finally {
@@ -556,7 +554,7 @@ export class SessionStore {
 		return state.modes[modeId] ?? { sessions: [] };
 	}
 
-	async readAll(): Promise<SessionState[]> {
+	async readAll(): Promise<PersistedSessionState[]> {
 		const root = await this.projectStateRoot();
 		let entries: string[];
 		try {
@@ -567,7 +565,7 @@ export class SessionStore {
 			if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
 			throw error;
 		}
-		const states: SessionState[] = [];
+		const states: PersistedSessionState[] = [];
 		// Reads EVERY task's state file in the project. Cost scales with the number of tasks, not
 		// with the task being inspected.
 		if (isEnabled("store")) debug("store", "readAll.begin", { entries: entries.length });
@@ -616,11 +614,11 @@ export class SessionStore {
 		};
 	}
 
-	private empty(taskId: string): SessionState {
+	private empty(taskId: string): PersistedSessionState {
 		return { version: 2, taskId, modes: {} };
 	}
 
-	private validate(value: unknown, taskId: string): SessionState {
+	private validate(value: unknown, taskId: string): PersistedSessionState {
 		if (
 			!isRecord(value) ||
 			value.version !== 2 ||
@@ -635,7 +633,7 @@ export class SessionStore {
 		)
 			throw new Error("invalid state");
 		const stateTaskId: string = value.taskId;
-		const modes: SessionState["modes"] = {};
+		const modes: PersistedSessionState["modes"] = {};
 		const seen = new Set<string>();
 		for (const [modeId, history] of Object.entries(value.modes as Record<string, unknown>)) {
 			if (
@@ -666,7 +664,7 @@ export class SessionStore {
 		};
 	}
 
-	private toVersioned(state: SessionState): SessionState {
+	private toVersioned(state: PersistedSessionState): PersistedSessionState {
 		return {
 			version: 2,
 			taskId: state.taskId,

@@ -1,6 +1,7 @@
 import { realpathSync } from "node:fs";
-import { mkdir, readFile, rename, rm, stat, unlink, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rename, rm, stat } from "node:fs/promises";
 import { basename, dirname, isAbsolute, join, resolve } from "node:path";
+import { z } from "zod";
 import { resolveMainWorktreeRootSync } from "../filesystem/git/main-worktree.ts";
 import { type LockAttemptSettings, LockOwner } from "../filesystem/lock-owner.ts";
 import type { AgenticWorkspaceConfigSource } from "../filesystem/paths/agentic-workspace-directory.ts";
@@ -24,12 +25,11 @@ import {
 } from "../model/types.ts";
 import { writeAtomically } from "./atomic-write.ts";
 import { isConfigValueError, parseConfig, serializeConfig } from "./config-codec.ts";
-import { FrontmatterSchemaError, TaskDependenciesParseError } from "./errors/frontmatter.ts";
 import { parseMarkdown, parseTask } from "./markdown/parser.ts";
 import { serializeTask } from "./markdown/serializer.ts";
 import { MilestoneStore } from "./milestones.ts";
 import { TaskArtifactRepository } from "./task-artifact-repository.ts";
-import { TaskRepository } from "./task-repository.ts";
+import { TaskRepository, validateTaskRecordIdentity } from "./task-repository.ts";
 
 // Interface for task path resolution context
 interface CreateLockOptions {
@@ -50,6 +50,14 @@ const DEFAULT_CREATE_LOCK_TIMEOUT_MS = 30_000;
 const DEFAULT_CREATE_LOCK_RETRY_DELAY_MS = 100;
 const DEFAULT_CREATE_LOCK_STALE_MS = 10_000;
 const TASK_DIRECTORY = TASK_DIRECTORY_TYPES[0];
+const taskCounterSchema = z.record(
+	z.string().regex(/^[A-Z]+$/),
+	z.strictObject({ lastAllocated: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER) }),
+);
+const nextUnusedTaskCounterSchema = z.record(
+	z.string().regex(/^[A-Z]+$/),
+	z.strictObject({ next: z.number().int().min(1).max(Number.MAX_SAFE_INTEGER) }),
+);
 
 export type ContentMutation =
 	| { type: typeof TASK_DIRECTORY; root: string; taskId: string; filePath: string }
@@ -131,16 +139,20 @@ export class FileSystem {
 	constructor(projectRoot: string, selection?: FileSystemSelection) {
 		this.projectRoot = projectRoot;
 		this.agenticWorkspaceResolutionRoot = resolveMainWorktreeRootSync(projectRoot) ?? projectRoot;
-		const resolution = resolveAgenticWorkspaceDirectory(this.agenticWorkspaceResolutionRoot);
+		const resolution = selection
+			? resolveAgenticWorkspaceDirectoryFromRootConfig(
+					this.agenticWorkspaceResolutionRoot,
+					selection.agenticWorkspaceDirectory,
+				)
+			: resolveAgenticWorkspaceDirectory(this.agenticWorkspaceResolutionRoot);
 		const agenticWorkspaceDirectory =
 			selection?.agenticWorkspaceDirectory ?? resolution.agenticWorkspaceDir ?? DEFAULT_DIRECTORIES.AGENTIC_WORKSPACE;
 		const normalizedSelection = normalizeProjectAgenticWorkspaceDirectory(agenticWorkspaceDirectory);
-		if (!normalizedSelection) throw new Error("AgenticWorkspace directory must be a project-relative path.");
+		if (!normalizedSelection) throw new Error("Invalid AgenticWorkspace directory.");
 		this.resolvedAgenticWorkspaceDirName = normalizedSelection;
-		this.resolvedAgenticWorkspaceDir = selection
-			? join(this.agenticWorkspaceResolutionRoot, normalizedSelection)
-			: (resolution.agenticWorkspacePath ??
-				join(this.agenticWorkspaceResolutionRoot, DEFAULT_DIRECTORIES.AGENTIC_WORKSPACE));
+		this.resolvedAgenticWorkspaceDir =
+			resolution.agenticWorkspacePath ??
+			resolve(this.agenticWorkspaceResolutionRoot, DEFAULT_DIRECTORIES.AGENTIC_WORKSPACE);
 		this.configSource = selection?.configLocation ?? resolution.configSource ?? "folder";
 		this.resolvedConfigPath =
 			this.configSource === "root"
@@ -432,27 +444,68 @@ export class FileSystem {
 		return await this.withEntityFileLock(TASK_DIRECTORY, task.id, filePath, fn);
 	}
 
-	/** Counter shape: { "PREFIX": { "next": integer } }; callers hold the create lock. */
+	private async taskCounterPath(): Promise<string> {
+		const lockTarget = await this.getCreateLockTarget(await this.getAgenticWorkspaceDir());
+		return join(dirname(lockTarget.locksDir), "task-counter.json");
+	}
+
+	/** Explicit maintenance only; ordinary allocation never converts existing counters. */
+	async convertTaskCounterToLastAllocated(): Promise<{ path: string; converted: boolean }> {
+		return await this.withCreateLock(async () => {
+			const path = await this.taskCounterPath();
+			let raw: string;
+			try {
+				raw = await readFile(path, "utf8");
+			} catch (error) {
+				if ((error as NodeJS.ErrnoException).code === "ENOENT") return { path, converted: false };
+				throw error;
+			}
+			try {
+				const data: unknown = JSON.parse(raw);
+				if (taskCounterSchema.safeParse(data).success) return { path, converted: false };
+				const old = nextUnusedTaskCounterSchema.parse(data);
+				const counters = Object.fromEntries(
+					Object.entries(old).map(([prefix, { next }]) => [prefix, { lastAllocated: next - 1 }]),
+				);
+				await writeAtomically(
+					path,
+					JSON.stringify(counters, null, 2),
+					"Task counter conversion",
+					(await stat(path)).mode & 0o777,
+				);
+				return { path, converted: true };
+			} catch (error) {
+				throw new Error(
+					`Cannot convert task counter at ${path}. Only a complete valid next-unused record can be converted.`,
+					{ cause: error },
+				);
+			}
+		});
+	}
+
+	/** Counter shape: { "PREFIX": { "lastAllocated": integer } }; callers hold the create lock. */
 	async allocateTaskId(
 		prefix: string,
 		zeroPadding: number | undefined,
 		existingIds: () => Promise<string[]>,
 	): Promise<string> {
-		const agenticWorkspaceDir = await this.getAgenticWorkspaceDir();
-		const lockTarget = await this.getCreateLockTarget(agenticWorkspaceDir);
-		const counterPath = join(dirname(lockTarget.locksDir), "task-counter.json");
+		const counterPath = await this.taskCounterPath();
 		await mkdir(dirname(counterPath), { recursive: true });
-		let counters: Record<string, { next: number }>;
+		let counters: Record<string, { lastAllocated: number }>;
 		try {
-			counters = JSON.parse(await readFile(counterPath, "utf8"));
+			counters = taskCounterSchema.parse(JSON.parse(await readFile(counterPath, "utf8")));
 		} catch (error) {
-			if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+			if ((error as NodeJS.ErrnoException).code !== "ENOENT")
+				throw new Error(
+					`Invalid task counter at ${counterPath}; expected lastAllocated records. Existing next-unused counters require explicit conversion: bun scripts/migrate-task-counter.ts ${JSON.stringify(this.projectRoot)}. Existing bytes were preserved.`,
+					{ cause: error },
+				);
 			counters = {};
 		}
 
 		const canonicalPrefix = prefix.toUpperCase();
-		let next = counters[canonicalPrefix]?.next;
-		if (next === undefined || !Number.isSafeInteger(next) || next < 1) {
+		let lastAllocated = Object.hasOwn(counters, canonicalPrefix) ? counters[canonicalPrefix]?.lastAllocated : undefined;
+		if (lastAllocated === undefined) {
 			let max = 0;
 			for (const id of await existingIds()) {
 				const canonicalId = taskIdKey(id);
@@ -460,24 +513,15 @@ export class FileSystem {
 				const suffix = canonicalId.startsWith(prefix) ? canonicalId.slice(prefix.length) : "";
 				if (/^\d+$/.test(suffix)) max = Math.max(max, Number(suffix));
 			}
-			next = max + 1;
+			lastAllocated = max;
 		}
 
 		for (let attempt = 0; attempt < 10; attempt += 1) {
-			const allocated = next++;
-			if (!Number.isSafeInteger(next))
+			const allocated = ++lastAllocated;
+			if (!Number.isSafeInteger(allocated))
 				throw new Error(`Task ID counter for ${canonicalPrefix} exceeded the safe integer range.`);
-			counters[canonicalPrefix] = { next };
-			const temporaryPath = `${counterPath}.${process.pid}.${Date.now()}.tmp`;
-			try {
-				await writeFile(temporaryPath, JSON.stringify(counters, null, 2), { flag: "wx" });
-				await rename(temporaryPath, counterPath);
-			} catch (error) {
-				await unlink(temporaryPath).catch((cleanupError) => {
-					if ((cleanupError as NodeJS.ErrnoException).code !== "ENOENT") throw cleanupError;
-				});
-				throw error;
-			}
+			counters[canonicalPrefix] = { lastAllocated: allocated };
+			await writeAtomically(counterPath, JSON.stringify(counters, null, 2), "Task counter");
 			const number = String(allocated).padStart(zeroPadding && zeroPadding > 0 ? zeroPadding : 0, "0");
 			const id = `${canonicalPrefix}-${number}`;
 			const occupied = await Promise.all(
@@ -557,10 +601,12 @@ export class FileSystem {
 
 	private async existingTaskAtWritePath(filepath: string): Promise<Task | null> {
 		try {
-			return parseTask(await Bun.file(filepath).text());
+			const task = parseTask(await Bun.file(filepath).text());
+			validateTaskRecordIdentity(task, filepath);
+			return task;
 		} catch (error) {
-			if (error instanceof TaskDependenciesParseError || error instanceof FrontmatterSchemaError) throw error;
-			return null;
+			if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
+			throw error;
 		}
 	}
 
@@ -685,11 +731,11 @@ export class FileSystem {
 		]);
 		const matches: Task[] = [];
 		for (const directory of directories) {
-			await this.taskRepository.listFiles(directory);
 			const filepath = join(directory, idDirectory, "task.md");
 			try {
 				const parsed = parseTask(await Bun.file(filepath).text());
-				if (taskIdsEqual(parsed.id, canonicalId)) matches.push({ ...parsed, filePath: filepath });
+				validateTaskRecordIdentity(parsed, filepath);
+				matches.push({ ...parsed, filePath: filepath });
 			} catch (error) {
 				if ((error as NodeJS.ErrnoException).code === "ENOENT") continue;
 				throw error;

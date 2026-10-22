@@ -8,7 +8,7 @@ Part of [BLUEPRINT](../BLUEPRINT.md). Controller is the sole operation boundary.
 Controller {
   tasks: Map<TaskId, Task>
   modes: Map<ModeId, Mode>
-  sessions: Session[]          // live sessions created or resumed in this run
+  sessions: Session[]          // owned live sessions, including rediscovered surviving executions
   maxSessions: number          // project-wide soft limit; supplied at startup
   selectedTask: Task
   selectedMode: Mode
@@ -41,18 +41,20 @@ Controller.load(project) {
 }
 ```
 
-Loading only transfers persisted data into Controller state. It starts nothing and publishes nothing. Renderer initializes after Controller. Loading creates no live sessions; `selectedSession` may reference the selected task's retained stopped Session.
+Loading only transfers persisted data into Controller state. It starts nothing and publishes nothing. Renderer initializes after Controller. Loading does not establish liveness; current observation discovers surviving executions and registers their Session models before attachment or lifecycle operations, without triggering soft-limit eviction. `selectedSession` may reference a retained Session whose liveness is not yet established.
 
 ## Live Sessions
 
 ```ts
-Controller.addSession(session) {
+Controller.addSession(session, enforceLimit = true) {
   if (this.sessions.includes(session)) return
 
   this.sessions.push(session)
 
-  while (this.sessions.length > this.maxSessions) {
-    if (!this.removeLongestIdleSession()) break
+  if (enforceLimit) {
+    while (this.sessions.length > this.maxSessions) {
+      if (!this.removeLongestIdleSession()) break
+    }
   }
 }
 
@@ -81,7 +83,7 @@ Controller.removeLongestIdleSession() {
 }
 ```
 
-`addSession` enforces the soft limit. A start is never blocked. Only positively idle sessions are stopped, longest continuously idle first; running, permission, and unknown sessions are protected. A failed eviction stop is reported and the limit may remain exceeded.
+`addSession` enforces the soft limit for start/resume; rediscovery calls it with `enforceLimit = false` to restore ownership without effects. A start is never blocked. Only positively idle sessions are stopped, longest continuously idle first; running, permission, and unknown sessions are protected. A failed eviction stop is reported and the limit may remain exceeded.
 
 ## Create a Session
 
@@ -257,21 +259,24 @@ Observation updates state and activity only. Session tracks continuous idle dura
 ## Shutdown
 
 ```ts
-Renderer.onKey("app.close", () => {
-  controller.shutdown()
-})
-
-Controller.shutdown() {
+async Controller.shutdown() {
+  failures = []
   for (session of [...this.sessions]) {
-    session.stop()
-    this.removeSession(session)
+    try {
+      await session.stop()
+      this.removeSession(session)
+    } catch (error) {
+      failures.push({ sessionId: session.id, error })
+    }
   }
 
-  this.signals.publish("Closed")
+  if (failures.length) throw aggregateFailure(failures)
 }
 ```
 
-Shutdown stops every live session. A failed stop propagates; it is not retried or silently treated as stopped.
+Renderer presents the close choice required by [SESSION-018](../specs/sessions.md#session-018-close-the-app-with-or-without-stopping-sessions). Ordinary close releases presentation without stopping execution. Force close awaits Controller-owned shutdown before reporting completion. Settle pending launches before taking the shutdown snapshot; input settlement follows [SESSION-019](../specs/sessions.md#session-019-settle-terminal-input-on-close-or-deletion). These are sequencing requirements, not a requirement for an additional close API.
+
+Shutdown attempts every owned execution exactly once, even after a stop failure. Only successful stops leave the live list; failed or uncertain cleanup retains ownership and durable tracking. Propagate aggregate failures with session identities and completed effects after all attempts. Do not publish successful `Closed` on failed shutdown.
 
 ## Invariants
 
@@ -279,7 +284,7 @@ Shutdown stops every live session. A failed stop propagates; it is not retried o
 - Controller holds a Storage, never a workspace filesystem, workspace path, or workspace record format. Every workspace read and write, including milestone and task corpus reads, goes through Storage. Controller does not expose Storage to Renderer or CLI.
 - Controller knows Task and Session; it does not know SessionRuntime.
 - Loading transfers persisted data into state. Renderer initializes after `controller.load`.
-- `sessions` holds only live sessions created or resumed in this run.
+- `sessions` includes owned live executions rediscovered after ordinary close; attachment never starts or resumes them.
 - `addSession` and `removeSession` are the only live-list mutations.
 - A start is never blocked. The soft limit stops only positively idle sessions, longest continuously idle first; running, permission, and unknown sessions are protected.
 - Activity is observed separately from lifecycle state.

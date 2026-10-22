@@ -2,10 +2,10 @@ import type { GitOperations } from "../filesystem/git/operations.ts";
 import { TaskCollectionParentNotFoundError } from "../model/errors/task-collection.ts";
 import { AmbiguousTaskIdError } from "../model/errors/task-id.ts";
 import { TaskIdentityIndex } from "../model/task/task-identity-index.ts";
+import type { TaskCorpusSnapshot } from "../model/task/task-projection.ts";
 import { TaskSearchIndex } from "../model/task/task-search.ts";
 import { TASK_SOURCE, type Task } from "../model/types.ts";
 import type { Storage } from "../storage/storage.ts";
-import type { TaskCorpusSnapshot } from "./task-loader.ts";
 import { filterTaskQueryResults, type TaskQueryOptions } from "./task-query-workflow.ts";
 
 /** A single persistent read. No subscriptions, session generations, retained indexes, or retries. */
@@ -48,6 +48,12 @@ export class PersistentTaskRead {
 		if (result.status === "found") return result.task;
 		if (options.forMutation) return null;
 		return await this.storage.loadTask(taskId, { includeArchived: options.includeArchived });
+	}
+
+	async searchTasks(includeArchived = false): Promise<Task[]> {
+		const corpus = await this.load();
+		const tasks = corpus.identityIndex.getTasks(true);
+		return includeArchived ? [...tasks, ...(await this.storage.loadArchivedTasks())] : tasks;
 	}
 
 	async query(

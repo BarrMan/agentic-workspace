@@ -1,7 +1,8 @@
-import { afterEach, describe, expect, it } from "bun:test";
+import { afterEach, describe, expect, it, mock, spyOn } from "bun:test";
 import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import * as sysprims from "@3leaps/sysprims";
 import { TmuxCommandError } from "libtmux";
 import type { AgentSession } from "../../model/session/types.ts";
 import { preparedLaunchResources } from "../../runtime/completion-supervisor-resources.ts";
@@ -24,11 +25,14 @@ async function rejection(promise: Promise<unknown>): Promise<unknown> {
 describe("persisted prepared launch resources", () => {
 	const roots: string[] = [];
 	afterEach(async () => {
+		mock.restore();
 		await Promise.all(roots.splice(0).map((path) => rm(path, { recursive: true, force: true })));
 		resourceMarker = "";
 	});
 
 	async function fixture() {
+		const table = sysprims.processList();
+		spyOn(sysprims, "processList").mockReturnValue({ ...table, processes: [] });
 		const createdRoot = await mkdtemp(join(tmpdir(), "agentic-workspace-resource-root-"));
 		roots.push(createdRoot);
 		const root = await realpath(createdRoot);

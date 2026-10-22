@@ -1,10 +1,10 @@
 import { isAbsolute, relative } from "node:path";
 import { DateTime } from "luxon";
 import type { ListPage } from "../../cli/list-window.ts";
-import type { TaskDetail, TaskListItem } from "../../controller/task-detail.ts";
 import type { DependencyGraph } from "../../model/task/dependency-graph.ts";
 import type { TaskReadiness } from "../../model/task/readiness.ts";
 import { TaskOrdering } from "../../model/task/task-ordering.ts";
+import type { TaskDetail, TaskListItem } from "../../model/task/task-projection.ts";
 import type { TaskSearchResult } from "../../model/types.ts";
 
 type TaskSummaryJson = {

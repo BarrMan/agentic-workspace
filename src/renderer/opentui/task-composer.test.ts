@@ -212,6 +212,30 @@ describe("openTUI task composer", () => {
 			mount.dispose();
 		}
 	});
+
+	it("creates an untitled task without a separate project field", async () => {
+		const setup = await createTestRenderer({ width: 80, height: 24, kittyKeyboard: true });
+		renderers.push(setup);
+		const inputs: TaskCreateInput[] = [];
+		const mount = mountOpenTuiTaskComposer(setup.renderer, parent(setup), {
+			statuses: ["To Do"],
+			persist: async (input) => {
+				inputs.push(input);
+				return fakeTask(input);
+			},
+		});
+		try {
+			await setup.flush();
+			expect(setup.captureCharFrame()).not.toContain("Project:");
+			setup.mockInput.pressKey("s", { ctrl: true });
+			await setup.flush();
+			expect(inputs).toHaveLength(1);
+			expect(inputs[0]?.title).toBe("");
+			expect(inputs[0]).not.toHaveProperty("project");
+		} finally {
+			mount.dispose();
+		}
+	});
 });
 
 type PersistCall = { input: TaskCreateInput; groupId: string | null };

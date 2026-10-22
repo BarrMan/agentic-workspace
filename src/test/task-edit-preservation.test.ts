@@ -3,7 +3,7 @@ import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { Core } from "../index.ts";
 import { runInProcessCli } from "./in-process-cli.ts";
-import { createUniqueTestDir, initializeFilesystemTestProject, safeCleanup } from "./test-utils.ts";
+import { coreFileSystem, createUniqueTestDir, initializeFilesystemTestProject, safeCleanup } from "./test-utils.ts";
 
 /** Every case owns its project directory. */
 async function setupPreservation(): Promise<{ dir: string; core: Core }> {
@@ -31,7 +31,7 @@ describe("Task edit section preservation", () => {
 				description: "Original description",
 			});
 
-			const artifactPath = join(dir, "agentic-workspace", "tasks", "task-1", "working-state.md");
+			const artifactPath = join(coreFileSystem(core).tasksDir, "task-1", "working-state.md");
 			await Bun.write(artifactPath, "Opaque working state.\n");
 
 			// Update just the description
@@ -46,7 +46,7 @@ describe("Task edit section preservation", () => {
 
 			expect(result).toContain("UPDATED description");
 			expect(await Bun.file(artifactPath).text()).toBe("Opaque working state.\n");
-			expect(await Bun.file(join(dir, "agentic-workspace", "tasks", "task-1", "task.md")).text()).not.toContain(
+			expect(await Bun.file(join(coreFileSystem(core).tasksDir, "task-1", "task.md")).text()).not.toContain(
 				"agent_summary",
 			);
 		} finally {
@@ -68,7 +68,7 @@ describe("Task edit section preservation", () => {
 				description: "Test description",
 			});
 
-			const artifactPath = join(dir, "agentic-workspace", "tasks", "task-2", "working-state.md");
+			const artifactPath = join(coreFileSystem(core).tasksDir, "task-2", "working-state.md");
 			await Bun.write(artifactPath, "Working notes remain opaque.\n");
 			expect(
 				(await runInProcessCli(["task", "edit", "TASK-2", "--description", "Updated description"], { cwd: dir }))
@@ -109,7 +109,7 @@ describe("Task edit section preservation", () => {
 			const viewed = await runInProcessCli(["task", "view", "TASK-3", "--plain"], { cwd: dir });
 			expect(viewed.exitCode).toBe(0);
 			const result = viewed.stdout;
-			const taskContent = await Bun.file(join(dir, "agentic-workspace", "tasks", "task-3", "task.md")).text();
+			const taskContent = await Bun.file(join(coreFileSystem(core).tasksDir, "task-3", "task.md")).text();
 
 			expect(result).toContain("Updated description");
 			expect(taskContent).not.toContain("agent_summary");
@@ -132,7 +132,7 @@ describe("Task edit section preservation", () => {
 				description: "Test description",
 			});
 
-			const artifactPath = join(dir, "agentic-workspace", "tasks", "task-4", "working-state.md");
+			const artifactPath = join(coreFileSystem(core).tasksDir, "task-4", "working-state.md");
 			await Bun.write(artifactPath, "Pending work.\n");
 			expect(
 				(await runInProcessCli(["task", "edit", "TASK-4", "--description", "Updated description"], { cwd: dir }))
@@ -176,7 +176,7 @@ describe("Task edit section preservation", () => {
 			const viewed = await runInProcessCli(["task", "view", "TASK-5", "--plain"], { cwd: dir });
 			expect(viewed.exitCode).toBe(0);
 			const result = viewed.stdout;
-			const taskContent = await Bun.file(join(dir, "agentic-workspace", "tasks", "task-5", "task.md")).text();
+			const taskContent = await Bun.file(join(coreFileSystem(core).tasksDir, "task-5", "task.md")).text();
 
 			expect(result).toContain("Updated minimal description");
 			expect(result).toContain("Artifacts: None");

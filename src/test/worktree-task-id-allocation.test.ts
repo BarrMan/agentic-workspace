@@ -144,7 +144,7 @@ describe("task ID allocation across git worktrees", () => {
 			),
 		).resolves.toBe("OPS-9");
 		const persisted = JSON.parse(await readFile(counterPath, "utf8"));
-		expect(persisted).toEqual({ OPS: { next: 10 } });
+		expect(persisted).toEqual({ OPS: { lastAllocated: 9 } });
 
 		const occupiedContainer = await coreFileSystem(core).taskArtifacts.containerPath("ops-10", "tasks");
 		await mkdir(occupiedContainer, { recursive: true });
@@ -165,13 +165,13 @@ describe("task ID allocation across git worktrees", () => {
 		const core = new Core(mainRepo);
 		const counterPath = join(mainRepo, ".git", "agentic-workspace", "task-counter.json");
 		await mkdir(join(mainRepo, ".git", "agentic-workspace"), { recursive: true });
-		await writeFile(counterPath, JSON.stringify({ OPS: { next: 1 } }));
+		await writeFile(counterPath, JSON.stringify({ OPS: { lastAllocated: 0 } }));
 		await mkdir(await coreFileSystem(core).taskArtifacts.containerPath("ops-1", "completed"), { recursive: true });
 
 		await expect(
 			core.withCreateLock(() => coreFileSystem(core).allocateTaskId("OPS", undefined, async () => [])),
 		).resolves.toBe("OPS-2");
-		expect(JSON.parse(await readFile(counterPath, "utf8"))).toEqual({ OPS: { next: 3 } });
+		expect(JSON.parse(await readFile(counterPath, "utf8"))).toEqual({ OPS: { lastAllocated: 2 } });
 	});
 
 	it("skips IDs in archived task storage", async () => {
@@ -180,7 +180,7 @@ describe("task ID allocation across git worktrees", () => {
 		const core = new Core(mainRepo);
 		const counterPath = join(mainRepo, ".git", "agentic-workspace", "task-counter.json");
 		await mkdir(join(mainRepo, ".git", "agentic-workspace"), { recursive: true });
-		await writeFile(counterPath, JSON.stringify({ OPS: { next: 1 } }));
+		await writeFile(counterPath, JSON.stringify({ OPS: { lastAllocated: 0 } }));
 		await mkdir(await coreFileSystem(core).taskArtifacts.containerPath("ops-1", "archive/tasks"), { recursive: true });
 
 		await expect(

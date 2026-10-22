@@ -2,10 +2,10 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { initializeAgentConfiguration } from "../controller/agent-configuration.ts";
 import { Core } from "../controller/agentic-workspace.ts";
 import type { Session } from "../model/session/session.ts";
 import type { AgentSession, SessionFactory, SessionLaunchContext, SessionSnapshot } from "../model/session/types.ts";
-import { initializeAgentConfiguration } from "../storage/config.ts";
 import { initializeTestProject } from "./test-utils.ts";
 
 const roots: string[] = [];
@@ -17,6 +17,7 @@ function factory(beforeStart: (context: SessionLaunchContext) => Promise<void> =
 		return {
 			id: record.id,
 			record,
+			moveToMode() {},
 			get view() {
 				return snapshot;
 			},

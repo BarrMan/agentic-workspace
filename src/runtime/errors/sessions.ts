@@ -1,17 +1,3 @@
-export class ResumeFailedError extends Error {
-	constructor(
-		readonly nativeProvider: string,
-		readonly nativeSessionId: string,
-		cause: unknown,
-	) {
-		super(
-			`ResumeFailed: ${nativeProvider} ${nativeSessionId}. Conversation preserved; starting fresh requires an explicit decision.`,
-			{ cause },
-		);
-		this.name = "ResumeFailedError";
-	}
-}
-
 export class ExactResumeUnavailableError extends Error {
 	constructor(
 		readonly reason: "auto-resume-disabled" | "previous-resume-failed",

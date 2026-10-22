@@ -18,7 +18,7 @@ describe("input worker send-keys coalescing", () => {
 				return result();
 			},
 		};
-		const worker = createInputWorker(exec, { sessionName: "t" });
+		const worker = createInputWorker(exec, { target: "t:^.0" });
 		// 1024 bytes -> two 512-byte chunks, and no VT input channel.
 		worker.send(new Uint8Array(1024).fill(0x61));
 		await worker.flush();
@@ -42,7 +42,7 @@ describe("input worker send-keys coalescing", () => {
 				return result();
 			},
 		};
-		const worker = createInputWorker(exec, { sessionName: "t" });
+		const worker = createInputWorker(exec, { target: "t:^.0" });
 		worker.onDispatch((_report, error) => {
 			if (error) errors.push(error);
 		});
@@ -69,7 +69,7 @@ describe("input worker send-keys coalescing", () => {
 				return result();
 			},
 		};
-		const worker = createInputWorker(exec, { sessionName: "t" });
+		const worker = createInputWorker(exec, { target: "t:^.0" });
 		worker.onDispatch((_report, error) => {
 			if (error) errors.push(error);
 		});
@@ -92,7 +92,7 @@ describe("input worker send-keys coalescing", () => {
 		const worker = createInputWorker(
 			{ run: async (argv) => (calls.push([...argv]), result()) },
 			{
-				sessionName: "t",
+				target: "t:^.0",
 				vt: {
 					inputMode: () => true,
 					trySendInput: () => {

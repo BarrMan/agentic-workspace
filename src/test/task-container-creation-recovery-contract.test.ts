@@ -23,7 +23,7 @@ describe("task container creation recovery contract", () => {
 			await expect(core.createTaskFromInput({ title: "Recover task", status: "To Do" })).rejects.toThrow(
 				"injected finalize failure",
 			);
-			const tasksDir = join(dir, "agentic-workspace", "tasks");
+			const tasksDir = coreFileSystem(core).tasksDir;
 			const taskContainer = join(tasksDir, "task-1");
 			expect(await Bun.file(join(taskContainer, "task.md")).exists()).toBe(false);
 			expect((await readdir(tasksDir)).filter((entry) => entry === "task-1")).toEqual([]);
@@ -47,7 +47,7 @@ describe("task container creation recovery contract", () => {
 			await expect(core.createTaskFromInput({ title: "Retained task", status: "To Do" })).rejects.toThrow(
 				"was created",
 			);
-			expect(await Bun.file(join(dir, "agentic-workspace", "tasks", "task-1", "task.md")).exists()).toBe(true);
+			expect(await Bun.file(join(coreFileSystem(core).tasksDir, "task-1", "task.md")).exists()).toBe(true);
 		} finally {
 			await safeCleanup(dir);
 		}
@@ -56,14 +56,14 @@ describe("task container creation recovery contract", () => {
 	it("skips an occupied task identity without merging its artifacts", async () => {
 		const { dir, core } = await setup();
 		try {
-			const occupied = join(dir, "agentic-workspace", "tasks", "task-1");
+			const occupied = join(coreFileSystem(core).tasksDir, "task-1");
 			await mkdir(occupied, { recursive: true });
 			await writeFile(join(occupied, "notes.txt"), "keep me");
 			const { task } = await core.createTaskFromInput({ title: "Occupied", status: "To Do" });
 			expect(task.id).toBe("TASK-2");
 			expect(await readFile(join(occupied, "notes.txt"), "utf8")).toBe("keep me");
 			expect(await Bun.file(join(occupied, "task.md")).exists()).toBe(false);
-			expect(await Bun.file(join(dir, "agentic-workspace", "tasks", "task-2", "task.md")).exists()).toBe(true);
+			expect(await Bun.file(join(coreFileSystem(core).tasksDir, "task-2", "task.md")).exists()).toBe(true);
 		} finally {
 			await safeCleanup(dir);
 		}

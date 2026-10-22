@@ -1,42 +1,6 @@
 import { slug } from "../../lib/slug.ts";
-import type { AgentSession, ModeId, ModeSessionHistory, TaskSessions } from "./types.ts";
 
 export { slug } from "../../lib/slug.ts";
-
-export function findSessionById(sessions: AgentSession[], sessionId: string | undefined): AgentSession | undefined {
-	if (sessionId === undefined) return undefined;
-	return sessions.find((session) => session.id === sessionId);
-}
-
-export function findActiveSession(state: Pick<TaskSessions, "sessions" | "activeSessionId">): AgentSession | undefined {
-	return findSessionById(state.sessions, state.activeSessionId);
-}
-
-/** Resolve a session's fixed mode from nested ownership. */
-export function findSessionMode(modes?: Record<ModeId, ModeSessionHistory>, sessionId = ""): ModeId | undefined {
-	if (!modes) return undefined;
-	for (const [modeId, history] of Object.entries(modes)) {
-		if (history.sessions.some((session) => session.id === sessionId)) return modeId;
-	}
-	return undefined;
-}
-
-/** Return each session across mode histories. */
-export function allModeSessions(state?: { modes?: Record<ModeId, ModeSessionHistory> }): AgentSession[] {
-	const modes = state?.modes;
-	if (!modes || Object.keys(modes).length === 0) return [];
-
-	const sessions: AgentSession[] = [];
-	const seen = new Set<string>();
-	for (const [, history] of Object.entries(modes)) {
-		for (const session of history.sessions) {
-			if (seen.has(session.id)) continue;
-			seen.add(session.id);
-			sessions.push(session);
-		}
-	}
-	return sessions;
-}
 
 export interface SessionCommandResult {
 	exitCode: number;

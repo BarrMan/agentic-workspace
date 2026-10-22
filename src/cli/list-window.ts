@@ -6,8 +6,8 @@ import type { Command } from "commander";
  * consecutive windows of an unchanged backlog neither overlap nor leave items out.
  */
 export type ListWindowOptions = {
-	maxCount?: number;
-	skip?: number;
+	maxCount?: unknown;
+	skip?: unknown;
 	count?: boolean;
 	json?: boolean;
 };
@@ -45,12 +45,8 @@ export const LIST_WINDOW_OUTPUT_HELP =
 
 export function addListWindowOptions(command: Command): Command {
 	return command
-		.option("--max-count <n>", "print at most n items after filtering and sorting", (value) =>
-			Number.parseInt(value, 10),
-		)
-		.option("--skip <n>", "leave out the first n items after filtering and sorting", (value) =>
-			Number.parseInt(value, 10),
-		)
+		.option("--max-count <n>", "print at most n items after filtering and sorting")
+		.option("--skip <n>", "leave out the first n items after filtering and sorting")
 		.option("--count", "print only the number of items");
 }
 
@@ -89,8 +85,14 @@ export function parseListWindow(
 	if (options.count && options.json) {
 		return reportInvalidOption("--count cannot be combined with --json.", helpCommand);
 	}
-	const maxCount = options.maxCount === undefined ? undefined : Math.max(0, options.maxCount);
-	const skip = options.skip === undefined ? undefined : Math.max(0, options.skip);
+	const maxCountValue =
+		options.maxCount === undefined ? undefined : parseListWindowInteger(options.maxCount, "--max-count", helpCommand);
+	if (maxCountValue === null) return null;
+	const skipValue =
+		options.skip === undefined ? undefined : parseListWindowInteger(options.skip, "--skip", helpCommand);
+	if (skipValue === null) return null;
+	const maxCount = maxCountValue === undefined ? undefined : Math.max(0, maxCountValue);
+	const skip = skipValue === undefined ? undefined : Math.max(0, skipValue);
 	return {
 		skip: skip ?? 0,
 		maxCount,
@@ -103,6 +105,18 @@ export function parseListWindow(
 				.flatMap((option) => [option.long, option.short].filter((flag): flag is string => flag !== undefined)),
 		),
 	};
+}
+
+function parseListWindowInteger(value: unknown, optionName: string, helpCommand: string): number | null {
+	const rawValue = String(value);
+	if (!/^[+-]?\d+$/.test(rawValue)) {
+		return reportInvalidOption(`${optionName} must be a signed safe integer.`, helpCommand);
+	}
+	const parsed = Number(rawValue);
+	if (!Number.isSafeInteger(parsed)) {
+		return reportInvalidOption(`${optionName} must be a signed safe integer.`, helpCommand);
+	}
+	return parsed;
 }
 
 export function selectListWindow<T>(items: readonly T[], window: ListWindow): ListPage<T> {

@@ -435,11 +435,9 @@ describe("Self-referential and cyclic dependencies", () => {
 		const completed = (await coreFileSystem(core).listCompletedTasks()).find((task) => taskIdsEqual(task.id, "task-3"));
 		expect(completed?.filePath).toBeDefined();
 		if (!completed?.filePath) return;
-		await mkdir(join(tempDir, "agentic-workspace", "tasks", "task-3"), { recursive: true });
-		await Bun.write(
-			join(tempDir, "agentic-workspace", "tasks", "task-3", "task.md"),
-			await Bun.file(completed.filePath).text(),
-		);
+		const duplicateDirectory = join(coreFileSystem(core).tasksDir, "task-3");
+		await mkdir(duplicateDirectory, { recursive: true });
+		await Bun.write(join(duplicateDirectory, "task.md"), await Bun.file(completed.filePath).text());
 
 		await expect(core.updateTaskFromInput("task-1", { dependencies: ["task-2"] })).rejects.toThrow(
 			"more than one record claims",

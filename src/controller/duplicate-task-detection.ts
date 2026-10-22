@@ -1,9 +1,9 @@
 import { basename, dirname } from "node:path";
 import { type DuplicateGroup, detectDuplicateTaskIds } from "../model/task/duplicate-detection.ts";
 import { taskIdsEqual } from "../model/task/task-id.ts";
+import type { TaskCorpusSnapshot } from "../model/task/task-projection.ts";
 import type { Task } from "../model/types.ts";
 import type { Core } from "./agentic-workspace.ts";
-import type { TaskCorpusSnapshot } from "./task-loader.ts";
 
 function withLocation(task: Task, location: "active" | "completed", relativePath: (path: string) => string): Task {
 	return {

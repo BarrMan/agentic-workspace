@@ -219,6 +219,7 @@ export function mountOpenTuiBoard(
 					`${formatShortcut(shortcutsConfig.board.quit)} Exit`,
 					`${formatShortcut(shortcutsConfig.board.previousColumn)}/${formatShortcut(shortcutsConfig.board.nextColumn)} Status`,
 					`${formatShortcut(shortcutsConfig.board.previousTask)}/${formatShortcut(shortcutsConfig.board.nextTask)} Position`,
+					`${formatShortcut(shortcutsConfig.board.recruit)} Recruit`,
 					`${formatShortcut(shortcutsConfig.board.confirm)} Confirm`,
 					`${formatShortcut(shortcutsConfig.board.cancelMove)} Cancel`,
 				]
@@ -226,9 +227,22 @@ export function mountOpenTuiBoard(
 					`${formatShortcut(shortcutsConfig.board.quit)} Exit`,
 					`${formatShortcut(shortcutsConfig.board.createTask)} Create`,
 					...(selectedTask ? [`${formatShortcut(shortcutsConfig.board.editTask)} Edit`] : []),
+					...(selectedTask && props.onTaskAction
+						? [`${formatShortcut(shortcutsConfig.board.taskActions)} Actions`]
+						: []),
+					...(selectedTask && props.onTaskAction ? [`${formatShortcut(shortcutsConfig.board.copyTask)} Copy`] : []),
+					...(selectedTask && props.onTaskAction
+						? [`${formatShortcut(shortcutsConfig.board.completeTask)} Complete`]
+						: []),
+					...(selectedTask && props.onTaskAction
+						? [`${formatShortcut(shortcutsConfig.board.archiveTask)} Archive`]
+						: []),
 					`${formatShortcut(shortcutsConfig.board.filter)} Filter`,
 					`${formatShortcut(shortcutsConfig.board.previousColumn)}/${formatShortcut(shortcutsConfig.board.nextColumn)} Status`,
 					`${formatShortcut(shortcutsConfig.board.previousTask)}/${formatShortcut(shortcutsConfig.board.nextTask)} Tasks`,
+					...(selectedTask ? [`${formatShortcut(shortcutsConfig.board.move)} Move`] : []),
+					`${formatShortcut(shortcutsConfig.board.toggleHideEmpty)} Hide empty`,
+					`${formatShortcut(shortcutsConfig.board.settings)} Settings`,
 					`${formatShortcut(shortcutsConfig.board.switchView)} Workspace`,
 					`${formatShortcut(shortcutsConfig.board.help)} Help`,
 				];

@@ -77,6 +77,7 @@ export type TaskFormValues<Fields extends readonly TaskFormField[]> = {
 
 export type TaskFormOptions<Fields extends readonly TaskFormField[]> = {
 	readonly title: string;
+	readonly zIndex?: number;
 	readonly fields: Fields;
 	readonly submitLabel?: string;
 	readonly cancelLabel?: string;
@@ -222,7 +223,7 @@ type ModalSurface = {
 	readonly surface: BoxRenderable;
 };
 
-function addModalSurface(renderer: CliRenderer, parent: BoxRenderable, title: string): ModalSurface {
+function addModalSurface(renderer: CliRenderer, parent: BoxRenderable, title: string, zIndex = 10): ModalSurface {
 	const backdrop = new BoxRenderable(renderer, {
 		position: "absolute",
 		top: 0,
@@ -231,7 +232,7 @@ function addModalSurface(renderer: CliRenderer, parent: BoxRenderable, title: st
 		height: "100%",
 		backgroundColor: "black",
 		opacity: 0.55,
-		zIndex: 10,
+		zIndex,
 	});
 	const surface = new BoxRenderable(renderer, {
 		position: "absolute",
@@ -239,7 +240,7 @@ function addModalSurface(renderer: CliRenderer, parent: BoxRenderable, title: st
 		left: "14%",
 		width: "72%",
 		height: "70%",
-		zIndex: 11,
+		zIndex: zIndex + 1,
 		backgroundColor: "#161616",
 		shouldFill: true,
 		focusable: true,
@@ -266,7 +267,7 @@ export function mountTaskForm<Fields extends readonly TaskFormField[]>(
 	let submitting = false;
 	let activeIndex = 0;
 	const previousFocus = renderer.currentFocusedRenderable;
-	const { backdrop, surface } = addModalSurface(renderer, parent, options.title);
+	const { backdrop, surface } = addModalSurface(renderer, parent, options.title, options.zIndex);
 	const controls: FormControl[] = [];
 	const groups: BoxRenderable[] = [];
 	const fieldsViewport = new ScrollBoxRenderable(renderer, {
@@ -444,7 +445,8 @@ export function mountTaskForm<Fields extends readonly TaskFormField[]>(
 	keybindings.on(shortcutsConfig.taskForm.nextField, handleNextField);
 	keybindings.on(shortcutsConfig.taskForm.submit, handleSubmit);
 	keybindings.on(shortcutsConfig.taskForm.advance, handleAdvance);
-	renderer.keyInput.on("keypress", onKeyPress);
+	if (options.zIndex === undefined) renderer.keyInput.on("keypress", onKeyPress);
+	else renderer.keyInput.prependListener("keypress", onKeyPress);
 	renderer.keyInput.on("paste", onPaste);
 	if (controls.length) setFocus(0);
 	else surface.focus();

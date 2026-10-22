@@ -41,7 +41,7 @@ function parsePiModels(output: string): AgentModel[] {
 export function piExtensionSource(statusDir: string, launchDirectory = ""): string {
 	return `// agentic-workspace-hooks
 // Process-scoped status emitter. Installed inside AgenticWorkspace's owned temp dir and removed with it.
-import { existsSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { mkdirSync, renameSync, unlinkSync } from "node:fs";
 
@@ -67,7 +67,10 @@ function publish(target, value) {
 function emit(status) {
   try {
     if (!STATUS_DIR || !existsSync(join(STATUS_DIR, ".agentic-workspace-launch-owner"))) return;
-    writeFileSync(join(STATUS_DIR, "status"), status, { mode: 0o600 });
+    const path = join(STATUS_DIR, "status");
+    let alreadyIdle = false;
+    if (status === "idle") try { alreadyIdle = readFileSync(path, "utf8") === "idle"; } catch {}
+    if (!alreadyIdle) writeFileSync(path, status, { mode: 0o600 });
   } catch {
     // A throwing extension can block the agent's tool calls; never propagate.
   }

@@ -119,7 +119,7 @@ export function removeMode(current: AgentConfiguration, modeId: string): AgentCo
 	return clone(next);
 }
 
-export interface AgentConfigurationStorage {
+export interface SessionConfigurationReader {
 	loadUserAgentConfiguration(): Promise<AgentConfiguration | null>;
 	loadProjectAgentConfiguration(): Promise<AgentConfiguration | null>;
 }
@@ -131,11 +131,11 @@ export class Config {
 	private loaded = false;
 
 	constructor(
-		private readonly storage: AgentConfigurationStorage,
+		private readonly storage: SessionConfigurationReader,
 		private readonly builtIn: EffectiveAgentConfiguration,
 	) {}
 
-	static async load(storage: AgentConfigurationStorage, builtIn: EffectiveAgentConfiguration): Promise<Config> {
+	static async load(storage: SessionConfigurationReader, builtIn: EffectiveAgentConfiguration): Promise<Config> {
 		const config = new Config(storage, builtIn);
 		await config.reload();
 		return config;

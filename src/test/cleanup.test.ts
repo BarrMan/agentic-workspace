@@ -37,7 +37,7 @@ describe("Cleanup functionality", () => {
 	describe("Core functionality", () => {
 		it("should create completed directory in agentic-workspace structure", async () => {
 			await coreFileSystem(core).ensureAgenticWorkspaceStructure();
-			expect(coreFileSystem(core).completedDir).toBe(join(TEST_DIR, "agentic-workspace", "completed"));
+			expect(coreFileSystem(core).completedDir).toBe(join(coreFileSystem(core).agenticWorkspaceDir, "completed"));
 		});
 
 		it("should move Done task to completed folder", async () => {
@@ -77,7 +77,7 @@ describe("Cleanup functionality", () => {
 			expect(await coreFileSystem(core).loadTask("task-2")).toMatchObject({
 				id: "TASK-2",
 				status: "Not Done",
-				filePath: join(TEST_DIR, "agentic-workspace", "completed", "task-2", "task.md"),
+				filePath: join(coreFileSystem(core).completedDir, "task-2", "task.md"),
 			});
 
 			const completedTasks = await coreFileSystem(core).listCompletedTasks();

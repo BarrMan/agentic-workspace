@@ -37,7 +37,9 @@ describe("generic task artifact search contract", () => {
 		await writeFile(join(artifactsDirectory, "notes.txt"), "plain text artifact content\n");
 		await writeFile(join(artifactsDirectory, "notes"), "extensionless artifact content\n");
 		await writeFile(join(artifactsDirectory, "payload.png"), Buffer.from("binarypayload\0notsearchtext", "utf8"));
-		await writeFile(join(artifactsDirectory, ".artifacts.json"), JSON.stringify({ version: 1, approvals: {} }));
+		await writeFile(join(taskDirectory, ".artifacts.json"), JSON.stringify({ version: 1, approvals: {} }));
+		const ordinaryJsonText = "ordinaryjsonartifactneedle";
+		await writeFile(join(artifactsDirectory, ".artifacts.json"), JSON.stringify({ note: ordinaryJsonText }));
 
 		const beforeTask = await readFile(join(taskDirectory, "task.md"), "utf8");
 		const persistent = (await core.searchPersistently({ query: artifactText, types: ["task"] })).filter(
@@ -45,6 +47,10 @@ describe("generic task artifact search contract", () => {
 		);
 		expect(persistent.map(({ task: resultTask }) => resultTask.id)).toEqual([task.id]);
 		expect((await core.queryTasks({ query: artifactText })).map(({ id }) => id)).toEqual([task.id]);
+		expect((await core.searchPersistently({ query: ordinaryJsonText })).map((result) => result.task?.id)).toEqual([
+			task.id,
+		]);
+		expect((await core.queryTasks({ query: ordinaryJsonText })).map(({ id }) => id)).toEqual([task.id]);
 		for (const excluded of ["summary", "approvals", "binarypayload", "notsearchtext"]) {
 			expect(await core.searchPersistently({ query: excluded, types: ["task"] })).toHaveLength(0);
 			expect(await core.queryTasks({ query: excluded })).toHaveLength(0);

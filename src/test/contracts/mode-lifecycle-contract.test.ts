@@ -2,15 +2,15 @@ import { afterEach, describe, expect, it } from "bun:test";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { Core } from "../../controller/agentic-workspace.ts";
-import { Session, type SessionRuntime } from "../../model/session/session.ts";
-import type { RunningExecution, SessionFactory, SessionLaunchContext } from "../../model/session/types.ts";
 import {
-	getDefaultModeCatalog,
 	initializeAgentConfiguration,
 	loadAgentConfiguration,
 	upsertAgentConfiguration,
-} from "../../storage/config.ts";
+} from "../../controller/agent-configuration.ts";
+import { Core } from "../../controller/agentic-workspace.ts";
+import { Session, type SessionRuntime } from "../../model/session/session.ts";
+import type { RunningExecution, SessionFactory, SessionLaunchContext } from "../../model/session/types.ts";
+import { getDefaultModeCatalog } from "../../storage/config.ts";
 import { Storage } from "../../storage/storage.ts";
 import { initializeTestProject } from "../test-utils.ts";
 

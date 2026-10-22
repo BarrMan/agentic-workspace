@@ -12,7 +12,7 @@ AgenticWorkspace manages project tasks, configured modes, retained conversations
 | Controller | Sole operation boundary. Owns models, persists through Storage, calls Session operations, publishes signals. | Models, Storage |
 | Renderer | Views, keybindings, focus, layout, terminal attachment, terminal backend. | Controller, Storage (presentation config), SessionRuntime |
 | CLI | Maps supported commands to Controller operations. | Controller |
-| Storage | Model-typed persistence and presentation configuration. Sole owner of the filesystem. | Models, filesystem |
+| Storage | Model-typed persistence and presentation configuration. Sole owner of workspace persistence. | Models, filesystem |
 | SessionRuntime | Start, exact-resume, stop, observe, attach. Composed of Harness and terminal host. | Models, execution host |
 
 Controller is UI-agnostic: no keybindings, focus, layout, or terminal backend. Only Renderer knows the terminal backend. Application init runs `controller.load(project)` before `renderer.init(controller)`.
@@ -23,7 +23,7 @@ Controller is UI-agnostic: no keybindings, focus, layout, or terminal backend. O
 
 | Directory | Component | Owns |
 |---|---|---|
-| `model/` | Models | Task and Session records and behavior, identity, readiness, dependency graph and validation, ordering, search and filters, configuration types, domain constants, and domain errors. No I/O. |
+| `model/` | Models | Task and Session records and behavior, identity, readiness, dependency graph and validation, ordering, search and filters, configuration types, domain constants, and domain errors. No direct persistence. |
 | `storage/` | Storage | Model-typed persistence, record codecs and schema validation, repositories, watchers, session/group/view state, and storage errors. |
 | `filesystem/` | Storage substrate | Filesystem operations, path resolution, atomic writes, locks, and git worktree access. |
 | `controller/` | Controller | The operation boundary and application workflows: task lifecycle, creation, mutation, queries, search, and initialization. |
@@ -60,10 +60,11 @@ Rules:
 - Callers supply valid data. Controller does not re-validate parameters; models enforce their schema, Storage validates encoding, and SessionRuntime validates provider identity.
 - Storage is the only component that knows workspace persistence: workspace paths, record formats, storage codecs, locks, and file watching. Controller calls Storage; Renderer may call Storage only for presentation configuration; CLI calls Controller only. No application or frontend component holds a workspace filesystem handle or constructs workspace storage paths. Milestone and task reads are Storage operations, not Controller filesystem calls.
 - Runtime execution resources are not workspace persistence: provider receipts, terminal sockets and panes, process handles, logs, and user-selected input files stay with SessionRuntime, Harness, or Renderer. Those components may use filesystem or socket APIs for their own resources, but never to read or write workspace records.
+- An operation's owner may initiate non-persistence I/O through a dedicated layer or wrapper. Persistence reads and writes belong to Storage regardless of whether the backend is a file, database, or remote service; Models never access it directly. Corpus validation receives loaded data from Controller, as specified by [Task](blueprints/task.md#corpus-operations).
 - Signals are post-commit. Handlers never call Controller operations.
 - Only an explicit Controller operation starts or resumes a session. Runtime state is observed, never persisted as history; `unknown` authorizes no destructive action.
 - Create order: reserve → persist reservation → start → persist identity → publish. Any creation failure stops or cleans up the execution and rolls back the reservation; if cleanup fails or the execution may still be running, keep durable tracking of it.
-- Terminal detach never stops execution. Shutdown stops every owned execution.
+- Terminal detach never stops execution. Ordinary app close preserves execution; force close invokes Controller shutdown, which attempts every owned execution before reporting aggregate failure. [SESSION-018](specs/sessions.md#session-018-close-the-app-with-or-without-stopping-sessions) owns the close choice and reopen behavior.
 - Every Renderer and CLI operation uses the same Controller method.
 - A start is never blocked. The project-wide soft limit stops only positively idle sessions, longest continuously idle first; running, permission, and unknown sessions are protected.
 - Session identity survives execution replacement. A provider ID alone proves neither liveness nor resumability.

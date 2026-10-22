@@ -87,10 +87,11 @@ describe("duplicate task diagnosis", () => {
 		expect(groups).toHaveLength(1);
 		expect(groups[0]?.id).toBe("TASK-7");
 		expect(groups[0]?.tasks).toHaveLength(3);
+		const dataDirectory = coreFileSystem(core).agenticWorkspaceDirName;
 		expect(groups[0]?.tasks.map((task) => task.filePath)).toEqual([
-			"agentic-workspace/completed/task-7/task.md",
-			"agentic-workspace/tasks/task-7 - Beta/task.md",
-			"agentic-workspace/tasks/task-7/task.md",
+			`${dataDirectory}/completed/task-7/task.md`,
+			`${dataDirectory}/tasks/task-7 - Beta/task.md`,
+			`${dataDirectory}/tasks/task-7/task.md`,
 		]);
 	});
 

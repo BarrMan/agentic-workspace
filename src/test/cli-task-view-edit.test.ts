@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { $ as shell } from "bun";
 import { Core } from "../index.ts";
 import { runInProcessCli } from "./in-process-cli.ts";
@@ -66,7 +67,7 @@ describe("CLI task view and edit", () => {
 	it("ignores flat records without modifying their bytes", async () => {
 		const content =
 			"---\nid: TASK-2\ntitle: Historical\nstatus: To Do\ncreated_date: '2026-10-01'\nlabels: []\ndependencies: []\n---\n\n## Description\n\n<!-- SECTION:DESCRIPTION:BEGIN -->\nPreserved\n<!-- SECTION:DESCRIPTION:END -->\n";
-		const first = `${testDir}/agentic-workspace/tasks/task-2 - First.md`;
+		const first = join(coreFileSystem(new Core(testDir)).tasksDir, "task-2 - First.md");
 		await writeFile(first, content);
 		const result = await runInProcessCli(["task", "view", "TASK-2", "--plain"], { cwd: testDir });
 		expect(result.exitCode).toBe(1);

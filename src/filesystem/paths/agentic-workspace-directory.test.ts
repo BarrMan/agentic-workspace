@@ -1,10 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import { mkdir, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { createHash } from "node:crypto";
+import { mkdir, readFile, realpath, rm, symlink, writeFile } from "node:fs/promises";
+import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import {
 	normalizeProjectAgenticWorkspaceDirectory,
 	resolveAgenticWorkspaceDirectory,
+	resolveAgenticWorkspaceDirectoryFromRootConfig,
 } from "./agentic-workspace-directory.ts";
 
 describe("resolveAgenticWorkspaceDirectory", () => {
@@ -13,6 +15,7 @@ describe("resolveAgenticWorkspaceDirectory", () => {
 	beforeEach(async () => {
 		testDir = join(tmpdir(), `agentic-workspace-directory-test-${Date.now()}`);
 		await mkdir(testDir, { recursive: true });
+		testDir = await realpath(testDir);
 	});
 
 	afterEach(async () => {
@@ -47,15 +50,16 @@ describe("resolveAgenticWorkspaceDirectory", () => {
 		expect(resolution.configPath).toBe(join(testDir, "agentic-workspace.config.yml"));
 	});
 
-	it("uses root agentic-workspace.config.yml with built-in agentic-workspace folder when agentic_workspace_directory is omitted", async () => {
+	it("reports an unselected old directory without moving or reinterpreting its data", async () => {
 		await mkdir(join(testDir, "agentic-workspace", "tasks"), { recursive: true });
+		const oldFile = join(testDir, "agentic-workspace", "tasks", "keep");
+		await writeFile(oldFile, "user data");
 		await writeFile(join(testDir, "agentic-workspace.config.yml"), 'project_name: "Test"\n');
-
-		const resolution = resolveAgenticWorkspaceDirectory(testDir);
-		expect(resolution.source).toBe("agentic-workspace");
-		expect(resolution.configSource).toBe("root");
-		expect(resolution.agenticWorkspaceDir).toBe("agentic-workspace");
-		expect(resolution.configPath).toBe(join(testDir, "agentic-workspace.config.yml"));
+		expect(() => resolveAgenticWorkspaceDirectory(testDir)).toThrow("explicit location decision");
+		expect(await readFile(oldFile, "utf8")).toBe("user data");
+		expect(resolveAgenticWorkspaceDirectoryFromRootConfig(testDir, "agentic-workspace").agenticWorkspacePath).toBe(
+			join(await realpath(testDir), "agentic-workspace"),
+		);
 	});
 
 	it("falls back to folder-local config when root agentic-workspace.config.yml is absent", async () => {
@@ -81,8 +85,7 @@ describe("resolveAgenticWorkspaceDirectory", () => {
 		expect(resolution.configPath).toBe(join(testDir, ".agentic-workspace", "config.yml"));
 	});
 
-	it("prefers the built-in agentic-workspace folder that has a config marker", async () => {
-		await mkdir(join(testDir, "agentic-workspace"), { recursive: true });
+	it("discovers the contracted default folder", async () => {
 		await mkdir(join(testDir, ".agentic-workspace", "tasks"), { recursive: true });
 		await writeFile(join(testDir, ".agentic-workspace", "config.yml"), 'project_name: "Test"\n');
 
@@ -93,13 +96,14 @@ describe("resolveAgenticWorkspaceDirectory", () => {
 		expect(resolution.configPath).toBe(join(testDir, ".agentic-workspace", "config.yml"));
 	});
 
-	it("rejects parent segments after converting Windows separators", () => {
-		expect(normalizeProjectAgenticWorkspaceDirectory(String.raw`foo\..\..\etc`)).toBeNull();
-		expect(normalizeProjectAgenticWorkspaceDirectory("foo/../bar")).toBeNull();
+	it("accepts selected relative and absolute paths and rejects Git metadata spelling", () => {
+		expect(normalizeProjectAgenticWorkspaceDirectory("../data")).toBe("../data");
+		expect(normalizeProjectAgenticWorkspaceDirectory("/tmp/data")).toBe("/tmp/data");
+		expect(normalizeProjectAgenticWorkspaceDirectory(String.raw`.git\workspace-data`)).toBeNull();
 		expect(normalizeProjectAgenticWorkspaceDirectory("planning/data")).toBe("planning/data");
 	});
 
-	it("rejects a workspace symlink that resolves outside the project", async () => {
+	it("allows an explicitly selected external directory through a symlink", async () => {
 		const outside = join(testDir, "..", `agentic-workspace-outside-${Date.now()}`);
 		await mkdir(outside, { recursive: true });
 		try {
@@ -107,10 +111,38 @@ describe("resolveAgenticWorkspaceDirectory", () => {
 				join(testDir, "agentic-workspace.config.yml"),
 				"project_name: Test\nagentic_workspace_directory: linked\n",
 			);
-			await Bun.spawn(["ln", "-s", outside, join(testDir, "linked")]).exited;
-			expect(resolveAgenticWorkspaceDirectory(testDir).agenticWorkspaceDir).toBeNull();
+			await symlink(outside, join(testDir, "linked"));
+			expect(resolveAgenticWorkspaceDirectory(testDir).agenticWorkspacePath).toBe(await realpath(outside));
 		} finally {
 			await rm(outside, { recursive: true, force: true });
 		}
+	});
+
+	it("resolves default, external, parent-relative and project-specific user storage", async () => {
+		const root = await realpath(testDir);
+		expect(resolveAgenticWorkspaceDirectoryFromRootConfig(testDir, undefined).agenticWorkspacePath).toBe(
+			join(root, ".agentic-workspace"),
+		);
+		for (const path of [join(root, "..", "external"), "../external"])
+			expect(resolveAgenticWorkspaceDirectoryFromRootConfig(testDir, path).agenticWorkspacePath).toBe(
+				join(root, "..", "external"),
+			);
+		const hash = createHash("sha256").update(root).digest("hex").slice(0, 16);
+		expect(resolveAgenticWorkspaceDirectoryFromRootConfig(testDir, "user:").agenticWorkspacePath).toBe(
+			join(homedir(), ".agentic-workspace", hash),
+		);
+	});
+
+	it("rejects canonical metadata aliases including a separate git-dir", async () => {
+		const metadata = join(testDir, "metadata");
+		expect(
+			await Bun.spawn(["git", "init", "--separate-git-dir", metadata, testDir], { stdout: "ignore", stderr: "pipe" })
+				.exited,
+		).toBe(0);
+		await symlink(metadata, join(testDir, "alias"));
+		for (const path of [".git/data", "metadata/data", "alias/data", join(metadata, "data")])
+			expect(() => resolveAgenticWorkspaceDirectoryFromRootConfig(testDir, path)).toThrow(
+				/Git metadata|Invalid task-data/,
+			);
 	});
 });

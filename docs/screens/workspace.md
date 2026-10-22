@@ -32,7 +32,7 @@ The task-list width and details/preview proportions above are approved qualitati
 
 Keyboard/focus behavior follows SPEC and the active shortcut configuration. `Tab` changes the selected mode for the selected task; session execution remains unchanged. `f` shows the same retained terminal fullscreen with a bottom row reserved for the visible `Ctrl+Q` exit hint; `Ctrl+Q` and `Ctrl+C` return to navigation without forwarding an interrupt. Navigation `Ctrl+C` exits; `q` never exits. At narrow sizes, shrink the task region below its 35-cell cap and preserve selected-task identity and essential footer actions. Exact minimum dimensions, wrapping/truncation policy, and collapse threshold remain undecided.
 
-The task-list pane is toggled with `Shift+[`, without restarting the selected agent. Start applies to the selected mode only and requires an explicit action; each action makes one attempt, with visible failure and no automatic retry. Closing the app stops every session and removes its harness, process, and pane; reopening shows sessions as stopped until explicitly resumed. Detaching the terminal alone does not stop a session.
+The task-list pane is toggled with `Shift+[`, without restarting the selected agent. Start applies to the selected mode only and requires an explicit action; each action makes one attempt, with visible failure and no automatic retry. Close and reopen follow [SESSION-018](../specs/sessions.md#session-018-close-the-app-with-or-without-stopping-sessions). The close confirmation is a focused modal stating that sessions are working and offering “Force close” and “Close without stopping sessions”; keep input within the modal under the shared dialog rules.
 
 ## Open Questions
 

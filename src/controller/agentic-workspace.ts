@@ -16,48 +16,50 @@ import { DEFAULT_ORDINAL_STEP, resolveOrdinalConflicts } from "../model/task/reo
 import { formatValidStatuses, getCanonicalStatuses } from "../model/task/status.ts";
 import { Task as TaskModel } from "../model/task/task.ts";
 import { TaskCollection as TaskCollectionModel } from "../model/task/task-collection.ts";
-import { taskIdsEqual } from "../model/task/task-id.ts";
+import { taskIdKey, taskIdsEqual } from "../model/task/task-id.ts";
 import { TaskIdentityIndex, type TaskIdentityRecord } from "../model/task/task-identity-index.ts";
 import { TaskOrdering } from "../model/task/task-ordering.ts";
 import { LOCAL_TASK_LOOKUP_HINT } from "../model/task/task-path.ts";
+import type { TaskCorpusSnapshot } from "../model/task/task-projection.ts";
 import { TaskSearchIndex } from "../model/task/task-search.ts";
 import {
 	EntityType,
 	type Milestone,
-	type SearchOptions,
 	type SearchResult,
 	type Task,
 	type TaskCreateInput,
 	type TaskListFilter,
 	type TaskUpdateInput,
 } from "../model/types.ts";
-import {
-	getBuiltInAgentConfiguration,
-	loadAgentConfiguration,
-	loadProjectModeCatalog,
-	patchAgentConfiguration,
-	resolveAgentConfiguration,
-	updateAgentConfiguration,
-} from "../storage/config.ts";
+import { getBuiltInAgentConfiguration, updateStoredAgentConfiguration } from "../storage/config.ts";
 import { isConfigValueError } from "../storage/file-system.ts";
 import { Storage } from "../storage/storage.ts";
 import type { CreatedTaskRollbackResult, CreatedTaskWrite } from "../storage/types.ts";
 import type { ConfigWatcherCallbacks } from "../storage/watchers/config-watcher.ts";
 import { type TaskWatcherCallbacks, watchTaskRecords } from "../storage/watchers/task-watcher.ts";
+import {
+	loadAgentConfiguration,
+	loadProjectModeCatalog,
+	patchAgentConfiguration,
+	resolveAgentConfiguration,
+	updateAgentConfiguration,
+} from "./agent-configuration.ts";
+import { CallingSessionOperations } from "./calling-session.ts";
 import { planOrderedTaskPlacement } from "./ordered-task-move-planner.ts";
 import { PersistentTaskRead } from "./persistent-task-read.ts";
-import { searchSnapshot } from "./search-service.ts";
+import { type PersistentSearchOptions, searchSnapshot } from "./search-service.ts";
 import { SessionApplication } from "./session-application.ts";
+import { Signals } from "./signals.ts";
 import { TaskCreationService } from "./task-creation-workflow.ts";
 import { TaskLifecycleService } from "./task-lifecycle-service.ts";
-import type { TaskCorpusSnapshot } from "./task-loader.ts";
-import { ProjectTaskMutations } from "./task-mutation-service.ts";
+import { type CommittedTaskChange, ProjectTaskMutations } from "./task-mutation-service.ts";
 import type { TaskQueryOptions, TaskReadOptions } from "./task-query-workflow.ts";
 import { planTaskReorder } from "./task-reorder-plan.ts";
 import { VacatedTaskReferenceService } from "./vacated-task-reference-service.ts";
 import { WorkspaceStateService } from "./workspace-state.ts";
 
 interface MoveTasksPlan {
+	readonly expectedTasks: Task[];
 	readonly movedTasks: Task[];
 	readonly changedTasks: Task[];
 	readonly failures: Array<{ taskId: string; reason: string }>;
@@ -101,8 +103,10 @@ function crossBranchMoveReason(task: Task, verb: "reordered" | "moved"): string 
 }
 
 export class Core {
+	readonly signals = new Signals();
 	readonly git: GitOperations;
 	readonly sessionApplication: SessionApplication;
+	readonly callingSession: CallingSessionOperations;
 	readonly workspaceState: WorkspaceStateService;
 	private readonly vacatedTaskReferences: VacatedTaskReferenceService;
 	private readonly taskMutations: ProjectTaskMutations;
@@ -129,11 +133,17 @@ export class Core {
 			sessionFactory: options.sessionFactory,
 			maxSessions: options.maxSessions ?? 10,
 		});
+		this.callingSession = new CallingSessionOperations(
+			(taskId) => this.sessionApplication.store.read(taskId),
+			(taskId, modeId, question) => this.sessionApplication.askPrevious(taskId, modeId, question),
+			(modeId, modelId) => this.setModeModel(modeId, modelId),
+		);
 		this.workspaceState = new WorkspaceStateService(this, { sessionApplication: this.sessionApplication });
 		this.taskMutations = new ProjectTaskMutations(
 			this.storage,
 			(id) => this.persistentReads.get(id, { forMutation: true }),
 			() => this.getActiveAndCompletedTaskIds(),
+			(task) => this.signals.publish("TasksChanged", task),
 		);
 		this.taskLifecycle = this.createTaskLifecycleService();
 	}
@@ -152,6 +162,17 @@ export class Core {
 		taskId?: string,
 	): Promise<AgentConfiguration | null> {
 		return await loadAgentConfiguration(this, scope, taskId);
+	}
+
+	async loadRootAgentConfiguration(): Promise<AgentConfiguration | null> {
+		return await this.storage.loadUserAgentConfiguration();
+	}
+
+	async updateStoredAgentConfiguration(
+		scope: "root" | "project",
+		updater: (configuration: AgentConfiguration | null) => AgentConfiguration,
+	): Promise<AgentConfiguration> {
+		return await updateStoredAgentConfiguration(this.storage, scope, updater);
 	}
 
 	async getEffectiveAgentConfiguration(taskId?: string) {
@@ -197,78 +218,99 @@ export class Core {
 
 	async deleteMode(
 		modeId: ModeId,
-		options: { confirmed: true },
+		options: { confirmed: true; moveToModeId?: ModeId },
 	): Promise<{ deletedModeId: ModeId; taskIds: string[] }> {
 		if (!options.confirmed) throw new Error("Mode deletion requires explicit confirmation.");
-		const releaseMode = await this.storage.claimModeAdmission(modeId);
-		const taskReleases: Array<() => Promise<void>> = [];
-		const prepared: Array<{
-			taskId: string;
-			record: { id: string };
-			stop: () => Promise<void>;
-			release: () => Promise<void>;
-		}> = [];
-		const completed: string[] = [];
-		const stopped: Array<{ taskId: string; sessionId: string }> = [];
-		let primary: Error | undefined;
-		const partialEffectsMessage = () =>
-			`Mode deletion failed after stopping sessions: ${stopped.map(({ taskId, sessionId }) => `${taskId}/${sessionId}`).join(", ") || "none"}; removed sessions from: ${completed.join(", ") || "none"}.`;
-		try {
-			await this.storage.modeDeletionJournal.withLock(async () => {
-				if (await this.storage.modeDeletionJournal.read())
-					throw new Error("A mode deletion is pending; preserve its journal and recover it before another deletion.");
-				const catalog = await this.getProjectModeCatalog();
-				if (!catalog.profiles[modeId]) throw new Error(`Unknown mode '${modeId}'.`);
-				if (catalog.order.length <= 1) throw new Error("Cannot delete the last configured mode.");
-				const taskIds = (await this.storage.loadProjectTaskIds()).sort((left, right) => left.localeCompare(right));
-				for (const taskId of taskIds) taskReleases.push(await this.storage.claimTaskAdmission(taskId));
-				for (const taskId of taskIds) {
-					for (const entry of await this.sessionApplication.prepareTaskStop(taskId, modeId))
-						prepared.push({ taskId, record: entry.record, stop: entry.stop, release: entry.release });
-				}
-				await this.storage.modeDeletionJournal.write({
-					version: 2,
-					operationId: crypto.randomUUID(),
-					source: modeId,
-					phase: "prepared",
-					tasks: taskIds,
+		return await this.withTaskChanges(async (changes) => {
+			const releaseMode = await this.storage.claimModeAdmission(modeId);
+			let releaseDestination: (() => Promise<void>) | undefined;
+			const taskReleases: Array<() => Promise<void>> = [];
+			const prepared: Array<{
+				taskId: string;
+				record: { id: string };
+				stop: () => Promise<void>;
+				release: () => Promise<void>;
+			}> = [];
+			const completed: string[] = [];
+			const stopped: Array<{ taskId: string; sessionId: string }> = [];
+			let primary: Error | undefined;
+			const partialEffectsMessage = () =>
+				`Mode deletion failed after stopping sessions: ${stopped.map(({ taskId, sessionId }) => `${taskId}/${sessionId}`).join(", ") || "none"}; ${options.moveToModeId ? "transferred" : "removed"} sessions from: ${completed.join(", ") || "none"}.`;
+			try {
+				await this.storage.modeDeletionJournal.withLock(async () => {
+					if (await this.storage.modeDeletionJournal.read())
+						throw new Error("A mode deletion is pending; preserve its journal and recover it before another deletion.");
+					const catalog = await this.getProjectModeCatalog();
+					if (!catalog.profiles[modeId]) throw new Error(`Unknown mode '${modeId}'.`);
+					if (catalog.order.length <= 1) throw new Error("Cannot delete the last configured mode.");
+					const destination = options.moveToModeId;
+					if (destination !== undefined) {
+						if (destination === modeId || !catalog.profiles[destination])
+							throw new Error("Choose a different existing destination mode.");
+						releaseDestination = await this.storage.claimModeAdmission(destination);
+					}
+					const taskIds = (await this.storage.loadProjectTaskIds()).sort((left, right) => left.localeCompare(right));
+					for (const taskId of taskIds) taskReleases.push(await this.storage.claimTaskAdmission(taskId));
+					for (const taskId of destination === undefined ? taskIds : []) {
+						for (const entry of await this.sessionApplication.prepareTaskStop(taskId, modeId))
+							prepared.push({ taskId, record: entry.record, stop: entry.stop, release: entry.release });
+					}
+					const journal = {
+						version: 2,
+						operationId: crypto.randomUUID(),
+						source: modeId,
+						...(destination === undefined ? {} : { destination }),
+						phase: "prepared",
+						tasks: taskIds,
+					} as const;
+					await this.storage.modeDeletionJournal.write(journal);
+					for (const entry of prepared) {
+						await entry.stop();
+						stopped.push({ taskId: entry.taskId, sessionId: entry.record.id });
+					}
+					for (const taskId of taskIds) {
+						if (destination !== undefined) {
+							await this.sessionApplication.moveModeSessions(taskId, modeId, destination);
+						} else {
+							await this.sessionApplication.discardModeSessions(taskId, modeId);
+							await this.sessionApplication.forgetModeSessions(taskId, modeId);
+						}
+						changes.push({ task: taskId });
+						completed.push(taskId);
+					}
+					const exact = await this.getExactAgentConfiguration("project");
+					if (!exact) throw new Error("Project agent configuration is unavailable.");
+					await updateAgentConfiguration(this, "project", (current) => removeConfiguredMode(current, modeId));
+					await this.storage.modeDeletionJournal.remove();
 				});
-				for (const entry of prepared) {
-					await entry.stop();
-					stopped.push({ taskId: entry.taskId, sessionId: entry.record.id });
+			} catch (error) {
+				primary = error instanceof Error ? error : new Error(String(error));
+				primary = new AggregateError([primary], partialEffectsMessage(), { cause: primary });
+			} finally {
+				const releases = [
+					...prepared.map((entry) => entry.release),
+					...taskReleases.reverse(),
+					...(releaseDestination ? [releaseDestination] : []),
+					releaseMode,
+				];
+				const failures: Error[] = [];
+				for (const release of releases) {
+					try {
+						await release();
+					} catch (error) {
+						failures.push(error instanceof Error ? error : new Error(String(error)));
+					}
 				}
-				for (const taskId of taskIds) {
-					await this.sessionApplication.discardModeSessions(taskId, modeId);
-					await this.sessionApplication.forgetTaskSessions(taskId);
-					completed.push(taskId);
-				}
-				const exact = await this.getExactAgentConfiguration("project");
-				if (!exact) throw new Error("Project agent configuration is unavailable.");
-				await updateAgentConfiguration(this, "project", (current) => removeConfiguredMode(current, modeId));
-				await this.storage.modeDeletionJournal.remove();
-			});
-		} catch (error) {
-			primary = error instanceof Error ? error : new Error(String(error));
-			primary = new AggregateError([primary], partialEffectsMessage(), { cause: primary });
-		} finally {
-			const releases = [...prepared.map((entry) => entry.release), ...taskReleases.reverse(), releaseMode];
-			const failures: Error[] = [];
-			for (const release of releases) {
-				try {
-					await release();
-				} catch (error) {
-					failures.push(error instanceof Error ? error : new Error(String(error)));
-				}
+				if (failures.length)
+					primary = new AggregateError(
+						[...(primary ? [primary] : []), ...failures],
+						primary?.message ?? "Mode deletion claim release failed.",
+						{ cause: primary },
+					);
 			}
-			if (failures.length)
-				primary = new AggregateError(
-					[...(primary ? [primary] : []), ...failures],
-					primary?.message ?? "Mode deletion claim release failed.",
-					{ cause: primary },
-				);
-		}
-		if (primary) throw primary;
-		return { deletedModeId: modeId, taskIds: completed };
+			if (primary) throw primary;
+			return { deletedModeId: modeId, taskIds: completed };
+		});
 	}
 
 	private createTaskLifecycleService(): TaskLifecycleService {
@@ -278,6 +320,18 @@ export class Core {
 			this.vacatedTaskReferences,
 			async (taskId) => await this.cleanupTaskSessions(taskId),
 			async (taskId) => await this.sessionApplication.forgetTaskSessions(taskId),
+			async (taskId) => {
+				const state = await this.sessionApplication.store.read(taskId);
+				for (const history of Object.values(state.modes)) {
+					for (const record of history.sessions) {
+						const observed = await this.sessionApplication.readObserved(taskId, record.id);
+						if (observed.snapshot.state !== "stopped")
+							throw new Error(
+								`Session ${record.id} is not positively stopped; stop it explicitly before archiving ${taskId}.`,
+							);
+					}
+				}
+			},
 		);
 	}
 
@@ -368,9 +422,11 @@ export class Core {
 		};
 	}
 
-	async searchPersistently(options: SearchOptions): Promise<SearchResult[]> {
-		const snapshot = !options.types || options.types.includes("task") ? await this.loadTaskSnapshot() : null;
-		const tasks = snapshot?.tasks ?? [];
+	async searchPersistently(options: PersistentSearchOptions): Promise<SearchResult[]> {
+		const tasks =
+			!options.types || options.types.includes("task")
+				? await this.persistentReads.searchTasks(options.includeArchived)
+				: [];
 		const searchableTasks = tasks.length ? await this.storage.addSearchableArtifactText(tasks) : tasks;
 		return searchSnapshot(searchableTasks, options);
 	}
@@ -503,7 +559,15 @@ export class Core {
 	}
 
 	async createTaskFromInput(input: TaskCreateInput): Promise<{ task: Task; filePath?: string }> {
-		return await new TaskCreationService(this).create(input);
+		return await this.withTaskChanges(async (changes) => {
+			const result = await new TaskCreationService(this).create(input, changes);
+			changes.push({ task: result.task });
+			return result;
+		});
+	}
+
+	async withTaskChanges<T>(operation: (changes: CommittedTaskChange[]) => Promise<T>): Promise<T> {
+		return await this.taskMutations.withPostCommit(operation);
 	}
 
 	/**
@@ -528,12 +592,15 @@ export class Core {
 		const config = await this.getConfig();
 		task.worktreePolicy = config.sessionSettings.worktreePerTask ? "enabled" : "disabled";
 
-		const filepath = await this.writePreparedTask(task);
-		return filepath;
+		return await this.withTaskChanges(async (changes) => {
+			const filepath = await this.writePreparedTask(task);
+			changes.push({ task });
+			return filepath;
+		});
 	}
 
-	async updateTask(task: Task): Promise<string> {
-		return await this.taskMutations.saveTask(task);
+	async updateTask(task: Task, changes?: CommittedTaskChange[]): Promise<string> {
+		return await this.taskMutations.saveTask(task, changes);
 	}
 
 	async setTaskModeApproval(taskId: string, modeId: string): Promise<Task> {
@@ -557,28 +624,52 @@ export class Core {
 		return await this.taskMutations.markDone(taskId, options);
 	}
 
-	private async writeTasksBulk(tasks: Task[]): Promise<void> {
-		for (const task of tasks) await this.updateTask(task);
-	}
-
-	private async writeBoardMoveTasksBulk(tasks: Task[]): Promise<void> {
-		await this.storage.withTaskLocks(tasks, async () => {
-			for (const planned of tasks) {
-				const current = await this.storage.loadTask(planned.id, { includeArchived: true });
-				if (!current) throw new Error(`Task not found while applying board move: ${planned.id}`);
-				const model = TaskModel.forUpdate(current);
-				model.applyBoardPlacement({
-					status: planned.status,
-					ordinal: planned.ordinal,
-					milestone: planned.milestone,
-				});
-				await this.updateTask(model.serialize());
-			}
-		});
+	private async writeBoardMoveTasksBulk(
+		tasks: Task[],
+		expectedTasks: Task[],
+		movedIds: string[],
+		moveMilestone: boolean,
+	): Promise<void> {
+		await this.withTaskChanges(async (changes) =>
+			this.storage.withTaskLocks(tasks, async () => {
+				const currentTasks: Task[] = [];
+				for (const planned of tasks) {
+					const current = await this.storage.loadTask(planned.id, { includeArchived: true });
+					if (!current) throw new Error(`Task not found while applying board move: ${planned.id}`);
+					const expected = expectedTasks.find((task) => taskIdsEqual(task.id, planned.id));
+					if (
+						!expected ||
+						current.status !== expected.status ||
+						current.ordinal !== expected.ordinal ||
+						current.milestone !== expected.milestone
+					)
+						throw new Error(`Task ${planned.id} placement changed before board move; retry the operation.`);
+					currentTasks.push(current);
+				}
+				for (const [index, current] of currentTasks.entries()) {
+					const planned = tasks[index];
+					if (!planned) continue;
+					const moved = movedIds.some((id) => taskIdsEqual(id, current.id));
+					const model = TaskModel.forUpdate(current);
+					model.applyBoardPlacement({
+						status: moved ? planned.status : current.status,
+						ordinal: planned.ordinal,
+						milestone: moved && moveMilestone ? planned.milestone : current.milestone,
+					});
+					const updated = model.serialize();
+					await this.taskMutations.saveTask(updated, changes);
+					tasks[index] = updated;
+				}
+			}),
+		);
 	}
 
 	async updateTasksBulk(tasks: Task[]): Promise<void> {
-		await this.storage.withTaskLocks(tasks, async () => await this.writeTasksBulk(tasks));
+		await this.withTaskChanges(async (changes) =>
+			this.storage.withTaskLocks(tasks, async () => {
+				for (const task of tasks) await this.taskMutations.saveTask(task, changes);
+			}),
+		);
 	}
 
 	/**
@@ -688,10 +779,10 @@ export class Core {
 		);
 
 		if (changedTasks.length > 0) {
-			await this.writeBoardMoveTasksBulk(changedTasks);
+			await this.writeBoardMoveTasksBulk(changedTasks, validTasks, [taskId], params.targetMilestone !== undefined);
 		}
 
-		return { updatedTask, changedTasks };
+		return { updatedTask: changedTasks.find((task) => taskIdsEqual(task.id, taskId)) ?? updatedTask, changedTasks };
 	}
 
 	/**
@@ -713,10 +804,20 @@ export class Core {
 		const plan = await this.planTasksToStatus(params, targetStatus, targetMilestone);
 
 		if (plan.changedTasks.length > 0) {
-			await this.writeBoardMoveTasksBulk(plan.changedTasks);
+			await this.writeBoardMoveTasksBulk(
+				plan.changedTasks,
+				plan.expectedTasks,
+				params.taskIds,
+				params.targetMilestone !== undefined,
+			);
 		}
 
-		return plan;
+		const committedById = new Map(plan.changedTasks.map((task) => [taskIdKey(task.id), task]));
+		return {
+			movedTasks: plan.movedTasks.map((task) => committedById.get(taskIdKey(task.id)) ?? task),
+			changedTasks: plan.changedTasks,
+			failures: plan.failures,
+		};
 	}
 
 	private async planTasksToStatus(
@@ -749,7 +850,7 @@ export class Core {
 				}
 			}
 		}
-		if (tasksToMove.length === 0) return { movedTasks: [], changedTasks: [], failures };
+		if (tasksToMove.length === 0) return { movedTasks: [], changedTasks: [], failures, expectedTasks: [] };
 
 		const hasTargetMilestone = params.targetMilestone !== undefined;
 		const applyMove = (task: Task): Task => {
@@ -779,7 +880,12 @@ export class Core {
 					targetMilestone,
 					params.defaultStep ?? DEFAULT_ORDINAL_STEP,
 				);
-		return { ...placement, failures, changedTasks: placement.changedTasks.filter((task) => !task.branch) };
+		return {
+			...placement,
+			failures,
+			expectedTasks: store.getTasks(),
+			changedTasks: placement.changedTasks.filter((task) => !task.branch),
+		};
 	}
 
 	private planOrderedTaskMove(

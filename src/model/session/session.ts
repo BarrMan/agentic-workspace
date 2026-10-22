@@ -1,6 +1,7 @@
 import type {
 	AgentActivity,
 	AgentSession,
+	ExecutionIdentity,
 	ModeId,
 	PreparedSessionStop,
 	RetainedSessionObservation,
@@ -20,10 +21,15 @@ export interface SessionRuntime {
 	stop(execution: RunningExecution): Promise<void>;
 	observe(execution: RunningExecution, listener: (event: RunningExecutionEvent) => void): Unsubscribe;
 	observeRetained(record: Readonly<AgentSession>): Promise<RetainedSessionObservation>;
+	observeRetainedActivity?(record: Readonly<AgentSession>): Promise<SessionSnapshot>;
 	prepareStop(record: Readonly<AgentSession>): Promise<PreparedSessionStop>;
 	attach(record: Readonly<AgentSession>): Promise<TerminalAttachment>;
 	detach(attachment: TerminalAttachment): Promise<void>;
 	ask(providerSessionId: string, context: SessionAskContext): Promise<{ readonly answer: string }>;
+}
+export interface RecoverableExecutionFailure extends Error {
+	readonly execution?: RunningExecution;
+	readonly identity?: ExecutionIdentity;
 }
 export interface SessionEvent {
 	readonly kind: "turn-completed" | "permission-wait" | "execution-exit" | "activity";
@@ -38,7 +44,7 @@ export class Session {
 	private currentExecution?: RunningExecution;
 	private providerSessionId?: string;
 	private snapshot: SessionSnapshot = { state: "stopped", activity: "unknown", idleSince: null };
-	private readonly modeId: ModeId;
+	private currentModeId: ModeId;
 	private readonly runtime: SessionRuntime;
 	private stopObserving?: Unsubscribe;
 	private readonly listeners = new Set<(event: SessionEvent) => void>();
@@ -49,12 +55,21 @@ export class Session {
 		this.id = record.id;
 		this.currentRecord = record;
 		this.providerSessionId = record.nativeSessionId;
-		this.modeId = modeId;
+		this.currentModeId = modeId;
 		this.runtime = runtime;
 	}
 
 	get record(): Readonly<AgentSession> {
 		return this.currentRecord;
+	}
+
+	get modeId(): ModeId {
+		return this.currentModeId;
+	}
+
+	/** Membership changes do not replace the execution or its launch identity. */
+	moveToMode(modeId: ModeId): void {
+		this.currentModeId = modeId;
 	}
 
 	get execution(): RunningExecution | undefined {
@@ -73,16 +88,29 @@ export class Session {
 
 	async start(context: SessionLaunchContext): Promise<void> {
 		this.assertMode(context);
-		const execution = await this.runtime.start(context);
-		this.installExecution(execution, { state: "running", activity: "working", idleSince: null });
+		try {
+			const execution = await this.runtime.start(context);
+			this.installExecution(execution, { state: "running", activity: "working", idleSince: null });
+		} catch (error) {
+			this.retainFailedExecution(error);
+			throw error;
+		}
 	}
 
 	async resume(context: SessionLaunchContext): Promise<void> {
 		this.assertMode(context);
 		if (!this.providerSessionId) throw new Error(`Session ${this.id} has no retained provider conversation`);
+		if ((await this.observeRetained()).state !== "stopped")
+			throw new Error(`Session ${this.id} is not positively stopped; refusing resume.`);
 		this.snapshot = { state: "starting", activity: "unknown", idleSince: null };
-		const execution = await this.runtime.resume(this.providerSessionId, context);
-		this.installExecution(execution, { state: "parked", activity: "unknown", idleSince: null });
+		try {
+			const execution = await this.runtime.resume(this.providerSessionId, context);
+			this.installExecution(execution, { state: "parked", activity: "unknown", idleSince: null });
+		} catch (error) {
+			this.snapshot = { state: "unknown", activity: "unknown", idleSince: null };
+			this.retainFailedExecution(error);
+			throw error;
+		}
 	}
 
 	async stop(): Promise<void> {
@@ -100,6 +128,8 @@ export class Session {
 				: this.retainedObservation === "live"
 					? { state: "parked", activity: "unknown", idleSince: null }
 					: { state: "unknown", activity: "unknown", idleSince: null };
+		if (this.retainedObservation === "live" && this.runtime.observeRetainedActivity)
+			this.snapshot = await this.runtime.observeRetainedActivity(this.currentRecord);
 		return this.snapshot;
 	}
 
@@ -135,7 +165,13 @@ export class Session {
 		return { ...this.currentRecord };
 	}
 
-	private installExecution(execution: RunningExecution, snapshot: SessionSnapshot): void {
+	private retainFailedExecution(error: unknown): void {
+		const execution = error instanceof Error ? (error as RecoverableExecutionFailure).execution : undefined;
+		if (!execution) return;
+		this.installExecution(execution, { state: "unknown", activity: "unknown", idleSince: null }, false);
+	}
+
+	private installExecution(execution: RunningExecution, snapshot: SessionSnapshot, observe = true): void {
 		const previous = this.currentExecution;
 		this.releaseExecution(previous);
 		this.currentExecution = execution;
@@ -145,7 +181,7 @@ export class Session {
 			this.providerSessionId = providerSessionId;
 			this.currentRecord = { ...this.currentRecord, nativeSessionId: providerSessionId };
 		}
-		if (this.disposed) return;
+		if (this.disposed || !observe) return;
 		this.stopObserving = this.runtime.observe(execution, (event) => {
 			if (this.currentExecution !== execution || this.disposed) return;
 			this.publish(event, execution);
@@ -161,6 +197,7 @@ export class Session {
 	}
 
 	private async stopCurrent(execution: RunningExecution): Promise<void> {
+		if (!this.currentExecution && this.snapshot.state === "stopped") return;
 		if (this.currentExecution !== execution) throw new Error(`Session ${this.id} execution changed before stop.`);
 		await this.runtime.stop(execution);
 		this.releaseExecution(execution);

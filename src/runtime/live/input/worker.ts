@@ -1,5 +1,5 @@
 import { traceLatency } from "../latency-trace.ts";
-import { paneTarget, type TmuxExec, type VtInputPort } from "../tmux/types.ts";
+import type { TmuxExec, VtInputPort } from "../tmux/types.ts";
 
 // Hex arguments must fit tmux's command message, not only the OS argv limit.
 const MAX_RAW_BYTES_PER_SEND = 512;
@@ -11,7 +11,7 @@ const MAX_PENDING_INPUT_BYTES = 64 * 1024;
 const DISPOSE_DRAIN_TIMEOUT_MS = 2_000;
 
 export type InputWorkerOptions = {
-	readonly sessionName: string;
+	readonly target: string;
 	readonly vt?: VtInputPort | null;
 };
 
@@ -33,7 +33,7 @@ export type InputWorker = {
 
 /** One ordered writer for native-terminal bytes, with no key or paste re-encoding. */
 export function createInputWorker(exec: TmuxExec, opts: InputWorkerOptions): InputWorker {
-	const target = paneTarget(opts.sessionName);
+	const target = opts.target;
 	const queue: Uint8Array[] = [];
 	const listeners = new Set<(report: Readonly<WorkerTotals>, error?: Error) => void>();
 	const totals: WorkerTotals = { dispatches: 0, forks: 0, socketWrites: 0, socketFallbacks: 0, failed: 0 };
