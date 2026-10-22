@@ -6,7 +6,7 @@ import type { BoxRenderable } from "@opentui/core";
 import { createTestRenderer } from "@opentui/core/testing";
 import type { AgentSession } from "../model/session/types.ts";
 import { mountOpenTuiWorkspace } from "../renderer/opentui/workspace.ts";
-import { modeSessionIndication } from "../renderer/opentui/workspace-controller.ts";
+import { modeSessionIndication } from "../renderer/opentui/workspace-session-monitor.ts";
 import { SessionStore } from "../storage/session-store.ts";
 
 /**

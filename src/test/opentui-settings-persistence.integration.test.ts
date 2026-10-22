@@ -188,12 +188,15 @@ describe("real WorkspaceController Settings persistence", () => {
 			return setup.captureCharFrame().includes("Choose an action");
 		});
 	}
-	async function chooseModeDeletion(setup: TestRendererSetup, choice: "discard" | "build" | "review") {
+	async function chooseModeDeletion(
+		setup: TestRendererSetup,
+		choice: "discard" | "build" | "review",
+		expectedNextMode?: string,
+	) {
 		await eventually(async () => {
 			await setup.flush();
 			return setup.captureCharFrame().includes("Delete mode");
 		});
-		const currentMode = setup.captureCharFrame().match(/Delete mode (\S+)/)?.[1];
 		const steps = choice === "discard" ? 1 : 2;
 		for (let i = 0; i < steps; i++) {
 			setup.mockInput.pressArrow("down");
@@ -204,7 +207,7 @@ describe("real WorkspaceController Settings persistence", () => {
 		await eventually(async () => {
 			await setup.flush();
 			const frame = setup.captureCharFrame();
-			if (currentMode === "plan") return frame.includes("Delete mode build");
+			if (expectedNextMode) return frame.includes(`Delete mode ${expectedNextMode}`);
 			return !frame.includes("Delete mode ") || frame.includes("Error:");
 		});
 	}
@@ -479,7 +482,7 @@ describe("real WorkspaceController Settings persistence", () => {
 				await f.setup.flush();
 				return f.setup.captureCharFrame().includes("Choose an action");
 			});
-			await chooseModeDeletion(f.setup, "review");
+			await chooseModeDeletion(f.setup, "review", "build");
 			await chooseModeDeletion(f.setup, "review");
 			await f.saved();
 			const saved = await f.json();

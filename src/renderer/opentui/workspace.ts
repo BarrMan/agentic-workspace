@@ -1,22 +1,12 @@
 import {
 	BoxRenderable,
-	bg,
-	bold,
 	type CliRenderer,
-	CodeRenderable,
 	type EmbeddedTerminalRenderable,
-	fg,
 	type KeyEvent,
-	MarkdownRenderable,
-	type MouseEvent,
 	type PasteEvent,
 	parseColor,
-	StyledText,
-	SyntaxStyle,
-	strikethrough,
 	TextAttributes,
 	TextRenderable,
-	t,
 } from "@opentui/core";
 import type { AgentIndication } from "../../model/session/types.ts";
 import { statusComparisonKey } from "../../model/task/status.ts";
@@ -24,7 +14,6 @@ import type { TaskDetail } from "../../model/task/task-projection.ts";
 import { isTerminalStatus } from "../../model/task/terminal-status.ts";
 import type { AgentHost } from "../../runtime/live/agent-host.ts";
 import type { GroupMembership, TaskGroup } from "../../storage/group-store.ts";
-import { getIndicationColor, getSelectedIndicationColor } from "../formatters/status-icon.ts";
 import { buildGroupRows, findGroup, type GroupRow } from "./groups.ts";
 import {
 	createKeybindings,
@@ -35,34 +24,16 @@ import {
 	shortcutKeyFromEvent,
 	shortcutsConfig,
 } from "./keybindings.ts";
-import { renderModeRowLabel } from "./mode-row-label.ts";
-import { TaskArtifactView, type TaskArtifactViewApi } from "./task-artifact-view.ts";
-import { generateTaskDetailSections, type TaskDetailStyledOptions } from "./task-detail-content.ts";
-
-const TASK_DESCRIPTION_STYLE = SyntaxStyle.fromStyles({
-	default: { fg: "#e5e5e5" },
-	"markup.heading": { fg: "cyan", bold: true },
-	"markup.strong": { fg: "brightWhite", bold: true },
-	"markup.italic": { fg: "cyan", italic: true },
-	"markup.raw": { fg: "yellow" },
-	"markup.raw.block": { fg: "#e5e5e5" },
-	"markup.link.label": { fg: "cyan", underline: true },
-	"markup.link.url": { fg: "blue", underline: true },
-	"markup.list": { fg: "blue" },
-});
-
-const artifactViewShortcut = shortcutsConfig.workspace.openArtifacts;
-const artifactCloseShortcut = shortcutsConfig.taskViewer.escape;
-
-/** Task-list wheel changes selection, not TextRenderable's private scroll offset. */
-class TaskListText extends TextRenderable {
-	protected override onMouseEvent(event: MouseEvent): void {
-		if (event.type !== "scroll") super.onMouseEvent(event);
-	}
-}
+import type { TaskArtifactViewApi } from "./task-artifact-view.ts";
+import type { TaskDetailStyledOptions } from "./task-detail-content.ts";
+import { mountWorkspaceDetails } from "./workspace-details.ts";
+import { mountWorkspacePreview } from "./workspace-preview.ts";
+import { mountWorkspaceTaskList } from "./workspace-task-list.ts";
 
 const SELECTED_TASK_BACKGROUND = "#cbd5e1";
 const SELECTED_TASK_FOREGROUND = "#111111";
+const artifactViewShortcut = shortcutsConfig.workspace.openArtifacts;
+const artifactCloseShortcut = shortcutsConfig.taskViewer.escape;
 
 /** Keep catalog hues legible on either surface without tying mode identity to UI focus. */
 function modeDisplayColor(color: string | undefined, selected = false): string | undefined {
@@ -85,24 +56,6 @@ function modeDisplayColor(color: string | undefined, selected = false): string |
 			return `#${channels.map((channel) => channel.toString(16).padStart(2, "0")).join("")}`;
 	}
 	return selected ? SELECTED_TASK_FOREGROUND : "#ffffff";
-}
-
-// Matches AOE's session list: fixed 35 columns, leaving the preview at least 40.
-const AOE_LIST_WIDTH = 35;
-const AOE_PREVIEW_MIN_WIDTH = 40;
-function sliceByCells(value: string, start: number, end: number): string {
-	let result = "";
-	let offset = 0;
-	for (const { segment } of new Intl.Segmenter(undefined, { granularity: "grapheme" }).segment(value)) {
-		const next = offset + Bun.stringWidth(segment);
-		if (offset >= start && next <= end) result += segment;
-		offset = next;
-	}
-	return result;
-}
-
-function workspaceTaskListWidth(availableWidth: number): number {
-	return Math.max(10, Math.min(AOE_LIST_WIDTH, availableWidth - AOE_PREVIEW_MIN_WIDTH));
 }
 
 export type OpenTuiWorkspaceTaskEntry = {
@@ -228,23 +181,6 @@ export type OpenTuiWorkspaceMount = {
 function clampIndex(index: number, length: number): number {
 	if (length === 0) return 0;
 	return Math.max(0, Math.min(index, length - 1));
-}
-
-function visibleStart(selectedIndex: number, firstVisible: number, visibleRows: number, length: number): number {
-	if (selectedIndex < firstVisible) return selectedIndex;
-	if (selectedIndex >= firstVisible + visibleRows) return selectedIndex - visibleRows + 1;
-	return Math.max(0, Math.min(firstVisible, Math.max(0, length - visibleRows)));
-}
-
-function taskDetails(task: OpenTuiWorkspaceTaskEntry | undefined): string {
-	if (!task) return "No task selected.";
-	const fields = [
-		`Status: ${task.status}`,
-		task.priority ? `Priority: ${task.priority}` : undefined,
-		task.labels?.length ? `Labels: ${task.labels.join(", ")}` : undefined,
-		"",
-	];
-	return fields.filter((field): field is string => field !== undefined).join("\n");
 }
 
 /** Mount one retained normal-task workspace screen inside an existing OpenTUI host. */
@@ -387,133 +323,12 @@ export function mountOpenTuiWorkspace(
 		flexDirection: "row",
 		columnGap: 1,
 	});
-	const taskList = new BoxRenderable(renderer, {
-		width: workspaceTaskListWidth(renderer.width),
-		flexShrink: 0,
-		height: "100%",
-		flexDirection: "column",
-		border: ["top"],
-		title: " Tasks ",
-		borderColor: "#555555",
-		backgroundColor: "#1f1f1f",
-		focusable: true,
-	});
 	const details = new BoxRenderable(renderer, {
 		flexGrow: 1,
 		flexBasis: 0,
 		height: "100%",
 		minHeight: 0,
 		flexDirection: "column",
-	});
-	const taskViewport = new BoxRenderable(renderer, {
-		width: "100%",
-		flexGrow: 1,
-		flexBasis: 0,
-		minHeight: 0,
-		overflow: "hidden",
-		border: ["left", "right", "bottom"],
-		borderStyle: "rounded",
-		borderColor: "#555555",
-		backgroundColor: "#1f1f1f",
-	});
-	const taskText = new TaskListText(renderer, {
-		width: "100%",
-		height: "100%",
-		wrapMode: "none",
-		overflow: "hidden",
-		selectable: false,
-	});
-	const detailRegion = new BoxRenderable(renderer, {
-		backgroundColor: "#111111",
-		width: "100%",
-		height: "30%",
-		flexShrink: 0,
-		flexDirection: "column",
-		border: true,
-		title: " Details ",
-		borderColor: "gray",
-		bottomTitleAlignment: "right",
-		overflow: "hidden",
-	});
-	const detailText = new TextRenderable(renderer, {
-		width: "100%",
-		height: "auto",
-		wrapMode: "word",
-		overflow: "hidden",
-		fg: "#e5e5e5",
-		bg: "#111111",
-	});
-	const detailMarkdown = new MarkdownRenderable(renderer, {
-		width: "100%",
-		height: "100%",
-		overflow: "hidden",
-		content: "",
-		syntaxStyle: TASK_DESCRIPTION_STYLE,
-		streaming: true,
-		renderNode: (token, context) => {
-			if (token.type !== "code") return undefined;
-			const renderable = context.defaultRender();
-			if (renderable instanceof CodeRenderable) {
-				renderable.drawUnstyledText = true;
-				renderable.streaming = false;
-			}
-			return renderable;
-		},
-		fg: "#e5e5e5",
-		bg: "#111111",
-	});
-	const descriptionViewport = new BoxRenderable(renderer, {
-		width: "100%",
-		flexGrow: 1,
-		flexBasis: 0,
-		minHeight: 0,
-		overflow: "hidden",
-	});
-	const detailAfterText = new TextRenderable(renderer, {
-		width: "100%",
-		height: "auto",
-		wrapMode: "word",
-		overflow: "hidden",
-		fg: "#e5e5e5",
-		bg: "#111111",
-	});
-	let artifactView: TaskArtifactView | undefined;
-	let artifactViewOpen = false;
-	let artifactViewTaskId: string | undefined;
-	const agentRegion = new BoxRenderable(renderer, {
-		width: "100%",
-		flexGrow: 1,
-		flexBasis: 0,
-		minHeight: 5,
-		border: true,
-		title: " Live preview ",
-		borderColor: "gray",
-		flexDirection: "column",
-		overflow: "hidden",
-	});
-	const agentHeader = new TextRenderable(renderer, { width: "100%", height: 1, wrapMode: "none" });
-	const agentOutput = new BoxRenderable(renderer, {
-		width: "100%",
-		flexGrow: 1,
-		flexBasis: 0,
-		overflow: "hidden",
-	});
-	const agentPlaceholder = new BoxRenderable(renderer, {
-		position: "absolute",
-		top: 0,
-		left: 0,
-		width: "100%",
-		height: "100%",
-		justifyContent: "center",
-		backgroundColor: "#111111",
-		zIndex: 1,
-	});
-	const agentText = new TextRenderable(renderer, {
-		width: "100%",
-		height: "auto",
-		wrapMode: "word",
-		fg: "#e5e5e5",
-		bg: "#111111",
 	});
 	const fullscreenHint = new TextRenderable(renderer, {
 		width: "100%",
@@ -523,8 +338,6 @@ export function mountOpenTuiWorkspace(
 		fg: "#f5f5f5",
 		bg: "#111111",
 	});
-	let agentMount: EmbeddedTerminalRenderable | undefined;
-	let mountedAgent: AgentHost | undefined;
 	const footer = new TextRenderable(renderer, {
 		width: "100%",
 		height: "auto",
@@ -533,54 +346,35 @@ export function mountOpenTuiWorkspace(
 		attributes: TextAttributes.DIM,
 	});
 
-	taskViewport.add(taskText);
-	taskList.add(taskViewport);
-	detailRegion.add(detailText);
-	detailRegion.add(descriptionViewport);
-	detailRegion.add(detailAfterText);
-	descriptionViewport.add(detailMarkdown);
-	const mountArtifactView = (taskId: string): void => {
-		if (!opts.taskArtifactApi) return;
-		if (!artifactView) {
-			artifactView = new TaskArtifactView({
-				renderer,
-				parent: detailRegion,
-				taskId,
-				api: opts.taskArtifactApi,
-				onError: (message) => {
-					notice = `Artifact review: ${message}`;
-					redraw();
-				},
-			});
-			artifactView.root.visible = false;
-			artifactView.setOpen(false);
-		} else if (artifactViewTaskId !== taskId) {
-			void artifactView.setTask(taskId);
-		}
-		artifactViewTaskId = taskId;
-		artifactViewOpen = true;
-		artifactView.setOpen(true);
-		artifactView.root.visible = true;
-		detailText.visible = false;
-		detailMarkdown.visible = false;
-		detailAfterText.visible = false;
-		redraw();
-	};
-	agentPlaceholder.add(agentText);
-	agentOutput.add(agentPlaceholder);
-	const agentPane = new BoxRenderable(renderer, {
-		width: "100%",
-		flexGrow: 1,
-		flexBasis: 0,
-		minHeight: 0,
-		flexDirection: "column",
-	});
-	agentPane.add(agentHeader);
-	agentPane.add(agentRegion);
-	agentRegion.add(agentOutput);
-	details.add(detailRegion);
-	details.add(agentPane);
-	body.add(taskList);
+	const detailPane = mountWorkspaceDetails(
+		renderer,
+		details,
+		opts.taskArtifactApi,
+		(message) => {
+			notice = `Artifact review: ${message}`;
+			redraw();
+		},
+		() => redraw(),
+	);
+	const preview = mountWorkspacePreview(renderer, details, () => focusAgent());
+	const taskList = mountWorkspaceTaskList(
+		renderer,
+		body,
+		(rowIndex) => {
+			agentFocused = false;
+			opts.onAgentFocusChange?.(false);
+			select(rowIndex);
+			redraw();
+		},
+		(delta) => {
+			if (!agentFocused) select(selectedRow + delta);
+		},
+		(firstVisibleTaskIndex) => {
+			taskFirstVisible = firstVisibleTaskIndex;
+			opts.onTaskScrollChange?.(firstVisibleTaskIndex);
+		},
+		() => redraw(),
+	);
 	body.add(details);
 	surface.add(navbar);
 	surface.add(body);
@@ -601,161 +395,61 @@ export function mountOpenTuiWorkspace(
 	};
 	const shortcut = (descriptor: Parameters<typeof formatShortcut>[0]): string =>
 		formatShortcut({ ...descriptor, keys: descriptor.keys.slice(0, 1), label: undefined }, opts.keyboardOverrides);
-	const visibleTaskRows = (): number => Math.max(1, taskViewport.height - 1);
 	redraw = (): void => {
 		if (disposed) return;
-		const scrollAnchor = Math.max(0, selectedRow);
-		taskList.title = ` Tasks (${opts.tasks.length}) `;
-		taskList.width = workspaceTaskListWidth(renderer.width);
-		// Before the first layout pass the task viewport has no measured height. Treating that as a
-		// one-row viewport would scroll the selection to the top and pin it there on every remount.
-		const measuredRows = taskViewport.height - 1;
-		if (measuredRows > 0) {
-			const nextFirstVisible = visibleStart(scrollAnchor, taskFirstVisible, measuredRows, rows.length);
-			if (nextFirstVisible !== taskFirstVisible) {
-				taskFirstVisible = nextFirstVisible;
-				opts.onTaskScrollChange?.(taskFirstVisible);
-			}
-		} else {
-			taskFirstVisible = Math.max(0, Math.min(taskFirstVisible, Math.max(0, rows.length - 1)));
-		}
 		filterText.content = opts.filterSummary ?? "All tasks";
+		const task = selectedTask();
+		taskList.update({
+			tasks: opts.tasks,
+			statuses: opts.statuses ?? [],
+			rows,
+			selectedRow,
+			firstVisibleTaskIndex: taskFirstVisible,
+			indicationByTask,
+			modeProjectionByTask: opts.modeProjectionByTask,
+			displayModeColor: modeDisplayColor,
+		});
 		const showDetails = detailsVisible && !fullscreen;
-		detailRegion.visible = showDetails;
-		detailRegion.height = showDetails ? "30%" : 0;
-		taskList.visible = taskPaneVisible && !fullscreen;
+		detailPane.updateArtifactApi(opts.taskArtifactApi);
+		detailPane.update({
+			task,
+			detail: task ? opts.taskDetails?.get(task.id) : undefined,
+			options: opts.taskDetailOptions,
+			visible: showDetails,
+			collapseShortcut: shortcut(shortcutsConfig.workspace.toggleDetails),
+		});
+		taskList.root.visible = taskPaneVisible && !fullscreen;
 		navbar.visible = !fullscreen;
 		footer.visible = !fullscreen;
-		agentHeader.visible = !fullscreen && Boolean(selectedSession());
 		body.columnGap = taskPaneVisible && !fullscreen ? 1 : 0;
-		taskText.content = rows.length
-			? new StyledText(
-					rows.slice(taskFirstVisible, taskFirstVisible + visibleTaskRows()).flatMap((row, offset) => {
-						const rowIndex = taskFirstVisible + offset;
-						const selected = rowIndex === selectedRow;
-						if (row.kind === "group") {
-							const label = `${"  ".repeat(row.depth)}${row.collapsed ? "▸" : "▾"} ${row.name} (${row.taskCount})`;
-							if (selected) {
-								return t`${bg(SELECTED_TASK_BACKGROUND)(fg(SELECTED_TASK_FOREGROUND)(bold(label)))}\n`.chunks;
-							}
-							return t`${fg("#60a5fa")(bold(label))}\n`.chunks;
-						}
-						const task = opts.tasks.find((entry) => entry.id === row.id);
-						if (!task) return [];
-						const projectedMode = opts.modeProjectionByTask?.(task.id);
-						const indication = indicationByTask.get(task.id);
-						const marker = indication ? "●" : "";
-						const label = renderModeRowLabel({
-							title: task.title,
-							modeLabel: projectedMode?.modeLabel ?? "",
-							approved: projectedMode?.approved ?? false,
-							selected,
-							activityMarker: marker,
-							depth: row.depth,
-							done: isTerminalStatus(task.status, opts.statuses ?? []),
-							width: Math.max(0, taskViewport.width - 2),
-							narrow: taskViewport.width < 24,
-						});
-						const terminal = isTerminalStatus(task.status, opts.statuses ?? []);
-						const title = sliceByCells(label.text, label.title.start, label.title.end);
-						const beforeTitle = sliceByCells(label.text, 0, label.title.start);
-						const activityStart = 0;
-						const activityEnd = activityStart + (indication ? marker.length : 0);
-						const afterActivity = beforeTitle.slice(activityEnd);
-						const modeColor = modeDisplayColor(projectedMode?.modeColor, selected);
-						const styled = (value: string, color?: string, done = false, emphasize = true) => {
-							let content = emphasize ? bold(value) : value;
-							if (done) content = strikethrough(content);
-							if (color || selected) content = fg(color ?? SELECTED_TASK_FOREGROUND)(content);
-							if (selected) content = bg(SELECTED_TASK_BACKGROUND)(content);
-							return t`${content}`.chunks;
-						};
-						const rowChunks = [
-							...styled(beforeTitle.slice(0, activityStart)),
-							...(indication
-								? styled(
-										marker,
-										selected ? getSelectedIndicationColor(indication) : getIndicationColor(indication),
-										false,
-										false,
-									)
-								: []),
-							...styled(afterActivity),
-							...styled(title, undefined, terminal),
-							...styled(sliceByCells(label.text, label.title.end, label.mode.start)),
-							...styled(label.text.slice(label.mode.characterStart, label.mode.characterEnd), modeColor),
-							...styled(label.text.slice(label.mode.characterEnd)),
-						];
-						return [...rowChunks, ...t`\n`.chunks];
-					}),
-				)
-			: "No tasks.";
-		const task = selectedTask();
-		// The controller precomputes one rich TaskDetail for the selected task; entries without
-		// one (fixtures, or before the detail read lands) keep the compact fallback.
-		const selectedDetail = task ? opts.taskDetails?.get(task.id) : undefined;
-		if (artifactView) {
-			artifactView.root.visible = artifactViewOpen && Boolean(task && opts.taskArtifactApi);
-			if (task && task.id !== artifactViewTaskId) {
-				artifactViewTaskId = task.id;
-				void artifactView.setTask(task.id);
-			}
-		}
-		detailText.visible = !artifactViewOpen;
-		detailMarkdown.visible = !artifactViewOpen;
-		detailAfterText.visible = !artifactViewOpen;
-		if (!task) {
-			detailText.content = "No task selected.";
-			detailMarkdown.content = "";
-			detailAfterText.content = "";
-		} else if (selectedDetail) {
-			const sections = generateTaskDetailSections(selectedDetail, opts.taskDetailOptions ?? {});
-			detailText.content = sections.beforeDescription;
-			detailMarkdown.content = sections.description;
-			detailAfterText.content = sections.afterDescription;
-		} else {
-			detailText.content = t`${bold(fg("blue")(task.id))} - ${task.title}\n${taskDetails(task)}\nDescription:`;
-			detailMarkdown.content = task.description?.trim() || "No description.";
-			detailAfterText.content = "";
-		}
 		const session = selectedSession();
 		const liveAgent = opts.liveAgent?.taskId === selectedTask()?.id ? opts.liveAgent : undefined;
-		const activeHost = liveAgent?.status !== "error" ? liveAgent?.host : undefined;
-		if (mountedAgent !== activeHost || agentMount !== (activeHost ? liveAgent?.terminal : undefined)) {
-			detachAgent();
-			mountedAgent = activeHost;
-			agentMount = activeHost ? liveAgent?.terminal : undefined;
-			if (agentMount) {
-				agentOutput.add(agentMount);
-				agentMount.on("focused", onAgentFocus);
-				agentMount.invalidate();
-			}
-		}
 		const selectedMode = task ? opts.modeProjectionByTask?.(task.id) : undefined;
 		const modeLabel = selectedMode?.modeLabel ?? opts.selectedModeId ?? "mode";
-		const headerModeColor = modeDisplayColor(selectedMode?.modeColor);
-		const headerStatus = session?.status ?? "stopped";
-		agentHeader.content = headerModeColor
-			? t`Agent session · ${headerStatus} · ${fg(headerModeColor)(bold(modeLabel))} · ${session?.cwd ?? ""}`
-			: `Agent session · ${headerStatus} · ${modeLabel} · ${session?.cwd ?? ""}`;
-		agentPlaceholder.visible = !agentMount && (!session || session.status === "stopped");
-		if (agentFocused && !agentMount) {
+		const terminal = liveAgent?.status === "error" ? undefined : liveAgent?.terminal;
+		if (agentFocused && !terminal) {
 			agentFocused = false;
 			opts.onAgentFocusChange?.(false);
 		}
-		agentText.content =
-			session?.status === "stopped"
-				? `Session ended · press ${shortcut(shortcutsConfig.workspace.sessions)} to resume`
-				: session
-					? ""
-					: `No session in ${modeLabel}`;
+		const focusedRenderable = renderer.currentFocusedRenderable;
+		const mayFocusPreview = !focusedRenderable || surface.focused || surface.hasFocusedDescendant;
+		preview.update({
+			session,
+			liveAgent,
+			modeLabel,
+			modeColor: modeDisplayColor(selectedMode?.modeColor),
+			resumeShortcut: shortcut(shortcutsConfig.workspace.sessions),
+			focused: agentFocused,
+			mayFocus: mayFocusPreview,
+			fullscreen,
+		});
 		const navigationShortcuts = [
 			task && opts.taskArtifactApi
 				? `[${formatShortcut(artifactViewShortcut, opts.keyboardOverrides)}] Artifacts`
 				: undefined,
 			...actionInventory().map((action) => `[${shortcut(action.shortcut)}] ${action.label}`),
 		].filter((value): value is string => Boolean(value));
-		const shortcuts = artifactViewOpen
+		const shortcuts = detailPane.artifactsOpen
 			? `Artifacts · ${formatShortcut(artifactCloseShortcut, opts.keyboardOverrides)}: close · ↑/↓: select`
 			: (opts.footer ?? navigationShortcuts.join(" · "));
 		footer.content = agentFocused
@@ -763,28 +457,20 @@ export function mountOpenTuiWorkspace(
 			: notice
 				? `${notice}\n${shortcuts}`
 				: shortcuts;
-		detailRegion.bottomTitle = detailsVisible
-			? ` Press ${shortcut(shortcutsConfig.workspace.toggleDetails)} to collapse `
-			: undefined;
 		fullscreenHint.visible = fullscreen;
 		fullscreenHint.content = ` Press ${shortcut(shortcutsConfig.workspace.quickPreviewExit)} to exit fullscreen `;
-		taskList.borderColor = "#555555";
-		agentRegion.borderColor = agentFocused ? "yellow" : "gray";
-		agentRegion.border = !fullscreen;
-		agentRegion.title = agentFocused ? " Live preview (active) " : " Live preview ";
 		if (agentFocused) {
-			taskList.blur();
+			taskList.root.blur();
 			// A controller-owned modal owns focus while it is open; a refresh must not take it.
-			const focused = renderer.currentFocusedRenderable;
-			if (!focused || surface.focused || surface.hasFocusedDescendant) agentMount?.focus();
+			if (mayFocusPreview) preview.terminal?.focus();
 		} else {
-			agentMount?.blur();
+			preview.terminal?.blur();
 			// Restore pane focus after controller remounts without stealing modal focus.
 			const focused = renderer.currentFocusedRenderable;
 			if (taskPaneVisible && (!focused || focused.isDestroyed || surface.focused || surface.hasFocusedDescendant)) {
-				taskList.focus();
+				taskList.root.focus();
 			} else {
-				taskList.blur();
+				taskList.root.blur();
 				if (!taskPaneVisible && (!focused || focused.isDestroyed || surface.focused || surface.hasFocusedDescendant)) {
 					surface.focus();
 				}
@@ -797,17 +483,6 @@ export function mountOpenTuiWorkspace(
 		agentFocused = true;
 		opts.onAgentFocusChange?.(true);
 		redraw();
-	};
-	const onAgentFocus = (): void => {
-		focusAgent();
-	};
-	const detachAgent = (): void => {
-		if (!agentMount) return;
-		agentMount.off("focused", onAgentFocus);
-		agentMount.blur();
-		if (agentMount.hasSelection()) renderer.clearSelection();
-		agentOutput.remove(agentMount);
-		agentMount = undefined;
 	};
 	const select = (rowIndex: number): void => {
 		if (rowIndex < 0 || rowIndex >= rows.length) return;
@@ -936,7 +611,11 @@ export function mountOpenTuiWorkspace(
 					shortcut: shortcutsConfig.workspace.select,
 					label: "Start",
 					run: () =>
-						opts.onAgentStart?.(task, Math.max(1, agentOutput.width || 1), Math.max(1, agentOutput.height || 1)),
+						opts.onAgentStart?.(
+							task,
+							Math.max(1, preview.outputSize.width || 1),
+							Math.max(1, preview.outputSize.height || 1),
+						),
 				},
 			task &&
 				!isTerminalStatus(task.status, opts.statuses ?? []) &&
@@ -986,7 +665,7 @@ export function mountOpenTuiWorkspace(
 				label: "Filter",
 				run: () => queueMicrotask(() => opts.onFilterRequest?.()),
 			},
-			agentMount && {
+			preview.terminal && {
 				shortcut: shortcutsConfig.workspace.fullscreen,
 				label: "Fullscreen",
 				run: () => {
@@ -1011,21 +690,20 @@ export function mountOpenTuiWorkspace(
 		if (renderer.currentFocusedRenderable && !surface.focused && !surface.hasFocusedDescendant) return;
 		// A retained terminal can regain native focus before the controller observes
 		// its focus event (for example when a session picker closes).
-		if (agentMount?.focused) focusAgent();
+		if (preview.terminal?.focused) focusAgent();
 		if (agentFocused) {
 			key.preventDefault();
 			key.stopPropagation();
-			if (!agentKeybindings.dispatch(key)) agentMount?.handleKeyPress(key);
+			if (!agentKeybindings.dispatch(key)) preview.terminal?.handleKeyPress(key);
 			return;
 		}
-		if (artifactViewOpen) {
+		if (detailPane.artifactsOpen) {
 			if (matchesShortcut(artifactCloseShortcut, key, opts.keyboardOverrides)) {
 				key.preventDefault();
 				key.stopPropagation();
-				artifactViewOpen = false;
-				artifactView?.setOpen(false);
+				detailPane.closeArtifacts();
 				redraw();
-				taskList.focus();
+				taskList.root.focus();
 				return;
 			}
 			if (
@@ -1034,7 +712,7 @@ export function mountOpenTuiWorkspace(
 			) {
 				key.preventDefault();
 				key.stopPropagation();
-				void artifactView?.navigate(matchesShortcut(shortcutsConfig.shared.up, key, opts.keyboardOverrides) ? -1 : 1);
+				detailPane.navigateArtifacts(matchesShortcut(shortcutsConfig.shared.up, key, opts.keyboardOverrides) ? -1 : 1);
 				return;
 			}
 		}
@@ -1047,7 +725,7 @@ export function mountOpenTuiWorkspace(
 			if (task) {
 				key.preventDefault();
 				key.stopPropagation();
-				mountArtifactView(task.id);
+				detailPane.openArtifacts();
 				return;
 			}
 		}
@@ -1103,7 +781,7 @@ export function mountOpenTuiWorkspace(
 		if (task && selectedTaskHasSessions()) opts.onHandoffRequest?.(task);
 	});
 	keybindings.on(shortcutsConfig.workspace.fullscreen, () => {
-		if (!agentMount) return;
+		if (!preview.terminal) return;
 		fullscreen = true;
 		agentFocused = true;
 		redraw();
@@ -1137,8 +815,8 @@ export function mountOpenTuiWorkspace(
 		if (!task) return;
 		opts.onAgentStart?.(
 			task,
-			Math.max(1, agentOutput.width || Math.floor((renderer.width - 1) * (taskPaneVisible ? 0.7 : 1)) - 2),
-			Math.max(1, agentOutput.height || renderer.height - 9),
+			Math.max(1, preview.outputSize.width || Math.floor((renderer.width - 1) * (taskPaneVisible ? 0.7 : 1)) - 2),
+			Math.max(1, preview.outputSize.height || renderer.height - 9),
 		);
 	});
 	keybindings.on(shortcutsConfig.workspace.editTask, () => requestTaskAction("edit"));
@@ -1158,40 +836,15 @@ export function mountOpenTuiWorkspace(
 	keybindings.on(shortcutsConfig.workspace.nextItem, () => select(selectedRow + 1));
 	keybindings.on(shortcutsConfig.workspace.first, () => select(0));
 	keybindings.on(shortcutsConfig.workspace.last, () => select(rows.length - 1));
-	taskList.onMouseScroll = (event): void => {
-		event.preventDefault();
-		event.stopPropagation();
-		if (agentFocused || !event.scroll) return;
-		const delta = event.scroll.direction === "up" ? -1 : event.scroll.direction === "down" ? 1 : 0;
-		if (delta) select(selectedRow + delta);
-	};
-	taskText.onMouseUp = (event): void => {
-		if (event.button !== 0) return;
-		const row = event.y - taskText.screenY;
-		const rowIndex = taskFirstVisible + row;
-		if (rowIndex < 0 || rowIndex >= rows.length) return;
-		event.preventDefault();
-		event.stopPropagation();
-		agentFocused = false;
-		opts.onAgentFocusChange?.(false);
-		select(rowIndex);
-		redraw();
-	};
 	keybindings.on(shortcutsConfig.workspace.toggleDetails, () => toggleDetails());
 	keybindings.on(shortcutsConfig.workspace.toggleTaskPane, () => toggleTaskPane());
-	const previousTaskViewportOnSizeChange = taskViewport.onSizeChange;
-	const onTaskViewportSizeChange = (): void => {
-		previousTaskViewportOnSizeChange?.call(taskViewport);
-		redraw();
-	};
-	taskViewport.onSizeChange = onTaskViewportSizeChange;
 	const onResize = (): void => redraw();
 	const onPaste = (event: PasteEvent): void => {
-		if (disposed || !agentFocused || !mountedAgent) return;
+		if (disposed || !agentFocused || !preview.terminal) return;
 		if (renderer.currentFocusedRenderable && !surface.focused && !surface.hasFocusedDescendant) return;
 		event.preventDefault();
 		event.stopPropagation();
-		agentMount?.handlePaste(event);
+		preview.terminal.handlePaste(event);
 	};
 
 	renderer.keyInput.on("keypress", onKeyPress);
@@ -1227,13 +880,11 @@ export function mountOpenTuiWorkspace(
 			renderer.keyInput.off("keypress", onKeyPress);
 			renderer.keyInput.off("paste", onPaste);
 			renderer.off("resize", onResize);
-			if (taskViewport.onSizeChange === onTaskViewportSizeChange) {
-				taskViewport.onSizeChange = previousTaskViewportOnSizeChange;
-			}
 			keybindings.clear();
 			agentKeybindings.clear();
-			detachAgent();
-			artifactView?.dispose();
+			taskList.dispose();
+			preview.dispose();
+			detailPane.dispose();
 			surface.destroyRecursively();
 		},
 	};

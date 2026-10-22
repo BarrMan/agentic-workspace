@@ -4,21 +4,21 @@ import { resolveRuntimeCwd } from "../lib/runtime-cwd.ts";
 import { DEFAULT_STATUSES, FALLBACK_STATUS } from "../model/constants.ts";
 import { TaskCollectionFilterError } from "../model/errors/task-collection.ts";
 import { AmbiguousTaskIdError } from "../model/errors/task-id.ts";
-import {
-	Config,
-	removeMode as removeConfiguredMode,
-	removeAgentPreset as removeExactAgentPreset,
-} from "../model/session/config.ts";
+import { Config, removeAgentPreset as removeExactAgentPreset } from "../model/session/config.ts";
 import type { AgentConfiguration, ModeId, SessionFactory } from "../model/session/types.ts";
 import { requireMilestoneId } from "../model/task/milestones.ts";
 import { formatValidPriorityValues, resolvePriorityLabel } from "../model/task/priority-config.ts";
-import { DEFAULT_ORDINAL_STEP, reconcileBoardPlacement } from "../model/task/reorder.ts";
+import {
+	DEFAULT_ORDINAL_STEP,
+	planAppendedTaskPlacement,
+	planOrderedTaskPlacement,
+	planTaskReorder,
+} from "../model/task/reorder.ts";
 import { formatValidStatuses, getCanonicalStatuses } from "../model/task/status.ts";
 import { Task as TaskModel } from "../model/task/task.ts";
 import { TaskCollection as TaskCollectionModel } from "../model/task/task-collection.ts";
 import { taskIdKey, taskIdsEqual } from "../model/task/task-id.ts";
 import { TaskIdentityIndex, type TaskIdentityRecord } from "../model/task/task-identity-index.ts";
-import { TaskOrdering } from "../model/task/task-ordering.ts";
 import { LOCAL_TASK_LOOKUP_HINT } from "../model/task/task-path.ts";
 import type { TaskCorpusSnapshot } from "../model/task/task-projection.ts";
 import { TaskSearchIndex } from "../model/task/task-search.ts";
@@ -45,7 +45,7 @@ import {
 	updateAgentConfiguration,
 } from "./agent-configuration.ts";
 import { CallingSessionOperations } from "./calling-session.ts";
-import { planOrderedTaskPlacement } from "./ordered-task-move-planner.ts";
+import { ModeDeletionWorkflow } from "./mode-deletion.ts";
 import { PersistentTaskRead } from "./persistent-task-read.ts";
 import { type PersistentSearchOptions, searchSnapshot } from "./search-service.ts";
 import { SessionApplication } from "./session-application.ts";
@@ -54,7 +54,6 @@ import { TaskCreationService } from "./task-creation-workflow.ts";
 import { TaskLifecycleService } from "./task-lifecycle-service.ts";
 import { type CommittedTaskChange, ProjectTaskMutations } from "./task-mutation-service.ts";
 import type { TaskQueryOptions, TaskReadOptions } from "./task-query-workflow.ts";
-import { planTaskReorder } from "./task-reorder-plan.ts";
 import { VacatedTaskReferenceService } from "./vacated-task-reference-service.ts";
 import { WorkspaceStateService } from "./workspace-state.ts";
 
@@ -63,11 +62,6 @@ interface MoveTasksPlan {
 	readonly movedTasks: Task[];
 	readonly changedTasks: Task[];
 	readonly failures: Array<{ taskId: string; reason: string }>;
-}
-
-interface MoveTaskPlacement {
-	readonly movedTasks: Task[];
-	readonly changedTasks: Task[];
 }
 
 export type { TaskReadOptions } from "./task-query-workflow.ts";
@@ -111,6 +105,7 @@ export class Core {
 	private readonly vacatedTaskReferences: VacatedTaskReferenceService;
 	private readonly taskMutations: ProjectTaskMutations;
 	private readonly taskLifecycle: TaskLifecycleService;
+	private readonly modeDeletion: ModeDeletionWorkflow;
 	private readonly persistentReads: PersistentTaskRead;
 	private readonly storage: Storage;
 	private configSnapshot?: Promise<Config>;
@@ -133,6 +128,7 @@ export class Core {
 			sessionFactory: options.sessionFactory,
 			maxSessions: options.maxSessions ?? 10,
 		});
+		this.modeDeletion = new ModeDeletionWorkflow(this.storage, this.sessionApplication, this);
 		this.callingSession = new CallingSessionOperations(
 			(taskId) => this.sessionApplication.store.read(taskId),
 			(taskId, modeId, question) => this.sessionApplication.askPrevious(taskId, modeId, question),
@@ -220,97 +216,7 @@ export class Core {
 		modeId: ModeId,
 		options: { confirmed: true; moveToModeId?: ModeId },
 	): Promise<{ deletedModeId: ModeId; taskIds: string[] }> {
-		if (!options.confirmed) throw new Error("Mode deletion requires explicit confirmation.");
-		return await this.withTaskChanges(async (changes) => {
-			const releaseMode = await this.storage.claimModeAdmission(modeId);
-			let releaseDestination: (() => Promise<void>) | undefined;
-			const taskReleases: Array<() => Promise<void>> = [];
-			const prepared: Array<{
-				taskId: string;
-				record: { id: string };
-				stop: () => Promise<void>;
-				release: () => Promise<void>;
-			}> = [];
-			const completed: string[] = [];
-			const stopped: Array<{ taskId: string; sessionId: string }> = [];
-			let primary: Error | undefined;
-			const partialEffectsMessage = () =>
-				`Mode deletion failed after stopping sessions: ${stopped.map(({ taskId, sessionId }) => `${taskId}/${sessionId}`).join(", ") || "none"}; ${options.moveToModeId ? "transferred" : "removed"} sessions from: ${completed.join(", ") || "none"}.`;
-			try {
-				await this.storage.modeDeletionJournal.withLock(async () => {
-					if (await this.storage.modeDeletionJournal.read())
-						throw new Error("A mode deletion is pending; preserve its journal and recover it before another deletion.");
-					const catalog = await this.getProjectModeCatalog();
-					if (!catalog.profiles[modeId]) throw new Error(`Unknown mode '${modeId}'.`);
-					if (catalog.order.length <= 1) throw new Error("Cannot delete the last configured mode.");
-					const destination = options.moveToModeId;
-					if (destination !== undefined) {
-						if (destination === modeId || !catalog.profiles[destination])
-							throw new Error("Choose a different existing destination mode.");
-						releaseDestination = await this.storage.claimModeAdmission(destination);
-					}
-					const taskIds = (await this.storage.loadProjectTaskIds()).sort((left, right) => left.localeCompare(right));
-					for (const taskId of taskIds) taskReleases.push(await this.storage.claimTaskAdmission(taskId));
-					for (const taskId of destination === undefined ? taskIds : []) {
-						for (const entry of await this.sessionApplication.prepareTaskStop(taskId, modeId))
-							prepared.push({ taskId, record: entry.record, stop: entry.stop, release: entry.release });
-					}
-					const journal = {
-						version: 2,
-						operationId: crypto.randomUUID(),
-						source: modeId,
-						...(destination === undefined ? {} : { destination }),
-						phase: "prepared",
-						tasks: taskIds,
-					} as const;
-					await this.storage.modeDeletionJournal.write(journal);
-					for (const entry of prepared) {
-						await entry.stop();
-						stopped.push({ taskId: entry.taskId, sessionId: entry.record.id });
-					}
-					for (const taskId of taskIds) {
-						if (destination !== undefined) {
-							await this.sessionApplication.moveModeSessions(taskId, modeId, destination);
-						} else {
-							await this.sessionApplication.discardModeSessions(taskId, modeId);
-							await this.sessionApplication.forgetModeSessions(taskId, modeId);
-						}
-						changes.push({ task: taskId });
-						completed.push(taskId);
-					}
-					const exact = await this.getExactAgentConfiguration("project");
-					if (!exact) throw new Error("Project agent configuration is unavailable.");
-					await updateAgentConfiguration(this, "project", (current) => removeConfiguredMode(current, modeId));
-					await this.storage.modeDeletionJournal.remove();
-				});
-			} catch (error) {
-				primary = error instanceof Error ? error : new Error(String(error));
-				primary = new AggregateError([primary], partialEffectsMessage(), { cause: primary });
-			} finally {
-				const releases = [
-					...prepared.map((entry) => entry.release),
-					...taskReleases.reverse(),
-					...(releaseDestination ? [releaseDestination] : []),
-					releaseMode,
-				];
-				const failures: Error[] = [];
-				for (const release of releases) {
-					try {
-						await release();
-					} catch (error) {
-						failures.push(error instanceof Error ? error : new Error(String(error)));
-					}
-				}
-				if (failures.length)
-					primary = new AggregateError(
-						[...(primary ? [primary] : []), ...failures],
-						primary?.message ?? "Mode deletion claim release failed.",
-						{ cause: primary },
-					);
-			}
-			if (primary) throw primary;
-			return { deletedModeId: modeId, taskIds: completed };
-		});
+		return await this.modeDeletion.deleteMode(modeId, options);
 	}
 
 	private createTaskLifecycleService(): TaskLifecycleService {
@@ -739,10 +645,10 @@ export class Core {
 		// shared resolver quietly drop it and reorder the column into an order nobody asked for.
 		const seen = new Set<string>();
 		for (const id of orderedTaskIds) {
-			if (seen.has(id.toUpperCase())) {
+			if (seen.has(taskIdKey(id))) {
 				throw new Error(`Duplicate task id ${id} in orderedTaskIds`);
 			}
-			seen.add(id.toUpperCase());
+			seen.add(taskIdKey(id));
 		}
 
 		const { resolutions } = await this.resolveTasksForBoardMove(orderedTaskIds);
@@ -768,15 +674,15 @@ export class Core {
 			throw new Error(crossBranchReason);
 		}
 
-		const { updatedTask, changedTasks } = planTaskReorder(
+		const { updatedTask, changedTasks } = planTaskReorder({
 			taskId,
 			targetStatus,
 			orderedTaskIds,
 			validTasks,
 			targetMilestone,
-			params.targetMilestone !== undefined,
+			hasTargetMilestone: params.targetMilestone !== undefined,
 			defaultStep,
-		);
+		});
 
 		if (changedTasks.length > 0) {
 			await this.writeBoardMoveTasksBulk(changedTasks, validTasks, [taskId], params.targetMilestone !== undefined);
@@ -852,127 +758,36 @@ export class Core {
 		}
 		if (tasksToMove.length === 0) return { movedTasks: [], changedTasks: [], failures, expectedTasks: [] };
 
-		const hasTargetMilestone = params.targetMilestone !== undefined;
-		const applyMove = (task: Task): Task => {
-			const model = TaskModel.forUpdate(task);
-			model.applyBoardPlacement({
-				status: targetStatus,
-				ordinal: task.ordinal,
-				milestone: hasTargetMilestone ? targetMilestone : task.milestone,
-			});
-			return model.serialize();
+		const options = {
+			targetStatus,
+			targetMilestone,
+			hasTargetMilestone: params.targetMilestone !== undefined,
+			defaultStep: params.defaultStep ?? DEFAULT_ORDINAL_STEP,
 		};
 		const placement = params.orderedTaskIds
-			? this.planOrderedTaskMove(
-					store,
-					params.orderedTaskIds,
-					tasksToMove,
-					failures,
-					applyMove,
-					params.defaultStep ?? DEFAULT_ORDINAL_STEP,
-				)
-			: this.planAppendedTaskMove(
-					store,
-					targetStatus,
-					tasksToMove,
-					applyMove,
-					hasTargetMilestone,
-					targetMilestone,
-					params.defaultStep ?? DEFAULT_ORDINAL_STEP,
-				);
+			? (() => {
+					const movedById = new Map(tasksToMove.map((task) => [taskIdKey(task.id), task]));
+					const failedIds = new Set(failures.map((failure) => taskIdKey(failure.taskId)));
+					const seen = new Set<string>();
+					const rows = params.orderedTaskIds.flatMap((id) => {
+						const key = taskIdKey(id);
+						if (seen.has(key)) throw new Error(`Duplicate task ID in orderedTaskIds: ${id}`);
+						seen.add(key);
+						if (failedIds.has(key)) return [];
+						const moved = movedById.get(key);
+						if (moved) return [{ task: moved, moved: true }];
+						const resolution = store.resolveTaskForMutation(id);
+						if (resolution.status === "ambiguous") throw new AmbiguousTaskIdError(id, resolution.candidates);
+						return resolution.status === "found" ? [{ task: resolution.task, moved: false }] : [];
+					});
+					return planOrderedTaskPlacement(rows, tasksToMove, options);
+				})()
+			: planAppendedTaskPlacement(store.getTasks({ status: targetStatus }), tasksToMove, options);
 		return {
 			...placement,
 			failures,
 			expectedTasks: store.getTasks(),
 			changedTasks: placement.changedTasks.filter((task) => !task.branch),
-		};
-	}
-
-	private planOrderedTaskMove(
-		store: TaskCollection,
-		orderedTaskIds: string[],
-		tasksToMove: Task[],
-		failures: Array<{ taskId: string; reason: string }>,
-		applyMove: (task: Task) => Task,
-		defaultStep: number,
-	): MoveTaskPlacement {
-		const { tasksInOrder, originalTasks, requiresRebalance } = planOrderedTaskPlacement({
-			resolver: store,
-			orderedTaskIds,
-			tasksToMove,
-			failures,
-			applyMove,
-			defaultStep,
-		});
-		const originals = new Map([...originalTasks, ...tasksToMove].map((task) => [taskIdKey(task.id), task]));
-		const placement = reconcileBoardPlacement(tasksInOrder, [...originals.values()], defaultStep, requiresRebalance);
-		return {
-			movedTasks: tasksToMove.map(
-				(task) => placement.tasks.find((placed) => taskIdsEqual(placed.id, task.id)) ?? applyMove(task),
-			),
-			changedTasks: placement.changedTasks,
-		};
-	}
-
-	private planAppendedTaskMove(
-		store: TaskCollection,
-		targetStatus: string,
-		tasksToMove: Task[],
-		applyMove: (task: Task) => Task,
-		hasTargetMilestone: boolean,
-		targetMilestone: string | undefined,
-		defaultStep: number,
-	): MoveTaskPlacement {
-		const stayingIds = new Set(
-			tasksToMove.filter((task) => task.status === targetStatus).map((task) => task.id.toUpperCase()),
-		);
-		const arriving = tasksToMove.filter((task) => !stayingIds.has(task.id.toUpperCase()));
-		if (arriving.length === 0) {
-			const movedTasks = tasksToMove.map(applyMove);
-			return {
-				movedTasks,
-				changedTasks: movedTasks.filter((task, index) => {
-					const original = tasksToMove[index];
-					return !original || original.status !== task.status || (original.milestone ?? "") !== (task.milestone ?? "");
-				}),
-			};
-		}
-
-		const movedIds = new Set(tasksToMove.map((task) => task.id.toUpperCase()));
-		const sanitizeOrdinal = (task: Task): Task => {
-			if (task.ordinal === undefined || Number.isFinite(task.ordinal)) return task;
-			const model = TaskModel.forUpdate(task);
-			model.applyBoardPlacement({ status: task.status, ordinal: undefined, milestone: task.milestone });
-			return model.serialize();
-		};
-		const inTargetLane = (task: Task): boolean =>
-			!hasTargetMilestone || (task.milestone ?? "") === (targetMilestone ?? "");
-		const columnTasks = TaskOrdering.byOrdinal(
-			store
-				.getTasks({ status: targetStatus })
-				.filter((task) =>
-					stayingIds.has(task.id.toUpperCase()) ? true : !movedIds.has(task.id.toUpperCase()) && inTargetLane(task),
-				)
-				.map(sanitizeOrdinal),
-		);
-		const tasksInOrder = [
-			...columnTasks.map((task) => (stayingIds.has(task.id.toUpperCase()) ? applyMove(task) : task)),
-			...arriving.map((task) => {
-				const moved = applyMove(task);
-				const model = TaskModel.forUpdate(moved);
-				model.applyBoardPlacement({ status: targetStatus, ordinal: undefined, milestone: moved.milestone });
-				return model.serialize();
-			}),
-		];
-		const originals = new Map(
-			[...store.getTasks({ status: targetStatus }), ...tasksToMove].map((task) => [taskIdKey(task.id), task]),
-		);
-		const placement = reconcileBoardPlacement(tasksInOrder, [...originals.values()], defaultStep);
-		return {
-			movedTasks: tasksToMove.map(
-				(task) => placement.tasks.find((placed) => taskIdsEqual(placed.id, task.id)) ?? applyMove(task),
-			),
-			changedTasks: placement.changedTasks,
 		};
 	}
 

@@ -219,6 +219,10 @@ describe("workspace controller group deletion", () => {
 			]);
 			expect(store.current.groups.find((group) => group.id === "grandchild")?.parentId).toBe("child-b");
 			expect(store.current.groups.map((group) => group.id)).not.toContain("doomed");
+			for (let attempt = 0; attempt < 100 && moving.mounted.groupMembership?.T1 !== "other"; attempt++)
+				await Bun.sleep(2);
+			expect(moving.mounted.groupMembership).toEqual({ T1: "other", T2: "parent" });
+			expect(moving.mounted.groups?.map((group) => group.id)).not.toContain("doomed");
 		} finally {
 			moving.controller.destroy();
 			await movingRun;

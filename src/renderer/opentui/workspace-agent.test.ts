@@ -2,6 +2,9 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { BoxRenderable, KeyEvent, parseKeypress } from "@opentui/core";
 import { createTestRenderer, type TestRendererSetup } from "@opentui/core/testing";
 import type { AgentHost } from "../../runtime/live/agent-host.ts";
+import type { TaskGroup } from "../../storage/group-store.ts";
+import type { TaskArtifactEntry } from "../../storage/task-artifact-repository.ts";
+import type { TaskArtifactViewApi } from "./task-artifact-view.ts";
 import { mountOpenTuiWorkspace } from "./workspace.ts";
 import { createWorkspaceAgent } from "./workspace-agent.ts";
 
@@ -239,6 +242,143 @@ describe("native workspace terminal", () => {
 			Reflect.deleteProperty(terminal, "focused");
 			mount.dispose();
 			terminal.destroy();
+		}
+	});
+
+	test("workspace details own artifact open/close and keep the current task content", async () => {
+		const setup = await createTestRenderer({ width: 120, height: 40, exitOnCtrlC: false, kittyKeyboard: true });
+		renderers.push(setup);
+		const parent = new BoxRenderable(setup.renderer, { width: "100%", height: "100%" });
+		setup.renderer.root.add(parent);
+		const entries: TaskArtifactEntry[] = [{ path: "notes.md", size: 6, type: "text" }];
+		const api: TaskArtifactViewApi = {
+			list: async () => entries,
+			read: async () => new TextEncoder().encode("detail"),
+			write: async () => {},
+		};
+		const mount = mountOpenTuiWorkspace(setup.renderer, parent, {
+			tasks: [{ id: "BACK-1", title: "First task", status: "Todo", description: "Original description" }],
+			taskArtifactApi: api,
+		});
+		try {
+			await setup.flush();
+			setup.mockInput.pressKey("o", { ctrl: true, shift: true });
+			await setup.flush();
+			expect(setup.captureCharFrame()).toContain("notes.md");
+			setup.mockInput.pressEscape();
+			await setup.flush();
+			expect(setup.captureCharFrame()).toContain("Original description");
+			expect(setup.captureCharFrame()).not.toContain("notes.md");
+		} finally {
+			mount.dispose();
+		}
+	});
+
+	test("workspace mount enables artifacts when the API arrives after mounting", async () => {
+		const setup = await createTestRenderer({ width: 120, height: 40, exitOnCtrlC: false, kittyKeyboard: true });
+		renderers.push(setup);
+		const parent = new BoxRenderable(setup.renderer, { width: "100%", height: "100%" });
+		setup.renderer.root.add(parent);
+		const options = { tasks: [{ id: "BACK-1", title: "First task", status: "Todo" }] };
+		const mount = mountOpenTuiWorkspace(setup.renderer, parent, options);
+		try {
+			await setup.flush();
+			const api: TaskArtifactViewApi = {
+				list: async () => [{ path: "late.md", size: 4, type: "text" }],
+				read: async () => new TextEncoder().encode("late"),
+				write: async () => {},
+			};
+			mount.update({ ...options, taskArtifactApi: api });
+			setup.mockInput.pressKey("o", { ctrl: true, shift: true });
+			await setup.flush();
+			expect(setup.captureCharFrame()).toContain("late.md");
+			expect(setup.captureCharFrame()).toContain("late");
+		} finally {
+			mount.dispose();
+		}
+	});
+
+	test("workspace mount replaces the artifact adapter for an open artifact pane", async () => {
+		const setup = await createTestRenderer({ width: 120, height: 40, exitOnCtrlC: false, kittyKeyboard: true });
+		renderers.push(setup);
+		const parent = new BoxRenderable(setup.renderer, { width: "100%", height: "100%" });
+		setup.renderer.root.add(parent);
+		const options = { tasks: [{ id: "BACK-1", title: "First task", status: "Todo" }] };
+		const makeApi = (path: string, content: string): TaskArtifactViewApi => ({
+			list: async () => [{ path, size: content.length, type: "text" }],
+			read: async () => new TextEncoder().encode(content),
+			write: async () => {},
+		});
+		const mount = mountOpenTuiWorkspace(setup.renderer, parent, {
+			...options,
+			taskArtifactApi: makeApi("old.md", "old adapter"),
+		});
+		try {
+			await setup.flush();
+			setup.mockInput.pressKey("o", { ctrl: true, shift: true });
+			await setup.flush();
+			expect(setup.captureCharFrame()).toContain("old.md");
+			mount.update({ ...options, taskArtifactApi: makeApi("new.md", "new adapter") });
+			await setup.flush();
+			expect(setup.captureCharFrame()).toContain("new.md");
+			expect(setup.captureCharFrame()).toContain("new adapter");
+			expect(setup.captureCharFrame()).not.toContain("old.md");
+		} finally {
+			mount.dispose();
+		}
+	});
+
+	test("empty grouped workspace keeps nonnegative anchors and mouse-selects the first group", async () => {
+		const setup = await createTestRenderer({ width: 120, height: 40, exitOnCtrlC: false });
+		renderers.push(setup);
+		const parent = new BoxRenderable(setup.renderer, { width: "100%", height: "100%" });
+		setup.renderer.root.add(parent);
+		const groups: TaskGroup[] = ["Alpha", "Beta", "Gamma"].map((name, order) => ({
+			id: name.toLowerCase(),
+			name,
+			parentId: null,
+			order,
+			collapsed: false,
+		}));
+		const anchors: number[] = [];
+		const selected: string[] = [];
+		const mount = mountOpenTuiWorkspace(setup.renderer, parent, {
+			tasks: [],
+			groups,
+			firstVisibleTaskIndex: 2,
+			onTaskScrollChange: (index) => anchors.push(index),
+			onGroupSelect: (group) => selected.push(group.id),
+		});
+		try {
+			await setup.flush();
+			const frame = setup.captureCharFrame();
+			for (const name of ["Alpha (0)", "Beta (0)", "Gamma (0)"]) expect(frame).toContain(name);
+			expect(anchors).toContain(0);
+			expect(anchors.every((index) => index >= 0)).toBe(true);
+			const findMouseUp = (
+				renderable: object,
+			): { readonly target: object; readonly handler: (event: unknown) => void } | undefined => {
+				const handler = Reflect.get(Reflect.get(renderable, "_mouseListeners") ?? {}, "up");
+				if (typeof handler === "function") return { target: renderable, handler };
+				const children = Reflect.get(renderable, "_childrenInLayoutOrder") as object[] | undefined;
+				for (const child of children ?? []) {
+					const found = findMouseUp(child);
+					if (found) return found;
+				}
+				return undefined;
+			};
+			const mouseUp = findMouseUp(parent);
+			expect(mouseUp).toBeDefined();
+			mouseUp?.handler({
+				button: 0,
+				y: Reflect.get(mouseUp.target, "screenY") as number,
+				preventDefault: () => {},
+				stopPropagation: () => {},
+			});
+			await setup.flush();
+			expect(selected).toEqual(["alpha"]);
+		} finally {
+			mount.dispose();
 		}
 	});
 });
