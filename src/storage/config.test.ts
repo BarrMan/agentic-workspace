@@ -631,6 +631,55 @@ describe("agent workspace configuration", () => {
 		expect(repeated.modes?.order).toEqual(["custom"]);
 		expect(repeated.modes?.defaultModeId).toBe("custom");
 	});
+
+	it("initializes absent modes on startup and preserves configured catalogs", async () => {
+		const initialized = await core.getProjectModeCatalog();
+		expect(initialized.order).toEqual(["plan", "build"]);
+		expect(initialized.defaultModeId).toBe("plan");
+		expect(initialized.profiles.plan).toMatchObject({ name: "PLAN", permissions: { repository: "read" } });
+		expect(initialized.profiles.build).toMatchObject({ name: "BUILD", permissions: { repository: "read-write" } });
+		expect(initialized.profiles.plan).not.toBe(initialized.profiles.build);
+		expect(await core.getProjectModeCatalog()).toEqual(initialized);
+
+		const plan = initialized.profiles.plan;
+		if (!plan) throw new Error("Expected default PLAN mode.");
+		const oneMode = {
+			...initialized,
+			order: ["custom"],
+			defaultModeId: "custom",
+			profiles: { custom: { ...plan, name: "Custom" } },
+		};
+		await upsertAgentConfiguration(core, "project", { modes: oneMode });
+		expect(await core.getProjectModeCatalog()).toEqual(oneMode);
+		expect(await core.getProjectModeCatalog()).toEqual(oneMode);
+	});
+
+	it("returns independent mutable copies of the default catalog", () => {
+		const first = getDefaultModeCatalog();
+		const second = getDefaultModeCatalog();
+		const firstPlan = first.profiles.plan;
+		const secondPlan = second.profiles.plan;
+		if (!firstPlan || !secondPlan) throw new Error("Expected default PLAN modes.");
+		expect(first).not.toBe(second);
+		expect(firstPlan).not.toBe(secondPlan);
+		expect(firstPlan.permissions).not.toBe(secondPlan.permissions);
+		firstPlan.name = "Changed";
+		firstPlan.permissions.repository = "read-write";
+		expect(secondPlan.name).toBe("PLAN");
+		expect(secondPlan.permissions.repository).toBe("read");
+	});
+
+	it("does not replace an invalid configured catalog on startup", async () => {
+		await saveProjectConfiguration({
+			modes: { version: 1, defaultModeId: "missing", order: [], profiles: {} } as NonNullable<
+				AgentConfiguration["modes"]
+			>,
+		});
+		const path = join(testDir, ".agentic-workspace", "config.yml");
+		const before = await readFile(path, "utf8");
+		await expect(core.getProjectModeCatalog()).rejects.toThrow(/mode|catalog/i);
+		expect(await readFile(path, "utf8")).toBe(before);
+	});
 });
 
 it("seeds a project-only mode catalog on explicit initialization and round-trips unrelated settings", async () => {

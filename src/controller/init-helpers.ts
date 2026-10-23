@@ -16,7 +16,7 @@ import type { Core } from "./agentic-workspace.ts";
 export interface InitializeProjectOptions {
 	projectName: string;
 	agenticWorkspaceDirectory?: string;
-	agenticWorkspaceDirectorySource?: "agentic-workspace" | ".agentic-workspace" | "custom";
+	agenticWorkspaceDirectorySource?: ".agentic-workspace" | "custom";
 	configLocation?: "folder" | "root";
 	filesystemOnly?: boolean;
 	advancedConfig?: {

@@ -165,13 +165,8 @@ function resolveBuiltInAgenticWorkspaceDirectory(projectRoot: string): {
 	agenticWorkspaceDir: string;
 	agenticWorkspacePath: string;
 	configPath: string | null;
-	source: Extract<AgenticWorkspaceDirectorySource, "agentic-workspace" | ".agentic-workspace">;
+	source: Extract<AgenticWorkspaceDirectorySource, ".agentic-workspace">;
 } | null {
-	const oldPath = join(projectRoot, "agentic-workspace");
-	if (directoryExists(oldPath))
-		throw new Error(
-			`Existing task-data directory at ${oldPath} requires an explicit location decision; no data was moved. Select it explicitly or authorize relocation to .agentic-workspace.`,
-		);
 	const name = DEFAULT_DIRECTORIES.AGENTIC_WORKSPACE;
 	const agenticWorkspacePath = taskDataPath(projectRoot, name);
 	return directoryExists(agenticWorkspacePath)

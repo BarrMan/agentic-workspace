@@ -149,15 +149,21 @@ From the repository root, run `bun scripts/migrate-task-counter.ts <project-root
 1. The project setting `agentic_workspace_directory` accepts a project-relative path, an absolute path, `~/…` relative to the user's home, or `user:` for the application user location `~/.agentic-workspace/<project-hash>` keyed by the canonical project root. Fresh projects default to `.agentic-workspace`.
 2. Keep the task data folder outside `.git`; give each task an `artifacts/` directory.
 3. Store each task as `task.md` in its container, serialized as Markdown with frontmatter.
-4. Keep existing task folders at their current locations, selected through explicit project configuration for the old path. An existing unconfigured `agentic-workspace` folder causes a location error; select it with `agentic_workspace_directory: agentic-workspace`. The fresh default does not authorize relocation, deletion, or automatic fallback discovery. If an existing literal project folder is named `user:` or lies under literal `~/…`, select it by absolute path rather than reinterpreting it as a selector.
+4. Normal startup resolves only the configured location or `.agentic-workspace` default; it does not discover, reject, or migrate the superseded `agentic-workspace` folder. Existing data is moved only by the [explicit directory migration](#explicit-directory-migration), never by startup. Generic custom locations remain supported without special handling for old names. If an existing literal project folder is named `user:` or lies under literal `~/…`, select it by absolute path rather than reinterpreting it as a selector.
 
 **Outcome:** Task data follows the configured storage structure.
 
-**Failures:** Reject invalid locations or locations resolving inside Git metadata. An unconfigured old folder or a selector conflicting with an existing literal path requires explicit configuration; leave existing data in place.
+**Failures:** Reject invalid locations or locations resolving inside Git metadata. A selector conflicting with an existing literal path requires explicit configuration; leave existing data in place.
 
 **Acceptance Criteria:**
 - Supported locations, outside-`.git` storage, task `artifacts/` directories, and Markdown-frontmatter `task.md` records are present.
-- Existing task folders remain at their explicitly configured old paths; fresh projects use `.agentic-workspace` by default, without automatic relocation or deletion.
+- Startup uses the configured store or `.agentic-workspace` default without old-folder discovery, automatic relocation, or deletion.
+
+#### Explicit directory migration
+
+With the application and task sessions stopped and no other process changing the project directory, run `bun scripts/migrate-task-directory.ts <project-root>` once to move the entire workspace-owned `agentic-workspace` directory to `.agentic-workspace`. This is a manually invoked maintenance script, not a startup path or CLI compatibility option. It preserves file contents and arbitrary entries without rewriting configuration, stored paths, or provider-owned state. Review explicit location settings and retained absolute-path references before use; this directory migration does not convert record schemas.
+
+Refuse a missing, non-directory, or symlink source and any existing destination, including an empty directory or dangling symlink. Never overwrite or merge stores. If both directories contain data, stop and obtain a separate data-preservation decision before reconciliation. Report completed effects truthfully on failure.
 
 ### TASK-007: Malformed records
 
