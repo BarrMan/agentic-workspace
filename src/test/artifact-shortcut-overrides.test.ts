@@ -49,7 +49,7 @@ describe("workspace artifact shortcut overrides", () => {
 			taskArtifactApi: api,
 			keyboardOverrides: overrides,
 			onCycleMode: () => navigation.push("tab"),
-			onAgentStart: (task) => navigation.push(`enter:${task.id}`),
+			onSessionAction: (task) => navigation.push(`enter:${task.id}`),
 		});
 		const send = (sequence: string) => setup.renderer.keyInput.emit("keypress", key(sequence));
 		const settle = async () => {

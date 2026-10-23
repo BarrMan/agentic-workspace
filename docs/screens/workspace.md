@@ -19,20 +19,26 @@ The task-list width and details/preview proportions above are approved qualitati
 - Starting: unavailable until usable; do not present as running.
 - Running: show the live terminal; selecting it attaches without sending input or changing control.
 - Parked: the live preview pane is retained; selecting a parked session switches the preview to that session without resuming it.
-- Stopped: show a prompt to resume and identify the session-picker/start shortcut; resume requires an explicit user action and never happens automatically.
+- Stopped: show a prompt to resume and identify the separate session-picker action; resume requires an explicit user action and never happens automatically.
 - Unknown/unavailable liveness: do not infer running or stopped from stored labels.
 - Starting, running, parked, and stopped are distinct lifecycle states. Starting is unavailable until usable; it is never presented as running.
 - Permission request and activity error must remain distinguishable.
 - Task-row activity indications appear on selected and unselected rows only when there is observed activity evidence; lifecycle state alone does not determine the indication. Selection remains visible when focus moves elsewhere.
+- The mode label appears only on the selected task row, never on unselected task rows. This restriction concerns the mode label, not the observed-activity indications above or the selected-session header. Moving selection moves the label to the newly selected row; moving keyboard focus away from task navigation does not clear task selection or its mode label.
 - Selecting a task updates the task-list highlight, details region, and preview region together. Activity evidence updates only the task-row indication and session header, leaving the list, details, and preview content and position unchanged.
 - Navigation preserves the viewport while selection remains visible, scrolling only enough when it crosses an edge. Refreshing selection preserves the viewport; status, filter, and view changes reset it.
 - `g`/`G` select the first/last filtered task within the active status tab; `Home`/`End` remain available. Empty panes are safe; editable fields and focused agent terminals keep their input.
 
 ## Focus and constrained terminals
 
-Keyboard/focus behavior follows SPEC and the active shortcut configuration. `Tab` changes the selected mode for the selected task; session execution remains unchanged. `f` shows the same retained terminal fullscreen with a bottom row reserved for the visible `Ctrl+Q` exit hint; `Ctrl+Q` and `Ctrl+C` return to navigation without forwarding an interrupt. Navigation `Ctrl+C` exits; `q` never exits. At narrow sizes, shrink the task region below its 35-cell cap and preserve selected-task identity and essential footer actions. Exact minimum dimensions, wrapping/truncation policy, and collapse threshold remain undecided.
+Keyboard/focus behavior follows SPEC and the active shortcut configuration. Session-picker and contextual session actions follow [IF-SI-008](../specs/session-interaction-and-feedback.md#if-si-008-workspace-session-actions). `Tab` changes the selected mode for the selected task; session execution remains unchanged. `f` shows the same retained terminal fullscreen with a bottom row reserved for the visible `Ctrl+Q` exit hint; `Ctrl+Q` and `Ctrl+C` return to navigation without forwarding an interrupt. Navigation `Ctrl+C` exits; `q` never exits. At narrow sizes, shrink the task region below its 35-cell cap and preserve selected-task identity and essential footer actions. Exact minimum dimensions, wrapping/truncation policy, and collapse threshold remain undecided.
 
 The task-list pane is toggled with `Shift+[`, without restarting the selected agent. Start applies to the selected mode only and requires an explicit action; each action makes one attempt, with visible failure and no automatic retry. Close and reopen follow [SESSION-018](../specs/sessions.md#session-018-close-the-app-with-or-without-stopping-sessions). The close confirmation is a focused modal stating that sessions are working and offering “Force close” and “Close without stopping sessions”; keep input within the modal under the shared dialog rules.
+
+## Acceptance criteria
+
+- With multiple task rows visible, only the selected row displays its mode label. Move selection and confirm the old row loses its label and the new row displays its own remembered mode.
+- Move focus into the preview and confirm the selected row retains its mode label. Observed activity dots on unselected rows remain governed by the activity contract, independently of mode-label visibility.
 
 ## Open Questions
 

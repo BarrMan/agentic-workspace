@@ -113,7 +113,7 @@ export type OpenTuiWorkspaceCallbacks = {
 	readonly onAgentConfigRequest?: (entry: OpenTuiWorkspaceTaskEntry) => void;
 	readonly onHistoryBack?: () => void;
 	readonly onHistoryForward?: () => void;
-	readonly onAgentStart?: (entry: OpenTuiWorkspaceTaskEntry, columns: number, rows: number) => void;
+	readonly onSessionAction?: (entry: OpenTuiWorkspaceTaskEntry, columns: number, rows: number) => void;
 	readonly onCycleMode?: () => void;
 	readonly onToggleDetails?: (visible: boolean) => void;
 	readonly onToggleTaskPane?: (visible: boolean) => void;
@@ -439,6 +439,7 @@ export function mountOpenTuiWorkspace(
 			modeLabel,
 			modeColor: modeDisplayColor(selectedMode?.modeColor),
 			resumeShortcut: shortcut(shortcutsConfig.workspace.sessions),
+			actionShortcut: shortcut(shortcutsConfig.workspace.select),
 			focused: agentFocused,
 			mayFocus: mayFocusPreview,
 			fullscreen,
@@ -592,10 +593,9 @@ export function mountOpenTuiWorkspace(
 			task && { shortcut: shortcutsConfig.workspace.toggleDetails, label: "Details", run: toggleDetails },
 			{ shortcut: shortcutsConfig.workspace.toggleTaskPane, label: "Tasks", run: toggleTaskPane },
 			task &&
-				selectedTaskHasSessions() &&
 				opts.onSessionRequest && {
 					shortcut: shortcutsConfig.workspace.sessions,
-					label: "Sessions",
+					label: "Choose session",
 					run: () => opts.onSessionRequest?.(task),
 				},
 			task &&
@@ -606,12 +606,20 @@ export function mountOpenTuiWorkspace(
 					run: () => opts.onHandoffRequest?.(task),
 				},
 			task &&
-				!selectedTaskHasSessions() &&
-				opts.onAgentStart && {
+				opts.onSessionAction && {
 					shortcut: shortcutsConfig.workspace.select,
-					label: "Start",
+					label:
+						selectedSession()?.status === "stopped"
+							? "Resume"
+							: selectedSession()?.status === "starting"
+								? "Starting"
+								: selectedSession()?.status === "unknown"
+									? "Check session"
+									: selectedSession()
+										? "Use session"
+										: "Start",
 					run: () =>
-						opts.onAgentStart?.(
+						opts.onSessionAction?.(
 							task,
 							Math.max(1, preview.outputSize.width || 1),
 							Math.max(1, preview.outputSize.height || 1),
@@ -813,7 +821,7 @@ export function mountOpenTuiWorkspace(
 	keybindings.on(shortcutsConfig.workspace.select, () => {
 		const task = selectedTask();
 		if (!task) return;
-		opts.onAgentStart?.(
+		opts.onSessionAction?.(
 			task,
 			Math.max(1, preview.outputSize.width || Math.floor((renderer.width - 1) * (taskPaneVisible ? 0.7 : 1)) - 2),
 			Math.max(1, preview.outputSize.height || renderer.height - 9),

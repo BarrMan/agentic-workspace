@@ -38,7 +38,7 @@ describe("workspace mode input contract", () => {
 			selectedModeId: "plan",
 			onCycleMode: () => modes.push("cycle"),
 			onQuit: () => quit.push("quit"),
-			onAgentStart: () => modes.push("launch"),
+			onSessionAction: () => modes.push("launch"),
 			liveAgent: { taskId: task.id, label: "test", status: "running", host, terminal },
 		});
 		try {

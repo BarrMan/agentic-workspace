@@ -16,6 +16,7 @@ export type WorkspacePreviewState = {
 	readonly modeLabel: string;
 	readonly modeColor?: string;
 	readonly resumeShortcut: string;
+	readonly actionShortcut: string;
 	readonly focused: boolean;
 	readonly mayFocus: boolean;
 	readonly fullscreen: boolean;
@@ -128,10 +129,10 @@ export function mountWorkspacePreview(
 			placeholder.visible = !terminal && (!session || session.status === "stopped");
 			placeholderText.content =
 				session?.status === "stopped"
-					? `Session ended · press ${state.resumeShortcut} to resume`
+					? `Session ended · ${state.actionShortcut} resume · ${state.resumeShortcut} choose session`
 					: session
 						? ""
-						: `No session in ${state.modeLabel}`;
+						: `No session in ${state.modeLabel} · ${state.actionShortcut} start · ${state.resumeShortcut} choose session`;
 			region.borderColor = state.focused ? "yellow" : "gray";
 			region.border = !state.fullscreen;
 			region.title = state.focused ? " Live preview (active) " : " Live preview ";

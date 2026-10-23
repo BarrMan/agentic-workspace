@@ -41,7 +41,7 @@ describe("mode row label public render output", () => {
 		expect(Bun.stringWidth(draft.text)).toBe(24);
 	});
 
-	test("selection preserves the original row prefix and the mode suffix at narrow widths", () => {
+	test("only selected rows show the mode suffix at narrow widths", () => {
 		const rendered = renderModeRowLabel({
 			title: "A very long title",
 			modeLabel: "BUILD",
@@ -58,8 +58,8 @@ describe("mode row label public render output", () => {
 			selected: false,
 			width: 10,
 		});
-		expect(unselected.text).toBe("  BUILD ✓ ");
-		expect(unselected.text.slice(unselected.mode.characterStart, unselected.mode.characterEnd)).toBe("BUILD");
+		expect(unselected.text).toBe("  A very l");
+		expect(unselected.text.slice(unselected.mode.characterStart, unselected.mode.characterEnd)).toBe("");
 		expect(Bun.stringWidth(rendered.text)).toBeLessThanOrEqual(10);
 		expect(rendered.text).toContain("BUILD ✓");
 		expect(rendered.modeHelp).toBe("BUILD ✓");
@@ -139,15 +139,15 @@ describe("mode row label public render output", () => {
 		expect(rendered.text.slice(rendered.title.end)).toContain("PLAN ✓");
 	});
 
-	test("unselected rows show badges when they fit and use all title cells when they do not", () => {
+	test("unselected rows omit mode badges and give their cells to the title", () => {
 		const row = renderModeRowLabel({
 			title: "abcdefghijklmnopqrstuv",
 			modeLabel: "PLAN",
 			approved: true,
 			width: 24,
 		});
-		expect(row.text).toBe("  abcdefghijklmn PLAN ✓ ");
-		expect(row.text.slice(row.mode.characterStart, row.mode.characterEnd)).toBe("PLAN");
+		expect(row.text).toBe("  abcdefghijklmnopqrstuv");
+		expect(row.text.slice(row.mode.characterStart, row.mode.characterEnd)).toBe("");
 
 		const narrow = renderModeRowLabel({ title: "abcdefghijklmnopqrstuv", modeLabel: "PLAN", approved: true, width: 8 });
 		expect(narrow.text).toBe("  abcdef");

@@ -27,6 +27,34 @@ describe("native workspace terminal", () => {
 		for (const setup of renderers.splice(0)) setup.renderer.destroy();
 	});
 
+	test("navigation Enter focuses the live preview without forwarding Enter", async () => {
+		const setup = await createTestRenderer({ width: 120, height: 40, exitOnCtrlC: false, kittyKeyboard: true });
+		renderers.push(setup);
+		const parent = new BoxRenderable(setup.renderer, { width: "100%", height: "100%" });
+		setup.renderer.root.add(parent);
+		const writes: string[] = [];
+		const agentHost = host(writes);
+		const terminal = createWorkspaceAgent(setup.renderer, agentHost, 70, 20, (error) => {
+			throw error;
+		});
+		const mount = mountOpenTuiWorkspace(setup.renderer, parent, {
+			tasks: [{ id: "BACK-1", title: "First", status: "Todo" }],
+			liveAgent: { taskId: "BACK-1", label: "Agent", status: "running", host: agentHost, terminal },
+			onSessionAction: () => terminal.focus(),
+		});
+		try {
+			await setup.flush();
+			setup.mockInput.pressEnter();
+			expect(terminal.focused).toBe(true);
+			expect(writes).toEqual([]);
+			setup.mockInput.pressKey("x");
+			expect(writes.join("")).toBe("x");
+		} finally {
+			mount.dispose();
+			terminal.destroy();
+		}
+	});
+
 	test("encodes backward word deletion without changing forward Delete or Super", async () => {
 		const setup = await createTestRenderer({ width: 80, height: 24 });
 		renderers.push(setup);

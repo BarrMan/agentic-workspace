@@ -202,7 +202,7 @@ describe("native workspace layout", () => {
 			liveAgent: agent,
 			detailsVisible: false,
 			onCycleMode: () => cycles.push("next"),
-			onAgentStart: () => agent.terminal.focus(),
+			onSessionAction: () => agent.terminal.focus(),
 			onQuit: () => quit++,
 		});
 		try {
@@ -517,7 +517,7 @@ describe("native workspace layout", () => {
 			agent.terminal.destroy();
 		}
 	});
-	test("footer switches between saved-session actions and start", async () => {
+	test("footer separates session selection from the contextual Enter action", async () => {
 		const setup = await createTestRenderer({ width: 36, height: 40, exitOnCtrlC: false });
 		renderers.push(setup);
 		const sessionRequests: string[] = [];
@@ -536,16 +536,16 @@ describe("native workspace layout", () => {
 				settingsRequests += 1;
 			},
 			onAgentConfigRequest: (task) => agentConfigRequests.push(task.id),
-			onAgentStart: (task) => agentStarts.push(task.id),
+			onSessionAction: (task) => agentStarts.push(task.id),
 			onFilterRequest: () => {},
 			onBoardRequest: () => {},
 			onQuit: () => {},
 		});
 		try {
 			await setup.flush();
-			expect(setup.captureCharFrame()).toContain("Sessions");
+			expect(setup.captureCharFrame()).toContain("Choose session");
 			expect(setup.captureCharFrame()).toContain("Handoff");
-			expect(setup.captureCharFrame()).not.toContain("Start");
+			expect(setup.captureCharFrame()).toContain("Start");
 			expect(setup.captureCharFrame()).toContain("Exit");
 			setup.mockInput.pressKey("s");
 			setup.mockInput.pressKey("h");
@@ -557,8 +557,8 @@ describe("native workspace layout", () => {
 			expect(agentConfigRequests).toEqual(["BACK-1"]);
 			setup.mockInput.pressArrow("down");
 			await setup.flush();
+			expect(setup.captureCharFrame()).toContain("Choose session");
 			expect(setup.captureCharFrame()).toContain("Start");
-			expect(setup.captureCharFrame()).not.toContain("Sessions");
 			expect(setup.captureCharFrame()).not.toContain("Handoff");
 			setup.mockInput.pressEnter();
 			expect(agentStarts).toEqual(["BACK-2"]);
@@ -888,20 +888,22 @@ describe("native workspace layout", () => {
 			selectedTaskIndex: 0,
 			selectedModeId: "plan",
 			modeProjectionByTask: () => ({ modeLabel: "PLAN", approved: false }),
-			onAgentStart: () => {},
+			onSessionRequest: () => {},
+			onSessionAction: () => {},
 		});
 		try {
 			await setup.flush();
 			const frame = setup.captureCharFrame();
 			expect(frame).not.toContain("Agent session ·");
-			expect(frame).toContain("No session in PLAN");
-			expect(frame).toContain("[Enter] Start");
+			expect(frame).toContain("No session in PLAN · Enter start · S choose session");
+			expect(frame).toContain("[Enter]");
+			expect(frame).toContain("[S] Choose session");
 		} finally {
 			mount.dispose();
 		}
 	});
 
-	test("shows the exact ended hint using the configured resume shortcut", async () => {
+	test("shows Enter resume and the configured S session-picker shortcut for ended sessions", async () => {
 		const setup = await createTestRenderer({ width: 120, height: 40, exitOnCtrlC: false });
 		renderers.push(setup);
 		const mount = mountOpenTuiWorkspace(setup.renderer, attachParent(setup), {
@@ -910,10 +912,11 @@ describe("native workspace layout", () => {
 			activeAgentSession: { id: "ended", status: "stopped", preset: "test", taskId: "BACK-1", cwd: "/project" },
 			sessionTaskIds: ["BACK-1"],
 			keyboardOverrides: { "workspace.sessions": { sequence: [{ key: "r" }] } },
+			onSessionAction: () => {},
 		});
 		try {
 			await setup.flush();
-			expect(setup.captureCharFrame()).toContain("Session ended · press R to resume");
+			expect(setup.captureCharFrame()).toContain("Session ended · Enter resume · R choose session");
 		} finally {
 			mount.dispose();
 		}

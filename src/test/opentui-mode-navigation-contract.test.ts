@@ -178,7 +178,7 @@ describe("OpenTui independent mode navigation contract", () => {
 			expect(harness.updates.at(-1)?.selectedModeId).toBe("build");
 			expect(harness.updates.length).toBeGreaterThan(before);
 			// Mode cycling is selection-only: browsing does not start an agent session.
-			expect(harness.mounted.onAgentStart).toBeDefined();
+			expect(harness.mounted.onSessionAction).toBeDefined();
 		} finally {
 			harness.controller.destroy();
 			await running;

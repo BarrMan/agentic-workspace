@@ -188,7 +188,7 @@ Let users inspect a task's session, attach to its live pane when running or park
 
 | ID | Requirement |
 |---|---|
-| IF-SI-001–IF-SI-007 | The complete requirements, flows, edge cases, invariants, and acceptance criteria are in the [Session interaction and feedback contract](specs/session-interaction-and-feedback.md). |
+| IF-SI-001–IF-SI-008 | The complete requirements, flows, edge cases, invariants, and acceptance criteria are in the [Session interaction and feedback contract](specs/session-interaction-and-feedback.md). |
 
 #### States and Behavior
 

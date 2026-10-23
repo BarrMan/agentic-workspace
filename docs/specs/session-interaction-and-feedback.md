@@ -53,7 +53,7 @@ Let users inspect the selected task's session, safely attach to a live session o
 
 **Description:** Start or resume occurs only after an explicit user action. Parked sessions are live and need no resume. Resuming a stopped session follows the [exact-conversation contract](sessions.md#session-014-resume-the-exact-conversation). Each action makes exactly one attempt; failure remains visible and is not retried. A starting session remains unavailable until provider initialization and identity establishment, plus supported acknowledgment of initial instruction submission (not an answer).
 
-**Trigger:** The user explicitly invokes the create-session/resume keybinding or CLI operation.
+**Trigger:** The user explicitly invokes a start/resume action, including the contextual workspace action in [IF-SI-008](#if-si-008-workspace-session-actions), or CLI operation.
 
 **Preconditions:** The selected task and mode are available.
 
@@ -91,7 +91,7 @@ Let users inspect the selected task's session, safely attach to a live session o
 
 ### IF-SI-004: Present the no-session state
 
-**Description:** If the selected mode has no session, the body says so and the footer offers the start shortcut.
+**Description:** If the selected mode has no session, the body says so and the footer offers the contextual start action defined in [IF-SI-008](#if-si-008-workspace-session-actions).
 
 **Trigger:** The application displays a task whose selected mode has no session.
 
@@ -110,7 +110,7 @@ Let users inspect the selected task's session, safely attach to a live session o
 
 ### IF-SI-005: Present the ended-session state
 
-**Description:** If a session is stopped/ended, the body immediately prompts explicit resume and identifies the session-picker/start shortcut; selection never resumes it.
+**Description:** If a session is stopped/ended, the body immediately prompts explicit resume and identifies the separate session-picker action defined in [IF-SI-008](#if-si-008-workspace-session-actions); selection never resumes it.
 
 **Trigger:** The application displays a task whose session has ended.
 
@@ -118,15 +118,15 @@ Let users inspect the selected task's session, safely attach to a live session o
 
 **Behavior:**
 1. Immediately show a resume prompt in the body.
-2. Identify the session-picker/start shortcut.
+2. Identify the separate session-picker action.
 3. Do not resume the session automatically.
 
-**Outcome:** The user sees that the session is stopped and can identify the explicit resume and picker/start actions.
+**Outcome:** The user sees that the session is stopped and can identify the explicit resume and session-picker actions.
 
 **Failures:** None specified.
 
 **Acceptance Criteria:**
-- [ ] IF-SI-005-AC-01: Select or launch with a stopped/ended session and confirm the resume prompt and session-picker/start shortcut appear immediately without a keypress or automatic resume.
+- [ ] IF-SI-005-AC-01: Select or launch with a stopped/ended session and confirm the resume prompt and separate session-picker action appear immediately without a keypress or automatic resume.
 
 ### IF-SI-006: Show initial session states on startup
 
@@ -165,6 +165,40 @@ Let users inspect the selected task's session, safely attach to a live session o
 **Acceptance Criteria:**
 - [ ] IF-SI-007-AC-01: Compare active-session activity evidence against absent evidence and historical labels; confirm exactly one dot is shown only for observed active activity in the selected mode.
 
+### IF-SI-008: Workspace session actions
+
+**Description:** Session browsing and session use are separate actions. In workspace navigation, the default `S` binding opens the session picker; the default `Enter` binding uses the selected task's session for its selected mode according to its current state. Shortcut customization follows [IF-WB-007](workspace-and-board.md#if-wb-007-searchable-help-and-shortcuts).
+
+**Trigger:** The user invokes the session-picker or contextual session action from workspace navigation.
+
+**Preconditions:** A task and mode are selected. These navigation bindings do not intercept input owned by a dialog, editable field, or focused agent terminal.
+
+**Behavior:**
+1. The session-picker action (`S` by default) lists retained sessions for the selected task and mode only. Opening or cancelling the picker never creates, resumes, or stops a session and never sends terminal input. It remains a picker action when the session is stopped or the list is empty, rather than becoming a resume/start action.
+2. The contextual session action (`Enter` by default) follows this table. The target is the selected session for the selected task/mode, not an arbitrary retained conversation.
+
+   | Session state | Required action |
+   |---|---|
+   | No selected/active session for this task and mode | Request creation of one new session in that mode. |
+   | Stopped/ended selected session | Request exact-conversation resume of that session, not a new conversation. A stopped selected session is not treated as absence of a session. |
+   | Running or parked selected session | Move input focus into its live preview so the user can converse with the agent; do not start/resume or send the triggering Enter to the agent. |
+   | Starting | Keep the session unavailable and do not make another start/resume attempt. |
+   | Unknown/unavailable liveness | Show the uncertainty; do not infer absence or stopped state, create a replacement, or attempt resume. |
+
+3. Creation and resume retain all existing configuration, confirmation, readiness, and execution-safety requirements in the [sessions contract](sessions.md). Each invocation makes at most one attempt; a failed resume never falls back to creating a conversation.
+4. Prompts, footer, and help distinguish the picker action from the contextual action, describe the contextual action for the current state, and show the active configured bindings.
+
+**Outcome:** Users can browse sessions without execution side effects and explicitly create, resume, or enter live interaction through one state-dependent action.
+
+**Failures:** Picker loading failure is visible without starting/resuming a session. Start/resume failures follow IF-SI-002 and the exact-conversation contract; no automatic retry or replacement occurs. With no selected task, neither action creates or resumes a session.
+
+**Acceptance Criteria:**
+- [ ] IF-SI-008-AC-01: With default bindings, press `S` for running, parked, stopped, and no-session states; confirm only the selected task/mode's picker opens, including an empty list, without execution or input side effects. Cancel and confirm the same.
+- [ ] IF-SI-008-AC-02: Press navigation `Enter` with no selected/active session and confirm one creation request in the selected mode; with a stopped selected session, confirm one exact-conversation resume request and no replacement creation.
+- [ ] IF-SI-008-AC-03: Press navigation `Enter` for a running or parked session and confirm input focus enters its live preview without restarting/resuming it or forwarding the triggering key; subsequent terminal input reaches the agent.
+- [ ] IF-SI-008-AC-04: Invoke the contextual action while starting or liveness is unknown; confirm no duplicate start, resume, or replacement occurs and the unavailable/uncertain state remains visible.
+- [ ] IF-SI-008-AC-05: Confirm prompts, footer, and help distinguish picker from contextual use, reflect state and configured bindings, and that navigation actions do not intercept modal, editing, or agent-terminal input.
+
 ## States and Transitions
 
 ### Task session lifecycle
@@ -191,7 +225,7 @@ Let users inspect the selected task's session, safely attach to a live session o
 | Running or parked session | User selects session | Live pane presented | Attach/switch only; send no input and change no control state. |
 | No session | User starts session | Starting session | Keep the session unavailable until startup completion. |
 | Stopped session | User explicitly resumes session | Starting/resumed session | Make one attempt and follow the [exact-conversation contract](sessions.md#session-014-resume-the-exact-conversation); do not retry on failure. |
-| Stopped session | User selects task/session | Stopped presentation | Immediately prompt resume and identify the session-picker/start shortcut; do not resume. |
+| Stopped session | User selects task/session | Stopped presentation | Immediately prompt resume and identify the separate session-picker action; do not resume. |
 
 **Invariants:**
 - Selecting a running or parked session only switches to its live pane; it does not start/resume, submit input, or change control.
@@ -225,7 +259,7 @@ Let users inspect the selected task's session, safely attach to a live session o
 
 **Action:** Select a task/session; explicitly start a new session or resume a stopped session; inspect session identity, execution context, and activity.
 
-**Response:** Selecting a running or parked session switches to its live pane only, without input or control changes. Selecting a stopped session immediately shows the resume prompt and session-picker/start shortcut without resuming. Start/resume occurs only on explicit action, once per action; keep a starting session unavailable until startup completes and show failures without retry.
+**Response:** Selecting a running or parked session switches to its live pane only, without input or control changes. Selecting a stopped session immediately shows the resume prompt and separate session-picker action without resuming. The navigation picker and contextual actions follow IF-SI-008. Start/resume occurs only on explicit action, once per action; keep a starting session unavailable until startup completes and show failures without retry.
 
 **Feedback:** Identify the start or session-picker shortcut as applicable and show the task-row activity dot only when observed activity exists for an active session in the selected mode.
 
@@ -265,7 +299,7 @@ Let users inspect the selected task's session, safely attach to a live session o
 | Condition | Required Behavior |
 |---|---|
 | The selected mode has no session at startup. | Immediately show the no-session body and start shortcut without requiring a keypress. |
-| The selected session is stopped/ended. | Immediately show the resume prompt and session-picker/start shortcut without requiring a keypress; do not resume automatically. |
+| The selected session is stopped/ended. | Immediately show the resume prompt and separate session-picker action without requiring a keypress; do not resume automatically. |
 | A session is starting but startup completion conditions are not all met. | Keep the session unavailable. |
 | A running or parked session is selected. | Switch to its live pane only; do not start/resume, send input, or change control. |
 | Start or resume fails. | Show the failed attempt; do not retry unless the user explicitly acts again. |

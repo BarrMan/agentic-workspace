@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { upsertAgentConfiguration } from "../../controller/agent-configuration.ts";
 import { Core } from "../../controller/agentic-workspace.ts";
 import type { ObservedSession } from "../../controller/session-application.ts";
-import type { AgentSession, TerminalAttachment } from "../../model/session/types.ts";
+import type { AgentSession, SessionState, TerminalAttachment } from "../../model/session/types.ts";
 import { getBuiltInAgentConfiguration, getDefaultModeCatalog } from "../../storage/config.ts";
 import { initializeTestProject } from "../../test/test-utils.ts";
 import type { OpenTuiHost } from "./host.ts";
@@ -38,6 +38,7 @@ async function fixture(
 		confirmResult?: boolean;
 		secondTask?: boolean;
 		deferResume?: boolean;
+		sessionState?: SessionState;
 	} = {},
 ) {
 	const root = await mkdtemp(join(tmpdir(), "workspace-controller-lifecycle-"));
@@ -62,6 +63,8 @@ async function fixture(
 	let pickerMounts = 0;
 	const disposedPickers = new Set<number>();
 	let resumeAttempts = 0;
+	const resumedIds: string[] = [];
+	let creationAttempts = 0;
 	let rejectResume: ((error: Error) => void) | undefined;
 	let pickerOptions: Parameters<typeof mountOpenTuiSessionPicker>[2] | undefined;
 	const attached: string[] = [];
@@ -88,7 +91,7 @@ async function fixture(
 	const history: AgentSession[] = [];
 	const observed = (record: AgentSession): ObservedSession => ({
 		record,
-		snapshot: { state: "running", activity: "idle", idleSince: null },
+		snapshot: { state: options.sessionState ?? "running", activity: "idle", idleSince: null },
 	});
 	const makeRecord = (id: string): AgentSession => ({
 		id,
@@ -139,15 +142,20 @@ async function fixture(
 		},
 		readObserved: async (_taskId: string, sessionId: string) =>
 			options.deferResume && sessionId === "saved"
-				? { record: makeRecord(sessionId), snapshot: { state: "stopped", activity: "unknown" } }
+				? {
+						record: makeRecord(sessionId),
+						snapshot: { state: options.sessionState ?? "stopped", activity: "unknown" },
+					}
 				: observed(makeRecord(sessionId)),
 		resumeSession: async (_taskId: string, sessionId: string) => {
 			resumeAttempts++;
+			resumedIds.push(sessionId);
 			if (options.deferResume && resumeAttempts === 1)
 				await new Promise<void>((_resolve, reject) => (rejectResume = reject));
 			return observed(makeRecord(sessionId));
 		},
 		newSession: async () => {
+			creationAttempts++;
 			const record = makeRecord("predecessor");
 			history.push(record);
 			return observed(record);
@@ -332,6 +340,13 @@ async function fixture(
 		get pickerMounts() {
 			return pickerMounts;
 		},
+		get resumeAttempts() {
+			return resumeAttempts;
+		},
+		resumedIds,
+		get creationAttempts() {
+			return creationAttempts;
+		},
 		get pickerOptions() {
 			return pickerOptions;
 		},
@@ -345,6 +360,125 @@ async function fixture(
 }
 
 describe("workspace controller attachment lifecycle", () => {
+	it.each([
+		false,
+		true,
+	] as const)("opens and cancels the S picker without lifecycle effects (stopped history: %s)", async (stopped) => {
+		const test = await fixture({ deferResume: stopped });
+		try {
+			const task = test.workspace.tasks[0];
+			if (!task) throw new Error("Fixture task missing.");
+			test.workspace.onSessionRequest?.(task);
+			await waitFor(() => test.pickerOptions !== undefined);
+			expect(test.pickerOptions?.sessions.length).toBe(stopped ? 1 : 0);
+			test.pickerOptions?.onClose();
+			expect(test.creationAttempts).toBe(0);
+			expect(test.resumeAttempts).toBe(0);
+			expect(test.attached).toEqual([]);
+		} finally {
+			test.controller.destroy();
+			await test.running;
+		}
+	});
+
+	it("Enter creates only when the selected task/mode has no active session", async () => {
+		const test = await fixture();
+		try {
+			const task = test.workspace.tasks[0];
+			if (!task) throw new Error("Fixture task missing.");
+			await test.workspace.onSessionAction?.(task, 80, 24);
+			await waitFor(() => test.creationAttempts === 1);
+			expect(test.creationAttempts).toBe(1);
+			expect(test.resumeAttempts).toBe(0);
+			expect(test.attached).toEqual(["predecessor"]);
+		} finally {
+			test.controller.destroy();
+			await test.running;
+		}
+	});
+
+	it("Enter resumes the selected stopped conversation exactly", async () => {
+		const test = await fixture({ deferResume: true });
+		try {
+			const task = test.workspace.tasks[0];
+			if (!task) throw new Error("Fixture task missing.");
+			const activating = test.workspace.onSessionAction?.(task, 80, 24);
+			await waitFor(() => test.resumeAttempts === 1);
+			test.failResume();
+			await activating;
+			await waitFor(() => test.workspace.notice?.includes("resume failed") === true);
+			expect(test.creationAttempts).toBe(0);
+			expect(test.resumeAttempts).toBe(1);
+			expect(test.resumedIds).toEqual(["saved"]);
+		} finally {
+			test.failResume();
+			test.controller.destroy();
+			await test.running;
+		}
+	});
+
+	it.each([
+		"running",
+		"parked",
+	] as const)("Enter attaches and focuses a %s session without lifecycle actions", async (sessionState) => {
+		const test = await fixture({ deferResume: true, sessionState });
+		try {
+			const task = test.workspace.tasks[0];
+			if (!task) throw new Error("Fixture task missing.");
+			await test.workspace.onSessionAction?.(task, 80, 24);
+			await test.controller.refresh();
+			await waitFor(() => test.workspace.agentFocused === true);
+			expect(test.attached).toEqual(["saved"]);
+			expect(test.creationAttempts).toBe(0);
+			expect(test.resumeAttempts).toBe(0);
+		} finally {
+			test.controller.destroy();
+			await test.running;
+		}
+	});
+
+	it.each([
+		"starting",
+		"unknown",
+	] as const)("Enter does not attempt lifecycle actions for %s sessions", async (sessionState) => {
+		const test = await fixture({ deferResume: true, sessionState });
+		try {
+			const task = test.workspace.tasks[0];
+			if (!task) throw new Error("Fixture task missing.");
+			await test.workspace.onSessionAction?.(task, 80, 24);
+			await test.controller.refresh();
+			expect(test.creationAttempts).toBe(0);
+			expect(test.resumeAttempts).toBe(0);
+			expect(test.attached).toEqual([]);
+			expect(test.workspace.notice).toContain(sessionState === "starting" ? "still starting" : "unknown");
+		} finally {
+			test.controller.destroy();
+			await test.running;
+		}
+	});
+
+	it("does not create after selection changes while Enter is loading mode history", async () => {
+		const test = await fixture({ secondTask: true });
+		try {
+			const first = test.workspace.tasks[0];
+			const second = test.workspace.tasks[1];
+			if (!first || !second) throw new Error("Fixture tasks missing.");
+			test.deferNextModeHistory();
+			const activating = test.workspace.onSessionAction?.(first, 80, 24);
+			await test.waitForModeHistory();
+			test.workspace.onTaskSelect?.(second);
+			test.finishModeHistory();
+			await activating;
+			expect(test.creationAttempts).toBe(0);
+			expect(test.resumeAttempts).toBe(0);
+			expect(test.attached).toEqual([]);
+		} finally {
+			test.finishModeHistory();
+			test.controller.destroy();
+			await test.running;
+		}
+	});
+
 	it("disposes an open session picker on public destroy", async () => {
 		const test = await fixture();
 		try {
@@ -465,7 +599,7 @@ describe("workspace controller attachment lifecycle", () => {
 		try {
 			const task = test.workspace.tasks[0];
 			if (!task) throw new Error("Fixture task missing.");
-			await test.workspace.onAgentStart?.(task, 80, 24);
+			await test.workspace.onSessionAction?.(task, 80, 24);
 			await test.controller.refresh();
 			await test.workspace.onQuit?.();
 			await test.running;
@@ -485,7 +619,7 @@ describe("workspace controller attachment lifecycle", () => {
 		try {
 			const task = test.workspace.tasks[0];
 			if (!task) throw new Error("Fixture task missing.");
-			await test.workspace.onAgentStart?.(task, 80, 24);
+			await test.workspace.onSessionAction?.(task, 80, 24);
 			await test.controller.refresh();
 			await test.waitForPoll(1);
 			const quitting = test.workspace.onQuit?.();
@@ -519,7 +653,7 @@ describe("workspace controller attachment lifecycle", () => {
 		try {
 			const task = test.workspace.tasks[0];
 			if (!task) throw new Error("Fixture task missing.");
-			const starting = test.workspace.onAgentStart?.(task, 80, 24);
+			const starting = test.workspace.onSessionAction?.(task, 80, 24);
 			await test.waitForStartup();
 			test.failDetaches(2);
 			const removal = Promise.resolve(test.removeTask());
@@ -544,7 +678,7 @@ describe("workspace controller attachment lifecycle", () => {
 		try {
 			const task = test.workspace.tasks[0];
 			if (!task) throw new Error("Fixture task missing.");
-			await test.workspace.onAgentStart?.(task, 80, 24);
+			await test.workspace.onSessionAction?.(task, 80, 24);
 			expect(test.attached).toEqual(["predecessor"]);
 			test.workspace.onHandoffRequest?.(task);
 			await test.successorAttachStartedPromise;
@@ -572,7 +706,7 @@ describe("workspace controller attachment lifecycle", () => {
 		try {
 			const task = test.workspace.tasks[0];
 			if (!task) throw new Error("Fixture task missing.");
-			await test.workspace.onAgentStart?.(task, 80, 24);
+			await test.workspace.onSessionAction?.(task, 80, 24);
 			test.workspace.onHandoffRequest?.(task);
 			await waitFor(() => test.workspace.notice?.includes("predecessor cleanup failed") === true);
 			expect(test.attached).toEqual(["predecessor", "successor"]);

@@ -645,7 +645,7 @@ export class OpenTuiWorkspaceController {
 			onTaskScrollChange: (firstVisibleTaskIndex) => {
 				this.#taskFirstVisible = firstVisibleTaskIndex;
 			},
-			onAgentStart: (entry, columns, rows) => this.#sessions?.start(entry.id, columns, rows),
+			onSessionAction: (entry, columns, rows) => this.#sessions?.activate(entry.id, columns, rows),
 			onToggleDetails: (detailsVisible) => {
 				void this.#persistState((current) => ({ ...current, detailsVisible }));
 			},

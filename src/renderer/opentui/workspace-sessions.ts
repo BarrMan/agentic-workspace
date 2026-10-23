@@ -264,7 +264,7 @@ export class WorkspaceSessions {
 		return false;
 	}
 
-	#attachRunningSession(taskId: string, session: AgentSession): void {
+	#attachRunningSession(taskId: string, session: AgentSession, focus = false): void {
 		if (this.#closed) return;
 		this.#launchSession(
 			taskId,
@@ -274,6 +274,7 @@ export class WorkspaceSessions {
 				notice: (message) => `Could not attach to ${session.id}: ${message}`,
 				ignore: (message) =>
 					message === `Task ${taskId} is no longer selected.` || message === "Workspace closed before agent launch.",
+				onReady: focus ? this.operations.focus : undefined,
 				onError: (message) => {
 					this.#attachments.retain(session.id, { taskId, label: session.preset, status: "error", error: message });
 					this.#agentAlive.delete(session.id);
@@ -365,6 +366,44 @@ export class WorkspaceSessions {
 		return this.#attachments.track(start);
 	}
 
+	async activate(taskId: string, columns: number, rows: number): Promise<void> {
+		const selection = this.#selection;
+		const state = this.viewState.current;
+		const modeId = selection.modeId;
+		if (!modeId || selection.taskId !== taskId || !this.#selected(selection, state) || this.operations.blocked())
+			return;
+		try {
+			const history = await this.workspace.listModeSessions(taskId, modeId);
+			if (!this.#selected(selection, state)) return;
+			const selectedId = this.#localSelections.get(`${taskId}\u0000${modeId}`) ?? history.activeSessionId;
+			if (!selectedId) {
+				await this.start(taskId, columns, rows, { modeId });
+				return;
+			}
+			const session = history.sessions.find((candidate) => candidate.id === selectedId);
+			if (!session) return;
+			const snapshot =
+				this.#monitor.observed(selectedId) ??
+				(await this.workspace.sessionApplication.readObserved(taskId, selectedId)).snapshot;
+			if (!this.#selected(selection, state)) return;
+			if (snapshot.state === "stopped") {
+				await this.start(taskId, columns, rows, { sessionId: selectedId, modeId, focus: true });
+			} else if (snapshot.state === "running" || snapshot.state === "parked") {
+				this.#localSelections.set(`${taskId}\u0000${modeId}`, selectedId);
+				if (this.#attachments.agent(selectedId)?.terminal) this.operations.focus();
+				else this.#attachRunningSession(taskId, session, true);
+			} else {
+				this.operations.notice(
+					snapshot.state === "starting" ? "Session is still starting." : "Session state is unknown; no action taken.",
+				);
+				void this.operations.refresh();
+			}
+		} catch (error) {
+			this.operations.notice(`Could not use session: ${String(error)}`);
+			void this.operations.refresh();
+		}
+	}
+
 	#finishStart(taskId: string, key: string, startOwner: object): void {
 		if (this.#startingTaskModes.get(key) === startOwner) this.#startingTaskModes.delete(key);
 		if (![...this.#startingTaskModes.keys()].some((candidate) => candidate.startsWith(`${taskId}\u0000`)))
@@ -425,7 +464,12 @@ export class WorkspaceSessions {
 		taskId: string,
 		sessionId: string,
 		options: LaunchOptions,
-		config: { notice(message: string): string; ignore(message: string): boolean; onError?(message: string): void },
+		config: {
+			notice(message: string): string;
+			ignore(message: string): boolean;
+			onError?(message: string): void;
+			onReady?(): void;
+		},
 	): void {
 		this.#attachments.track(
 			this.#launchAgent(
@@ -444,6 +488,7 @@ export class WorkspaceSessions {
 					config.onError?.(message);
 				})
 				.finally(() => {
+					if (!this.#closed) config.onReady?.();
 					if (!this.#closed) void this.operations.refresh();
 				}),
 		);
@@ -725,7 +770,8 @@ export class WorkspaceSessions {
 						const session = sessions.sessions.find((candidate) => candidate.id === id);
 						if (session)
 							void this.workspace.sessionApplication.readObserved(taskId, id).then((observed) => {
-								if (current() && observed.snapshot.state === "running") this.#attachRunningSession(taskId, session);
+								if (current() && ["running", "parked"].includes(observed.snapshot.state))
+									this.#attachRunningSession(taskId, session, true);
 							});
 						return;
 					}

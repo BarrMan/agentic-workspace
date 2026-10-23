@@ -4,7 +4,7 @@ Purpose: choose a retained session or work with generic files stored in a task's
 
 ## Session picker
 
-Show retained sessions for the selected task and mode, with enough identity to choose the intended conversation. Attach and resume behavior follows [IF-SI-001 and IF-SI-002](../specs/session-interaction-and-feedback.md#functional-requirements). Loading, unavailable, and resume failure states need visible feedback; exact copy and row composition are unspecified.
+Show retained sessions for the selected task and mode, with enough identity to choose the intended conversation. Opening and cancelling the picker, including an empty list, follows [IF-SI-008](../specs/session-interaction-and-feedback.md#if-si-008-workspace-session-actions) without starting or resuming a session. Attach and resume behavior follows [IF-SI-001 and IF-SI-002](../specs/session-interaction-and-feedback.md#functional-requirements). Loading, unavailable, and resume failure states need visible feedback; exact copy and row composition are unspecified.
 
 ## Artifact files
 

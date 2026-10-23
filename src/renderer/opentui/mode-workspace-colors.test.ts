@@ -154,16 +154,17 @@ describe("mode name color projection", () => {
 			expect(approval.fg.toInts()).toEqual(title.fg.toInts());
 			expect(marker.fg.toInts()).toEqual([22, 101, 52, 255]);
 			const otherY = lines.findIndex((row) => row.includes("Other title"));
-			expect(lines[otherY]).toContain("Build ✓");
+			expect(lines[otherY]).not.toContain("Build ✓");
 			const colorlessY = lines.findIndex((row) => row.includes("Colorless title"));
-			expect(lines[colorlessY]).toContain("Review");
+			expect(lines[colorlessY]).not.toContain("Review");
 			setup.mockInput.pressArrow("down");
 			await setup.flush();
 			lines = setup.captureCharFrame().split("\n");
 			const build = spanAt(setup, (lines[otherY] ?? "").indexOf("Build"), otherY);
 			expect(build.bg.toInts()).toEqual(title.bg.toInts());
 			expect(contrast(build.fg.toInts(), build.bg.toInts())).toBeGreaterThanOrEqual(4.5);
-			expect(lines[y]).toContain("Plan ✓");
+			expect(lines[y]).not.toContain("Plan ✓");
+			expect(lines[otherY]).toContain("Build ✓");
 			expect(spanAt(setup, (lines[y] ?? "").indexOf("●"), y).fg.toInts()).toEqual([102, 255, 102, 255]);
 			setup.mockInput.pressArrow("down");
 			await setup.flush();
@@ -235,8 +236,8 @@ describe("mode name color projection", () => {
 			setup.mockInput.pressArrow("down");
 			await setup.flush();
 			lines = setup.captureCharFrame().split("\n");
-			expect((lines[y] ?? "").slice(left + 1, right)).toBe(`  ${longTitle.slice(0, contentWidth - 10)} PLAN ✓ `);
-			expect(lines[y]).toContain("PLAN ✓");
+			expect((lines[y] ?? "").slice(left + 1, right)).toBe(`  ${longTitle.slice(0, contentWidth - 2)}`);
+			expect(lines[y]).not.toContain("PLAN ✓");
 			const nextY = lines.findIndex((line) => line.includes("Next task") && line.includes("BUILD ✓"));
 			expect(nextY).toBeGreaterThanOrEqual(0);
 			expect((lines[nextY] ?? "").slice(left + 1, right)).toEndWith(" BUILD ✓ ");
@@ -244,7 +245,7 @@ describe("mode name color projection", () => {
 			await setup.flush();
 			lines = setup.captureCharFrame().split("\n");
 			expect((lines[y] ?? "").slice(left + 1, right)).toBe(selectedContent);
-			expect(lines[nextY]).toContain("BUILD ✓");
+			expect(lines[nextY]).not.toContain("BUILD ✓");
 		} finally {
 			mount.dispose();
 			setup.renderer.destroy();
@@ -307,6 +308,12 @@ describe("mode name color projection", () => {
 			mount.update({ ...options, agentFocused: true });
 			await setup.flush();
 			expect(headerColor()).toEqual(originalColor);
+			expect(
+				setup
+					.captureCharFrame()
+					.split("\n")
+					.some((line) => line.includes("Retained task") && line.includes("Plan")),
+			).toBe(true);
 			projection = { modeLabel: "Build", approved: false, modeColor: "blue" };
 			mount.update({ ...options, agentFocused: true });
 			await setup.flush();
