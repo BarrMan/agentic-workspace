@@ -33,7 +33,7 @@ Define configuration access and precedence, configurable modes and task-scoped a
 
 ### CONFIG-001: TUI configuration
 
-**Description:** Setup and all settings/configuration are available inside the TUI, not through an `init` command; a future wizard remains deferred.
+**Description:** Setup and all settings/configuration are available inside the TUI, not through an `init` command; a future wizard remains deferred. Workspace startup initializes absent project modes with the canonical defaults as defined by CONFIG-004.
 
 **Trigger:** User sets up or changes configuration.
 
@@ -41,6 +41,7 @@ Define configuration access and precedence, configurable modes and task-scoped a
 
 **Behavior:**
 1. Provide setup and configuration access in the TUI; do not require `init`.
+2. Initialize an absent project mode catalogue during workspace startup as defined by CONFIG-004; do not require a separate setup step.
 
 **Outcome:** User can configure the application from within the TUI.
 
@@ -92,22 +93,27 @@ Define configuration access and precedence, configurable modes and task-scoped a
 
 ### CONFIG-004: Configurable mode catalogue
 
-**Description:** A mode catalogue is required for workspace startup. Modes are dynamic and configurable; users define modes and instructions and can add modes, rename labels, reorder modes, and select a default. Mode contents and outputs are user-defined.
+**Description:** A mode catalogue is required for workspace startup. When project configuration is absent or has no mode catalogue, seed exactly two editable built-in modes in PLAN-then-BUILD order, with PLAN as the default. PLAN is the planning mode with repository read access; BUILD is the implementation mode with repository read-write access. Mode artifact templates are optional, and approval metadata is informational rather than an execution gate. The exact editable prompt text is defined by [`getDefaultModeCatalog`](../../src/storage/config.ts#L17-L50). Users can add modes, rename labels, reorder modes, select a default, and delete modes as long as at least one remains. Once a catalogue exists, it is authoritative: do not merge or restore built-ins, including previously deleted built-ins. Mode contents and outputs are user-defined.
+
+Seeding PLAN and BUILD does not require users to follow a PLAN-to-BUILD sequence or produce artifacts; the defaults do not constrain the user's workflow.
 
 **Trigger:** Workspace startup or user catalogue edits.
 
-**Preconditions:** The project catalogue is available.
+**Preconditions:** Workspace startup may encounter absent project configuration or an absent catalogue; configured catalogues must validate.
 
 **Behavior:**
-1. Load the catalogue.
-2. Support adding modes, renaming labels, reordering modes, defining prompts and optional deliverables, and selecting a default.
+1. Seed PLAN and BUILD only when project configuration or its catalogue is absent; persist the initialization once.
+2. Load the resulting catalogue.
+3. Support adding modes, renaming labels, reordering modes, defining prompts and optional deliverables, selecting a default, and deleting modes while at least one remains.
 
 **Outcome:** The workspace uses the user-defined catalogue and selected default.
 
-**Failures:** Catalogue load failures fail startup and report the error (CONFIG-014).
+**Failures:** Malformed or otherwise invalid configured catalogues fail startup and report the error; do not replace them (CONFIG-014).
 
 **Acceptance Criteria:**
 - [ ] Users can add modes, rename labels, reorder modes, define prompts and optional deliverables, and select a default.
+- [ ] Absent project modes are initialized with exactly PLAN and BUILD; existing catalogues, including custom or one-mode catalogues, are unchanged on repeated startup.
+- [ ] Users can delete any mode while at least one remains; deleting the last mode is refused.
 - [ ] The workspace requires its mode catalogue at startup.
 
 ### CONFIG-005: Modes are categories
@@ -307,22 +313,22 @@ Agent preset commands are argv arrays: the first item is a non-empty executable 
 
 ### CONFIG-014: Catalogue startup failure
 
-**Description:** If the mode catalogue cannot be loaded at startup, the application fails and reports the error rather than substituting one. Mode identifiers are unique names and have no version scheme; see the [architecture contract](../BLUEPRINT.md).
+**Description:** Startup distinguishes absent configuration from invalid configured data. An absent project catalogue is initialized once with PLAN and BUILD under CONFIG-004; a malformed, empty, or otherwise invalid configured catalogue fails startup and is reported without substitution or repair. Mode identifiers are unique names and have no version scheme; see the [architecture contract](../BLUEPRINT.md).
 
 **Trigger:** Application startup loads the mode catalogue.
 
-**Preconditions:** A project catalogue is configured.
+**Preconditions:** Project configuration and its mode catalogue may be absent or configured.
 
 **Behavior:**
-1. Load the catalogue.
-2. Proceed with startup only if the catalogue loads successfully.
+1. Initialize absent project modes under CONFIG-004.
+2. Load configured modes and proceed only if validation succeeds.
 
 **Outcome:** Startup proceeds only with a successfully loaded catalogue.
 
-**Failures:** A load failure fails startup and reports the error.
+**Failures:** Invalid configured catalogues fail startup and report the error; they are not replaced or repaired.
 
 **Acceptance Criteria:**
-- [ ] Catalogue load failure prevents startup and reports the load error without substituting a catalogue.
+- [ ] Absent modes initialize with the canonical defaults; empty or invalid configured modes prevent startup and report the load error without substitution or repair.
 - [ ] Mode identifiers are unique names and do not use a version scheme.
 
 ### CONFIG-015: Priority labels

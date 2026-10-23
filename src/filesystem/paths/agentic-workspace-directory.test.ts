@@ -50,16 +50,19 @@ describe("resolveAgenticWorkspaceDirectory", () => {
 		expect(resolution.configPath).toBe(join(testDir, "agentic-workspace.config.yml"));
 	});
 
-	it("reports an unselected old directory without moving or reinterpreting its data", async () => {
+	it("ignores an old folder and selects the default folder without changing either folder", async () => {
 		await mkdir(join(testDir, "agentic-workspace", "tasks"), { recursive: true });
 		const oldFile = join(testDir, "agentic-workspace", "tasks", "keep");
 		await writeFile(oldFile, "user data");
+		await mkdir(join(testDir, ".agentic-workspace", "tasks"), { recursive: true });
+		const defaultFile = join(testDir, ".agentic-workspace", "tasks", "keep");
+		await writeFile(defaultFile, "default data");
 		await writeFile(join(testDir, "agentic-workspace.config.yml"), 'project_name: "Test"\n');
-		expect(() => resolveAgenticWorkspaceDirectory(testDir)).toThrow("explicit location decision");
+		const resolution = resolveAgenticWorkspaceDirectory(testDir);
+		expect(resolution.agenticWorkspaceDir).toBe(".agentic-workspace");
+		expect(resolution.agenticWorkspacePath).toBe(join(await realpath(testDir), ".agentic-workspace"));
 		expect(await readFile(oldFile, "utf8")).toBe("user data");
-		expect(resolveAgenticWorkspaceDirectoryFromRootConfig(testDir, "agentic-workspace").agenticWorkspacePath).toBe(
-			join(await realpath(testDir), "agentic-workspace"),
-		);
+		expect(await readFile(defaultFile, "utf8")).toBe("default data");
 	});
 
 	it("falls back to folder-local config when root agentic-workspace.config.yml is absent", async () => {

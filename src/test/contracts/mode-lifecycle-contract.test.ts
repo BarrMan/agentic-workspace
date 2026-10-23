@@ -111,9 +111,11 @@ async function fixture() {
 
 describe("Core mode deletion contract", () => {
 	it("refuses the last mode and requires confirmation before any effect", async () => {
-		const { core } = await fixture();
+		const { core, task, controlled, storage } = await fixture();
 		const before = await core.getProjectModeCatalog();
 		await expect(core.deleteMode("build", { confirmed: false } as never)).rejects.toThrow(/explicit confirmation/i);
+		await core.sessionApplication.newSession(task.id, "build");
+		const sessionState = await storage.sessionStore().read(task.id);
 		const build = before.profiles.build;
 		if (!build) throw new Error("Expected build mode.");
 		await upsertAgentConfiguration(core, "project", {
@@ -128,6 +130,10 @@ describe("Core mode deletion contract", () => {
 			profiles: { build },
 			defaultModeId: "build",
 		});
+		expect(controlled.stopped).toEqual([]);
+		expect(await storage.sessionStore().read(task.id)).toEqual(sessionState);
+		expect(await storage.modeDeletionJournal.read()).toBeUndefined();
+		expect((await core.getProjectModeCatalog()).profiles.build).toBeDefined();
 	});
 
 	it("rejects failed preflight without stopping or changing the mode", async () => {

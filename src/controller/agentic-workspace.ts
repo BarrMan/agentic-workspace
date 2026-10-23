@@ -38,6 +38,7 @@ import type { CreatedTaskRollbackResult, CreatedTaskWrite } from "../storage/typ
 import type { ConfigWatcherCallbacks } from "../storage/watchers/config-watcher.ts";
 import { type TaskWatcherCallbacks, watchTaskRecords } from "../storage/watchers/task-watcher.ts";
 import {
+	initializeAgentConfiguration,
 	loadAgentConfiguration,
 	loadProjectModeCatalog,
 	patchAgentConfiguration,
@@ -176,6 +177,7 @@ export class Core {
 	}
 
 	async getProjectModeCatalog() {
+		await initializeAgentConfiguration(this, "project");
 		return await loadProjectModeCatalog(this);
 	}
 

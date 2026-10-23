@@ -264,8 +264,8 @@ async function initializeTestProjectWithOptions(
 ): Promise<void> {
 	const { agenticWorkspaceDirectory, filesystemOnly = false } = options;
 	const agenticWorkspaceDirectorySource = agenticWorkspaceDirectory
-		? agenticWorkspaceDirectory === "agentic-workspace" || agenticWorkspaceDirectory === ".agentic-workspace"
-			? (agenticWorkspaceDirectory as "agentic-workspace" | ".agentic-workspace")
+		? agenticWorkspaceDirectory === ".agentic-workspace"
+			? ".agentic-workspace"
 			: "custom"
 		: undefined;
 	const configLocation = agenticWorkspaceDirectorySource === "custom" ? "root" : "folder";

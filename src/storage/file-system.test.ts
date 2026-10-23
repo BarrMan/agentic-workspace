@@ -117,27 +117,27 @@ describe("persisted task counter", () => {
 		expect(await readFile(path, "utf8")).toBe(exhausted);
 	});
 
-	it("runs conversion only through explicit script invocation and keeps the configured old folder", async () => {
+	it("runs conversion only for the selected store through explicit script invocation", async () => {
 		const fs = await filesystem();
-		const directory = join(fs.rootDir, "agentic-workspace");
+		const directory = join(fs.rootDir, "custom-store");
 		await mkdir(directory);
 		const path = join(directory, "task-counter.json");
 		await writeFile(path, '{"TASK":{"next":3}}');
 		const script = fileURLToPath(new URL("../../scripts/migrate-task-counter.ts", import.meta.url));
 		const run = () => Bun.spawnSync([process.execPath, script, fs.rootDir], { timeout: 10_000 });
-		const blocked = run();
-		expect(blocked.exitCode).toBe(1);
-		expect(blocked.stderr.toString()).toContain("explicit location decision");
+		const unselected = run();
+		expect(unselected.exitCode).toBe(0);
+		expect(JSON.parse(unselected.stdout.toString()).converted).toBe(false);
 		expect(await readFile(path, "utf8")).toBe('{"TASK":{"next":3}}');
 		await writeFile(
 			join(fs.rootDir, "agentic-workspace.config.yml"),
-			"project_name: Test\nagentic_workspace_directory: agentic-workspace\n",
+			"project_name: Test\nagentic_workspace_directory: custom-store\n",
 		);
 		const converted = run();
 		expect(converted.exitCode).toBe(0);
 		expect(JSON.parse(converted.stdout.toString()).converted).toBe(true);
 		expect(JSON.parse(await readFile(path, "utf8"))).toEqual({ TASK: { lastAllocated: 2 } });
-		expect((await new FileSystem(fs.rootDir).loadConfig())?.agenticWorkspaceDirectory).toBe("agentic-workspace");
+		expect((await new FileSystem(fs.rootDir).loadConfig())?.agenticWorkspaceDirectory).toBe("custom-store");
 	});
 
 	it("converts the shared Git counter when explicitly invoked from a linked worktree", async () => {
