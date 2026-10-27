@@ -34,21 +34,23 @@ describe("task boundary shortcuts", () => {
 		const tasks = Array.from({ length: 20 }, (_, index) => task(`TASK-${index + 1}`));
 		tasks.push(task("TASK-21", "To Do", false), task("TASK-22", "Doing"), task("TASK-23", "Doing"));
 		const board = new Board({ tasks, statuses: ["To Do", "Doing", "Empty"], filters: { labelFilter: ["visible"] } });
+		board.select("To Do", "TASK-10");
 		const mount = mountOpenTuiBoard(setup.renderer, parent(setup), { board });
 		try {
 			await setup.flush();
-			setup.mockInput.pressKey("G");
+			setup.mockInput.pressKey("g", { shift: false });
 			await setup.flush();
-			expect(board.selectedTask?.id).toBe("TASK-1");
-			expect(setup.captureCharFrame().split("\n").slice(1, -2).join("\n")).toContain("TASK-1");
-			setup.mockInput.pressKey("g");
+			// Board columns are ordered by descending ID: first is TASK-20, last TASK-1.
 			expect(board.selectedTask?.id).toBe("TASK-20");
+			expect(setup.captureCharFrame().split("\n").slice(1, -2).join("\n")).toContain("TASK-20");
+			setup.mockInput.pressKey("g", { shift: true });
+			expect(board.selectedTask?.id).toBe("TASK-1");
 			setup.mockInput.pressArrow("right");
 			setup.mockInput.pressKey("g", { shift: true });
 			expect(board.selectedLane?.status).toBe("Doing");
 			expect(board.selectedTask?.id).toBe("TASK-22");
 			setup.mockInput.pressKey("HOME");
-			expect(board.selectedTask?.id).toBe("TASK-23");
+			expect(board.selectedTask?.id).toBe("TASK-22");
 			setup.mockInput.pressKey("END");
 			expect(board.selectedTask?.id).toBe("TASK-22");
 			setup.mockInput.pressArrow("right");

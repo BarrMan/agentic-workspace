@@ -167,7 +167,7 @@ describe("real WorkspaceController Settings persistence", () => {
 			if (attempt === 299) throw new Error(`Mode deletion confirmation did not settle:\n${setup.captureCharFrame()}`);
 			await Bun.sleep(10);
 		}
-		setup.mockInput.pressKey("y");
+		setup.mockInput.pressEnter();
 		await setup.flush();
 		await eventually(async () => {
 			await setup.flush();
@@ -180,7 +180,7 @@ describe("real WorkspaceController Settings persistence", () => {
 				await setup.flush();
 				return setup.captureCharFrame().includes("Delete mode");
 			});
-			setup.mockInput.pressKey("y");
+			setup.mockInput.pressEnter();
 			await setup.flush();
 		}
 		await eventually(async () => {
@@ -470,14 +470,14 @@ describe("real WorkspaceController Settings persistence", () => {
 				await f.setup.flush();
 				return f.setup.captureCharFrame().includes("Delete mode");
 			});
-			f.setup.mockInput.pressKey("y");
+			f.setup.mockInput.pressEnter();
 			await f.setup.flush();
 			expect(deletion).not.toHaveBeenCalled();
 			await eventually(async () => {
 				await f.setup.flush();
 				return f.setup.captureCharFrame().includes("Delete mode");
 			});
-			f.setup.mockInput.pressKey("y");
+			f.setup.mockInput.pressEnter();
 			await eventually(async () => {
 				await f.setup.flush();
 				return f.setup.captureCharFrame().includes("Choose an action");
@@ -554,7 +554,7 @@ describe("real WorkspaceController Settings persistence", () => {
 					await f.setup.flush();
 					return f.setup.captureCharFrame().includes("Delete mode");
 				});
-				f.setup.mockInput.pressKey("y");
+				f.setup.mockInput.pressEnter();
 				await f.setup.flush();
 			}
 			await eventually(async () => {

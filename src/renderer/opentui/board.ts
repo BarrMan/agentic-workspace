@@ -153,10 +153,7 @@ export function mountOpenTuiBoard(
 	props: OpenTuiBoardProps,
 ): OpenTuiBoardMount {
 	const formatShortcut = (shortcut: ShortcutDescriptor): string =>
-		formatConfiguredShortcut(
-			{ ...shortcut, keys: shortcut.keys.slice(0, 1), label: undefined },
-			props.keyboardOverrides,
-		);
+		formatConfiguredShortcut(shortcut, props.keyboardOverrides);
 	const root = new BoxRenderable(renderer, {
 		width: "100%",
 		height: "100%",

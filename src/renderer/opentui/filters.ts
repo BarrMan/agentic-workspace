@@ -560,7 +560,7 @@ export function mountOpenTuiHelpOverlay(
 		});
 	};
 	const formatSequence = (keys: readonly ShortcutKey[]): string =>
-		keys.map((key) => formatShortcut({ id: "", keys: [key] })).join(", ");
+		keys.map((binding) => formatShortcut({ id: "", binding })).join(", ");
 	const rowModels: ShortcutRow[] = [];
 	let renderedItems: readonly OpenTuiHelpItem[] = [];
 	const bindingValue = (item: OpenTuiHelpItem): string =>

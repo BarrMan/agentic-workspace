@@ -159,7 +159,7 @@ Let users inspect and organize project tasks in a grouped workspace list or a st
 
 ### IF-WB-007: Searchable help and shortcuts
 
-**Description:** Help is searchable and keyboard shortcuts are customizable. A conflicting assignment is rejected while the working binding is retained.
+**Description:** Help is searchable and keyboard shortcuts are customizable. Each action has exactly one configured binding, not a collection of alternative bindings or aliases. A binding may be an ordered multi-stroke sequence as described in the [help screen](../screens/help-dialogs.md); its strokes are not alternative bindings. A conflicting assignment is rejected while the working binding is retained.
 
 **Trigger:** User searches help or customizes a shortcut.
 
@@ -169,6 +169,9 @@ Let users inspect and organize project tasks in a grouped workspace list or a st
 1. Search help entries.
 2. Allow shortcut customization.
 3. Reject a binding that conflicts with a working binding.
+4. Replace the action's single binding when customizing it; do not retain its previous/default binding as an alias or expose alternative bindings under duplicate names for the same action.
+5. In task-list navigation, bind First to `g` and Last to `Shift+G` by default. `Home` and `End` are not task-list navigation aliases. The workspace New group default is `Option+G` on macOS (`Alt+G` elsewhere).
+6. Program Exit has one configurable binding (`Ctrl+C` by default) and context-dependent handling, not an alternative Leave-preview binding. While live-preview input is focused, the controller routes Program Exit to leave preview input (and fullscreen, if active), consumes it, and stops propagation without forwarding terminal input or closing the app. Outside live-preview input, Program Exit requests graceful application close under [SESSION-018](sessions.md#session-018-close-the-app-with-or-without-stopping-sessions). The separate Leave-preview action retains its own single binding (`Ctrl+Q` by default). Rebinding Program Exit changes both contextual uses of that action.
 
 **Outcome:** Help search is usable and valid shortcut overrides take effect.
 
@@ -178,6 +181,9 @@ Let users inspect and organize project tasks in a grouped workspace list or a st
 - [ ] IF-WB-007-AC-01: Search help for an available action and confirm matching help entries can be found.
 - [ ] IF-WB-007-AC-02: Customize a non-conflicting shortcut and confirm the new binding works.
 - [ ] IF-WB-007-AC-03: Assign a shortcut already bound to a working action; confirm rejection and retention of the previous binding.
+- [ ] IF-WB-007-AC-04: Confirm every action exposes one binding, customization replaces it, and no alternate defaults or duplicate-action aliases remain active.
+- [ ] IF-WB-007-AC-05: With default task-list bindings, confirm `g` selects First and `Shift+G` selects Last, while `Home`/`End` do not navigate to task-list boundaries. Confirm the workspace New group binding is `Option+G`/`Alt+G`.
+- [ ] IF-WB-007-AC-06: Invoke Program Exit in navigation and confirm the graceful-close flow; invoke it in focused preview/fullscreen and confirm return to navigation without close or terminal input. Rebind Program Exit and repeat both contexts; confirm the separate Leave-preview binding still works and the old Exit binding is no longer an Exit action.
 
 ### IF-WB-008: Complete action listings
 
@@ -190,6 +196,8 @@ Let users inspect and organize project tasks in a grouped workspace list or a st
 **Behavior:**
 1. Keep footer actions complete for current focus.
 2. Keep help actions complete for the workspace.
+3. Derive footer and help shortcut hints from the same effective binding used for dispatch, including a saved override. Preserve modifiers and all strokes of a sequence; do not select a separate display-only alias or show a default after it is overridden.
+4. Display readable key combinations, such as `Option+G` on macOS or `Alt+G` elsewhere for New group, rather than Option-composed text such as `©`. Distinguish unmodified `g` from `Shift+G` in hints.
 
 **Outcome:** Available actions are discoverable in the appropriate listing.
 
@@ -198,6 +206,8 @@ Let users inspect and organize project tasks in a grouped workspace list or a st
 **Acceptance Criteria:**
 - [ ] IF-WB-008-AC-01: For each focus state, confirm the footer lists every action available for that focus and no available action is omitted.
 - [ ] IF-WB-008-AC-02: Confirm help lists all available actions, including actions not shown in the current-focus footer.
+- [ ] IF-WB-008-AC-03: Compare footer/help hints with actual dispatch for default bindings and customized single-/multi-stroke bindings; confirm the hints show the effective binding and every modifier/stroke, never a superseded default.
+- [ ] IF-WB-008-AC-04: Confirm default First/Last hints show `g`/`Shift+G` and New group shows `Option+G` on macOS (`Alt+G` elsewhere), not `©`.
 
 ## States and Transitions
 

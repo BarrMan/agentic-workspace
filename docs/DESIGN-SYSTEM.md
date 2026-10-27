@@ -22,7 +22,7 @@ Terminal text uses the available cell grid, not proportional-font or web-breakpo
 
 ## Shared footer and focus
 
-Session start applies to the selected mode only. Footer content, mode-specific cue policy, shortcut presentation, and focused-agent footer detail remain open questions.
+Session start applies to the selected mode only. Footer action completeness and readable effective-binding hints follow [IF-WB-008](specs/workspace-and-board.md#if-wb-008-complete-action-listings). Exact footer layout, mode-specific cue policy, and focused-agent footer detail remain open questions.
 
 ## Dialogs and focus
 

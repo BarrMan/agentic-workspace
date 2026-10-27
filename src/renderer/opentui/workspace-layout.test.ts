@@ -231,6 +231,41 @@ describe("native workspace layout", () => {
 		}
 	});
 
+	test("configured Program Exit closes in navigation and leaves the focused preview", async () => {
+		const setup = await createTestRenderer({ width: 120, height: 40, exitOnCtrlC: false });
+		renderers.push(setup);
+		const { agent, writes } = liveAgent(setup);
+		let quit = 0;
+		const mount = mountOpenTuiWorkspace(setup.renderer, attachParent(setup), {
+			tasks,
+			liveAgent: agent,
+			keyboardOverrides: { "workspace.quit": { sequence: [{ key: "x", ctrl: true }] } },
+			detailsVisible: false,
+			onSessionAction: () => agent.terminal.focus(),
+			onQuit: () => quit++,
+		});
+		try {
+			await setup.flush();
+			expect(setup.captureCharFrame()).toContain("[Ctrl+X] Exit");
+			setup.mockInput.pressCtrlC();
+			expect(quit).toBe(0);
+			setup.mockInput.pressKey("x", { ctrl: true });
+			expect(quit).toBe(1);
+			setup.mockInput.pressEnter();
+			await setup.flush();
+			expect(agent.terminal.focused).toBe(true);
+			expect(setup.captureCharFrame()).toContain("[Ctrl+X] Leave preview · [Ctrl+Q] Leave agent");
+			setup.mockInput.pressKey("x", { ctrl: true });
+			await setup.flush();
+			expect(agent.terminal.focused).toBe(false);
+			expect(quit).toBe(1);
+			expect(writes).toEqual([]);
+		} finally {
+			mount.dispose();
+			agent.terminal.destroy();
+		}
+	});
+
 	test("renders one flat task list ordered by configured status then unknown statuses", async () => {
 		const setup = await createTestRenderer({ width: 120, height: 40, exitOnCtrlC: false });
 		renderers.push(setup);
@@ -726,7 +761,7 @@ describe("native workspace layout", () => {
 		}
 	});
 
-	test("g and G select the first and last task of the flat list without hijacking agent input", async () => {
+	test("g and Shift+G select the first and last task, while Home and End do not navigate boundaries", async () => {
 		const setup = await createTestRenderer({ width: 120, height: 40, exitOnCtrlC: false });
 		renderers.push(setup);
 		const { agent, writes } = liveAgent(setup);
@@ -742,6 +777,8 @@ describe("native workspace layout", () => {
 		});
 		try {
 			await setup.flush();
+			expect(setup.captureCharFrame()).toContain("[g] First");
+			expect(setup.captureCharFrame()).toContain("[Shift+G] Last");
 			setup.mockInput.pressKey("G");
 			await setup.flush();
 			expect(selected).toEqual(["BACK-3"]);
@@ -750,14 +787,13 @@ describe("native workspace layout", () => {
 			await setup.flush();
 			expect(selected).toEqual(["BACK-3", "BACK-1"]);
 			expect(setup.captureCharFrame()).toContain("First task");
-			// End and Home arrive as terminal escape sequences and reach the same boundaries.
+			// Home and End are not task-list navigation bindings.
 			setup.mockInput.pressKey("\x1b[F");
 			await setup.flush();
-			expect(selected).toEqual(["BACK-3", "BACK-1", "BACK-3"]);
+			expect(selected).toEqual(["BACK-3", "BACK-1"]);
 			setup.mockInput.pressKey("\x1b[H");
 			await setup.flush();
-			const boundaries = ["BACK-3", "BACK-1", "BACK-3", "BACK-1"];
-			expect(selected).toEqual(boundaries);
+			expect(selected).toEqual(["BACK-3", "BACK-1"]);
 			// Tab in the workspace cycles modes; it does not focus the preview terminal.
 			setup.mockInput.pressTab();
 			await setup.flush();
@@ -766,7 +802,7 @@ describe("native workspace layout", () => {
 			setup.mockInput.pressKey("g");
 			setup.mockInput.pressKey("G");
 			await setup.flush();
-			expect(selected).toEqual([...boundaries, "BACK-3"]);
+			expect(selected).toEqual(["BACK-3", "BACK-1", "BACK-3"]);
 			expect(writes.join("")).toBe("");
 		} finally {
 			mount.dispose();
@@ -895,9 +931,9 @@ describe("native workspace layout", () => {
 			await setup.flush();
 			const frame = setup.captureCharFrame();
 			expect(frame).not.toContain("Agent session ·");
-			expect(frame).toContain("No session in PLAN · Enter start · S choose session");
+			expect(frame).toContain("No session in PLAN · Enter start · s choose session");
 			expect(frame).toContain("[Enter]");
-			expect(frame).toContain("[S] Choose session");
+			expect(frame).toContain("[s] Choose session");
 		} finally {
 			mount.dispose();
 		}
@@ -916,7 +952,7 @@ describe("native workspace layout", () => {
 		});
 		try {
 			await setup.flush();
-			expect(setup.captureCharFrame()).toContain("Session ended · Enter resume · R choose session");
+			expect(setup.captureCharFrame()).toContain("Session ended · Enter resume · r choose session");
 		} finally {
 			mount.dispose();
 		}

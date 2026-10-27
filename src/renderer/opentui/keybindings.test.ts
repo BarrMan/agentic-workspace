@@ -10,7 +10,7 @@ import {
 	shortcutKeyFromEvent,
 	shortcutsConfig,
 } from "./keybindings.ts";
-import { metaModifierLabel, uiKeymap } from "./keymap.ts";
+import { metaModifierLabel } from "./keymap.ts";
 
 function keyEvent(
 	name: string,
@@ -21,40 +21,27 @@ function keyEvent(
 
 describe("OpenTUI keybinding adapter", () => {
 	it("dispatches canonical remaps without retaining replaced shortcuts", () => {
-		const keymap = uiKeymap as unknown as { board: { workspace: string[] } };
-		const original = keymap.board.workspace;
 		const keybindings = createKeybindings();
+		const shortcut = { ...shortcutsConfig.board.workspace, binding: { key: "x" } };
 		let invocations = 0;
-		try {
-			keymap.board.workspace = ["x"];
-			keybindings.on(shortcutsConfig.board.workspace, () => {
-				invocations += 1;
-			});
+		keybindings.on(shortcut, () => {
+			invocations += 1;
+		});
 
-			expect(keybindings.dispatch(keyEvent("S-b", { shift: true }))).toBe(false);
-			expect(keybindings.dispatch(keyEvent("x"))).toBe(true);
-			expect(invocations).toBe(1);
-		} finally {
-			keymap.board.workspace = original;
-		}
+		expect(keybindings.dispatch(keyEvent("b", { shift: true }))).toBe(false);
+		expect(keybindings.dispatch(keyEvent("x"))).toBe(true);
+		expect(invocations).toBe(1);
 	});
 
 	it("converts Ctrl, Shift, and Meta canonical modifiers", () => {
-		const keymap = uiKeymap as unknown as { board: { workspace: string[] } };
-		const original = keymap.board.workspace;
-		try {
-			expect(matchesShortcut(shortcutsConfig.shared.quit, keyEvent("c", { ctrl: true }))).toBe(true);
-			expect(matchesShortcut(shortcutsConfig.board.workspace, keyEvent("b", { shift: true }))).toBe(true);
-
-			keymap.board.workspace = ["M-b"];
-			expect(matchesShortcut(shortcutsConfig.board.workspace, keyEvent("b", { meta: true }))).toBe(true);
-			expect(matchesShortcut(shortcutsConfig.board.workspace, keyEvent("b"))).toBe(false);
-		} finally {
-			keymap.board.workspace = original;
-		}
+		expect(matchesShortcut(shortcutsConfig.shared.quit, keyEvent("c", { ctrl: true }))).toBe(true);
+		expect(matchesShortcut(shortcutsConfig.board.workspace, keyEvent("b", { shift: true }))).toBe(true);
+		const metaShortcut = { ...shortcutsConfig.board.workspace, binding: { key: "b", meta: true as const } };
+		expect(matchesShortcut(metaShortcut, keyEvent("b", { meta: true }))).toBe(true);
+		expect(matchesShortcut(metaShortcut, keyEvent("b"))).toBe(false);
 	});
 	for (const surface of ["board", "taskViewer", "workspace"] as const) {
-		it(`${surface} distinguishes g/G and retains Home/End boundary shortcuts`, () => {
+		it(`${surface} binds first/last to g and Shift+G only`, () => {
 			const shortcuts = shortcutsConfig[surface];
 			expect(matchesShortcut(shortcuts.first, keyEvent("g"))).toBe(true);
 			expect(matchesShortcut(shortcuts.last, keyEvent("g"))).toBe(false);
@@ -62,8 +49,8 @@ describe("OpenTUI keybinding adapter", () => {
 			expect(matchesShortcut(shortcuts.first, keyEvent("G"))).toBe(false);
 			expect(matchesShortcut(shortcuts.last, keyEvent("g", { shift: true }))).toBe(true);
 			expect(matchesShortcut(shortcuts.first, keyEvent("g", { shift: true }))).toBe(false);
-			expect(matchesShortcut(shortcuts.first, keyEvent("home"))).toBe(true);
-			expect(matchesShortcut(shortcuts.last, keyEvent("end"))).toBe(true);
+			expect(matchesShortcut(shortcuts.first, keyEvent("home"))).toBe(false);
+			expect(matchesShortcut(shortcuts.last, keyEvent("end"))).toBe(false);
 			expect(matchesShortcut(shortcuts.first, keyEvent("g", { ctrl: true }))).toBe(false);
 			expect(matchesShortcut(shortcuts.last, keyEvent("G", { meta: true }))).toBe(false);
 		});
@@ -71,9 +58,9 @@ describe("OpenTUI keybinding adapter", () => {
 
 	it("exposes workspace group descriptors for newGroup, expand, and collapse", () => {
 		const workspace = shortcutsConfig.workspace;
-		expect(workspace.newGroup.keys).toEqual([{ key: "g", meta: true }]);
-		expect(workspace.expand.keys).toEqual([{ key: "right" }]);
-		expect(workspace.collapse.keys).toEqual([{ key: "left" }]);
+		expect(workspace.newGroup.binding).toEqual({ key: "g", meta: true });
+		expect(workspace.expand.binding).toEqual({ key: "right" });
+		expect(workspace.collapse.binding).toEqual({ key: "left" });
 
 		expect(matchesShortcut(workspace.newGroup, keyEvent("g", { meta: true }))).toBe(true);
 		expect(matchesShortcut(workspace.newGroup, keyEvent("g"))).toBe(false);
@@ -115,10 +102,10 @@ describe("OpenTUI keybinding adapter", () => {
 		expect(matchesShortcut(workspace.toggleTaskPane, keyEvent("[", { ctrl: true }))).toBe(false);
 		expect(matchesShortcut(workspace.toggleTaskPane, keyEvent("escape"))).toBe(false);
 		expect(matchesShortcut(workspace.historyBack, keyEvent("[", { ctrl: true }))).toBe(true);
-		expect(matchesShortcut(workspace.historyBack, keyEvent("escape"))).toBe(true);
+		expect(matchesShortcut(workspace.historyBack, keyEvent("escape"))).toBe(false);
 		expect(matchesShortcut(workspace.historyBack, keyEvent("[", { ctrl: true, shift: true }))).toBe(false);
 		expect(matchesShortcut(workspace.historyForward, keyEvent("]", { ctrl: true }))).toBe(true);
-		expect(matchesShortcut(workspace.quickPreviewExit, keyEvent("c", { ctrl: true }))).toBe(true);
+		expect(matchesShortcut(workspace.quickPreviewExit, keyEvent("c", { ctrl: true }))).toBe(false);
 		expect(matchesShortcut(workspace.quickPreviewExit, keyEvent("q", { ctrl: true }))).toBe(true);
 		expect(matchesShortcut(workspace.fullscreen, keyEvent("f", { ctrl: true }))).toBe(false);
 		expect(matchesShortcut(workspace.fullscreen, keyEvent("f", { super: true }))).toBe(false);
@@ -130,11 +117,11 @@ describe("OpenTUI keybinding adapter", () => {
 		});
 		expect(shortcutKeyFromEvent(keyEvent("shift", { shift: true }))).toBeUndefined();
 		expect(shortcutKeyFromEvent({ ...keyEvent("x"), eventType: "release" } as KeyEvent)).toBeUndefined();
-		expect(matchesShortcut(shortcutsConfig.board.workspace, keyEvent("q", { ctrl: true }))).toBe(true);
+		expect(matchesShortcut(shortcutsConfig.board.workspace, keyEvent("q", { ctrl: true }))).toBe(false);
 		expect(matchesShortcut(workspace.help, keyEvent("?"))).toBe(true);
-		expect(matchesShortcut(workspace.help, keyEvent("?", { shift: true }))).toBe(true);
+		expect(matchesShortcut(workspace.help, keyEvent("?", { shift: true }))).toBe(false);
 		expect(matchesShortcut(workspace.help, keyEvent("?", { ctrl: true }))).toBe(false);
-		expect(formatShortcut(workspace.quickPreviewExit)).toBe("Ctrl+Q/Ctrl+C");
+		expect(formatShortcut(workspace.quickPreviewExit)).toBe("Ctrl+Q");
 	});
 
 	it("applies serialized project overrides without changing another registry", () => {
@@ -175,7 +162,7 @@ describe("OpenTUI keybinding adapter", () => {
 			fullscreen += 1;
 		});
 
-		expect(formatShortcut(shortcutsConfig.workspace.createTask, overrides)).toBe("Ctrl+B, D");
+		expect(formatShortcut(shortcutsConfig.workspace.createTask, overrides)).toBe("Ctrl+B, d");
 		expect(matchesShortcut(shortcutsConfig.workspace.createTask, keyEvent("b", { ctrl: true }), overrides)).toBe(false);
 		expect(keybindings.dispatch(keyEvent("b", { ctrl: true }))).toBe(true);
 		expect(creates).toBe(0);
@@ -187,6 +174,21 @@ describe("OpenTUI keybinding adapter", () => {
 		expect(keybindings.dispatch(keyEvent("x"))).toBe(true);
 		expect(fullscreen).toBe(1);
 		overrides = {};
+	});
+
+	it("keeps an explicitly unbound override inactive", () => {
+		const shortcut = shortcutsConfig.workspace.fullscreen;
+		const overrides = { [shortcut.id]: { sequence: [] } };
+		const keybindings = createKeybindings(() => overrides);
+		let calls = 0;
+		keybindings.on(shortcut, () => {
+			calls += 1;
+		});
+
+		expect(formatShortcut(shortcut, overrides)).toBe("Unbound");
+		expect(matchesShortcut(shortcut, keyEvent("f"), overrides)).toBe(false);
+		expect(keybindings.dispatch(keyEvent("f"))).toBe(false);
+		expect(calls).toBe(0);
 	});
 
 	it("finds same-surface conflicts including active overrides", () => {
@@ -230,7 +232,7 @@ describe("OpenTUI keybinding adapter", () => {
 			{ event: keyEvent("{"), recorded: { key: "[", shift: true }, label: "Shift+[" },
 		] as const;
 		for (const [index, testCase] of cases.entries()) {
-			const shortcut = { id: `test.recording.${index}`, keys: [] };
+			const shortcut = { id: `test.recording.${index}`, binding: { key: "unbound" } };
 			const recorded = shortcutKeyFromEvent(testCase.event);
 			expect(recorded).toEqual(testCase.recorded);
 			expect(
@@ -243,7 +245,7 @@ describe("OpenTUI keybinding adapter", () => {
 	});
 
 	it("matches literal override key names without parsing binding syntax", () => {
-		const shortcut = { id: "test.literal", keys: [] };
+		const shortcut = { id: "test.literal", binding: { key: "unbound" } };
 		for (const name of ["😀", "unknown", "ctrl+x"] as const) {
 			const overrides = { [shortcut.id]: { sequence: [{ key: name }] } };
 			expect(matchesShortcut(shortcut, keyEvent(name), overrides)).toBe(true);

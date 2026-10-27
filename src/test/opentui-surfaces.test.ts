@@ -35,7 +35,7 @@ describe("OpenTUI surfaces", () => {
 		});
 		try {
 			await setup.flush();
-			setup.mockInput.pressKey("END");
+			setup.mockInput.pressKey("g", { shift: true });
 			await setup.flush();
 			expect(board.selectedTask?.id).toBe("BACK-1");
 			expect(

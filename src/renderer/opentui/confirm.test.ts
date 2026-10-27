@@ -21,11 +21,15 @@ describe("native confirm overlay", () => {
 		return { setup, parent, modal };
 	};
 
-	test("accept resolves true and unmounts", async () => {
+	test("accept uses the displayed Enter binding and unmounts", async () => {
 		const { setup, parent, modal } = await setupConfirm();
-		expect(setup.captureCharFrame()).toContain("Delete this task?");
-		expect(setup.captureCharFrame()).toContain(": Yes · ");
+		const frame = setup.captureCharFrame();
+		expect(frame).toContain("Delete this task?");
+		expect(frame).toContain("Enter: Yes · Esc: No");
 		setup.mockInput.pressKey("y");
+		await setup.flush();
+		expect(parent.getChildren()).toHaveLength(3);
+		setup.mockInput.pressEnter();
 		await setup.flush();
 		expect(await modal.result).toBe(true);
 		expect(parent.getChildren()).toHaveLength(1);

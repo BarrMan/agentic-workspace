@@ -241,8 +241,8 @@ describe("native shortcut help", () => {
 			const persisted: ShortcutOverrides[] = [];
 			const help = mountOpenTuiHelpOverlay(setup.renderer, parent, {
 				items: [
-					{ shortcut: { id: "test.first", keys: [{ key: "f1" }] }, description: "First action" },
-					{ shortcut: { id: "test.second", keys: [{ key: "f2" }] }, description: "Second action" },
+					{ shortcut: { id: "test.first", binding: { key: "f1" } }, description: "First action" },
+					{ shortcut: { id: "test.second", binding: { key: "f2" } }, description: "Second action" },
 				],
 				onOverridesChange: (next) => {
 					persisted.push(next);
@@ -315,7 +315,7 @@ describe("native shortcut help", () => {
 				await setup.flush();
 				expect(pending.isDestroyed).toBe(true);
 				expect(setup.renderer.currentFocusedRenderable).not.toBeInstanceOf(InputRenderable);
-				const expectedBinding = finish === "Escape" ? stroke : `${stroke}, X`;
+				const expectedBinding = finish === "Escape" ? stroke : `${stroke}, x`;
 				expect(first.binding.plainText).toBe(expectedBinding);
 				expect(checkColumns()).toBe(descriptionX);
 				expect(setup.captureCharFrame()).not.toContain("Press key...");
@@ -411,7 +411,7 @@ describe("native shortcut help", () => {
 		setup.renderer.root.add(parent);
 		const persisted: ShortcutOverrides[] = [];
 		const items: OpenTuiHelpItem[] = Array.from({ length: 12 }, (_, index) => ({
-			shortcut: { id: `test.${index}`, keys: [{ key: `f${index + 1}` }] },
+			shortcut: { id: `test.${index}`, binding: { key: `f${index + 1}` } },
 			description: `Group shortcut ${index}`,
 		}));
 		const help = mountOpenTuiHelpOverlay(setup.renderer, parent, {
@@ -435,13 +435,13 @@ describe("native shortcut help", () => {
 			expect(captureLine).toContain("> Press key...");
 			setup.mockInput.pressKey("x");
 			await setup.flush();
-			expect(shortcutRow(parent, 8).binding.plainText).toBe("X, ");
+			expect(shortcutRow(parent, 8).binding.plainText).toBe("x, ");
 			pendingInput(setup);
 			setup.mockInput.pressEscape();
 			await setup.flush();
 			expect(setup.captureCharFrame()).toContain("Confirm selection");
 			expect(setup.renderer.currentFocusedRenderable).not.toBeInstanceOf(InputRenderable);
-			expect(shortcutRow(parent, 8).binding.plainText).toBe("X");
+			expect(shortcutRow(parent, 8).binding.plainText).toBe("x");
 			expect(setup.captureCharFrame()).toContain("Discard");
 			setup.mockInput.pressArrow("right");
 			await setup.flush();

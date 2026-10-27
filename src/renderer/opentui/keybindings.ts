@@ -1,15 +1,7 @@
 import type { KeyEvent } from "@opentui/core";
 import { Keymap, type KeymapEvent, type KeymapHost, type KeyStrokeInput } from "@opentui/keymap";
 import { registerDefaultKeys } from "@opentui/keymap/addons";
-import {
-	formatKey,
-	formatKeymap,
-	type KeymapAction,
-	type KeymapContext,
-	keymapKeys,
-	metaModifierLabel,
-	uiKeymap,
-} from "./keymap.ts";
+import { formatKey, type KeymapAction, type KeymapContext, keymapKey, metaModifierLabel, uiKeymap } from "./keymap.ts";
 import { charFromBaseCode, optionBaseKey } from "./option-compose.ts";
 
 const keymapTarget = {};
@@ -59,14 +51,13 @@ export type ShortcutSequence = Readonly<{
 /** One persisted shortcut override. */
 export type ShortcutOverride = ShortcutSequence;
 
-/** Project-local overrides, keyed by descriptor ID. An override replaces every default alias. */
+/** Project-local overrides, keyed by descriptor ID. An override replaces the default binding. */
 export type ShortcutOverrides = Readonly<Record<string, ShortcutOverride>>;
 
-/** Named OpenTUI action and every key combination that invokes it. */
+/** Named OpenTUI action and its one default key combination. */
 export type ShortcutDescriptor<Name extends string = string> = Readonly<{
 	readonly id: Name;
-	readonly keys: readonly ShortcutKey[];
-	readonly label?: string;
+	readonly binding: ShortcutKey;
 }>;
 
 type OpenTuiShortcutConfig = Readonly<Record<string, ShortcutDescriptor>>;
@@ -101,26 +92,11 @@ function keyFromCanonical(name: string): ShortcutKey {
 	};
 }
 
-function canonicalShortcut<Name extends string>(
-	id: Name,
-	...bindings: readonly KeymapBinding[]
-): ShortcutDescriptor<Name> {
+function canonicalShortcut<Name extends string>(id: Name, binding: KeymapBinding): ShortcutDescriptor<Name> {
+	const [context, action] = binding;
 	return {
 		id,
-		get keys(): readonly ShortcutKey[] {
-			const seen = new Set<string>();
-			return bindings
-				.flatMap(([context, action]) => keymapKeys(context as never, action as never).map(keyFromCanonical))
-				.filter((shortcut) => {
-					const signature = `${shortcut.key}:${shortcut.ctrl ? 1 : 0}:${shortcut.shift ? 1 : 0}:${shortcut.meta ? 1 : 0}`;
-					if (seen.has(signature)) return false;
-					seen.add(signature);
-					return true;
-				});
-		},
-		get label(): string {
-			return bindings.map(([context, action]) => formatKeymap(context as never, action as never)).join("/");
-		},
+		binding: keyFromCanonical(keymapKey(context as never, action as never)),
 	};
 }
 
@@ -129,10 +105,10 @@ const sharedShortcuts = {
 	cancel: canonicalShortcut("shared.cancel", ["shared", "cancel"]),
 	activate: canonicalShortcut("shared.activate", ["shared", "activate"]),
 	help: canonicalShortcut("shared.help", ["shared", "help"]),
-	up: canonicalShortcut("shared.up", ["shared", "up"], ["shared", "upVim"]),
-	down: canonicalShortcut("shared.down", ["shared", "down"], ["shared", "downVim"]),
-	previous: canonicalShortcut("shared.previous", ["shared", "previous"], ["shared", "previousVim"]),
-	next: canonicalShortcut("shared.next", ["shared", "next"], ["shared", "nextVim"]),
+	up: canonicalShortcut("shared.up", ["shared", "up"]),
+	down: canonicalShortcut("shared.down", ["shared", "down"]),
+	previous: canonicalShortcut("shared.previous", ["shared", "previous"]),
+	next: canonicalShortcut("shared.next", ["shared", "next"]),
 	pageUp: canonicalShortcut("shared.pageUp", ["shared", "pageUp"]),
 	pageDown: canonicalShortcut("shared.pageDown", ["shared", "pageDown"]),
 	first: canonicalShortcut("shared.first", ["shared", "first"]),
@@ -163,8 +139,8 @@ export const shortcutsConfig = {
 		move: canonicalShortcut("board.move", ["board", "move"]),
 		previousColumn: canonicalShortcut("board.previousColumn", ["board", "navPrevious"]),
 		nextColumn: canonicalShortcut("board.nextColumn", ["board", "navNext"]),
-		previousTask: canonicalShortcut("board.previousTask", ["board", "navUp"], ["board", "navUpVim"]),
-		nextTask: canonicalShortcut("board.nextTask", ["board", "navDown"], ["board", "navDownVim"]),
+		previousTask: canonicalShortcut("board.previousTask", ["board", "navUp"]),
+		nextTask: canonicalShortcut("board.nextTask", ["board", "navDown"]),
 		pageUp: canonicalShortcut("board.pageUp", ["board", "pageUp"]),
 		pageDown: canonicalShortcut("board.pageDown", ["board", "pageDown"]),
 		first: canonicalShortcut("board.first", ["board", "first"]),
@@ -193,18 +169,18 @@ export const shortcutsConfig = {
 		archiveTask: canonicalShortcut("taskViewer.archiveTask", ["taskList", "archive"]),
 		focusDetail: canonicalShortcut("taskViewer.focusDetail", ["taskList", "focusDetail"]),
 		focusList: canonicalShortcut("taskViewer.focusList", ["taskList", "focusList"]),
-		previous: canonicalShortcut("taskViewer.previous", ["list", "up"], ["list", "upVim"]),
-		next: canonicalShortcut("taskViewer.next", ["list", "down"], ["list", "downVim"]),
+		previous: canonicalShortcut("taskViewer.previous", ["list", "up"]),
+		next: canonicalShortcut("taskViewer.next", ["list", "down"]),
 		pageUp: canonicalShortcut("taskViewer.pageUp", ["list", "pageUp"]),
 		pageDown: canonicalShortcut("taskViewer.pageDown", ["list", "pageDown"]),
 		first: canonicalShortcut("taskViewer.first", ["taskList", "first"]),
 		last: canonicalShortcut("taskViewer.last", ["taskList", "last"]),
-		approveArtifact: { id: "taskViewer.approveArtifact", keys: [{ key: "a", ctrl: true, shift: true }] },
-		revokeArtifact: { id: "taskViewer.revokeArtifact", keys: [{ key: "r", ctrl: true, shift: true }] },
+		approveArtifact: { id: "taskViewer.approveArtifact", binding: { key: "a", ctrl: true, shift: true } },
+		revokeArtifact: { id: "taskViewer.revokeArtifact", binding: { key: "r", ctrl: true, shift: true } },
 	},
 	workspace: {
 		quit: canonicalShortcut("workspace.quit", ["shared", "quit"]),
-		openArtifacts: { id: "workspace.openArtifacts", keys: [{ key: "o", ctrl: true, shift: true }] },
+		openArtifacts: { id: "workspace.openArtifacts", binding: { key: "o", ctrl: true, shift: true } },
 		toggleDetails: canonicalShortcut("workspace.toggleDetails", ["workspace", "details"]),
 		toggleTaskPane: canonicalShortcut("workspace.toggleTaskPane", ["workspace", "toggleTaskPane"]),
 		fullscreen: canonicalShortcut("workspace.fullscreen", ["workspace", "fullscreen"]),
@@ -237,8 +213,8 @@ export const shortcutsConfig = {
 	},
 	scrollableViewer: {
 		quit: canonicalShortcut("scrollableViewer.quit", ["shared", "cancel"]),
-		previousLine: canonicalShortcut("scrollableViewer.previousLine", ["list", "up"], ["list", "upVim"]),
-		nextLine: canonicalShortcut("scrollableViewer.nextLine", ["list", "down"], ["list", "downVim"]),
+		previousLine: canonicalShortcut("scrollableViewer.previousLine", ["list", "up"]),
+		nextLine: canonicalShortcut("scrollableViewer.nextLine", ["list", "down"]),
 		pageUp: canonicalShortcut("scrollableViewer.pageUp", ["list", "pageUp"]),
 		pageDown: canonicalShortcut("scrollableViewer.pageDown", ["list", "pageDown"]),
 		first: canonicalShortcut("scrollableViewer.first", ["list", "first"]),
@@ -263,11 +239,11 @@ export const shortcutsConfig = {
 		cancel: canonicalShortcut("filterEditor.cancel", ["shared", "cancel"]),
 		apply: canonicalShortcut("filterEditor.apply", ["shared", "save"]),
 		reset: canonicalShortcut("filterEditor.reset", ["shared", "reset"]),
-		nextField: canonicalShortcut("filterEditor.nextField", ["shared", "tab"], ["shared", "down"]),
-		previousField: canonicalShortcut("filterEditor.previousField", ["shared", "previousTab"], ["shared", "up"]),
+		nextField: canonicalShortcut("filterEditor.nextField", ["shared", "tab"]),
+		previousField: canonicalShortcut("filterEditor.previousField", ["shared", "previousTab"]),
 		previousChoice: canonicalShortcut("filterEditor.previousChoice", ["shared", "up"]),
 		nextChoice: canonicalShortcut("filterEditor.nextChoice", ["shared", "down"]),
-		clear: canonicalShortcut("filterEditor.clear", ["shared", "backspace"], ["shared", "delete"]),
+		clear: canonicalShortcut("filterEditor.clear", ["shared", "backspace"]),
 		toggle: canonicalShortcut("filterEditor.toggle", ["shared", "space"]),
 		confirm: canonicalShortcut("filterEditor.confirm", ["shared", "advance"]),
 	},
@@ -394,9 +370,7 @@ function matcherFor(key: ShortcutKey): ReturnType<Keymap<typeof keymapTarget>["c
 }
 
 for (const context of Object.values(uiKeymap)) {
-	for (const keys of Object.values(context)) {
-		for (const key of keys) matcherFor(keyFromCanonical(key));
-	}
+	for (const key of Object.values(context)) matcherFor(keyFromCanonical(key));
 }
 
 function sameKey(left: ShortcutKey, right: ShortcutKey): boolean {
@@ -412,29 +386,23 @@ function isShortcutKey(value: unknown): value is ShortcutKey {
 }
 
 /** Invalid persisted values fall back to descriptor defaults. */
-function overrideSequences(overrides: ShortcutOverrides, id: string): readonly (readonly ShortcutKey[])[] | undefined {
+function overrideSequence(overrides: ShortcutOverrides, id: string): readonly ShortcutKey[] | undefined {
 	const override = overrides[id];
 	if (
 		typeof override === "object" &&
 		override !== null &&
 		"sequence" in override &&
 		Array.isArray(override.sequence) &&
-		override.sequence.length >= 1 &&
 		override.sequence.length <= 2 &&
 		override.sequence.every(isShortcutKey)
 	) {
-		return [override.sequence];
+		return override.sequence;
 	}
 	return undefined;
 }
 
-function shortcutSequences(
-	shortcut: ShortcutDescriptor,
-	overrides: ShortcutOverrides,
-): readonly (readonly ShortcutKey[])[] {
-	const override = overrideSequences(overrides, shortcut.id);
-	if (override) return override;
-	return shortcut.keys.length === 0 ? [[]] : shortcut.keys.map((key) => [key]);
+function shortcutSequence(shortcut: ShortcutDescriptor, overrides: ShortcutOverrides): readonly ShortcutKey[] {
+	return overrideSequence(overrides, shortcut.id) ?? [shortcut.binding];
 }
 
 function sameSequence(left: readonly ShortcutKey[], right: readonly ShortcutKey[]): boolean {
@@ -443,7 +411,7 @@ function sameSequence(left: readonly ShortcutKey[], right: readonly ShortcutKey[
 
 /** Prefix collisions cannot dispatch deterministically without a timeout, so they conflict. */
 function sequencesConflict(left: readonly ShortcutKey[], right: readonly ShortcutKey[]): boolean {
-	if (left.length === 0 || right.length === 0) return left.length === 0 && right.length === 0;
+	if (left.length === 0 || right.length === 0) return false;
 	return (
 		sameKey(left[0] as ShortcutKey, right[0] as ShortcutKey) &&
 		(left.length === 1 || right.length === 1 || sameSequence(left, right))
@@ -489,10 +457,8 @@ export function matchesShortcut(
 	overrides: ShortcutOverrides = {},
 ): boolean {
 	const key = shortcutKeyFromEvent(event);
-	return shortcutSequences(shortcut, overrides).some(
-		(sequence) =>
-			sequence.length === 0 || (sequence.length === 1 && key !== undefined && sameKey(sequence[0] as ShortcutKey, key)),
-	);
+	const sequence = shortcutSequence(shortcut, overrides);
+	return sequence.length === 1 && key !== undefined && sameKey(sequence[0] as ShortcutKey, key);
 }
 
 /** Find another action on the same surface that owns an equal or ambiguous shortcut sequence. */
@@ -506,23 +472,17 @@ export function findShortcutConflict(
 	const config = shortcutsConfig[surface as keyof typeof shortcutsConfig];
 	if (!config) return undefined;
 	return Object.values(config).find(
-		(candidate) =>
-			candidate.id !== shortcut.id &&
-			shortcutSequences(candidate, overrides).some((existing) => sequencesConflict(existing, sequence)),
+		(candidate) => candidate.id !== shortcut.id && sequencesConflict(shortcutSequence(candidate, overrides), sequence),
 	);
 }
 
 /** Format one shortcut for terminal help text. */
 export function formatShortcut(shortcut: ShortcutDescriptor, overrides: ShortcutOverrides = {}): string {
-	const override = overrideSequences(overrides, shortcut.id);
+	const override = overrideSequence(overrides, shortcut.id);
 	if (override) {
-		return override.length
-			? override.map((sequence) => sequence.map(formatShortcutKey).join(", ")).join(" or ")
-			: "Unbound";
+		return override.length ? override.map(formatShortcutKey).join(", ") : "Unbound";
 	}
-	if (shortcut.label) return shortcut.label;
-	if (shortcut.keys.length === 0) return "Any key";
-	return shortcut.keys.map(formatShortcutKey).join(" or ");
+	return formatShortcutKey(shortcut.binding);
 }
 
 /** Format one OpenTUI key combination for terminal help text. */
@@ -534,7 +494,9 @@ function formatShortcutKey(shortcut: ShortcutKey): string {
 		shortcut.super && "Super",
 		shortcut.hyper && "Hyper",
 	].filter((modifier): modifier is string => Boolean(modifier));
-	return [...modifiers, formatKey(shortcut.key)].join("+");
+	const key = formatKey(shortcut.key);
+	const displayKey = shortcut.key.length === 1 && modifiers.length > 0 ? key.toUpperCase() : key;
+	return [...modifiers, displayKey].join("+");
 }
 
 export const keybindingPropagation = {
@@ -575,7 +537,7 @@ export function createKeybindings(getOverrides: () => ShortcutOverrides = () => 
 	): boolean => {
 		let handled = false;
 		for (const binding of [...bindings]) {
-			if (!shortcutSequences(binding.shortcut, overrides).some(matches)) continue;
+			if (!matches(shortcutSequence(binding.shortcut, overrides))) continue;
 			const propagation = binding.callback(event) ?? keybindingPropagation.stop;
 			if (propagation === keybindingPropagation.ignore) continue;
 			handled = true;
@@ -602,12 +564,11 @@ export function createKeybindings(getOverrides: () => ShortcutOverrides = () => 
 				event.stopPropagation();
 				return true;
 			}
-			if (!key) return dispatchMatching(event, overrides, (candidate) => candidate.length === 0);
-			const startsSequence = bindings.some((binding) =>
-				shortcutSequences(binding.shortcut, overrides).some(
-					(candidate) => candidate.length === 2 && sameKey(candidate[0] as ShortcutKey, key),
-				),
-			);
+			if (!key) return false;
+			const startsSequence = bindings.some((binding) => {
+				const sequence = shortcutSequence(binding.shortcut, overrides);
+				return sequence.length === 2 && sameKey(sequence[0] as ShortcutKey, key);
+			});
 			if (startsSequence) {
 				pending = key;
 				event.stopPropagation();
@@ -616,7 +577,7 @@ export function createKeybindings(getOverrides: () => ShortcutOverrides = () => 
 			const handled = dispatchMatching(
 				event,
 				overrides,
-				(candidate) => candidate.length === 0 || (candidate.length === 1 && sameKey(candidate[0] as ShortcutKey, key)),
+				(candidate) => candidate.length === 1 && sameKey(candidate[0] as ShortcutKey, key),
 			);
 			if (handled) event.stopPropagation();
 			return handled;

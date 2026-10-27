@@ -2,6 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { BoxRenderable } from "@opentui/core";
 import { createTestRenderer, type TestRendererSetup } from "@opentui/core/testing";
 import type { TaskGroup } from "../../storage/group-store.ts";
+import { metaModifierLabel } from "./keymap.ts";
 import { mountOpenTuiWorkspace, type OpenTuiWorkspaceGroupEntry } from "./workspace.ts";
 
 function attachParent(setup: TestRendererSetup): BoxRenderable {
@@ -171,8 +172,54 @@ describe("workspace task groups", () => {
 		});
 		try {
 			await setup.flush();
-			expect(setup.captureCharFrame()).toContain("Group");
+			const frame = setup.captureCharFrame();
+			expect(frame).toContain(`${metaModifierLabel()}+G`);
+			expect(frame).not.toContain("©");
 			setup.mockInput.pressKey("g", { meta: true });
+			await setup.flush();
+			expect(newGroups).toBe(1);
+		} finally {
+			mount.dispose();
+		}
+	});
+
+	test("footer shows the effective full multi-stroke New group override", async () => {
+		const setup = await createTestRenderer({ width: 120, height: 40, exitOnCtrlC: false });
+		renderers.push(setup);
+		let newGroups = 0;
+		const mount = mountOpenTuiWorkspace(setup.renderer, attachParent(setup), {
+			tasks,
+			keyboardOverrides: { "workspace.newGroup": { sequence: [{ key: "x", ctrl: true }, { key: "y" }] } },
+			onNewGroup: () => newGroups++,
+		});
+		try {
+			await setup.flush();
+			expect(setup.captureCharFrame()).toContain("Ctrl+X, y");
+			setup.mockInput.pressKey("x", { ctrl: true });
+			setup.mockInput.pressKey("y");
+			await setup.flush();
+			expect(newGroups).toBe(1);
+		} finally {
+			mount.dispose();
+		}
+	});
+
+	test("single-stroke New group override replaces its default in display and dispatch", async () => {
+		const setup = await createTestRenderer({ width: 120, height: 40, exitOnCtrlC: false });
+		renderers.push(setup);
+		let newGroups = 0;
+		const mount = mountOpenTuiWorkspace(setup.renderer, attachParent(setup), {
+			tasks,
+			keyboardOverrides: { "workspace.newGroup": { sequence: [{ key: "n", ctrl: true }] } },
+			onNewGroup: () => newGroups++,
+		});
+		try {
+			await setup.flush();
+			const frame = setup.captureCharFrame();
+			expect(frame).toContain("Ctrl+N");
+			expect(frame).not.toContain(`${metaModifierLabel()}+G`);
+			setup.mockInput.pressKey("g", { meta: true });
+			setup.mockInput.pressKey("n", { ctrl: true });
 			await setup.flush();
 			expect(newGroups).toBe(1);
 		} finally {

@@ -394,7 +394,7 @@ export function mountOpenTuiWorkspace(
 		return Boolean(task && (opts.sessionTaskIds?.includes(task.id) ?? selectedSession()));
 	};
 	const shortcut = (descriptor: Parameters<typeof formatShortcut>[0]): string =>
-		formatShortcut({ ...descriptor, keys: descriptor.keys.slice(0, 1), label: undefined }, opts.keyboardOverrides);
+		formatShortcut(descriptor, opts.keyboardOverrides);
 	redraw = (): void => {
 		if (disposed) return;
 		filterText.content = opts.filterSummary ?? "All tasks";
@@ -454,7 +454,7 @@ export function mountOpenTuiWorkspace(
 			? `Artifacts · ${formatShortcut(artifactCloseShortcut, opts.keyboardOverrides)}: close · ↑/↓: select`
 			: (opts.footer ?? navigationShortcuts.join(" · "));
 		footer.content = agentFocused
-			? ` Agent input · [${shortcut(shortcutsConfig.workspace.quickPreviewExit)}] Leave agent `
+			? ` Agent input · [${shortcut(shortcutsConfig.workspace.quit)}] Leave preview · [${shortcut(shortcutsConfig.workspace.quickPreviewExit)}] Leave agent `
 			: notice
 				? `${notice}\n${shortcuts}`
 				: shortcuts;
@@ -726,7 +726,7 @@ export function mountOpenTuiWorkspace(
 		}
 		if (
 			opts.taskArtifactApi &&
-			!findShortcutConflict(artifactViewShortcut, artifactViewShortcut.keys[0], opts.keyboardOverrides) &&
+			!findShortcutConflict(artifactViewShortcut, artifactViewShortcut.binding, opts.keyboardOverrides) &&
 			matchesShortcut(artifactViewShortcut, key, opts.keyboardOverrides)
 		) {
 			const task = selectedTask();
@@ -778,6 +778,7 @@ export function mountOpenTuiWorkspace(
 		opts.onAgentFocusChange?.(false);
 	};
 	agentKeybindings.on(shortcutsConfig.workspace.quickPreviewExit, leaveAgent);
+	agentKeybindings.on(shortcutsConfig.workspace.quit, leaveAgent);
 	keybindings.on(shortcutsConfig.workspace.historyBack, () => opts.onHistoryBack?.());
 	keybindings.on(shortcutsConfig.workspace.historyForward, () => opts.onHistoryForward?.());
 	keybindings.on(shortcutsConfig.workspace.sessions, () => {
