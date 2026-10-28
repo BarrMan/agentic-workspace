@@ -44,7 +44,6 @@ describe("native runtime ownership probes", () => {
 		tmuxName: "agentic-workspace-task-23-12345678",
 		cwd: process.cwd(),
 		createdAt: "2026-10-10T00:00:00.000Z",
-		nativeWorkspace: true,
 		ownerPid: 1,
 		outputPath: "/unused.log",
 		bootstrapPath: "/unused.md",

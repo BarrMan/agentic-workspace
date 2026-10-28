@@ -37,7 +37,7 @@ Sessions let users launch and continue agent conversations attached to tasks, ob
 **Preconditions:** A session exists.
 
 **Behavior:**
-1. Retain identity and conversation history; derive current runtime state from observation.
+1. Retain the distinct workspace session identity, provider namespace, provider conversation identity, and conversation history; derive current runtime state from observation.
 2. Historical lifecycle labels, transition logs, and past stopped-versus-failed distinctions need not persist.
 3. Report relevant launch progress and errors when they occur.
 
@@ -50,7 +50,7 @@ Sessions let users launch and continue agent conversations attached to tasks, ob
 
 ### SESSION-002: Report observed runtime state
 
-**Description:** Runtime state distinguishes running, idle, stopped, and unknown sessions, with permission requests indicated separately. Stored state alone never establishes liveness.
+**Description:** Report session state from current runtime evidence.
 
 **Trigger:** The workspace observes a session's runtime state.
 
@@ -70,7 +70,7 @@ Sessions let users launch and continue agent conversations attached to tasks, ob
 
 ### SESSION-003: Refresh runtime observations
 
-**Description:** The workspace observes every task every 30 seconds to update observed runtime state and indications. Observation never starts, resumes, stops, or retries a session.
+**Description:** Refresh runtime observations periodically.
 
 **Trigger:** The 30-second refresh interval elapses.
 
@@ -79,7 +79,7 @@ Sessions let users launch and continue agent conversations attached to tasks, ob
 **Behavior:**
 1. Observe every task every 30 seconds and update observed runtime state and indications only; do not start, resume, stop, or retry a session.
 
-**Outcome:** Observed runtime state and indications are updated for every task at the specified interval without lifecycle actions.
+**Outcome:** Runtime observations and indications are refreshed for every task.
 
 **Failures:** None.
 
@@ -102,7 +102,7 @@ Sessions let users launch and continue agent conversations attached to tasks, ob
 5. After supported acceptance of initial delivery and successful durable publication into the same reserved record, report creation ready without waiting for an answer.
 6. Create a session only in the selected mode and store tasks, artifacts, and saved agent configuration on disk, not only in workspace memory.
 
-**Outcome:** CLI and workspace starts behave identically using resolved configuration and disk-backed data; the selected task/mode has one new active session, ready only after startup, initialization, identity, accepted delivery, and durable publication.
+**Outcome:** CLI and workspace starts have identical semantics, and the selected task/mode has one new active session.
 
 **Failures:** A required status change fails the start before reservation/startup. Other startup and publication failures settle as specified in SESSION-009 and SESSION-010.
 
@@ -150,7 +150,7 @@ Sessions let users launch and continue agent conversations attached to tasks, ob
 
 ### SESSION-007: Set explicit launch environment
 
-**Description:** The child launch inherits the parent environment unchanged. The workspace explicitly sets child workspace/session identities and the selected tmux socket; these protected values cannot be replaced by preset values or adapters. Inherited credentials are exposed to the child as an accepted consequence.
+**Description:** Set explicit, protected workspace/session launch values.
 
 **Trigger:** A session launch environment is prepared.
 
@@ -162,7 +162,7 @@ Sessions let users launch and continue agent conversations attached to tasks, ob
 3. Use `AGENTIC_WORKSPACE_PROJECT_DIR`, `AGENTIC_WORKSPACE_WORKTREE_DIR`, `AGENTIC_WORKSPACE_TASK_DIR`, `AGENTIC_WORKSPACE_TASK_ID`, `AGENTIC_WORKSPACE_MODE_ID`, and `AGENTIC_WORKSPACE_SESSION_ID`; workspace-defined names use the `AGENTIC_WORKSPACE_` prefix.
 4. Accept that inherited credentials are exposed to the child process.
 
-**Outcome:** The child receives the unchanged inherited environment plus explicitly set workspace/session identities, selected tmux socket, and selected-preset user variables; protected identity/socket values cannot be replaced.
+**Outcome:** The child receives selected-preset user variables alongside explicit workspace/session identities and the selected tmux socket.
 
 **Failures:** None.
 
@@ -231,7 +231,7 @@ Sessions let users launch and continue agent conversations attached to tasks, ob
 
 ### SESSION-011: Gate readiness and exact resume
 
-**Description:** Creation is ready only after provider initialization, identity establishment, supported acknowledgment of initial instruction submission, and successful durable publication.
+**Description:** Gate readiness and resume on required provider evidence.
 
 **Trigger:** A session is created or resumed.
 
@@ -242,7 +242,7 @@ Sessions let users launch and continue agent conversations attached to tasks, ob
 2. Submit initial instructions exactly once and do not wait for an answer.
 3. Resume the exact conversation identity without replaying the initial prompt or sending a synthetic probe.
 
-**Outcome:** Creation is ready only with required evidence and publication; resume continues the exact identity without replay or probe.
+**Outcome:** Creation readiness and resume follow the required evidence and exact-conversation rules.
 
 **Failures:** If readiness evidence, publication, or exact resume initialization is unavailable, fail under SESSION-009 and explain resume failure as required by SESSION-014.
 
@@ -354,7 +354,7 @@ Sessions let users launch and continue agent conversations attached to tasks, ob
 
 ### SESSION-017: Display the live terminal
 
-**Description:** The workspace displays the agent's live terminal, seeded from its current screen and updated while it runs.
+**Description:** Display the live terminal.
 
 **Trigger:** The workspace attaches to a live session.
 
@@ -364,7 +364,7 @@ Sessions let users launch and continue agent conversations attached to tasks, ob
 1. Seed the display from the current screen and show updates while the agent runs.
 2. Keep retained conversation history and the [ask operation](supported-integration-operations.md#supported-integration-operations) separate from terminal capture.
 
-**Outcome:** The terminal reflects its current screen and subsequent updates without conflating history or ask operation with capture.
+**Outcome:** The live terminal is shown separately from conversation history and ask operation.
 
 **Failures:** None.
 
@@ -373,7 +373,7 @@ Sessions let users launch and continue agent conversations attached to tasks, ob
 
 ### SESSION-018: Close the app with or without stopping sessions
 
-**Description:** Ordinary app close preserves live executions and panes. If any session is observed working (the green RUNNING indication), ask whether to force close or close without stopping executions. Force close kills owned executions; ordinary close lets them continue. Reopening attaches to surviving live panes without resume. Detaching presentation alone never stops execution.
+**Description:** Close the app with or without stopping sessions, and reconnect to surviving executions on reopen.
 
 **Trigger:** The user closes the app, or the app reopens after a crash.
 
@@ -383,7 +383,7 @@ Sessions let users launch and continue agent conversations attached to tasks, ob
 1. When any session is currently observed working (green RUNNING, not merely a live idle or parked pane), show a confirmation offering force close or ordinary close with execution preserved.
 2. Ordinary close, including close with no working sessions, preserves live harnesses, processes, and panes; releasing presentation resources must not stop them.
 3. Force close stops every owned execution and removes its harness processes and terminal panes. Attempt all stops even if one fails; report aggregate failures only after all attempts, retain tracking for failed or uncertain cleanup, and never claim complete shutdown on failure.
-4. On reopen, establish liveness from current evidence. Attach to a surviving live pane without resume, restart, or replacement. A positively stopped session requires explicit exact-conversation resume; uncertain evidence is unknown. Stored state never proves running.
+4. On reopen, establish liveness from current evidence. Discover and attach to a surviving live pane without resume, restart, or replacement. Discovery requires current evidence that the session is running. A positively stopped session requires explicit exact-conversation resume; uncertain evidence is unknown. Stored state never proves running.
 5. A crash does not guarantee cleanup. Apply the same evidence-based reopen behavior; detaching presentation alone never stops execution.
 
 **Outcome:** Ordinary close allows ongoing execution to continue; successful force close leaves no owned execution runtime. Reopen uses current evidence and attaches to surviving panes without resume.
@@ -395,18 +395,18 @@ Sessions let users launch and continue agent conversations attached to tasks, ob
 - [ ] Ordinary close preserves live processes and panes; reopening attaches to surviving panes without resume or restart.
 - [ ] Force close attempts every owned stop, leaves no owned harness process or pane on success, and reports aggregate failure only after all attempts while retaining tracking for unsuccessful cleanup.
 - [ ] Detach alone does not stop execution.
-- [ ] After a crash, cleanup is not assumed; current evidence alone determines liveness and stored state never proves running.
+- [ ] After a crash, cleanup is not assumed; current evidence alone determines liveness, discovery requires observed running state, and stored state never proves running.
 
 ### SESSION-019: Settle terminal input on close or deletion
 
-**Description:** On app close or task deletion, terminal input already in flight is allowed up to two seconds to land before close or required session shutdown completes.
+**Description:** Settle terminal input on app close or task deletion.
 
 **Trigger:** The app closes or a task is deleted while terminal input is queued or in flight.
 
 **Preconditions:** Terminal input may have been dispatched or remain queued.
 
 **Behavior:**
-1. Allow input already in flight up to two seconds to land.
+1. Before close or required session shutdown completes, allow input already in flight up to two seconds to land.
 2. Discard text never dispatched and report it as not sent.
 3. Distinguish unsent queued input from uncertain in-flight delivery; never automatically resend.
 
@@ -419,7 +419,7 @@ Sessions let users launch and continue agent conversations attached to tasks, ob
 
 ### SESSION-020: Delete a session safely
 
-**Description:** Deletion is refused while the session's agent is running. Process identity is PID plus process name, without a start-time or UID fence; inspection failure or unknown identity fails closed and never authorizes termination or clean completion. Same-name PID reuse is an accepted limitation.
+**Description:** Delete a session without orphaning its running agent or modifying provider-owned state.
 
 **Trigger:** The user requests session deletion, optionally with force.
 
@@ -431,8 +431,9 @@ Sessions let users launch and continue agent conversations attached to tasks, ob
 3. For single-session sidecar deletion, derive targets from the trusted task directory and validated session ID, canonicalize the ancestor directory, verify containment, use `lstat`, and unlink only regular files.
 4. Never modify provider-owned configuration, data, or state; runtime-evidence constraints continue to apply.
 5. Establish process identity by PID and process name only; inspection failure or unknown identity never authorizes termination or clean completion.
+6. Process identity has no start-time or UID fence; same-name PID reuse is an accepted limitation.
 
-**Outcome:** A running agent is not orphaned by session removal and provider-owned state remains untouched.
+**Outcome:** Deletion obeys the force and runtime-evidence rules while leaving provider-owned state untouched.
 
 **Failures:** Refuse non-forced deletion of a running session; apply runtime-evidence constraints when liveness is uncertain.
 

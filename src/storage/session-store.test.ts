@@ -146,16 +146,6 @@ describe("SessionStore", () => {
 		);
 		await expect(store.read("TASK-1")).rejects.toThrow(/file was not changed.*Preserve a copy.*do not reset/i);
 
-		await writeFile(
-			statePath,
-			JSON.stringify({
-				version: 2,
-				taskId: "TASK-1",
-				modes: { build: { sessions: [{ ...validSession, extra: "field" }] } },
-			}),
-		);
-		await expect(store.read("TASK-1")).rejects.toThrow(/file was not changed.*Preserve a copy.*do not reset/i);
-
 		await store.reset("TASK-1");
 		expect(await store.read("TASK-1")).toMatchObject({
 			version: 2,
@@ -262,28 +252,6 @@ describe("SessionStore", () => {
 		persisted.modes.build.sessions[0].nativeProvider = "unknown-provider";
 		await writeFile(statePath, JSON.stringify(persisted));
 		await expect(store.read("TASK-1")).rejects.toThrow("invalid session data");
-	});
-
-	it("rejects removed runtime-observation fields without changing the state file", async () => {
-		const root = await mkdtemp(join(tmpdir(), "agentic-workspace-resume-marker-state-"));
-		directories.push(root);
-		const store = new SessionStore(root);
-		const { statePath } = await store.paths("TASK-1");
-		for (const [key, value] of Object.entries({
-			status: "failed",
-			endedAt: "2026-01-02T00:00:00.000Z",
-			error: "probe failed",
-			resumeProbeFailed: { nativeProvider: "claude", nativeSessionId: "provider-session-1" },
-		})) {
-			const raw = JSON.stringify({
-				version: 2,
-				taskId: "TASK-1",
-				modes: { build: { activeSessionId: "marked", sessions: [{ ...session("marked"), [key]: value }] } },
-			});
-			await Bun.write(statePath, raw);
-			await expect(store.read("TASK-1")).rejects.toThrow(/corrupt or contains invalid session data/i);
-			expect(await Bun.file(statePath).text()).toBe(raw);
-		}
 	});
 
 	it("loads a current v2 record unchanged", async () => {

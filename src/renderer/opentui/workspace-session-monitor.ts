@@ -131,7 +131,7 @@ export class WorkspaceSessionMonitor {
 					for (const active of taskSessions.sessions) {
 						if ((active as AgentSession & { ownerScope?: string }).ownerScope === "foreign") continue;
 						const observed = this.#snapshots.get(active.id);
-						if (discoverOnly && (observed?.state !== "running" || !active.nativeWorkspace)) continue;
+						if (discoverOnly && observed?.state !== "running") continue;
 						if (observed?.state !== "starting" && observed?.state !== "running") continue;
 						if (this.#targets.has(active.id) && !this.#targets.get(active.id)?.supervised) continue;
 						try {

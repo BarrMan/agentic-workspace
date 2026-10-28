@@ -46,11 +46,7 @@ export function registerAgentWorkspaceCommands(
 				options.preset,
 			);
 			const record = session.record;
-			process.stdout.write(
-				record.nativeWorkspace
-					? `Registered session ${record.id} for the owning workspace to launch (preset: ${record.preset}).\n`
-					: `Started session ${record.id} (preset: ${record.preset}).\n`,
-			);
+			process.stdout.write(`Started session ${record.id} (preset: ${record.preset}).\n`);
 		});
 	sessions
 		.command("ask <taskId> <question>")

@@ -191,8 +191,6 @@ export interface AgentSession {
 	nativeSessionId?: string;
 	/** Adapter namespace recorded when this native conversation was first launched. */
 	nativeProvider?: NativeAgentNamespace;
-	/** Provenance: this session's private tmux server belongs to the native workspace. */
-	nativeWorkspace?: boolean;
 	cwd: string;
 	/** Immutable canonical project, session worktree, and task-artifact roots captured at creation. */
 	pathContext?: AgentSessionPathContext;

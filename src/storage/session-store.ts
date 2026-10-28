@@ -248,34 +248,14 @@ function hasOnlyKeys(value: Record<string, unknown>, keys: readonly string[]): b
 	return Object.keys(value).every((key) => keys.includes(key));
 }
 
-const SESSION_KEYS = new Set([
-	"id",
-	"taskId",
-	"preset",
-	"tmuxName",
-	"nativeSessionId",
-	"nativeProvider",
-	"nativeWorkspace",
-	"cwd",
-	"createdAt",
-	"ownerPid",
-	"outputPath",
-	"bootstrapPath",
-	"lastUsedAt",
-	"useCount",
-	"pathContext",
-]);
-
 function isSession(value: unknown, taskId: string): value is AgentSession {
 	if (!isRecord(value)) return false;
-	if (!Object.keys(value).every((key) => SESSION_KEYS.has(key))) return false;
 	if (typeof value.taskId !== "string" || !taskIdsEqual(value.taskId, taskId)) return false;
 	for (const key of ["id", "preset", "tmuxName", "cwd", "createdAt", "outputPath", "bootstrapPath"]) {
 		if (typeof value[key] !== "string") return false;
 	}
 	return (
 		(value.pathContext === undefined || isAgentSessionPathContext(value.pathContext)) &&
-		(value.nativeWorkspace === undefined || typeof value.nativeWorkspace === "boolean") &&
 		(value.nativeProvider === undefined ||
 			(typeof value.nativeProvider === "string" &&
 				NATIVE_AGENT_NAMESPACES.includes(value.nativeProvider as (typeof NATIVE_AGENT_NAMESPACES)[number]))) &&

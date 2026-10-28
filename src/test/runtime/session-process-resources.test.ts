@@ -56,7 +56,6 @@ describe("persisted prepared launch resources", () => {
 			nativeSessionId: "native-resource-session",
 			cwd: root,
 			createdAt: "2026-10-12T00:00:00.000Z",
-			nativeWorkspace: true,
 			outputPath,
 			bootstrapPath,
 		};

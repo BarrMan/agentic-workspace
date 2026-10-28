@@ -17,7 +17,6 @@ describe("SessionProcess tmux instance lifecycle", () => {
 		tmuxName: "agentic-workspace-task-1-instance",
 		cwd: process.cwd(),
 		createdAt: "2026-10-12T00:00:00.000Z",
-		nativeWorkspace: true,
 		outputPath: join(tmpdir(), "instance.log"),
 		bootstrapPath: join(tmpdir(), "instance.md"),
 	};
