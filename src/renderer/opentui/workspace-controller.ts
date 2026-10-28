@@ -305,7 +305,7 @@ export class OpenTuiWorkspaceController {
 					focus: () => {
 						this.#agentFocused = true;
 					},
-					followStartedTask: (taskId, adopt) => this.#followStartedTaskStatus(taskId, adopt),
+					followStartedTask: (taskId) => this.#followStartedTaskStatus(taskId),
 					indications: (indications) => {
 						if (!this.#closed && this.#mountView === "workspace")
 							(this.#mount as OpenTuiWorkspaceMount | undefined)?.setIndication(indications);
@@ -759,12 +759,11 @@ export class OpenTuiWorkspaceController {
 		).then(() => this.#scheduleRefresh());
 	}
 
-	async #followStartedTaskStatus(taskId: string, adopt: boolean): Promise<void> {
+	async #followStartedTaskStatus(taskId: string): Promise<void> {
 		const task = await this.#core.getTask(taskId);
 		if (
 			!task ||
 			isTerminalStatus(task.status, this.#config?.statuses ?? []) ||
-			adopt ||
 			!task.status ||
 			this.#selectedTaskId !== taskId ||
 			this.#viewState?.current.activeStatus === task.status

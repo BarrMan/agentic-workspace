@@ -77,14 +77,8 @@ async function fixture(
 	let finishShutdown: ((error?: Error) => void) | undefined;
 	let shutdowns = 0;
 	let prompts = 0;
-	let polls = 0;
-	let deliverRequest: (() => void) | undefined;
-	let requestPending = false;
-	let requestStarted!: () => void;
-	const requestStartedPromise = new Promise<void>((resolve) => (requestStarted = resolve));
 	let pickerMounted!: () => void;
 	const pickerMountedPromise = new Promise<void>((resolve) => (pickerMounted = resolve));
-	const adopted: string[] = [];
 	let successorAttach: (() => void) | undefined;
 	let successorAttachStarted!: () => void;
 	const successorAttachStartedPromise = new Promise<void>((resolve) => (successorAttachStarted = resolve));
@@ -118,27 +112,6 @@ async function fixture(
 						},
 					]
 				: [],
-		pendingRequests: async () => {
-			polls++;
-			requestStarted();
-			if (options.deferShutdown && polls === 1) {
-				await new Promise<void>(
-					(resolve) =>
-						(deliverRequest = () => {
-							requestPending = true;
-							resolve();
-						}),
-				);
-			}
-			return requestPending ? [{ taskId: task.id, sessionId: "request" }] : [];
-		},
-		adoptRequest: async (_taskId: string, sessionId: string) => {
-			adopted.push(sessionId);
-			requestPending = false;
-			const record = makeRecord(sessionId);
-			history.push(record);
-			return observed(record);
-		},
 		readObserved: async (_taskId: string, sessionId: string) =>
 			options.deferResume && sessionId === "saved"
 				? {
@@ -146,6 +119,7 @@ async function fixture(
 						snapshot: { state: options.sessionState ?? "stopped", activity: "unknown" },
 					}
 				: observed(makeRecord(sessionId)),
+		executionCwd: async () => root,
 		resumeSession: async (_taskId: string, sessionId: string) => {
 			resumeAttempts++;
 			resumedIds.push(sessionId);
@@ -325,10 +299,6 @@ async function fixture(
 		get attachmentDetaches() {
 			return attachmentDetaches;
 		},
-		adopted,
-		waitForPoll: (count: number) => waitFor(() => polls >= count),
-		requestStartedPromise,
-		deliverRequest: () => deliverRequest?.(),
 		waitForShutdown: (count: number) => waitFor(() => shutdowns >= count),
 		finishShutdown: (error?: Error) => finishShutdown?.(error),
 		deferNextModeHistory: () => {
@@ -494,23 +464,6 @@ describe("workspace controller attachment lifecycle", () => {
 		}
 	});
 
-	it("ignores a pending-request result delivered after public destroy", async () => {
-		const test = await fixture({ deferShutdown: true });
-		try {
-			await test.requestStartedPromise;
-			test.controller.destroy();
-			await test.running;
-			test.deliverRequest();
-			// Drain the resolved request's promise continuations without depending on how its array is consumed.
-			await new Promise<void>((resolve) => setImmediate(resolve));
-			expect(test.adopted).toEqual([]);
-		} finally {
-			test.deliverRequest();
-			test.controller.destroy();
-			await test.running;
-		}
-	});
-
 	it.each([
 		"navigation",
 		"view-state",
@@ -608,40 +561,6 @@ describe("workspace controller attachment lifecycle", () => {
 			expect(test.detached).toEqual(["pane-predecessor"]);
 			expect(test.attachmentDetaches).toBe(1);
 		} finally {
-			test.controller.destroy();
-			await test.running;
-		}
-	});
-
-	it("blocks request admission during force shutdown and admits it again after failure", async () => {
-		const test = await fixture({ deferShutdown: true });
-		try {
-			const task = test.workspace.tasks[0];
-			if (!task) throw new Error("Fixture task missing.");
-			await test.workspace.onSessionAction?.(task, 80, 24);
-			await test.controller.refresh();
-			await test.waitForPoll(1);
-			const quitting = test.workspace.onQuit?.();
-			await test.waitForShutdown(1);
-			test.deliverRequest();
-			await test.waitForPoll(2);
-			expect(test.adopted).toEqual([]);
-			expect(test.attached).toEqual(["predecessor"]);
-			test.finishShutdown(new Error("shutdown failed"));
-			await quitting;
-			await waitFor(() => test.workspace.notice?.includes("shutdown failed") === true);
-			await waitFor(() => test.attached.includes("request"));
-			expect(test.adopted).toEqual(["request"]);
-			const retry = test.workspace.onQuit?.();
-			await test.waitForShutdown(2);
-			test.finishShutdown();
-			await retry;
-			await test.running;
-			expect(test.detached).toContain("pane-predecessor");
-			expect(test.detached).toContain("pane-request");
-		} finally {
-			test.deliverRequest();
-			test.finishShutdown();
 			test.controller.destroy();
 			await test.running;
 		}

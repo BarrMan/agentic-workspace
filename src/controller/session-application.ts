@@ -13,7 +13,6 @@ import type {
 	SessionLaunchContext,
 	SessionSnapshot,
 } from "../model/session/types.ts";
-import type { WorkspaceRequestMarker } from "../model/session/workspace-request.ts";
 import { resolveInProgressStatus } from "../model/task/status.ts";
 import { type SessionCreationIdentity, Task } from "../model/task/task.ts";
 import { taskIdKey, taskIdsEqual } from "../model/task/task-id.ts";
@@ -439,20 +438,6 @@ export class SessionApplication {
 			snapshot: observed.snapshot,
 			ownedByThisApplication: this.sessions.has(this.key(taskId, sessionId)),
 		};
-	}
-
-	async adoptRequest(taskId: string, sessionId: string): Promise<ObservedSession> {
-		const request = (await this.storage.workspaceRequests.read()).find(
-			(entry) => taskIdsEqual(entry.taskId, taskId) && entry.sessionId === sessionId,
-		);
-		if (!request) throw new Error(`No pending workspace request exists for session ${sessionId}.`);
-		const resumed = await this.resumeSession(taskId, sessionId);
-		await this.storage.workspaceRequests.delete(sessionId);
-		return resumed;
-	}
-
-	pendingRequests(): Promise<WorkspaceRequestMarker[]> {
-		return this.storage.workspaceRequests.read();
 	}
 
 	shutdown(): Promise<void> {

@@ -18,7 +18,7 @@ These are physical line counts, not a new size limit. The largest remaining cont
 
 | Module | Implementation hidden from its caller |
 |---|---|
-| [workspace-sessions.ts](../../src/renderer/opentui/workspace-sessions.ts) | Session presentation, attachment/start/handoff, launch and deletion admission, local selections, picker lifetime, request polling, close/disposal |
+| [workspace-sessions.ts](../../src/renderer/opentui/workspace-sessions.ts) | Session presentation, attachment/start/handoff, launch and deletion admission, local selections, picker lifetime, close/disposal |
 | [workspace-session-monitor.ts](../../src/renderer/opentui/workspace-session-monitor.ts) | Observations, activity probes, liveness polling, sidecar watches, detach histories, timer cleanup |
 | [workspace-task-actions.ts](../../src/renderer/opentui/workspace-task-actions.ts) | Task forms and retry state, group interactions, task deletion coordination, board mutation feedback, modal completion |
 | [workspace-settings.ts](../../src/renderer/opentui/workspace-settings.ts) | Settings loading/lifetime, confirmed Mode deletion, persisted destination selection, partial-effect reporting |

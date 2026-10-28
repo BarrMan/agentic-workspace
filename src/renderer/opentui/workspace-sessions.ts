@@ -35,7 +35,6 @@ import { WorkspaceSessionMonitor } from "./workspace-session-monitor.ts";
 type Selection = { view: "workspace" | "board"; taskId?: string; modeId?: string };
 type LaunchOptions = {
 	attachOnly?: boolean;
-	adopt?: boolean;
 	modeId?: string;
 	newSession?: boolean;
 	handoff?: SessionHandoff;
@@ -71,8 +70,6 @@ export class WorkspaceSessions {
 	#picker: { mount: { dispose(): void }; phase: "selecting" | "resuming" } | undefined;
 	#pickerLoading = false;
 	#pickerRequest = 0;
-	#requestTimer: ReturnType<typeof setTimeout> | undefined;
-	#requestPolling = false;
 
 	constructor(
 		private readonly core: Core,
@@ -93,7 +90,7 @@ export class WorkspaceSessions {
 			notice(message: string | undefined): void;
 			confirm(title: string, message: string): Promise<boolean>;
 			focus(): void;
-			followStartedTask(taskId: string, adopt: boolean): Promise<void>;
+			followStartedTask(taskId: string): Promise<void>;
 			indications(value: ReadonlyMap<string, AgentIndication>): void;
 			persist(patch: (state: SharedWorkspaceState) => SharedWorkspaceState): Promise<void>;
 		},
@@ -141,7 +138,6 @@ export class WorkspaceSessions {
 
 	async startMonitoring(): Promise<void> {
 		await this.#monitor.start();
-		this.#scheduleRequestPoll(0);
 	}
 
 	async project(
@@ -501,48 +497,6 @@ export class WorkspaceSessions {
 		);
 	}
 
-	#scheduleRequestPoll(delayMs: number): void {
-		if (this.#closed) return;
-		clearTimeout(this.#requestTimer);
-		this.#requestTimer = setTimeout(() => {
-			this.#requestTimer = undefined;
-			void this.#pollRequests();
-		}, delayMs);
-	}
-
-	async #pollRequests(): Promise<void> {
-		if (this.#closed || this.#requestPolling) return;
-		this.#requestPolling = true;
-		try {
-			for (const request of await this.workspace.sessionApplication.pendingRequests()) {
-				if (this.#closed) return;
-				if (
-					this.#selection.view !== "workspace" ||
-					this.#attachments.hasAgent(request.sessionId) ||
-					this.#attachments.isPendingSession(request.sessionId)
-				)
-					continue;
-				this.#launchSession(
-					request.taskId,
-					request.sessionId,
-					{ adopt: true },
-					{
-						notice: (message) => `Could not adopt agent request ${request.sessionId}: ${message}`,
-						ignore: (message) => message === "Workspace closed before agent launch.",
-					},
-				);
-			}
-		} catch (error) {
-			this.operations.notice(
-				`Could not check pending session requests: ${error instanceof Error ? error.message : String(error)}`,
-			);
-			if (!this.#closed) void this.operations.refresh();
-		} finally {
-			this.#requestPolling = false;
-			if (!this.#closed) this.#scheduleRequestPoll(Math.min(this.#monitor.interval, 1_000));
-		}
-	}
-
 	#launchAgent(
 		taskId: string,
 		columns: number,
@@ -553,7 +507,7 @@ export class WorkspaceSessions {
 		return this.#attachments.launch(
 			taskId,
 			(launch) => this.#performLaunch(taskId, columns, rows, sessionId, options, launch),
-			options.attachOnly || options.adopt ? sessionId : undefined,
+			options.attachOnly ? sessionId : undefined,
 		);
 	}
 
@@ -566,7 +520,6 @@ export class WorkspaceSessions {
 		launch: PendingAgentLaunch,
 	): Promise<AgentSession | false> {
 		const attachOnly = options.attachOnly === true;
-		const adopt = options.adopt === true;
 		let resolvedSessionId = sessionId;
 		if (!resolvedSessionId && !options.newSession && options.modeId) {
 			const selected = this.#localSelections.get(`${taskId}\u0000${options.modeId}`);
@@ -598,14 +551,12 @@ export class WorkspaceSessions {
 		const application = this.workspace.sessionApplication;
 		let observed: ObservedSession | undefined;
 		if (resolvedSessionId) {
-			observed = adopt
-				? await application.adoptRequest(taskId, resolvedSessionId)
-				: await application.readObserved(taskId, resolvedSessionId);
+			observed = await application.readObserved(taskId, resolvedSessionId);
 			const live =
 				observed.snapshot.state === "running" ||
 				observed.snapshot.state === "starting" ||
 				observed.snapshot.state === "parked";
-			if (!live && !adopt) {
+			if (!live) {
 				if (attachOnly) {
 					this.operations.notice(`Agent session ${resolvedSessionId} is no longer running.`);
 					return false;
@@ -617,12 +568,7 @@ export class WorkspaceSessions {
 			return false;
 		}
 		if (this.#closed || this.#selection.view !== "workspace") throw new Error(`Task ${taskId} is no longer selected.`);
-		const localModeId =
-			adopt && resolvedSessionId
-				? ((await this.workspace.findSessionMode(taskId, resolvedSessionId)) ?? options.modeId)
-				: options.modeId;
-		const selectionKey = localModeId ? `${taskId}\u0000${localModeId}` : undefined;
-		const selectionAtAdmission = selectionKey ? this.#localSelections.get(selectionKey) : undefined;
+		const localModeId = options.modeId;
 		if (!observed) {
 			if (!options.modeId) throw new Error("A mode is required when creating a session.");
 			const task = this.#selectedTask;
@@ -632,7 +578,7 @@ export class WorkspaceSessions {
 				options.newSession && predecessorId
 					? await application.handoff(task, predecessorId, options.modeId)
 					: await application.newSession(task, options.modeId);
-			await this.operations.followStartedTask(taskId, adopt);
+			await this.operations.followStartedTask(taskId);
 		}
 		if (launch.invalidated || this.#deletingTasks.has(taskId)) return false;
 		const { record } = observed;
@@ -698,7 +644,7 @@ export class WorkspaceSessions {
 				}
 				if (this.#closed || this.#selection.view !== "workspace")
 					throw new Error(`Task ${taskId} is no longer selected.`);
-				if (!attachOnly && !adopt) await this.operations.followStartedTask(taskId, adopt);
+				if (!attachOnly) await this.operations.followStartedTask(taskId);
 			},
 			async (history) => {
 				if (owner) await owner.detachAndDestroy(session.terminal, history);
@@ -709,11 +655,7 @@ export class WorkspaceSessions {
 		if (!this.#closed && owner) {
 			const host = owner.host;
 			this.#agentAlive.set(record.id, () => host.alive());
-			const modePairRaced =
-				adopt &&
-				selectionKey &&
-				(this.#startingTaskModes.has(selectionKey) || this.#localSelections.get(selectionKey) !== selectionAtAdmission);
-			if (localModeId && !modePairRaced) {
+			if (localModeId) {
 				this.#localSelections.set(`${taskId}\u0000${localModeId}`, record.id);
 				this.#localSessionModes.set(record.id, localModeId);
 			}
@@ -882,7 +824,6 @@ export class WorkspaceSessions {
 	dispose(): Promise<void> {
 		this.#closed = true;
 		this.#attachments.close();
-		clearTimeout(this.#requestTimer);
 		this.#monitor.dispose();
 		this.#pickerRequest++;
 		this.#picker?.mount.dispose();
