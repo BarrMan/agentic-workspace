@@ -11,7 +11,6 @@ function session(id: string, changes: Partial<AgentSession> = {}): AgentSession 
 		taskId: "TASK-23",
 		preset: "agent",
 		tmuxName: `pane-${id}`,
-		cwd: "/work/TASK-23",
 		createdAt: "2026-10-10T12:00:00.000Z",
 		outputPath: `/logs/${id}.log`,
 		bootstrapPath: `/logs/${id}.prompt`,
@@ -49,7 +48,6 @@ describe("SessionStore mode persistence contract", () => {
 					session("bad-path-context", {
 						pathContext: {
 							projectDir: "relative/project",
-							worktreeDir: "/work/TASK-23",
 							taskDir: "/project/tasks/task-23",
 						},
 					}),
@@ -63,11 +61,7 @@ describe("SessionStore mode persistence contract", () => {
 		const { root, store, statePath } = await fixture();
 		const planner = session("plan-uuid", {
 			nativeSessionId: "native-plan",
-			pathContext: {
-				projectDir: "/project",
-				worktreeDir: "/work/plan",
-				taskDir: "/project/agentic-workspace/tasks/task-23",
-			},
+			pathContext: { projectDir: "/project", taskDir: "/project/agentic-workspace/tasks/task-23" },
 		});
 		const builder = session("build-uuid", {
 			nativeSessionId: "native-build",
@@ -226,26 +220,6 @@ describe("SessionStore mode persistence contract", () => {
 		await expect(
 			store.mutateMode("TASK-23", "plan", async (history) => {
 				history.activeSessionId = "does-not-exist";
-			}),
-		).rejects.toThrow(/invalid state/i);
-		expect(await readFile(statePath, "utf8")).toBe(before);
-	});
-
-	it("refuses removed snapshot fields without losing the prior session", async () => {
-		const { store, statePath } = await fixture();
-		const retained = session("preset-only");
-		await store.mutateMode("TASK-23", "plan", async (history) => {
-			history.sessions.push(retained);
-			history.activeSessionId = retained.id;
-		});
-		const before = await readFile(statePath, "utf8");
-		expect((await store.readMode("TASK-23", "plan")).sessions[0]).toEqual(retained);
-
-		await expect(
-			store.mutateMode("TASK-23", "plan", async (history) => {
-				const existing = history.sessions[0];
-				if (!existing) throw new Error("Missing fixture session");
-				Object.assign(existing, { createdWith: {} });
 			}),
 		).rejects.toThrow(/invalid state/i);
 		expect(await readFile(statePath, "utf8")).toBe(before);

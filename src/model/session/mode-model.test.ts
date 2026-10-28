@@ -7,7 +7,6 @@ const session = (id: string): AgentSession => ({
 	taskId: "TASK-1",
 	preset: "agent",
 	tmuxName: `session-${id}`,
-	cwd: "/project",
 	createdAt: "2026-01-01T00:00:00.000Z",
 	outputPath: `/project/${id}.log`,
 	bootstrapPath: `/project/${id}.md`,

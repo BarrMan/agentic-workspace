@@ -15,7 +15,6 @@ describe("SessionProcess tmux instance lifecycle", () => {
 		taskId: "TASK-1",
 		preset: "opencode",
 		tmuxName: "agentic-workspace-task-1-instance",
-		cwd: process.cwd(),
 		createdAt: "2026-10-12T00:00:00.000Z",
 		outputPath: join(tmpdir(), "instance.log"),
 		bootstrapPath: join(tmpdir(), "instance.md"),
@@ -128,7 +127,7 @@ describe("SessionProcess tmux instance lifecycle", () => {
 		const child = Bun.spawn(["/bin/sleep", "60"], { detached: true, stdout: "ignore", stderr: "ignore" });
 		f.setPanePid(String(child.pid));
 		try {
-			await f.process.kill({ ...session, cwd: await realpath(session.cwd) });
+			await f.process.kill(session);
 			expect(await child.exited).not.toBe(0);
 			expect(f.events).toEqual(["kill-pane"]);
 			expect(f.options.size).toBe(0);
@@ -144,17 +143,17 @@ describe("SessionProcess tmux instance lifecycle", () => {
 
 	it("cleans a retained dead pane and makes it ready for the saved-ID relaunch", async () => {
 		const f = await fixture("dead");
-		expect(await f.process.nativeRuntimeClassification({ ...session, cwd: await realpath(session.cwd) })).toEqual({
+		expect(await f.process.nativeRuntimeClassification(session)).toEqual({
 			status: "dead",
 			paneId: "%731",
 		});
-		await f.process.kill({ ...session, cwd: await realpath(session.cwd) });
+		await f.process.kill(session);
 		expect(f.events).toEqual(["kill-pane"]);
 	});
 
 	it("stops only the pane captured for this execution", async () => {
 		const replaced = await fixture();
-		const record = { ...session, cwd: await realpath(session.cwd) };
+		const record = session;
 		const capturedPaneId = await replaced.process.paneId(record, { roles: ["live-preview"] });
 		replaced.pane.id = "%732";
 
@@ -162,7 +161,7 @@ describe("SessionProcess tmux instance lifecycle", () => {
 		expect(replaced.killedPaneIds).toEqual([]);
 
 		const current = await fixture();
-		const currentRecord = { ...session, cwd: await realpath(session.cwd) };
+		const currentRecord = session;
 		const currentPaneId = await current.process.paneId(currentRecord, { roles: ["live-preview"] });
 		await current.process.killCaptured(currentRecord, currentPaneId);
 		expect(current.killedPaneIds).toEqual(["%731"]);
@@ -171,9 +170,7 @@ describe("SessionProcess tmux instance lifecycle", () => {
 	it("fails closed on a malformed pane PID before pane teardown", async () => {
 		const f = await fixture();
 		f.setPanePid("not-a-pid");
-		await expect(f.process.kill({ ...session, cwd: await realpath(session.cwd) })).rejects.toThrow(
-			/refusing pane teardown/,
-		);
+		await expect(f.process.kill(session)).rejects.toThrow(/refusing pane teardown/);
 		expect(f.events).toEqual([]);
 	});
 
@@ -185,7 +182,7 @@ describe("SessionProcess tmux instance lifecycle", () => {
 		const terminate = spyOn(sysprims, "terminateTree").mockImplementation(() => {
 			throw new Error("An absent process must not be signalled.");
 		});
-		const record = { ...session, cwd: await realpath(session.cwd) };
+		const record = session;
 		const prepared = await f.process.prepareStop(record);
 		await prepared.stop();
 		await prepared.stop();
@@ -198,9 +195,7 @@ describe("SessionProcess tmux instance lifecycle", () => {
 		spyOn(sysprims, "processList").mockImplementation(() => {
 			throw new Error("process inspection denied");
 		});
-		await expect(f.process[operation]({ ...session, cwd: await realpath(session.cwd) })).rejects.toThrow(
-			"Could not inspect process identity",
-		);
+		await expect(f.process[operation](session)).rejects.toThrow("Could not inspect process identity");
 		expect(f.events).toEqual([]);
 	});
 
@@ -216,9 +211,7 @@ describe("SessionProcess tmux instance lifecycle", () => {
 			...table,
 			processes: [{ ...row, pid: 4242, name: "", state: "running" }],
 		});
-		await expect(f.process[operation]({ ...session, cwd: await realpath(session.cwd) })).rejects.toThrow(
-			"Could not read process name",
-		);
+		await expect(f.process[operation](session)).rejects.toThrow("Could not read process name");
 		expect(f.events).toEqual([]);
 	});
 
@@ -235,54 +228,48 @@ describe("SessionProcess tmux instance lifecycle", () => {
 		const terminate = spyOn(sysprims, "terminateTree").mockImplementation(() => {
 			throw new Error("A replacement process must not be signalled.");
 		});
-		await expect(f.process.kill({ ...session, cwd: await realpath(session.cwd) })).rejects.toThrow("survivor");
+		await expect(f.process.kill(session)).rejects.toThrow("survivor");
 		expect(terminate).not.toHaveBeenCalled();
 		expect(f.events).toEqual([]);
 	});
 
 	it("treats a conclusive absent instance as already stopped", async () => {
 		const f = await fixture("absent");
-		expect(await f.process.nativeRuntimeClassification({ ...session, cwd: await realpath(session.cwd) })).toEqual({
+		expect(await f.process.nativeRuntimeClassification(session)).toEqual({
 			status: "missing",
 		});
-		await f.process.kill({ ...session, cwd: await realpath(session.cwd) });
+		await f.process.kill(session);
 		expect(f.events).toEqual([]);
 	});
 
 	it("refuses foreign ownership and propagates uncertain probe and pane-kill errors", async () => {
 		const foreign = await fixture();
 		foreign.options.set("@agentic_workspace_task", "OTHER");
-		await expect(foreign.process.kill({ ...session, cwd: await realpath(session.cwd) })).rejects.toThrow();
+		await expect(foreign.process.kill(session)).rejects.toThrow();
 		expect(foreign.events).toEqual([]);
 
 		const probe = await fixture();
 		probe.server.cmd = async () => Promise.reject(new Error("tmux socket denied"));
-		await expect(
-			probe.process.nativeRuntimeClassification({ ...session, cwd: await realpath(session.cwd) }),
-		).rejects.toThrow("tmux socket denied");
+		await expect(probe.process.nativeRuntimeClassification(session)).rejects.toThrow("tmux socket denied");
 
 		const failedKill = await fixture();
 		failedKill.pane.kill = async () => {
 			throw new Error("tmux kill denied");
 		};
-		await expect(failedKill.process.kill({ ...session, cwd: await realpath(session.cwd) })).rejects.toThrow(
-			"tmux kill denied",
-		);
+		await expect(failedKill.process.kill(session)).rejects.toThrow("tmux kill denied");
 	});
 
 	it("keeps normal and retired role ownership disjoint", async () => {
 		for (const role of ["native-workspace", "retired-session"]) {
 			const f = await fixture("live", role);
-			await expect(f.process.kill({ ...session, cwd: await realpath(session.cwd) })).rejects.toThrow("ownership");
+			await expect(f.process.kill(session)).rejects.toThrow("ownership");
 			expect(f.events).toEqual([]);
 		}
 		const retired = await fixture("live", "retired-session");
-		await retired.process.killRetired({ ...session, cwd: await realpath(session.cwd) });
+		await retired.process.killRetired(session);
 		expect(retired.events).toEqual(["kill-pane"]);
 		const wrongRetired = await fixture("live", "live-preview");
-		await expect(wrongRetired.process.killRetired({ ...session, cwd: await realpath(session.cwd) })).rejects.toThrow(
-			"ownership",
-		);
+		await expect(wrongRetired.process.killRetired(session)).rejects.toThrow("ownership");
 		expect(wrongRetired.events).toEqual([]);
 	});
 
@@ -296,10 +283,10 @@ describe("SessionProcess tmux instance lifecycle", () => {
 		live.pane.setTitle = async (title: string) => {
 			writes.push(`title:${title}`);
 		};
-		await live.process.demote({ ...session, cwd: await realpath(session.cwd) });
+		await live.process.demote(session);
 		expect(live.options.get("@agentic_workspace_role")).toBe("retired-session");
 		expect(writes).toHaveLength(2);
-		await live.process.demote({ ...session, cwd: await realpath(session.cwd) });
+		await live.process.demote(session);
 		expect(writes).toHaveLength(4);
 
 		for (const tags of [{ role: "native-workspace" }, { task: "OTHER" }]) {
@@ -313,9 +300,7 @@ describe("SessionProcess tmux instance lifecycle", () => {
 			foreign.pane.setTitle = async () => {
 				mutations++;
 			};
-			await expect(foreign.process.demote({ ...session, cwd: await realpath(session.cwd) })).rejects.toThrow(
-				"ownership",
-			);
+			await expect(foreign.process.demote(session)).rejects.toThrow("ownership");
 			expect(mutations).toBe(0);
 		}
 	});
@@ -340,12 +325,10 @@ describe("SessionProcess tmux instance lifecycle", () => {
 			if (command === "send-keys") sends++;
 			return [""];
 		};
-		await expect(f.process.paneId({ ...session, cwd: await realpath(session.cwd) })).rejects.toThrow("ownership");
-		await expect(f.process.sendKey({ ...session, cwd: await realpath(session.cwd) }, "enter")).rejects.toThrow(
-			"ownership",
-		);
-		await expect(f.process.attach({ ...session, cwd: await realpath(session.cwd) })).rejects.toThrow("ownership");
-		const alive = await f.process.alive({ ...session, cwd: await realpath(session.cwd) });
+		await expect(f.process.paneId(session)).rejects.toThrow("ownership");
+		await expect(f.process.sendKey(session, "enter")).rejects.toThrow("ownership");
+		await expect(f.process.attach(session)).rejects.toThrow("ownership");
+		const alive = await f.process.alive(session);
 		expect(alive.exitCode).toBe(1);
 		expect(alive.stderr).not.toBe(`tmux pane for session ${session.id} not found`);
 		expect(sends).toBe(0);

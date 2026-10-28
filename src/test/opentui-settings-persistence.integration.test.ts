@@ -389,7 +389,6 @@ describe("real WorkspaceController Settings persistence", () => {
 			taskId: f.task.id,
 			preset: "contract",
 			tmuxName: "test-stopped-settings",
-			cwd: coreFileSystem(f.core).rootDir,
 			outputPath: join(coreFileSystem(f.core).rootDir, "output.log"),
 			bootstrapPath: join(coreFileSystem(f.core).rootDir, "bootstrap.sh"),
 			createdAt: "2026-10-10T10:00:00.000Z",

@@ -34,7 +34,6 @@ async function fixture(omit?: Omitted, resume = false) {
 		taskId: "TASK-1",
 		preset: "default",
 		tmuxName: "harness-test",
-		cwd: root,
 		createdAt: new Date().toISOString(),
 		outputPath: join(root, "output.log"),
 		bootstrapPath: join(root, "bootstrap.md"),
@@ -44,6 +43,7 @@ async function fixture(omit?: Omitted, resume = false) {
 		modeId: "build",
 		sessionId: record.id,
 		record,
+		cwd: root,
 		configuration: {
 			scope: "root",
 			config: {
@@ -122,14 +122,14 @@ async function fixture(omit?: Omitted, resume = false) {
 }
 
 describe("provider prompt-acceptance receipts", () => {
-	it("fails resume with the unavailable recorded directory named before preparing resources", async () => {
+	it("fails resume with the unavailable task execution directory named before preparing resources", async () => {
 		const test = await fixture();
 		const missing = join(test.root, "missing-worktree");
 		try {
 			await expect(
 				new Harness(test.root, test.process).resume("native", {
 					...test.context,
-					record: { ...test.record, cwd: missing },
+					cwd: missing,
 				}),
 			).rejects.toThrow(missing);
 			expect(test.emitted.order).toEqual([]);

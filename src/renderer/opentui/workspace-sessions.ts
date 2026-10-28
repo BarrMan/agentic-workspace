@@ -43,6 +43,7 @@ type LaunchOptions = {
 type StartOptions = { sessionId?: string; modeId?: string; focus?: boolean; rejectFailure?: boolean };
 export type WorkspaceSessionPresentation = {
 	activeAgentSession: AgentSession | undefined;
+	activeAgentCwd: string | undefined;
 	activeAgentSnapshot: SessionSnapshot | undefined;
 	selectedModeId: string | undefined;
 	modeProjectionByTask: ReadonlyMap<string, { modeLabel: string; approved: boolean; modeColor?: string }>;
@@ -65,6 +66,7 @@ export class WorkspaceSessions {
 	readonly #startingTaskModes = new Map<string, object>();
 	readonly #agentAlive = new Map<string, () => Promise<boolean>>();
 	#allSessions: ReadonlyMap<string, TaskSessions> | undefined;
+	#selectedTask: Task | undefined;
 	#modeActiveSessions = new Map<string, AgentSession>();
 	#picker: { mount: { dispose(): void }; phase: "selecting" | "resuming" } | undefined;
 	#pickerLoading = false;
@@ -148,6 +150,7 @@ export class WorkspaceSessions {
 		selectedTask: Task | undefined,
 	): Promise<WorkspaceSessionPresentation> {
 		const selection = this.#selection;
+		this.#selectedTask = selectedTask;
 		let presentation = await this.#readPresentation(state, visibleTasks, selectedTask);
 		if (!this.#closed && this.#selection === selection && this.viewState.current === state) {
 			this.select(selection.view, selectedTask?.id, presentation.selectedModeId);
@@ -221,9 +224,13 @@ export class WorkspaceSessions {
 			else this.#sessionTaskIds.delete(selectedTask.id);
 		}
 		const activeAgentSnapshot = activeAgentSession ? this.#monitor.observed(activeAgentSession.id) : undefined;
+		const activeAgentCwd = activeAgentSession
+			? await this.workspace.sessionApplication.executionCwd(activeAgentSession.taskId)
+			: undefined;
 		const selectedAgent = activeAgentSession ? this.#attachments.agent(activeAgentSession.id) : undefined;
 		return {
 			activeAgentSession,
+			activeAgentCwd,
 			activeAgentSnapshot,
 			selectedModeId,
 			modeProjectionByTask,
@@ -618,11 +625,13 @@ export class WorkspaceSessions {
 		const selectionAtAdmission = selectionKey ? this.#localSelections.get(selectionKey) : undefined;
 		if (!observed) {
 			if (!options.modeId) throw new Error("A mode is required when creating a session.");
+			const task = this.#selectedTask;
+			if (!task || task.id !== taskId) throw new Error(`Task ${taskId} is no longer selected.`);
 			const predecessorId = options.handoff?.predecessor?.id ?? options.handoff?.priorActiveSessionId;
 			observed =
 				options.newSession && predecessorId
-					? await application.handoff(taskId, predecessorId, options.modeId)
-					: await application.newSession(taskId, options.modeId);
+					? await application.handoff(task, predecessorId, options.modeId)
+					: await application.newSession(task, options.modeId);
 			await this.operations.followStartedTask(taskId, adopt);
 		}
 		if (launch.invalidated || this.#deletingTasks.has(taskId)) return false;

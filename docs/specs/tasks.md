@@ -264,7 +264,7 @@ Refuse a missing, non-directory, or symlink source and any existing destination,
 
 ### TASK-012: Task worktrees
 
-**Description:** A worktree-per-task setting controls task worktree use. The effective policy is captured on the task at creation and does not change for that task when configuration later changes. When enabled, a worktree is created on the first session launch. Task creation creates the task record without allocating the worktree. If worktree creation fails, retain the task and fail session launch with a path-specific error; a requested worktree failure must not silently redirect execution into the project checkout. Resume preparation with a missing recorded working directory fails with a path-specific error.
+**Description:** A worktree-per-task setting controls task worktree use. The effective policy is captured on the task at creation and does not change for that task when configuration later changes. When enabled, a worktree is created on the first session launch. Task creation creates the task record without allocating the worktree. If worktree creation fails, retain the task and fail session launch with a path-specific error; a requested worktree failure must not silently redirect execution into the project checkout. Resume preparation with a missing task effective directory fails with a path-specific error.
 
 **Trigger:** A task is created, a session is launched, or a session is resumed.
 
@@ -274,7 +274,7 @@ Refuse a missing, non-directory, or symlink source and any existing destination,
 1. Capture the effective worktree policy on the task record without allocating a worktree.
 2. On first session launch, create or adopt the worktree when the captured policy is enabled; use the project root when it is disabled.
 3. On worktree creation failure, retain the task and fail session launch with an error naming the expected path; do not redirect execution to the project checkout.
-4. Fail resume preparation with a path-specific error if the recorded working directory is missing.
+4. Derive execution directory from the task's captured worktree policy and deterministic worktree location (or project root); fail resume preparation with a path-specific error if that directory is missing. Current global configuration does not override a captured task policy.
 
 **Outcome:** Task creation, launch, and resume use the task's captured worktree policy.
 
@@ -651,7 +651,7 @@ Refuse a missing, non-directory, or symlink source and any existing destination,
 | A collection contains malformed records | Skip each malformed record, warn with its filename and parse error, and preserve readable results. |
 | A direct action targets a malformed record | Fail with a helpful error; bulk collection reads that skip malformed records may exit 0, while explicit single-record loads remain strict. |
 | A requested worktree cannot be created | Retain the task, fail session launch with a path-specific error, and do not redirect execution into the project checkout. |
-| A recorded resume working directory is missing | Fail resume preparation with a path-specific error. |
+| The task effective resume directory is missing | Fail resume preparation with a path-specific error; do not recreate or fall back to another directory. |
 | An artifact path escapes the task's `artifacts/` directory, including through a symlink | Reject the path. |
 | An artifact change notification is missed | No periodic recheck or recovery of the missed notification is guaranteed. |
 | A task is marked Done rather than completed/cleaned up | Change only its status; retain its worktree. |

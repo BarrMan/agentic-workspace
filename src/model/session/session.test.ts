@@ -8,7 +8,6 @@ const record: AgentSession = {
 	taskId: "task",
 	preset: "preset",
 	tmuxName: "tmux",
-	cwd: "/tmp",
 	createdAt: "now",
 	outputPath: "/tmp/out",
 	bootstrapPath: "/tmp/bootstrap",

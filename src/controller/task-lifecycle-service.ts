@@ -51,10 +51,10 @@ export class TaskLifecycleService {
 		return await this.mutations.withPostCommit(async (changes) => {
 			const release = await this.storage.claimTaskAdmission(taskId);
 			return this.withRelease(release, async () => {
-				const taskToArchive = await this.mutations.loadTaskForMutation(taskId, options);
+				const taskToArchive = await this.storage.loadTask(taskId, { includeArchived: options.includeArchived });
 				if (!taskToArchive) return { success: false, cleanedTaskIds: [] };
 				return await this.vacatedTaskReferences.withLockedCleanup(taskToArchive, taskToArchive.id, async (cleanup) => {
-					const current = await this.mutations.loadTaskForMutation(taskToArchive.id, options);
+					const current = await this.storage.loadTask(taskToArchive.id, { includeArchived: options.includeArchived });
 					if (!current) return { success: false, cleanedTaskIds: [] };
 					const config = await this.storage.loadConfig();
 					const statuses = config?.statuses ?? [...DEFAULT_STATUSES];
@@ -80,10 +80,10 @@ export class TaskLifecycleService {
 		return await this.mutations.withPostCommit(async (changes) => {
 			const release = await this.storage.claimTaskAdmission(taskId);
 			return this.withRelease(release, async () => {
-				const task = await this.mutations.loadTaskForMutation(taskId, options);
+				const task = await this.storage.loadTask(taskId, { includeArchived: options.includeArchived });
 				if (!task) return { success: false, cleanedTaskIds: [] };
 				return await this.vacatedTaskReferences.withLockedCleanup(task, task.id, async (cleanup) => {
-					const current = await this.mutations.loadTaskForMutation(task.id, options);
+					const current = await this.storage.loadTask(task.id, { includeArchived: options.includeArchived });
 					if (!current) return { success: false, cleanedTaskIds: [] };
 					if (!current.filePath) return { success: false, cleanedTaskIds: [] };
 					if (current.filePath !== task.filePath)
@@ -113,11 +113,11 @@ export class TaskLifecycleService {
 		return await this.mutations.withPostCommit(async (changes) => {
 			const release = await this.storage.claimTaskAdmission(taskId);
 			return this.withRelease(release, async () => {
-				const task = await this.mutations.loadTaskForMutation(taskId, options);
+				const task = await this.storage.loadTask(taskId, { includeArchived: options.includeArchived });
 				if (!task) return false;
 				if (!task.filePath) return false;
 				return await this.storage.withTaskLock(task, async () => {
-					const current = await this.mutations.loadTaskForMutation(task.id, options);
+					const current = await this.storage.loadTask(task.id, { includeArchived: options.includeArchived });
 					if (!current) return false;
 					if (!current.filePath) return false;
 					if (current.filePath !== task.filePath)

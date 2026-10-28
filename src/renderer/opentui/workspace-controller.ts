@@ -131,9 +131,10 @@ function taskEntry(task: Task): OpenTuiWorkspaceTaskEntry {
 function sessionEntry(
 	session: AgentSession | undefined,
 	snapshot: SessionSnapshot | undefined,
+	cwd: string | undefined,
 ): OpenTuiWorkspaceAgentSession | undefined {
 	if (!session || !snapshot) return undefined;
-	return { id: session.id, status: snapshot.state, preset: session.preset, cwd: session.cwd, taskId: session.taskId };
+	return { id: session.id, status: snapshot.state, preset: session.preset, taskId: session.taskId, cwd };
 }
 
 function summarizeFilters(state: SharedWorkspaceState): string {
@@ -590,7 +591,11 @@ export class OpenTuiWorkspaceController {
 			groupMembership: organization.membership,
 			selectedGroupId: this.#selectedGroupId,
 			statuses: snapshot.config?.statuses,
-			activeAgentSession: sessionEntry(snapshot.activeAgentSession, snapshot.activeAgentSnapshot),
+			activeAgentSession: sessionEntry(
+				snapshot.activeAgentSession,
+				snapshot.activeAgentSnapshot,
+				snapshot.activeAgentCwd,
+			),
 			selectedModeId: snapshot.selectedModeId,
 			modeProjectionByTask: (taskId) => snapshot.modeProjectionByTask.get(taskId),
 			taskArtifactApi: {
@@ -755,7 +760,7 @@ export class OpenTuiWorkspaceController {
 	}
 
 	async #followStartedTaskStatus(taskId: string, adopt: boolean): Promise<void> {
-		const task = await this.#core.loadTaskForMutation(taskId);
+		const task = await this.#core.getTask(taskId);
 		if (
 			!task ||
 			isTerminalStatus(task.status, this.#config?.statuses ?? []) ||

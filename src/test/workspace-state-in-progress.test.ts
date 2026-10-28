@@ -54,7 +54,7 @@ describe("session in-progress status coordination", () => {
 		await initializeTestProject(core, "Session status coordination");
 		await initializeAgentConfiguration(core, "project");
 		const { task } = await core.createTaskFromInput({ title: "Move me", status: "To Do" });
-		const session = await core.sessionApplication.newSession(task.id);
+		const session = await core.sessionApplication.newSession(task);
 		expect(session.snapshot.state).toBe("running");
 		expect((await core.loadTaskById(task.id))?.status).toBe("In Progress");
 	});
@@ -66,7 +66,7 @@ describe("session in-progress status coordination", () => {
 		await initializeTestProject(core, "Session status coordination");
 		await initializeAgentConfiguration(core, "project");
 		const { task } = await core.createTaskFromInput({ title: "Already shipped", status: "Done" });
-		await core.sessionApplication.newSession(task.id);
+		await core.sessionApplication.newSession(task);
 		expect((await core.loadTaskById(task.id))?.status).toBe("Done");
 	});
 
@@ -82,7 +82,7 @@ describe("session in-progress status coordination", () => {
 			throw new Error("status write failed");
 		};
 		try {
-			await expect(core.sessionApplication.newSession(task.id)).rejects.toThrow("status write failed");
+			await expect(core.sessionApplication.newSession(task)).rejects.toThrow("status write failed");
 			expect(
 				Object.values((await core.sessionApplication.store.read(task.id)).modes).flatMap(({ sessions }) => sessions),
 			).toEqual([]);

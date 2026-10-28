@@ -138,7 +138,6 @@ export class Core {
 		this.workspaceState = new WorkspaceStateService(this, { sessionApplication: this.sessionApplication });
 		this.taskMutations = new ProjectTaskMutations(
 			this.storage,
-			(id) => this.persistentReads.get(id, { forMutation: true }),
 			() => this.getActiveAndCompletedTaskIds(),
 			(task) => this.signals.publish("TasksChanged", task),
 		);
@@ -373,10 +372,6 @@ export class Core {
 
 	async loadWorkingCopyTask(taskId: string, forMutation: boolean, activeTasks?: Task[]): Promise<Task | null> {
 		return await this.taskMutations.loadWorkingCopyTask(taskId, forMutation, activeTasks);
-	}
-
-	async loadTaskForMutation(taskId: string, options: TaskReadOptions = {}): Promise<Task | null> {
-		return await this.taskMutations.loadTaskForMutation(taskId, options);
 	}
 
 	async getTaskContent(taskId: string): Promise<string | null> {

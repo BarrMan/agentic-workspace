@@ -176,7 +176,6 @@ describe("task post-commit operations", () => {
 			taskId: "TASK-1",
 			preset: "test",
 			tmuxName: "test-session",
-			cwd: root,
 			createdAt: "2026-10-10T00:00:00.000Z",
 			outputPath: "",
 			bootstrapPath: "",

@@ -247,13 +247,14 @@ export class SessionProcess {
 
 	async create(
 		session: AgentSession,
+		cwd: string,
 		env: Record<string, string>,
 		acquired?: (paneId?: string) => void,
 	): Promise<void> {
 		const created = await tmux(`Could not start tmux session ${session.id}`, () =>
 			this.server.newSession({
 				name: session.tmuxName,
-				startDirectory: session.cwd,
+				startDirectory: cwd,
 				environment: env,
 				shellCommand: `/bin/sh -lc ${quote(TMUX_PLACEHOLDER_COMMAND)}`,
 			}),

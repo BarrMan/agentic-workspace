@@ -54,7 +54,6 @@ describe("persisted prepared launch resources", () => {
 			preset: "opencode",
 			tmuxName: "agentic-workspace-task-1-resource",
 			nativeSessionId: "native-resource-session",
-			cwd: root,
 			createdAt: "2026-10-12T00:00:00.000Z",
 			outputPath,
 			bootstrapPath,
@@ -267,7 +266,7 @@ describe("persisted prepared launch resources", () => {
 		const process = f.makeProcess();
 		await process.launchPrepared(f.session, f.launch);
 		await process.kill(f.session);
-		await process.create(f.session, {});
+		await process.create(f.session, f.root, {});
 		await process.preparePane(f.session);
 		await process.launchPrepared(f.session, f.launch);
 		expect(f.events.filter((event) => event === "respawn")).toHaveLength(2);

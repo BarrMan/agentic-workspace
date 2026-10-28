@@ -5,17 +5,16 @@ import { join } from "node:path";
 import type { AgentSession } from "../../model/session/types.ts";
 import { SessionStore } from "../../storage/session-store.ts";
 
-function record(id: string, _modeId: string, cwd: string): AgentSession {
+function record(id: string, _modeId: string, _cwd: string): AgentSession {
 	return {
 		id,
 		taskId: "TASK-23",
 		preset: "original",
 		tmuxName: `pane-${id}`,
-		cwd,
 		createdAt: "2026-10-10T12:00:00.000Z",
 		outputPath: `/logs/${id}.log`,
 		bootstrapPath: `/logs/${id}.md`,
-		pathContext: { projectDir: "/repo", worktreeDir: cwd, taskDir: "/repo/tasks/TASK-23" },
+		pathContext: { projectDir: "/repo", taskDir: "/repo/tasks/TASK-23" },
 	};
 }
 
@@ -122,7 +121,6 @@ describe("mode session reservation and adoption contract", () => {
 		expect(
 			(await store.readMode("TASK-23", "plan")).sessions.find(({ id }) => id === selected.id)?.pathContext,
 		).toEqual(before);
-		expect(before?.worktreeDir).toBe(root);
 	});
 
 	it("resolves a calling UUID by its current mode membership rather than a selected UI mode", async () => {

@@ -40,8 +40,10 @@ export function registerAgentWorkspaceCommands(
 		.option("--preset <name>", "configured preset name")
 		.action(async (taskId: string, options: { preset?: string; mode?: string }) => {
 			const core = await getCore.project();
+			const task = await core.getTask(taskId);
+			if (!task) throw new Error(`Task not found: ${taskId}`);
 			const session = await core.sessionApplication.newSession(
-				taskId,
+				task,
 				options.mode ? await resolveModeOption(core, options.mode) : undefined,
 				options.preset,
 			);

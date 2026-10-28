@@ -130,17 +130,17 @@ export class Harness implements HarnessProvider {
 	private async start(context: SessionLaunchContext, intent: SessionIntent): Promise<RunningExecution> {
 		const record = context.record as AgentSession;
 		try {
-			if (!(await stat(record.cwd)).isDirectory()) throw new Error("Not a directory.");
+			if (!(await stat(context.cwd)).isDirectory()) throw new Error("Not a directory.");
 		} catch (cause) {
-			throw new Error(`Session working directory is unavailable: ${record.cwd}`, { cause });
+			throw new Error(`Task execution directory is unavailable: ${context.cwd}`, { cause });
 		}
 		const executionId = randomUUID();
 		const env = { ...context.configuration.config.presets[record.preset]?.env, ...context.preset.env };
-		const preset = await resolveLaunchPreset(context.preset, { cwd: record.cwd, env });
+		const preset = await resolveLaunchPreset(context.preset, { cwd: context.cwd, env });
 		const agent = harnessRegistry.forPreset(preset.bootstrap);
 		if (!agent.readiness) throw new Error(`Agent ${agent.name} does not provide Harness readiness evidence.`);
 		const options = {
-			cwd: record.cwd,
+			cwd: context.cwd,
 			intent,
 			sessionId: record.id,
 			taskId: context.taskId,
@@ -158,8 +158,8 @@ export class Harness implements HarnessProvider {
 		try {
 			if (intent.kind === "resume") await this.process.assertNoPreparedResources(record);
 			prepared = await prepareAgentLaunchResources(record.bootstrapPath, preflight);
-			await this.process.prepare(preset.prepare, record.cwd, prepared.env);
-			await this.process.create(record, prepared.env, (captured) => {
+			await this.process.prepare(preset.prepare, context.cwd, prepared.env);
+			await this.process.create(record, context.cwd, prepared.env, (captured) => {
 				owned = true;
 				paneId = captured;
 			});
@@ -195,7 +195,7 @@ export class Harness implements HarnessProvider {
 			const identity = await this.captureIdentity(agent, {
 				intent,
 				preset,
-				cwd: record.cwd,
+				cwd: context.cwd,
 				env: prepared.env,
 				launchDirectory: prepared.resources.skill.path,
 				...(prepared.identity ? { preparedIdentity: prepared.identity } : {}),

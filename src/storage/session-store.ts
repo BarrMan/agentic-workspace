@@ -251,7 +251,7 @@ function hasOnlyKeys(value: Record<string, unknown>, keys: readonly string[]): b
 function isSession(value: unknown, taskId: string): value is AgentSession {
 	if (!isRecord(value)) return false;
 	if (typeof value.taskId !== "string" || !taskIdsEqual(value.taskId, taskId)) return false;
-	for (const key of ["id", "preset", "tmuxName", "cwd", "createdAt", "outputPath", "bootstrapPath"]) {
+	for (const key of ["id", "preset", "tmuxName", "createdAt", "outputPath", "bootstrapPath"]) {
 		if (typeof value[key] !== "string") return false;
 	}
 	return (
@@ -266,10 +266,8 @@ function isSession(value: unknown, taskId: string): value is AgentSession {
 }
 
 function isAgentSessionPathContext(value: unknown): value is AgentSessionPathContext {
-	if (!isRecord(value) || !hasOnlyKeys(value, ["projectDir", "worktreeDir", "taskDir"])) return false;
-	return ["projectDir", "worktreeDir", "taskDir"].every(
-		(key) => typeof value[key] === "string" && isAbsolute(value[key]),
-	);
+	if (!isRecord(value) || !hasOnlyKeys(value, ["projectDir", "taskDir"])) return false;
+	return ["projectDir", "taskDir"].every((key) => typeof value[key] === "string" && isAbsolute(value[key]));
 }
 
 /** Owns the durable state and files for one project's task sessions. */

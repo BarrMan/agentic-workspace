@@ -191,8 +191,7 @@ export interface AgentSession {
 	nativeSessionId?: string;
 	/** Adapter namespace recorded when this native conversation was first launched. */
 	nativeProvider?: NativeAgentNamespace;
-	cwd: string;
-	/** Immutable canonical project, session worktree, and task-artifact roots captured at creation. */
+	/** Immutable canonical project and task-artifact roots captured at creation. */
 	pathContext?: AgentSessionPathContext;
 	createdAt: string;
 	ownerPid?: number;
@@ -241,6 +240,8 @@ export interface SessionLaunchContext {
 	readonly modeId: ModeId;
 	readonly sessionId: string;
 	readonly record: Readonly<AgentSession>;
+	/** Resolved from the task's captured worktree policy for this execution. */
+	readonly cwd: string;
 	readonly configuration: ResolvedAgentConfiguration;
 	readonly profile: Readonly<ModeProfile>;
 	readonly preset: Readonly<AgentPreset>;
@@ -289,7 +290,6 @@ export interface HarnessProvider {
 
 export interface AgentSessionPathContext {
 	projectDir: string;
-	worktreeDir: string;
 	taskDir: string;
 }
 

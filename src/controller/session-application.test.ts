@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "bun:test";
-import { mkdtemp, realpath, rm } from "node:fs/promises";
+import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Session, type SessionRuntime } from "../model/session/session.ts";
@@ -10,7 +10,7 @@ import type {
 	SessionLaunchContext,
 } from "../model/session/types.ts";
 import { Storage } from "../storage/storage.ts";
-import { initGitRepo, initializeTestProject } from "../test/test-utils.ts";
+import { initializeTestProject } from "../test/test-utils.ts";
 import {
 	initializeAgentConfiguration,
 	loadAgentConfiguration,
@@ -175,8 +175,8 @@ describe("SessionApplication", () => {
 				profiles: { ...config.modes.profiles, destination: { ...profile, name: "Destination" } },
 			},
 		});
-		const moved = await application.newSession(task.id, source);
-		const retained = await application.newSession(task.id, "destination");
+		const moved = await application.newSession(task, source);
+		const retained = await application.newSession(task, "destination");
 		const mover = external
 			? new SessionApplication(core, { storage: Storage.open(core.projectRoot), sessionFactory: controlled.factory })
 			: application;
@@ -197,48 +197,9 @@ describe("SessionApplication", () => {
 		expect(controlled.stopped).toEqual([]);
 	});
 
-	it("creates and reuses the captured task worktree before launch", async () => {
-		const { application, core, task } = await fixture();
-		const previous = process.env.AGENTIC_WORKSPACE_WORKTREE_HOME;
-		const home = await mkdtemp(join(tmpdir(), "session-worktrees-"));
-		roots.push(home);
-		process.env.AGENTIC_WORKSPACE_WORKTREE_HOME = home;
-		try {
-			initGitRepo(core.projectRoot, "main");
-			const commit = Bun.spawn(
-				[
-					"git",
-					"-C",
-					core.projectRoot,
-					"-c",
-					"user.name=Fixture",
-					"-c",
-					"user.email=fixture@example.test",
-					"commit",
-					"--allow-empty",
-					"-m",
-					"fixture",
-				],
-				{ stdout: "ignore", stderr: "pipe" },
-			);
-			const [error, code] = await Promise.all([new Response(commit.stderr).text(), commit.exited]);
-			if (code !== 0) throw new Error(error);
-			const current = await core.loadTaskForMutation(task.id);
-			if (!current) throw new Error("Missing task");
-			await core.updateTask({ ...current, worktreePolicy: "enabled" });
-			const first = await application.newSession(task.id);
-			const second = await application.newSession(task.id);
-			expect(first.record.cwd).not.toBe(core.projectRoot);
-			expect(first.record.pathContext?.worktreeDir).toBe(first.record.cwd);
-			expect(await realpath(second.record.cwd)).toBe(await realpath(first.record.cwd));
-		} finally {
-			if (previous === undefined) delete process.env.AGENTIC_WORKSPACE_WORKTREE_HOME;
-			else process.env.AGENTIC_WORKSPACE_WORKTREE_HOME = previous;
-		}
-	});
 	it("refuses deletion and resume for live parked and unknown retained sessions", async () => {
 		const { application, controlled, store, task } = await fixture();
-		const created = await application.newSession(task.id);
+		const created = await application.newSession(task);
 		await application.stopSession(task.id, created.record.id);
 		await store.mutate(task.id, async (state) => {
 			for (const history of Object.values(state.modes))
@@ -279,7 +240,7 @@ describe("SessionApplication", () => {
 			throw Object.assign(new Error("startup failed"), { execution });
 		};
 		controlled.runtime.stop = (execution) => execution.stop();
-		await expect(application.newSession(task.id)).rejects.toThrow("reservation retained");
+		await expect(application.newSession(task)).rejects.toThrow("reservation retained");
 		const records = Object.values((await store.read(task.id)).modes).flatMap(({ sessions }) => sessions);
 		expect(records).toMatchObject([{ id: sessionId, nativeSessionId: "captured-native" }]);
 		expect((await application.attachmentContext(task.id, sessionId)).ownedByThisApplication).toBe(true);
@@ -295,14 +256,14 @@ describe("SessionApplication", () => {
 			const execution = await start(context);
 			throw Object.assign(new Error("startup failed"), { execution });
 		};
-		await expect(application.newSession(task.id)).rejects.toThrow("startup failed");
+		await expect(application.newSession(task)).rejects.toThrow("startup failed");
 		expect(controlled.stopped).toHaveLength(1);
 		expect(Object.values((await store.read(task.id)).modes).flatMap(({ sessions }) => sessions)).toHaveLength(0);
 	});
 
 	it("keeps forced-deletion tracking when cleanup fails and removes only after successful cleanup", async () => {
 		const { application, controlled, store, task } = await fixture();
-		const created = await application.newSession(task.id);
+		const created = await application.newSession(task);
 		controlled.stopErrorFor.add(created.record.id);
 		await expect(application.deleteSession(task.id, created.record.id, { force: true })).rejects.toThrow("stop failed");
 		expect(Object.values((await store.read(task.id)).modes).flatMap(({ sessions }) => sessions)).toHaveLength(1);
@@ -313,8 +274,8 @@ describe("SessionApplication", () => {
 
 	it("persists survivor selection after stop and preserves a nonactive selection", async () => {
 		const { application, store, task } = await fixture();
-		const first = await application.newSession(task.id);
-		const second = await application.newSession(task.id);
+		const first = await application.newSession(task);
+		const second = await application.newSession(task);
 		await application.stopSession(task.id, second.record.id);
 		const history = Object.values((await store.read(task.id)).modes).find(({ sessions }) => sessions.length);
 		expect(history?.activeSessionId).toBe(first.record.id);
@@ -327,7 +288,7 @@ describe("SessionApplication", () => {
 
 	it("waits for an admitted launch on shutdown, rejects new launches, and attempts all stops", async () => {
 		const { application, controlled, task } = await fixture();
-		const first = await application.newSession(task.id);
+		const first = await application.newSession(task);
 		controlled.stopErrorFor.add(first.record.id);
 		const gate = Promise.withResolvers<void>();
 		const entered = Promise.withResolvers<void>();
@@ -337,18 +298,18 @@ describe("SessionApplication", () => {
 			await gate.promise;
 			return start(context);
 		};
-		const pending = application.newSession(task.id);
+		const pending = application.newSession(task);
 		await entered.promise;
 		const shutdown = application.shutdown();
 		expect(application.shutdown()).toBe(shutdown);
-		await expect(application.newSession(task.id)).rejects.toThrow("shutting down");
+		await expect(application.newSession(task)).rejects.toThrow("shutting down");
 		gate.resolve();
 		const second = await pending;
 		await expect(shutdown).rejects.toThrow(`${task.id}/${first.record.id}`);
 		await expect(shutdown).rejects.toThrow(`Completed stops: ${task.id}/${second.record.id}`);
 		expect(controlled.stopped).toContain(first.record.id);
 		expect(controlled.stopped).toContain(second.record.id);
-		const third = await application.newSession(task.id);
+		const third = await application.newSession(task);
 		controlled.stopErrorFor.clear();
 		await application.shutdown();
 		expect(controlled.stopped.filter((id) => id === first.record.id)).toHaveLength(2);
@@ -358,7 +319,7 @@ describe("SessionApplication", () => {
 
 	it("uses positive cross-window idle evidence in the project-wide limit", async () => {
 		const { application, controlled, core, task } = await fixture();
-		const oldest = await application.newSession(task.id);
+		const oldest = await application.newSession(task);
 		controlled.retained.observation = "live";
 		controlled.runtime.observeRetainedActivity = async (record) => ({
 			state: "parked",
@@ -370,22 +331,22 @@ describe("SessionApplication", () => {
 			sessionFactory: controlled.factory,
 			maxSessions: 1,
 		});
-		await other.newSession(task.id);
+		await other.newSession(task);
 		expect(controlled.stopped).toEqual([oldest.record.id]);
 	});
 
 	it("fails enabled worktree preparation before reserving instead of using the checkout", async () => {
 		const { application, controlled, core, store, task } = await fixture();
-		const current = await core.loadTaskForMutation(task.id);
+		const current = await core.loadTaskById(task.id);
 		if (!current) throw new Error("Missing task");
 		await core.updateTask({ ...current, worktreePolicy: "enabled" });
-		await expect(application.newSession(task.id)).rejects.toThrow("Could not prepare task worktree at");
+		await expect(application.newSession(task)).rejects.toThrow("Could not prepare task worktree at");
 		expect(controlled.starts()).toBe(0);
 		expect(Object.values((await store.read(task.id)).modes).flatMap(({ sessions }) => sessions)).toHaveLength(0);
 	});
 	it("coordinates task status and persists the Task reservation before launch", async () => {
 		const { application, core, controlled, task } = await fixture();
-		const created = await application.newSession(task.id);
+		const created = await application.newSession(task);
 		expect(controlled.starts()).toBe(1);
 		expect(created.snapshot.state).toBe("running");
 		expect((await core.loadTaskById(task.id))?.status).not.toBe("To Do");
@@ -393,7 +354,7 @@ describe("SessionApplication", () => {
 
 	it("resumes the exact durable conversation without another reservation", async () => {
 		const { application, store, task } = await fixture();
-		const created = await application.newSession(task.id);
+		const created = await application.newSession(task);
 		await application.stopSession(task.id, created.record.id);
 		await store.mutate(task.id, async (state) => {
 			const record = Object.values(state.modes)
@@ -409,8 +370,8 @@ describe("SessionApplication", () => {
 
 	it("enforces the session limit after resume without failing the resume", async () => {
 		const { application, controlled, store, task } = await fixture({ maxSessions: 1 });
-		const idle = await application.newSession(task.id);
-		const resumedTarget = await application.newSession(task.id);
+		const idle = await application.newSession(task);
+		const resumedTarget = await application.newSession(task);
 		await application.stopSession(task.id, resumedTarget.record.id);
 		controlled.emit(idle.record.id, "idle", 10);
 		await store.mutate(task.id, async (state) => {
@@ -428,13 +389,13 @@ describe("SessionApplication", () => {
 
 	it("rolls back a pre-execution start failure instead of retaining a provisional session", async () => {
 		const { application, store, task } = await fixture({ startError: new Error("pre-start failed") });
-		await expect(application.newSession(task.id)).rejects.toThrow("pre-start failed");
+		await expect(application.newSession(task)).rejects.toThrow("pre-start failed");
 		expect(Object.values((await store.read(task.id)).modes).flatMap((history) => history.sessions)).toEqual([]);
 	});
 
 	it("does not retain a local session when exact resume fails before execution", async () => {
 		const { application, store, task } = await fixture({ resumeError: new Error("resume failed") });
-		const created = await application.newSession(task.id);
+		const created = await application.newSession(task);
 		await store.mutate(task.id, async (state) => {
 			const record = Object.values(state.modes)
 				.flatMap(({ sessions }) => sessions)
@@ -449,38 +410,38 @@ describe("SessionApplication", () => {
 
 	it("does not stop sessions below the configured limit", async () => {
 		const { application, controlled, task } = await fixture({ maxSessions: 2 });
-		await application.newSession(task.id);
+		await application.newSession(task);
 		expect(controlled.stopped).toEqual([]);
 	});
 
 	it("evicts the longest continuously idle session when over the limit", async () => {
 		const { application, controlled, task } = await fixture({ maxSessions: 2 });
-		const oldest = await application.newSession(task.id);
+		const oldest = await application.newSession(task);
 		controlled.emit(oldest.record.id, "idle", 10);
-		const newer = await application.newSession(task.id);
+		const newer = await application.newSession(task);
 		controlled.emit(newer.record.id, "idle", 20);
-		await application.newSession(task.id);
+		await application.newSession(task);
 		expect(controlled.stopped).toEqual([oldest.record.id]);
 	});
 
 	it("counts other-task sessions while never evicting the newly started session", async () => {
 		const { application, controlled, core, task } = await fixture({ maxSessions: 1 });
-		const existing = await application.newSession(task.id);
+		const existing = await application.newSession(task);
 		controlled.emit(existing.record.id, "idle", 10);
 		const { task: otherTask } = await core.createTaskFromInput({ title: "Other task", status: "To Do" });
-		const created = await application.newSession(otherTask.id);
+		const created = await application.newSession(otherTask);
 		expect(controlled.stopped).toEqual([existing.record.id]);
 		expect(created.record.id).not.toBe(existing.record.id);
 	});
 
 	it("keeps working, permission-waiting, and unknown sessions when the limit is exceeded", async () => {
 		const { application, controlled, task } = await fixture({ maxSessions: 3 });
-		const waiting = await application.newSession(task.id);
+		const waiting = await application.newSession(task);
 		controlled.emit(waiting.record.id, "waiting", 10);
-		const unknown = await application.newSession(task.id);
+		const unknown = await application.newSession(task);
 		controlled.emit(unknown.record.id, "unknown", 20);
-		const created = await application.newSession(task.id);
-		const extra = await application.newSession(task.id);
+		const created = await application.newSession(task);
+		const extra = await application.newSession(task);
 		expect(created.snapshot.state).toBe("running");
 		expect(extra.snapshot.state).toBe("running");
 		expect(controlled.stopped).toEqual([]);
@@ -488,14 +449,14 @@ describe("SessionApplication", () => {
 
 	it("reports an eviction failure while leaving the started session successful", async () => {
 		const { application, controlled, task } = await fixture({ maxSessions: 1 });
-		const idle = await application.newSession(task.id);
+		const idle = await application.newSession(task);
 		controlled.emit(idle.record.id, "idle", 10);
 		controlled.stopErrorFor.add(idle.record.id);
 		const warning = console.warn;
 		const warnings: unknown[][] = [];
 		console.warn = (...args) => warnings.push(args);
 		try {
-			const created = await application.newSession(task.id);
+			const created = await application.newSession(task);
 			expect(created.snapshot.state).toBe("running");
 		} finally {
 			console.warn = warning;

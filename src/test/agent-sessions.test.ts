@@ -105,7 +105,7 @@ async function fixture(runtime = controlledRuntime()) {
 describe("consolidated session lifecycle", () => {
 	it("reads current execution state separately from durable session identity", async () => {
 		const { application, task } = await fixture();
-		const started = await application.newSession(task.id);
+		const started = await application.newSession(task);
 		const observed = await application.readObserved(task.id, started.record.id);
 
 		expect(observed.record.id).toBe(started.record.id);
@@ -125,7 +125,7 @@ describe("consolidated session lifecycle", () => {
 		}) as typeof application.store.mutate;
 
 		// SESSION-009, docs/specs/sessions.md:202-205: successful cleanup rolls back the provisional relationship.
-		await expect(application.newSession(task.id)).rejects.toThrow("publication failed");
+		await expect(application.newSession(task)).rejects.toThrow("publication failed");
 		expect(Object.values((await application.store.read(task.id)).modes).flatMap((history) => history.sessions)).toEqual(
 			[],
 		);
@@ -146,7 +146,7 @@ describe("consolidated session lifecycle", () => {
 		// SESSION-009, docs/specs/sessions.md:203-205: retain tracking when cleanup fails and report both failures.
 		let failure: unknown;
 		try {
-			await application.newSession(task.id);
+			await application.newSession(task);
 		} catch (error) {
 			failure = error;
 		}
@@ -162,7 +162,7 @@ describe("consolidated session lifecycle", () => {
 
 	it("allows a start without stopping sessions when no positively idle candidate is established", async () => {
 		const { application, task } = await fixture();
-		const started = await application.newSession(task.id);
+		const started = await application.newSession(task);
 		// SESSION-012, docs/specs/sessions.md:261-264: starts are allowed and unknown/non-idle sessions are protected.
 		expect(started.snapshot.activity).toBe("working");
 		expect((await application.readObserved(task.id, started.record.id)).snapshot.state).toBe("running");

@@ -11,7 +11,6 @@ function session(id: string, createdAt: string): AgentSession {
 		taskId: "TASK-1",
 		preset: "opencode",
 		tmuxName: id,
-		cwd: "/tmp",
 		outputPath: "/tmp/out",
 		bootstrapPath: "/tmp/prompt",
 	};

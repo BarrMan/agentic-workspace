@@ -22,7 +22,6 @@ function session(id: string): AgentSession {
 		taskId: "TASK-1",
 		preset: "test",
 		tmuxName: id,
-		cwd: "/tmp",
 		createdAt: "2026-01-01T00:00:00.000Z",
 		outputPath: "/tmp/output",
 		bootstrapPath: "/tmp/bootstrap",

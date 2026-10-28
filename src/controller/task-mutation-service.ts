@@ -56,7 +56,6 @@ export class ProjectTaskMutations {
 
 	constructor(
 		private readonly storage: Storage,
-		private readonly loadTask: (id: string, forMutation: boolean) => Promise<Task | null>,
 		private readonly occupiedTaskIds: () => Promise<string[]>,
 		private readonly publishTaskChanged: (task: Task | string) => void = () => {},
 	) {}
@@ -144,16 +143,6 @@ export class ProjectTaskMutations {
 		return generateNextId(allIds, prefix, config?.zeroPaddedIds);
 	}
 
-	async loadTaskForMutation(taskId: string, _options: TaskReadOptions = {}): Promise<Task | null> {
-		const task = await this.loadTask(taskId, true);
-		if (task?.source === "completed") return null;
-		const resolved = task ?? (await this.storage.loadTask(taskId, { includeArchived: true }));
-		if (resolved?.filePath) {
-			if (this.storage.isCompletedTaskRecordPath(resolved.filePath)) return null;
-		}
-		return resolved;
-	}
-
 	async loadWorkingCopyTask(taskId: string, forMutation: boolean, activeTasks?: Task[]): Promise<Task | null> {
 		const index = await this.buildWorkingCopyTaskIndex(activeTasks);
 		return await this.loadResolvedTaskOrFilesystem(
@@ -163,11 +152,11 @@ export class ProjectTaskMutations {
 	}
 
 	async updateFromInput(taskId: string, input: TaskUpdateInput, options: TaskReadOptions = {}): Promise<Task> {
-		const task = await this.loadTaskForMutation(taskId, options);
+		const task = await this.storage.loadTask(taskId, { includeArchived: options.includeArchived });
 		if (!task) throw new Error(`Task not found: ${taskId}`);
 		return await this.withPostCommit(async (changes) =>
 			this.storage.withTaskLock(task, async () => {
-				const current = await this.loadTaskForMutation(taskId, options);
+				const current = await this.storage.loadTask(taskId, { includeArchived: options.includeArchived });
 				if (!current) throw new Error(`Task not found: ${taskId}`);
 				const updated = await this.applyTaskUpdateInput(current, input);
 				if (!updated.mutated) return current;
@@ -178,11 +167,11 @@ export class ProjectTaskMutations {
 	}
 
 	async markDone(taskId: string, options: TaskReadOptions = {}): Promise<{ task: Task; changed: boolean }> {
-		const task = await this.loadTaskForMutation(taskId, options);
+		const task = await this.storage.loadTask(taskId, { includeArchived: options.includeArchived });
 		if (!task) throw new Error(`Task not found: ${taskId}`);
 		return await this.withPostCommit(async (changes) =>
 			this.storage.withTaskLock(task, async () => {
-				const current = await this.loadTaskForMutation(taskId, options);
+				const current = await this.storage.loadTask(taskId, { includeArchived: options.includeArchived });
 				if (!current) throw new Error(`Task not found: ${taskId}`);
 				const configuration = await this.storage.loadConfig();
 				const status = getTerminalStatus(configuration?.statuses ?? []);
@@ -208,7 +197,7 @@ export class ProjectTaskMutations {
 		await previous;
 		return await this.withPostCommit(async (changes) => {
 			try {
-				const task = await this.loadTaskForMutation(taskId);
+				const task = await this.storage.loadTask(taskId, { includeArchived: true });
 				if (!task) throw new Error(`Task not found: ${taskId}`);
 				return await this.storage.withTaskLock(task, async () => {
 					const current = await this.storage.loadTask(taskId, { includeArchived: true });

@@ -85,8 +85,7 @@ export type OpenTuiWorkspaceAgentSession = {
 	readonly id: string;
 	readonly status: string;
 	readonly preset: string;
-	/** Actual execution directory captured on the session, never the application cwd. */
-	readonly cwd: string;
+	readonly cwd?: string;
 	readonly taskId?: string;
 	readonly summary?: string;
 };

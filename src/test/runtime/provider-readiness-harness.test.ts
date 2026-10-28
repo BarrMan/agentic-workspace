@@ -34,7 +34,6 @@ async function harnessFixture(provider: Provider, omitted?: OmittedStage) {
 		taskId: "TASK-1",
 		preset: "default",
 		tmuxName: "readiness-test",
-		cwd: root,
 		createdAt: new Date().toISOString(),
 		outputPath: join(root, "output.log"),
 		bootstrapPath: join(root, "bootstrap.md"),
@@ -46,6 +45,7 @@ async function harnessFixture(provider: Provider, omitted?: OmittedStage) {
 		modeId: "build",
 		sessionId: record.id,
 		record,
+		cwd: root,
 		configuration: {
 			scope: "root",
 			config: {

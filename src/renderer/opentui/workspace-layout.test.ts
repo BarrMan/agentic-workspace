@@ -884,7 +884,7 @@ describe("native workspace layout", () => {
 		}
 	});
 
-	test("renders agent, status, selected mode, and actual session directory in order", async () => {
+	test("renders agent, status, and selected mode in order", async () => {
 		const setup = await createTestRenderer({ width: 120, height: 40, exitOnCtrlC: false });
 		renderers.push(setup);
 		const { agent } = liveAgent(setup);

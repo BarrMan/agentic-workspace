@@ -18,6 +18,7 @@ import { resolveInProgressStatus } from "../model/task/status.ts";
 import { type SessionCreationIdentity, Task } from "../model/task/task.ts";
 import { taskIdKey, taskIdsEqual } from "../model/task/task-id.ts";
 import { getTerminalStatus, isTerminalStatus } from "../model/task/terminal-status.ts";
+import type { Task as TaskRecord } from "../model/types.ts";
 import type { SessionStore } from "../storage/session-store.ts";
 import type { Storage } from "../storage/storage.ts";
 import { loadProjectModeCatalog, resolveAgentConfiguration } from "./agent-configuration.ts";
@@ -72,20 +73,25 @@ export class SessionApplication {
 		this.maxSessions = options.maxSessions ?? 10;
 	}
 
-	newSession(taskId: string, modeId?: ModeId, presetName?: string): Promise<ObservedSession> {
+	newSession(task: TaskRecord, modeId?: ModeId, presetName?: string): Promise<ObservedSession> {
 		return this.trackLaunch(async () => {
-			const created = await this.createSession(taskId, modeId, presetName);
+			const created = await this.createSession(task, modeId, presetName);
 			await this.enforceSessionLimit(created.record);
 			return created;
 		});
 	}
 
-	private async createSession(taskId: string, modeId?: ModeId, presetName?: string): Promise<ObservedSession> {
+	private async createSession(
+		selectedTask: TaskRecord,
+		modeId?: ModeId,
+		presetName?: string,
+	): Promise<ObservedSession> {
 		this.requireSessionFactory();
 		const requestedMode = modeId ?? (await loadProjectModeCatalog(this.core)).defaultModeId;
+		const taskId = selectedTask.id;
 		return await this.withAdmissions(requestedMode, taskId, async () => {
-			await this.coordinateTaskStatus(taskId);
-			return await this.withTaskAdmission(taskId, async (taskRecord) => {
+			const taskRecord = await this.coordinateTaskStatus(selectedTask);
+			return await this.core.withTaskLock(taskRecord, async () => {
 				const resolved = await resolveAgentConfiguration(this.core, taskId);
 				const catalog = await loadProjectModeCatalog(this.core);
 				const selectedMode = modeId ?? catalog.defaultModeId;
@@ -110,7 +116,9 @@ export class SessionApplication {
 					release = await this.store.claimSession(taskId, session.id);
 					this.sessions.set(this.key(taskId, session.id), session);
 					startEntered = true;
-					await session.start(this.launchContext(record, selectedMode, resolved, configuredPreset, configuredMode));
+					await session.start(
+						this.launchContext(taskRecord, record, selectedMode, resolved, configuredPreset, configuredMode),
+					);
 					await this.publish(session, selectedMode, taskRecord, catalog.profiles, resolved);
 					const created = this.view(session);
 					return created;
@@ -173,7 +181,9 @@ export class SessionApplication {
 						if (!profile) throw new Error(`Unknown mode '${modeId}'.`);
 						const resumedSession = this.newModelSession(record, modeId);
 						session = resumedSession;
-						await resumedSession.resume(this.launchContext(record, modeId, resolved, presetConfig, profile));
+						await resumedSession.resume(
+							this.launchContext(taskRecord, record, modeId, resolved, presetConfig, profile),
+						);
 						await this.publish(resumedSession, modeId, taskRecord, catalog.profiles, resolved);
 						this.sessions.set(this.key(taskId, sessionId), resumedSession);
 						const resumed = this.view(resumedSession);
@@ -194,8 +204,9 @@ export class SessionApplication {
 		);
 	}
 
-	async handoff(taskId: string, predecessorSessionId: string, modeId?: ModeId): Promise<ObservedSession> {
-		const successor = await this.newSession(taskId, modeId);
+	async handoff(task: TaskRecord, predecessorSessionId: string, modeId?: ModeId): Promise<ObservedSession> {
+		const successor = await this.newSession(task, modeId);
+		const taskId = task.id;
 		try {
 			const predecessor = this.sessions.get(this.key(taskId, predecessorSessionId));
 			if (predecessor) await this.stopSession(taskId, predecessorSessionId);
@@ -514,6 +525,8 @@ export class SessionApplication {
 		if (!profile) throw new Error(`Unknown mode '${modeId}'.`);
 		const roots = record.pathContext;
 		if (!roots) throw new Error(`Session ${sessionId} has no retained execution roots.`);
+		const task = await this.core.getTask(taskId);
+		if (!task) throw new Error(`Task not found: ${taskId}`);
 		const release = await this.store.claimSession(taskId, sessionId);
 		let primary: unknown;
 		try {
@@ -525,7 +538,7 @@ export class SessionApplication {
 				roots: {
 					repositoryRoot: roots.projectDir,
 					taskRoot: roots.taskDir,
-					cwd: roots.worktreeDir,
+					cwd: this.taskExecutionCwd(task, resolved.config.sessions.worktreePerTask),
 					taskId,
 					modeId,
 					sessionId,
@@ -539,35 +552,43 @@ export class SessionApplication {
 		}
 	}
 
+	async executionCwd(taskId: string): Promise<string> {
+		const [task, configuration] = await Promise.all([
+			this.core.getTask(taskId),
+			resolveAgentConfiguration(this.core, taskId),
+		]);
+		if (!task) throw new Error(`Task not found: ${taskId}`);
+		return this.taskExecutionCwd(task, configuration.config.sessions.worktreePerTask);
+	}
+
 	async askPrevious(taskId: string, modeId: ModeId, question: string): Promise<{ answer: string }> {
 		const [state, taskRecord, configuration, catalog] = await Promise.all([
 			this.store.read(taskId),
-			this.core.loadTaskForMutation(taskId),
+			this.core.getTask(taskId),
 			resolveAgentConfiguration(this.core, taskId),
 			loadProjectModeCatalog(this.core),
 		]);
 		if (!catalog.profiles[modeId]) throw new Error(`Unknown mode '${modeId}'.`);
+		if (!taskRecord) throw new Error(`Task not found: ${taskId}`);
 		const task = this.hydrate(taskRecord, catalog.profiles, configuration, state, undefined, modeId);
 		const session = task.activeSession;
 		if (!session) throw new Error(`Mode ${modeId} for task ${taskId} has no saved conversation.`);
 		return await this.ask(taskId, session.id, question);
 	}
 
-	private async coordinateTaskStatus(taskId: string): Promise<void> {
-		const task = await this.core.loadTaskForMutation(taskId);
-		if (!task) throw new Error(`Task not found: ${taskId}`);
+	private async coordinateTaskStatus(task: TaskRecord): Promise<TaskRecord> {
 		const config = await this.core.getStoredConfig();
 		const statuses = config?.statuses?.length ? config.statuses : [...DEFAULT_STATUSES];
-		if (isTerminalStatus(task.status, statuses)) return;
+		if (isTerminalStatus(task.status, statuses)) return task;
 		const target = resolveInProgressStatus(statuses);
-		if (!target || target === getTerminalStatus(statuses) || task.status === target) return;
-		await this.core.updateTaskFromInput(task.id, { status: target });
+		if (!target || target === getTerminalStatus(statuses) || task.status === target) return task;
+		return await this.core.updateTaskFromInput(task.id, { status: target });
 	}
 
 	private async publish(
 		session: Session,
 		modeId: ModeId,
-		taskRecord: Awaited<ReturnType<Core["loadTaskForMutation"]>>,
+		taskRecord: TaskRecord,
 		profiles: Record<ModeId, ModeProfile>,
 		configuration: Awaited<ReturnType<typeof resolveAgentConfiguration>>,
 	): Promise<void> {
@@ -581,7 +602,7 @@ export class SessionApplication {
 	private async settleFailedCreation(
 		session: Session,
 		creation: SessionCreationIdentity,
-		taskRecord: Awaited<ReturnType<Core["loadTaskForMutation"]>>,
+		taskRecord: TaskRecord,
 		profiles: Record<ModeId, ModeProfile>,
 		configuration: Awaited<ReturnType<typeof resolveAgentConfiguration>>,
 		original: unknown,
@@ -686,19 +707,13 @@ export class SessionApplication {
 		return { record, modeId };
 	}
 
-	private async newRecord(
-		task: NonNullable<Awaited<ReturnType<Core["loadTaskForMutation"]>>>,
-		preset: string,
-		defaultWorktree: boolean,
-	): Promise<AgentSession> {
+	private async newRecord(task: TaskRecord, preset: string, defaultWorktree: boolean): Promise<AgentSession> {
 		const taskId = task.id;
-		let cwd = this.core.projectRoot;
 		if (task.worktreePolicy === "enabled" || (task.worktreePolicy === undefined && defaultWorktree)) {
 			const expected = taskWorktreePath(this.core.projectRoot, task);
 			try {
 				const worktree = await ensureTaskWorktree(this.core.projectRoot, task);
 				if (!worktree) throw new Error("Project is not a Git worktree.");
-				cwd = worktree;
 			} catch (cause) {
 				throw new Error(
 					`Could not prepare task worktree at ${expected}: ${cause instanceof Error ? cause.message : String(cause)}`,
@@ -713,10 +728,8 @@ export class SessionApplication {
 			taskId,
 			preset,
 			tmuxName: nativeSessionName(taskId, id),
-			cwd,
 			pathContext: {
 				projectDir: this.core.projectRoot,
-				worktreeDir: cwd,
 				taskDir: await this.storage.taskArtifacts.containerPath(taskId),
 			},
 			createdAt: new Date().toISOString(),
@@ -727,7 +740,7 @@ export class SessionApplication {
 	}
 
 	private hydrate(
-		task: Awaited<ReturnType<Core["loadTaskForMutation"]>>,
+		task: TaskRecord,
 		profiles: Record<ModeId, ModeProfile>,
 		configuration: Awaited<ReturnType<typeof resolveAgentConfiguration>>,
 		state: Awaited<ReturnType<SessionStore["read"]>>,
@@ -751,6 +764,7 @@ export class SessionApplication {
 	}
 
 	private launchContext(
+		task: TaskRecord,
 		record: AgentSession,
 		modeId: ModeId,
 		configuration: Awaited<ReturnType<typeof resolveAgentConfiguration>>,
@@ -762,11 +776,18 @@ export class SessionApplication {
 			modeId,
 			sessionId: record.id,
 			record,
+			cwd: this.taskExecutionCwd(task, configuration.config.sessions.worktreePerTask),
 			configuration,
 			profile,
 			preset,
 			prompt: profile.prompt,
 		};
+	}
+
+	private taskExecutionCwd(task: TaskRecord, defaultWorktree: boolean): string {
+		return task.worktreePolicy === "enabled" || (task.worktreePolicy === undefined && defaultWorktree)
+			? taskWorktreePath(this.core.projectRoot, task)
+			: this.core.projectRoot;
 	}
 
 	private newModelSession(record: AgentSession, modeId: ModeId): Session {
@@ -783,17 +804,11 @@ export class SessionApplication {
 		return { record: session.serialize(), snapshot: session.view };
 	}
 
-	private async withTaskAdmission<T>(
-		taskId: string,
-		operation: (task: NonNullable<Awaited<ReturnType<Core["loadTaskForMutation"]>>>) => Promise<T>,
-	): Promise<T> {
-		const task = await this.core.loadTaskForMutation(taskId);
+	private async withTaskAdmission<T>(taskId: string, operation: (task: TaskRecord) => Promise<T>): Promise<T> {
+		const task = await this.core.getTask(taskId);
 		if (!task) throw new Error(`Task not found: ${taskId}`);
 		return await this.core.withTaskLock(task, async () => {
-			const current = await this.core.loadTaskForMutation(taskId);
-			if (!current || current.filePath !== task.filePath)
-				throw new Error(`Task changed or no longer exists: ${taskId}`);
-			return await operation(current);
+			return await operation(task);
 		});
 	}
 

@@ -19,7 +19,7 @@ describe("ProjectTaskMutations", () => {
 		};
 		const mutations = new ProjectTaskMutations(
 			storage as never,
-			async () => null,
+			async () => [],
 			async () => [],
 		);
 
@@ -41,7 +41,7 @@ describe("ProjectTaskMutations", () => {
 		} as Task;
 		const mutations = new ProjectTaskMutations(
 			{ loadConfig: async () => ({ statuses: ["To Do"] }) } as never,
-			async () => null,
+			async () => [],
 			async () => [],
 		);
 
@@ -65,7 +65,7 @@ describe("ProjectTaskMutations", () => {
 				loadConfig: async () => ({ statuses: ["To Do"] }),
 				loadMilestones: async () => [{ id: "M-1", title: "Release One", description: "" }],
 			} as never,
-			async () => null,
+			async () => [],
 			async () => [],
 		);
 
@@ -90,7 +90,7 @@ describe("ProjectTaskMutations", () => {
 		};
 		const mutations = new ProjectTaskMutations(
 			storage as never,
-			async () => null,
+			async () => [],
 			async () => [],
 		);
 
@@ -120,7 +120,7 @@ describe("ProjectTaskMutations", () => {
 		};
 		const mutations = new ProjectTaskMutations(
 			storage as never,
-			async () => task,
+			async () => [task.id],
 			async () => [],
 		);
 

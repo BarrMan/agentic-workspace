@@ -114,7 +114,7 @@ describe("Core mode deletion contract", () => {
 		const { core, task, controlled, storage } = await fixture();
 		const before = await core.getProjectModeCatalog();
 		await expect(core.deleteMode("build", { confirmed: false } as never)).rejects.toThrow(/explicit confirmation/i);
-		await core.sessionApplication.newSession(task.id, "build");
+		await core.sessionApplication.newSession(task, "build");
 		const sessionState = await storage.sessionStore().read(task.id);
 		const build = before.profiles.build;
 		if (!build) throw new Error("Expected build mode.");
@@ -138,7 +138,7 @@ describe("Core mode deletion contract", () => {
 
 	it("rejects failed preflight without stopping or changing the mode", async () => {
 		const { core, task, controlled, storage } = await fixture();
-		const created = await core.sessionApplication.newSession(task.id, "build");
+		const created = await core.sessionApplication.newSession(task, "build");
 		await core.sessionApplication.forgetTaskSessions(task.id);
 		controlled.preflightFailures.add(created.record.id);
 		const before = await storage.sessionStore().read(task.id);
@@ -152,9 +152,9 @@ describe("Core mode deletion contract", () => {
 
 	it("deletes populated histories, stops only the deleted mode, and makes the first remaining mode default", async () => {
 		const { core, task, otherTask, controlled, storage } = await fixture();
-		const deleted = await core.sessionApplication.newSession(task.id, "build");
-		const retained = await core.sessionApplication.newSession(task.id, "plan");
-		const otherDeleted = await core.sessionApplication.newSession(otherTask.id, "build");
+		const deleted = await core.sessionApplication.newSession(task, "build");
+		const retained = await core.sessionApplication.newSession(task, "plan");
+		const otherDeleted = await core.sessionApplication.newSession(otherTask, "build");
 		const providerConfiguration = structuredClone((await loadAgentConfiguration(core, "project"))?.presets);
 		await expect(core.deleteMode("build", { confirmed: true })).resolves.toEqual({
 			deletedModeId: "build",
@@ -173,8 +173,8 @@ describe("Core mode deletion contract", () => {
 
 	it("reports sessions stopped before a later stop failure without discarding either history", async () => {
 		const { core, task, controlled, storage } = await fixture();
-		const first = await core.sessionApplication.newSession(task.id, "build");
-		const second = await core.sessionApplication.newSession(task.id, "build");
+		const first = await core.sessionApplication.newSession(task, "build");
+		const second = await core.sessionApplication.newSession(task, "build");
 		controlled.stopFailures.add(first.record.id);
 		await expect(core.deleteMode("build", { confirmed: true })).rejects.toThrow(second.record.id);
 		expect(controlled.stopped).toEqual([second.record.id, first.record.id]);

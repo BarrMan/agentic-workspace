@@ -98,7 +98,6 @@ async function fixture(
 		taskId: task.id,
 		preset: "claude",
 		tmuxName: `tmux-${id}`,
-		cwd: root,
 		createdAt: new Date().toISOString(),
 		outputPath: join(root, `${id}.log`),
 		bootstrapPath: join(root, `${id}.sh`),

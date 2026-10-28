@@ -9,7 +9,6 @@ describe("calling session operations", () => {
 		preset: "opencode",
 		createdAt: "2026-10-21T00:00:00Z",
 		tmuxName: "saved-1",
-		cwd: "/project",
 		outputPath: "/runtime/output",
 		bootstrapPath: "/runtime/bootstrap",
 	};
