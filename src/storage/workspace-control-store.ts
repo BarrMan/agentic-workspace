@@ -1,5 +1,6 @@
 import { mkdir, readdir, readFile, rename, rm, unlink, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
+import { LockOwner } from "../filesystem/lock-owner.ts";
 import type { WorkspaceRequestMarker } from "../model/session/workspace-request.ts";
 
 export interface ModeDeletionJournal {
@@ -13,7 +14,7 @@ export interface ModeDeletionJournal {
 
 const SAFE_MARKER_ID = /^[A-Za-z0-9._-]+$/;
 const JOURNAL_PHASES = ["prepared", "histories", "view", "configuration"] as const;
-const journalLocks = new Map<string, Promise<void>>();
+const JOURNAL_LOCK_SETTINGS = { staleMs: 2_000, retries: 200, retryDelayMs: 25 };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
 	return typeof value === "object" && value !== null;
@@ -105,6 +106,7 @@ async function writeAtomic(path: string, content: string, temporary: string): Pr
 export class ModeDeletionJournalStore {
 	readonly directory: string;
 	readonly path: string;
+	private readonly lock = new LockOwner();
 
 	constructor(projectRoot: string) {
 		this.directory = join(projectRoot, ".agentic-workspace", "agent-workspace");
@@ -112,18 +114,16 @@ export class ModeDeletionJournalStore {
 	}
 
 	async withLock<T>(operation: () => Promise<T>): Promise<T> {
-		const previous = journalLocks.get(this.path) ?? Promise.resolve();
-		let release!: () => void;
-		const current = new Promise<void>((resolve) => (release = resolve));
-		const tail = previous.then(() => current);
-		journalLocks.set(this.path, tail);
-		await previous;
-		try {
-			return await operation();
-		} finally {
-			release();
-			if (journalLocks.get(this.path) === tail) journalLocks.delete(this.path);
-		}
+		return await this.lock.withTarget(
+			this.path,
+			join(this.directory, ".locks", "mode-deletion"),
+			JOURNAL_LOCK_SETTINGS,
+			(error) =>
+				new Error(
+					`Could not lock mode-deletion journal at ${this.path}: ${error instanceof Error ? error.message : String(error)}`,
+				),
+			operation,
+		);
 	}
 
 	async read(): Promise<ModeDeletionJournal | undefined> {

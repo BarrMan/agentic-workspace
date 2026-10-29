@@ -230,13 +230,12 @@ describe("findAgenticWorkspaceRoot", () => {
 		expect(result).toBe(innerProject);
 	});
 
-	it("should handle the default task-data directory with config.yaml", async () => {
-		// Create task-data structure with config.yaml instead of tasks/
+	it("should not discover a project from config.yaml", async () => {
 		await mkdir(join(testDir, ".agentic-workspace"), { recursive: true });
 		await writeFile(join(testDir, ".agentic-workspace", "config.yaml"), "name: Test");
 
 		const result = await findAgenticWorkspaceRoot(testDir);
-		expect(result).toBe(testDir);
+		expect(result).toBeNull();
 	});
 
 	it("should find root when project root agentic-workspace.config.yml points to a custom agentic-workspace directory", async () => {

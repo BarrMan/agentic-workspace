@@ -28,6 +28,13 @@ function session(id: string): AgentSession {
 	};
 }
 
+async function createSessionRoot(prefix: string, taskId = "TASK-1"): Promise<string> {
+	const root = await mkdtemp(join(tmpdir(), prefix));
+	await mkdir(join(root, ".agentic-workspace"));
+	await new SessionStore(root).insertTask(taskId);
+	return root;
+}
+
 describe("SessionStore", () => {
 	const directories: string[] = [];
 
@@ -38,7 +45,7 @@ describe("SessionStore", () => {
 	});
 
 	it("uses task identity keys for paths, reads, and mutations without recasing stored IDs", async () => {
-		const root = await mkdtemp(join(tmpdir(), "agentic-workspace-session-id-key-"));
+		const root = await createSessionRoot("agentic-workspace-session-id-key-", "TASK-01");
 		directories.push(root);
 		const store = new SessionStore(root);
 		const firstPaths = await store.paths("TASK-01");
@@ -54,12 +61,16 @@ describe("SessionStore", () => {
 			history.activeSessionId = record.id;
 		});
 		expect((await store.read(" task-01 ")).taskId).toBe("TASK-01");
-		await store.mutateMode(" task-01 ", "build", async (history) => {
+		await store.mutate(" task-01 ", async (state) => {
+			const history = state.modes.build;
+			if (!history) throw new Error("Expected keyed mode history.");
 			const record = history.sessions[0];
 			if (!record) throw new Error("Expected keyed session fixture.");
 			record.lastUsedAt = "2026-01-02T00:00:00.000Z";
 		});
-		await store.mutateSession("TASK-01 ", "keyed", async (record) => {
+		await store.mutate("TASK-01 ", async (state) => {
+			const record = state.modes.build?.sessions.find(({ id }) => id === "keyed");
+			if (!record) throw new Error("Expected keyed session fixture.");
 			record.useCount = 2;
 		});
 		const persisted = JSON.parse(await Bun.file(firstPaths.statePath).text());
@@ -72,7 +83,7 @@ describe("SessionStore", () => {
 	});
 
 	it("preserves lowercase task-ID spelling for empty state and subsequent mutations", async () => {
-		const root = await mkdtemp(join(tmpdir(), "agentic-workspace-session-lowercase-id-"));
+		const root = await createSessionRoot("agentic-workspace-session-lowercase-id-", "jira-abc");
 		directories.push(root);
 		const store = new SessionStore(root);
 		await store.mutate("jira-abc", async () => undefined);
@@ -82,7 +93,7 @@ describe("SessionStore", () => {
 	});
 
 	it("serializes task mutations and rejects malformed durable state", async () => {
-		const root = await mkdtemp(join(tmpdir(), "agentic-workspace-session-store-"));
+		const root = await createSessionRoot("agentic-workspace-session-store-");
 		directories.push(root);
 		const store = new SessionStore(root);
 
@@ -146,15 +157,10 @@ describe("SessionStore", () => {
 		await expect(store.read("TASK-1")).rejects.toThrow(/file was not changed.*Preserve a copy.*do not reset/i);
 
 		await store.reset("TASK-1");
-		expect(await store.read("TASK-1")).toMatchObject({
-			version: 2,
-			taskId: "TASK-1",
-			modes: {},
-		});
 	});
 
 	it("distinguishes an uncommitted mutation error from a committed write with release failure", async () => {
-		const root = await mkdtemp(join(tmpdir(), "agentic-workspace-session-store-release-"));
+		const root = await createSessionRoot("agentic-workspace-session-store-release-");
 		directories.push(root);
 		const store = new SessionStore(root);
 		const before = new Error("callback failed");
@@ -188,7 +194,7 @@ describe("SessionStore", () => {
 	});
 
 	it("reports committed mode and session writes when lock release fails", async () => {
-		const root = await mkdtemp(join(tmpdir(), "agentic-workspace-session-store-mode-release-"));
+		const root = await createSessionRoot("agentic-workspace-session-store-mode-release-");
 		directories.push(root);
 		const store = new SessionStore(root);
 		const originalLock = lockfile.lock;
@@ -201,7 +207,8 @@ describe("SessionStore", () => {
 				};
 			}) as typeof lockfile.lock;
 			const modeFailure = await store
-				.mutateMode("TASK-1", "build", async (history) => {
+				.mutate("TASK-1", async (state) => {
+					const history = buildHistory(state);
 					history.sessions.push(session("mode"));
 					history.activeSessionId = "mode";
 				})
@@ -210,7 +217,9 @@ describe("SessionStore", () => {
 			expect((modeFailure as SessionMutationError).writeCommitted).toBe(true);
 
 			const sessionFailure = await store
-				.mutateSession("TASK-1", "mode", async (record) => {
+				.mutate("TASK-1", async (state) => {
+					const record = state.modes.build?.sessions.find(({ id }) => id === "mode");
+					if (!record) throw new Error("Expected mode session.");
 					record.useCount = 1;
 				})
 				.catch((error: unknown) => error);
@@ -223,11 +232,10 @@ describe("SessionStore", () => {
 	});
 
 	it("round-trips optional native providers while preserving older exact-ID histories", async () => {
-		const root = await mkdtemp(join(tmpdir(), "agentic-workspace-native-provider-state-"));
+		const root = await createSessionRoot("agentic-workspace-native-provider-state-");
 		directories.push(root);
 		const store = new SessionStore(root);
 		const { statePath } = await store.paths("TASK-1");
-		await mkdir(join(root, ".agentic-workspace", "task-1"), { recursive: true });
 		const old = { ...session("old"), nativeSessionId: "Exact-ID/Keep-Bytes" };
 		await writeFile(
 			statePath,
@@ -236,8 +244,8 @@ describe("SessionStore", () => {
 		const before = await store.read("TASK-1");
 		expect(before.modes?.build?.sessions[0]?.nativeSessionId).toBe(old.nativeSessionId);
 		expect(before.modes?.build?.sessions[0]?.nativeProvider).toBeUndefined();
-		await store.mutateMode("TASK-1", "build", async (history) => {
-			const current = history.sessions[0];
+		await store.mutate("TASK-1", async (state) => {
+			const current = state.modes.build?.sessions[0];
 			if (!current) throw new Error("Expected current session fixture.");
 			current.nativeProvider = "opencode";
 		});
@@ -254,7 +262,7 @@ describe("SessionStore", () => {
 	});
 
 	it("loads a current v2 record unchanged", async () => {
-		const root = await mkdtemp(join(tmpdir(), "agentic-workspace-old-v2-state-"));
+		const root = await createSessionRoot("agentic-workspace-old-v2-state-");
 		directories.push(root);
 		const store = new SessionStore(root);
 		const { statePath } = await store.paths("TASK-1");
@@ -269,10 +277,11 @@ describe("SessionStore", () => {
 	});
 
 	it("removing the active session selects a surviving session", async () => {
-		const root = await mkdtemp(join(tmpdir(), "agentic-workspace-session-remove-active-"));
+		const root = await createSessionRoot("agentic-workspace-session-remove-active-");
 		directories.push(root);
 		const store = new SessionStore(root);
-		await store.mutateMode("TASK-1", "build", async (history) => {
+		await store.mutate("TASK-1", async (state) => {
+			const history = buildHistory(state);
 			history.sessions.push(session("selected"), session("survivor"));
 			history.activeSessionId = "selected";
 		});
@@ -286,7 +295,7 @@ describe("SessionStore", () => {
 	});
 
 	it("rejects unsupported v1 session state without changing the file", async () => {
-		const root = await mkdtemp(join(tmpdir(), "agentic-workspace-session-store-modes-"));
+		const root = await createSessionRoot("agentic-workspace-session-store-modes-");
 		directories.push(root);
 		const store = new SessionStore(root);
 		const { statePath } = await store.paths("TASK-1");
@@ -296,20 +305,18 @@ describe("SessionStore", () => {
 		);
 		const original = await Bun.file(statePath).text();
 		await expect(store.read("TASK-1")).rejects.toThrow(/unsupported format version 1/i);
-		await expect(
-			store.mutateMode("TASK-1", "plan", async (history) => {
-				history.sessions.push(session("planner"));
-				history.activeSessionId = "planner";
-			}),
-		).rejects.toThrow(/unsupported format version 1/i);
+		await expect(store.reserveSession("TASK-1", "plan", session("planner"), "planner")).rejects.toThrow(
+			/unsupported format version 1/i,
+		);
 		expect(await Bun.file(statePath).text()).toBe(original);
 	});
 
 	it("serializes the entire mode read-modify-write with session mutations", async () => {
-		const root = await mkdtemp(join(tmpdir(), "agentic-workspace-session-store-lock-"));
+		const root = await createSessionRoot("agentic-workspace-session-store-lock-");
 		directories.push(root);
 		const store = new SessionStore(root);
-		await store.mutateMode("TASK-1", "build", async (history) => {
+		await store.mutate("TASK-1", async (state) => {
+			const history = buildHistory(state);
 			history.sessions.push(session("existing"));
 			history.activeSessionId = "existing";
 		});
@@ -325,7 +332,8 @@ describe("SessionStore", () => {
 		const pending: Promise<unknown>[] = [];
 		try {
 			pending.push(
-				store.mutateMode("TASK-1", "build", async (history) => {
+				store.mutate("TASK-1", async (state) => {
+					const history = buildHistory(state);
 					entered();
 					await modeCallbackGate;
 					history.sessions.push(session("mode-update"));
@@ -335,7 +343,9 @@ describe("SessionStore", () => {
 			await modeCallbackEntered;
 			stateLockHeld = await checkLock(statePath, { realpath: false });
 			pending.push(
-				store.mutateSession("TASK-1", "existing", async (record) => {
+				store.mutate("TASK-1", async (state) => {
+					const record = state.modes.build?.sessions.find(({ id }) => id === "existing");
+					if (!record) throw new Error("Expected existing session.");
 					record.useCount = 1;
 				}),
 			);
@@ -354,7 +364,7 @@ describe("SessionStore", () => {
 	});
 
 	it("rejects removed configuration snapshots without rewriting historical state", async () => {
-		const root = await mkdtemp(join(tmpdir(), "agentic-workspace-session-history-"));
+		const root = await createSessionRoot("agentic-workspace-session-history-");
 		directories.push(root);
 		const store = new SessionStore(root);
 		const { statePath } = await store.paths("TASK-1");

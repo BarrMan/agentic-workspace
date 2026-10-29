@@ -107,27 +107,27 @@ describe("malformed dependencies cannot be rewritten by unrelated edits", () => 
 
 	it.each([false, true])("shared mutation rejects malformed source", async () => {
 		await Bun.write(taskPath, taskMarkdown("dependencies: [TASK-1]"));
-		expect((await core.getTask("TASK-2"))?.title).toBe("dependent");
+		expect((await core.tasks.getTask("TASK-2"))?.title).toBe("dependent");
 		const original = taskMarkdown(malformedDependencies[0][1]);
 		await Bun.write(taskPath, original);
 
-		await expect(core.updateTaskFromInput("TASK-2", { title: "dependent v2" }, {})).rejects.toThrow(
-			"Invalid dependencies in task TASK-2",
-		);
+		await expect(
+			core.storage.withTaskLock("TASK-2", (current) => core.tasks.edit({ ...current, title: "dependent v2" })),
+		).rejects.toThrow("Invalid dependencies in task TASK-2");
 		expect(await Bun.file(taskPath).text()).toBe(original);
 	});
 
 	it("refuses to save a stale task after the source becomes malformed", async () => {
 		await Bun.write(taskPath, taskMarkdown("dependencies: [TASK-1]"));
-		const stale = await core.getTask("TASK-2");
+		const stale = await core.tasks.getTask("TASK-2");
 		expect(stale).not.toBeNull();
 		if (!stale) throw new Error("Expected the initial task");
 		const original = taskMarkdown(malformedDependencies[1][1]);
 		await Bun.write(taskPath, original);
 
-		await expect(core.updateTask({ ...stale, title: "dependent v2" })).rejects.toThrow(
-			"Invalid dependencies in task TASK-2",
-		);
+		await expect(
+			core.storage.withTaskLock(stale.id, () => core.tasks.edit({ ...stale, title: "dependent v2" })),
+		).rejects.toThrow("Invalid dependencies in task TASK-2");
 		expect(await Bun.file(taskPath).text()).toBe(original);
 	});
 
@@ -141,9 +141,9 @@ describe("malformed dependencies cannot be rewritten by unrelated edits", () => 
 
 		expect((await coreFileSystem(core).listTasks()).map((task) => task.id)).toEqual(["TASK-1"]);
 		await expect(coreFileSystem(core).loadTask("TASK-2")).rejects.toThrow("Invalid dependencies in task TASK-2");
-		await expect(core.loadTaskById("TASK-2")).rejects.toThrow("Invalid dependencies in task TASK-2");
-		await expect(core.getTask("TASK-2")).rejects.toThrow("Invalid dependencies in task TASK-2");
-		await core.updateTaskFromInput("TASK-1", { title: "Healthy edit" }, {});
+		await expect(core.tasks.getTask("TASK-2")).rejects.toThrow("Invalid dependencies in task TASK-2");
+		await expect(core.tasks.getTask("TASK-2")).rejects.toThrow("Invalid dependencies in task TASK-2");
+		await core.storage.withTaskLock("TASK-1", (current) => core.tasks.edit({ ...current, title: "Healthy edit" }));
 		expect((await coreFileSystem(core).loadTask("TASK-1"))?.title).toBe("Healthy edit");
 		expect(await Bun.file(taskPath).text()).toBe(original);
 	});

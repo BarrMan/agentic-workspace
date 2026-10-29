@@ -4,14 +4,12 @@ import { toTaskDetail } from "../controller/task-detail.ts";
 import type { Task } from "../model/types.ts";
 import { generateTaskDetailSections } from "../renderer/opentui/task-detail-content.ts";
 
-const STATUSES = ["To Do", "In Progress", "Done"] as const;
-
-function makeTask(id: string, title: string, dependencies: string[] = [], status = "To Do"): Task {
-	return { id, title, status, createdDate: "2026-01-01", labels: [], dependencies };
+function makeTask(id: string, title: string, dependencies: string[] = [], status = "To Do", done = false): Task {
+	return { id, title, status, done, createdDate: "2026-01-01", labels: [], dependencies };
 }
 
 const CORPUS = [
-	makeTask("BACK-1", "Foundation", [], "Done"),
+	makeTask("BACK-1", "Foundation", [], "Done", true),
 	makeTask("BACK-2", "Selected", ["BACK-1", "BACK-404"]),
 	makeTask("BACK-3", "Follow up", ["BACK-2"]),
 	makeTask("BACK-4", "Later", ["BACK-3"]),
@@ -22,7 +20,7 @@ type DetailChunk = StyledText["chunks"][number];
 // A detail read hands the viewer a task that already carries its graph; every other caller hands it
 // a plain record. The viewer only renders what it was given.
 function detailStyled(task: Task, asDetail: boolean): StyledText {
-	const given = asDetail ? toTaskDetail(task, { tasks: CORPUS, completedTasks: [], statuses: STATUSES }) : task;
+	const given = asDetail ? toTaskDetail(task, { tasks: CORPUS, completedTasks: [] }) : task;
 	const sections = generateTaskDetailSections(given);
 	return new StyledText([
 		...sections.beforeDescription.chunks,
@@ -77,7 +75,7 @@ describe("OpenTUI dependency graph section", () => {
 	it("renders a title containing tag-like brace syntax as literal characters", () => {
 		const styled = makeTask("BACK-7", "Style {red-fg}accent{/} braces");
 		const root = makeTask("BACK-8", "Root", ["BACK-7"]);
-		const detail = toTaskDetail(root, { tasks: [root, styled], completedTasks: [], statuses: STATUSES });
+		const detail = toTaskDetail(root, { tasks: [root, styled], completedTasks: [] });
 		const body = generateTaskDetailSections(detail)
 			.beforeDescription.chunks.map((chunk) => chunk.text)
 			.join("");
@@ -93,7 +91,7 @@ describe("OpenTUI dependency graph section", () => {
 
 	it("omits the section for a task with no dependencies and no dependents", () => {
 		const isolated = makeTask("BACK-9", "Alone");
-		const detail = toTaskDetail(isolated, { tasks: [isolated], completedTasks: [], statuses: STATUSES });
+		const detail = toTaskDetail(isolated, { tasks: [isolated], completedTasks: [] });
 
 		expect(
 			generateTaskDetailSections(detail)

@@ -14,10 +14,4 @@ describe("resolveReadOutputMode", () => {
 	it("uses the interactive mode only when both streams are TTYs", () => {
 		expect(resolveReadOutputMode({}, true)).toBe("interactive");
 	});
-
-	it("rejects conflicting explicit modes", () => {
-		expect(() => resolveReadOutputMode({ json: true, plain: true }, true)).toThrow(
-			"--json cannot be combined with --plain.",
-		);
-	});
 });

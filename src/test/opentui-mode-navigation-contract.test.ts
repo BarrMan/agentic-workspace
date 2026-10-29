@@ -1,4 +1,4 @@
-import { describe, expect, it } from "bun:test";
+import { describe, expect, it, mock } from "bun:test";
 import { EventEmitter } from "node:events";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -11,10 +11,13 @@ import type { OpenTuiWorkspaceOptions } from "../renderer/opentui/workspace.ts";
 import { OpenTuiWorkspaceController } from "../renderer/opentui/workspace-controller.ts";
 import { getDefaultModeCatalog } from "../storage/config.ts";
 
+mock.module("../storage/watchers/task-watcher.ts", () => ({ watchTaskRecords: () => ({ stop() {} }) }));
+
 const task: Task = {
 	id: "TASK-1",
 	title: "Mode navigation",
 	status: "To Do",
+	done: false,
 	createdDate: "2026-01-01",
 	labels: [],
 	dependencies: [],
@@ -48,32 +51,16 @@ function setup() {
 	);
 	const core = {
 		getProjectModeCatalog: async () => modes,
-		getStoredConfig: async () => ({
-			agentConfiguration: {
-				selectedPreset: "opencode",
-				presets: {
-					opencode: {
-						command: ["opencode"],
-						env: {},
-						prepare: "",
-						bootstrap: "opencode",
-						resumeFlag: "--session",
-					},
-				},
-				modes,
-			},
-		}),
+		tasks: {
+			loadSnapshot: async () => ({
+				tasks: [task],
+				activeTasks: [task],
+				config: { statuses: ["To Do"] },
+				identityIndex: { getTasks: () => [], getContestedIds: () => new Set() },
+			}),
+		},
 		loadTasks: async () => [task],
-		loadMilestones: async () => [],
-		loadArchivedMilestones: async () => [],
-		loadTaskSnapshot: async () => ({
-			tasks: [task],
-			activeTasks: [task],
-			config: { statuses: ["To Do"] },
-			identityIndex: { getTasks: () => [task], getContestedIds: () => new Set() },
-		}),
-		watchTasks: () => ({ stop() {} }),
-		watchConfig: () => ({ stop() {} }),
+		projectInventory: async () => [],
 		filesystem: {
 			agenticWorkspaceDir: join(directory, ".agentic-workspace"),
 			projectRoot: directory,
@@ -96,14 +83,28 @@ function setup() {
 			listMilestones: async () => [],
 			listArchivedMilestones: async () => [],
 		},
+		storage: {
+			loadTasks: async () => [task],
+			loadConfig: async () => ({
+				projectName: "Test",
+				statuses: ["To Do"],
+				agentConfiguration: {
+					selectedPreset: "opencode",
+					presets: {
+						opencode: { command: ["opencode"], env: {}, prepare: "", bootstrap: "opencode", resumeFlag: "--session" },
+					},
+					modes,
+				},
+			}),
+			loadMilestones: async () => [],
+			loadArchivedMilestones: async () => [],
+			watchConfig: () => ({ stop() {} }),
+		},
 	} as unknown as Core;
 	const workspace = {
-		sessionApplication: { projectInventory: async () => [] },
-		listTasks: async () => [task],
-		listSessions: async (taskId: string) => ({ taskId, sessions: [] }),
-		listModeSessions: async (taskId: string, modeId: string) => ({
+		listSessions: async (taskId: string, modeId?: string) => ({
 			taskId,
-			modeId,
+			...(modeId ? { modeId } : {}),
 			sessions: [],
 			activeSessionId: undefined,
 		}),

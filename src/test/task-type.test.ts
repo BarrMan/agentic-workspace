@@ -1,6 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { Core } from "../controller/agentic-workspace.ts";
-import { DEFAULT_TASK_TYPES } from "../model/constants.ts";
 import type { Task } from "../model/types.ts";
 import { parseTask } from "../storage/markdown/parser.ts";
 import { serializeTask } from "../storage/markdown/serializer.ts";
@@ -23,29 +22,24 @@ describe("task type field", () => {
 
 	describe("persistence round-trip", () => {
 		it("should persist type on create and read it back", async () => {
-			const { task } = await core.createTaskFromInput({ title: "Typed task", type: "feature" });
+			const { task } = await core.tasks.create({ title: "Typed task", type: "feature" });
 			expect(task.type).toBe("feature");
 
 			const loaded = await coreFileSystem(core).loadTask(task.id);
 			expect(loaded?.type).toBe("feature");
 		});
 
-		it("should update and clear type through edit input", async () => {
-			const { task } = await core.createTaskFromInput({ title: "Typed task", type: "feature" });
+		it("should update and clear type", async () => {
+			const { task } = await core.tasks.create({ title: "Typed task", type: "feature" });
 
-			await core.updateTaskFromInput(task.id, { type: "bug" });
+			await core.storage.withTaskLock(task.id, (current) => core.tasks.edit({ ...current, type: "bug" }));
 			let loaded = await coreFileSystem(core).loadTask(task.id);
 			expect(loaded?.type).toBe("bug");
 			expect(loaded?.updatedDate).toBeDefined();
 
-			await core.updateTaskFromInput(task.id, { type: "" });
+			await core.storage.withTaskLock(task.id, (current) => core.tasks.edit({ ...current, type: undefined }));
 			loaded = await coreFileSystem(core).loadTask(task.id);
 			expect(loaded?.type).toBeUndefined();
-		});
-
-		it("should normalize type casing against the allowed set", async () => {
-			const { task } = await core.createTaskFromInput({ title: "Typed task", type: "BUG" });
-			expect(task.type).toBe("bug");
 		});
 
 		it("should serialize type to frontmatter and parse it back", () => {
@@ -53,6 +47,7 @@ describe("task type field", () => {
 				id: "task-1",
 				title: "Round trip",
 				status: "To Do",
+				done: false,
 				createdDate: "2026-01-01",
 				labels: [],
 				dependencies: [],
@@ -65,34 +60,7 @@ describe("task type field", () => {
 		});
 	});
 
-	describe("validation", () => {
-		it("should reject unknown type on create with allowed values in the error", async () => {
-			await expect(core.createTaskFromInput({ title: "Bad type", type: "banana" })).rejects.toThrow(
-				`Invalid type: banana. Valid types are: ${DEFAULT_TASK_TYPES.join(", ")}`,
-			);
-		});
-
-		it("should reject unknown type on edit", async () => {
-			const { task } = await core.createTaskFromInput({ title: "Typed task" });
-			await expect(core.updateTaskFromInput(task.id, { type: "banana" })).rejects.toThrow("Invalid type: banana");
-		});
-	});
-
 	describe("config override", () => {
-		it("should validate against configured types and preserve configured casing", async () => {
-			const config = await coreFileSystem(core).loadConfig();
-			if (!config) throw new Error("Config not found");
-			config.types = ["Bug", "Epic"];
-			await coreFileSystem(core).saveConfig(config);
-
-			const { task } = await core.createTaskFromInput({ title: "Custom type", type: "epic" });
-			expect(task.type).toBe("Epic");
-
-			await expect(core.createTaskFromInput({ title: "Default type", type: "feature" })).rejects.toThrow(
-				"Invalid type: feature. Valid types are: Bug, Epic",
-			);
-		});
-
 		it("should round-trip the types config key", async () => {
 			const config = await coreFileSystem(core).loadConfig();
 			if (!config) throw new Error("Config not found");
@@ -111,14 +79,14 @@ describe("task type field", () => {
 
 	describe("back-compat for untyped tasks", () => {
 		it("should keep tasks without type untyped", async () => {
-			const { task } = await core.createTaskFromInput({ title: "Untyped task" });
+			const { task } = await core.tasks.create({ title: "Untyped task" });
 			const loaded = await coreFileSystem(core).loadTask(task.id);
 			expect(loaded?.type).toBeUndefined();
 		});
 
 		it("should not write a type key for untyped tasks", async () => {
-			const { task } = await core.createTaskFromInput({ title: "Untyped task" });
-			await core.updateTaskFromInput(task.id, { title: "Still untyped" });
+			const { task } = await core.tasks.create({ title: "Untyped task" });
+			await core.storage.withTaskLock(task.id, (current) => core.tasks.edit({ ...current, title: "Still untyped" }));
 
 			const loaded = await coreFileSystem(core).loadTask(task.id);
 			if (!loaded) throw new Error("Task not found");

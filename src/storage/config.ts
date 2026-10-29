@@ -1,8 +1,7 @@
-import { chmod, mkdir, readFile, rename, stat, unlink, writeFile } from "node:fs/promises";
+import { chmod, readFile, rename, stat, unlink, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
-import lockfile from "proper-lockfile";
-import { assertAgentConfiguration, assertModeCatalog } from "../model/session/agent-config-schema.ts";
+import { LockOwner } from "../filesystem/lock-owner.ts";
 import type {
 	AgentConfiguration,
 	EffectiveAgentConfiguration,
@@ -12,7 +11,24 @@ import type {
 import type { AgenticWorkspaceConfig } from "../model/types.ts";
 import { parseConfig, serializeConfig } from "./config-codec.ts";
 
-export { validateArtifactPath } from "../model/session/agent-config-schema.ts";
+const configLock = new LockOwner();
+
+export async function withConfigPathLock<T>(
+	path: string,
+	scope: "root" | "project",
+	operation: () => Promise<T>,
+): Promise<T> {
+	return await configLock.withTarget(
+		path,
+		join(dirname(path), ".locks", "agentic-workspace-config"),
+		{ staleMs: 2_000, retries: 15, retryDelayMs: 25 },
+		(error) =>
+			new Error(
+				`Could not lock ${scope} agent configuration at ${path}: ${error instanceof Error ? error.message : String(error)}`,
+			),
+		operation,
+	);
+}
 
 export function getDefaultModeCatalog(): ModeCatalog {
 	return {
@@ -84,7 +100,6 @@ export function requireProjectModeCatalog(configuration: AgentConfiguration | nu
 		throw new Error(
 			"Project modes are not initialized. Run `agentic-workspace workspace` and configure project modes in the TUI.",
 		);
-	assertModeCatalog(configuration.modes, "Project mode catalog");
 	return configuration.modes;
 }
 
@@ -103,12 +118,11 @@ export async function readRootConfiguration(path: string): Promise<AgentConfigur
 	}
 	let parsed: unknown;
 	try {
-		parsed = parseConfig(content, path).agentConfiguration;
+		parsed = parseConfig(content, path, "root").agentConfiguration;
 	} catch (error) {
 		throw new Error(`Invalid agent configuration at ${path}: ${(error as Error).message}`);
 	}
 	if (parsed === undefined) return null;
-	assertAgentConfiguration(parsed, "root", `Invalid agent configuration at ${path}`);
 	return structuredClone(parsed);
 }
 
@@ -116,7 +130,9 @@ export async function readRootConfiguration(path: string): Promise<AgentConfigur
 export interface AgentConfigurationStorage {
 	readonly configFilePath: string;
 	loadConfig(): Promise<AgenticWorkspaceConfig | null>;
+	loadConfigFromDisk(): Promise<AgenticWorkspaceConfig | null>;
 	saveConfig(config: AgenticWorkspaceConfig): Promise<void>;
+	saveConfigUnderConfigLock(config: AgenticWorkspaceConfig): Promise<void>;
 }
 
 /** Persist an exact scope atomically under its lock; application policy stays in the updater. */
@@ -126,12 +142,7 @@ export async function updateStoredAgentConfiguration(
 	updater: (configuration: AgentConfiguration | null) => AgentConfiguration,
 ): Promise<AgentConfiguration> {
 	const path = scope === "root" ? rootConfigFilePath() : storage.configFilePath;
-	await mkdir(dirname(path), { recursive: true });
-	const release = await lockfile.lock(path, {
-		realpath: false,
-		retries: { retries: 4, minTimeout: 25, maxTimeout: 200 },
-	});
-	try {
+	return await withConfigPathLock(path, scope, async () => {
 		const workspaceConfig =
 			scope === "root"
 				? parseConfig(
@@ -140,16 +151,15 @@ export async function updateStoredAgentConfiguration(
 							throw error;
 						}),
 						path,
+						"root",
 					)
-				: ((await storage.loadConfig()) ?? parseConfig("", path));
+				: ((await storage.loadConfigFromDisk()) ?? parseConfig("", path));
 		const current = structuredClone(workspaceConfig.agentConfiguration ?? null);
-		if (current) assertAgentConfiguration(current, scope);
 		const updated = updater(current);
 		const next = structuredClone(updated);
-		assertAgentConfiguration(next, scope);
 		if (updated === current) return next;
 		workspaceConfig.agentConfiguration = next;
-		if (scope === "project") await storage.saveConfig(workspaceConfig);
+		if (scope === "project") await storage.saveConfigUnderConfigLock(workspaceConfig);
 		else {
 			const temporary = `${path}.${process.pid}.${Date.now()}.tmp`;
 			try {
@@ -169,7 +179,5 @@ export async function updateStoredAgentConfiguration(
 			}
 		}
 		return next;
-	} finally {
-		await release();
-	}
+	});
 }

@@ -15,7 +15,7 @@ describe("exact status matching", () => {
 		const core = new Core(root);
 		await initializeFilesystemTestProject(core, "Status resolution");
 
-		await expect(core.createTaskFromInput({ title: "Task", status: " In Progress " })).rejects.toThrow(
+		await expect(core.tasks.create({ title: "Task", status: " In Progress " })).rejects.toThrow(
 			"Invalid status:  In Progress ",
 		);
 	});

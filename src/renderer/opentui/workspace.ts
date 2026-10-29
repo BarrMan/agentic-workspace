@@ -11,7 +11,6 @@ import {
 import type { AgentIndication } from "../../model/session/types.ts";
 import { statusComparisonKey } from "../../model/task/status.ts";
 import type { TaskDetail } from "../../model/task/task-projection.ts";
-import { isTerminalStatus } from "../../model/task/terminal-status.ts";
 import type { AgentHost } from "../../runtime/live/agent-host.ts";
 import type { GroupMembership, TaskGroup } from "../../storage/group-store.ts";
 import { buildGroupRows, findGroup, type GroupRow } from "./groups.ts";
@@ -65,6 +64,7 @@ export type OpenTuiWorkspaceTaskEntry = {
 	readonly description?: string;
 	readonly labels?: readonly string[];
 	readonly priority?: string;
+	readonly done: boolean;
 };
 
 export type OpenTuiWorkspaceModeProjection = {
@@ -99,7 +99,7 @@ export type OpenTuiWorkspaceLiveAgent = {
 	error?: string;
 };
 
-export type OpenTuiWorkspaceTaskAction = "edit" | "copy" | "complete" | "archive" | "done" | "delete";
+export type OpenTuiWorkspaceTaskAction = "edit" | "copy" | "archive" | "done" | "delete";
 
 export type OpenTuiWorkspaceCallbacks = {
 	readonly onTaskSelect?: (entry: OpenTuiWorkspaceTaskEntry) => void;
@@ -526,7 +526,7 @@ export function mountOpenTuiWorkspace(
 	const requestTaskAction = (action: OpenTuiWorkspaceTaskAction): void => {
 		const task = selectedTask();
 		if (!task) return;
-		if (action === "done" && isTerminalStatus(task.status, opts.statuses ?? [])) return;
+		if (action === "done" && task.done) return;
 		opts.onTaskAction?.(task, action);
 	};
 	// This is the single source for normal-focus discovery and dispatch. Keep it local because
@@ -625,7 +625,7 @@ export function mountOpenTuiWorkspace(
 						),
 				},
 			task &&
-				!isTerminalStatus(task.status, opts.statuses ?? []) &&
+				!task.done &&
 				opts.onTaskAction && {
 					shortcut: shortcutsConfig.workspace.markDone,
 					label: "Done",
@@ -642,12 +642,6 @@ export function mountOpenTuiWorkspace(
 					shortcut: shortcutsConfig.workspace.copyTask,
 					label: "Copy",
 					run: () => requestTaskAction("copy"),
-				},
-			task &&
-				opts.onTaskAction && {
-					shortcut: shortcutsConfig.workspace.completeTask,
-					label: "Complete",
-					run: () => requestTaskAction("complete"),
 				},
 			task &&
 				opts.onTaskAction && {
@@ -829,7 +823,6 @@ export function mountOpenTuiWorkspace(
 	});
 	keybindings.on(shortcutsConfig.workspace.editTask, () => requestTaskAction("edit"));
 	keybindings.on(shortcutsConfig.workspace.copyTask, () => requestTaskAction("copy"));
-	keybindings.on(shortcutsConfig.workspace.completeTask, () => requestTaskAction("complete"));
 	keybindings.on(shortcutsConfig.workspace.archiveTask, () => requestTaskAction("archive"));
 	keybindings.on(shortcutsConfig.workspace.markDone, () => requestTaskAction("done"));
 	keybindings.on(shortcutsConfig.workspace.deleteTask, () => {

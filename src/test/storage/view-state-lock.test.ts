@@ -21,13 +21,15 @@ describe("view-state locking", () => {
 		sandbox = await realpath(await mkdtemp(join(tmpdir(), "agentic-workspace-view-lock-")));
 		root = join(sandbox, "project");
 		await mkdir(root);
+		await mkdir(join(root, ".agentic-workspace", ".locks"), { recursive: true });
 		previousHome = process.env.HOME;
 		previousAgenticWorkspaceCwd = process.env.AGENTIC_WORKSPACE_CWD;
 		process.env.HOME = join(sandbox, "home");
 		delete process.env.AGENTIC_WORKSPACE_CWD;
 		saved = join(process.env.HOME, ".agentic-workspace", createHash("sha256").update(root).digest("hex").slice(0, 16));
+		await mkdir(saved, { recursive: true });
 		externalLock = join(saved, "workspace-view-state.lock");
-		canonicalLock = join(root, "agentic-workspace", ".locks", "workspace-view-state");
+		canonicalLock = join(root, ".agentic-workspace", ".locks", "workspace-view-state");
 	});
 
 	afterEach(async () => {
@@ -90,8 +92,8 @@ describe("view-state locking", () => {
 	});
 
 	it("serializes physical aliases while the first writer is paused after reading", async () => {
-		await mkdir(saved, { recursive: true });
 		const primary = join(root, ".agentic-workspace");
+		await rm(primary, { recursive: true });
 		await symlink(saved, primary, "dir");
 		const second = await openViewStateStore(root, () => ({ count: 0 }), { stateRoot: primary });
 		stores.push(second);
@@ -174,8 +176,7 @@ describe("view-state locking", () => {
 
 	it("keeps external-spelling aliases of local physical storage canonical-only", async () => {
 		const primary = join(root, ".agentic-workspace");
-		await mkdir(primary);
-		await mkdir(dirname(saved), { recursive: true });
+		await rm(saved, { recursive: true });
 		await symlink(primary, saved, "dir");
 		const store = await open();
 		await store.update(() => {

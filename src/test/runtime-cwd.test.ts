@@ -7,6 +7,7 @@ import { getLabels, getStatuses, getTaskIds } from "../cli/completions/data-prov
 import { CliRuntime } from "../cli/runtime.ts";
 import { Core, createRuntimeCore } from "../controller/agentic-workspace.ts";
 import { AGENTIC_WORKSPACE_CWD_ENV, resolveRuntimeCwd } from "../lib/runtime-cwd.ts";
+import { Storage } from "../storage/storage.ts";
 import { coreFileSystem, initGitRepo, initializeFilesystemTestProject } from "./test-utils.ts";
 
 describe("resolveRuntimeCwd", () => {
@@ -168,11 +169,12 @@ describe("resolveRuntimeCwd", () => {
 			const core = new Core(projectDir);
 			await initializeFilesystemTestProject(core, "Completion Project");
 			await mkdir(nestedDir, { recursive: true });
-			await core.createTaskFromInput({ title: "Completion task", labels: ["ui"] });
-			await core.createTask({
+			await core.tasks.create({ title: "Completion task", labels: ["ui"] });
+			await new Storage(coreFileSystem(core)).createTask({
 				id: "TASK-2",
 				title: "Completion variant",
 				status: "To Do",
+				done: false,
 				createdDate: "2026-01-01",
 				labels: [],
 				dependencies: [],

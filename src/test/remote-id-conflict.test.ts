@@ -5,6 +5,7 @@ import { Writable } from "node:stream";
 import { $ } from "bun";
 import { runCli } from "../cli/register.ts";
 import { Core } from "../index.ts";
+import { Storage } from "../storage/storage.ts";
 import { coreFileSystem, createUniqueTestDir, initializeTestProject, safeCleanup } from "./test-utils.ts";
 
 let TEST_DIR: string;
@@ -51,10 +52,11 @@ describe("next id across remote branches", () => {
 		await $`git push -u origin main`.cwd(LOCAL_DIR).quiet();
 
 		await $`git checkout -b feature`.cwd(LOCAL_DIR).quiet();
-		await core.createTask({
+		await new Storage(coreFileSystem(core)).createTask({
 			id: "task-1",
 			title: "Remote Task",
 			status: "To Do",
+			done: false,
 			createdDate: "2025-06-08",
 			labels: [],
 			dependencies: [],

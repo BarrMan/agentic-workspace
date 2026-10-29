@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { mkdir } from "node:fs/promises";
 import { Core } from "../controller/agentic-workspace.ts";
 import type { Task } from "../model/types.ts";
+import { Storage } from "../storage/storage.ts";
 import { coreFileSystem, createUniqueTestDir, initializeFilesystemTestProject, safeCleanup } from "./test-utils.ts";
 
 let TEST_DIR: string;
@@ -13,6 +14,7 @@ const buildTask = (id: string, status: string, ordinal?: number, overrides: Part
 	id,
 	title: `Task ${id}`,
 	status,
+	done: false,
 	createdDate: FIXED_DATE,
 	labels: [],
 	dependencies: [],
@@ -34,82 +36,26 @@ describe("Core.reorderTask", () => {
 
 	const createTasks = async (tasks: Array<[string, string, number?, Partial<Task>?]>) => {
 		for (const [id, status, ordinal, overrides] of tasks) {
-			await core.createTask(buildTask(id, status, ordinal, overrides));
+			await Storage.open(core.projectRoot).createTask(buildTask(id, status, ordinal, overrides));
 		}
 	};
 
-	it("preserves updatedDate when editing only ordinal", async () => {
-		await core.createTask(
-			buildTask("task-1", "To Do", 1000, {
-				updatedDate: "2025-01-02 12:00",
-			}),
-		);
-
-		await core.updateTaskFromInput("task-1", { ordinal: 2000 });
-
-		const updatedTask = await coreFileSystem(core).loadTask("task-1");
-		expect(updatedTask?.ordinal).toBe(2000);
-		expect(updatedTask?.updatedDate).toBe("2025-01-02 12:00");
-	});
-
-	it("does not add updatedDate when editing only ordinal on a task without one", async () => {
-		await core.createTask(buildTask("task-1", "To Do", 1000));
-
-		await core.updateTaskFromInput("task-1", { ordinal: 2000 });
-
-		const updatedTask = await coreFileSystem(core).loadTask("task-1");
-		expect(updatedTask?.ordinal).toBe(2000);
-		expect(updatedTask?.updatedDate).toBeUndefined();
-	});
-
 	it("updates updatedDate when ordinal changes with another task field", async () => {
-		await core.createTask(
+		await Storage.open(core.projectRoot).createTask(
 			buildTask("task-1", "To Do", 1000, {
 				updatedDate: "2025-01-02 12:00",
 			}),
 		);
 
-		await core.updateTaskFromInput("task-1", { ordinal: 2000, title: "Updated Task" });
+		await core.storage.withTaskLock("task-1", (current) =>
+			core.tasks.edit({ ...current, ordinal: 2000, title: "Updated Task" }),
+		);
 
 		const updatedTask = await coreFileSystem(core).loadTask("task-1");
 		const now = new Date().toISOString().slice(0, 16).replace("T", " ");
 		expect(updatedTask?.title).toBe("Updated Task");
 		expect(updatedTask?.ordinal).toBe(2000);
 		expect(updatedTask?.updatedDate).toBe(now);
-	});
-
-	it("preserves updatedDate for ordinal-only bulk updates", async () => {
-		await createTasks([
-			[
-				"task-1",
-				"To Do",
-				1000,
-				{
-					updatedDate: "2025-01-02 12:00",
-				},
-			],
-			["task-2", "To Do", 2000],
-		]);
-
-		const task1 = await coreFileSystem(core).loadTask("task-1");
-		const task2 = await coreFileSystem(core).loadTask("task-2");
-		expect(task1).not.toBeNull();
-		expect(task2).not.toBeNull();
-		if (!task1 || !task2) {
-			throw new Error("Expected tasks to exist");
-		}
-
-		await core.updateTasksBulk([
-			{ ...task1, ordinal: 3000 },
-			{ ...task2, ordinal: 4000 },
-		]);
-
-		const updatedTask1 = await coreFileSystem(core).loadTask("task-1");
-		const updatedTask2 = await coreFileSystem(core).loadTask("task-2");
-		expect(updatedTask1?.ordinal).toBe(3000);
-		expect(updatedTask1?.updatedDate).toBe("2025-01-02 12:00");
-		expect(updatedTask2?.ordinal).toBe(4000);
-		expect(updatedTask2?.updatedDate).toBeUndefined();
 	});
 
 	it("reorders within a column without touching unaffected tasks", async () => {
@@ -213,7 +159,7 @@ describe("Core.reorderTask", () => {
 			["task-2", "To Do", 2000],
 		]);
 
-		await core.createTask(buildTask("task-3", "To Do", 3000));
+		await Storage.open(core.projectRoot).createTask(buildTask("task-3", "To Do", 3000));
 
 		const result = await core.reorderTask({
 			taskId: "task-3",

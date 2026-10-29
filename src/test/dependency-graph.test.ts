@@ -13,13 +13,12 @@ import {
 	formatDependencyGraphSection,
 } from "../renderer/formatters/dependency-graph-text.ts";
 
-const STATUSES = ["To Do", "In Progress", "Done"] as const;
-
 function task(id: string, dependencies: string[] = [], overrides: Partial<Task> = {}): Task {
 	return {
 		id,
 		title: `Title ${id}`,
 		status: "To Do",
+		done: false,
 		createdDate: "2026-01-01",
 		labels: [],
 		dependencies,
@@ -30,7 +29,7 @@ function task(id: string, dependencies: string[] = [], overrides: Partial<Task> 
 function graphFor(rootId: string, tasks: Task[], completedTasks: Task[] = []): DependencyGraph {
 	const root = [...tasks, ...completedTasks].find((candidate) => candidate.id === rootId);
 	if (!root) throw new Error(`missing root ${rootId}`);
-	return buildDependencyGraph(root, { tasks, completedTasks, statuses: STATUSES });
+	return buildDependencyGraph(root, { tasks, completedTasks });
 }
 
 function nodeIds(graph: DependencyGraph, direction: "dependencies" | "dependents"): string[] {
@@ -65,17 +64,6 @@ describe("buildDependencyGraph", () => {
 		expect(graph.edges).toEqual([
 			{ from: "task-2", to: "task-1" },
 			{ from: "task-3", to: "task-2" },
-		]);
-	});
-
-	it("trims padded case-variant dependency IDs without merging numeric variants", () => {
-		const graph = graphFor("TASK-1", [task("TASK-1", [" TASK-01 "]), task("TASK-01"), task("TASK-2", [" task-1 "])]);
-
-		expect(nodeIds(graph, "dependents")).toEqual(["TASK-2"]);
-		expect(graph.nodes.find((node) => node.id === "TASK-01")?.state).toBe("resolved");
-		expect(graph.edges).toEqual([
-			{ from: "TASK-1", to: "TASK-01" },
-			{ from: "TASK-2", to: "TASK-1" },
 		]);
 	});
 
@@ -140,58 +128,15 @@ describe("buildDependencyGraph", () => {
 		expect(nodeIds(graph, "dependents")).toEqual([]);
 	});
 
-	it("reports an ambiguous identity explicitly and never traverses through it", () => {
-		const duplicated = [task("task-2", ["task-3"]), task("TASK-2", ["task-3"])];
-		const graph = graphFor("task-1", [task("task-1", ["task-2"]), ...duplicated, task("task-3")]);
-
-		const ambiguous = graph.nodes.find((node) => node.state === "ambiguous");
-		expect(ambiguous?.id).toBe("TASK-2");
-		expect(ambiguous?.completed).toBe(false);
-		// task-3 sits behind the ambiguous identity, so it is not claimed as a resolved dependency.
-		expect(nodeIds(graph, "dependencies")).toEqual(["TASK-2"]);
-	});
-
-	it("reports a collision the corpus carries but cannot show in its records", () => {
-		// A loader that resolves each identity to one record hands over a corpus where a contested ID
-		// looks singly claimed. The collision travels beside the records, and the read fails closed on
-		// it rather than on how many claimants survived the loader.
-		const graph = buildDependencyGraph(task("task-1", ["task-2"]), {
-			tasks: [task("task-1", ["task-2"]), task("task-2", ["task-3"]), task("task-3")],
-			statuses: STATUSES,
-			ambiguousIds: new Set(["TASK-2"]),
-		});
-
-		expect(graph.nodes.find((node) => node.id === "TASK-2")?.state).toBe("ambiguous");
-		expect(nodeIds(graph, "dependencies")).toEqual(["TASK-2"]);
-	});
-
-	it("keeps an ambiguous identity a leaf even when reverse edges leave it", () => {
-		// One duplicate record behind the ambiguous identity declares a dependency on task-3, which is
-		// itself a dependent of the root, so the shared edge set carries an edge leaving the ambiguous
-		// node. The display tree must not follow it in either direction.
-		const graph = graphFor("task-1", [
-			task("task-1", ["task-2"]),
-			task("task-2", ["task-3"]),
-			task("TASK-2"),
-			task("task-3", ["task-1"]),
-		]);
-
-		const dependsOn = buildDependencyTree(graph, "dependencies");
-		expect(dependsOn.map((entry) => entry.node.state)).toEqual(["ambiguous"]);
-		expect(dependsOn[0]?.children).toEqual([]);
-
-		const dependents = buildDependencyTree(graph, "dependents");
-		expect(dependents[0]?.node.id).toBe("task-3");
-		expect(dependents[0]?.children[0]?.node.state).toBe("ambiguous");
-		expect(dependents[0]?.children[0]?.children).toEqual([]);
-	});
-
 	it("keeps a completed record visible as a resolved dependency", () => {
-		const graph = graphFor("task-1", [task("task-1", ["task-2"])], [task("task-2", [], { status: "In Progress" })]);
+		const graph = graphFor(
+			"task-1",
+			[task("task-1", ["task-2"])],
+			[task("task-2", [], { status: "In Progress", done: true })],
+		);
 
 		const dependency = graph.nodes.find((node) => node.id === "task-2");
-		// The record lives in the completed corpus, so its location settles completion whatever its
-		// status string says.
+		// The done flag settles completion whatever the stored status string says.
 		expect(dependency).toMatchObject({ state: "resolved", completed: true, status: "In Progress" });
 	});
 
@@ -263,13 +208,13 @@ describe("buildDependencyGraph", () => {
 		// identity would lose the completion evidence and could show a stale non-terminal status.
 		const completed = task("task-1", [], {
 			status: "In Progress",
+			done: true,
 			filePath: "/p/agentic-workspace/completed/task-1 - Done.md",
 		});
 		const dependent = task("task-2", ["task-1"], { filePath: "/p/agentic-workspace/tasks/task-2 - Next.md" });
 		const graph = buildDependencyGraph(completed, {
 			tasks: [dependent, completed],
 			completedTasks: [completed],
-			statuses: STATUSES,
 		});
 
 		const root = graph.nodes.find((node) => node.id === "task-1");
@@ -279,41 +224,18 @@ describe("buildDependencyGraph", () => {
 		const readinessGraph = createReadinessGraph({
 			tasks: [dependent, completed],
 			completedTasks: [completed],
-			statuses: STATUSES,
 		});
-		// The dependent resolves it as satisfied rather than as an ambiguous identity.
+		// The dependent resolves it as satisfied.
 		expect(getTaskReadiness(dependent, readinessGraph)).toMatchObject({ isReady: true, missingDependencies: [] });
 		// And the completed record keeps its completion evidence, so it is neither ready nor blocked.
 		// Losing it makes an already-finished task render a readiness verdict in the detail view.
-		expect(readinessGraph.isCompletedRecord("task-1")).toBe(true);
+		expect(readinessGraph.get("task-1")).toBe(completed);
 		expect(getTaskReadiness(completed, readinessGraph)).toMatchObject({ isReady: false, isBlocked: false });
-	});
-
-	it("keeps padded variants distinct while still failing closed for identical IDs", () => {
-		const first = task("task-1", [], { filePath: "/p/agentic-workspace/tasks/task-1 - Alpha.md" });
-		const second = task("TASK-01", [], { filePath: "/p/agentic-workspace/tasks/task-01 - Beta.md" });
-		const graph = buildDependencyGraph(task("task-2", ["task-1", "TASK-01"]), {
-			tasks: [task("task-2", ["task-1", "TASK-01"]), first, second],
-			statuses: STATUSES,
-		});
-
-		expect(graph.nodes.find((node) => node.id === "task-1")?.state).toBe("resolved");
-		expect(graph.nodes.find((node) => node.id === "TASK-01")?.state).toBe("resolved");
-
-		const duplicate = buildDependencyGraph(task("task-2", ["task-1"]), {
-			tasks: [
-				task("task-2", ["task-1"]),
-				first,
-				task("TASK-1", [], { filePath: "/p/agentic-workspace/completed/task-1/task.md" }),
-			],
-			statuses: STATUSES,
-		});
-		expect(duplicate.nodes.find((node) => node.state === "ambiguous")?.id).toBe("TASK-1");
 	});
 
 	it("resolves a root that is not part of the supplied corpus", () => {
 		const root = task("task-1", ["task-2"]);
-		const graph = buildDependencyGraph(root, { tasks: [task("task-2")], statuses: STATUSES });
+		const graph = buildDependencyGraph(root, { tasks: [task("task-2")] });
 
 		expect(graph.rootId).toBe("task-1");
 		expect(nodeIds(graph, "dependencies")).toEqual(["task-2"]);
@@ -341,7 +263,11 @@ describe("dependency graph text", () => {
 	});
 
 	it("renders a completed dependency as completed rather than as its stored status", () => {
-		const graph = graphFor("task-1", [task("task-1", ["task-2"])], [task("task-2", [], { status: "In Progress" })]);
+		const graph = graphFor(
+			"task-1",
+			[task("task-1", ["task-2"])],
+			[task("task-2", [], { status: "In Progress", done: true })],
+		);
 
 		expect(formatDependencyGraphSection(graph, "dependencies")).toEqual([
 			"Depends on (1 direct, 1 total):",
@@ -371,7 +297,7 @@ describe("dependency graph text", () => {
 		const graph = graphFor(
 			"task-2",
 			[task("task-2", ["task-1", "task-404"]), task("task-3", ["task-2"])],
-			[task("task-1")],
+			[task("task-1", [], { done: true })],
 		);
 		const entries = formatDependencyGraphEntries(graph);
 

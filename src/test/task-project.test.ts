@@ -20,22 +20,9 @@ describe("task project field", () => {
 		await safeCleanup(TEST_DIR);
 	});
 
-	describe("fail-closed when unconfigured", () => {
-		it("should reject a project value when no projects are configured", async () => {
-			await expect(core.createTaskFromInput({ title: "Web task", project: "web" })).rejects.toThrow(
-				"No projects are configured. Add a 'projects:' list to",
-			);
-		});
-
-		it("should reject a project value on edit when no projects are configured", async () => {
-			const { task } = await core.createTaskFromInput({ title: "Task" });
-			await expect(core.updateTaskFromInput(task.id, { project: "web" })).rejects.toThrow(
-				"No projects are configured. Add a 'projects:' list to",
-			);
-		});
-
+	describe("unconfigured projects", () => {
 		it("should allow creating tasks without a project when unconfigured", async () => {
-			const { task } = await core.createTaskFromInput({ title: "Untagged task" });
+			const { task } = await core.tasks.create({ title: "Untagged task" });
 			const loaded = await coreFileSystem(core).loadTask(task.id);
 			expect(loaded?.project).toBeUndefined();
 		});
@@ -50,29 +37,24 @@ describe("task project field", () => {
 		});
 
 		it("should persist project on create and read it back", async () => {
-			const { task } = await core.createTaskFromInput({ title: "Web task", project: "web" });
+			const { task } = await core.tasks.create({ title: "Web task", project: "web" });
 			expect(task.project).toBe("web");
 
 			const loaded = await coreFileSystem(core).loadTask(task.id);
 			expect(loaded?.project).toBe("web");
 		});
 
-		it("should update and clear project through edit input", async () => {
-			const { task } = await core.createTaskFromInput({ title: "Web task", project: "web" });
+		it("should update and clear project", async () => {
+			const { task } = await core.tasks.create({ title: "Web task", project: "web" });
 
-			await core.updateTaskFromInput(task.id, { project: "api" });
+			await core.storage.withTaskLock(task.id, (current) => core.tasks.edit({ ...current, project: "api" }));
 			let loaded = await coreFileSystem(core).loadTask(task.id);
 			expect(loaded?.project).toBe("api");
 			expect(loaded?.updatedDate).toBeDefined();
 
-			await core.updateTaskFromInput(task.id, { project: "" });
+			await core.storage.withTaskLock(task.id, (current) => core.tasks.edit({ ...current, project: undefined }));
 			loaded = await coreFileSystem(core).loadTask(task.id);
 			expect(loaded?.project).toBeUndefined();
-		});
-
-		it("should normalize project casing against the allowed set", async () => {
-			const { task } = await core.createTaskFromInput({ title: "Web task", project: "WEB" });
-			expect(task.project).toBe("web");
 		});
 
 		it("should serialize project to frontmatter and parse it back", () => {
@@ -80,6 +62,7 @@ describe("task project field", () => {
 				id: "task-1",
 				title: "Round trip",
 				status: "To Do",
+				done: false,
 				createdDate: "2026-01-01",
 				labels: [],
 				dependencies: [],
@@ -92,41 +75,7 @@ describe("task project field", () => {
 		});
 	});
 
-	describe("validation", () => {
-		beforeEach(async () => {
-			const config = await coreFileSystem(core).loadConfig();
-			if (!config) throw new Error("Config not found");
-			config.projects = ["web", "api"];
-			await coreFileSystem(core).saveConfig(config);
-		});
-
-		it("should reject unknown project on create with allowed values in the error", async () => {
-			await expect(core.createTaskFromInput({ title: "Bad project", project: "mobile" })).rejects.toThrow(
-				"Invalid project: mobile. Valid projects are: web, api",
-			);
-		});
-
-		it("should reject unknown project on edit", async () => {
-			const { task } = await core.createTaskFromInput({ title: "Task" });
-			await expect(core.updateTaskFromInput(task.id, { project: "mobile" })).rejects.toThrow("Invalid project: mobile");
-		});
-	});
-
 	describe("config override", () => {
-		it("should validate against configured projects and preserve configured casing", async () => {
-			const config = await coreFileSystem(core).loadConfig();
-			if (!config) throw new Error("Config not found");
-			config.projects = ["Web", "API"];
-			await coreFileSystem(core).saveConfig(config);
-
-			const { task } = await core.createTaskFromInput({ title: "Custom project", project: "api" });
-			expect(task.project).toBe("API");
-
-			await expect(core.createTaskFromInput({ title: "Bad project", project: "mobile" })).rejects.toThrow(
-				"Invalid project: mobile. Valid projects are: Web, API",
-			);
-		});
-
 		it("should round-trip the projects config key", async () => {
 			const config = await coreFileSystem(core).loadConfig();
 			if (!config) throw new Error("Config not found");
@@ -150,8 +99,8 @@ describe("task project field", () => {
 			config.projects = ["web"];
 			await coreFileSystem(core).saveConfig(config);
 
-			const { task } = await core.createTaskFromInput({ title: "Untagged task" });
-			await core.updateTaskFromInput(task.id, { title: "Still untagged" });
+			const { task } = await core.tasks.create({ title: "Untagged task" });
+			await core.storage.withTaskLock(task.id, (current) => core.tasks.edit({ ...current, title: "Still untagged" }));
 
 			const loaded = await coreFileSystem(core).loadTask(task.id);
 			if (!loaded) throw new Error("Task not found");

@@ -1,7 +1,5 @@
 import { slug } from "../../lib/slug.ts";
 
-export { slug } from "../../lib/slug.ts";
-
 export interface SessionCommandResult {
 	exitCode: number;
 	stdout: string;

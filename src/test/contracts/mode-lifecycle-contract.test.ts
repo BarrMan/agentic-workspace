@@ -2,11 +2,7 @@ import { afterEach, describe, expect, it } from "bun:test";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import {
-	initializeAgentConfiguration,
-	loadAgentConfiguration,
-	upsertAgentConfiguration,
-} from "../../controller/agent-configuration.ts";
+import { loadAgentConfiguration, upsertAgentConfiguration } from "../../controller/agent-configuration.ts";
 import { Core } from "../../controller/agentic-workspace.ts";
 import { Session, type SessionRuntime } from "../../model/session/session.ts";
 import type { RunningExecution, SessionFactory, SessionLaunchContext } from "../../model/session/types.ts";
@@ -94,9 +90,8 @@ async function fixture() {
 	const controlled = controlledSessions();
 	const core = new Core(root, { storage, sessionFactory: controlled.factory });
 	await initializeTestProject(core, "Mode deletion");
-	const { task } = await core.createTaskFromInput({ title: "First task", status: "To Do" });
-	const { task: otherTask } = await core.createTaskFromInput({ title: "Second task", status: "To Do" });
-	await initializeAgentConfiguration(core, "project");
+	const { task } = await core.tasks.create({ title: "First task", status: "To Do" });
+	const { task: otherTask } = await core.tasks.create({ title: "Second task", status: "To Do" });
 	const configuration = await loadAgentConfiguration(core, "project");
 	if (!configuration) throw new Error("Expected project agent configuration.");
 	const modes = getDefaultModeCatalog();
@@ -113,15 +108,17 @@ describe("Core mode deletion contract", () => {
 	it("refuses the last mode and requires confirmation before any effect", async () => {
 		const { core, task, controlled, storage } = await fixture();
 		const before = await core.getProjectModeCatalog();
-		await expect(core.deleteMode("build", { confirmed: false } as never)).rejects.toThrow(/explicit confirmation/i);
-		await core.sessionApplication.newSession(task, "build");
+		await expect(core.modeDeletion.deleteMode("build", { confirmed: false } as never)).rejects.toThrow(
+			/explicit confirmation/i,
+		);
+		await core.newSession(task, "build");
 		const sessionState = await storage.sessionStore().read(task.id);
 		const build = before.profiles.build;
 		if (!build) throw new Error("Expected build mode.");
 		await upsertAgentConfiguration(core, "project", {
 			modes: { ...before, order: ["build"], profiles: { build }, defaultModeId: "build" },
 		});
-		await expect(core.deleteMode("build", { confirmed: true })).rejects.toMatchObject({
+		await expect(core.modeDeletion.deleteMode("build", { confirmed: true })).rejects.toMatchObject({
 			cause: expect.objectContaining({ message: expect.stringMatching(/last configured mode/i) }),
 		});
 		expect(await core.getProjectModeCatalog()).toEqual({
@@ -138,11 +135,11 @@ describe("Core mode deletion contract", () => {
 
 	it("rejects failed preflight without stopping or changing the mode", async () => {
 		const { core, task, controlled, storage } = await fixture();
-		const created = await core.sessionApplication.newSession(task, "build");
-		await core.sessionApplication.forgetTaskSessions(task.id);
+		const created = await core.newSession(task, "build");
+		await core.forgetTaskSessions(task.id);
 		controlled.preflightFailures.add(created.record.id);
 		const before = await storage.sessionStore().read(task.id);
-		await expect(core.deleteMode("build", { confirmed: true })).rejects.toMatchObject({
+		await expect(core.modeDeletion.deleteMode("build", { confirmed: true })).rejects.toMatchObject({
 			cause: expect.objectContaining({ message: expect.stringMatching(/preflight failed/i) }),
 		});
 		expect(controlled.stopped).toEqual([]);
@@ -152,11 +149,11 @@ describe("Core mode deletion contract", () => {
 
 	it("deletes populated histories, stops only the deleted mode, and makes the first remaining mode default", async () => {
 		const { core, task, otherTask, controlled, storage } = await fixture();
-		const deleted = await core.sessionApplication.newSession(task, "build");
-		const retained = await core.sessionApplication.newSession(task, "plan");
-		const otherDeleted = await core.sessionApplication.newSession(otherTask, "build");
+		const deleted = await core.newSession(task, "build");
+		const retained = await core.newSession(task, "plan");
+		const otherDeleted = await core.newSession(otherTask, "build");
 		const providerConfiguration = structuredClone((await loadAgentConfiguration(core, "project"))?.presets);
-		await expect(core.deleteMode("build", { confirmed: true })).resolves.toEqual({
+		await expect(core.modeDeletion.deleteMode("build", { confirmed: true })).resolves.toEqual({
 			deletedModeId: "build",
 			taskIds: [otherTask.id, task.id].sort(),
 		});
@@ -173,10 +170,10 @@ describe("Core mode deletion contract", () => {
 
 	it("reports sessions stopped before a later stop failure without discarding either history", async () => {
 		const { core, task, controlled, storage } = await fixture();
-		const first = await core.sessionApplication.newSession(task, "build");
-		const second = await core.sessionApplication.newSession(task, "build");
+		const first = await core.newSession(task, "build");
+		const second = await core.newSession(task, "build");
 		controlled.stopFailures.add(first.record.id);
-		await expect(core.deleteMode("build", { confirmed: true })).rejects.toThrow(second.record.id);
+		await expect(core.modeDeletion.deleteMode("build", { confirmed: true })).rejects.toThrow(second.record.id);
 		expect(controlled.stopped).toEqual([second.record.id, first.record.id]);
 		expect(
 			(await storage.sessionStore().read(task.id)).modes.build?.sessions.map((session) => session.id).sort(),
@@ -193,7 +190,7 @@ describe("Core mode deletion contract", () => {
 		]) {
 			await writeFile(path, journal);
 			const before = await core.getProjectModeCatalog();
-			await expect(core.deleteMode("build", { confirmed: true })).rejects.toThrow("Mode deletion failed");
+			await expect(core.modeDeletion.deleteMode("build", { confirmed: true })).rejects.toThrow("Mode deletion failed");
 			expect(await readFile(path, "utf8")).toBe(journal);
 			expect(await core.getProjectModeCatalog()).toEqual(before);
 		}

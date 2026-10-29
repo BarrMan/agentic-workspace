@@ -3,11 +3,9 @@
 import { Console } from "node:console";
 import type { Writable } from "node:stream";
 import { Command } from "commander";
-import { findLocalDuplicateTaskIds } from "../controller/duplicate-task-detection.ts";
-import { Core, createApplication, createCore } from "../index.ts";
+import { Core } from "../index.ts";
 import { getVersion } from "../lib/version.ts";
-import { formatDuplicateTaskIdWarning } from "../model/task/duplicate-detection.ts";
-import { isConfigValueError } from "../storage/file-system.ts";
+import { isConfigValueError } from "../storage/config-codec.ts";
 import { registerAgentWorkspaceCommands } from "./commands/agent-workspace.ts";
 import { configureHelpValues } from "./commands/help-schema.ts";
 import { registerSearchCommand } from "./commands/search.ts";
@@ -58,13 +56,9 @@ export async function runCli(
 	const version = await getVersion();
 	try {
 		const helpRoot = await runtime.findProjectRoot();
-		configureHelpValues(helpRoot ? await new Core(helpRoot).getStoredConfig() : null);
+		configureHelpValues(helpRoot ? await new Core(helpRoot).storage.loadConfig() : null);
 	} catch {
 		configureHelpValues(null);
-	}
-
-	async function requireProjectRoot(): Promise<string> {
-		return runtime.projectRoot();
 	}
 
 	function resolveListOutput(options: ReadOutputOptions, command: Command) {
@@ -92,7 +86,7 @@ export async function runCli(
 			let initialized = false;
 			try {
 				const root = await runtime.findProjectRoot();
-				initialized = Boolean(root && (await new Core(root).getStoredConfig()));
+				initialized = Boolean(root && (await new Core(root).storage.loadConfig()));
 			} catch (error) {
 				if (isConfigValueError(error)) {
 					console.error(error.message);
@@ -124,19 +118,12 @@ export async function runCli(
 			command.name() === "workspace" ||
 			(hasInteractiveTTY &&
 				(command.name() === "board" || (command.name() === "view" && command.parent?.name() === "board")));
-		if (opensWorkspace) await new Core(await requireProjectRoot()).getProjectModeCatalog();
+		if (opensWorkspace) await new Core(await runtime.projectRoot()).getProjectModeCatalog();
 	});
 	registerTaskCommands(program, { runtime, readOutput });
 	registerSearchCommand(program, {
-		requireProjectRoot,
+		createCore: async () => (await runtime.application()).core,
 		resolveListOutput,
-		printDuplicateIntegrityWarning: async (core) => {
-			const groups = await findLocalDuplicateTaskIds(core);
-			if (groups.length === 0) return false;
-			console.error(formatDuplicateTaskIdWarning(groups));
-			process.exitCode = 1;
-			return true;
-		},
 		normalizeStatusList: normalizeCliStatusList,
 		normalizePriority: normalizeCliPriority,
 		normalizeTaskTypes: normalizeCliTaskTypes,
@@ -144,8 +131,8 @@ export async function runCli(
 	});
 
 	registerAgentWorkspaceCommands(program, {
-		project: async () => createCore(await requireProjectRoot()),
-		workspace: async () => createApplication(await requireProjectRoot()),
+		project: async () => (await runtime.application()).core,
+		workspace: () => runtime.application(),
 	});
 	try {
 		await program.parseAsync([process.execPath, "agentic-workspace", ...argv]);
@@ -159,6 +146,7 @@ export async function runCli(
 		process.exitCode = previousExitCode;
 		return 1;
 	} finally {
+		runtime.dispose();
 		if (originalBunOptions) process.env.BUN_OPTIONS = originalBunOptions;
 		restoreProcessState();
 	}

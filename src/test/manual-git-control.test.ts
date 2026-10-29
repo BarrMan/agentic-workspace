@@ -42,17 +42,20 @@ describe("manual Git control", () => {
 	});
 
 	it("persists task transitions without committing or altering the index", async () => {
-		const { task } = await core.createTaskFromInput({ title: "Task" });
-		await core.updateTaskFromInput(task.id, { title: "Renamed", description: "Edited" });
+		const { task } = await core.tasks.create({ title: "Task" });
+		await core.storage.withTaskLock(
+			task.id,
+			async (current) => await core.tasks.edit({ ...current, title: "Renamed", description: "Edited" }),
+		);
 		expect((await coreFileSystem(core).loadTask(task.id))?.description).toBe("Edited");
 		await core.moveTasksToStatus({ taskIds: [task.id], targetStatus: "In Progress" });
 		expect((await coreFileSystem(core).loadTask(task.id))?.status).toBe("In Progress");
-		expect((await core.archiveTask(task.id)).success).toBe(true);
-		expect((await core.deleteTask(task.id)).success).toBe(true);
-		const disposable = await core.createTaskFromInput({ title: "Disposable" });
-		expect((await core.deleteTask(disposable.task.id)).success).toBe(true);
-		const completed = await core.createTaskFromInput({ title: "Finished", status: "Done" });
-		expect(await core.completeTask(completed.task.id)).toBe(true);
+		expect((await core.tasks.archive(task.id)).success).toBe(true);
+		expect((await core.tasks.delete(task.id, { includeArchived: true })).success).toBe(true);
+		const disposable = await core.tasks.create({ title: "Disposable" });
+		expect((await core.tasks.delete(disposable.task.id)).success).toBe(true);
+		const completed = await core.tasks.create({ title: "Finished", status: "Done" });
+		expect((await core.tasks.archive(completed.task.id)).success).toBe(true);
 		await expectUserGitState();
 	});
 });

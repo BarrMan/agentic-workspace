@@ -2,7 +2,7 @@
 
 Part of [BLUEPRINT](../BLUEPRINT.md). Harness is the provider-adapter boundary owned by [SessionRuntime](session.md). SessionRuntime depends only on the `HarnessProvider` execution boundary below; each provider supplies an implementation. Harness selection is configuration, never a branch inside SessionRuntime.
 
-Provider adapters implement the internal `HarnessInterface` contract in `src/runtime/agents/core/agent.ts` (command construction, preparation, hooks, and identity capture). The explicit startup list in `src/runtime/agents/startup.ts` registers those adapters. `HarnessProvider` is the narrower runtime boundary that launches and resumes an execution.
+Provider adapters implement the internal [HarnessInterface](../../src/runtime/agents/core/agent.ts) contract (command construction, preparation, hooks and identity capture). The explicit [startup list](../../src/runtime/agents/startup.ts) registers those adapters. `HarnessProvider` is the narrower runtime boundary that launches and resumes an execution.
 
 ## Responsibility
 
@@ -28,40 +28,24 @@ Launch inherits the parent environment unchanged. The workspace sets child ident
 
 ```ts
 interface HarnessProvider {
-  launch(request: LaunchRequest): Promise<RunningExecution>
-  resume(providerSessionId: string, request: ResumeRequest): Promise<RunningExecution>
-  stop(execution: RunningExecution): Promise<void>
-  observe(execution: RunningExecution): Promise<RuntimeEvidence>
+  launch(context: SessionLaunchContext): Promise<RunningExecution>
+  resume(nativeId: string, context: SessionLaunchContext): Promise<RunningExecution>
 }
 ```
 
-`RunningExecution` and `RuntimeEvidence` are defined in [Session](session.md#types). `TaskId`, `ModeId`, `SessionId`, and `ResolvedConfig` are defined in [Models](models.md).
+The actual port and execution types are declared in [model/session/types.ts](../../src/model/session/types.ts). Stop and observation are operations on the returned RunningExecution, exposed to Session through [SessionRuntime](session.md#sessionruntime); they are not additional HarnessProvider facade methods.
 
 ### Launch request
-
-```ts
-type LaunchRequest = {
-  taskId: TaskId
-  modeId: ModeId
-  sessionId: SessionId
-  path: string
-  instructions: string
-  configuration: ResolvedConfig
-}
-```
 
 | Field | Meaning |
 |---|---|
 | `taskId`, `modeId`, `sessionId` | Correlation identity for the execution. |
-| `path` | Working directory or worktree the provider starts in. |
-| `instructions` | Initial prompt; delivered exactly once by `launch`. |
-| `configuration` | Resolved mode configuration, including the selected harness preset. Harness reads provider settings; it does not resolve precedence or re-read project configuration. |
+| `record` | Retained AgentSession record and its launch references. |
+| `cwd` | Working directory derived from the task's work context. |
+| `prompt` | Initial prompt; delivered exactly once by `launch`, never replayed by resume. |
+| `configuration`, `profile`, `preset` | Resolved configuration and selected mode/preset. Harness consumes these accepted values; it does not resolve precedence or re-read project configuration. |
 
-```ts
-type ResumeRequest = Omit<LaunchRequest, "instructions">
-```
-
-Resume targets exactly `providerSessionId`. It never chooses a new conversation and never replays the initial instructions.
+Resume targets exactly the supplied native conversation ID. It never chooses a new conversation and never replays the initial instructions, even though the common context type contains a prompt.
 
 ## Required evidence
 
@@ -73,7 +57,7 @@ Every harness must establish the same positive evidence, regardless of provider:
 | Initialization | The provider is ready for input. |
 | Prompt acceptance | The initial instructions were accepted, not answered. |
 | Resume | The exact retained conversation is initialized. |
-| Failure | The execution is stopped and resources are released before the error is thrown. |
+| Failure | Actual cleanup outcome, including retained execution/resource identity when cleanup cannot be proven. Never claim a clean stop from missing evidence. |
 | Observation | Turn completion, permission wait, execution exit, and activity where the provider supports them; otherwise `unknown`. |
 
 Provider receipt paths, event names, executable names, flags, environment variables, and readiness deadlines stay in the adapter.
@@ -85,34 +69,34 @@ Provider receipt paths, event names, executable names, flags, environment variab
 - Returns only after identity, initialization, and initial-prompt acceptance are positively observed.
 - Delivers the initial instructions exactly once.
 - Never returns a handle with unknown provider identity.
-- On failure, stops the execution, releases resources, and throws. One attempt only; no retry.
+- On failure, attempts actual stop and resource cleanup, then throws with cleanup failures and any remaining execution evidence. Core retains durable tracking when cleanup is failed or uncertain. One attempt only; no retry.
 
 ### `resume`
 
-- Requires a non-empty exact `providerSessionId`.
+- Requires a non-empty exact native conversation ID.
 - Starts the retained conversation without sending the initial instructions again.
 - Returns only after resume initialization is positively observed.
-- On failure, stops the execution, releases resources, and throws. One attempt only; no retry.
+- On failure, attempts actual stop and resource cleanup and retains evidence for any uncertain execution in the thrown failure. One attempt only; no retry.
 
-### `stop`
+### Execution `stop`
 
 - Stops the actual process or pane and releases captured resources.
 - Is idempotent.
 - A metadata write is not proof of stop.
 
-### `observe`
+### Execution `observe`
 
-- Maps provider evidence to `RuntimeEvidence`.
-- Returns `unknown` when evidence is insufficient.
-- Never infers `running` or `stopped` from absence, and never changes Session state.
+- Publishes normalized `RunningExecutionEvent` evidence through a subscription, with supported capabilities declared by the execution.
+- Unsupported or insufficient evidence leaves the corresponding Session indication unknown.
+- Never infers `running` or `stopped` from missing evidence. Session, rather than the adapter, applies evidence to its runtime state.
 
 ## Harness-agnostic rules
 
 - SessionRuntime never branches on provider name.
-- No provider-specific field appears in Session or SessionRuntime.
+- Provider-specific launch/readiness mechanics stay out of Session and SessionRuntime; retained native identity is data, not a branch on provider name.
 - A new harness implements this interface and its evidence; it does not require SessionRuntime changes.
 - A provider ID alone proves neither liveness nor resumability.
-- Provider-specific lifecycle events are normalized at the Harness boundary; Session consumes only `RuntimeEvidence`.
+- Provider-specific lifecycle events are normalized at the execution boundary; Session consumes only supported normalized evidence.
 
 ## Non-goals
 

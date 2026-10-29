@@ -53,7 +53,7 @@ Let users narrow the workspace task list and find project tasks.
 
 ### IF-FS-002: Task search scope and matching
 
-**Description:** Search spans project tasks within the project directory. It uses case-insensitive literal matching over task IDs, titles, and descriptions; assignees are not searchable fields.
+**Description:** Search spans project tasks within the project directory. It uses case-insensitive literal matching over task IDs, titles, and descriptions; assignees are not searchable fields. Text matching does not change identity: returned IDs and direct task addressing follow [TASK-003's exact-string contract](tasks.md#task-003-task-identity).
 
 **Trigger:** User or integration submits a task search.
 
@@ -72,10 +72,11 @@ Let users narrow the workspace task list and find project tasks.
 - [ ] IF-FS-002-AC-02: Confirm matching checks task IDs, titles, and descriptions.
 - [ ] IF-FS-002-AC-03: Confirm matching is case-insensitive and literal.
 - [ ] IF-FS-002-AC-04: Confirm records outside the project directory are excluded.
+- [ ] IF-FS-002-AC-05: Case-insensitive search preserves each returned ID's exact casing and numeric spelling and provides no alias for direct task lookup.
 
 ### IF-FS-003: Filter combination, archive scope, and output limits
 
-**Description:** Values within one filter combine with OR; separate filters combine with AND. Active and completed records are searched by default; archived records only when explicitly requested. Plain-text and JSON are the only output formats; regex, fuzzy ranking, and pagination are not supported.
+**Description:** Values within one filter combine with OR; separate filters combine with AND. Active and existing completed records are searched by default; archived records only when explicitly requested. These are storage locations, independent of `done` and configured status; searching does not relocate or migrate records. Plain-text and JSON are the only output formats; regex, fuzzy ranking, and pagination are not supported.
 
 **Trigger:** Search request includes filters, archive option, or output format.
 
@@ -137,6 +138,7 @@ Let users narrow the workspace task list and find project tasks.
 - Values within one filter combine with OR; separate filters combine with AND.
 - Archived records are excluded unless explicitly requested.
 - Search matching is literal and case-insensitive; no pagination is supported.
+- Text matching preserves exact task IDs; it is not a read-time identity alias or duplicate resolver. Search scope follows storage location, not an inferred `done` value.
 
 ## User Interactions
 

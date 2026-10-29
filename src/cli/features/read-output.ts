@@ -11,23 +11,12 @@ export function isPlainRequested(options: { plain?: boolean } | undefined, runti
 	return Boolean(options?.plain || runtime.plainFlagInArgv);
 }
 
-export function getReadOutputMode(options: ReadOutputOptions, runtime: CliReadOutput): ReadOutputMode | null {
-	try {
-		return resolveReadOutputMode(options, runtime.hasInteractiveTTY);
-	} catch (error) {
-		console.error(error instanceof Error ? error.message : String(error));
-		process.exitCode = 1;
-		return null;
-	}
-}
-
 export function resolveListOutput(
 	options: ListWindowOptions & ReadOutputOptions,
 	command: Command,
 	runtime: CliReadOutput,
 ): { outputMode: ReadOutputMode; listWindow: ListWindow } | null {
-	const readOutputMode = getReadOutputMode(options, runtime);
-	if (!readOutputMode) return null;
+	const readOutputMode = resolveReadOutputMode(options, runtime.hasInteractiveTTY);
 	const listWindow = parseListWindow(options, command, process.argv.slice(2));
 	if (!listWindow) return null;
 	const outputMode = readOutputMode === "interactive" && listWindow.forcesText ? "plain" : readOutputMode;

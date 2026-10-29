@@ -40,13 +40,15 @@ Sessions let users launch and continue agent conversations attached to tasks, ob
 1. Retain the distinct workspace session identity, provider namespace, provider conversation identity, and conversation history; derive current runtime state from observation.
 2. Historical lifecycle labels, transition logs, and past stopped-versus-failed distinctions need not persist.
 3. Report relevant launch progress and errors when they occur.
+4. Require the task's session state and resource directories provisioned by [task creation](tasks.md#task-006-task-storage-format), including empty initial state. Missing required resources fail without lazy creation or reconstruction; hydration does not repair active/selected session identities.
 
 **Outcome:** The conversation remains identifiable and relevant launch progress/errors are reported.
 
-**Failures:** None.
+**Failures:** Missing or malformed required session state is an error, not an empty history; leave existing state and tracking evidence untouched.
 
 **Acceptance Criteria:**
 - [ ] Session identity and conversation history persist; runtime is observed rather than inferred from historical labels, and relevant launch progress/errors are reported when they occur.
+- [ ] A task with its valid empty initial session state has no sessions. Missing required state/directories or malformed state fail without recreation, empty-state substitution, or hydration-time identity repair.
 
 ### SESSION-002: Report observed runtime state
 
@@ -95,8 +97,8 @@ Sessions let users launch and continue agent conversations attached to tasks, ob
 **Preconditions:** A task and mode are selected; task configuration and the first-launch worktree contract can be resolved.
 
 **Behavior:**
-1. Resolve the task's [current effective configuration](configuration.md#functional-requirements), establish the required work context under the [first-launch worktree contract](tasks.md#task-013-done-and-completion), and prepare the launch environment and initial instruction/artifact context.
-2. Coordinate unfinished-task status before any reservation or startup: move an unfinished task to its configured in-progress status and leave a finished task unchanged. If this change cannot complete, fail with an error before reservation or startup.
+1. Resolve the task's [current effective configuration](configuration.md#functional-requirements), establish the required work context under the [first-launch worktree contract](tasks.md#task-012-task-worktrees), and prepare the launch environment and initial instruction/artifact context.
+2. Coordinate task status under SESSION-005 before any reservation or startup. If the required change cannot complete, fail with an error before reservation or startup.
 3. Reserve and persist exactly one provisional session relationship in the selected mode, making it the task's active session for that mode.
 4. Start the reserved session outside the store lock; initialize the provider, establish identity, and deliver the initial instruction exactly once.
 5. After supported acceptance of initial delivery and successful durable publication into the same reserved record, report creation ready without waiting for an answer.
@@ -112,22 +114,24 @@ Sessions let users launch and continue agent conversations attached to tasks, ob
 
 ### SESSION-005: Coordinate task status before starting
 
-**Description:** Starting moves an unfinished task to its configured in-progress status.
+**Description:** Starting moves a task whose `done` indication is false to its configured in-progress status. A task with `done: true` retains its status. The [completion indication](tasks.md#task-013-done-and-completion), configured status, and storage location remain distinct; dependencies do not gate launch.
 
 **Trigger:** The user starts a session for a task.
 
-**Preconditions:** The task's finished/unfinished state and configured in-progress status are available.
+**Preconditions:** The task's `done` indication and configured in-progress status are available.
 
 **Behavior:**
-1. Before session startup or reservation, move an unfinished task to its configured in-progress status.
-2. Leave a finished task's status unchanged.
+1. Before session startup or reservation, move a task with `done: false` to its configured in-progress status under [task-operation and update ownership](tasks.md#task-025-complete-record-updates-and-edits).
+2. Leave the status of a task with `done: true` unchanged. Do not change `done` or storage location as part of status coordination.
+3. Treat dependencies as informational; do not impose an automatic dependency launch gate.
 
-**Outcome:** Status coordination succeeds before session startup proceeds; a finished task retains its status.
+**Outcome:** Status coordination succeeds before session startup proceeds; a task indicated as done retains its status.
 
 **Failures:** If the required status change cannot be completed, fail the start with an error before session reservation or startup.
 
 **Acceptance Criteria:**
-- [ ] Starting moves an unfinished task to its configured in-progress status before session startup and fails with an error if that change cannot complete; a finished task's status is unchanged.
+- [ ] Starting moves a task with `done: false` to its configured in-progress status before reservation/startup and fails with an error if that change cannot complete; `done: true` retains its status.
+- [ ] Status coordination preserves `done` and storage location and does not gate launch on dependencies.
 
 ### SESSION-006: Deliver startup context once
 
@@ -313,14 +317,14 @@ Sessions let users launch and continue agent conversations attached to tasks, ob
 
 **Description:** Before batch cleanup stops any relevant native target, all relevant native targets are validated.
 
-**Trigger:** Task or mode deletion requires batch cleanup of native targets.
+**Trigger:** Task archive, task deletion, or mode deletion requires batch cleanup of native targets.
 
 **Preconditions:** All relevant native targets can be identified.
 
 **Behavior:**
 1. Validate every relevant target before cleanup effects; a preflight rejection occurs before effects.
 2. If cleanup fails, report completed effects and the error.
-3. Cleanup precedes removal of relationships and tracking evidence as required by [task deletion](tasks.md#task-015-destructive-task-deletion) or [mode deletion](configuration.md#config-013-catalogue-deletion-and-task-fallback).
+3. Cleanup precedes removal of relationships and tracking evidence as required by [task archive](tasks.md#task-022-archive-and-cleanup), [task deletion](tasks.md#task-015-destructive-task-deletion), or [mode deletion](configuration.md#config-012-confirmed-mode-deletion-cleanup).
 
 **Outcome:** Cleanup occurs only after successful validation and precedes required relationship/tracking removal.
 
@@ -381,27 +385,27 @@ Sessions let users launch and continue agent conversations attached to tasks, ob
 
 **Behavior:**
 1. When any session is currently observed working (green RUNNING, not merely a live idle or parked pane), show a confirmation offering force close or ordinary close with execution preserved.
-2. Ordinary close, including close with no working sessions, preserves live harnesses, processes, and panes; releasing presentation resources must not stop them.
+2. Ordinary close, including close with no working sessions, stops this app instance's subscriptions, watchers, and presentation observation while preserving live harnesses, processes, and panes. Releasing those resources must not stop executions.
 3. Force close stops every owned execution and removes its harness processes and terminal panes. Attempt all stops even if one fails; report aggregate failures only after all attempts, retain tracking for failed or uncertain cleanup, and never claim complete shutdown on failure.
 4. On reopen, establish liveness from current evidence. Discover and attach to a surviving live pane without resume, restart, or replacement. Discovery requires current evidence that the session is running. A positively stopped session requires explicit exact-conversation resume; uncertain evidence is unknown. Stored state never proves running.
 5. A crash does not guarantee cleanup. Apply the same evidence-based reopen behavior; detaching presentation alone never stops execution.
 
-**Outcome:** Ordinary close allows ongoing execution to continue; successful force close leaves no owned execution runtime. Reopen uses current evidence and attaches to surviving panes without resume.
+**Outcome:** Ordinary close releases subscriptions and presentation resources while ongoing execution continues; successful force close leaves no owned execution runtime. Reopen uses current evidence and attaches to surviving panes without resume.
 
 **Failures:** If close cleanup or post-crash liveness cannot be established, report the failure or unknown/unavailable under SESSION-002; never claim stopped or running from uncertain or stored evidence.
 
 **Acceptance Criteria:**
 - [ ] A working/green RUNNING session triggers the close confirmation with force-close and execution-preserving choices; live idle or parked sessions alone do not trigger it.
-- [ ] Ordinary close preserves live processes and panes; reopening attaches to surviving panes without resume or restart.
+- [ ] Ordinary close stops this app instance's subscriptions/watchers and preserves live processes and panes; reopening attaches to surviving panes without resume or restart.
 - [ ] Force close attempts every owned stop, leaves no owned harness process or pane on success, and reports aggregate failure only after all attempts while retaining tracking for unsuccessful cleanup.
 - [ ] Detach alone does not stop execution.
 - [ ] After a crash, cleanup is not assumed; current evidence alone determines liveness, discovery requires observed running state, and stored state never proves running.
 
 ### SESSION-019: Settle terminal input on close or deletion
 
-**Description:** Settle terminal input on app close or task deletion.
+**Description:** Settle terminal input on app close or task archive/deletion that requires session shutdown.
 
-**Trigger:** The app closes or a task is deleted while terminal input is queued or in flight.
+**Trigger:** The app closes or task archive/deletion requires session shutdown while terminal input is queued or in flight.
 
 **Preconditions:** Terminal input may have been dispatched or remain queued.
 
@@ -415,7 +419,7 @@ Sessions let users launch and continue agent conversations attached to tasks, ob
 **Failures:** If in-flight input does not land within the two-second allowance, report uncertain delivery; do not automatically resend.
 
 **Acceptance Criteria:**
-- [ ] Closing or deleting allows dispatched input up to two seconds to land; undispatched text is discarded and reported not sent, uncertain in-flight delivery is distinguished, and automatic resend never occurs.
+- [ ] Closing or task archive/deletion requiring shutdown allows dispatched input up to two seconds to land; undispatched text is discarded and reported not sent, uncertain in-flight delivery is distinguished, and automatic resend never occurs.
 
 ### SESSION-020: Delete a session safely
 
@@ -480,6 +484,7 @@ Parked is a loaded runtime state, distinct from stopped. Activity indications ar
 - No session is automatically resumed or started. Each explicit user action makes exactly one attempt; failure remains visible and requires another explicit action to retry.
 - Selecting a running or parked session only switches presentation to its live pane; it sends no input and changes no control state.
 - App close and reopen follow [SESSION-018](#session-018-close-the-app-with-or-without-stopping-sessions); park is not stop.
+- Ordinary close releases this app instance's subscriptions and watchers, not its surviving executions.
 - Uncertain evidence never authorizes stopping or a stopped claim.
 
 ### Session creation and handoff
@@ -508,6 +513,8 @@ Parked is a loaded runtime state, distinct from stopped. Activity indications ar
 **Invariants:**
 - Creation readiness requires provider initialization, established identity, accepted initial delivery, and durable publication.
 - Task-status coordination precedes reservation and session startup; handoff confirmation precedes predecessor retirement.
+- Task status coordination uses the independent `done` indication; neither dependencies nor storage location are automatic launch gates.
+- Task creation provisions required session resources. Missing state or directories never imply an empty session history or permission to repair identities.
 - A creation failure rolls back the provisional creation relationship after attempting execution cleanup; tracking is retained when the execution may still be running or cleanup failed.
 
 ## User Interactions
@@ -564,10 +571,11 @@ Parked is a loaded runtime state, distinct from stopped. Activity indications ar
 | A session is stopped | Require explicit resume of the exact retained conversation before use. |
 | A session is starting | Keep it unavailable and never present it as running. |
 | A start or resume attempt fails | Keep the failure visible and do not retry without another explicit user action. |
-| The user closes the app | Apply the confirmation, ordinary-close preservation, and force-close cleanup in SESSION-018. |
+| The user closes the app | Apply SESSION-018's confirmation; ordinary close stops subscriptions/watchers while preserving execution, and force close performs the specified cleanup. |
 | The app reopens with a surviving live pane | Attach without resume, restart, or replacement. |
 | The app crashes | Do not assume cleanup; establish liveness after reopen only from current evidence, never stored state. |
 | Task cannot be moved to its configured in-progress status | Fail the start and show an error before reservation or startup. |
+| A task's required session state or resource directory is missing | Fail with the affected resource; do not lazily create it, substitute empty history, or repair active/selected IDs. |
 | Startup or initial instruction delivery fails | Fail creation, report the error and completed effects, and preserve tracking for any execution that may remain active; startup/readiness failures may require cleanup. |
 | Final durable publication fails after startup | Fail creation, stop the new execution, and roll back its provisional relationship; report errors and completed effects, and preserve tracking for any execution that may remain active. |
 | A handoff or cleanup step fails or is interrupted | Report the error and completed effects; preserve tracking for any execution that may remain active and preserve the predecessor/successor outcomes defined in SESSION-016. |
@@ -578,7 +586,7 @@ Parked is a loaded runtime state, distinct from stopped. Activity indications ar
 | Successor fails to start during handoff | Keep the predecessor intact. |
 | Predecessor retirement fails after successor confirmation | Keep the successor running and report the failure. |
 | Deletion is requested for a running session without force | Refuse deletion. |
-| Terminal input is queued but not dispatched when the workspace closes or a task is deleted | Discard the text and report that it was not sent; never automatically resend it. |
+| Terminal input is queued but not dispatched when the workspace closes or task archive/deletion shuts down a session | Discard the text and report that it was not sent; never automatically resend it. |
 | In-flight terminal input does not land within the two-second close/delete allowance | Report that delivery is uncertain; never automatically resend it. |
 
 ## Open Questions

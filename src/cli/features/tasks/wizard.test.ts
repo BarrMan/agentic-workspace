@@ -106,6 +106,7 @@ describe("task wizard", () => {
 		const existingTask: Task = {
 			id: "task-9",
 			title: "Old title",
+			done: false,
 			status: "To Do",
 			priority: "low",
 			type: "Bug",
@@ -156,6 +157,7 @@ describe("task wizard", () => {
 		const existingTask: Task = {
 			id: "task-10",
 			title: "List round trip",
+			done: false,
 			status: "To Do",
 			createdDate: "2026-02-20",
 			labels: ["alpha", "beta"],
@@ -323,6 +325,7 @@ describe("task wizard", () => {
 		const existingTask: Task = {
 			id: "task-9",
 			title: "Typed task",
+			done: false,
 			status: "To Do",
 			type: "Epic",
 			createdDate: "2026-02-20 12:00",
@@ -437,6 +440,7 @@ describe("task wizard", () => {
 		const existingTask: Task = {
 			id: "task-9",
 			title: "Projected task",
+			done: false,
 			status: "To Do",
 			project: "API",
 			createdDate: "2026-02-20 12:00",

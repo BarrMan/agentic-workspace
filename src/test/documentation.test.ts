@@ -22,7 +22,7 @@ describe("Task Documentation", () => {
 
 	describe("Create task with documentation", () => {
 		it("should create a task without documentation", async () => {
-			const { task } = await core.createTaskFromInput({
+			const { task } = await core.tasks.create({
 				title: "Task without docs",
 			});
 
@@ -32,27 +32,33 @@ describe("Task Documentation", () => {
 
 	describe("Update task documentation", () => {
 		it("should not add duplicate documentation", async () => {
-			const { task } = await core.createTaskFromInput({
+			const { task } = await core.tasks.create({
 				title: "Task with docs",
 				documentation: ["doc1.md", "doc2.md"],
 			});
 
-			const updated = await core.updateTaskFromInput(task.id, {
-				addDocumentation: ["doc2.md", "doc3.md"],
-			});
+			const updated = await core.storage.withTaskLock(task.id, async (current) =>
+				core.tasks.edit({
+					...current,
+					documentation: [
+						...(current.documentation ?? []),
+						...["doc2.md", "doc3.md"].filter((value) => !current.documentation?.includes(value)),
+					],
+				}),
+			);
 
 			expect(updated.documentation).toEqual(["doc1.md", "doc2.md", "doc3.md"]);
 		});
 
 		it("should replace documentation when setting directly", async () => {
-			const { task } = await core.createTaskFromInput({
+			const { task } = await core.tasks.create({
 				title: "Task with docs to replace",
 				documentation: ["old1.md", "old2.md"],
 			});
 
-			const updated = await core.updateTaskFromInput(task.id, {
-				documentation: ["new1.md", "new2.md"],
-			});
+			const updated = await core.storage.withTaskLock(task.id, async (current) =>
+				core.tasks.edit({ ...current, documentation: ["new1.md", "new2.md"] }),
+			);
 
 			expect(updated.documentation).toEqual(["new1.md", "new2.md"]);
 		});
@@ -60,7 +66,7 @@ describe("Task Documentation", () => {
 
 	describe("Documentation in markdown", () => {
 		it("should not include empty documentation in frontmatter", async () => {
-			const { filePath } = await core.createTaskFromInput({
+			const { filePath } = await core.tasks.create({
 				title: "Task without docs",
 			});
 

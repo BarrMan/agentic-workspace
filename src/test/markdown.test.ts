@@ -245,6 +245,7 @@ describe("Markdown Serializer", () => {
 			const task: Task = {
 				id: "task-1",
 				title: "Test Task",
+				done: false,
 				status: "To Do",
 				reporter: "@manager",
 				createdDate: "2025-06-03",
@@ -276,6 +277,7 @@ describe("Markdown Serializer", () => {
 			const task: Task = {
 				id: "task-parent",
 				title: "Parent Task",
+				done: false,
 				status: "In Progress",
 				createdDate: "2025-06-03",
 				labels: [],
@@ -295,6 +297,7 @@ describe("Markdown Serializer", () => {
 			const task: Task = {
 				id: "task-1.1",
 				title: "Subtask",
+				done: false,
 				status: "To Do",
 				createdDate: "2025-06-03",
 				labels: [],
@@ -312,6 +315,7 @@ describe("Markdown Serializer", () => {
 			const task: Task = {
 				id: "task-minimal",
 				title: "Minimal Task",
+				done: false,
 				status: "Blocked",
 				createdDate: "2025-06-03",
 				labels: [],
@@ -331,6 +335,7 @@ describe("Markdown Serializer", () => {
 			const result = serializeTask({
 				id: "task-policy",
 				title: "Frontmatter policy",
+				done: false,
 				status: "In Progress",
 				reporter: "@reporter",
 				createdDate: "2026-09-29",
@@ -356,6 +361,7 @@ describe("Markdown Serializer", () => {
 				"id",
 				"title",
 				"status",
+				"done",
 				"reporter",
 				"created_date",
 				"updated_date",
@@ -380,6 +386,7 @@ describe("Markdown Serializer", () => {
 			const emptyOptionals = serializeTask({
 				id: "task-empty-optionals",
 				title: "Empty optionals",
+				done: false,
 				status: "To Do",
 				createdDate: "2026-09-29",
 				labels: [],

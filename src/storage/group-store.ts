@@ -1,4 +1,4 @@
-import { mkdir, readFile } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { z } from "zod";
 import { LockOwner } from "../filesystem/lock-owner.ts";
@@ -52,21 +52,6 @@ const groupStateSchema = z.strictObject({
 	membership: z.record(z.string(), z.string()),
 });
 
-function parseState(raw: string): GroupState {
-	return groupStateSchema.parse(JSON.parse(raw));
-}
-
-async function readStateFile(path: string): Promise<GroupState | undefined> {
-	try {
-		return parseState(await readFile(path, "utf8"));
-	} catch (error) {
-		if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
-		throw new Error(
-			`Could not read workspace groups at ${path}: ${error instanceof Error ? error.message : String(error)}`,
-		);
-	}
-}
-
 class GroupStoreImpl implements GroupStore {
 	private readonly lock = new LockOwner();
 	private readonly lifecycle = new StateStoreLifecycle<GroupState>();
@@ -75,10 +60,7 @@ class GroupStoreImpl implements GroupStore {
 	/** Serialises recheck against update so a stale watcher read cannot regress `current`. */
 	private tail: Promise<void> = Promise.resolve();
 
-	constructor(
-		private readonly rootDir: string,
-		private readonly agenticWorkspaceDir: string,
-	) {}
+	constructor(private readonly agenticWorkspaceDir: string) {}
 
 	get current(): GroupState {
 		return this.state;
@@ -86,8 +68,6 @@ class GroupStoreImpl implements GroupStore {
 
 	async open(): Promise<void> {
 		this.path = join(this.agenticWorkspaceDir, GROUPS_FILE);
-		// The directory has to exist before fs.watch can attach to it.
-		await mkdir(this.agenticWorkspaceDir, { recursive: true });
 		await this.seed();
 		this.lifecycle.stateWatcher = startStateStoreWatcher(
 			this.path,
@@ -103,7 +83,8 @@ class GroupStoreImpl implements GroupStore {
 	async update(patch: (state: GroupState) => GroupState): Promise<void> {
 		await this.serialize(async () => {
 			await this.withLock(async () => {
-				const base = (await this.readState()) ?? this.state;
+				const base = await this.readState();
+				if (!base) throw new Error(`Workspace groups disappeared at ${this.path}; refusing to overwrite them.`);
 				const next = patch(base);
 				if (JSON.stringify(next) === JSON.stringify(base)) return;
 				await this.writeState(next);
@@ -160,7 +141,14 @@ class GroupStoreImpl implements GroupStore {
 	}
 
 	private async readState(): Promise<GroupState | undefined> {
-		return await readStateFile(this.path);
+		try {
+			return groupStateSchema.parse(JSON.parse(await readFile(this.path, "utf8")));
+		} catch (error) {
+			if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
+			throw new Error(
+				`Could not read workspace groups at ${this.path}: ${error instanceof Error ? error.message : String(error)}`,
+			);
+		}
 	}
 
 	private async writeState(state: GroupState): Promise<void> {
@@ -179,7 +167,7 @@ class GroupStoreImpl implements GroupStore {
 
 	private async withLock<R>(operation: () => Promise<R>): Promise<R> {
 		return await this.lock.withTarget(
-			this.rootDir,
+			this.path,
 			join(this.agenticWorkspaceDir, ".locks", "workspace-groups"),
 			{ staleMs: LOCK_STALE_MS, retries: LOCK_RETRIES, retryDelayMs: LOCK_RETRY_DELAY_MS },
 			(error) =>
@@ -189,8 +177,8 @@ class GroupStoreImpl implements GroupStore {
 	}
 }
 
-export async function openGroupStore(rootDir: string, agenticWorkspaceDir: string): Promise<GroupStore> {
-	const store = new GroupStoreImpl(rootDir, agenticWorkspaceDir);
+export async function openGroupStore(_rootDir: string, agenticWorkspaceDir: string): Promise<GroupStore> {
+	const store = new GroupStoreImpl(agenticWorkspaceDir);
 	await store.open();
 	return store;
 }

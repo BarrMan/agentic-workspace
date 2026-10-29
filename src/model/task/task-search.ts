@@ -12,7 +12,6 @@ import { matchesConfiguredFilter } from "./config-values.ts";
 import { labelComparisonKey } from "./label-filter.ts";
 import { prioritiesEqual } from "./priority-config.ts";
 import { statusComparisonKey } from "./status.ts";
-import { taskIdsEqual } from "./task-id.ts";
 
 export const NO_MILESTONE_FILTER_VALUE = "\u0000no-milestone";
 
@@ -21,7 +20,6 @@ export interface TaskSearchFields {
 	title: string;
 	bodyText: string;
 	id: string;
-	idVariants: string[];
 	dependencyIds: string[];
 	modifiedFiles: string[];
 }
@@ -84,8 +82,7 @@ export class TaskSearchIndex {
 			title: task.title,
 			bodyText: TaskSearchIndex.bodyText(task),
 			id: task.id,
-			idVariants: createTaskIdSearchVariants(task.id),
-			dependencyIds: (task.dependencies ?? []).flatMap((dependency) => createTaskIdSearchVariants(dependency)),
+			dependencyIds: task.dependencies ?? [],
 			modifiedFiles: task.modifiedFiles ?? [],
 		};
 	}
@@ -93,14 +90,9 @@ export class TaskSearchIndex {
 	/** Search is a case-insensitive literal substring match; keep every task search path in parity. */
 	static matchesFields(fields: TaskSearchFields, query: string): boolean {
 		const needle = query.toLowerCase();
-		return [
-			fields.title,
-			fields.bodyText,
-			fields.id,
-			...fields.idVariants,
-			...fields.dependencyIds,
-			...fields.modifiedFiles,
-		].some((value) => value.toLowerCase().includes(needle));
+		return [fields.title, fields.bodyText, fields.id, ...fields.dependencyIds, ...fields.modifiedFiles].some((value) =>
+			value.toLowerCase().includes(needle),
+		);
 	}
 
 	/** Build the shared task predicate used by search and filtering. */
@@ -146,7 +138,7 @@ export class TaskSearchIndex {
 
 		if (options.parentTaskId) {
 			const parentFilter = options.parentTaskId;
-			checks.push((task) => Boolean(task.parentTaskId) && taskIdsEqual(parentFilter, task.parentTaskId as string));
+			checks.push((task) => parentFilter === task.parentTaskId);
 		}
 
 		addMilestoneCheck(checks, options);
@@ -164,11 +156,6 @@ function toExactNonemptyList(value: string | string[] | undefined): string[] {
 	if (!value) return [];
 	const values = Array.isArray(value) ? value : [value];
 	return values.filter((item) => item.length > 0);
-}
-
-function createTaskIdSearchVariants(id: string): string[] {
-	const lowerId = id.toLowerCase();
-	return id === lowerId ? [id] : [id, lowerId];
 }
 
 function normalizeStatusSet(values: string | string[] | undefined): Set<string> {

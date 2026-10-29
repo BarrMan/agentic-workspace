@@ -43,8 +43,8 @@ describe("workspace artifact shortcut overrides", () => {
 		const navigation: string[] = [];
 		const mount = mountOpenTuiWorkspace(setup.renderer, parent, {
 			tasks: [
-				{ id: "TASK-1", title: "One", status: "To Do" },
-				{ id: "TASK-2", title: "Two", status: "To Do" },
+				{ id: "TASK-1", title: "One", status: "To Do", done: false },
+				{ id: "TASK-2", title: "Two", status: "To Do", done: false },
 			],
 			taskArtifactApi: api,
 			keyboardOverrides: overrides,

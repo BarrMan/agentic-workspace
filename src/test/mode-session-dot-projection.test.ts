@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "bun:test";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { BoxRenderable } from "@opentui/core";
@@ -37,14 +37,13 @@ describe("workspace row dot projection", () => {
 	it("renders a plan-mode active session dot from idle activity", async () => {
 		const root = await mkdtemp(join(tmpdir(), "agentic-workspace-dot-"));
 		directories.push(root);
+		await mkdir(join(root, ".agentic-workspace"), { recursive: true });
 		const store = new SessionStore(root);
+		await store.insertTask("TASK-1");
 		const id = "plan-session";
 		// Production stores a task's session under its owning mode; the default catalog mode is "plan"
 		// (config.ts getDefaultModeCatalog), not the hardcoded compatibility lane "build".
-		await store.mutateMode("TASK-1", "plan", async (history) => {
-			history.sessions.push(session(id, "TASK-1"));
-			history.activeSessionId = id;
-		});
+		await store.reserveSession("TASK-1", "plan", session(id, "TASK-1"), id);
 
 		const plan = await store.readMode("TASK-1", "plan");
 		const active = plan.sessions.find((candidate) => candidate.id === plan.activeSessionId);
@@ -53,7 +52,7 @@ describe("workspace row dot projection", () => {
 		expect(indication).toBe("parked");
 		const setup = await createTestRenderer({ width: 120, height: 40, exitOnCtrlC: false });
 		const mount = mountOpenTuiWorkspace(setup.renderer, setup.renderer.root as unknown as BoxRenderable, {
-			tasks: [{ id: "TASK-1", title: "Plan session task", status: "To Do" }],
+			tasks: [{ id: "TASK-1", title: "Plan session task", status: "To Do", done: false }],
 			selectedModeId: "plan",
 			selectedTaskIndex: 0,
 			modeProjectionByTask: () => ({ modeLabel: "PLAN", approved: false }),
@@ -71,12 +70,11 @@ describe("workspace row dot projection", () => {
 	it("does not project a dot when the selected mode has no active session", async () => {
 		const root = await mkdtemp(join(tmpdir(), "agentic-workspace-dot-"));
 		directories.push(root);
+		await mkdir(join(root, ".agentic-workspace"), { recursive: true });
 		const store = new SessionStore(root);
+		await store.insertTask("TASK-1");
 		const id = "build-session";
-		await store.mutateMode("TASK-1", "build", async (history) => {
-			history.sessions.push(session(id, "TASK-1"));
-			history.activeSessionId = id;
-		});
+		await store.reserveSession("TASK-1", "build", session(id, "TASK-1"), id);
 
 		const build = await store.readMode("TASK-1", "build");
 		expect(build.activeSessionId).toBe(id);

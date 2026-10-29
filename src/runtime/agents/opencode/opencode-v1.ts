@@ -2,8 +2,8 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { AgentPreset } from "../../../model/session/types.ts";
 import type { InstalledStatusHook } from "../../status-hooks.ts";
-import type { AgentModel } from "../core/agent.ts";
 import {
+	type AgentModel,
 	type AgentPreparation,
 	type AskCommandRequest,
 	appendArguments,

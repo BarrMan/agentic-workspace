@@ -18,10 +18,6 @@ export interface AgentConfigurationPatch extends Omit<AgentConfiguration, "sessi
 
 type ConfigurationSource = AgentConfiguration | null | undefined;
 
-function clone<T>(value: T): T {
-	return structuredClone(value);
-}
-
 function mergeSessions(base: SessionSettings | undefined, override: AgentConfiguration["sessions"]): SessionSettings {
 	return { ...base, ...override } as SessionSettings;
 }
@@ -31,7 +27,7 @@ export function mergeAgentConfigurations(
 	builtIn: EffectiveAgentConfiguration,
 	...overrides: ConfigurationSource[]
 ): EffectiveAgentConfiguration {
-	let result = clone(builtIn);
+	let result = structuredClone(builtIn);
 	for (const override of overrides) {
 		if (!override) continue;
 		result = {
@@ -39,10 +35,10 @@ export function mergeAgentConfigurations(
 			...(override.selectedPreset !== undefined && { selectedPreset: override.selectedPreset }),
 			presets: { ...result.presets, ...(override.presets ?? {}) },
 			sessions: mergeSessions(result.sessions, override.sessions),
-			...(override.modes !== undefined && { modes: clone(override.modes) }),
+			...(override.modes !== undefined && { modes: structuredClone(override.modes) }),
 		};
 	}
-	return clone(result);
+	return structuredClone(result);
 }
 
 /** Applies a sparse exact-scope patch; null clears a persisted session field to inherit. */
@@ -72,7 +68,7 @@ export function applyAgentConfigurationPatch(
 		"Agent configuration patch",
 	);
 	const next: AgentConfiguration = {
-		...(current ? clone(current) : {}),
+		...(current ? structuredClone(current) : {}),
 		...(configurationPatch.selectedPreset !== undefined && { selectedPreset: configurationPatch.selectedPreset }),
 		...(configurationPatch.presets !== undefined && {
 			presets: { ...(current?.presets ?? {}), ...configurationPatch.presets },
@@ -87,23 +83,18 @@ export function applyAgentConfigurationPatch(
 		if (sessionPatch.yoloMode === null) delete next.sessions.yoloMode;
 		if (sessionPatch.autoResumeOnRestart === null) delete next.sessions.autoResumeOnRestart;
 	}
-	if (scope === "project" && configurationPatch.modes !== undefined) next.modes = clone(configurationPatch.modes);
-	assertAgentConfiguration(next, scope, "Agent configuration patch");
-	return clone(next);
+	if (scope === "project" && configurationPatch.modes !== undefined)
+		next.modes = structuredClone(configurationPatch.modes);
+	return structuredClone(next);
 }
 
 /** Removes one exact-scope preset without reconstructing inherited configuration. */
-export function removeAgentPreset(
-	current: AgentConfiguration,
-	name: string,
-	scope: AgentConfigScope,
-): AgentConfiguration {
+export function removeAgentPreset(current: AgentConfiguration, name: string): AgentConfiguration {
 	if (!current.presets || !Object.hasOwn(current.presets, name)) throw new Error(`Agent preset not found: ${name}`);
 	if (current.selectedPreset === name) throw new Error(`Choose another preset before removing ${name}.`);
 	const { [name]: _removed, ...presets } = current.presets;
-	const next = { ...clone(current), presets };
-	assertAgentConfiguration(next, scope, "Agent configuration");
-	return clone(next);
+	const next = { ...structuredClone(current), presets };
+	return structuredClone(next);
 }
 
 /** Removes one project-owned mode and selects the first remaining mode when its default was removed. */
@@ -113,10 +104,11 @@ export function removeMode(current: AgentConfiguration, modeId: string): AgentCo
 	if (catalog.order.length <= 1) throw new Error("Cannot delete the last configured mode.");
 	const order = catalog.order.filter((id) => id !== modeId);
 	const { [modeId]: _removed, ...profiles } = catalog.profiles;
-	const defaultModeId = catalog.defaultModeId === modeId ? order[0] : catalog.defaultModeId;
-	const next = { ...clone(current), modes: { ...catalog, order, profiles, defaultModeId } };
-	assertAgentConfiguration(next, "project", "Agent configuration");
-	return clone(next);
+	const firstRemainingMode = order[0];
+	if (!firstRemainingMode) throw new Error("Cannot delete a mode without a remaining configured mode.");
+	const defaultModeId = catalog.defaultModeId === modeId ? firstRemainingMode : catalog.defaultModeId;
+	const next = { ...structuredClone(current), modes: { ...catalog, order, profiles, defaultModeId } };
+	return structuredClone(next);
 }
 
 export interface SessionConfigurationReader {
@@ -146,10 +138,8 @@ export class Config {
 			this.storage.loadUserAgentConfiguration(),
 			this.storage.loadProjectAgentConfiguration(),
 		]);
-		assertAgentConfiguration(user ?? {}, "root", "Invalid user agent configuration");
-		assertAgentConfiguration(project ?? {}, "project", "Invalid project agent configuration");
-		this.userConfiguration = user && clone(user);
-		this.projectConfiguration = project && clone(project);
+		this.userConfiguration = user && structuredClone(user);
+		this.projectConfiguration = project && structuredClone(project);
 		this.loaded = true;
 	}
 
@@ -162,7 +152,7 @@ export class Config {
 				this.projectConfiguration,
 				...overrides.map((override) => (override ? { ...override, modes: undefined } : undefined)),
 			),
-			modes: this.projectConfiguration?.modes && clone(this.projectConfiguration.modes),
+			modes: this.projectConfiguration?.modes && structuredClone(this.projectConfiguration.modes),
 		};
 	}
 

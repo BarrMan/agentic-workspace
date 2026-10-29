@@ -1,15 +1,15 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import { mkdir, utimes } from "node:fs/promises";
+import { mkdir } from "node:fs/promises";
 import { dirname, join } from "node:path";
-import { $ } from "bun";
 import { Core } from "../controller/agentic-workspace.ts";
 import type { Task } from "../model/types.ts";
 import { serializeTask } from "../storage/markdown/serializer.ts";
+import { Storage } from "../storage/storage.ts";
 import {
-	commitSamePathBranchTaskVariant,
 	coreFileSystem,
 	createUniqueTestDir,
 	initGitRepo,
+	initializeFilesystemTestWorkspace,
 	initializeTestProject,
 	safeCleanup,
 } from "./test-utils.ts";
@@ -21,23 +21,19 @@ async function writeTaskFixture(path: string, task: Task): Promise<void> {
 	await Bun.write(path, serializeTask(task));
 }
 
-// so commit dates must stay relative to the test run, never absolute.
-function recentCommitDate(minutesAgo: number): string {
-	return new Date(Date.now() - minutesAgo * 60_000).toISOString();
-}
-
 describe("Core", () => {
 	let core: Core;
 
 	beforeEach(async () => {
 		TEST_DIR = createUniqueTestDir("test-core");
 		core = new Core(TEST_DIR);
-		await coreFileSystem(core).ensureAgenticWorkspaceStructure();
+		await initializeFilesystemTestWorkspace(coreFileSystem(core));
 
 		initGitRepo(TEST_DIR);
 	});
 
 	afterEach(async () => {
+		core.tasks.dispose();
 		await safeCleanup(TEST_DIR);
 	});
 
@@ -66,9 +62,10 @@ describe("Core", () => {
 
 	describe("task operations", () => {
 		const sampleTask: Task = {
-			id: "task-1",
+			id: "TASK-1",
 			title: "Test Task",
 			status: "To Do",
+			done: false,
 			createdDate: "2025-06-07",
 			labels: ["test"],
 			dependencies: [],
@@ -77,306 +74,42 @@ describe("Core", () => {
 
 		beforeEach(async () => {
 			await initializeTestProject(core, "Test Project");
+			await core.tasks.init();
 		});
 
-		async function commitPaddedTaskLifecycleVariant(type: "archived" | "completed"): Promise<void> {
-			const config = await coreFileSystem(core).loadConfig();
-			if (!config) {
-				throw new Error("Expected config to be loaded");
-			}
-			await coreFileSystem(core).saveConfig({
-				...config,
-				remoteOperations: false,
-				prefixes: { ...config.prefixes, task: "back" },
-			});
-
-			const taskPath = await coreFileSystem(core).saveTask({
-				...sampleTask,
-				id: "BACK-1",
-				title: "Local task version",
-				status: "To Do",
-			});
-			const localDate = recentCommitDate(3);
-			await $`git add . && GIT_AUTHOR_DATE="${localDate}" GIT_COMMITTER_DATE="${localDate}" git commit -m "Add local task"`
-				.cwd(TEST_DIR)
-				.quiet();
-
-			await $`git switch -c progressed-task-variant`.cwd(TEST_DIR).quiet();
-			await Bun.write(
-				taskPath,
-				serializeTask({
-					...sampleTask,
-					id: "BACK-001",
-					title: "Progressed branch version",
-					status: "Done",
-				}),
-			);
-			const progressedDate = recentCommitDate(2);
-			await $`git add . && GIT_AUTHOR_DATE="${progressedDate}" GIT_COMMITTER_DATE="${progressedDate}" git commit -m "Progress padded task variant"`
-				.cwd(TEST_DIR)
-				.quiet();
-
-			await $`git switch -c ${`${type}-task-variant`}`.cwd(TEST_DIR).quiet();
-			const destinationDir =
-				type === "archived" ? coreFileSystem(core).archiveTasksDir : coreFileSystem(core).completedDir;
-			const destinationPath = join(destinationDir, "back-1 - Local-task-version.md");
-			await $`git mv -- ${taskPath} ${destinationPath}`.cwd(TEST_DIR).quiet();
-			const lifecycleDate = recentCommitDate(1);
-			await $`GIT_AUTHOR_DATE="${lifecycleDate}" GIT_COMMITTER_DATE="${lifecycleDate}" git commit -m ${`${type} padded task variant`}`
-				.cwd(TEST_DIR)
-				.quiet();
-
-			await $`git switch main`.cwd(TEST_DIR).quiet();
-			await utimes(taskPath, new Date(localDate), new Date(localDate));
-		}
-
 		it("should create task without committing", async () => {
-			await core.createTask(sampleTask);
+			await Storage.open(core.projectRoot).createTask(sampleTask);
 
 			const loadedTask = await coreFileSystem(core).loadTask("task-1");
 			expect(loadedTask?.id).toBe("TASK-1");
 			expect(loadedTask?.title).toBe("Test Task");
 		});
 
-		it("reads a completed-only task while keeping it unavailable to mutations", async () => {
-			await core.createTask(sampleTask);
-			expect(await coreFileSystem(core).completeTask(sampleTask.id)).toBe(true);
-
-			const completed = await core.getTask(sampleTask.id);
-
-			expect(completed?.id).toBe("TASK-1");
-			expect(completed?.source).toBe("completed");
-			await expect(core.updateTaskFromInput(sampleTask.id, { title: "Must not change" })).rejects.toThrow(
-				"Task not found",
-			);
-		});
-
-		it("updates a resolved task while rechecking task identity collections", async () => {
-			await core.createTask(sampleTask);
-			const activePath = (await coreFileSystem(core).loadTask(sampleTask.id))?.filePath;
-			if (!activePath) throw new Error("Expected active task path");
-			const completedPath = join(coreFileSystem(core).completedDir, "task-01", "task.md");
-			await mkdir(join(coreFileSystem(core).completedDir, "task-01"), { recursive: true });
-			await Bun.write(completedPath, serializeTask({ ...sampleTask, id: "TASK-01", title: "Completed collision" }));
-
-			const originalListTasks = coreFileSystem(core).listTasks.bind(coreFileSystem(core));
-			const originalListCompletedTasks = coreFileSystem(core).listCompletedTasks.bind(coreFileSystem(core));
-			let activeLoads = 0;
-			let completedLoads = 0;
-			coreFileSystem(core).listTasks = async (...args) => {
-				activeLoads += 1;
-				return await originalListTasks(...args);
-			};
-			coreFileSystem(core).listCompletedTasks = async (...args) => {
-				completedLoads += 1;
-				return await originalListCompletedTasks(...args);
-			};
-
-			try {
-				await expect(core.updateTaskFromInput(sampleTask.id, { title: "Updated active" })).resolves.toMatchObject({
-					title: "Updated active",
-				});
-			} finally {
-				coreFileSystem(core).listTasks = originalListTasks;
-				coreFileSystem(core).listCompletedTasks = originalListCompletedTasks;
-			}
-
-			// Resolution builds an identity index before the write and repeats it under the task lock,
-			// so both active and completed ID collisions fail closed against the current collections.
-			expect(activeLoads).toBe(2);
-			expect(completedLoads).toBe(2);
-			expect(await Bun.file(activePath).text()).toContain("Updated active");
-			expect((await coreFileSystem(core).listCompletedTasks()).find((task) => task.id === "TASK-01")?.title).toBe(
-				"Completed collision",
-			);
-		});
-
-		it("makes completed lifecycle state visible to the next persistent read", async () => {
-			await core.createTask(sampleTask);
-			expect(await core.completeTask(sampleTask.id)).toBe(true);
-			const snapshot = await core.loadTaskSnapshot();
-			expect(await core.getTask(sampleTask.id)).toMatchObject({ id: "TASK-1", source: "completed" });
-			expect(snapshot.activeTasks).toEqual([]);
-			expect(snapshot.completedTasks.map((task) => task.id)).toEqual(["TASK-1"]);
-		});
-
 		it("makes archived lifecycle state unavailable to the next persistent read", async () => {
-			await core.createTask(sampleTask);
-			expect((await core.archiveTask(sampleTask.id)).success).toBe(true);
-			expect(await core.getTask(sampleTask.id)).toBeNull();
-			expect((await core.loadTaskSnapshot()).activeTasks).toEqual([]);
-		});
-
-		it("rejects a canonical task container whose folder differs from its frontmatter ID", async () => {
-			const taskPath = join(coreFileSystem(core).tasksDir, "task-999", "task.md");
-			await writeTaskFixture(taskPath, { ...sampleTask, id: "TASK-1", status: "Done" });
-			expect(await core.getTask("TASK-1")).toBeNull();
-			expect(await core.completeTask("TASK-1")).toBe(false);
-			expect(await Bun.file(taskPath).exists()).toBe(true);
-		});
-
-		it("does not archive a canonical task container whose folder differs from its frontmatter ID", async () => {
-			const taskPath = join(coreFileSystem(core).tasksDir, "task-999", "task.md");
-			await writeTaskFixture(taskPath, { ...sampleTask, id: "TASK-1" });
-			expect(await core.getTask("TASK-1")).toBeNull();
-			expect((await core.archiveTask("TASK-1")).success).toBe(false);
-			expect(await Bun.file(taskPath).exists()).toBe(true);
+			const { task } = await core.tasks.create({ title: sampleTask.title, status: sampleTask.status });
+			expect((await core.tasks.archive(task.id)).success).toBe(true);
+			expect(await core.tasks.getTask(sampleTask.id)).toBeNull();
+			expect(core.tasks.getActiveTasks()).toEqual([]);
 		});
 
 		it("does not update a longer numeric sibling for a shorter numeric ID", async () => {
-			await core.createTask({ ...sampleTask, id: "BACK-12", title: "Longer sibling" });
+			await Storage.open(core.projectRoot).createTask({ ...sampleTask, id: "BACK-12", title: "Longer sibling" });
 
-			await expect(core.updateTaskFromInput("BACK-1", { title: "Wrong target" })).rejects.toThrow(
-				"Task not found: BACK-1",
-			);
+			await expect(
+				core.storage.withTaskLock("BACK-1", async (current) => core.tasks.edit({ ...current, title: "Wrong target" })),
+			).rejects.toThrow("Task not found: BACK-1");
 			expect((await coreFileSystem(core).loadTask("BACK-12"))?.title).toBe("Longer sibling");
 		});
 
-		it("resolves lowercase prefixed IDs without changing the exact numeric segment", async () => {
-			await core.createTask({ ...sampleTask, id: "TASK-01", title: "Padded" });
-			expect(await core.getTask("task-01")).toMatchObject({ id: "TASK-01", title: "Padded" });
-			expect(await core.getTask("TASK-1")).toBeNull();
-		});
-
-		it("returns the local task when merge policy selects a same-path padded ID variant", async () => {
-			const config = await coreFileSystem(core).loadConfig();
-			if (!config) {
-				throw new Error("Expected config to be loaded");
-			}
-			await coreFileSystem(core).saveConfig({
-				...config,
-				remoteOperations: false,
-				prefixes: { ...config.prefixes, task: "back" },
-			});
-
-			const localTask: Task = {
-				...sampleTask,
-				id: "BACK-1",
-				title: "Local task version",
-				status: "To Do",
-			};
-			await commitSamePathBranchTaskVariant(core, localTask, {
-				...localTask,
-				id: "BACK-001",
-				title: "Progressed branch version",
-				status: "Done",
-			});
-
-			const loaded = await core.getTask("BACK-1");
-			expect(loaded?.id).toBe("BACK-1");
-			expect(loaded?.title).toBe("Local task version");
-			expect(loaded?.status).toBe("To Do");
-		});
-
-		it("resolves a padded ID variant at a different path as its own identity", async () => {
-			const config = await coreFileSystem(core).loadConfig();
-			if (!config) {
-				throw new Error("Expected config to be loaded");
-			}
-			await coreFileSystem(core).saveConfig({
-				...config,
-				remoteOperations: false,
-				prefixes: { ...config.prefixes, task: "back" },
-			});
-
-			const localTask: Task = {
-				...sampleTask,
-				id: "BACK-1",
-				title: "Local task version",
-				status: "To Do",
-			};
-			await commitSamePathBranchTaskVariant(
-				core,
-				localTask,
-				{
-					...localTask,
-					id: "BACK-001",
-					title: "Progressed branch version",
-					status: "Done",
-				},
-				join(coreFileSystem(core).tasksDir, "back-001", "task.md"),
-			);
-
-			expect(await core.getTask("BACK-1")).toMatchObject({ id: "BACK-1", title: "Local task version" });
-		});
-
-		it("refreshes branch identities before resolving a long-lived Core read", async () => {
-			const config = await coreFileSystem(core).loadConfig();
-			if (!config) throw new Error("Expected config to be loaded");
-			await coreFileSystem(core).saveConfig({
-				...config,
-				remoteOperations: false,
-				prefixes: { ...config.prefixes, task: "back" },
-			});
-
-			await coreFileSystem(core).saveTask({ ...sampleTask, id: "BACK-1", title: "Local identity" });
-			await $`git add . && git commit -m "Add local identity"`.cwd(TEST_DIR).quiet();
-
-			expect((await core.getTask("BACK-1"))?.title).toBe("Local identity");
-
-			await $`git switch -c late-distinct-identity`.cwd(TEST_DIR).quiet();
-			await writeTaskFixture(join(coreFileSystem(core).tasksDir, "back-001", "task.md"), {
-				...sampleTask,
-				id: "BACK-001",
-				title: "Late distinct identity",
-			});
-			await $`git add . && git commit -m "Add late distinct identity"`.cwd(TEST_DIR).quiet();
-			await $`git switch main`.cwd(TEST_DIR).quiet();
-
-			expect(await core.getTask("BACK-1")).toMatchObject({ id: "BACK-1", title: "Local identity" });
-		});
-
-		it("keeps padded active paths distinct when an archive snapshot is present", async () => {
-			const config = await coreFileSystem(core).loadConfig();
-			if (!config) {
-				throw new Error("Expected config to be loaded");
-			}
-			await coreFileSystem(core).saveConfig({
-				...config,
-				remoteOperations: false,
-				prefixes: { ...config.prefixes, task: "back" },
-			});
-
-			const localTaskPath = await coreFileSystem(core).saveTask({
-				...sampleTask,
-				id: "BACK-1",
-				title: "Local active path",
-			});
-			await $`git add . && git commit -m "Add local active task"`.cwd(TEST_DIR).quiet();
-
-			await $`git switch -c distinct-active-path && git rm -- ${localTaskPath}`.cwd(TEST_DIR).quiet();
-			await writeTaskFixture(join(coreFileSystem(core).tasksDir, "back-001", "task.md"), {
-				...sampleTask,
-				id: "BACK-001",
-				title: "Distinct branch path",
-			});
-			const activeDate = recentCommitDate(2);
-			await $`git add . && GIT_AUTHOR_DATE="${activeDate}" GIT_COMMITTER_DATE="${activeDate}" git commit -m "Move task to a distinct active path"`
-				.cwd(TEST_DIR)
-				.quiet();
-
-			await $`git switch -c archive-shadow`.cwd(TEST_DIR).quiet();
-			await Bun.write(
-				join(coreFileSystem(core).archiveTasksDir, "back-1 - Local-active-path.md"),
-				serializeTask({ ...sampleTask, id: "BACK-1", title: "Archived local path" }),
-			);
-			const archiveDate = recentCommitDate(1);
-			await $`git add . && GIT_AUTHOR_DATE="${archiveDate}" GIT_COMMITTER_DATE="${archiveDate}" git commit -m "Archive the original path"`
-				.cwd(TEST_DIR)
-				.quiet();
-			await $`git switch main`.cwd(TEST_DIR).quiet();
-			const localMtime = new Date(recentCommitDate(3));
-			await utimes(localTaskPath, localMtime, localMtime);
-
-			expect(await core.getTask("BACK-1")).toMatchObject({ id: "BACK-1", title: "Local active path" });
-		});
-
 		it("keeps active and completed identities at distinct paths when completed tasks are included", async () => {
-			const activePath = await coreFileSystem(core).saveTask({
-				...sampleTask,
-				id: "TASK-1",
-				title: "Active identity",
-			});
+			const activePath = await coreFileSystem(core).saveTask(
+				{
+					...sampleTask,
+					id: "TASK-1",
+					title: "Active identity",
+				},
+				{ create: true },
+			);
 			const completedPath = join(coreFileSystem(core).completedDir, "task-001", "task.md");
 			await writeTaskFixture(completedPath, {
 				...sampleTask,
@@ -384,6 +117,8 @@ describe("Core", () => {
 				title: "Completed identity",
 				status: "Done",
 			});
+			core.tasks.dispose();
+			await core.tasks.init();
 
 			const tasks = await core.loadTasks(undefined, undefined, { includeCompleted: true });
 			expect(tasks.map((task) => task.title).sort()).toEqual(["Active identity", "Completed identity"]);
@@ -391,66 +126,8 @@ describe("Core", () => {
 			const statisticsTasks = (await core.loadAllTasksForStatistics()).tasks;
 			expect(statisticsTasks.map((task) => task.title).sort()).toEqual(["Active identity", "Completed identity"]);
 			expect(activePath).not.toBe(completedPath);
-			expect(await core.getTask("TASK-1")).toMatchObject({ id: "TASK-1", title: "Active identity" });
-			expect(await core.getTask("TASK-001")).toMatchObject({ id: "TASK-001", title: "Completed identity" });
-		});
-
-		it("normalizes local and Git paths for a nested project with a custom agentic-workspace directory", async () => {
-			const nestedRoot = join(TEST_DIR, "packages", "app");
-			const nestedCore = new Core(nestedRoot);
-			await initializeTestProject(nestedCore, "Nested Project", false, "planning/agentic-workspace-data");
-			const configuredCore = new Core(nestedRoot);
-			const config = await coreFileSystem(configuredCore).loadConfig();
-			if (!config) {
-				throw new Error("Expected nested config to be loaded");
-			}
-			await coreFileSystem(configuredCore).saveConfig({
-				...config,
-				remoteOperations: false,
-				prefixes: { ...config.prefixes, task: "back" },
-			});
-
-			const taskPath = await coreFileSystem(configuredCore).saveTask({
-				...sampleTask,
-				id: "BACK-1",
-				title: "Nested local version",
-			});
-			await $`git add . && git commit -m "Add nested local task"`.cwd(TEST_DIR).quiet();
-			await $`git switch -c nested-task-version`.cwd(TEST_DIR).quiet();
-			await Bun.write(
-				taskPath,
-				serializeTask({
-					...sampleTask,
-					id: "BACK-001",
-					title: "Nested branch version",
-					status: "Done",
-				}),
-			);
-			await $`git add . && git commit -m "Progress nested task"`.cwd(TEST_DIR).quiet();
-			await $`git switch main`.cwd(TEST_DIR).quiet();
-
-			const loaded = await new Core(nestedRoot).getTask("BACK-1");
-			expect(loaded?.id).toBe("BACK-1");
-			expect(loaded?.title).toBe("Nested local version");
-		});
-
-		it("keeps the working-copy task active when a branch archives the same padded identity path", async () => {
-			await commitPaddedTaskLifecycleVariant("archived");
-
-			const tasks = await core.loadTasks();
-			const task = tasks.find((candidate) => candidate.id === "BACK-1" || candidate.id === "BACK-001");
-			expect(task?.id).toBe("BACK-1");
-			expect(task?.source).toBe("local");
-			expect(await core.generateNextId()).toBe("BACK-2");
-		});
-
-		it("keeps the working-copy task active when a branch completes the same padded identity path", async () => {
-			await commitPaddedTaskLifecycleVariant("completed");
-
-			const tasks = await core.loadTasks(undefined, undefined, { includeCompleted: true });
-			const task = tasks.find((candidate) => candidate.id === "BACK-1" || candidate.id === "BACK-001");
-			expect(task?.id).toBe("BACK-1");
-			expect(task?.source).toBe("local");
+			expect(await core.tasks.getTask("TASK-1")).toMatchObject({ id: "TASK-1", title: "Active identity" });
+			expect(await core.tasks.getTask("TASK-001")).toMatchObject({ id: "TASK-001", title: "Completed identity" });
 		});
 
 		it("rejects a stored task ID outside the numeric ID grammar without changing its bytes", async () => {
@@ -459,7 +136,7 @@ describe("Core", () => {
 			const content = serializeTask({ ...sampleTask, id: "TASK-PREFIXED", title: "Historical task" });
 			await Bun.write(filepath, content);
 
-			await expect(core.getTask("task-prefixed")).rejects.toThrow(/Invalid task ID.*PREFIX-NUMBER/);
+			await expect(core.tasks.getTask("task-prefixed")).rejects.toThrow(/Invalid task ID.*PREFIX-NUMBER/);
 			expect(await Bun.file(filepath).text()).toBe(content);
 		});
 
@@ -474,13 +151,15 @@ describe("Core", () => {
 				id: "TASK-01",
 				title: "Second",
 			});
+			core.tasks.dispose();
+			await core.tasks.init();
 
-			expect(await core.getTask("TASK-1")).toMatchObject({ id: "TASK-1", title: "First" });
-			expect(await core.getTask("TASK-01")).toMatchObject({ id: "TASK-01", title: "Second" });
+			expect(await core.tasks.getTask("TASK-1")).toMatchObject({ id: "TASK-1", title: "First" });
+			expect(await core.tasks.getTask("TASK-01")).toMatchObject({ id: "TASK-01", title: "Second" });
 		});
 
 		it("assigns ordinal 1000 to the first created task when none exist", async () => {
-			const { task } = await core.createTaskFromInput({ title: "First ordinal task" });
+			const { task } = await core.tasks.create({ title: "First ordinal task" });
 			expect(task.ordinal).toBe(1000);
 
 			const loadedTask = await coreFileSystem(core).loadTask(task.id);
@@ -488,25 +167,25 @@ describe("Core", () => {
 		});
 
 		it("assigns the next tail ordinal when existing tasks already have ordinals", async () => {
-			await core.createTask({
+			await Storage.open(core.projectRoot).createTask({
 				...sampleTask,
 				id: "task-10",
 				title: "Seed 1000",
 				ordinal: 1000,
 			});
-			await core.createTask({
+			await Storage.open(core.projectRoot).createTask({
 				...sampleTask,
 				id: "task-11",
 				title: "Seed 4000",
 				ordinal: 4000,
 			});
 
-			const { task } = await core.createTaskFromInput({ title: "Appended ordinal task" });
+			const { task } = await core.tasks.create({ title: "Appended ordinal task" });
 			expect(task.ordinal).toBe(5000);
 		});
 
 		it("preserves explicit ordinals on create input", async () => {
-			const { task } = await core.createTaskFromInput({
+			const { task } = await core.tasks.create({
 				title: "Explicit ordinal task",
 				ordinal: 2750,
 			});
@@ -515,7 +194,7 @@ describe("Core", () => {
 
 		it("rejects non-finite ordinals on create input", async () => {
 			await expect(
-				core.createTaskFromInput({
+				core.tasks.create({
 					title: "Invalid ordinal task",
 					ordinal: Number.POSITIVE_INFINITY,
 				}),
@@ -523,42 +202,34 @@ describe("Core", () => {
 		});
 
 		it("ignores tasks without ordinals when computing the next tail ordinal", async () => {
-			await core.createTask({
+			await Storage.open(core.projectRoot).createTask({
 				...sampleTask,
 				id: "task-20",
 				title: "No ordinal seed",
 			});
-			await core.createTask({
+			await Storage.open(core.projectRoot).createTask({
 				...sampleTask,
 				id: "task-21",
 				title: "Ordinal seed",
 				ordinal: 3000,
 			});
 
-			const { task } = await core.createTaskFromInput({ title: "Mixed ordinal task" });
+			const { task } = await core.tasks.create({ title: "Mixed ordinal task" });
 			expect(task.ordinal).toBe(4000);
 		});
 
 		it("preserves no-ordinal ordering when no existing tasks have ordinals", async () => {
-			await core.createTask({
+			await Storage.open(core.projectRoot).createTask({
 				...sampleTask,
 				id: "task-20",
 				title: "Historical no ordinal seed",
 			});
 
-			const { task } = await core.createTaskFromInput({ title: "Historical appended task" });
+			const { task } = await core.tasks.create({ title: "Historical appended task" });
 			expect(task.ordinal).toBeUndefined();
 
 			const loadedTask = await coreFileSystem(core).loadTask(task.id);
 			expect(loadedTask?.ordinal).toBeUndefined();
-		});
-
-		it("rejects non-finite ordinals on update input", async () => {
-			const { task } = await core.createTaskFromInput({ title: "Ordinal update target" });
-
-			await expect(core.updateTaskFromInput(task.id, { ordinal: Number.POSITIVE_INFINITY })).rejects.toThrow(
-				"Ordinal must be a non-negative number.",
-			);
 		});
 
 		it("should NOT match numeric ID with typos when using custom prefix (BACK-364)", async () => {
@@ -574,16 +245,16 @@ describe("Core", () => {
 
 			// Create task with custom prefix
 			const task: Task = { ...sampleTask, id: "back-358", title: "Custom Prefix Task" };
-			await core.createTask(task);
+			await Storage.open(core.projectRoot).createTask(task);
 
 			// Typos should NOT match (prevent parseInt coercion bug)
-			await expect(core.getTask("358a")).rejects.toThrow(/Invalid task ID.*PREFIX-NUMBER/);
+			await expect(core.tasks.getTask("358a")).rejects.toThrow(/Invalid task ID.*PREFIX-NUMBER/);
 
-			await expect(core.getTask("35x8")).rejects.toThrow(/Invalid task ID.*PREFIX-NUMBER/);
+			await expect(core.tasks.getTask("35x8")).rejects.toThrow(/Invalid task ID.*PREFIX-NUMBER/);
 		});
 
 		it("should return false when archiving non-existent task", async () => {
-			const archived = await core.archiveTask("TASK-999");
+			const archived = await core.tasks.archive("TASK-999");
 			expect(archived.success).toBe(false);
 		});
 
@@ -593,7 +264,7 @@ describe("Core", () => {
 				status: "",
 			};
 
-			await core.createTask(taskWithoutStatus);
+			await core.tasks.create(taskWithoutStatus);
 
 			const loadedTask = await coreFileSystem(core).loadTask("task-1");
 			expect(loadedTask?.status).toBe("To Do"); // Should use default from config
@@ -605,7 +276,7 @@ describe("Core", () => {
 				status: "In Progress",
 			};
 
-			await core.createTask(taskWithStatus);
+			await core.tasks.create(taskWithStatus);
 
 			const loadedTask = await coreFileSystem(core).loadTask("task-1");
 			expect(loadedTask?.status).toBe("In Progress");
@@ -618,10 +289,10 @@ describe("Core", () => {
 				description: "Just text",
 			};
 
-			await core.createTask(taskNoHeader);
+			await Storage.open(core.projectRoot).createTask(taskNoHeader);
 			const loaded = await coreFileSystem(core).loadTask("task-2");
 			expect(loaded?.description).toBe("Just text");
-			const body = await core.getTaskContent("task-2");
+			const body = await Storage.open(core.projectRoot).loadTaskContent("task-2");
 			expect(body).toContain("description: Just text");
 			expect(body).not.toContain("## Description");
 		});
@@ -634,30 +305,40 @@ describe("Core", () => {
 				rawContent: "## Description\n\nFree-form note",
 			};
 
-			await core.createTask(taskWithHeader);
-			const body = await core.getTaskContent("task-3");
+			await Storage.open(core.projectRoot).createTask(taskWithHeader);
+			const body = await Storage.open(core.projectRoot).loadTaskContent("task-3");
 			expect(body).toEndWith("## Description\n\nFree-form note");
 		});
 
 		it("should handle task creation without committing when git fails", async () => {
 			// Create task in directory without git
 			const nonGitCore = new Core(join(TEST_DIR, "no-git"));
-			await coreFileSystem(nonGitCore).ensureAgenticWorkspaceStructure();
+			await mkdir(nonGitCore.projectRoot, { recursive: true });
+			await initializeFilesystemTestWorkspace(coreFileSystem(nonGitCore));
 
 			// This should succeed even without git
-			await nonGitCore.createTask(sampleTask);
+			await Storage.open(nonGitCore.projectRoot).createTask(sampleTask);
 
 			const loadedTask = await coreFileSystem(nonGitCore).loadTask("task-1");
 			expect(loadedTask?.id).toBe("TASK-1");
 		});
 
 		it("matches labels by trimmed case-insensitive identity when adding and removing", async () => {
-			await core.createTask({ ...sampleTask, labels: [" UI "] });
+			await Storage.open(core.projectRoot).createTask({ ...sampleTask, labels: [" UI "] });
 
-			await core.updateTaskFromInput("task-1", { addLabels: ["ui"] });
+			await core.storage.withTaskLock("task-1", async (current) =>
+				core.tasks.edit({
+					...current,
+					labels: current.labels.some((label) => label.trim().toLowerCase() === "ui")
+						? current.labels
+						: [...current.labels, "ui"],
+				}),
+			);
 			expect((await coreFileSystem(core).loadTask("task-1"))?.labels).toEqual([" UI "]);
 
-			await core.updateTaskFromInput("task-1", { removeLabels: ["  Ui  "] });
+			await core.storage.withTaskLock("task-1", async (current) =>
+				core.tasks.edit({ ...current, labels: current.labels.filter((label) => label.trim().toLowerCase() !== "ui") }),
+			);
 			expect((await coreFileSystem(core).loadTask("task-1"))?.labels).toEqual([]);
 		});
 
@@ -665,14 +346,14 @@ describe("Core", () => {
 			await initializeTestProject(core, "Subtask Project", true);
 
 			// Create parent task
-			const { task: parent } = await core.createTaskFromInput({
+			const { task: parent } = await core.tasks.create({
 				title: "Parent Task",
 				status: "To Do",
 			});
 			expect(parent.id).toBe("TASK-1");
 
 			// Create first sub-task
-			const { task: child1 } = await core.createTaskFromInput({
+			const { task: child1 } = await core.tasks.create({
 				title: "First Child",
 				parentTaskId: parent.id,
 				status: "To Do",
@@ -681,7 +362,7 @@ describe("Core", () => {
 			expect(child1.parentTaskId).toBe("TASK-1");
 
 			// Create second sub-task
-			const { task: child2 } = await core.createTaskFromInput({
+			const { task: child2 } = await core.tasks.create({
 				title: "Second Child",
 				parentTaskId: parent.id,
 				status: "To Do",
@@ -690,7 +371,7 @@ describe("Core", () => {
 			expect(child2.parentTaskId).toBe("TASK-1");
 
 			// Create another parent task to ensure sequential numbering still works
-			const { task: parent2 } = await core.createTaskFromInput({
+			const { task: parent2 } = await core.tasks.create({
 				title: "Second Parent",
 				status: "To Do",
 			});
@@ -706,6 +387,7 @@ describe("Core", () => {
 			// Update config with custom default status
 			const config = await coreFileSystem(core).loadConfig();
 			if (config) {
+				config.statuses.push("Custom Status");
 				config.defaultStatus = "Custom Status";
 				await coreFileSystem(core).saveConfig(config);
 			}
@@ -714,15 +396,16 @@ describe("Core", () => {
 				id: "task-990",
 				title: "Custom Task",
 				status: "",
+				done: false,
 				createdDate: "2025-06-07",
 				labels: [],
 				dependencies: [],
 				description: "Task without status",
 			};
 
-			await core.createTask(taskWithoutStatus);
+			const { task } = await core.tasks.create(taskWithoutStatus);
 
-			const loadedTask = await coreFileSystem(core).loadTask("task-990");
+			const loadedTask = await coreFileSystem(core).loadTask(task.id);
 			expect(loadedTask?.status).toBe("Custom Status");
 		});
 
@@ -741,15 +424,16 @@ describe("Core", () => {
 				id: "task-991",
 				title: "Fallback Task",
 				status: "",
+				done: false,
 				createdDate: "2025-06-07",
 				labels: [],
 				dependencies: [],
 				description: "Task without status",
 			};
 
-			await core.createTask(taskWithoutStatus);
+			const { task } = await core.tasks.create(taskWithoutStatus);
 
-			const loadedTask = await coreFileSystem(core).loadTask("task-991");
+			const loadedTask = await coreFileSystem(core).loadTask(task.id);
 			expect(loadedTask?.status).toBe("To Do");
 		});
 	});

@@ -21,13 +21,14 @@ describe("generic task artifact search contract", () => {
 			id: "TASK-1",
 			title: "Unrelated task",
 			status: "To Do",
+			done: false,
 			labels: [],
 			dependencies: [],
 			createdDate: "2026-10-10",
 			description: "Task body is unrelated.",
 			rawContent: "Task body is unrelated.",
 		};
-		await coreFileSystem(core).saveTask(task);
+		await coreFileSystem(core).saveTask(task, { create: true });
 
 		const taskDirectory = await coreFileSystem(core).taskArtifacts.containerPath(task.id);
 		const artifactsDirectory = join(taskDirectory, "artifacts");
@@ -46,14 +47,14 @@ describe("generic task artifact search contract", () => {
 			(result): result is TaskSearchResult => result.type === "task",
 		);
 		expect(persistent.map(({ task: resultTask }) => resultTask.id)).toEqual([task.id]);
-		expect((await core.queryTasks({ query: artifactText })).map(({ id }) => id)).toEqual([task.id]);
+		expect((await core.tasks.query({ query: artifactText })).map(({ id }) => id)).toEqual([task.id]);
 		expect((await core.searchPersistently({ query: ordinaryJsonText })).map((result) => result.task?.id)).toEqual([
 			task.id,
 		]);
-		expect((await core.queryTasks({ query: ordinaryJsonText })).map(({ id }) => id)).toEqual([task.id]);
+		expect((await core.tasks.query({ query: ordinaryJsonText })).map(({ id }) => id)).toEqual([task.id]);
 		for (const excluded of ["summary", "approvals", "binarypayload", "notsearchtext"]) {
 			expect(await core.searchPersistently({ query: excluded, types: ["task"] })).toHaveLength(0);
-			expect(await core.queryTasks({ query: excluded })).toHaveLength(0);
+			expect(await core.tasks.query({ query: excluded })).toHaveLength(0);
 		}
 		expect(await readFile(join(taskDirectory, "task.md"), "utf8")).toBe(beforeTask);
 		expect(task).not.toHaveProperty("agentSummary");

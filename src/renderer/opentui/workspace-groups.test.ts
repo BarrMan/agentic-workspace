@@ -28,9 +28,9 @@ function spanContaining(setup: TestRendererSetup, text: string) {
 }
 
 const tasks = [
-	{ id: "BACK-1", title: "Alpha task", status: "Todo" },
-	{ id: "BACK-2", title: "Beta task", status: "Todo" },
-	{ id: "BACK-3", title: "Gamma task", status: "Todo" },
+	{ id: "BACK-1", title: "Alpha task", status: "Todo", done: false },
+	{ id: "BACK-2", title: "Beta task", status: "Todo", done: false },
+	{ id: "BACK-3", title: "Gamma task", status: "Todo", done: false },
 ];
 
 const openGroups: readonly TaskGroup[] = [

@@ -2,8 +2,15 @@ import { afterAll, beforeAll, describe, expect, it } from "bun:test";
 import { mkdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { Core } from "../index.ts";
+import { Storage } from "../storage/storage.ts";
 import { getTestCliCommand } from "./test-cli.ts";
-import { createUniqueTestDir, initializeFilesystemTestProject, safeCleanup, withTimeout } from "./test-utils.ts";
+import {
+	coreFileSystem,
+	createUniqueTestDir,
+	initializeFilesystemTestProject,
+	safeCleanup,
+	withTimeout,
+} from "./test-utils.ts";
 
 const CLI_COMMAND = getTestCliCommand();
 const directory = createUniqueTestDir("cli-pipe-output");
@@ -16,10 +23,11 @@ describe("finite CLI output to a delayed pipe reader", () => {
 		await initializeFilesystemTestProject(core, "Delayed pipe output");
 		// Exceed both the OS pipe capacity and Bun.spawn's own eager read buffer.
 		for (let index = 1; index <= 24; index++) {
-			await core.createTask({
+			await new Storage(coreFileSystem(core)).createTask({
 				id: `TASK-${index}`,
 				title: `Task ${index} ${"slow reader é ".repeat(8_000)}`,
 				status: ["To Do", "In Progress", "Done"][index % 3] ?? "To Do",
+				done: false,
 				createdDate: "2026-09-27",
 				labels: [],
 				dependencies: [],

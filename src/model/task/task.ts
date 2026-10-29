@@ -1,18 +1,15 @@
+import { randomUUID } from "node:crypto";
+import { join } from "node:path";
 import { isDeepStrictEqual } from "node:util";
+import { normalizeStringList, stringArraysEqual } from "../../lib/string-list.ts";
 import type { Session } from "../session/session.ts";
-import type {
-	AgentSession,
-	ModeId,
-	ModeProfile,
-	ModeSessionHistory,
-	ResolvedAgentConfiguration,
-} from "../session/types.ts";
-import type { Task as TaskRecord, TaskUpdateInput } from "../types.ts";
-import { isLocalEditableTask } from "../types.ts";
-import type { ReadinessGraph, TaskReadiness } from "./readiness.ts";
+import { nativeSessionName } from "../session/session-utils.ts";
+import type { AgentSession, ModeId, ModeProfile, ModeSessionHistory, SessionFactory } from "../session/types.ts";
+import type { Task as TaskRecord } from "../types.ts";
+import { DependencyValidator } from "./dependency-validator.ts";
+import type { TaskReadiness } from "./readiness.ts";
 import { getTaskReadiness } from "./readiness.ts";
-import { taskIdsEqual } from "./task-id.ts";
-import { applyTaskUpdate, type TaskUpdateContext } from "./task-update/index.ts";
+import { LOCAL_TASK_LOOKUP_HINT } from "./task-path.ts";
 
 export interface SessionCreationIdentity {
 	readonly taskId: TaskRecord["id"];
@@ -20,23 +17,37 @@ export interface SessionCreationIdentity {
 	readonly provisionalSessionId: AgentSession["id"];
 	readonly createdAt: AgentSession["createdAt"];
 	readonly previousActiveSessionId?: AgentSession["id"];
+	readonly previousSelectedModeId?: ModeId;
 }
-
-export interface TaskHydrationInput {
-	readonly task: TaskRecord;
-	readonly modes: Readonly<Record<ModeId, ModeProfile>>;
-	readonly configuration: ResolvedAgentConfiguration;
-	readonly sessionRecords: Readonly<Record<ModeId, ModeSessionHistory>>;
-	readonly selectedModeId: ModeId;
-	readonly createSession: (input: { readonly taskId: string; readonly modeId: ModeId }) => Session;
-}
-
-type TaskMutationInput = Pick<TaskHydrationInput, "task">;
 
 export interface TaskSessionCreation {
 	readonly session: Session;
 	readonly creation: SessionCreationIdentity;
 }
+
+export interface SessionCreationInputs {
+	readonly preset: string;
+	readonly taskDir: string;
+	readonly pathContext: NonNullable<AgentSession["pathContext"]>;
+}
+
+export type TaskSessionHistory = Omit<ModeSessionHistory, "sessions"> & { sessions: Session[] };
+
+/** Actual in-memory relationships; unsaved tasks may have no modes or histories. */
+export interface TaskRelationships {
+	readonly modes?: Readonly<Record<ModeId, TaskSessionHistory>>;
+	readonly profiles?: Readonly<Record<ModeId, ModeProfile>>;
+	readonly selectedModeId?: ModeId;
+}
+
+/** Loaded relationship records supplied by Storage; runtime objects are created at the boundary. */
+export interface TaskLoadedStateInput extends TaskRecord {
+	readonly profiles: Readonly<Record<ModeId, ModeProfile>>;
+	readonly sessionRecords: Readonly<Record<ModeId, ModeSessionHistory>>;
+	readonly selectedModeId: ModeId;
+}
+
+export type TaskInput = TaskRecord & TaskRelationships;
 
 /** A board operation has already resolved its configured status and target lane. */
 export interface BoardTaskPlacement {
@@ -47,80 +58,105 @@ export interface BoardTaskPlacement {
 
 export class Task {
 	readonly id: string;
-	readonly modes: Record<ModeId, ModeSessionHistory>;
-	readonly profiles: Record<ModeId, ModeProfile>;
-	readonly task: TaskRecord;
-	readonly configuration: ResolvedAgentConfiguration | undefined;
-	readonly createSession: TaskHydrationInput["createSession"] | undefined;
+	modes: Record<ModeId, TaskSessionHistory>;
+	profiles: Record<ModeId, ModeProfile>;
+	task: TaskRecord;
 	#selectedModeId: ModeId;
 
-	constructor(input: TaskHydrationInput | TaskMutationInput) {
-		this.task = structuredClone(input.task);
-		this.id = input.task.id;
-		if (!("modes" in input)) {
-			this.configuration = undefined;
-			this.createSession = undefined;
-			this.profiles = {};
-			this.modes = {};
-			this.#selectedModeId = "";
-			return;
-		}
-		this.configuration = structuredClone(input.configuration);
-		this.createSession = input.createSession;
-		this.profiles = structuredClone(input.modes);
+	constructor(input: TaskInput) {
+		const { modes = {}, profiles = {}, selectedModeId = "", ...task } = input;
+		this.task = structuredClone(task);
+		this.task.done ??= false;
+		this.id = task.id;
+		this.profiles = { ...profiles };
 		this.modes = Object.fromEntries(
-			[...new Set([...Object.keys(input.modes), ...Object.keys(input.sessionRecords)])].map((modeId) => {
-				const sessions = structuredClone(input.sessionRecords[modeId]?.sessions ?? []);
-				const persistedActiveId = input.sessionRecords[modeId]?.activeSessionId;
+			Object.entries(modes).map(([modeId, history]) => [modeId, { ...history, sessions: [...history.sessions] }]),
+		);
+		this.#selectedModeId = selectedModeId;
+	}
+
+	replaceLoadedState(input: TaskLoadedStateInput, sessionFactory: SessionFactory): void {
+		const { profiles, sessionRecords, selectedModeId, ...task } = input;
+		this.task = structuredClone(task);
+		this.task.done ??= false;
+		this.profiles = structuredClone(profiles);
+		const existingSessions = new Map<string, Session>();
+		for (const history of Object.values(this.modes)) {
+			for (const session of history.sessions) existingSessions.set(session.id, session);
+		}
+		this.modes = Object.fromEntries(
+			[...new Set([...Object.keys(profiles), ...Object.keys(sessionRecords)])].map((modeId) => {
+				const sessions = (sessionRecords[modeId]?.sessions ?? []).map((record) => {
+					const session = existingSessions.get(record.id) ?? sessionFactory(this.id, modeId, record);
+					session.replaceLoadedRecord(record, modeId);
+					return session;
+				});
+				const activeSessionId = sessionRecords[modeId]?.activeSessionId;
 				return [
 					modeId,
 					{
 						sessions,
-						activeSessionId: sessions.some(({ id }) => id === persistedActiveId) ? persistedActiveId : sessions[0]?.id,
+						activeSessionId,
 					},
 				];
 			}),
 		);
-		this.#selectedModeId =
-			input.selectedModeId in input.modes ? input.selectedModeId : (Object.keys(input.modes)[0] ?? "");
-	}
-
-	/** Hydrates only the record behavior needed for a synchronous task mutation. */
-	static forUpdate(task: TaskRecord): Task {
-		return new Task({ task });
+		this.#selectedModeId = selectedModeId;
 	}
 
 	get selectedModeId(): ModeId {
 		return this.#selectedModeId;
 	}
 
-	get activeSession(): AgentSession | undefined {
+	get activeSession(): Session | undefined {
 		const history = this.modes[this.#selectedModeId];
 		return history?.sessions.find(({ id }) => id === history.activeSessionId);
 	}
 
-	get editable(): boolean {
-		return isLocalEditableTask(this.task);
+	findSession(sessionId: string): Session | undefined {
+		for (const history of Object.values(this.modes)) {
+			const session = history.sessions.find(({ id }) => id === sessionId);
+			if (session) return session;
+		}
+		return undefined;
 	}
 
-	/** Identity comparison, case-folded and whitespace-insensitive; display spelling is preserved. */
+	/** Exact stored-ID comparison. */
 	equals(other: string | { readonly id: string }): boolean {
-		return taskIdsEqual(this.id, typeof other === "string" ? other : other.id);
+		return this.id === (typeof other === "string" ? other : other.id);
 	}
 
 	/** Record equality, including fields that have no identity meaning. */
 	equalsDeep(record: TaskRecord): boolean {
-		return isDeepStrictEqual(this.serialize(), record);
+		return isDeepStrictEqual(this.task, record);
 	}
 
 	/** Corpus-wide readiness, evaluated against the graph supplied by the caller. */
-	ready(graph: ReadinessGraph): TaskReadiness {
+	ready(graph: ReadonlyMap<string, TaskRecord>): TaskReadiness {
 		return getTaskReadiness(this.task, graph);
 	}
 
-	/** Applies a fully resolved edit without I/O. */
-	applyUpdate(input: TaskUpdateInput, context: TaskUpdateContext): boolean {
-		return applyTaskUpdate(this.task, input, context);
+	replaceDependencies(input: string[], corpus: readonly TaskRecord[]): boolean {
+		return this.assignDependencies(input, corpus, true);
+	}
+
+	addDependencies(input: string[], corpus: readonly TaskRecord[]): boolean {
+		return this.assignDependencies(input, corpus, false);
+	}
+
+	private assignDependencies(input: string[], corpus: readonly TaskRecord[], replace: boolean): boolean {
+		const normalized = normalizeStringList(input) ?? [];
+		const { valid, invalid } = new DependencyValidator(corpus).validate(normalized, this.task);
+		if (invalid.length > 0)
+			throw new Error(
+				`The following dependencies do not exist: ${invalid.join(", ")}. Please create these tasks first or verify the IDs. ${LOCAL_TASK_LOOKUP_HINT}`,
+			);
+		const next = replace
+			? valid
+			: [...this.task.dependencies, ...valid.filter((dependency) => !this.task.dependencies.includes(dependency))];
+		if (stringArraysEqual(next, this.task.dependencies)) return false;
+		this.task.dependencies = next;
+		return true;
 	}
 
 	/** Applies a resolved board position without I/O or record reconstruction in the controller. */
@@ -148,32 +184,50 @@ export class Task {
 		return this.#selectedModeId;
 	}
 
-	reserveSession(modeId: ModeId): TaskSessionCreation {
+	createSession(
+		modeId: ModeId,
+		inputs: SessionCreationInputs,
+		sessionFactory: SessionFactory,
+		activate = true,
+	): TaskSessionCreation {
 		const history = this.#requireMode(modeId);
 		const previousActiveSessionId = history.activeSessionId;
-		if (!this.createSession) throw new Error("Session creation is unavailable during task mutation.");
-		const session = this.createSession({ taskId: this.id, modeId });
+		const id = randomUUID();
+		const record: AgentSession = {
+			id,
+			taskId: this.id,
+			preset: inputs.preset,
+			tmuxName: nativeSessionName(this.id, id),
+			pathContext: inputs.pathContext,
+			createdAt: new Date().toISOString(),
+			ownerPid: process.pid,
+			outputPath: join(inputs.taskDir, `${id}.log`),
+			bootstrapPath: join(inputs.taskDir, `${id}.md`),
+		};
+		const session = sessionFactory(this.id, modeId, record);
 		const creation: SessionCreationIdentity = {
 			taskId: this.id,
 			modeId,
 			provisionalSessionId: session.id,
 			createdAt: session.record.createdAt,
 			...(previousActiveSessionId === undefined ? {} : { previousActiveSessionId }),
+			...(this.#selectedModeId === "" ? {} : { previousSelectedModeId: this.#selectedModeId }),
 		};
-		history.sessions.unshift(structuredClone(session.record) as AgentSession);
-		history.activeSessionId = session.id;
-		this.#selectedModeId = modeId;
+		history.sessions.unshift(session);
+		if (activate) {
+			history.activeSessionId = session.id;
+			this.#selectedModeId = modeId;
+		}
 		return { session, creation };
 	}
 
-	rollbackSession(creation: SessionCreationIdentity): void {
-		if (!taskIdsEqual(creation.taskId, this.id))
-			throw new Error(`Creation belongs to another task: ${creation.taskId}`);
+	rollbackSession(creation: SessionCreationIdentity): string | undefined {
+		if (creation.taskId !== this.id) throw new Error(`Creation belongs to another task: ${creation.taskId}`);
 		const history = this.#requireMode(creation.modeId);
 		const matches = history.sessions.filter(({ id }) => id === creation.provisionalSessionId);
-		if (matches.length === 0) return;
+		if (matches.length === 0) return history.activeSessionId;
 		if (matches.length !== 1) throw new Error(`Expected one provisional session: ${creation.provisionalSessionId}`);
-		const provisional = matches[0];
+		const provisional = matches[0]?.record;
 		if (!provisional) throw new Error(`Missing provisional session: ${creation.provisionalSessionId}`);
 		if (creation.createdAt !== provisional.createdAt)
 			throw new Error(`Reservation incarnation changed: ${creation.provisionalSessionId}`);
@@ -183,18 +237,9 @@ export class Task {
 				? creation.previousActiveSessionId
 				: history.sessions[0]?.id;
 		}
-	}
-
-	updateSessionRecord(modeId: ModeId, record: Readonly<AgentSession>): void {
-		if (!taskIdsEqual(record.taskId, this.id)) throw new Error(`Session belongs to another task: ${record.taskId}`);
-		const history = this.#requireMode(modeId);
-		const indexes = history.sessions.flatMap((session, index) => (session.id === record.id ? [index] : []));
-		if (indexes.length !== 1) throw new Error(`Expected one session membership: ${record.id}`);
-		const index = indexes[0];
-		if (index === undefined) throw new Error(`Expected one session membership: ${record.id}`);
-		const current = history.sessions[index];
-		if (!current || !sameIncarnation(current, record)) throw new Error(`Session incarnation changed: ${record.id}`);
-		history.sessions[index] = structuredClone(record) as AgentSession;
+		if (this.#selectedModeId === creation.modeId && creation.previousSelectedModeId !== undefined)
+			this.#selectedModeId = creation.previousSelectedModeId;
+		return history.activeSessionId;
 	}
 
 	selectSession(modeId: ModeId, sessionId: string): void {
@@ -212,12 +257,12 @@ export class Task {
 		history.activeSessionId = history.sessions.find(({ id }) => id !== stoppedSessionId)?.id ?? stoppedSessionId;
 	}
 
-	registerSession(modeId: ModeId, record: Readonly<AgentSession>): void {
-		if (!taskIdsEqual(record.taskId, this.id)) throw new Error(`Session belongs to another task: ${record.taskId}`);
+	registerSession(modeId: ModeId, record: Readonly<AgentSession>, sessionFactory: SessionFactory): void {
+		if (record.taskId !== this.id) throw new Error(`Session belongs to another task: ${record.taskId}`);
 		const history = this.#requireMode(modeId);
 		if (history.sessions.some(({ id }) => id === record.id))
 			throw new Error(`Session already registered: ${record.id}`);
-		history.sessions.unshift(structuredClone(record) as AgentSession);
+		history.sessions.unshift(sessionFactory(this.id, modeId, record));
 		if (!history.sessions.some(({ id }) => id === history.activeSessionId)) history.activeSessionId = record.id;
 	}
 
@@ -261,22 +306,9 @@ export class Task {
 		this.task.modeApprovals = Object.keys(approvals).length ? approvals : undefined;
 	}
 
-	serialize(): TaskRecord {
-		return structuredClone(this.task);
-	}
-
-	serializeSessions(): Record<ModeId, ModeSessionHistory> {
-		return structuredClone(this.modes);
-	}
-
-	#requireMode(modeId: ModeId): ModeSessionHistory {
+	#requireMode(modeId: ModeId): TaskSessionHistory {
 		const history = this.modes[modeId];
 		if (!history) throw new Error(`Unknown mode: ${modeId}`);
 		return history;
 	}
-}
-
-/** Incarnation key: only fields fixed at reservation. Native/tmux provenance is mutable progress, not identity. */
-function sameIncarnation(left: AgentSession, right: Readonly<AgentSession>): boolean {
-	return left.id === right.id && taskIdsEqual(left.taskId, right.taskId) && left.createdAt === right.createdAt;
 }

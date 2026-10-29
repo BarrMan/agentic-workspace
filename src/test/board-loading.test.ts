@@ -3,7 +3,15 @@ import { mkdir, rm } from "node:fs/promises";
 import { $ } from "bun";
 import { Core } from "../controller/agentic-workspace.ts";
 import type { AgenticWorkspaceConfig, Task } from "../model/types.ts";
-import { coreFileSystem, createUniqueTestDir, initGitRepo, initializeTestProject, safeCleanup } from "./test-utils.ts";
+import { Storage } from "../storage/storage.ts";
+import {
+	coreFileSystem,
+	createUniqueTestDir,
+	initGitRepo,
+	initializeFilesystemTestWorkspace,
+	initializeTestProject,
+	safeCleanup,
+} from "./test-utils.ts";
 
 let TEST_DIR: string;
 
@@ -13,7 +21,7 @@ describe("Board Loading", () => {
 	beforeEach(async () => {
 		TEST_DIR = createUniqueTestDir("test-board-loading");
 		core = new Core(TEST_DIR);
-		await coreFileSystem(core).ensureAgenticWorkspaceStructure();
+		await initializeFilesystemTestWorkspace(coreFileSystem(core));
 
 		// Initialize git repository for testing
 		initGitRepo(TEST_DIR);
@@ -29,6 +37,7 @@ describe("Board Loading", () => {
 	const createTestTask = (id: string, status = "To Do"): Task => ({
 		id,
 		title: `Test Task ${id}`,
+		done: false,
 		status,
 		createdDate: "2025-01-08",
 		labels: ["test"],
@@ -39,9 +48,9 @@ describe("Board Loading", () => {
 	describe("Core.loadTasks()", () => {
 		beforeEach(async () => {
 			// Create some test tasks
-			await core.createTask(createTestTask("task-1", "To Do"));
-			await core.createTask(createTestTask("task-2", "In Progress"));
-			await core.createTask(createTestTask("task-3", "Done"));
+			await new Storage(coreFileSystem(core)).createTask(createTestTask("task-1", "To Do"));
+			await new Storage(coreFileSystem(core)).createTask(createTestTask("task-2", "In Progress"));
+			await new Storage(coreFileSystem(core)).createTask(createTestTask("task-3", "Done"));
 
 			// Commit them to have a clean state
 			await $`git add .`.cwd(TEST_DIR).quiet();
@@ -76,15 +85,15 @@ describe("Board Loading", () => {
 				statuses: ["To Do", "In Progress", "Done"],
 				defaultStatus: "To Do",
 				labels: [],
-				milestones: [],
 				dateFormat: "yyyy-mm-dd",
 			};
 			await coreFileSystem(core).saveConfig(minimalConfig);
 
 			// Create a task to ensure we have something to load
-			await core.createTask({
+			await new Storage(coreFileSystem(core)).createTask({
 				id: "task-1",
 				title: "Test Task",
+				done: false,
 				status: "To Do",
 				createdDate: "2025-01-08",
 				labels: [],

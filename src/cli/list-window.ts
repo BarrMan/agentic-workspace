@@ -1,4 +1,4 @@
-import type { Command } from "commander";
+import { type Command, Option } from "commander";
 
 /**
  * Paging for CLI lists, named after options agents already know: `git log --max-count --skip`
@@ -47,7 +47,7 @@ export function addListWindowOptions(command: Command): Command {
 	return command
 		.option("--max-count <n>", "print at most n items after filtering and sorting")
 		.option("--skip <n>", "leave out the first n items after filtering and sorting")
-		.option("--count", "print only the number of items");
+		.addOption(new Option("--count", "print only the number of items").conflicts("json"));
 }
 
 function reportInvalidOption(message: string, helpCommand: string | undefined): null {
@@ -82,9 +82,6 @@ export function parseListWindow(
 	commandArgs: readonly string[],
 ): ListWindow | null {
 	const helpCommand = `${commandName(command)} --help`;
-	if (options.count && options.json) {
-		return reportInvalidOption("--count cannot be combined with --json.", helpCommand);
-	}
 	const maxCountValue =
 		options.maxCount === undefined ? undefined : parseListWindowInteger(options.maxCount, "--max-count", helpCommand);
 	if (maxCountValue === null) return null;

@@ -11,6 +11,7 @@ import {
 } from "../model/constants.ts";
 import { getTaskPrefixError } from "../model/task/prefix-config.ts";
 import type { AgenticWorkspaceConfig } from "../model/types.ts";
+import { getDefaultModeCatalog } from "../storage/config.ts";
 import type { Core } from "./agentic-workspace.ts";
 
 export interface InitializeProjectOptions {
@@ -24,8 +25,6 @@ export interface InitializeProjectOptions {
 		bypassGitHooks?: boolean;
 		zeroPaddedIds?: number;
 		defaultEditor?: string;
-		defaultPort?: number;
-		autoOpenBrowser?: boolean;
 		/** Custom task prefix (e.g., "JIRA"). Only set during first init, read-only after. */
 		taskPrefix?: string;
 	};
@@ -50,9 +49,8 @@ function resolveFreshConfig(projectName: string, taskPrefix?: string): AgenticWo
 		filesystemOnly: defaults.filesystemOnly,
 		remoteOperations: defaults.remoteOperations,
 		bypassGitHooks: defaults.bypassGitHooks,
-		defaultPort: defaults.defaultPort,
-		autoOpenBrowser: defaults.autoOpenBrowser,
 		prefixes: { task: taskPrefix || "task" },
+		agentConfiguration: { modes: getDefaultModeCatalog() },
 	};
 }
 
@@ -95,8 +93,6 @@ export function resolveInitializationConfig(options: InitializeProjectOptions): 
 		filesystemOnly: effectiveFilesystemOnly || defaults.filesystemOnly,
 		remoteOperations: advancedConfig.remoteOperations ?? existingConfig?.remoteOperations ?? defaults.remoteOperations,
 		bypassGitHooks: advancedConfig.bypassGitHooks ?? existingConfig?.bypassGitHooks ?? defaults.bypassGitHooks,
-		defaultPort: advancedConfig.defaultPort ?? existingConfig?.defaultPort ?? defaults.defaultPort,
-		autoOpenBrowser: advancedConfig.autoOpenBrowser ?? existingConfig?.autoOpenBrowser ?? defaults.autoOpenBrowser,
 		prefixes: existingConfig?.prefixes ?? freshConfig.prefixes,
 	};
 	applyOptionalOverrides(config, advancedConfig);
@@ -107,8 +103,6 @@ function inferAgenticWorkspaceDirectorySource(
 	agenticWorkspaceDirectory: string | null,
 ): InitializeProjectOptions["agenticWorkspaceDirectorySource"] | undefined {
 	if (!agenticWorkspaceDirectory) return undefined;
-	if (agenticWorkspaceDirectory === AGENTIC_WORKSPACE_DIRECTORY_SOURCE.HIDDEN)
-		return AGENTIC_WORKSPACE_DIRECTORY_SOURCE.HIDDEN;
 	if (agenticWorkspaceDirectory === AGENTIC_WORKSPACE_DIRECTORY_SOURCE.DEFAULT)
 		return AGENTIC_WORKSPACE_DIRECTORY_SOURCE.DEFAULT;
 	return AGENTIC_WORKSPACE_DIRECTORY_SOURCE.CUSTOM;
@@ -155,11 +149,7 @@ function resolveProjectDirectories(options: InitializeProjectOptions): {
 	const agenticWorkspaceDirectory = normalizeProjectAgenticWorkspaceDirectory(options.agenticWorkspaceDirectory);
 	const source = resolveAgenticWorkspaceDirectorySource(options, agenticWorkspaceDirectory);
 	return {
-		agenticWorkspaceDirectory:
-			agenticWorkspaceDirectory ??
-			(source === AGENTIC_WORKSPACE_DIRECTORY_SOURCE.HIDDEN
-				? AGENTIC_WORKSPACE_DIRECTORY_SOURCE.HIDDEN
-				: AGENTIC_WORKSPACE_DIRECTORY_SOURCE.DEFAULT),
+		agenticWorkspaceDirectory: agenticWorkspaceDirectory ?? AGENTIC_WORKSPACE_DIRECTORY_SOURCE.DEFAULT,
 		configLocation: resolveConfigLocation(source, options.configLocation),
 	};
 }
@@ -171,9 +161,9 @@ export async function initializeProjectFiles(
 	isReInitialization: boolean,
 ): Promise<void> {
 	if (isReInitialization) {
-		await core.saveWorkspaceConfig(config);
+		await core.storage.saveConfig(config);
 		return;
 	}
 	const directories = resolveProjectDirectories(options);
-	await core.initializeWorkspaceFiles(config, directories);
+	await core.storage.initializeWorkspace(config, directories);
 }

@@ -1,5 +1,5 @@
 import type { AgenticWorkspaceConfig } from "../model/types.ts";
-import { AgenticWorkspaceConfigSchema } from "./config-schema.ts";
+import { AgenticWorkspaceConfigSchema, RootAgenticWorkspaceConfigSchema } from "./config-schema.ts";
 
 const CONFIG_VALUE_ERROR_NAME = "ConfigValueError";
 
@@ -26,7 +26,11 @@ export function isConfigValueError(error: unknown): error is Error {
 	return error instanceof Error && error.name === CONFIG_VALUE_ERROR_NAME;
 }
 
-export function parseConfig(content: string, configPath: string): AgenticWorkspaceConfig {
+export function parseConfig(
+	content: string,
+	configPath: string,
+	scope: "root" | "project" = "project",
+): AgenticWorkspaceConfig {
 	let document: unknown;
 	try {
 		document = Bun.YAML.parse(content);
@@ -35,7 +39,9 @@ export function parseConfig(content: string, configPath: string): AgenticWorkspa
 	}
 	if (document === null || document === undefined) document = {};
 
-	const parsed = AgenticWorkspaceConfigSchema.safeParse(document);
+	const parsed = (scope === "root" ? RootAgenticWorkspaceConfigSchema : AgenticWorkspaceConfigSchema).safeParse(
+		document,
+	);
 	if (!parsed.success) {
 		const issue = parsed.error.issues[0];
 		const key = issue?.path.length ? issue.path.map(String).join(".") : "config";
@@ -74,9 +80,7 @@ export function serializeConfig(config: AgenticWorkspaceConfig): string {
 		`date_format: ${JSON.stringify(config.dateFormat)}`,
 		...serializeOptional("max_column_width", config.maxColumnWidth || undefined),
 		...serializeOptional("default_editor", config.defaultEditor, true),
-		...(typeof config.autoOpenBrowser === "boolean" ? [`auto_open_browser: ${config.autoOpenBrowser}`] : []),
 		...(typeof config.hideEmptyColumns === "boolean" ? [`hide_empty_columns: ${config.hideEmptyColumns}`] : []),
-		...(config.defaultPort ? [`default_port: ${config.defaultPort}`] : []),
 		...(typeof config.remoteOperations === "boolean" ? [`remote_operations: ${config.remoteOperations}`] : []),
 		...(typeof config.filesystemOnly === "boolean" ? [`filesystem_only: ${config.filesystemOnly}`] : []),
 		...(typeof config.zeroPaddedIds === "number" ? [`zero_padded_ids: ${config.zeroPaddedIds}`] : []),

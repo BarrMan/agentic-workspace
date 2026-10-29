@@ -229,9 +229,6 @@ export function mountOpenTuiBoard(
 						: []),
 					...(selectedTask && props.onTaskAction ? [`${formatShortcut(shortcutsConfig.board.copyTask)} Copy`] : []),
 					...(selectedTask && props.onTaskAction
-						? [`${formatShortcut(shortcutsConfig.board.completeTask)} Complete`]
-						: []),
-					...(selectedTask && props.onTaskAction
 						? [`${formatShortcut(shortcutsConfig.board.archiveTask)} Archive`]
 						: []),
 					`${formatShortcut(shortcutsConfig.board.filter)} Filter`,
@@ -371,7 +368,6 @@ export function mountOpenTuiBoard(
 			task,
 			onEdit: (candidate) => props.onTaskAction?.(candidate, "edit"),
 			onCopy: (candidate) => props.onTaskAction?.(candidate, "copy"),
-			onComplete: (candidate) => props.onTaskAction?.(candidate, "complete"),
 			onArchive: (candidate) => props.onTaskAction?.(candidate, "archive"),
 			onCancel: () => undefined,
 		});
@@ -475,9 +471,6 @@ export function mountOpenTuiBoard(
 	const handleCopy = (): void => {
 		finishInteraction(requestTaskAction("copy"));
 	};
-	const handleComplete = (): void => {
-		finishInteraction(requestTaskAction("complete"));
-	};
 	const handleArchive = (): void => {
 		finishInteraction(requestTaskAction("archive"));
 	};
@@ -508,7 +501,6 @@ export function mountOpenTuiBoard(
 	keybindings.on(shortcutsConfig.board.confirm, handleConfirm);
 	keybindings.on(shortcutsConfig.board.editTask, handleEdit);
 	keybindings.on(shortcutsConfig.board.copyTask, handleCopy);
-	keybindings.on(shortcutsConfig.board.completeTask, handleComplete);
 	keybindings.on(shortcutsConfig.board.archiveTask, handleArchive);
 	keybindings.on(shortcutsConfig.board.filter, () => {
 		if (!props.board.move) props.onFilterRequest?.();

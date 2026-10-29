@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from "bun:test";
 import { join } from "node:path";
 import { Core } from "../controller/agentic-workspace.ts";
 import { FileSystem } from "../storage/file-system.ts";
-import { coreFileSystem, createUniqueTestDir, safeCleanup } from "./test-utils.ts";
+import { coreFileSystem, createUniqueTestDir, initializeFilesystemTestWorkspace, safeCleanup } from "./test-utils.ts";
 
 const directories: string[] = [];
 
@@ -18,7 +18,6 @@ describe("immutable Core project binding", () => {
 			projectName: "Immutable context",
 			statuses: ["To Do", "Done"],
 			labels: [],
-			milestones: [],
 			dateFormat: "YYYY-MM-DD",
 			remoteOperations: false,
 		};
@@ -30,36 +29,43 @@ describe("immutable Core project binding", () => {
 				"  - To Do",
 				"  - Done",
 				"labels: []",
-				"milestones: []",
 				"date_format: YYYY-MM-DD",
 				"remote_operations: false",
 				"check_active_branches: false",
 			].join("\n");
-		await Bun.write(join(root, "agentic-workspace.config.yml"), rootConfig("a"));
 		const initializer = new FileSystem(root, { agenticWorkspaceDirectory: "a", configLocation: "root" });
-		await initializer.ensureAgenticWorkspaceStructure();
-		await initializer.saveTask({
-			id: "task-1",
-			title: "A",
-			status: "To Do",
-			createdDate: "2026-01-01",
-			labels: [],
-			dependencies: [],
-		});
+		await initializeFilesystemTestWorkspace(initializer);
+		await initializer.saveTask(
+			{
+				id: "task-1",
+				title: "A",
+				done: false,
+				status: "To Do",
+				createdDate: "2026-01-01",
+				labels: [],
+				dependencies: [],
+			},
+			{ create: true },
+		);
 		const replacement = new FileSystem(root, { agenticWorkspaceDirectory: "b", configLocation: "root" });
-		await replacement.ensureAgenticWorkspaceStructure();
-		await replacement.saveTask({
-			id: "task-2",
-			title: "B",
-			status: "To Do",
-			createdDate: "2026-01-01",
-			labels: [],
-			dependencies: [],
-		});
+		await initializeFilesystemTestWorkspace(replacement);
+		await replacement.saveTask(
+			{
+				id: "task-2",
+				title: "B",
+				done: false,
+				status: "To Do",
+				createdDate: "2026-01-01",
+				labels: [],
+				dependencies: [],
+			},
+			{ create: true },
+		);
 
+		await Bun.write(join(root, "agentic-workspace.config.yml"), rootConfig("a"));
 		const core = new Core(root);
 		expect(coreFileSystem(core).agenticWorkspaceDir).toBe(join(root, "a"));
-		expect((await core.queryTasks()).map((task) => task.id)).toEqual(["TASK-1"]);
+		expect((await core.tasks.query({})).map((task) => task.id)).toEqual(["TASK-1"]);
 		const originalListTasks = coreFileSystem(core).listTasks.bind(coreFileSystem(core));
 		let release: (() => void) | undefined;
 		const paused = new Promise<void>((resolve) => {
@@ -75,42 +81,45 @@ describe("immutable Core project binding", () => {
 			return await originalListTasks();
 		};
 
-		const read = core.queryTasks();
+		const read = core.tasks.query({});
 		await reading;
 		await Bun.write(join(root, "agentic-workspace.config.yml"), rootConfig("b"));
 		release?.();
 
 		expect((await read).map((task) => task.id)).toEqual(["TASK-1"]);
-		expect((await new Core(root).queryTasks()).map((task) => task.id)).toEqual(["TASK-2"]);
+		expect((await new Core(root).tasks.query({})).map((task) => task.id)).toEqual(["TASK-2"]);
 	});
 
 	it("keeps local task reads off branch discovery", async () => {
 		const root = createUniqueTestDir("immutable-project-local-read");
 		directories.push(root);
 		const filesystem = new FileSystem(root);
-		await filesystem.ensureAgenticWorkspaceStructure();
+		await initializeFilesystemTestWorkspace(filesystem);
 		await filesystem.saveConfig({
 			projectName: "Local read",
 			statuses: ["To Do", "Done"],
 			labels: [],
-			milestones: [],
 			dateFormat: "YYYY-MM-DD",
 			remoteOperations: true,
 		});
-		await filesystem.saveTask({
-			id: "task-1",
-			title: "Local",
-			status: "To Do",
-			createdDate: "2026-01-01",
-			labels: [],
-			dependencies: [],
-		});
+		await filesystem.saveTask(
+			{
+				id: "task-1",
+				title: "Local",
+				done: false,
+				status: "To Do",
+				createdDate: "2026-01-01",
+				labels: [],
+				dependencies: [],
+			},
+			{ create: true },
+		);
 		const core = new Core(root);
 		core.git.listRecentBranchTips = async () => {
 			throw new Error("local read must not discover branches");
 		};
 
-		expect((await core.getTask("TASK-1", {}))?.title).toBe("Local");
-		expect(await core.getTask("TASK-2", {})).toBeNull();
+		expect((await core.tasks.getTask("TASK-1", {}))?.title).toBe("Local");
+		expect(await core.tasks.getTask("TASK-2", {})).toBeNull();
 	});
 });

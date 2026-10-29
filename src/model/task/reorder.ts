@@ -1,6 +1,5 @@
 import type { Task } from "../types.ts";
 import { Task as TaskModel } from "./task.ts";
-import { taskIdKey, taskIdsEqual } from "./task-id.ts";
 import { TaskOrdering } from "./task-ordering.ts";
 
 export const DEFAULT_ORDINAL_STEP = 1000;
@@ -148,13 +147,13 @@ export function reconcileBoardPlacement(
 		startOrdinal: defaultStep,
 		forceSequential,
 	});
-	const updates = new Map(ordinalUpdates.map((task) => [taskIdKey(task.id), task]));
-	const tasks = tasksInOrder.map((task) => updates.get(taskIdKey(task.id)) ?? task);
-	const originals = new Map(originalTasks.map((task) => [taskIdKey(task.id), task]));
+	const updates = new Map(ordinalUpdates.map((task) => [task.id, task]));
+	const tasks = tasksInOrder.map((task) => updates.get(task.id) ?? task);
+	const originals = new Map(originalTasks.map((task) => [task.id, task]));
 	return {
 		tasks,
 		changedTasks: tasks.filter((task) => {
-			const original = originals.get(taskIdKey(task.id));
+			const original = originals.get(task.id);
 			return (
 				!original ||
 				(original.status ?? "") !== (task.status ?? "") ||
@@ -182,28 +181,28 @@ export function planTaskReorder({
 	hasTargetMilestone: boolean;
 	defaultStep: number;
 }): { updatedTask: Task; changedTasks: Task[] } {
-	const movedTask = validTasks.find((task) => taskIdsEqual(task.id, taskId));
+	const movedTask = validTasks.find((task) => task.id === taskId);
 	if (!movedTask) throw new Error(`Task ${taskId} not found while reordering`);
 	const orderedTasks = orderedTaskIds
-		.map((id) => validTasks.find((task) => taskIdsEqual(task.id, id)))
+		.map((id) => validTasks.find((task) => task.id === id))
 		.filter((task): task is Task => task !== undefined);
-	const movedIndex = orderedTasks.findIndex((task) => taskIdsEqual(task.id, taskId));
+	const movedIndex = orderedTasks.findIndex((task) => task.id === taskId);
 	if (movedIndex < 0) throw new Error("Implementation error: Task found in validTasks but index missing");
 	const { ordinal, requiresRebalance } = calculateNewOrdinal({
 		previous: movedIndex > 0 ? (orderedTasks[movedIndex - 1] ?? null) : null,
 		next: movedIndex < orderedTasks.length - 1 ? (orderedTasks[movedIndex + 1] ?? null) : null,
 		defaultStep,
 	});
-	const movedModel = TaskModel.forUpdate(movedTask);
+	const movedModel = new TaskModel(movedTask);
 	movedModel.applyBoardPlacement({
 		status: targetStatus,
 		ordinal,
 		milestone: hasTargetMilestone ? targetMilestone : movedTask.milestone,
 	});
-	const updatedMoved = movedModel.serialize();
-	const tasksInOrder = orderedTasks.map((task) => (taskIdsEqual(task.id, taskId) ? updatedMoved : task));
+	const updatedMoved = structuredClone(movedModel.task);
+	const tasksInOrder = orderedTasks.map((task) => (task.id === taskId ? updatedMoved : task));
 	const { tasks, changedTasks } = reconcileBoardPlacement(tasksInOrder, validTasks, defaultStep, requiresRebalance);
-	return { updatedTask: tasks.find((task) => taskIdsEqual(task.id, taskId)) ?? updatedMoved, changedTasks };
+	return { updatedTask: tasks.find((task) => task.id === taskId) ?? updatedMoved, changedTasks };
 }
 
 export interface OrderedTaskPlacementRow {
@@ -222,13 +221,13 @@ function applyBoardMove(
 	task: Task,
 	{ targetStatus, targetMilestone, hasTargetMilestone }: BoardPlacementOptions,
 ): Task {
-	const model = TaskModel.forUpdate(task);
+	const model = new TaskModel(task);
 	model.applyBoardPlacement({
 		status: targetStatus,
 		ordinal: task.ordinal,
 		milestone: hasTargetMilestone ? targetMilestone : task.milestone,
 	});
-	return model.serialize();
+	return structuredClone(model.task);
 }
 
 export function planOrderedTaskPlacement(
@@ -236,8 +235,8 @@ export function planOrderedTaskPlacement(
 	tasksToMove: Task[],
 	options: BoardPlacementOptions,
 ): { movedTasks: Task[]; changedTasks: Task[] } {
-	const movedIds = new Set(rows.filter(({ moved }) => moved).map(({ task }) => taskIdKey(task.id)));
-	if (tasksToMove.some((task) => !movedIds.has(taskIdKey(task.id)))) {
+	const movedIds = new Set(rows.filter(({ moved }) => moved).map(({ task }) => task.id));
+	if (tasksToMove.some((task) => !movedIds.has(task.id))) {
 		throw new Error("orderedTaskIds must include every task being moved");
 	}
 	let requiresRebalance = false;
@@ -261,18 +260,18 @@ export function planOrderedTaskPlacement(
 		requiresRebalance ||= block.requiresRebalance;
 		for (const [offset, { task }] of rows.slice(index, runEnd).entries()) {
 			const moved = applyBoardMove(task, options);
-			const model = TaskModel.forUpdate(moved);
+			const model = new TaskModel(moved);
 			model.applyBoardPlacement({
 				status: moved.status,
 				ordinal: block.ordinals[offset],
 				milestone: moved.milestone,
 			});
-			tasksInOrder.push(model.serialize());
+			tasksInOrder.push(structuredClone(model.task));
 		}
 		index = runEnd;
 	}
-	const originals = new Map(rows.map(({ task }) => [taskIdKey(task.id), task]));
-	for (const task of tasksToMove) originals.set(taskIdKey(task.id), task);
+	const originals = new Map(rows.map(({ task }) => [task.id, task]));
+	for (const task of tasksToMove) originals.set(task.id, task);
 	const placement = reconcileBoardPlacement(
 		tasksInOrder,
 		[...originals.values()],
@@ -281,7 +280,7 @@ export function planOrderedTaskPlacement(
 	);
 	return {
 		movedTasks: tasksToMove.map(
-			(task) => placement.tasks.find((placed) => taskIdsEqual(placed.id, task.id)) ?? applyBoardMove(task, options),
+			(task) => placement.tasks.find((placed) => placed.id === task.id) ?? applyBoardMove(task, options),
 		),
 		changedTasks: placement.changedTasks,
 	};
@@ -293,10 +292,8 @@ export function planAppendedTaskPlacement(
 	options: BoardPlacementOptions,
 ): { movedTasks: Task[]; changedTasks: Task[] } {
 	const { targetStatus, targetMilestone, hasTargetMilestone, defaultStep } = options;
-	const stayingIds = new Set(
-		tasksToMove.filter((task) => task.status === targetStatus).map((task) => taskIdKey(task.id)),
-	);
-	const arriving = tasksToMove.filter((task) => !stayingIds.has(taskIdKey(task.id)));
+	const stayingIds = new Set(tasksToMove.filter((task) => task.status === targetStatus).map((task) => task.id));
+	const arriving = tasksToMove.filter((task) => !stayingIds.has(task.id));
 	if (arriving.length === 0) {
 		const movedTasks = tasksToMove.map((task) => applyBoardMove(task, options));
 		return {
@@ -308,34 +305,34 @@ export function planAppendedTaskPlacement(
 		};
 	}
 
-	const movedIds = new Set(tasksToMove.map((task) => taskIdKey(task.id)));
+	const movedIds = new Set(tasksToMove.map((task) => task.id));
 	const inTargetLane = (task: Task): boolean =>
 		!hasTargetMilestone || (task.milestone ?? "") === (targetMilestone ?? "");
 	const columnTasks = TaskOrdering.byOrdinal(
 		targetColumnTasks
-			.filter((task) => stayingIds.has(taskIdKey(task.id)) || (!movedIds.has(taskIdKey(task.id)) && inTargetLane(task)))
+			.filter((task) => stayingIds.has(task.id) || (!movedIds.has(task.id) && inTargetLane(task)))
 			.map((task) => {
 				if (task.ordinal === undefined || Number.isFinite(task.ordinal)) return task;
-				const model = TaskModel.forUpdate(task);
+				const model = new TaskModel(task);
 				model.applyBoardPlacement({ status: task.status, ordinal: undefined, milestone: task.milestone });
-				return model.serialize();
+				return structuredClone(model.task);
 			}),
 	);
 	const tasksInOrder = [
-		...columnTasks.map((task) => (stayingIds.has(taskIdKey(task.id)) ? applyBoardMove(task, options) : task)),
+		...columnTasks.map((task) => (stayingIds.has(task.id) ? applyBoardMove(task, options) : task)),
 		...arriving.map((task) => {
 			const moved = applyBoardMove(task, options);
-			const model = TaskModel.forUpdate(moved);
+			const model = new TaskModel(moved);
 			model.applyBoardPlacement({ status: targetStatus, ordinal: undefined, milestone: moved.milestone });
-			return model.serialize();
+			return structuredClone(model.task);
 		}),
 	];
-	const originals = new Map(targetColumnTasks.map((task) => [taskIdKey(task.id), task]));
-	for (const task of tasksToMove) originals.set(taskIdKey(task.id), task);
+	const originals = new Map(targetColumnTasks.map((task) => [task.id, task]));
+	for (const task of tasksToMove) originals.set(task.id, task);
 	const placement = reconcileBoardPlacement(tasksInOrder, [...originals.values()], defaultStep);
 	return {
 		movedTasks: tasksToMove.map(
-			(task) => placement.tasks.find((placed) => taskIdsEqual(placed.id, task.id)) ?? applyBoardMove(task, options),
+			(task) => placement.tasks.find((placed) => placed.id === task.id) ?? applyBoardMove(task, options),
 		),
 		changedTasks: placement.changedTasks,
 	};

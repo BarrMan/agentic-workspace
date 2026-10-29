@@ -1,6 +1,6 @@
 import { DEFAULT_IN_PROGRESS_STATUS, DEFAULT_STATUSES } from "../constants.ts";
 
-type StatusConfigReader = { getStoredConfig(): Promise<{ statuses?: string[] } | null> };
+type StatusConfigReader = { storage: { loadConfig(): Promise<{ statuses?: string[] } | null> } };
 
 /**
  * Statuses are configured labels, so equality and lookup use their exact stored spelling.
@@ -30,7 +30,7 @@ export function findCanonicalStatus(input: string, statuses: readonly string[]):
  * Load valid statuses from project configuration.
  */
 async function getValidStatuses(core: StatusConfigReader): Promise<string[]> {
-	const config = await core.getStoredConfig();
+	const config = await core.storage.loadConfig();
 	return config?.statuses && config.statuses.length > 0 ? config.statuses : [...DEFAULT_STATUSES];
 }
 

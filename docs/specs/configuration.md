@@ -29,11 +29,11 @@ Define configuration access and precedence, configurable modes and task-scoped a
 
 ## Functional Requirements
 
-`default_assignee` is not a supported configuration key. Assignees are removed from task fields, create/update inputs, frontmatter, plain-text and JSON output, search/filter surfaces, UI, CLI flags, and completions.
+`default_assignee` and assignee task fields have no supported semantics in configuration, task input/frontmatter, output, search/filter surfaces, UI, CLI flags, or completions. Existing data is not rewritten to remove them; current unknown-input and custom-frontmatter schema rules still apply.
 
 ### CONFIG-001: TUI configuration
 
-**Description:** Setup and all settings/configuration are available inside the TUI, not through an `init` command; a future wizard remains deferred. Workspace startup initializes absent project modes with the canonical defaults as defined by CONFIG-004.
+**Description:** Setup and all settings/configuration are available inside the TUI, not through an `init` command; a future wizard remains deferred. Explicit fresh-workspace initialization provisions required configuration, directories, state, lock parents, and the default mode catalogue under CONFIG-004. Ordinary startup and reads do not provision or repair missing required resources.
 
 **Trigger:** User sets up or changes configuration.
 
@@ -41,14 +41,16 @@ Define configuration access and precedence, configurable modes and task-scoped a
 
 **Behavior:**
 1. Provide setup and configuration access in the TUI; do not require `init`.
-2. Initialize an absent project mode catalogue during workspace startup as defined by CONFIG-004; do not require a separate setup step.
+2. Provision required resources and defaults during explicit fresh-workspace initialization; [task storage](tasks.md#task-006-task-storage-format) owns workspace/task resource requirements.
+3. Require initialized resources for subsequent use. Optional settings and files retain their documented absence semantics; they do not justify substituting defaults for missing required state.
 
 **Outcome:** User can configure the application from within the TUI.
 
-**Failures:** None.
+**Failures:** Missing required configuration, state, directories, or catalogue fail the affected operation with a useful error; do not lazily recreate them.
 
 **Acceptance Criteria:**
 - [ ] Setup and settings can be accessed in the TUI; no `init` command is required.
+- [ ] Explicit initialization provisions required resources; ordinary startup, reads, writes, and lock acquisition fail on missing required resources without repair.
 
 ### CONFIG-002: Editable project configuration
 
@@ -61,14 +63,19 @@ Define configuration access and precedence, configurable modes and task-scoped a
 **Behavior:**
 1. Keep the listed project configuration in one file.
 2. Permit direct user access and editing.
+3. Use the supported `config.yml` filename at the configured location. Do not discover `config.yaml` or alternate old formats through compatibility paths.
+4. Validate unknown file and mutation inputs against the current schemas at acceptance, preserving project-only mode ownership and existing security checks. Resolve omitted optional settings without rewriting files or repeatedly parsing accepted models.
+5. Mutations read current persisted configuration under the same resource lock and save atomically; do not overwrite it from a stale instance cache. [Storage](../blueprints/storage.md) owns persistence mechanics.
 
 **Outcome:** Users can inspect and edit configuration/data without relying exclusively on the public API.
 
-**Failures:** None.
+**Failures:** Reject malformed or unsupported configuration without rewriting it. Missing required configuration/catalogue fails; an optional field's absence follows CONFIG-003 and its owning setting contract.
 
 **Acceptance Criteria:**
 - [ ] Agent presets and mode catalogue are present in the project's single user-editable configuration file.
 - [ ] Configuration and data remain directly accessible and editable; API access is not exclusive.
+- [ ] `config.yaml` is not discovered or converted; unknown inputs retain current schema checks and accepted objects are not repeatedly revalidated.
+- [ ] Configuration mutations use current persisted state under the lock and atomic writes, preserving concurrent changes rather than writing stale cached state.
 
 ### CONFIG-003: Effective configuration precedence
 
@@ -93,26 +100,26 @@ Define configuration access and precedence, configurable modes and task-scoped a
 
 ### CONFIG-004: Configurable mode catalogue
 
-**Description:** A mode catalogue is required for workspace startup. When project configuration is absent or has no mode catalogue, seed exactly two editable built-in modes in PLAN-then-BUILD order, with PLAN as the default. PLAN is the planning mode with repository read access; BUILD is the implementation mode with repository read-write access. Mode artifact templates are optional, and approval metadata is informational rather than an execution gate. The exact editable prompt text is defined by [`getDefaultModeCatalog`](../../src/storage/config.ts#L17-L50). Users can add modes, rename labels, reorder modes, select a default, and delete modes as long as at least one remains. Once a catalogue exists, it is authoritative: do not merge or restore built-ins, including previously deleted built-ins. Mode contents and outputs are user-defined.
+**Description:** A mode catalogue is required for workspace startup. Explicit fresh-workspace initialization creates exactly two editable built-in modes in PLAN-then-BUILD order, with PLAN as the default. PLAN is the planning mode with repository read access; BUILD is the implementation mode with repository read-write access. Mode artifact templates are optional, and approval metadata is informational rather than an execution gate. The editable default prompts are defined by [`getDefaultModeCatalog`](../../src/storage/config.ts). Users can add modes, rename labels, reorder modes, select a default, and delete modes as long as at least one remains. Once a catalogue exists, it is authoritative: do not merge or restore built-ins, including previously deleted built-ins. Mode contents and outputs are user-defined.
 
 Seeding PLAN and BUILD does not require users to follow a PLAN-to-BUILD sequence or produce artifacts; the defaults do not constrain the user's workflow.
 
-**Trigger:** Workspace startup or user catalogue edits.
+**Trigger:** Explicit workspace initialization, catalogue loading, or user catalogue edits.
 
-**Preconditions:** Workspace startup may encounter absent project configuration or an absent catalogue; configured catalogues must validate.
+**Preconditions:** Initialization targets a fresh workspace. Subsequent startup requires valid project configuration with a catalogue.
 
 **Behavior:**
-1. Seed PLAN and BUILD only when project configuration or its catalogue is absent; persist the initialization once.
-2. Load the resulting catalogue.
+1. Create PLAN and BUILD during explicit fresh-workspace initialization only.
+2. Load the required catalogue without seeding, merging defaults, or repairing missing data.
 3. Support adding modes, renaming labels, reordering modes, defining prompts and optional deliverables, selecting a default, and deleting modes while at least one remains.
 
 **Outcome:** The workspace uses the user-defined catalogue and selected default.
 
-**Failures:** Malformed or otherwise invalid configured catalogues fail startup and report the error; do not replace them (CONFIG-014).
+**Failures:** Missing, malformed, empty, or otherwise invalid catalogues fail startup and report the error; do not replace them (CONFIG-014).
 
 **Acceptance Criteria:**
 - [ ] Users can add modes, rename labels, reorder modes, define prompts and optional deliverables, and select a default.
-- [ ] Absent project modes are initialized with exactly PLAN and BUILD; existing catalogues, including custom or one-mode catalogues, are unchanged on repeated startup.
+- [ ] Explicit fresh-workspace initialization creates exactly PLAN and BUILD; ordinary startup does not create an absent catalogue or change an existing custom or one-mode catalogue.
 - [ ] Users can delete any mode while at least one remains; deleting the last mode is refused.
 - [ ] The workspace requires its mode catalogue at startup.
 
@@ -167,16 +174,18 @@ Seeding PLAN and BUILD does not require users to follow a PLAN-to-BUILD sequence
 2. Do not infer approval from finished work.
 3. Clear only that task/mode's approval when further session activity occurs in that mode.
 4. Do not use approval as a workflow gate or depend on shared mode definitions or artifact contents/hashes.
+5. Transform the fresh full task through its domain approval operation under the current-task lock, then persist through [TASK-025's `edit(task)` contract](tasks.md#task-025-complete-record-updates-and-edits). Use no approval override flag or special persistence path.
 
 **Outcome:** Approval accurately indicates the task/mode state without imposing a workflow gate.
 
-**Failures:** None.
+**Failures:** Apply TASK-025's two-save and notification failure outcomes; a durable approval change is not undone by a later notification failure.
 
 **Acceptance Criteria:**
 - [ ] The CLI can set approval for a specified task/mode in response to user direction; completing work alone does not.
 - [ ] Approval does not depend on shared mode definitions or artifact contents/hashes.
 - [ ] Further session activity clears only that task/mode approval; another task's approval remains unchanged.
 - [ ] Approval is informational and does not block work on artifact review.
+- [ ] Approval transforms the locked current task and persists the full result through ordinary edit semantics; unrelated fields survive and no persistence-control flag is required.
 
 ### CONFIG-008: Agent settings
 
@@ -189,16 +198,16 @@ Seeding PLAN and BUILD does not require users to follow a PLAN-to-BUILD sequence
 **Behavior:**
 1. Stage supported edits.
 2. Retain staged edits on Save and discard them on cancel.
+3. Accept preset commands only as argv arrays: the first item is a non-empty executable and every item is a NUL-free string. Preserve empty later arguments. Do not convert string commands during startup, reading, or editing.
 
 **Outcome:** Saved settings are retained; canceled edits have no effect.
 
-**Failures:** None.
+**Failures:** Reject invalid command arrays and unsupported string commands at acceptance; leave existing configuration untouched.
 
 **Acceptance Criteria:**
 - [ ] Agent settings expose named presets, editable mode prompts, model selection/discovery, and the specified permission controls.
 - [ ] Saving staged settings retains them; canceling discards them.
-
-Agent preset commands are argv arrays: the first item is a non-empty executable and every item is a NUL-free string. Empty later arguments are preserved. Legacy string commands are converted once during selected-workspace startup; this retained startup migration is separate from the explicit task/config migration in [TASK-023](tasks.md#task-023-explicit-task-and-configuration-migration). Normal readers require arrays.
+- [ ] Command arrays enforce the executable and NUL constraints while preserving empty later arguments; string commands fail without conversion or configuration rewrite.
 
 ### CONFIG-009: Permission enforcement disclosure
 
@@ -272,14 +281,15 @@ Agent preset commands are argv arrays: the first item is a non-empty executable 
 
 **Behavior:**
 1. Offer discard or move to a chosen remaining mode, explain the selected effects, and request confirmation.
-2. For discard, preflight all affected native cleanup targets before any batch stop effects under [native cleanup preflight](sessions.md#session-013-stop-while-retaining-identity). Kill affected running agents before removing their workspace-owned sessions and tracking.
+2. For discard, preflight all affected native cleanup targets before any batch stop effects under [native cleanup preflight](sessions.md#session-015-validate-batch-cleanup). Kill affected running agents before removing their workspace-owned sessions and tracking.
 3. For move, transfer each affected session to the chosen mode on the same task without stopping, resuming, or replacing its execution. Preserve existing destination sessions; no particular transfer ordering is required.
 4. Remove the source mode only after its sessions have been discarded or transferred. Keep ownership and observers for surviving sessions, including those in unaffected modes. Apply catalogue and task-selection fallback under CONFIG-013.
 5. Preserve provider-owned state.
+6. Notification failure does not undo durable effects or skip remaining required cleanup, catalogue changes, or task-reference cleanup. Report failures after required work is attempted, preserving execution tracking when cleanup fails.
 
 **Outcome:** The source mode is removed; its sessions are either discarded or retained in the chosen destination, and unrelated sessions remain intact.
 
-**Failures:** Rejection or failed preflight causes no deletion/batch stop effects. A later failure or interruption is reported with completed effects.
+**Failures:** Rejection or failed preflight causes no deletion/batch stop effects. Later failure reports completed effects and incomplete work; notification failure does not roll back persistence or substitute for required cleanup.
 
 **Acceptance Criteria:**
 - [ ] The user can choose discard or move to another existing mode; confirmation explains the selected effects.
@@ -288,6 +298,7 @@ Agent preset commands are argv arrays: the first item is a non-empty executable 
 - [ ] Existing destination and unrelated-mode sessions retain their ownership and observers; no particular transfer ordering is required.
 - [ ] Provider-owned configuration, data, and state are unchanged.
 - [ ] Later failure or interruption reports the error and completed effects.
+- [ ] Notification failure leaves durable effects intact and does not prevent required cleanup or catalogue/reference changes; failed execution cleanup preserves tracking evidence.
 
 ### CONFIG-013: Catalogue deletion and task fallback
 
@@ -313,27 +324,27 @@ Agent preset commands are argv arrays: the first item is a non-empty executable 
 
 ### CONFIG-014: Catalogue startup failure
 
-**Description:** Startup distinguishes absent configuration from invalid configured data. An absent project catalogue is initialized once with PLAN and BUILD under CONFIG-004; a malformed, empty, or otherwise invalid configured catalogue fails startup and is reported without substitution or repair. Mode identifiers are unique names and have no version scheme; see the [architecture contract](../BLUEPRINT.md).
+**Description:** Startup requires the catalogue provisioned by explicit initialization under CONFIG-004. A missing, malformed, empty, or otherwise invalid catalogue fails startup and is reported without substitution or repair. Mode identifiers are unique names and have no version scheme; see the [architecture contract](../BLUEPRINT.md).
 
 **Trigger:** Application startup loads the mode catalogue.
 
-**Preconditions:** Project configuration and its mode catalogue may be absent or configured.
+**Preconditions:** Workspace initialization is separate from startup loading.
 
 **Behavior:**
-1. Initialize absent project modes under CONFIG-004.
-2. Load configured modes and proceed only if validation succeeds.
+1. Load required project modes without initializing absent data.
+2. Validate unknown stored configuration at acceptance and proceed only with a valid catalogue.
 
 **Outcome:** Startup proceeds only with a successfully loaded catalogue.
 
-**Failures:** Invalid configured catalogues fail startup and report the error; they are not replaced or repaired.
+**Failures:** Missing or invalid catalogues fail startup and report the error; they are not replaced or repaired.
 
 **Acceptance Criteria:**
-- [ ] Absent modes initialize with the canonical defaults; empty or invalid configured modes prevent startup and report the load error without substitution or repair.
+- [ ] Missing, empty, or invalid catalogues prevent startup and report the load error without substitution, initialization, or repair.
 - [ ] Mode identifiers are unique names and do not use a version scheme.
 
 ### CONFIG-015: Priority labels
 
-**Description:** Project configuration defines `priorities` as an ordered `string[]`, defaulting to `["High", "Medium", "Low"]`. A task stores and displays the selected configured label directly; priority has no separate normalized value. Legacy task/config values are migrated only by the explicit invocation and scope in [TASK-023](tasks.md#task-023-explicit-task-and-configuration-migration), never during ordinary Core startup or load.
+**Description:** Project configuration defines `priorities` as an ordered `string[]`, defaulting to `["High", "Medium", "Low"]`. A task stores and displays the selected configured label directly; priority has no separate normalized value. Only the current format is supported; existing values are not migrated or rewritten.
 
 **Trigger:** Priority configuration is loaded or a task priority is created, edited, or displayed.
 
@@ -342,39 +353,39 @@ Agent preset commands are argv arrays: the first item is a non-empty executable 
 **Behavior:**
 1. Use the ordered configured priority labels, with the stated default when unspecified.
 2. Store and display a task's priority as the configured label itself.
-3. During the explicit task/config migration, map old priority values to a configured label only when the mapping is unambiguous; report unmatched or ambiguous values and leave them untouched.
-4. Do not migrate or rewrite priority values during ordinary load.
+3. Validate supplied values against current configuration/input schemas; do not map old label/value pairs or normalize stored labels through a compatibility path.
+4. Do not migrate or rewrite priority values during load.
 
-**Outcome:** Supported task priorities are configured labels; unresolved legacy values remain unchanged and reported by migration.
+**Outcome:** Supported task priorities are exact configured labels; existing stored data is not converted.
 
-**Failures:** Report unmatched or ambiguous values and do not alter them.
+**Failures:** Reject unsupported input/record formats under their accepting schema; leave stored data unchanged and apply [TASK-007](tasks.md#task-007-malformed-records) to malformed task records.
 
 **Acceptance Criteria:**
 - `priorities` is an ordered string array with the stated default; task priority is the label, without paired label/value entries.
-- The explicit task/config migration follows TASK-023, reports and leaves unmatched/ambiguous values untouched; ordinary startup/load does not rewrite them.
+- Unsupported old formats are not mapped or migrated; invalid input is reported under the accepting schema without rewriting existing data.
 
 ### CONFIG-016: Date format tokens
 
-**Description:** `date_format` is a case-sensitive Luxon date-only pattern, defaulting to `yyyy-MM-dd`. Timestamp display appends fixed `HH:mm` separately. Patterns containing time tokens are unsupported. The explicit task/config migration in [TASK-023](tasks.md#task-023-explicit-task-and-configuration-migration) converts legacy syntax only when it resolves to a supported date-only pattern; mixed/time-token formats are reported and left unchanged. Ordinary Core startup and load never rewrite configuration.
+**Description:** `date_format` is a case-sensitive Luxon date-only pattern, defaulting to `yyyy-MM-dd`. Timestamp display appends fixed `HH:mm` separately. Patterns containing time tokens are unsupported. Old syntax is not converted; startup and loading never rewrite configuration.
 
-**Trigger:** A date is configured or displayed, or the explicit task/config migration is run.
+**Trigger:** A date is configured or displayed.
 
 **Preconditions:** Configuration and date values are available.
 
 **Behavior:**
 1. Interpret `date_format` as a case-sensitive Luxon date-only pattern, defaulting to `yyyy-MM-dd`.
 2. Render a date-only value with that pattern. Render a timestamp with the date pattern followed by fixed `HH:mm`; do not accept configured time tokens.
-3. Convert legacy syntax only through the explicit task/config migration when its exact lookup yields a supported date-only pattern. Report mixed/time-token or otherwise unsupported values and leave them unchanged.
-4. Never rewrite date configuration during ordinary startup or load.
+3. Reject unsupported patterns under the current configuration schema, without an old-syntax conversion or alias lookup.
+4. Never rewrite date configuration during startup or load.
 
 **Outcome:** Date formatting uses a date-only Luxon pattern; timestamp time is appended separately as `HH:mm`.
 
-**Failures:** Report unconvertible or unsupported legacy values and leave them unchanged.
+**Failures:** Report unsupported patterns and leave existing configuration unchanged.
 
 **Acceptance Criteria:**
 - `date_format` is a case-sensitive Luxon date-only pattern; default is `yyyy-MM-dd`. Configured time tokens are unsupported.
 - Date-only values use the pattern; timestamps append fixed `HH:mm` separately.
-- The explicit task/config migration uses exact lookup for supported date-only formats and reports/leaves mixed or unsupported values unchanged; ordinary startup/load does not rewrite configuration.
+- Unsupported patterns fail without conversion; startup/load does not rewrite configuration.
 
 ## States and Transitions
 
@@ -394,6 +405,8 @@ Agent preset commands are argv arrays: the first item is a non-empty executable 
 
 **Invariants:**
 - A task's effective configuration is resolved field by field and used by its operations.
+- Defaults for required resources are provisioned by explicit initialization; absent optional settings may inherit without creating files or repairing missing required state.
+- Current schemas accept unknown inputs once; atomic persistence, lock ownership, and security containment remain required.
 
 ### Task mode and session ownership
 
@@ -432,6 +445,7 @@ Agent preset commands are argv arrays: the first item is a non-empty executable 
 
 **Invariants:**
 - Approval is task-and-mode scoped, informational, and not an artifact-review gate.
+- Approval changes use the locked full-task domain transformation and TASK-025 edit contract.
 
 ### Agent settings
 
@@ -458,16 +472,20 @@ Agent preset commands are argv arrays: the first item is a non-empty executable 
 
 | State | Meaning |
 |---|---|
+| Uninitialized workspace | Required configuration and catalogue have not been explicitly provisioned. |
 | Available catalogue | Project-defined set of modes and its selected default. |
 
 **Transitions:**
 
 | From | Trigger | To | Required Behavior |
 |---|---|---|---|
+| Fresh uninitialized workspace | Explicit initialization | Available catalogue | Provision PLAN and BUILD with PLAN as default. |
+| Missing or invalid required catalogue | Ordinary startup | Startup failed | Report the error without seeding or repair. |
 | Available catalogue | Delete a non-last mode | Updated catalogue | Remove it and apply the deletion fallback described by CONFIG-013. |
 
 **Invariants:**
 - The catalogue is required for startup; failure to load it fails startup and reports the error.
+- Startup and reads never seed a missing catalogue or restore built-ins to an existing one.
 - Mode identifiers are unique names without a version scheme.
 - The catalogue always retains at least one mode and a valid default.
 
@@ -505,6 +523,7 @@ Agent preset commands are argv arrays: the first item is a non-empty executable 
 
 - Catalogue load failure prevents startup and reports the error without substituting a catalogue.
 - Model discovery failure or an unavailable configured model retains the selection and displays the problem.
+- Required resource loss fails without lazy repair. Atomic, locked mutations use current persisted state; post-save notification failure does not undo effects or skip required cleanup.
 
 ### Security
 
@@ -513,16 +532,23 @@ Agent preset commands are argv arrays: the first item is a non-empty executable 
 ### Compatibility
 
 - Configuration and data remain directly accessible and editable; API access is not exclusive.
+- Current configuration formats and `config.yml` only; no string-command, priority, date-format, deprecated-key, or filename migration/alias path. Existing files and migration manifests remain untouched.
 
 ## Edge Cases
 
 | Condition | Required Behavior |
 |---|---|
 | Catalogue cannot load at startup | Fail startup and report the error; do not substitute a catalogue. |
+| Required catalogue, configuration, directory, or state is missing | Fail the affected operation; do not initialize or repair it during an ordinary read/write. |
+| An optional setting is omitted | Apply its documented default or inheritance without rewriting configuration. |
+| A preset command is a string, an old format is supplied, or only `config.yaml` exists | Apply current schemas and supported filename rules; do not convert, discover an alias, or rewrite existing data. |
+| Configuration changed since an instance cached it | Mutate the current persisted configuration under the lock rather than overwriting from cache. |
 | Model discovery fails or configured model is unavailable | Retain selected model and show the problem; do not silently substitute. |
 | Provider adapter is missing / has no discovery | Report unsupported preset / return empty model list, respectively. |
 | Native cleanup validation rejects deletion | Reject before deletion or batch stop effects. |
 | Mode deletion fails or is interrupted after preflight | Report error and completed effects. |
+| A task edit's second save or post-save notification fails during approval | Apply TASK-025's partial-effect reporting; do not claim rollback of the first save. |
+| A notification fails during mode deletion | Keep durable effects and continue required cleanup/configuration/reference work; report notification and cleanup errors. |
 | User cancels staged settings | Discard staged edits. |
 | User deletes the last mode | Refuse deletion; retain the mode. |
 

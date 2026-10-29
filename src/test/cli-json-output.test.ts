@@ -4,6 +4,7 @@ import { Writable } from "node:stream";
 import { runCli } from "../cli/register.ts";
 import { Core } from "../index.ts";
 import { taskListJson } from "../renderer/formatters/json-output.ts";
+import { Storage } from "../storage/storage.ts";
 import { coreFileSystem, createUniqueTestDir, initializeFilesystemTestProject, safeCleanup } from "./test-utils.ts";
 
 const createdDirs: string[] = [];
@@ -49,9 +50,10 @@ async function makeProject() {
 
 	const core = new Core(TEST_DIR);
 	await initializeFilesystemTestProject(core, "JSON Output Test");
-	await core.createTask({
+	await new Storage(coreFileSystem(core)).createTask({
 		id: "task-1",
 		title: "JSON task",
+		done: false,
 		status: "In Progress",
 		type: "enhancement",
 		priority: "High",
@@ -91,6 +93,7 @@ describe("CLI JSON output", () => {
 			{
 				id: "TASK-1",
 				title: "Offset timestamps",
+				done: false,
 				status: "To Do",
 				createdDate: "2026-08-10T00:30+15:00",
 				updatedDate: "2026-08-09T23:30-02:00",
@@ -149,9 +152,10 @@ describe("CLI JSON output", () => {
 	it("emits empty reference and modified-file arrays for tasks without them", async () => {
 		const { dir: TEST_DIR, runCli } = await makeProject();
 		const core = new Core(TEST_DIR);
-		await core.createTask({
+		await new Storage(coreFileSystem(core)).createTask({
 			id: "TASK-3",
 			title: "Bare task",
+			done: false,
 			status: "To Do",
 			createdDate: "2026-07-15 08:00",
 			labels: [],
@@ -257,7 +261,7 @@ describe("CLI JSON output", () => {
 			const result = await runCli(args);
 			expect(result.exitCode).toBe(1);
 			expect(result.stdout.toString()).toBe("");
-			expect(result.stderr.toString()).toContain("--json cannot be combined with --plain");
+			expect(result.stderr.toString()).toContain("cannot be used with option '--plain'");
 		}
 	});
 

@@ -10,7 +10,6 @@ import {
 import { processIdentity, terminateProcessTree } from "../lib/process-tree.ts";
 import { fail, type SessionCommandResult } from "../model/session/session-utils.ts";
 import type { AgentSession } from "../model/session/types.ts";
-import { taskIdsEqual } from "../model/task/task-id.ts";
 import { cleanupPreparedLaunchResources, type PreparedLaunchResources } from "./completion-supervisor-resources.ts";
 import { ConclusiveStartupFailureError } from "./errors/sessions.ts";
 import { createTmuxExec } from "./live/tmux/exec.ts";
@@ -487,7 +486,7 @@ export class SessionProcess {
 		if (
 			name !== session.tmuxName ||
 			root !== this.rootDir ||
-			!taskIdsEqual(taskId ?? "", session.taskId) ||
+			taskId !== session.taskId ||
 			sessionId !== session.id ||
 			!roles.includes(role ?? "") ||
 			actualPaneId !== paneId ||

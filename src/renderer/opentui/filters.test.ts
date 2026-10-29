@@ -25,7 +25,7 @@ describe("native workspace filters", () => {
 		const backgroundActions: string[] = [];
 		let modal: ReturnType<typeof mountOpenTuiFilterEditor> | undefined;
 		const workspace = mountOpenTuiWorkspace(setup.renderer, parent, {
-			tasks: [{ id: "BACK-1", title: "Task", status: "Todo" }],
+			tasks: [{ id: "BACK-1", title: "Task", status: "Todo", done: false }],
 			onTaskCreate: () => backgroundActions.push("create"),
 			onTaskAction: () => backgroundActions.push("action"),
 			onToggleDetails: () => backgroundActions.push("details"),
@@ -351,7 +351,7 @@ describe("native shortcut help", () => {
 		const persisted: ShortcutOverrides[] = [];
 		const actions: string[] = [];
 		let workspace = mountOpenTuiWorkspace(setup.renderer, parent, {
-			tasks: [{ id: "BACK-1", title: "Task", status: "Todo" }],
+			tasks: [{ id: "BACK-1", title: "Task", status: "Todo", done: false }],
 			onTaskCreate: () => actions.push("create"),
 			onQuit: () => actions.push("quit"),
 		});
@@ -390,7 +390,7 @@ describe("native shortcut help", () => {
 			help.dispose();
 			workspace.dispose();
 			workspace = mountOpenTuiWorkspace(setup.renderer, parent, {
-				tasks: [{ id: "BACK-1", title: "Task", status: "Todo" }],
+				tasks: [{ id: "BACK-1", title: "Task", status: "Todo", done: false }],
 				keyboardOverrides: overrides,
 				onTaskCreate: () => actions.push("create"),
 			});

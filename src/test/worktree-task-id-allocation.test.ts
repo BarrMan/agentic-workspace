@@ -53,11 +53,11 @@ describe("task ID allocation across git worktrees", () => {
 		const sibling = await addWorktree(mainRepo, testDir, "feature-task");
 
 		const siblingCore = new Core(sibling);
-		const siblingTask = await siblingCore.createTaskFromInput({ title: "Sibling task" });
+		const siblingTask = await siblingCore.tasks.create({ title: "Sibling task" });
 		expect(siblingTask.task.id).toBe("TASK-1");
 
 		const mainCore = new Core(mainRepo);
-		const mainTask = await mainCore.createTaskFromInput({ title: "Main task" });
+		const mainTask = await mainCore.tasks.create({ title: "Main task" });
 
 		expect(mainTask.task.id).toBe("TASK-2");
 		expect(await coreFileSystem(mainCore).loadTask("task-2")).not.toBeNull();
@@ -76,23 +76,23 @@ describe("task ID allocation across git worktrees", () => {
 
 		const patchSaveTask = (core: Core) => {
 			const original = coreFileSystem(core).saveTask.bind(coreFileSystem(core));
-			coreFileSystem(core).saveTask = (async (task: Task): Promise<string> => {
+			coreFileSystem(core).saveTask = (async (task: Task, options): Promise<string> => {
 				saveEntries += 1;
 				if (task.title === "Alpha") {
 					firstEnteredSave.resolve();
 					await releaseFirstSave.promise;
 				}
-				return await original(task);
+				return await original(task, options);
 			}) as ReturnType<typeof coreFileSystem>["saveTask"];
 		};
 
 		patchSaveTask(first);
 		patchSaveTask(second);
 
-		const firstCreate = first.createTaskFromInput({ title: "Alpha" });
+		const firstCreate = first.tasks.create({ title: "Alpha" });
 		await firstEnteredSave.promise;
 
-		const secondCreate = second.createTaskFromInput({ title: "Beta" });
+		const secondCreate = second.tasks.create({ title: "Beta" });
 		await Promise.resolve();
 		await Promise.resolve();
 		expect(saveEntries).toBe(1);
@@ -119,10 +119,10 @@ describe("task ID allocation across git worktrees", () => {
 
 		const sibling = await addWorktree(mainRepo, testDir, "feature-prefix");
 		const siblingCore = new Core(sibling);
-		const siblingTask = await siblingCore.createTaskFromInput({ title: "Sibling task" });
+		const siblingTask = await siblingCore.tasks.create({ title: "Sibling task" });
 		expect(siblingTask.task.id).toBe("OPS-1");
 
-		const mainTask = await mainCore.createTaskFromInput({ title: "Main task" });
+		const mainTask = await mainCore.tasks.create({ title: "Main task" });
 		expect(mainTask.task.id).toBe("OPS-2");
 	});
 
@@ -132,12 +132,14 @@ describe("task ID allocation across git worktrees", () => {
 		const core = new Core(mainRepo);
 		const counterPath = join(mainRepo, ".git", "agentic-workspace", "task-counter.json");
 		const allocate = async (prefix: string, ids: string[]) =>
-			await core.withCreateLock(() => coreFileSystem(core).allocateTaskId(prefix, undefined, async () => ids));
+			await coreFileSystem(core).withCreateLock(() =>
+				coreFileSystem(core).allocateTaskId(prefix, undefined, async () => ids),
+			);
 
 		expect(await allocate("OPS", ["OPS-7", "OPS-7.1"])).toBe("OPS-8");
 		const restartedCore = new Core(mainRepo);
 		await expect(
-			restartedCore.withCreateLock(() =>
+			coreFileSystem(restartedCore).withCreateLock(() =>
 				coreFileSystem(restartedCore).allocateTaskId("OPS", undefined, async () => {
 					throw new Error("persisted counter should skip bootstrap");
 				}),
@@ -152,10 +154,10 @@ describe("task ID allocation across git worktrees", () => {
 		expect(await stat(occupiedContainer).then(() => true)).toBe(true);
 
 		await expect(
-			core.withCreateLock(() => coreFileSystem(core).allocateTaskId("PAD", 3, async () => [])),
+			coreFileSystem(core).withCreateLock(() => coreFileSystem(core).allocateTaskId("PAD", 3, async () => [])),
 		).resolves.toBe("PAD-001");
 		await expect(
-			core.withCreateLock(() => coreFileSystem(core).allocateTaskId("PAD", 3, async () => [])),
+			coreFileSystem(core).withCreateLock(() => coreFileSystem(core).allocateTaskId("PAD", 3, async () => [])),
 		).resolves.toBe("PAD-002");
 	});
 
@@ -169,7 +171,7 @@ describe("task ID allocation across git worktrees", () => {
 		await mkdir(await coreFileSystem(core).taskArtifacts.containerPath("ops-1", "completed"), { recursive: true });
 
 		await expect(
-			core.withCreateLock(() => coreFileSystem(core).allocateTaskId("OPS", undefined, async () => [])),
+			coreFileSystem(core).withCreateLock(() => coreFileSystem(core).allocateTaskId("OPS", undefined, async () => [])),
 		).resolves.toBe("OPS-2");
 		expect(JSON.parse(await readFile(counterPath, "utf8"))).toEqual({ OPS: { lastAllocated: 2 } });
 	});
@@ -184,7 +186,7 @@ describe("task ID allocation across git worktrees", () => {
 		await mkdir(await coreFileSystem(core).taskArtifacts.containerPath("ops-1", "archive/tasks"), { recursive: true });
 
 		await expect(
-			core.withCreateLock(() => coreFileSystem(core).allocateTaskId("OPS", undefined, async () => [])),
+			coreFileSystem(core).withCreateLock(() => coreFileSystem(core).allocateTaskId("OPS", undefined, async () => [])),
 		).resolves.toBe("OPS-2");
 	});
 });

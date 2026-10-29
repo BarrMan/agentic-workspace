@@ -1,5 +1,5 @@
-import { mkdir, rename, stat } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { rename, stat } from "node:fs/promises";
+import { join } from "node:path";
 import { normalizeDueDate } from "../model/task/due-date.ts";
 import type { Milestone } from "../model/types.ts";
 import { writeAtomically } from "./atomic-write.ts";
@@ -48,15 +48,15 @@ export class MilestoneStore {
 	private async find(identifier: string, scope: Scope = "active"): Promise<MilestoneFile | null> {
 		if (!identifier.trim()) return null;
 		const milestonesDir = await this.directory(scope);
+		await stat(milestonesDir);
 		const files = await Array.fromAsync(new Bun.Glob("m-*.md").scan({ cwd: milestonesDir, followSymlinks: true }));
 		const entries: MilestoneFile[] = [];
 		for (const file of files) {
 			if (file.toLowerCase() === "readme.md") continue;
 			const filepath = join(milestonesDir, file);
+			const content = await Bun.file(filepath).text();
 			let milestone: Milestone;
-			let content: string;
 			try {
-				content = await Bun.file(filepath).text();
 				milestone = parseMilestone(content);
 			} catch (error) {
 				if (error instanceof FrontmatterSchemaError) throw error;
@@ -82,12 +82,14 @@ export class MilestoneStore {
 	}
 
 	private async list(directory: string): Promise<Milestone[]> {
+		await stat(directory);
 		const files = await Array.fromAsync(new Bun.Glob("m-*.md").scan({ cwd: directory, followSymlinks: true }));
 		const milestones: Milestone[] = [];
 		for (const file of files) {
 			if (file.toLowerCase() === "readme.md") continue;
+			const content = await Bun.file(join(directory, file)).text();
 			try {
-				milestones.push(parseMilestone(await Bun.file(join(directory, file)).text()));
+				milestones.push(parseMilestone(content));
 			} catch (error) {
 				if (error instanceof FrontmatterSchemaError) throw error;
 				/* Ignore malformed files. */
@@ -97,20 +99,10 @@ export class MilestoneStore {
 	}
 
 	async listActive(): Promise<Milestone[]> {
-		try {
-			return await this.list(await this.directory("active"));
-		} catch (error) {
-			if (error instanceof FrontmatterSchemaError) throw error;
-			return [];
-		}
+		return await this.list(await this.directory("active"));
 	}
 	async listArchived(): Promise<Milestone[]> {
-		try {
-			return await this.list(await this.directory("archived"));
-		} catch (error) {
-			if (error instanceof FrontmatterSchemaError) throw error;
-			return [];
-		}
+		return await this.list(await this.directory("archived"));
 	}
 	async filePath(identifier: string): Promise<string | null> {
 		return (await this.find(identifier))?.filepath ?? null;
@@ -119,7 +111,7 @@ export class MilestoneStore {
 		try {
 			return (await this.find(identifier))?.milestone ?? null;
 		} catch (error) {
-			if (error instanceof FrontmatterSchemaError) throw error;
+			if (error instanceof FrontmatterSchemaError || (error as NodeJS.ErrnoException).code) throw error;
 			return null;
 		}
 	}
@@ -128,7 +120,7 @@ export class MilestoneStore {
 		const normalizedDueDate = normalizeDueDate(dueDate, "Due date");
 		return this.context.withCreateLock(async () => {
 			const [active, archived] = await Promise.all([this.directory("active"), this.directory("archived")]);
-			await Promise.all([mkdir(active, { recursive: true }), mkdir(archived, { recursive: true })]);
+			await Promise.all([stat(active), stat(archived)]);
 			const allFiles = await Promise.all([
 				Array.fromAsync(new Bun.Glob("m-*.md").scan({ cwd: active, followSymlinks: true })),
 				Array.fromAsync(new Bun.Glob("m-*.md").scan({ cwd: archived, followSymlinks: true })),
@@ -222,7 +214,6 @@ export class MilestoneStore {
 				const found = await this.find(identifier);
 				if (!found) return { success: false };
 				const targetPath = join(await this.directory("archived"), found.file);
-				await this.context.ensureDirectory(dirname(targetPath));
 				await assertAbsent(targetPath);
 				await rename(found.filepath, targetPath);
 				return { success: true, sourcePath: found.filepath, targetPath, milestone: found.milestone };

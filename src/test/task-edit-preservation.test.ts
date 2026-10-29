@@ -2,6 +2,7 @@ import { describe, expect, it } from "bun:test";
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { Core } from "../index.ts";
+import { Storage } from "../storage/storage.ts";
 import { runInProcessCli } from "./in-process-cli.ts";
 import { coreFileSystem, createUniqueTestDir, initializeFilesystemTestProject, safeCleanup } from "./test-utils.ts";
 
@@ -21,9 +22,10 @@ describe("Task edit section preservation", () => {
 		const { dir, core } = await setupPreservation();
 		try {
 			// Create a task with both content fields
-			await core.createTask({
+			await Storage.open(dir).createTask({
 				id: "task-1",
 				title: "Full task test",
+				done: false,
 				status: "To Do",
 				createdDate: "2025-07-04",
 				labels: [],
@@ -58,9 +60,10 @@ describe("Task edit section preservation", () => {
 		const { dir, core } = await setupPreservation();
 		try {
 			// Create a task with a description
-			await core.createTask({
+			await Storage.open(dir).createTask({
 				id: "task-2",
 				title: "Agent summary update test",
+				done: false,
 				status: "To Do",
 				createdDate: "2025-07-04",
 				labels: [],
@@ -91,9 +94,10 @@ describe("Task edit section preservation", () => {
 		const { dir, core } = await setupPreservation();
 		try {
 			// Create a task with a description
-			await core.createTask({
+			await Storage.open(dir).createTask({
 				id: "task-3",
 				title: "Agent summary replace test",
+				done: false,
 				status: "To Do",
 				createdDate: "2025-07-04",
 				labels: [],
@@ -122,9 +126,10 @@ describe("Task edit section preservation", () => {
 		const { dir, core } = await setupPreservation();
 		try {
 			// Create a task with a description
-			await core.createTask({
+			await Storage.open(dir).createTask({
 				id: "task-4",
 				title: "Agent summary clear test",
+				done: false,
 				status: "To Do",
 				createdDate: "2025-07-04",
 				labels: [],
@@ -154,9 +159,10 @@ describe("Task edit section preservation", () => {
 		const { dir, core } = await setupPreservation();
 		try {
 			// Create a task with just description
-			await core.createTask({
+			await Storage.open(dir).createTask({
 				id: "task-5",
 				title: "Minimal task test",
+				done: false,
 				status: "To Do",
 				createdDate: "2025-07-04",
 				labels: [],

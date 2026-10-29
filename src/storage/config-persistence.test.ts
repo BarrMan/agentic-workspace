@@ -20,12 +20,17 @@ describe("exact configuration persistence", () => {
 	it("serializes concurrent project updates and preserves unrelated configuration", async () => {
 		const root = await mkdtemp(join(tmpdir(), "configuration-persistence-"));
 		directories.push(root);
+		await mkdir(join(root, ".locks"), { recursive: true });
 		let saved: AgenticWorkspaceConfig = { ...parseConfig("", "config.yml"), projectName: "Keep" };
 		let writes = 0;
 		const storage: AgentConfigurationStorage = {
 			configFilePath: join(root, "config.yml"),
 			loadConfig: async () => structuredClone(saved),
-			saveConfig: async (config) => {
+			loadConfigFromDisk: async () => structuredClone(saved),
+			saveConfig: async () => {
+				throw new Error("Unexpected unlocked project write");
+			},
+			saveConfigUnderConfigLock: async (config) => {
 				writes++;
 				saved = structuredClone(config);
 			},
@@ -61,14 +66,20 @@ describe("exact configuration persistence", () => {
 		process.env.XDG_CONFIG_HOME = root;
 		try {
 			const path = rootConfigFilePath();
-			await mkdir(join(root, "agentic-workspace"));
+			await mkdir(join(root, "agentic-workspace", ".locks"), { recursive: true });
 			await writeFile(path, serializeConfig({ ...parseConfig("", path), projectName: "Keep" }), { mode: 0o640 });
 			const storage: AgentConfigurationStorage = {
 				configFilePath: "unused",
 				loadConfig: async () => {
 					throw new Error("Unexpected project read");
 				},
+				loadConfigFromDisk: async () => {
+					throw new Error("Unexpected project read");
+				},
 				saveConfig: async () => {
+					throw new Error("Unexpected project write");
+				},
+				saveConfigUnderConfigLock: async () => {
 					throw new Error("Unexpected project write");
 				},
 			};

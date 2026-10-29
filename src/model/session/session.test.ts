@@ -82,7 +82,7 @@ describe("Session", () => {
 		);
 		await expect(session.start(context)).rejects.toBe(failure);
 		expect(session.execution).toBe(running.value);
-		expect(session.serialize().nativeSessionId).toBe("captured");
+		expect(session.record.nativeSessionId).toBe("captured");
 		expect(session.view.state).toBe("unknown");
 		expect(running.observerCount()).toBe(0);
 		await session.stop();
@@ -98,7 +98,7 @@ describe("Session", () => {
 		expect(session.execution).toBe(running.value);
 		expect(running.observerCount()).toBe(1);
 		expect(session.view.activity).toBe("idle");
-		expect(session.serialize().nativeSessionId).toBe("one");
+		expect(session.record.nativeSessionId).toBe("one");
 		await session.stop();
 	});
 	test("owns the current execution and durable provider identity", async () => {
@@ -106,7 +106,7 @@ describe("Session", () => {
 		const session = new Session(record, "mode", runtime({ start: async () => running.value }));
 		await session.start(context);
 		expect(session.execution).toBe(running.value);
-		expect(session.serialize()).toEqual({ ...record, nativeSessionId: "native-1" });
+		expect(session.record).toEqual({ ...record, nativeSessionId: "native-1" });
 		expect(session.view).toEqual({ state: "running", activity: "working", idleSince: null });
 	});
 
@@ -149,7 +149,7 @@ describe("Session", () => {
 		expect(running.calls.stop).toBe(1);
 		expect(running.observerCount()).toBe(0);
 		expect(session.view).toEqual({ state: "stopped", activity: "unknown", idleSince: null });
-		expect(session.serialize()).toEqual({ ...record, nativeSessionId: "one" });
+		expect(session.record).toEqual({ ...record, nativeSessionId: "one" });
 	});
 
 	test("keeps retained absence, verified liveness, and unknown inspection distinct", async () => {

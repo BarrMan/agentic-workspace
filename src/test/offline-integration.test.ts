@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { $ } from "bun";
 import { Core } from "../controller/agentic-workspace.ts";
 import type { AgenticWorkspaceConfig } from "../model/types.ts";
+import { Storage } from "../storage/storage.ts";
 import { coreFileSystem, initGitRepo } from "./test-utils.ts";
 
 describe("Offline Integration Tests", () => {
@@ -32,7 +33,6 @@ describe("Offline Integration Tests", () => {
 			projectName: "Offline Test Project",
 			statuses: ["To Do", "In Progress", "Done"],
 			labels: ["bug", "feature"],
-			milestones: [],
 			dateFormat: "YYYY-MM-DD",
 			remoteOperations: false,
 		};
@@ -42,7 +42,6 @@ describe("Offline Integration Tests", () => {
 			`project_name: "${config.projectName}"
 statuses: ["To Do", "In Progress", "Done"]
 labels: ["bug", "feature"]
-milestones: []
 date_format: YYYY-MM-DD
 agentic_workspace_directory: "agentic-workspace"
 remote_operations: false
@@ -50,6 +49,10 @@ remote_operations: false
 		);
 
 		core = new Core(tempDir);
+		await new Storage(coreFileSystem(core)).initializeWorkspace(config, {
+			agenticWorkspaceDirectory: "agentic-workspace",
+			configLocation: "root",
+		});
 	});
 
 	afterEach(async () => {
@@ -68,6 +71,7 @@ remote_operations: false
 			title: "Test task in offline mode",
 			description: "This task should be created without remote operations",
 			status: "To Do",
+			done: false,
 			createdDate: new Date().toISOString().split("T")[0] ?? "",
 			updatedDate: new Date().toISOString().split("T")[0] ?? "",
 			labels: ["feature"],
@@ -75,11 +79,11 @@ remote_operations: false
 			priority: "medium" as const,
 		};
 
-		const filepath = await core.createTask(task);
+		const filepath = await new Storage(coreFileSystem(core)).saveTask(task, { create: true });
 		expect(filepath).toContain("task-1");
 
 		// List tasks should work without remote operations
-		const tasks = await core.queryTasks({});
+		const tasks = await core.tasks.query({});
 		expect(tasks).toHaveLength(1);
 		expect(tasks[0]?.id).toBe("TASK-1");
 		expect(tasks[0]?.title).toBe("Test task in offline mode");

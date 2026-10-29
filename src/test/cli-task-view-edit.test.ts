@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { $ as shell } from "bun";
 import { Core } from "../index.ts";
+import { Storage } from "../storage/storage.ts";
 import { runInProcessCli } from "./in-process-cli.ts";
 import { coreFileSystem, createUniqueTestDir, initializeTestProject, safeCleanup } from "./test-utils.ts";
 
@@ -29,10 +30,11 @@ describe("CLI task view and edit", () => {
 
 	it("edits only title and description without interpreting an opaque body", async () => {
 		const core = new Core(testDir);
-		await core.createTask({
+		await new Storage(coreFileSystem(core)).createTask({
 			id: "task-1",
 			title: "Original",
 			status: "To Do",
+			done: false,
 			createdDate: "2026-09-30",
 			labels: [],
 			dependencies: [],

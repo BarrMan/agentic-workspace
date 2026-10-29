@@ -9,6 +9,7 @@ describe("task description storage", () => {
 			id: "task-1",
 			title: "Description",
 			status: "To Do",
+			done: false,
 			createdDate: "2026-09-30",
 			labels: [],
 			dependencies: [],

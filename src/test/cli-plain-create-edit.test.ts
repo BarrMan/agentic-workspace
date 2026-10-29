@@ -1,7 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { mkdir } from "node:fs/promises";
-import { hasEditFieldFlags } from "../cli/features/task/edit-fields.ts";
-import { buildTaskUpdateInput } from "../cli/task-edit-builder.ts";
 import { Core } from "../index.ts";
 import { runInProcessCli } from "./in-process-cli.ts";
 import { coreFileSystem, createUniqueTestDir, initializeFilesystemTestProject, safeCleanup } from "./test-utils.ts";
@@ -9,12 +7,6 @@ import { coreFileSystem, createUniqueTestDir, initializeFilesystemTestProject, s
 let TEST_DIR: string;
 
 describe("CLI task create/edit descriptions", () => {
-	it("distinguishes omitted, explicit empty, and blank-only label lists", () => {
-		expect(buildTaskUpdateInput({})).not.toHaveProperty("labels");
-		expect(buildTaskUpdateInput({ labels: [] }).labels).toEqual([]);
-		expect(buildTaskUpdateInput({ labels: [" "] })).not.toHaveProperty("labels");
-	});
-
 	beforeEach(async () => {
 		TEST_DIR = createUniqueTestDir("test-plain-create-edit");
 		await mkdir(TEST_DIR, { recursive: true });
@@ -84,10 +76,5 @@ describe("CLI task create/edit descriptions", () => {
 		expect(
 			(await runInProcessCli(["task", "edit", "task-1", "--priority", "Urgent"], { cwd: TEST_DIR })).exitCode,
 		).not.toBe(0);
-	});
-
-	it("treats a task edit with no field options as an interactive edit", () => {
-		expect(hasEditFieldFlags({})).toBe(false);
-		expect(hasEditFieldFlags({ label: undefined, dependsOn: undefined })).toBe(false);
 	});
 });

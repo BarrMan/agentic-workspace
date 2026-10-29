@@ -1,13 +1,6 @@
 import type { Core } from "../../controller/agentic-workspace.ts";
-import { DEFAULT_STATUSES } from "../../model/constants.ts";
 import { formatDependencyCleanupMessage } from "../../model/task/dependency-graph.ts";
-import { getTerminalStatus, isTerminalStatus } from "../../model/task/terminal-status.ts";
 import type { Task } from "../../model/types.ts";
-
-type CompleteTaskFromTuiResult =
-	| { success: true }
-	| { success: false; reason: "not-terminal"; terminalStatus: string }
-	| { success: false; reason: "failed" };
 
 /**
  * Transient TUI line for a finished archive: the confirmation, plus the shared cleanup report
@@ -18,56 +11,21 @@ function formatTaskArchivedMessage(taskId: string, cleanedTaskIds: readonly stri
 	return `Archived ${taskId}${cleanup ? `. ${cleanup}` : ""}`;
 }
 
-function formatTaskCompletionBlockedMessage(taskId: string, terminalStatus: string): string {
-	return `Task ${taskId} is not ${terminalStatus}. Set status to "${terminalStatus}" before completing it.`;
-}
+export type TaskLifecycleOutcome = { kind: "completed"; message: string } | { kind: "failed"; message: string };
 
-async function completeTaskFromTui(core: Core, task: Task): Promise<CompleteTaskFromTuiResult> {
-	const config = await core.getStoredConfig();
-	const statuses = config?.statuses ?? [...DEFAULT_STATUSES];
-	const terminalStatus = getTerminalStatus(statuses) ?? "Done";
-
-	if (!isTerminalStatus(task.status, statuses)) {
-		return { success: false, reason: "not-terminal", terminalStatus };
-	}
-
-	const success = await core.completeTask(task.id);
-	return success ? { success: true } : { success: false, reason: "failed" };
-}
-
-export type TaskLifecycleOutcome =
-	| { kind: "blocked"; message: string }
-	| { kind: "completed"; message: string }
-	| { kind: "failed"; message: string };
-
-export async function runTaskLifecycleAction(
-	core: Core,
-	task: Task,
-	action: "complete" | "archive",
-): Promise<TaskLifecycleOutcome> {
-	if (task.branch) return { kind: "blocked", message: `Cannot ${action} task from branch "${task.branch}".` };
+export async function runTaskLifecycleAction(core: Core, task: Task, action: "archive"): Promise<TaskLifecycleOutcome> {
 	try {
-		const archived = action === "archive" ? await archiveTask(core, task) : undefined;
-		const result = archived ? { ...archived, reason: "failed" as const } : await completeTaskFromTui(core, task);
-		if (result.success)
+		const archived = await core.tasks.archive(task.id);
+		if (archived.success)
 			return {
 				kind: "completed",
-				message: archived
-					? formatTaskArchivedMessage(task.id, archived.cleanedTaskIds)
-					: `Moved ${task.id} to completed`,
+				message: formatTaskArchivedMessage(task.id, archived.cleanedTaskIds),
 			};
-		if (action === "complete" && result.reason === "not-terminal") {
-			return { kind: "blocked", message: formatTaskCompletionBlockedMessage(task.id, result.terminalStatus) };
-		}
 		return { kind: "failed", message: `Failed to ${action} ${task.id}` };
 	} catch (error) {
 		return {
 			kind: "failed",
-			message: `Error ${action === "complete" ? "completing" : "archiving"} task: ${error instanceof Error ? error.message : "Unknown error"}`,
+			message: `Error archiving task: ${error instanceof Error ? error.message : "Unknown error"}`,
 		};
 	}
-}
-
-async function archiveTask(core: Core, task: Task) {
-	return core.archiveTask(task.id);
 }

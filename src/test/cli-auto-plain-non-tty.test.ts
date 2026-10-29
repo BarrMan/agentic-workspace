@@ -2,8 +2,9 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdir } from "node:fs/promises";
 import { Core } from "../controller/agentic-workspace.ts";
 import type { Task } from "../model/types.ts";
+import { Storage } from "../storage/storage.ts";
 import { runInProcessCli } from "./in-process-cli.ts";
-import { createUniqueTestDir, initializeFilesystemTestProject, safeCleanup } from "./test-utils.ts";
+import { coreFileSystem, createUniqueTestDir, initializeFilesystemTestProject, safeCleanup } from "./test-utils.ts";
 
 let TEST_DIR: string;
 let core: Core;
@@ -19,13 +20,14 @@ describe("CLI auto-plain behavior in non-TTY runs", () => {
 		const seedTask: Task = {
 			id: "task-1",
 			title: "First Task",
+			done: false,
 			status: "To Do",
 			createdDate: "2026-01-01 00:00",
 			labels: [],
 			dependencies: [],
 			description: "Seed task description",
 		};
-		await core.createTask(seedTask);
+		await new Storage(coreFileSystem(core)).createTask(seedTask);
 	});
 
 	afterEach(async () => {

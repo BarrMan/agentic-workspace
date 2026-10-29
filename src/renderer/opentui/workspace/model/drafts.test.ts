@@ -5,6 +5,7 @@ import { changedTaskFields, createWorkspaceDraft } from "./drafts.ts";
 const task = (id: string, status: string): Task => ({
 	id,
 	title: id,
+	done: false,
 	status,
 	createdDate: "2026-01-01",
 	labels: [],

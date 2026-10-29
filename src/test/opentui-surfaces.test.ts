@@ -7,7 +7,7 @@ import { mountOpenTuiBoard } from "../renderer/opentui/board.ts";
 import { mountOpenTuiWorkspace } from "../renderer/opentui/workspace.ts";
 
 function task(id: string, status = "Todo"): Task {
-	return { id, title: `Task ${id}`, status, createdDate: "2026-01-01", labels: [], dependencies: [] };
+	return { id, title: `Task ${id}`, status, done: false, createdDate: "2026-01-01", labels: [], dependencies: [] };
 }
 
 function attachSurfaceParent(setup: TestRendererSetup): BoxRenderable {
@@ -67,8 +67,8 @@ describe("OpenTUI surfaces", () => {
 		renderers.push(setup);
 		const parent = attachSurfaceParent(setup);
 		const tasks = [
-			{ id: "BACK-1", title: "First", status: "Todo", description: "First task details" },
-			{ id: "BACK-2", title: "Second", status: "Todo", description: "Second task details" },
+			{ id: "BACK-1", title: "First", status: "Todo", done: false, description: "First task details" },
+			{ id: "BACK-2", title: "Second", status: "Todo", done: false, description: "Second task details" },
 		];
 		let selectedTaskIndex = 0;
 		let taskPaneVisible = true;
@@ -122,7 +122,7 @@ describe("OpenTUI surfaces", () => {
 		const setup = await createTestRenderer({ width: 120, height: 40, kittyKeyboard: true });
 		renderers.push(setup);
 		const parent = attachSurfaceParent(setup);
-		const tasks = [{ id: "BACK-1", title: "First", status: "Todo", description: "First task details" }];
+		const tasks = [{ id: "BACK-1", title: "First", status: "Todo", done: false, description: "First task details" }];
 		let taskPaneVisible = true;
 		const options = {
 			tasks,

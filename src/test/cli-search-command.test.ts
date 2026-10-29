@@ -1,8 +1,9 @@
 import { afterAll, beforeAll, describe, expect, it } from "bun:test";
 import { mkdir } from "node:fs/promises";
 import { Core } from "../index.ts";
+import { Storage } from "../storage/storage.ts";
 import { runInProcessCli } from "./in-process-cli.ts";
-import { createUniqueTestDir, initializeFilesystemTestProject, safeCleanup } from "./test-utils.ts";
+import { coreFileSystem, createUniqueTestDir, initializeFilesystemTestProject, safeCleanup } from "./test-utils.ts";
 
 let TEST_DIR: string;
 
@@ -14,9 +15,10 @@ describe("CLI search command", () => {
 		const core = new Core(TEST_DIR);
 		await initializeFilesystemTestProject(core, "Search Command Project");
 
-		await core.createTask({
+		await new Storage(coreFileSystem(core)).createTask({
 			id: "task-1",
 			title: "Central search integration",
+			done: false,
 			status: "To Do",
 			createdDate: "2025-09-18",
 			labels: ["search"],
@@ -26,9 +28,10 @@ describe("CLI search command", () => {
 			modifiedFiles: ["src/web/App.tsx"],
 		});
 
-		await core.createTask({
+		await new Storage(coreFileSystem(core)).createTask({
 			id: "task-2",
 			title: "High priority follow-up",
+			done: false,
 			status: "In Progress",
 			createdDate: "2025-09-18",
 			labels: ["search"],
@@ -39,27 +42,32 @@ describe("CLI search command", () => {
 			modifiedFiles: ["src/core/search-service.ts"],
 		});
 
-		await core.createTask({
+		await new Storage(coreFileSystem(core)).createTask({
 			id: "task-3",
 			title: "Completed archive-scope marker",
+			done: true,
 			status: "To Do",
 			createdDate: "2025-09-18",
 			labels: [],
 			dependencies: [],
 			description: "Completed archive-scope marker",
 		});
-		expect(await core.completeTask("task-3")).toBe(true);
+		await coreFileSystem(core).moveTaskContainer(
+			(await core.tasks.getTask("task-3"))!,
+			coreFileSystem(core).completedDir,
+		);
 
-		await core.createTask({
+		await new Storage(coreFileSystem(core)).createTask({
 			id: "task-4",
 			title: "Archived archive-scope marker",
+			done: false,
 			status: "To Do",
 			createdDate: "2025-09-18",
 			labels: [],
 			dependencies: [],
 			description: "Archived archive-scope marker",
 		});
-		expect((await core.archiveTask("task-4")).success).toBe(true);
+		expect((await core.tasks.archive("task-4")).success).toBe(true);
 	});
 
 	afterAll(async () => {

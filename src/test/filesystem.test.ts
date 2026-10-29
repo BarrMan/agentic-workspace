@@ -2,10 +2,12 @@ import { afterEach, beforeEach, describe, expect, it, spyOn } from "bun:test";
 import * as fsPromises from "node:fs/promises";
 import { mkdir, readdir, stat } from "node:fs/promises";
 import { join } from "node:path";
+import { Core } from "../controller/agentic-workspace.ts";
 import type { AgenticWorkspaceConfig, Task } from "../model/types.ts";
 import { FileSystem } from "../storage/file-system.ts";
 import { serializeTask } from "../storage/markdown/serializer.ts";
-import { createUniqueTestDir, safeCleanup } from "./test-utils.ts";
+import { Storage } from "../storage/storage.ts";
+import { createUniqueTestDir, initializeFilesystemTestWorkspace, safeCleanup } from "./test-utils.ts";
 
 let TEST_DIR: string;
 
@@ -15,14 +17,14 @@ describe("FileSystem", () => {
 	beforeEach(async () => {
 		TEST_DIR = createUniqueTestDir("test-agentic-workspace");
 		filesystem = new FileSystem(TEST_DIR);
-		await filesystem.ensureAgenticWorkspaceStructure();
+		await initializeFilesystemTestWorkspace(filesystem);
 	});
 
 	afterEach(async () => {
 		await safeCleanup(TEST_DIR);
 	});
 
-	describe("ensureAgenticWorkspaceStructure", () => {
+	describe("explicit workspace initialization", () => {
 		it("should create all required directories", async () => {
 			const workspaceDir = filesystem.agenticWorkspaceDir;
 			const expectedDirs = [
@@ -75,7 +77,7 @@ describe("FileSystem", () => {
 				);
 				const oneDriveFilesystem = new MockedFileSystem(projectDir);
 
-				await oneDriveFilesystem.ensureAgenticWorkspaceStructure();
+				await initializeFilesystemTestWorkspace(oneDriveFilesystem);
 
 				for (const dir of expectedDirs) {
 					const stats = await stat(dir);
@@ -109,7 +111,7 @@ describe("FileSystem", () => {
 				const { FileSystem: MockedFileSystem } = await import(`../storage/file-system.ts?eexist-file=${Date.now()}`);
 				const conflictFilesystem = new MockedFileSystem(projectDir);
 
-				await expect(conflictFilesystem.ensureAgenticWorkspaceStructure()).rejects.toMatchObject({ code: "EEXIST" });
+				await expect(initializeFilesystemTestWorkspace(conflictFilesystem)).rejects.toMatchObject({ code: "EEXIST" });
 			} finally {
 				mkdirSpy.mockRestore();
 			}
@@ -120,6 +122,7 @@ describe("FileSystem", () => {
 		const sampleTask: Task = {
 			id: "task-1",
 			title: "Test Task",
+			done: false,
 			status: "To Do",
 			reporter: "@manager",
 			createdDate: "2025-06-03",
@@ -130,7 +133,7 @@ describe("FileSystem", () => {
 		};
 
 		it("should save and load a task", async () => {
-			await filesystem.saveTask(sampleTask);
+			await filesystem.saveTask(sampleTask, { create: true });
 
 			const loadedTask = await filesystem.loadTask("task-1");
 			expect(loadedTask?.id).toBe("TASK-1"); // IDs are normalized to uppercase
@@ -154,11 +157,14 @@ describe("FileSystem", () => {
 		});
 
 		it("preserves unknown frontmatter and opaque body when saving an existing task", async () => {
-			await filesystem.saveTask({
-				...sampleTask,
-				dueDate: "2026-10-01",
-				rawContent: "## Free-form\n\nThis body stays literal.",
-			});
+			await filesystem.saveTask(
+				{
+					...sampleTask,
+					dueDate: "2026-10-01",
+					rawContent: "## Free-form\n\nThis body stays literal.",
+				},
+				{ create: true },
+			);
 			const loaded = await filesystem.loadTask("task-1");
 			if (!loaded?.filePath) throw new Error("Saved task was not found");
 			const filepath = loaded.filePath;
@@ -178,20 +184,6 @@ describe("FileSystem", () => {
 			expect((await filesystem.loadTask("task-1"))?.rawContent).toBe("## Free-form\n\nThis body stays literal.");
 		});
 
-		it("preserves fresh approvals through stale metadata saves and container moves", async () => {
-			await filesystem.saveTask({ ...sampleTask, modeApprovals: { build: true } });
-			const stale = await filesystem.loadTask("task-1");
-			if (!stale) throw new Error("Saved task was not found");
-			await filesystem.saveTask({ ...stale, title: "Metadata edit", modeApprovals: undefined });
-			expect((await filesystem.loadTask("task-1"))?.modeApprovals).toEqual({ build: true });
-			const current = await filesystem.loadTask("task-1");
-			if (!current) throw new Error("Saved task was not found");
-			await filesystem.moveTaskContainer(current, filesystem.completedDir);
-			expect((await filesystem.listCompletedTasks()).find(({ id }) => id === "TASK-1")?.modeApprovals).toEqual({
-				build: true,
-			});
-		});
-
 		it("uses the same immediate-child identity rule for path saves and lifecycle operations", async () => {
 			const cases = [
 				{ name: "direct child", path: join(filesystem.tasksDir, "task-1", "task.md"), accepted: true },
@@ -207,7 +199,7 @@ describe("FileSystem", () => {
 				const before = await Bun.file(item.path).text();
 				if (item.accepted) {
 					await expect(filesystem.saveTask({ ...record, filePath: undefined }, { create: true })).rejects.toThrow();
-					await filesystem.saveTask({ ...record, filePath: undefined, title: "Changed by ID" });
+					await filesystem.saveTask({ ...record, title: "Changed by ID" });
 					expect(await Bun.file(item.path).text()).toContain("Changed by ID");
 					await filesystem.saveTask({ ...record, title: "Changed" });
 					expect(await Bun.file(item.path).text()).toContain("Changed");
@@ -239,8 +231,10 @@ describe("FileSystem", () => {
 			await mkdir(join(filesystem.completedDir, "task-1"), { recursive: true });
 			await Bun.write(duplicate, serializeTask({ ...sampleTask, id: "TASK-1" }));
 			const before = await Promise.all([filepath, duplicate].map((path) => Bun.file(path).text()));
-			await expect(filesystem.saveTask({ ...sampleTask, id: "TASK-1" })).rejects.toThrow(/ambiguous/i);
-			await expect(filesystem.archiveTask("TASK-1")).rejects.toThrow(/ambiguous/i);
+			await expect(filesystem.saveTask({ ...sampleTask, id: "TASK-1" }, { create: true })).rejects.toThrow(
+				/ambiguous/i,
+			);
+			await expect(new Core(TEST_DIR).tasks.archive("TASK-1")).rejects.toThrow(/ambiguous/i);
 			expect(await Promise.all([filepath, duplicate].map((path) => Bun.file(path).text()))).toEqual(before);
 		});
 
@@ -261,7 +255,7 @@ describe("FileSystem", () => {
 		});
 
 		it("does not read a longer numeric sibling for a shorter numeric ID", async () => {
-			await filesystem.saveTask({ ...sampleTask, id: "BACK-12", title: "Longer sibling" });
+			await filesystem.saveTask({ ...sampleTask, id: "BACK-12", title: "Longer sibling" }, { create: true });
 
 			expect(await filesystem.loadTask("BACK-1")).toBeNull();
 			expect((await filesystem.loadTask("back-12"))?.title).toBe("Longer sibling");
@@ -284,36 +278,31 @@ describe("FileSystem", () => {
 		});
 
 		it("does not archive a longer numeric sibling for a shorter numeric ID", async () => {
-			await filesystem.saveTask({ ...sampleTask, id: "BACK-12", title: "Longer sibling" });
+			await filesystem.saveTask({ ...sampleTask, id: "BACK-12", title: "Longer sibling" }, { create: true });
 
-			expect(await filesystem.archiveTask("BACK-1")).toBe(false);
+			expect((await new Core(TEST_DIR).tasks.archive("BACK-1")).success).toBe(false);
 			expect((await filesystem.loadTask("BACK-12"))?.title).toBe("Longer sibling");
 			expect(await readdir(filesystem.archiveTasksDir)).toHaveLength(0);
 		});
 
-		it("does not complete a longer numeric sibling for a shorter numeric ID", async () => {
-			await filesystem.saveTask({ ...sampleTask, id: "BACK-12", title: "Longer sibling" });
-
-			expect(await filesystem.completeTask("BACK-1")).toBe(false);
-			expect((await filesystem.loadTask("BACK-12"))?.title).toBe("Longer sibling");
-			expect(await readdir(filesystem.completedDir)).toHaveLength(0);
-		});
-
 		it("does not delete a longer numeric sibling during numeric save cleanup", async () => {
-			await filesystem.saveTask({ ...sampleTask, id: "BACK-12", title: "Longer sibling" });
-			await filesystem.saveTask({ ...sampleTask, id: "BACK-1", title: "Numeric target" });
+			await filesystem.saveTask({ ...sampleTask, id: "BACK-12", title: "Longer sibling" }, { create: true });
+			await filesystem.saveTask({ ...sampleTask, id: "BACK-1", title: "Numeric target" }, { create: true });
 
 			expect((await filesystem.loadTask("BACK-1"))?.title).toBe("Numeric target");
 			expect((await filesystem.loadTask("BACK-12"))?.title).toBe("Longer sibling");
 		});
 
 		it("should list all tasks", async () => {
-			await filesystem.saveTask(sampleTask);
-			await filesystem.saveTask({
-				...sampleTask,
-				id: "task-2",
-				title: "Second Task",
-			});
+			await filesystem.saveTask(sampleTask, { create: true });
+			await filesystem.saveTask(
+				{
+					...sampleTask,
+					id: "task-2",
+					title: "Second Task",
+				},
+				{ create: true },
+			);
 
 			const tasks = await filesystem.listTasks();
 			expect(tasks).toHaveLength(2);
@@ -321,12 +310,15 @@ describe("FileSystem", () => {
 		});
 
 		it("propagates malformed task frontmatter instead of hiding corrupt task data", async () => {
-			await filesystem.saveTask(sampleTask);
-			await filesystem.saveTask({
-				...sampleTask,
-				id: "task-2",
-				title: "Second Task",
-			});
+			await filesystem.saveTask(sampleTask, { create: true });
+			await filesystem.saveTask(
+				{
+					...sampleTask,
+					id: "task-2",
+					title: "Second Task",
+				},
+				{ create: true },
+			);
 
 			const invalidPath = join(filesystem.tasksDir, "task-99", "task.md");
 			await Bun.write(
@@ -355,11 +347,14 @@ title: [unterminated
 			// Create tasks with IDs that would sort incorrectly with string comparison
 			const taskIds = ["task-2", "task-10", "task-1", "task-20", "task-3"];
 			for (const id of taskIds) {
-				await filesystem.saveTask({
-					...sampleTask,
-					id,
-					title: `Task ${id}`,
-				});
+				await filesystem.saveTask(
+					{
+						...sampleTask,
+						id,
+						title: `Task ${id}`,
+					},
+					{ create: true },
+				);
 			}
 
 			const tasks = await filesystem.listTasks();
@@ -370,11 +365,14 @@ title: [unterminated
 			// Create tasks with decimal IDs
 			const taskIds = ["task-2.10", "task-2.2", "task-2", "task-1", "task-2.1"];
 			for (const id of taskIds) {
-				await filesystem.saveTask({
-					...sampleTask,
-					id,
-					title: `Task ${id}`,
-				});
+				await filesystem.saveTask(
+					{
+						...sampleTask,
+						id,
+						title: `Task ${id}`,
+					},
+					{ create: true },
+				);
 			}
 
 			const tasks = await filesystem.listTasks();
@@ -382,34 +380,43 @@ title: [unterminated
 		});
 
 		it("should filter tasks by status", async () => {
-			await filesystem.saveTask({
-				...sampleTask,
-				id: "task-1",
-				status: "To Do",
-				title: "Task 1",
-			});
-			await filesystem.saveTask({
-				...sampleTask,
-				id: "task-2",
-				status: "Done",
-				title: "Task 2",
-			});
-			await filesystem.saveTask({
-				...sampleTask,
-				id: "task-3",
-				status: "To Do",
-				title: "Task 3",
-			});
+			await filesystem.saveTask(
+				{
+					...sampleTask,
+					id: "task-1",
+					status: "To Do",
+					title: "Task 1",
+				},
+				{ create: true },
+			);
+			await filesystem.saveTask(
+				{
+					...sampleTask,
+					id: "task-2",
+					status: "Done",
+					title: "Task 2",
+				},
+				{ create: true },
+			);
+			await filesystem.saveTask(
+				{
+					...sampleTask,
+					id: "task-3",
+					status: "To Do",
+					title: "Task 3",
+				},
+				{ create: true },
+			);
 
 			const statusFiltered = await filesystem.listTasks({ status: "To Do" });
 			expect(statusFiltered.map((t) => t.id)).toEqual(["TASK-1", "TASK-3"]); // IDs normalized to uppercase
 		});
 
 		it("should archive a task", async () => {
-			await filesystem.saveTask(sampleTask);
+			await Storage.open(TEST_DIR).createTask(sampleTask);
 
-			const archived = await filesystem.archiveTask("task-1");
-			expect(archived).toBe(true);
+			const archived = await new Core(TEST_DIR).tasks.archive("task-1");
+			expect(archived.success).toBe(true);
 
 			const task = await filesystem.loadTask("task-1");
 			expect(task).toBeNull();
@@ -450,13 +457,15 @@ title: [unterminated
 		it("should return null for missing config", async () => {
 			// Create a fresh filesystem without any config
 			const freshFilesystem = new FileSystem(join(TEST_DIR, "fresh"));
-			await freshFilesystem.ensureAgenticWorkspaceStructure();
+			await initializeFilesystemTestWorkspace(freshFilesystem);
+			await fsPromises.rm(freshFilesystem.configFilePath);
 
 			const config = await freshFilesystem.loadConfig();
 			expect(config).toBeNull();
 		});
 
 		it("reports an unreadable config path instead of treating it as missing", async () => {
+			await fsPromises.rm(filesystem.configFilePath);
 			await mkdir(filesystem.configFilePath);
 
 			await expect(filesystem.loadConfig()).rejects.toThrow(filesystem.configFilePath);
@@ -482,6 +491,7 @@ title: [unterminated
 			const taskWithPrefix: Task = {
 				id: "task-777",
 				title: "Already Prefixed",
+				done: false,
 				status: "To Do",
 				createdDate: "2025-06-07",
 				labels: [],
@@ -494,8 +504,8 @@ title: [unterminated
 				title: "Longer ID",
 			};
 
-			await filesystem.saveTask(taskWithPrefix);
-			await filesystem.saveTask(longerTask);
+			await filesystem.saveTask(taskWithPrefix, { create: true });
+			await filesystem.saveTask(longerTask, { create: true });
 			const loaded = await filesystem.loadTask("task-777");
 			const longerLoaded = await filesystem.loadTask("task-778");
 
@@ -508,6 +518,7 @@ title: [unterminated
 			const taskWithCustomPrefix: Task = {
 				id: "JIRA-456",
 				title: "Custom Prefix",
+				done: false,
 				status: "To Do",
 				createdDate: "2025-06-07",
 				labels: [],
@@ -515,7 +526,7 @@ title: [unterminated
 				description: "Task with custom prefix",
 			};
 
-			await filesystem.saveTask(taskWithCustomPrefix);
+			await filesystem.saveTask(taskWithCustomPrefix, { create: true });
 			const loaded = await filesystem.loadTask("jira-456");
 
 			// IDs with existing prefix are preserved (normalized to uppercase)
@@ -528,8 +539,8 @@ title: [unterminated
 		});
 
 		it("should return false when archiving non-existent task", async () => {
-			const result = await filesystem.archiveTask("TASK-999");
-			expect(result).toBe(false);
+			const result = await new Core(TEST_DIR).tasks.archive("TASK-999");
+			expect(result.success).toBe(false);
 		});
 
 		it("should handle config with minimal fields", async () => {
@@ -551,6 +562,7 @@ title: [unterminated
 			const taskWithSpecialChars: Task = {
 				id: "task-998",
 				title: "Task/with\\special:chars?",
+				done: false,
 				status: "To Do",
 				createdDate: "2025-06-07",
 				labels: [],
@@ -558,7 +570,7 @@ title: [unterminated
 				description: "Task with special characters in title",
 			};
 
-			await filesystem.saveTask(taskWithSpecialChars);
+			await filesystem.saveTask(taskWithSpecialChars, { create: true });
 			const loaded = await filesystem.loadTask("task-998");
 
 			expect(loaded?.title).toBe("Task/with\\special:chars?");
@@ -568,6 +580,7 @@ title: [unterminated
 			const taskWithMixedCase: Task = {
 				id: "task-997",
 				title: "Fix Task List Ordering",
+				done: false,
 				status: "To Do",
 				createdDate: "2025-06-07",
 				labels: [],
@@ -575,7 +588,7 @@ title: [unterminated
 				description: "Task with mixed case title",
 			};
 
-			await filesystem.saveTask(taskWithMixedCase);
+			await filesystem.saveTask(taskWithMixedCase, { create: true });
 
 			// Check that the file exists with preserved case
 			const files = await readdir(filesystem.tasksDir);
@@ -591,6 +604,7 @@ title: [unterminated
 			const flatTask: Task = {
 				id: "task-995",
 				title: "Historical user's login (OAuth)",
+				done: false,
 				status: "To Do",
 				createdDate: "2025-06-07",
 				labels: [],
@@ -637,15 +651,19 @@ title: [unterminated
 			];
 
 			for (const { id, title } of cases) {
-				await filesystem.saveTask({
-					id,
-					title,
-					status: "To Do",
-					createdDate: "2025-06-07",
-					labels: [],
-					dependencies: [],
-					description: "Sanitization test",
-				});
+				await filesystem.saveTask(
+					{
+						id,
+						title,
+						done: false,
+						status: "To Do",
+						createdDate: "2025-06-07",
+						labels: [],
+						dependencies: [],
+						description: "Sanitization test",
+					},
+					{ create: true },
+				);
 
 				const files = await readdir(filesystem.tasksDir);
 				expect(files).toContain(id);
@@ -660,6 +678,7 @@ title: [unterminated
 		it("names a task file with a placeholder title instead of an empty segment", async () => {
 			const task: Task = {
 				id: "task-994",
+				done: false,
 				title: punctuationOnlyTitle,
 				status: "To Do",
 				createdDate: "2025-06-07",
@@ -668,7 +687,7 @@ title: [unterminated
 				description: "Punctuation-only title",
 			};
 
-			const filePath = await filesystem.saveTask(task);
+			const filePath = await filesystem.saveTask(task, { create: true });
 
 			const files = await readdir(filesystem.tasksDir);
 			expect(files).toContain("task-994");
@@ -678,43 +697,25 @@ title: [unterminated
 		});
 
 		it("keeps the id parseable by the readers that split the task filename", async () => {
-			await filesystem.saveTask({
-				id: "task-993",
-				title: punctuationOnlyTitle,
-				status: "To Do",
-				createdDate: "2025-06-07",
-				labels: [],
-				dependencies: [],
-				description: "Punctuation-only title",
-			});
+			await filesystem.saveTask(
+				{
+					id: "task-993",
+					done: false,
+					title: punctuationOnlyTitle,
+					status: "To Do",
+					createdDate: "2025-06-07",
+					labels: [],
+					dependencies: [],
+					description: "Punctuation-only title",
+				},
+				{ create: true },
+			);
 
 			const files = await readdir(filesystem.tasksDir);
 			const filename = files.find((f) => f.startsWith("task-993"));
 			expect(filename).toBeDefined();
 			expect(filename).toBe("task-993");
 			expect(await Bun.file(join(filesystem.tasksDir, filename!, "task.md")).exists()).toBe(true);
-		});
-
-		it("publishes completed content mutations and supports unsubscribe", async () => {
-			const mutations: string[] = [];
-			const unsubscribe = filesystem.subscribeToContentMutations((mutation) => {
-				mutations.push(`${mutation.type}:${mutation.root}`);
-			});
-			const task: Task = {
-				id: "TASK-1",
-				title: "Published task",
-				status: "To Do",
-				createdDate: "2025-01-01",
-				labels: [],
-				dependencies: [],
-				rawContent: "",
-			};
-			const taskPath = await filesystem.saveTask(task);
-
-			expect(mutations).toEqual([`task:${filesystem.agenticWorkspaceDir}`]);
-			unsubscribe();
-			await filesystem.saveTask({ ...task, filePath: taskPath, title: "Unobserved task" });
-			expect(mutations).toHaveLength(1);
 		});
 	});
 });

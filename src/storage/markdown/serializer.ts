@@ -23,6 +23,7 @@ const taskFrontmatterFields: readonly TaskFrontmatterField[] = [
 	{ key: TASK_FRONTMATTER_FIELDS.ID, property: "id" },
 	{ key: TASK_FRONTMATTER_FIELDS.TITLE, property: "title" },
 	{ key: TASK_FRONTMATTER_FIELDS.STATUS, property: "status" },
+	{ key: TASK_FRONTMATTER_FIELDS.DONE, property: "done" },
 	{ key: TASK_FRONTMATTER_FIELDS.REPORTER, property: "reporter", mode: TASK_FRONTMATTER_FIELD_MODE.TRUTHY },
 	{ key: TASK_FRONTMATTER_FIELDS.CREATED_DATE, property: "createdDate" },
 	{ key: TASK_FRONTMATTER_FIELDS.UPDATED_DATE, property: "updatedDate", mode: TASK_FRONTMATTER_FIELD_MODE.TRUTHY },

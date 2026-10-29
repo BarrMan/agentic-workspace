@@ -1,46 +1,29 @@
-import type { Command, OptionValues } from "commander";
-import { findLocalDuplicateTaskIds } from "../../../controller/duplicate-task-detection.ts";
+import { type Command, Option, type OptionValues } from "commander";
 import { loadTaskDetail } from "../../../controller/task-detail.ts";
-import { Core } from "../../../index.ts";
-import { formatDuplicateTaskIdWarning } from "../../../model/task/duplicate-detection.ts";
-import { taskIdsEqual } from "../../../model/task/task-id.ts";
+import type { Core } from "../../../index.ts";
 import { LOCAL_TASK_LOOKUP_HINT } from "../../../model/task/task-path.ts";
 import { printJson, taskListJson, taskViewJson } from "../../../renderer/formatters/json-output.ts";
 import { formatTaskPlainText } from "../../../renderer/formatters/task-plain-text.ts";
 import { addHelpSchema } from "../../commands/help-schema.ts";
 import { addListWindowOptions, LIST_WINDOW_OUTPUT_HELP, printListWindow, selectListWindow } from "../../list-window.ts";
-import type { ReadOutputMode, ReadOutputOptions } from "../../read-output-mode.ts";
+import { type ReadOutputMode, type ReadOutputOptions, resolveReadOutputMode } from "../../read-output-mode.ts";
 import type { CliRuntime } from "../../runtime.ts";
 import { registerTaskArtifactCommands } from "../../task-artifact.ts";
-import { type CliReadOutput, getReadOutputMode, isPlainRequested, resolveListOutput } from "../read-output.ts";
+import { type CliReadOutput, isPlainRequested, resolveListOutput } from "../read-output.ts";
 import { registerTaskCreate } from "./create.ts";
 import { runTaskEdit } from "./edit.ts";
-import {
-	normalizeCliPriority,
-	normalizeCliProjects,
-	normalizeCliStatusList,
-	normalizeCliTaskTypes,
-} from "./filter-normalizers.ts";
 import { parseTaskListRequest } from "./list-parse.ts";
 import { queryTaskList } from "./list-query.ts";
-import { formatTaskListRow, groupTaskListByStatus, printTaskListGroupedByStatus } from "./list-render.ts";
-import { formatTaskEditError, TASK_SORT_FIELDS } from "./policies.ts";
+import { groupTaskListByStatus, printTaskListGroupedByStatus } from "./list-render.ts";
+import { formatTaskEditError } from "./policies.ts";
 
 export type TaskRuntime = {
 	runtime: CliRuntime;
 	readOutput: CliReadOutput;
 };
 
-async function printDuplicateIntegrityWarning(core: Core): Promise<boolean> {
-	const groups = await findLocalDuplicateTaskIds(core);
-	if (groups.length === 0) return false;
-	console.error(formatDuplicateTaskIdWarning(groups));
-	process.exitCode = 1;
-	return true;
-}
-
 async function loadLocalTaskView(core: Core, taskId: string) {
-	const localTasks = await core.loadStoredTasks();
+	const localTasks = core.tasks.getActiveTasks();
 	const task = await core.getTaskWithSubtasks(taskId, localTasks, {});
 	if (!task) {
 		console.error(`Task ${taskId} not found. ${LOCAL_TASK_LOOKUP_HINT}`);
@@ -49,7 +32,7 @@ async function loadLocalTaskView(core: Core, taskId: string) {
 	}
 	return {
 		task,
-		tasks: localTasks.some((candidate) => taskIdsEqual(task.id, candidate.id)) ? localTasks : [...localTasks, task],
+		tasks: localTasks.some((candidate) => task.id === candidate.id) ? localTasks : [...localTasks, task],
 		detail: await loadTaskDetail(core, task),
 	};
 }
@@ -69,25 +52,21 @@ function printTaskViewOutput(
 }
 
 export function registerTaskCommands(program: Command, { runtime, readOutput }: TaskRuntime): void {
-	const requireProjectRoot = () => runtime.projectRoot();
 	const taskCmd = program.command("task");
 	function taskReadOptions(options: ReadOutputOptions): ReadOutputOptions {
 		const taskOptions = taskCmd.opts<ReadOutputOptions>();
 		return { json: Boolean(options.json || taskOptions.json), plain: Boolean(options.plain || taskOptions.plain) };
 	}
-	function getTaskReadOutputMode(options: ReadOutputOptions): ReadOutputMode | null {
-		return getReadOutputMode(taskReadOptions(options), readOutput);
-	}
 	registerTaskCreate(taskCmd, runtime, readOutput);
-	registerTaskArtifactCommands(taskCmd, { createCore: async () => new Core(await requireProjectRoot()) });
+	registerTaskArtifactCommands(taskCmd, { createCore: async () => (await runtime.application()).core });
 	taskCmd
 		.command("done")
 		.description("mark the calling session's current task Done without completion or cleanup")
 		.action(async () => {
 			const taskId = process.env.AGENTIC_WORKSPACE_TASK_ID;
 			if (!taskId) throw new Error("No current task is available in this session.");
-			const core = new Core(await requireProjectRoot());
-			const { task } = await core.markTaskDone(taskId);
+			const { core } = await runtime.application();
+			const { task } = await core.tasks.markDone(taskId);
 			process.stdout.write(`Marked task ${task.id} Done.\n`);
 		});
 	addHelpSchema(taskCmd.command("approve <taskId> <modeId>"), {
@@ -101,7 +80,7 @@ export function registerTaskCommands(program: Command, { runtime, readOutput }: 
 	})
 		.description("approve a task for a mode")
 		.action(async (taskId: string, modeId: string) => {
-			const core = new Core(await requireProjectRoot());
+			const { core } = await runtime.application();
 			const task = await core.setTaskModeApproval(taskId, modeId);
 			process.stdout.write(`Approved task ${task.id} for mode ${modeId}.\n`);
 		});
@@ -113,39 +92,19 @@ export function registerTaskCommands(program: Command, { runtime, readOutput }: 
 		const listOutput = resolveListOutput({ ...options, ...taskReadOptions(options) }, taskListCommand, readOutput);
 		if (!listOutput) return;
 		const { outputMode, listWindow } = listOutput;
-		const core = new Core(await requireProjectRoot());
+		const { core } = await runtime.application();
 		try {
-			const hasDuplicateIds = await printDuplicateIntegrityWarning(core);
-			if (hasDuplicateIds && outputMode === "json") return;
-			const request = await parseTaskListRequest(core, options, TASK_SORT_FIELDS, {
-				statusList: normalizeCliStatusList,
-				priority: normalizeCliPriority,
-				types: normalizeCliTaskTypes,
-				projects: normalizeCliProjects,
-			});
+			const request = parseTaskListRequest(options);
 			if (!request) return;
-			const { config, parentId, rows, jsonRows } = await queryTaskList(
-				core,
-				request,
-				outputMode === "json" || request.ready,
-			);
+			const { config, rows, jsonRows } = await queryTaskList(core, request, outputMode === "json");
 			if (outputMode === "json") {
 				const page = selectListWindow(jsonRows, listWindow);
 				return emitJson(taskListJson(page.items, page));
 			}
 			const statuses = config?.statuses || [];
-			const priority = options.sort?.toLowerCase() === "priority";
-			const printed = priority ? rows : groupTaskListByStatus(rows, statuses).flatMap((group) => group.tasks);
+			const printed = groupTaskListByStatus(rows, statuses).flatMap((group) => group.tasks);
 			printListWindow(printed, listWindow, (windowTasks) => {
-				if (windowTasks.length === 0)
-					return process.stdout.write(
-						parentId ? `No child tasks found for parent task ${request.parentDisplayId}.\n` : "No tasks found.\n",
-					);
-				if (priority) {
-					process.stdout.write("Tasks (sorted by priority):\n");
-					for (const task of windowTasks) process.stdout.write(`${formatTaskListRow(task, true)}\n`);
-					return;
-				}
+				if (windowTasks.length === 0) return process.stdout.write("No tasks found.\n");
 				printTaskListGroupedByStatus(windowTasks, statuses);
 			});
 		} catch (error) {
@@ -168,12 +127,12 @@ export function registerTaskCommands(program: Command, { runtime, readOutput }: 
 	)
 		.description("list tasks grouped by status")
 		.option("--plain", "use plain text output")
-		.option("--json", "print versioned machine-readable JSON output")
+		.addOption(new Option("--json", "print versioned machine-readable JSON output").conflicts("plain"))
 		.option("--limit <n>", "limit the number of matching tasks")
 		.action((options) => runTaskList(options));
 
 	const editRuntime = {
-		createCore: async () => new Core(await requireProjectRoot()),
+		createCore: async () => (await runtime.application()).core,
 		isPlainRequested: (options: { plain?: boolean }) => isPlainRequested(options, readOutput),
 		formatError: formatTaskEditError,
 	};
@@ -210,15 +169,14 @@ export function registerTaskCommands(program: Command, { runtime, readOutput }: 
 	})
 		.description("display task details")
 		.option("--plain", "use plain text output")
-		.option("--json", "print versioned machine-readable JSON output")
+		.addOption(new Option("--json", "print versioned machine-readable JSON output").conflicts("plain"))
 		.action(async (taskId: string, options) => {
-			const outputMode = getTaskReadOutputMode(options);
-			if (!outputMode) return;
-			const cwd = await requireProjectRoot();
-			const core = new Core(cwd);
+			const outputMode = resolveReadOutputMode(taskReadOptions(options), readOutput.hasInteractiveTTY);
+			const cwd = await runtime.projectRoot();
+			const { core } = await runtime.application();
 			const taskView = await loadLocalTaskView(core, taskId);
 			if (!taskView) return;
-			const artifacts = await core.listTaskArtifacts(taskView.task.id);
+			const artifacts = await core.storage.taskArtifacts.list(taskView.task.id);
 			printTaskViewOutput(taskView.detail, cwd, outputMode, artifacts);
 		});
 }

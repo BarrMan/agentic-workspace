@@ -4,7 +4,7 @@ import { formatReadinessBlockers } from "../../model/task/readiness.ts";
 import type { TaskDetail } from "../../model/task/task-projection.ts";
 import type { Task } from "../../model/types.ts";
 import { type DependencyGraphEntry, formatDependencyGraphEntries } from "../formatters/dependency-graph-text.ts";
-import { formatStatusWithIcon, getStatusColor } from "../formatters/status-icon.ts";
+import { formatStatusWithIcon, getStatusStyle } from "../formatters/status-icon.ts";
 import { TASK_FIELD_LABELS } from "../formatters/task-labels.ts";
 import { formatUtcDateForDisplay } from "../formatters/utc-date-display.ts";
 
@@ -64,7 +64,7 @@ function headerLine(task: Task | TaskDetail): DetailChunk[] {
 	const status = formatStatusWithIcon(task.status);
 	return [
 		literal(" "),
-		statusChunk(status, getStatusColor(task.status)),
+		statusChunk(status, getStatusStyle(task.status).color),
 		literal(" "),
 		bold(fg("blue")(task.id)),
 		literal(` - ${task.title}`),

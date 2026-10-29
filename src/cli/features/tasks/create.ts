@@ -1,5 +1,4 @@
 import type { Command, OptionValues } from "commander";
-import { Core } from "../../../index.ts";
 import { formatValidPriorityValues, resolvePriorityLabel } from "../../../model/task/priority-config.ts";
 import { addHelpSchema } from "../../commands/help-schema.ts";
 import type { CliRuntime } from "../../runtime.ts";
@@ -8,20 +7,20 @@ import { isPlainRequested } from "../read-output.ts";
 import { buildTaskCreateInput, createAndReportTask } from "./input.ts";
 
 async function createTask(
-	title: string | undefined,
+	title: string,
 	options: OptionValues,
 	runtime: CliRuntime,
 	readOutput: CliReadOutput,
 ): Promise<void> {
-	if (title === undefined || title.trim().length === 0) {
+	if (title.trim().length === 0) {
 		console.error("error: missing required argument 'title'");
 		process.exitCode = 1;
 		return;
 	}
-	const core = new Core(await runtime.projectRoot());
+	const { core } = await runtime.application();
 	await core.ensureConfigLoaded();
 	if (options.priority) {
-		const config = await core.getStoredConfig();
+		const config = await core.storage.loadConfig();
 		const priority = resolvePriorityLabel(String(options.priority), config);
 		if (!priority) {
 			console.error(`Invalid priority: ${options.priority}. Valid values are: ${formatValidPriorityValues(config)}`);
@@ -30,7 +29,7 @@ async function createTask(
 		}
 		options.priority = priority;
 	}
-	const input = await buildTaskCreateInput(title, options, async (value) => value);
+	const input = buildTaskCreateInput(title, options);
 	if (!input) return;
 	await createAndReportTask(core, input, {
 		plain: isPlainRequested(options, readOutput),
@@ -91,5 +90,5 @@ export function registerTaskCreate(taskCmd: Command, runtime: CliRuntime, readOu
 			(value, previous: string[] = []) => [...previous, value],
 			[],
 		)
-		.action((title: string | undefined, options: OptionValues) => createTask(title, options, runtime, readOutput));
+		.action((title: string, options: OptionValues) => createTask(title, options, runtime, readOutput));
 }

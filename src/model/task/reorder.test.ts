@@ -15,6 +15,7 @@ const item = (id: string, ordinal?: number) => ({ id, ordinal });
 const task = (id: string, status: string, ordinal?: number, overrides: Partial<Task> = {}): Task => ({
 	id,
 	title: `Task ${id}`,
+	done: false,
 	status,
 	createdDate: "2025-01-01 00:00",
 	labels: [],

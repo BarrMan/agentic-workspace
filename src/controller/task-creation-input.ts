@@ -50,30 +50,22 @@ function uniqueLabels(labels: string[]): string[] {
 	});
 }
 
-function field(name: string, value: unknown): [string, unknown][] {
-	return value === undefined ? [] : [[name, value]];
-}
-
-function nonEmptyString(value: string | undefined): string | undefined {
-	return value?.trim() || undefined;
-}
-
 function createdTaskOptionalFields(
 	input: TaskCreateInput,
 	prepared: PreparedTaskCreationInput,
 	resolved: Parameters<typeof buildCreatedTask>[3],
 ): Partial<Task> {
-	return Object.fromEntries([
-		...field("dueDate", prepared.dueDate),
-		...field("parentTaskId", nonEmptyString(resolved.parentTaskId)),
-		...field("priority", nonEmptyString(resolved.priority)),
-		...field("type", nonEmptyString(resolved.type)),
-		...field("project", nonEmptyString(resolved.project)),
-		...field("ordinal", resolved.ordinal),
-		...field("milestone", nonEmptyString(input.milestone)),
-		...field("description", input.description),
-		...field("agentConfiguration", input.agentConfiguration),
-	]) as Partial<Task>;
+	return {
+		...(prepared.dueDate !== undefined ? { dueDate: prepared.dueDate } : {}),
+		...(resolved.parentTaskId !== undefined ? { parentTaskId: resolved.parentTaskId } : {}),
+		...(resolved.priority !== undefined ? { priority: resolved.priority } : {}),
+		...(resolved.type !== undefined ? { type: resolved.type } : {}),
+		...(resolved.project !== undefined ? { project: resolved.project } : {}),
+		...(resolved.ordinal !== undefined ? { ordinal: resolved.ordinal } : {}),
+		...(input.milestone !== undefined ? { milestone: input.milestone } : {}),
+		...(input.description !== undefined ? { description: input.description } : {}),
+		...(input.agentConfiguration !== undefined ? { agentConfiguration: input.agentConfiguration } : {}),
+	};
 }
 
 export function buildCreatedTask(
@@ -96,6 +88,7 @@ export function buildCreatedTask(
 		id: resolved.id,
 		title: prepared.title,
 		status: resolved.status || config?.defaultStatus || FALLBACK_STATUS,
+		done: false,
 		labels: prepared.labels,
 		dependencies: resolved.dependencies,
 		references: prepared.references,

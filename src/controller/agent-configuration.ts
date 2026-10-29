@@ -11,24 +11,18 @@ import type {
 	ModeCatalog,
 	ResolvedAgentConfiguration,
 } from "../model/session/types.ts";
-import { getBuiltInAgentConfiguration, getDefaultModeCatalog, requireProjectModeCatalog } from "../storage/config.ts";
+import { getBuiltInAgentConfiguration, requireProjectModeCatalog } from "../storage/config.ts";
 import type { Core } from "./agentic-workspace.ts";
 
-/** Core supplies this operation through its private Storage instance. */
-export type AgentConfigurationController = Pick<
-	Core,
-	"getStoredConfig" | "getTask" | "withTaskLock" | "withTaskChanges" | "updateTask" | "reloadConfiguration"
-> & {
+export type AgentConfigurationController = Pick<Core, "reloadConfiguration"> & {
+	storage: Pick<Core["storage"], "loadConfig" | "withTaskLock">;
+	tasks: Pick<Core["tasks"], "getTask" | "edit">;
 	updateStoredAgentConfiguration(
 		scope: "root" | "project",
 		updater: (configuration: AgentConfiguration | null) => AgentConfiguration,
 	): Promise<AgentConfiguration>;
 	loadRootAgentConfiguration(): Promise<AgentConfiguration | null>;
 };
-
-function clone<T>(value: T): T {
-	return structuredClone(value);
-}
 
 function requireTaskId(scope: AgentConfigScope, taskId: string | undefined): string {
 	if (scope === "card" && !taskId) throw new Error("A task ID is required for card agent configuration.");
@@ -57,17 +51,15 @@ export async function loadAgentConfiguration(
 ): Promise<AgentConfiguration | null> {
 	if (scope === "root") return await core.loadRootAgentConfiguration();
 	if (scope === "project") {
-		const configuration = await core.getStoredConfig();
+		const configuration = await core.storage.loadConfig();
 		if (!configuration?.agentConfiguration) return null;
-		assertAgentConfiguration(configuration.agentConfiguration, "project", "Invalid project agent configuration");
-		return clone(configuration.agentConfiguration);
+		return structuredClone(configuration.agentConfiguration);
 	}
 
-	const task = await core.getTask(requireTaskId(scope, taskId));
+	const task = await core.tasks.getTask(requireTaskId(scope, taskId));
 	if (!task) throw new Error(`Task not found: ${taskId}`);
 	if (task.agentConfiguration === undefined) return null;
-	assertAgentConfiguration(task.agentConfiguration, "card", `Invalid agent configuration on task ${task.id}`);
-	return clone(task.agentConfiguration);
+	return structuredClone(task.agentConfiguration);
 }
 
 /** Read only the exact project scope; root/card configuration cannot supply workspace modes. */
@@ -104,21 +96,6 @@ export async function resolveSessionPreset(
 	return preset;
 }
 
-export async function initializeAgentConfiguration(
-	core: AgentConfigurationController,
-	scope: AgentConfigScope,
-	taskId?: string,
-): Promise<AgentConfiguration> {
-	return await updateAgentConfigurationInternal(
-		core,
-		scope,
-		(config) =>
-			scope === "project" && config.modes === undefined ? { ...config, modes: getDefaultModeCatalog() } : config,
-		taskId,
-		true,
-	);
-}
-
 /** Returns the exact scoped configuration without persisting inherited values. */
 export async function getEditableAgentConfiguration(
 	core: AgentConfigurationController,
@@ -130,60 +107,28 @@ export async function getEditableAgentConfiguration(
 	return {};
 }
 
-async function updateAgentConfigurationInternal(
-	core: AgentConfigurationController,
-	scope: AgentConfigScope,
-	updater: (config: AgentConfiguration) => AgentConfiguration,
-	taskId: string | undefined,
-	onlyIfAbsent: boolean,
-): Promise<AgentConfiguration> {
-	if (scope !== "card") {
-		const next = await core.updateStoredAgentConfiguration(scope, (existing) => {
-			if (existing) assertAgentConfiguration(existing, scope, `Invalid ${scope} agent configuration`);
-			if (existing && onlyIfAbsent) {
-				if (scope !== "project" || existing.modes !== undefined) return existing;
-				const initialized = clone(updater(clone(existing)));
-				assertAgentConfiguration(initialized, scope);
-				return initialized;
-			}
-			const base = existing ?? {};
-			const next = clone(updater(clone(base)));
-			assertAgentConfiguration(next, scope);
-			return next;
-		});
-		await core.reloadConfiguration();
-		return next;
-	}
-
-	const id = requireTaskId(scope, taskId);
-	const task = await core.getTask(id);
-	if (!task) throw new Error(`Task not found: ${id}`);
-	return await core.withTaskChanges(async (changes) =>
-		core.withTaskLock(task, async () => {
-			const current = await core.getTask(id);
-			if (!current) throw new Error(`Task not found: ${id}`);
-			const stored = current.agentConfiguration;
-			const existing = stored === undefined ? undefined : clone(stored);
-			if (existing !== undefined)
-				assertAgentConfiguration(existing, "card", `Invalid agent configuration on task ${current.id}`);
-			if (existing && onlyIfAbsent) return clone(existing);
-			const base = existing ?? {};
-			const next = clone(updater(clone(base)));
-			assertAgentConfiguration(next, "card");
-			current.agentConfiguration = next;
-			await core.updateTask(current, changes);
-			return next;
-		}),
-	);
-}
-
 export async function updateAgentConfiguration(
 	core: AgentConfigurationController,
 	scope: AgentConfigScope,
 	updater: (config: AgentConfiguration) => AgentConfiguration,
 	taskId?: string,
 ): Promise<AgentConfiguration> {
-	return await updateAgentConfigurationInternal(core, scope, updater, taskId, false);
+	if (scope !== "card") {
+		const next = await core.updateStoredAgentConfiguration(scope, (existing) => updater(existing ?? {}));
+		await core.reloadConfiguration();
+		return next;
+	}
+
+	const id = requireTaskId(scope, taskId);
+	return await core.storage.withTaskLock(id, async (current) => {
+		const stored = current.agentConfiguration;
+		const existing = stored === undefined ? undefined : structuredClone(stored);
+		const base = existing ?? {};
+		const next = structuredClone(updater(structuredClone(base)));
+		current.agentConfiguration = next;
+		await core.tasks.edit(current);
+		return next;
+	});
 }
 
 export async function upsertAgentConfiguration(
@@ -202,7 +147,7 @@ export async function upsertAgentConfiguration(
 	const effective = mergeAgentConfigurations(parent, config);
 	if (!Object.hasOwn(effective.presets, effective.selectedPreset))
 		throw new Error("selectedPreset must name a configured preset");
-	await updateAgentConfiguration(core, scope, () => clone(config), taskId);
+	await updateAgentConfiguration(core, scope, () => structuredClone(config), taskId);
 }
 
 /** Applies a typed sparse patch to the exact persisted scope while holding its existing lock. */

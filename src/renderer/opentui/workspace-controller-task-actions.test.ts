@@ -121,7 +121,7 @@ describe("public workspace task operation retries", () => {
 		"selection",
 	] as const)("retries a committed creation after %s failure without duplicating it", async (failure) => {
 		const test = await fixture();
-		const creating = spyOn(test.core, "createTaskFromInput");
+		const creating = spyOn(test.core.tasks, "create");
 		test.workspace.onGroupSelect?.({ id: "group", name: "Group" });
 		await test.controller.refresh();
 		await test.workspace.onTaskCreate?.();
@@ -173,7 +173,7 @@ describe("public workspace task operation retries", () => {
 		["with a real external change", true],
 	] as const)("retries field/group save %s", async (_name, externalChange) => {
 		const test = await fixture();
-		const { task } = await test.core.createTaskFromInput({ title: "Original", status: "To Do" });
+		const { task } = await test.core.tasks.create({ title: "Original", status: "To Do" });
 		await test.controller.refresh();
 		const entry = test.workspace.tasks.find((candidate) => candidate.id === task.id);
 		if (!entry) throw new Error("Task not mounted.");
@@ -187,19 +187,23 @@ describe("public workspace task operation retries", () => {
 		test.submit();
 		await test.waitFor(() => test.frame().includes("group save failed"));
 		expect(test.frame()).toContain("are saved");
-		expect((await test.core.getTask(task.id))?.title).toBe("Original edited");
+		expect((await test.core.tasks.getTask(task.id))?.title).toBe("Original edited");
 		expect(test.groups.current.membership[task.id]).toBeUndefined();
-		if (externalChange) await test.core.updateTaskFromInput(task.id, { title: "External title" });
+		if (externalChange)
+			await test.core.storage.withTaskLock(
+				task.id,
+				async (current) => await test.core.tasks.edit({ ...current, title: "External title" }),
+			);
 		test.setup.mockInput.pressTab();
 		await test.setup.mockInput.typeText(" again");
 		test.submit();
 		if (externalChange) {
 			await test.waitFor(() => test.frame().includes("title changed outside this workspace"));
-			expect((await test.core.getTask(task.id))?.title).toBe("External title");
+			expect((await test.core.tasks.getTask(task.id))?.title).toBe("External title");
 			expect(test.groups.current.membership[task.id]).toBeUndefined();
 		} else {
 			await test.waitFor(() => test.workspace.notice === `Saved ${task.id}`);
-			expect((await test.core.getTask(task.id))?.title).toBe("Original edited again");
+			expect((await test.core.tasks.getTask(task.id))?.title).toBe("Original edited again");
 			expect(test.groups.current.membership[task.id]).toBe("group");
 		}
 	});

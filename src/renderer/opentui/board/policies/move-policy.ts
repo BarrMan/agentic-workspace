@@ -1,5 +1,5 @@
+import { TaskOrdering } from "../../../../model/task/task-ordering.ts";
 import type { Task } from "../../../../model/types.ts";
-import { type ColumnData, prepareBoardColumns } from "./column-policy.ts";
 
 /** Mutable preview state for one board move. The session owns the instance; this module owns its semantics. */
 export type BoardMoveOperation = {
@@ -37,22 +37,19 @@ export function getMoveInsertionBase(
 	excludeIds: string[],
 ): string[] {
 	const excluded = new Set(excludeIds);
-	const column = prepareBoardColumns(tasks, statuses).find((candidate) => candidate.status === targetStatus);
+	const column = TaskOrdering.boardColumns(tasks, statuses).find((candidate) => candidate.status === targetStatus);
 	return (column?.tasks ?? []).filter((task) => !excluded.has(task.id)).map((task) => task.id);
 }
 
 /** Produces the exact visual placement used for confirmation, without mutating source tasks. */
-export function projectBoardMove(
-	tasks: Task[],
-	statuses: string[],
-	operation: BoardMoveOperation | null,
-): ColumnData[] {
-	if (!operation || !tasks.some((task) => task.id === operation.taskId)) return prepareBoardColumns(tasks, statuses);
+export function projectBoardMove(tasks: Task[], statuses: string[], operation: BoardMoveOperation | null) {
+	if (!operation || !tasks.some((task) => task.id === operation.taskId))
+		return TaskOrdering.boardColumns(tasks, statuses);
 	const movingIds = new Set(getPreviewMovingIds(operation));
-	const movingTasks = prepareBoardColumns(tasks, statuses).flatMap((column) =>
+	const movingTasks = TaskOrdering.boardColumns(tasks, statuses).flatMap((column) =>
 		column.tasks.filter((task) => movingIds.has(task.id)),
 	);
-	const columns = prepareBoardColumns(
+	const columns = TaskOrdering.boardColumns(
 		tasks.filter((task) => !movingIds.has(task.id)),
 		statuses,
 	);

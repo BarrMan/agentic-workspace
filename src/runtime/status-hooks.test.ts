@@ -6,9 +6,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import "./agents/startup.ts";
 import { claudeHooksConfig } from "./agents/claude/claude.ts";
+import { buildHookCommand } from "./agents/core/hook-script.ts";
 import { openCodeV1PluginSource } from "./agents/opencode/opencode-v1.ts";
 import { piExtensionSource } from "./agents/pi/pi.ts";
-import { buildHookCommand, installStatusHooks, sessionActivityDir } from "./status-hooks.ts";
+import { installStatusHooks, sessionActivityDir } from "./status-hooks.ts";
 
 async function fixture() {
 	const root = await mkdtemp(join(tmpdir(), "agentic-workspace-hooks-test-"));

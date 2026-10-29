@@ -1,5 +1,4 @@
 import { debug, isEnabled } from "../lib/debug-log.ts";
-import { taskIdsEqual } from "../model/task/task-id.ts";
 
 export type PaneLookupRow = {
 	paneId: string;
@@ -68,7 +67,7 @@ export async function findTmuxPanesByTaskAndRole(options: FindPaneOptions): Prom
 				pane.rootPath === options.rootPath &&
 				pane.taskId &&
 				pane.role === options.role &&
-				(options.taskId === undefined || taskIdsEqual(pane.taskId, options.taskId)) &&
+				(options.taskId === undefined || pane.taskId === options.taskId) &&
 				(options.sessionId === undefined || pane.sessionId === options.sessionId) &&
 				(options.includeWindow || pane.windowId !== undefined),
 		);

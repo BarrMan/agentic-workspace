@@ -6,7 +6,13 @@ import { Core } from "../controller/agentic-workspace.ts";
 import type { AgenticWorkspaceConfig } from "../model/types.ts";
 import { FileSystem } from "../storage/file-system.ts";
 import { watchConfigFile } from "../storage/watchers/config-watcher.ts";
-import { coreFileSystem, createUniqueTestDir, getPlatformTimeout, safeCleanup } from "./test-utils.ts";
+import {
+	coreFileSystem,
+	createUniqueTestDir,
+	getPlatformTimeout,
+	initializeFilesystemTestWorkspace,
+	safeCleanup,
+} from "./test-utils.ts";
 
 let testDir: string;
 let core: Core;
@@ -49,7 +55,7 @@ describe("config watcher", () => {
 		testDir = createUniqueTestDir("config-watcher");
 		watcherChild = undefined;
 		core = new Core(testDir);
-		await coreFileSystem(core).ensureAgenticWorkspaceStructure();
+		await initializeFilesystemTestWorkspace(coreFileSystem(core));
 		await coreFileSystem(core).saveConfig(initialConfig);
 	});
 
@@ -89,16 +95,16 @@ describe("config watcher", () => {
 				'statuses: ["To Do", "Done"]',
 				'labels: ["web"]',
 				"date_format: yyyy-MM-dd",
-				"auto_open_browser: fals",
+				'remote_operations: "invalid"',
 				'task_prefix: "BACK"',
 				"",
 			].join("\n"),
 			[
-				'project_name: "Malformed port"',
+				'project_name: "Malformed column width"',
 				'statuses: ["To Do", "Done"]',
 				'labels: ["web"]',
 				"date_format: yyyy-MM-dd",
-				"default_port: nope",
+				'max_column_width: "invalid"',
 				'task_prefix: "BACK"',
 				"",
 			].join("\n"),
@@ -138,7 +144,7 @@ describe("config watcher", () => {
 		const publishedConfig = new Promise<AgenticWorkspaceConfig>((resolve) => {
 			resolvePublished = resolve;
 		});
-		const configWatcher = core.watchConfig({
+		const configWatcher = core.storage.watchConfig({
 			onConfigChanged: (config) => {
 				if (!config) return;
 				published.push(config);
@@ -355,7 +361,7 @@ describe("config watcher", () => {
 		const publishedConfig = new Promise<AgenticWorkspaceConfig>((resolve) => {
 			resolvePublished = resolve;
 		});
-		const configWatcher = core.watchConfig({
+		const configWatcher = core.storage.watchConfig({
 			onConfigChanged: (config) => {
 				if (config) resolvePublished(config);
 			},
@@ -376,7 +382,7 @@ describe("config watcher", () => {
 		const publishedConfig = new Promise<AgenticWorkspaceConfig>((resolve) => {
 			resolvePublished = resolve;
 		});
-		const configWatcher = core.watchConfig({
+		const configWatcher = core.storage.watchConfig({
 			onConfigChanged: (config) => {
 				if (config) resolvePublished(config);
 			},
@@ -412,7 +418,7 @@ describe("config watcher", () => {
 		const nextPublished = new Promise<AgenticWorkspaceConfig>((resolve) => {
 			resolveNextPublished = resolve;
 		});
-		const configWatcher = core.watchConfig({
+		const configWatcher = core.storage.watchConfig({
 			onConfigChanged: (config) => {
 				if (!config) return;
 				callbackCount += 1;
@@ -454,7 +460,7 @@ describe("config watcher", () => {
 		const callbackRelease = new Promise<void>((resolve) => {
 			releaseCallback = resolve;
 		});
-		const configWatcher = core.watchConfig({
+		const configWatcher = core.storage.watchConfig({
 			onConfigChanged: async (config) => {
 				expect(config?.projectName).toBe("Held publication");
 				callbackCount += 1;
@@ -496,7 +502,7 @@ describe("config watcher", () => {
 		const newestPublished = new Promise<void>((resolve) => {
 			resolveNewestPublished = resolve;
 		});
-		const configWatcher = core.watchConfig({
+		const configWatcher = core.storage.watchConfig({
 			onConfigChanged: async (config) => {
 				if (!config) return;
 				publishedNames.push(config.projectName);
@@ -539,7 +545,7 @@ describe("config watcher", () => {
 		const nextPublished = new Promise<AgenticWorkspaceConfig | null>((resolve) => {
 			resolveNextPublished = resolve;
 		});
-		const configWatcher = core.watchConfig({
+		const configWatcher = core.storage.watchConfig({
 			onConfigChanged: async (config) => {
 				callbackAttempts += 1;
 				cachedProjectNames.push((await coreFileSystem(core).loadConfig())?.projectName ?? "");

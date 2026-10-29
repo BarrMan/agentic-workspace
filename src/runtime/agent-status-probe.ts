@@ -11,9 +11,10 @@ import { readFile, stat } from "node:fs/promises";
 import type { ActivityMetadata, AgentActivity } from "../model/session/types.ts";
 import { ACTIVITY_TIMING, detectChromeActivity, type PaneProbe, shouldSkipCapture } from "./agent-status.ts";
 import type { AgentChromeRule } from "./agents/core/agent.ts";
+import { HOOK_STATUS_VALUES, type HookStatus } from "./agents/core/hook-script.ts";
 import { harnessRegistry } from "./agents/startup.ts";
 import type { TmuxResult } from "./live/tmux/types.ts";
-import { activityStatusPath, HOOK_STATUS_VALUES, type HookStatus } from "./status-hooks.ts";
+import { activityStatusPath } from "./status-hooks.ts";
 
 export interface ActivityProbeTarget {
 	readonly sessionId: string;

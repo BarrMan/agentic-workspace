@@ -28,7 +28,7 @@ Define task organization, persistence, work context, artifacts, completion, mile
 
 | ID | Requirement |
 |---|---|
-| TASK-001–TASK-022 | The complete requirements, flows, edge cases, invariants, and acceptance criteria are in the [Tasks and storage contract](specs/tasks.md). |
+| TASK-001–TASK-025 (TASK-023 retired) | The complete requirements, flows, edge cases, invariants, and acceptance criteria are in the [Tasks and storage contract](specs/tasks.md). |
 
 #### States and Behavior
 
@@ -92,7 +92,7 @@ Define workspace settings and the configuration, approval, and lifecycle of agen
 
 | ID | Requirement |
 |---|---|
-| CONFIG-001–CONFIG-014 | The complete requirements, flows, edge cases, invariants, and acceptance criteria are in the [Configuration and modes contract](specs/configuration.md). |
+| CONFIG-001–CONFIG-016 | The complete requirements, flows, edge cases, invariants, and acceptance criteria are in the [Configuration and modes contract](specs/configuration.md). |
 
 #### States and Behavior
 
@@ -112,7 +112,7 @@ See the verifiable criteria in the [Configuration and modes contract](specs/conf
 
 #### Open Decisions
 
-None recorded in the [Configuration and modes contract](specs/configuration.md).
+See [Configuration and modes: Open Questions](specs/configuration.md#open-questions).
 
 ### Workspace and board
 

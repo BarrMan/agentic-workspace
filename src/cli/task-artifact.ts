@@ -23,7 +23,7 @@ export function registerTaskArtifactCommands(taskCommand: Command, runtime: Task
 		.option("--plain", "output plain text")
 		.action(async (taskId: string) => {
 			try {
-				const entries = await (await runtime.createCore()).listTaskArtifacts(taskId);
+				const entries = await (await runtime.createCore()).storage.taskArtifacts.list(taskId);
 				if (wantsJson(listCommand)) return printJson({ artifacts: entries });
 				if (entries.length === 0) return void console.log("No artifacts.");
 				for (const entry of entries) console.log(`${entry.type}\t${entry.size}\t${entry.path}`);
@@ -37,7 +37,7 @@ export function registerTaskArtifactCommands(taskCommand: Command, runtime: Task
 		.option("--json", "output JSON with base64 content")
 		.action(async (taskId: string, path: string) => {
 			try {
-				const bytes = await (await runtime.createCore()).readTaskArtifact(taskId, path);
+				const bytes = await (await runtime.createCore()).storage.taskArtifacts.read(taskId, path);
 				if (wantsJson(readCommand)) return printJson({ contentBase64: Buffer.from(bytes).toString("base64") });
 				process.stdout.write(bytes);
 			} catch (error) {
@@ -54,7 +54,7 @@ export function registerTaskArtifactCommands(taskCommand: Command, runtime: Task
 				const bytes = options.from
 					? await readFile(options.from)
 					: Buffer.from(await new Response(Bun.stdin.stream()).arrayBuffer());
-				await (await runtime.createCore()).writeTaskArtifact(taskId, path, bytes);
+				await (await runtime.createCore()).storage.taskArtifacts.write(taskId, path, bytes);
 				if (wantsJson(writeCommand)) return printJson({ path });
 				console.log(`Written\t${path}`);
 			} catch (error) {

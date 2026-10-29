@@ -4,6 +4,7 @@ import { Writable } from "node:stream";
 import { runCli } from "../cli/register.ts";
 import { Core } from "../controller/agentic-workspace.ts";
 import type { Task } from "../model/types.ts";
+import { Storage } from "../storage/storage.ts";
 import { coreFileSystem, createUniqueTestDir, initializeFilesystemTestProject, safeCleanup } from "./test-utils.ts";
 
 let TEST_DIR: string;
@@ -48,12 +49,13 @@ describe("CLI ID Incrementing Behavior", () => {
 			id: "task-1",
 			title: "First Task",
 			status: "To Do",
+			done: false,
 			createdDate: "2025-01-01",
 			labels: [],
 			dependencies: [],
 			description: "A test task.",
 		};
-		await core.createTask(task1);
+		await new Storage(coreFileSystem(core)).createTask(task1);
 
 		const result = await runCommand(["task", "create", "Second Task"]);
 

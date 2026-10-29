@@ -1,4 +1,5 @@
 import type { BoxRenderable, CliRenderer } from "@opentui/core";
+import { uniqBy } from "lodash";
 import { type EffectiveAgentConfiguration, resolveSessionSettings } from "../../model/session/types.ts";
 import { getPriorityLabels } from "../../model/task/priority-config.ts";
 import { getTaskTypeValues } from "../../model/task/task-type-config.ts";
@@ -69,21 +70,10 @@ export type OpenTuiTaskComposerMount = {
 	dispose(): void;
 };
 
-function uniqueValues(values: readonly string[]): string[] {
-	const result: string[] = [];
-	const seen = new Set<string>();
-	for (const value of values) {
-		const trimmed = String(value ?? "").trim();
-		const normalized = trimmed.toLowerCase();
-		if (!trimmed || seen.has(normalized)) continue;
-		seen.add(normalized);
-		result.push(trimmed);
-	}
-	return result;
-}
-
 function workflowStatuses(statuses: readonly string[]): string[] {
-	const values = uniqueValues(statuses);
+	const values = uniqBy(statuses.map((value) => String(value ?? "").trim()).filter(Boolean), (value) =>
+		value.toLowerCase(),
+	);
 	return values.length > 0 ? values : ["To Do"];
 }
 

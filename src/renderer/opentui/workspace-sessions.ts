@@ -1,7 +1,6 @@
 import { dirname } from "node:path";
 import { loadProjectModeCatalog } from "../../controller/agent-configuration.ts";
-import type { Core } from "../../controller/agentic-workspace.ts";
-import type { ObservedSession } from "../../controller/session-application.ts";
+import type { Core, ObservedSession } from "../../controller/agentic-workspace.ts";
 import type { WorkspaceStateService } from "../../controller/workspace-state.ts";
 import { effectiveModeTextColor } from "../../model/session/mode-colors.ts";
 import type { SessionRuntime } from "../../model/session/session.ts";
@@ -98,7 +97,6 @@ export class WorkspaceSessions {
 	) {
 		this.#monitor = new WorkspaceSessionMonitor(
 			core,
-			workspace,
 			sessionRuntime,
 			runtime.createActivityProbe,
 			{
@@ -183,7 +181,7 @@ export class WorkspaceSessions {
 			const histories = new Map<string, TaskSessions>();
 			if (selectedTask) {
 				selectedModeId = selectedModeForTask(state, selectedTask.id, catalog);
-				const modeSessions = await this.workspace.listModeSessions(selectedTask.id, selectedModeId);
+				const modeSessions = await this.workspace.listSessions(selectedTask.id, selectedModeId);
 				histories.set(selectedTask.id, modeSessions);
 				const localId = this.#localSelections.get(`${selectedTask.id}\u0000${selectedModeId}`);
 				activeAgentSession =
@@ -200,7 +198,7 @@ export class WorkspaceSessions {
 						const task = visibleTasks[cursor++];
 						if (!task) continue;
 						const modeId = selectedModeForTask(state, task.id, catalog);
-						const modeSessions = histories.get(task.id) ?? (await this.workspace.listModeSessions(task.id, modeId));
+						const modeSessions = histories.get(task.id) ?? (await this.workspace.listSessions(task.id, modeId));
 						const active = modeSessions.sessions.find((session) => session.id === modeSessions.activeSessionId);
 						if (active) modeActiveSessions.set(task.id, active);
 						const profile = catalog.profiles[modeId];
@@ -220,9 +218,7 @@ export class WorkspaceSessions {
 			else this.#sessionTaskIds.delete(selectedTask.id);
 		}
 		const activeAgentSnapshot = activeAgentSession ? this.#monitor.observed(activeAgentSession.id) : undefined;
-		const activeAgentCwd = activeAgentSession
-			? await this.workspace.sessionApplication.executionCwd(activeAgentSession.taskId)
-			: undefined;
+		const activeAgentCwd = activeAgentSession ? await this.core.executionCwd(activeAgentSession.taskId) : undefined;
 		const selectedAgent = activeAgentSession ? this.#attachments.agent(activeAgentSession.id) : undefined;
 		return {
 			activeAgentSession,
@@ -254,7 +250,7 @@ export class WorkspaceSessions {
 		)
 			return false;
 		try {
-			const probe = await this.workspace.sessionApplication.readObserved(session.taskId, session.id);
+			const probe = await this.core.readObserved(session.taskId, session.id);
 			if (!this.#selected(selection, state)) return false;
 			if (probe.snapshot.state !== "running" && probe.snapshot.state !== "parked") return true;
 			this.#attachRunningSession(session.taskId, session);
@@ -376,7 +372,7 @@ export class WorkspaceSessions {
 		if (!modeId || selection.taskId !== taskId || !this.#selected(selection, state) || this.operations.blocked())
 			return;
 		try {
-			const history = await this.workspace.listModeSessions(taskId, modeId);
+			const history = await this.workspace.listSessions(taskId, modeId);
 			if (!this.#selected(selection, state)) return;
 			const selectedId = this.#localSelections.get(`${taskId}\u0000${modeId}`) ?? history.activeSessionId;
 			if (!selectedId) {
@@ -386,8 +382,7 @@ export class WorkspaceSessions {
 			const session = history.sessions.find((candidate) => candidate.id === selectedId);
 			if (!session) return;
 			const snapshot =
-				this.#monitor.observed(selectedId) ??
-				(await this.workspace.sessionApplication.readObserved(taskId, selectedId)).snapshot;
+				this.#monitor.observed(selectedId) ?? (await this.core.readObserved(taskId, selectedId)).snapshot;
 			if (!this.#selected(selection, state)) return;
 			if (snapshot.state === "stopped") {
 				await this.start(taskId, columns, rows, { sessionId: selectedId, modeId, focus: true });
@@ -430,7 +425,7 @@ export class WorkspaceSessions {
 		this.#startingTaskModes.set(key, startOwner);
 		let successorStarted = false;
 		try {
-			const history = await this.workspace.listModeSessions(taskId, modeId);
+			const history = await this.workspace.listSessions(taskId, modeId);
 			const predecessor = local?.origin?.record;
 			const handoff: SessionHandoff = {
 				modeId,
@@ -525,7 +520,7 @@ export class WorkspaceSessions {
 			const selected = this.#localSelections.get(`${taskId}\u0000${options.modeId}`);
 			const retained = selected ? this.#attachments.agent(selected) : undefined;
 			if (retained?.terminal && !retained.terminal.isDestroyed) resolvedSessionId = selected;
-			else resolvedSessionId = (await this.workspace.listModeSessions(taskId, options.modeId)).activeSessionId;
+			else resolvedSessionId = (await this.workspace.listSessions(taskId, options.modeId)).activeSessionId;
 		}
 		if (launch.invalidated || this.#deletingTasks.has(taskId)) return false;
 		if (this.#closed || this.#selection.view !== "workspace") throw new Error(`Task ${taskId} is no longer selected.`);
@@ -548,7 +543,7 @@ export class WorkspaceSessions {
 		}
 		if (launch.invalidated || this.#deletingTasks.has(taskId)) return false;
 		if (this.#closed || this.#selection.view !== "workspace") throw new Error(`Task ${taskId} is no longer selected.`);
-		const application = this.workspace.sessionApplication;
+		const application = this.core;
 		let observed: ObservedSession | undefined;
 		if (resolvedSessionId) {
 			observed = await application.readObserved(taskId, resolvedSessionId);
@@ -690,7 +685,7 @@ export class WorkspaceSessions {
 		try {
 			const catalog = await loadProjectModeCatalog(this.core);
 			const modeId = selectedModeForTask(state, taskId, catalog);
-			const sessions = await this.workspace.listModeSessions(taskId, modeId);
+			const sessions = await this.workspace.listSessions(taskId, modeId);
 			if (!current() || modeId !== selection.modeId) return;
 			const mount = this.runtime.mountSessionPicker(this.host.renderer, this.host.root, {
 				taskId,
@@ -720,7 +715,7 @@ export class WorkspaceSessions {
 					if (!agent?.terminal || agent.terminal.isDestroyed) {
 						const session = sessions.sessions.find((candidate) => candidate.id === id);
 						if (session)
-							void this.workspace.sessionApplication.readObserved(taskId, id).then((observed) => {
+							void this.core.readObserved(taskId, id).then((observed) => {
 								if (current() && ["running", "parked"].includes(observed.snapshot.state))
 									this.#attachRunningSession(taskId, session, true);
 							});
@@ -755,7 +750,7 @@ export class WorkspaceSessions {
 				},
 				onDelete: async (id) => {
 					if (!current()) throw new Error(`Task ${taskId} is no longer selected.`);
-					await this.workspace.sessionApplication.deleteSession(taskId, id, { force: true });
+					await this.core.deleteSession(taskId, id, { force: true });
 					await this.#attachments.releaseAgent(id, this.#monitor.history(id));
 					this.#forgetLocal(id);
 					if (!this.#closed) void this.operations.refresh();
@@ -796,7 +791,7 @@ export class WorkspaceSessions {
 	async deleteTask(taskId: string): Promise<{ success: boolean; cleanupError?: unknown }> {
 		this.#deletingTasks.add(taskId);
 		try {
-			const result = await this.core.deleteTask(taskId, {});
+			const result = await this.core.tasks.delete(taskId, {});
 			if (!result.success) return { success: false };
 			try {
 				await this.removeTask(taskId);
@@ -818,7 +813,7 @@ export class WorkspaceSessions {
 			))
 		)
 			return;
-		await this.#attachments.shutdown(() => this.workspace.sessionApplication.shutdown());
+		await this.#attachments.shutdown(() => this.core.shutdown());
 	}
 
 	dispose(): Promise<void> {

@@ -15,7 +15,6 @@ const DIRECTION_HEADINGS: Record<DependencyDirection, string> = {
 
 const UNRESOLVED_LABELS: Record<Exclude<DependencyGraphNode["state"], "resolved">, string> = {
 	missing: "unknown task ID",
-	ambiguous: "ambiguous task ID",
 };
 
 /**

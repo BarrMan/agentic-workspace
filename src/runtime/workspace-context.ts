@@ -3,7 +3,6 @@
 import { realpathSync } from "node:fs";
 import { isAbsolute } from "node:path";
 import type { AgentConversationContext } from "../model/session/types.ts";
-import { taskIdsEqual } from "../model/task/task-id.ts";
 import { createSessionTransport } from "./session-process.ts";
 
 /** The environment variable a workspace sets in its agent panes and the CLI reads back. */
@@ -82,7 +81,7 @@ const defaultPaneMatches = async (paneId: string, context: WorkspaceContext): Pr
 		actualPaneId === paneId &&
 		realpathOrUndefined(rootDir ?? "") === realpathOrUndefined(context.rootDir) &&
 		(context.conversation === undefined ||
-			(taskIdsEqual(taskId ?? "", context.conversation.taskId) && sessionId === context.conversation.sessionId))
+			(taskId === context.conversation.taskId && sessionId === context.conversation.sessionId))
 	);
 };
 

@@ -118,7 +118,10 @@ describe("pinned project state root", () => {
 		const core = new Core(root, { stateRoot: saved });
 		const workspace = core.workspaceState;
 		expect(await workspace.stateRoot).toBe(saved);
-		await store.mutateMode("TASK-1", "build", async () => undefined);
+		await store.insertTask("TASK-1");
+		await store.mutate("TASK-1", async (state) => {
+			state.modes.build = { sessions: [] };
+		});
 		expect((await new SessionStore(root).read("TASK-1")).modes?.build).toBeDefined();
 		const release = await store.claimSession("TASK-1", "session-1");
 		try {
@@ -138,6 +141,7 @@ describe("pinned project state root", () => {
 	});
 
 	it("pins a relative view-store project path including its existing lock namespace", async () => {
+		await mkdir(join(root, ".agentic-workspace", ".locks"), { recursive: true });
 		const view = await openViewStateStore(".", () => ({ count: 0 }));
 		try {
 			process.chdir(home);
@@ -171,16 +175,16 @@ describe("pinned project state root", () => {
 		await mkdir(old, { recursive: true });
 		await writeFile(join(old, "state.json"), "historical bytes");
 		const store = new SessionStore(root);
-		await expect(store.mutateMode("TASK-1", "build", async () => undefined)).rejects.toThrow("Ambiguous agent state");
+		await expect(store.mutate("TASK-1", async () => undefined)).rejects.toThrow("Ambiguous agent state");
 		expect(await readFile(join(old, "state.json"), "utf8")).toBe("historical bytes");
 		expect(await readdir(root)).not.toContain(".agentic-workspace");
 	});
 
-	it("rejects older external claims and a conflicting explicit root", async () => {
+	it("rejects older external state and a conflicting explicit root", async () => {
 		const execution = await worktree();
 		const old = join(external(execution, home), "task-1");
 		await mkdir(old, { recursive: true });
-		await writeFile(join(old, "owner.claim"), "");
+		await writeFile(join(old, "state.json"), "preserve");
 		await expect(resolveProjectStateRoot(root)).rejects.toThrow("Ambiguous agent state");
 		await expect(resolveProjectStateRoot(root, { stateRoot: join(sandbox, "unrelated") })).rejects.toThrow(
 			"Invalid agent state root",
@@ -292,18 +296,18 @@ describe("pinned project state root", () => {
 		expect(await readFile(join(saved, "view-state.json"), "utf8")).toBe("preserve");
 	});
 
-	it("checks inherited storage base for older claims after HOME changes", async () => {
+	it("checks inherited storage base for older state after HOME changes", async () => {
 		const execution = await worktree();
 		const saved = external(root, home);
 		const old = join(external(execution, home), "task-1");
 		await mkdir(saved, { recursive: true });
 		await writeFile(join(saved, "view-state.json"), "preserve");
 		await mkdir(old, { recursive: true });
-		await writeFile(join(old, "owner.claim"), "preserve claim");
+		await writeFile(join(old, "state.json"), "preserve state");
 		process.env.HOME = join(sandbox, "new-home");
 		const store = new SessionStore(root, { stateRoot: saved });
 		await expect(store.claimSession("TASK-1", "session-1")).rejects.toThrow("Ambiguous agent state");
-		expect(await readFile(join(old, "owner.claim"), "utf8")).toBe("preserve claim");
+		expect(await readFile(join(old, "state.json"), "utf8")).toBe("preserve state");
 		expect(await readFile(join(saved, "view-state.json"), "utf8")).toBe("preserve");
 		expect(existsSync(process.env.HOME)).toBe(false);
 		expect(await readdir(root)).not.toContain(".agentic-workspace");
@@ -314,7 +318,8 @@ describe("pinned project state root", () => {
 		const saved = external(root, home);
 		expect(await resolveProjectStateRoot(root)).toBe(saved);
 		const store = new SessionStore(root);
-		await store.mutateMode("TASK-1", "build", async () => undefined);
+		await store.insertTask("TASK-1");
+		await store.mutate("TASK-1", async () => undefined);
 		expect(await store.stateRoot).toBe(saved);
 		const first = await openViewStateStore(root, () => ({ count: 0 }));
 		const second = await openViewStateStore(root, () => ({ count: 0 }), { stateRoot: await store.stateRoot });
@@ -342,11 +347,12 @@ describe("pinned project state root", () => {
 
 	it("uses only the external lock for writable-project external state clients", async () => {
 		const saved = external(root, home);
+		await mkdir(saved, { recursive: true });
 		const view = await openViewStateStore(root, () => ({ count: 0 }), { stateRoot: saved });
 		try {
 			await view.update(() => {
 				expect(statSync(join(saved, "workspace-view-state.lock")).isDirectory()).toBe(true);
-				expect(existsSync(join(root, "agentic-workspace", ".locks", "workspace-view-state"))).toBe(false);
+				expect(existsSync(join(root, ".agentic-workspace", ".locks", "workspace-view-state"))).toBe(false);
 				return { count: 1 };
 			});
 		} finally {
@@ -355,9 +361,10 @@ describe("pinned project state root", () => {
 	});
 
 	it("ignores an existing canonical namespace for external state clients", async () => {
-		await mkdir(join(root, "agentic-workspace", ".locks"), { recursive: true });
+		await mkdir(join(root, ".agentic-workspace", ".locks"), { recursive: true });
 		await chmod(root, 0o500);
 		const saved = external(root, home);
+		await mkdir(saved, { recursive: true });
 		const view = await openViewStateStore(root, () => ({ count: 0 }), { stateRoot: saved });
 		try {
 			await view.update(() => {
@@ -370,10 +377,11 @@ describe("pinned project state root", () => {
 	});
 
 	it("ignores an unusable canonical lock directory for external state clients", async () => {
-		const locks = join(root, "agentic-workspace", ".locks");
+		const locks = join(root, ".agentic-workspace", ".locks");
 		await mkdir(locks, { recursive: true });
 		await chmod(locks, 0o500);
 		const saved = external(root, home);
+		await mkdir(saved, { recursive: true });
 		const view = await openViewStateStore(root, () => ({ count: 0 }), { stateRoot: saved });
 		try {
 			await view.update(() => ({ count: 1 }));
@@ -385,7 +393,7 @@ describe("pinned project state root", () => {
 	});
 
 	it("rejects an unreadable canonical lock directory for canonical state clients", async () => {
-		const locks = join(root, "agentic-workspace", ".locks");
+		const locks = join(root, ".agentic-workspace", ".locks");
 		await mkdir(locks, { recursive: true });
 		await chmod(locks, 0o000);
 		try {

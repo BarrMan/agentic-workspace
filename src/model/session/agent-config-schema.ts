@@ -226,6 +226,12 @@ export const AgentConfigurationSchema = z.looseObject(
 	{ error: "must be an object." },
 );
 
+/** Root and card records cannot own project modes. */
+export const NonProjectAgentConfigurationSchema = AgentConfigurationSchema.refine(
+	(configuration) => configuration.modes === undefined,
+	{ error: "modes is project-owned and cannot be set in this configuration." },
+);
+
 function issueMessage(label: string, path: PropertyKey[], message: string): Error {
 	const suffix = path.map(String).join(".");
 	return new Error(`${label}${suffix ? `.${suffix}` : ""} ${message}`);
@@ -242,10 +248,4 @@ export function assertAgentConfiguration(
 		throw issueMessage(label, result.error.issues[0]?.path ?? [], result.error.issues[0]?.message ?? "is invalid.");
 	if (scope !== "project" && result.data.modes !== undefined)
 		throw new Error(`${label}.modes is project-owned and cannot be set in ${scope} configuration.`);
-}
-
-export function assertModeCatalog(value: unknown, label: string): asserts value is ModeCatalog {
-	const result = ModeCatalogSchema.safeParse(value);
-	if (!result.success)
-		throw issueMessage(label, result.error.issues[0]?.path ?? [], result.error.issues[0]?.message ?? "is invalid.");
 }

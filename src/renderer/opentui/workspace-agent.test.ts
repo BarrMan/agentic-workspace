@@ -38,7 +38,7 @@ describe("native workspace terminal", () => {
 			throw error;
 		});
 		const mount = mountOpenTuiWorkspace(setup.renderer, parent, {
-			tasks: [{ id: "BACK-1", title: "First", status: "Todo" }],
+			tasks: [{ id: "BACK-1", title: "First", status: "Todo", done: false }],
 			liveAgent: { taskId: "BACK-1", label: "Agent", status: "running", host: agentHost, terminal },
 			onSessionAction: () => terminal.focus(),
 		});
@@ -124,8 +124,8 @@ describe("native workspace terminal", () => {
 		const options = {
 			detailsVisible: false,
 			tasks: [
-				{ id: "BACK-1", title: "First", status: "Todo" },
-				{ id: "BACK-2", title: "Second", status: "Todo" },
+				{ id: "BACK-1", title: "First", status: "Todo", done: false },
+				{ id: "BACK-2", title: "Second", status: "Todo", done: false },
 			],
 			liveAgent: { taskId: "BACK-1", label: "Agent", status: "running" as const, host: agentHost, terminal },
 		};
@@ -178,7 +178,7 @@ describe("native workspace terminal", () => {
 		});
 		const focusChanges: boolean[] = [];
 		const mount = mountOpenTuiWorkspace(setup.renderer, parent, {
-			tasks: [{ id: "BACK-1", title: "First", status: "Todo" }],
+			tasks: [{ id: "BACK-1", title: "First", status: "Todo", done: false }],
 			liveAgent: { taskId: "BACK-1", label: "Agent", status: "running", host: agentHost, terminal },
 			keyboardOverrides: {
 				"workspace.quickPreviewExit": { sequence: [{ key: "b", ctrl: true }, { key: "d" }] },
@@ -211,7 +211,7 @@ describe("native workspace terminal", () => {
 		});
 		const focusChanges: boolean[] = [];
 		const mount = mountOpenTuiWorkspace(setup.renderer, parent, {
-			tasks: [{ id: "BACK-1", title: "ESC RETURN TASK", status: "Todo" }],
+			tasks: [{ id: "BACK-1", title: "ESC RETURN TASK", status: "Todo", done: false }],
 			liveAgent: { taskId: "BACK-1", label: "Agent", status: "running", host: agentHost, terminal },
 			agentFocused: true,
 			onAgentFocusChange: (focused) => focusChanges.push(focused),
@@ -245,7 +245,7 @@ describe("native workspace terminal", () => {
 		let sessionRequests = 0;
 		let quit = 0;
 		const mount = mountOpenTuiWorkspace(setup.renderer, parent, {
-			tasks: [{ id: "BACK-1", title: "First", status: "Todo" }],
+			tasks: [{ id: "BACK-1", title: "First", status: "Todo", done: false }],
 			liveAgent: { taskId: "BACK-1", label: "Agent", status: "running", host: agentHost, terminal },
 			onAgentFocusChange: (focused) => focusChanges.push(focused),
 			onSessionRequest: () => {
@@ -285,7 +285,7 @@ describe("native workspace terminal", () => {
 			write: async () => {},
 		};
 		const mount = mountOpenTuiWorkspace(setup.renderer, parent, {
-			tasks: [{ id: "BACK-1", title: "First task", status: "Todo", description: "Original description" }],
+			tasks: [{ id: "BACK-1", title: "First task", status: "Todo", done: false, description: "Original description" }],
 			taskArtifactApi: api,
 		});
 		try {
@@ -307,7 +307,7 @@ describe("native workspace terminal", () => {
 		renderers.push(setup);
 		const parent = new BoxRenderable(setup.renderer, { width: "100%", height: "100%" });
 		setup.renderer.root.add(parent);
-		const options = { tasks: [{ id: "BACK-1", title: "First task", status: "Todo" }] };
+		const options = { tasks: [{ id: "BACK-1", title: "First task", status: "Todo", done: false }] };
 		const mount = mountOpenTuiWorkspace(setup.renderer, parent, options);
 		try {
 			await setup.flush();
@@ -331,7 +331,7 @@ describe("native workspace terminal", () => {
 		renderers.push(setup);
 		const parent = new BoxRenderable(setup.renderer, { width: "100%", height: "100%" });
 		setup.renderer.root.add(parent);
-		const options = { tasks: [{ id: "BACK-1", title: "First task", status: "Todo" }] };
+		const options = { tasks: [{ id: "BACK-1", title: "First task", status: "Todo", done: false }] };
 		const makeApi = (path: string, content: string): TaskArtifactViewApi => ({
 			list: async () => [{ path, size: content.length, type: "text" }],
 			read: async () => new TextEncoder().encode(content),

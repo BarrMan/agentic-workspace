@@ -7,6 +7,7 @@ import { createTestRenderer, type TestRendererSetup } from "@opentui/core/testin
 import { loadAgentConfiguration, upsertAgentConfiguration } from "../controller/agent-configuration.ts";
 import { Core } from "../controller/agentic-workspace.ts";
 import { MODE_TEXT_COLORS } from "../model/session/mode-colors.ts";
+import { Session } from "../model/session/session.ts";
 import type { AgentConfiguration, AgentSession } from "../model/session/types.ts";
 import { mountOpenTuiWorkspace, type OpenTuiWorkspaceOptions } from "../renderer/opentui/workspace.ts";
 import { OpenTuiWorkspaceController } from "../renderer/opentui/workspace-controller.ts";
@@ -60,9 +61,40 @@ describe("real WorkspaceController Settings persistence", () => {
 	async function fixture(pinExternalRoot = false, configuration = initialConfiguration()) {
 		const rootDir = await mkdtemp(join(tmpdir(), "settings-persistence-"));
 		cleanups.push(async () => await rm(rootDir, { recursive: true, force: true }));
-		const core = new Core(rootDir);
+		const core = new Core(rootDir, {
+			sessionFactory: (_taskId, modeId, record) => {
+				if (!record) throw new Error("Expected durable session record.");
+				return new Session(record, modeId, {
+					async start() {
+						throw new Error("Settings must not start sessions.");
+					},
+					async resume() {
+						throw new Error("Settings must not resume sessions.");
+					},
+					async stop(execution) {
+						await execution.stop();
+					},
+					observe(execution, listener) {
+						return execution.observe(listener);
+					},
+					async observeRetained() {
+						return "absent";
+					},
+					async prepareStop() {
+						return { stop: async () => {} };
+					},
+					async attach() {
+						throw new Error("Settings must not attach sessions.");
+					},
+					async detach() {},
+					async ask() {
+						throw new Error("Settings must not query sessions.");
+					},
+				});
+			},
+		});
 		await initializeTestProject(core, "Settings persistence");
-		const { task } = await core.createTaskFromInput({ title: "Settings fixture", status: "To Do" });
+		const { task } = await core.tasks.create({ title: "Settings fixture", status: "To Do" });
 		await upsertAgentConfiguration(core, "project", configuration);
 		const path = coreFileSystem(core).configFilePath;
 		let workspaceState: Core["workspaceState"] | undefined;
@@ -232,14 +264,10 @@ describe("real WorkspaceController Settings persistence", () => {
 		const pinnedRoot = f.stateRoot;
 		if (!pinnedRoot) throw new Error("Fixture did not pin a state root.");
 		expect(await readFile(join(pinnedRoot, "view-state.json"), "utf8")).toContain('"state"');
-		const originalDelete = Core.prototype.deleteMode;
-		const deletion = spyOn(Core.prototype, "deleteMode").mockImplementation(async function (
-			this: Core,
-			modeId,
-			options,
-		) {
-			expect(await this.workspaceState.stateRoot).toBe(pinnedRoot);
-			return await originalDelete.call(this, modeId, options);
+		const originalDelete = f.core.modeDeletion.deleteMode.bind(f.core.modeDeletion);
+		const deletion = spyOn(f.core.modeDeletion, "deleteMode").mockImplementation(async (modeId, options) => {
+			expect(await f.core.workspaceState.stateRoot).toBe(pinnedRoot);
+			return await originalDelete(modeId, options);
 		});
 		try {
 			await f.open();
@@ -383,7 +411,7 @@ describe("real WorkspaceController Settings persistence", () => {
 
 	it("moves sessions to the chosen mode and saves deletion, added modes and color", async () => {
 		const f = await fixture();
-		const store = f.core.sessionApplication.store;
+		const store = f.core.store;
 		const session: AgentSession = {
 			id: "persisted-session",
 			taskId: f.task.id,
@@ -393,7 +421,9 @@ describe("real WorkspaceController Settings persistence", () => {
 			bootstrapPath: join(coreFileSystem(f.core).rootDir, "bootstrap.sh"),
 			createdAt: "2026-10-10T10:00:00.000Z",
 		};
-		await store.mutateMode(f.task.id, "plan", async (history) => {
+		await store.mutate(f.task.id, async (state) => {
+			state.modes.plan ??= { sessions: [] };
+			const history = state.modes.plan;
 			history.sessions.push(session);
 			history.activeSessionId = session.id;
 		});
@@ -441,9 +471,9 @@ describe("real WorkspaceController Settings persistence", () => {
 		catalog.order.push("review");
 		catalog.profiles.review = { ...catalog.profiles.build, name: "REVIEW", prompt: "Original" };
 		const f = await fixture(false, config);
-		const originalDelete = Core.prototype.deleteMode;
-		const deletion = spyOn(Core.prototype, "deleteMode").mockImplementation(async function (this: Core, id, options) {
-			return await originalDelete.call(this, id, options);
+		const originalDelete = f.core.modeDeletion.deleteMode.bind(f.core.modeDeletion);
+		const deletion = spyOn(f.core.modeDeletion, "deleteMode").mockImplementation(async (id, options) => {
+			return await originalDelete(id, options);
 		});
 		try {
 			await f.open();
@@ -503,10 +533,10 @@ describe("real WorkspaceController Settings persistence", () => {
 		catalog.order.push("review");
 		catalog.profiles.review = { ...catalog.profiles.build, name: "REVIEW" };
 		const f = await fixture(false, config);
-		const originalDelete = Core.prototype.deleteMode;
-		const deletion = spyOn(Core.prototype, "deleteMode").mockImplementation(async function (this: Core, id, options) {
+		const originalDelete = f.core.modeDeletion.deleteMode.bind(f.core.modeDeletion);
+		const deletion = spyOn(f.core.modeDeletion, "deleteMode").mockImplementation(async (id, options) => {
 			if (id === "build") throw new Error("second deletion failed");
-			return await originalDelete.call(this, id, options);
+			return await originalDelete(id, options);
 		});
 		try {
 			await f.open();
@@ -536,7 +566,7 @@ describe("real WorkspaceController Settings persistence", () => {
 
 	it("refuses staged deletion of every mode before calling Core deletion", async () => {
 		const f = await fixture();
-		const deletion = spyOn(Core.prototype, "deleteMode");
+		const deletion = spyOn(f.core.modeDeletion, "deleteMode");
 		try {
 			await f.open();
 			modes(f.setup);
@@ -603,7 +633,7 @@ describe("real WorkspaceController Settings persistence", () => {
 		cleanups.push(async () => await rm(rootDir, { recursive: true, force: true }));
 		const core = new Core(rootDir);
 		await initializeTestProject(core, "Settings binary PTY");
-		await core.createTaskFromInput({ title: "PTY fixture", status: "To Do" });
+		await core.tasks.create({ title: "PTY fixture", status: "To Do" });
 		await upsertAgentConfiguration(core, "project", initialConfiguration());
 		const command = getTestCliCommand();
 		const script = String.raw`

@@ -1,6 +1,6 @@
-import type { Command, OptionValues } from "commander";
+import { type Command, Option, type OptionValues } from "commander";
 import { loadTaskListItems } from "../../controller/task-detail.ts";
-import { Core } from "../../index.ts";
+import type { Core } from "../../index.ts";
 import { normalizeStringList, toStringArray } from "../../lib/string-list.ts";
 import {
 	isLocalEditableTask,
@@ -24,12 +24,11 @@ import {
 } from "./help-schema.ts";
 
 type SearchCommandDependencies = {
-	requireProjectRoot: () => Promise<string>;
+	createCore: () => Promise<Core>;
 	resolveListOutput: (
 		options: ListWindowOptions & ReadOutputOptions,
 		command: Command,
 	) => { outputMode: ReadOutputMode; listWindow: ListWindow } | null;
-	printDuplicateIntegrityWarning: (core: Core) => Promise<boolean>;
 	normalizeStatusList: (core: Core, values: string[], optionName: string) => Promise<string[] | null>;
 	normalizePriority: (core: Core, value: string) => Promise<string | null>;
 	normalizeTaskTypes: (core: Core, values: string[], optionName: string) => Promise<string[] | null>;
@@ -127,7 +126,7 @@ export function registerSearchCommand(program: Command, dependencies: SearchComm
 			createMultiValueAccumulator(),
 		)
 		.option("--plain", "print plain text output")
-		.option("--json", "print versioned machine-readable JSON output")
+		.addOption(new Option("--json", "print versioned machine-readable JSON output").conflicts("plain"))
 		.option("--include-archived", "include archived tasks in search results")
 		.action((query: string | undefined, options: OptionValues) =>
 			runSearch(query, options, searchCommand, dependencies),
@@ -142,10 +141,7 @@ async function runSearch(
 ): Promise<void> {
 	const listOutput = dependencies.resolveListOutput(options, command);
 	if (!listOutput) return;
-	const cwd = await dependencies.requireProjectRoot();
-	const core = new Core(cwd);
-	const hasDuplicateIds = await dependencies.printDuplicateIntegrityWarning(core);
-	if (hasDuplicateIds && listOutput.outputMode === "json") return;
+	const core = await dependencies.createCore();
 	const parsed = await parseSearchOptions(core, options, dependencies);
 	if (!parsed) return;
 	const searchResults = await core.searchPersistently({

@@ -1,31 +1,21 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { Core } from "../controller/agentic-workspace.ts";
-import type { Task } from "../model/types.ts";
-import { coreFileSystem, createUniqueTestDir, initializeFilesystemTestProject, safeCleanup } from "./test-utils.ts";
+import {
+	coreFileSystem,
+	createUniqueTestDir,
+	initializeFilesystemTestProject,
+	initializeFilesystemTestWorkspace,
+	safeCleanup,
+} from "./test-utils.ts";
 
 let TEST_DIR: string;
 
 describe("Cleanup functionality", () => {
 	let core: Core;
 
-	// Sample data
-	const sampleTask: Task = {
-		id: "task-1",
-		title: "Test Task",
-		status: "Done",
-		createdDate: "2025-07-21",
-		labels: [],
-		dependencies: [],
-		rawContent: "Test task description",
-	};
-
 	beforeEach(async () => {
 		TEST_DIR = createUniqueTestDir("test-cleanup");
-		await mkdir(TEST_DIR, { recursive: true });
-
-		// Initialize agentic-workspace project
 		core = new Core(TEST_DIR);
 		await initializeFilesystemTestProject(core, "Cleanup Test Project");
 	});
@@ -34,250 +24,12 @@ describe("Cleanup functionality", () => {
 		await safeCleanup(TEST_DIR);
 	});
 
-	describe("Core functionality", () => {
-		it("should create completed directory in agentic-workspace structure", async () => {
-			await coreFileSystem(core).ensureAgenticWorkspaceStructure();
-			expect(coreFileSystem(core).completedDir).toBe(join(coreFileSystem(core).agenticWorkspaceDir, "completed"));
-		});
-
-		it("should move Done task to completed folder", async () => {
-			// Create a task
-			await core.createTask(sampleTask);
-
-			// Verify task exists in active tasks
-			const activeTasks = await coreFileSystem(core).listTasks();
-			expect(activeTasks).toHaveLength(1);
-			expect(activeTasks[0]?.id).toBe("TASK-1");
-
-			// Move to completed
-			const success = await core.completeTask("task-1");
-			expect(success).toBe(true);
-
-			// Verify task is no longer in active tasks
-			const activeTasksAfter = await coreFileSystem(core).listTasks();
-			expect(activeTasksAfter).toHaveLength(0);
-
-			// Verify task is in completed tasks
-			const completedTasks = await coreFileSystem(core).listCompletedTasks();
-			expect(completedTasks).toHaveLength(1);
-			expect(completedTasks[0]?.id).toBe("TASK-1");
-			expect(completedTasks[0]?.title).toBe("Test Task");
-		});
-
-		it("allows core completion callers to move active tasks into completed", async () => {
-			await core.createTask({
-				...sampleTask,
-				id: "task-2",
-				title: "Not Done Task",
-				status: "Not Done",
-			});
-
-			const success = await core.completeTask("task-2");
-			expect(success).toBe(true);
-			expect(await coreFileSystem(core).loadTask("task-2")).toMatchObject({
-				id: "TASK-2",
-				status: "Not Done",
-				filePath: join(coreFileSystem(core).completedDir, "task-2", "task.md"),
-			});
-
-			const completedTasks = await coreFileSystem(core).listCompletedTasks();
-			expect(completedTasks).toHaveLength(1);
-			expect(completedTasks[0]?.id).toBe("TASK-2");
-			expect(completedTasks[0]?.status).toBe("Not Done");
-		});
+	it("should create completed directory in agentic-workspace structure", async () => {
+		await initializeFilesystemTestWorkspace(coreFileSystem(core));
+		expect(coreFileSystem(core).completedDir).toBe(join(coreFileSystem(core).agenticWorkspaceDir, "completed"));
 	});
 
-	describe("getTerminalStatusTasksByAge", () => {
-		it("should filter Done tasks by age", async () => {
-			// Create old Done task (7 days ago)
-			const oldDate = new Date();
-			oldDate.setDate(oldDate.getDate() - 7);
-			const oldTask: Task = {
-				...sampleTask,
-				title: "Old Done Task",
-				createdDate: oldDate.toISOString().split("T")[0] as string,
-				updatedDate: oldDate.toISOString().split("T")[0] as string,
-				rawContent: "Old task description",
-			};
-			await core.createTask(oldTask);
-
-			// Create recent Done task (1 day ago)
-			const recentDate = new Date();
-			recentDate.setDate(recentDate.getDate() - 1);
-			const recentTask: Task = {
-				...sampleTask,
-				id: "task-2",
-				title: "Recent Done Task",
-				createdDate: recentDate.toISOString().split("T")[0] as string,
-				updatedDate: recentDate.toISOString().split("T")[0] as string,
-				rawContent: "Recent task description",
-			};
-			await core.createTask(recentTask);
-
-			// Create In Progress task
-			const activeTask: Task = {
-				...sampleTask,
-				id: "task-3",
-				title: "Active Task",
-				status: "In Progress",
-				createdDate: oldDate.toISOString().split("T")[0] as string,
-				rawContent: "Active task description",
-			};
-			await core.createTask(activeTask);
-
-			// Get tasks older than 3 days
-			const oldTasks = await core.getTerminalStatusTasksByAge(3);
-			expect(oldTasks).toHaveLength(1);
-			expect(oldTasks[0]?.id).toBe("TASK-1");
-
-			// Get tasks older than 0 days (should include recent task too)
-			const allDoneTasks = await core.getTerminalStatusTasksByAge(0);
-			expect(allDoneTasks).toHaveLength(2);
-		});
-
-		it("uses the final configured status as the cleanup status", async () => {
-			const config = await coreFileSystem(core).loadConfig();
-			if (!config) {
-				throw new Error("Expected test project config to exist");
-			}
-			await coreFileSystem(core).saveConfig({
-				...config,
-				statuses: ["To Do", "Review", "Closed"],
-				defaultStatus: "To Do",
-			});
-
-			const oldDate = new Date();
-			oldDate.setDate(oldDate.getDate() - 7);
-			const recentDate = new Date();
-			recentDate.setDate(recentDate.getDate() - 1);
-			const oldDateValue = oldDate.toISOString().split("T")[0] as string;
-			const recentDateValue = recentDate.toISOString().split("T")[0] as string;
-
-			await core.createTask({
-				...sampleTask,
-				id: "task-1",
-				title: "Old Closed Task",
-				status: "Closed",
-				createdDate: oldDateValue,
-				updatedDate: oldDateValue,
-			});
-			await core.createTask({
-				...sampleTask,
-				id: "task-2",
-				title: "Recent Closed Task",
-				status: "Closed",
-				createdDate: recentDateValue,
-				updatedDate: recentDateValue,
-			});
-			await core.createTask({
-				...sampleTask,
-				id: "task-3",
-				title: "Old Review Task",
-				status: "Review",
-				createdDate: oldDateValue,
-				updatedDate: oldDateValue,
-			});
-			await core.createTask({
-				...sampleTask,
-				id: "task-4",
-				title: "Old Literal Done Task",
-				status: "Done",
-				createdDate: oldDateValue,
-				updatedDate: oldDateValue,
-			});
-
-			const oldTasks = await core.getTerminalStatusTasksByAge(3);
-			expect(oldTasks.map((task) => task.id)).toEqual(["TASK-1"]);
-
-			const allTerminalTasks = await core.getTerminalStatusTasksByAge(0);
-			expect(allTerminalTasks.map((task) => task.id).sort()).toEqual(["TASK-1", "TASK-2"]);
-		});
-
-		it("does not collapse internal spaces when matching the cleanup status", async () => {
-			const config = await coreFileSystem(core).loadConfig();
-			if (!config) {
-				throw new Error("Expected test project config to exist");
-			}
-			await coreFileSystem(core).saveConfig({
-				...config,
-				statuses: ["To Do", "In Progress", "InProgress"],
-				defaultStatus: "To Do",
-			});
-
-			const oldDate = new Date();
-			oldDate.setDate(oldDate.getDate() - 7);
-			const oldDateValue = oldDate.toISOString().split("T")[0] as string;
-
-			await core.createTask({
-				...sampleTask,
-				id: "task-1",
-				title: "Old Terminal Task",
-				status: "InProgress",
-				createdDate: oldDateValue,
-				updatedDate: oldDateValue,
-			});
-			await core.createTask({
-				...sampleTask,
-				id: "task-2",
-				title: "Old Non-Terminal Task",
-				status: "In Progress",
-				createdDate: oldDateValue,
-				updatedDate: oldDateValue,
-			});
-
-			const oldTasks = await core.getTerminalStatusTasksByAge(3);
-			expect(oldTasks.map((task) => task.id)).toEqual(["TASK-1"]);
-		});
-
-		it("should handle tasks without dates", async () => {
-			const task: Task = {
-				...sampleTask,
-				title: "Task Without Date",
-				createdDate: "",
-				rawContent: "Task description",
-			};
-			await core.createTask(task);
-
-			const oldTasks = await core.getTerminalStatusTasksByAge(1);
-			expect(oldTasks).toHaveLength(0); // Should not include tasks without valid dates
-		});
-
-		it("should use updatedDate over createdDate when available", async () => {
-			const oldDate = new Date();
-			oldDate.setDate(oldDate.getDate() - 10);
-			const recentDate = new Date();
-			recentDate.setDate(recentDate.getDate() - 1);
-
-			const task: Task = {
-				id: "task-1",
-				title: "Task with Both Dates",
-				status: "Done",
-				createdDate: oldDate.toISOString().split("T")[0] as string,
-				updatedDate: recentDate.toISOString().split("T")[0] as string,
-				labels: [],
-				dependencies: [],
-				rawContent: "Task description",
-			};
-			await core.createTask(task);
-
-			// Should use updatedDate (recent) not createdDate (old)
-			const oldTasks = await core.getTerminalStatusTasksByAge(5);
-			expect(oldTasks).toHaveLength(0); // updatedDate is recent, so not old enough
-
-			const recentTasks = await core.getTerminalStatusTasksByAge(0);
-			expect(recentTasks).toHaveLength(1); // updatedDate makes it recent
-		});
-	});
-
-	describe("Error handling", () => {
-		it("should handle non-existent task gracefully", async () => {
-			const success = await core.completeTask("TASK-999");
-			expect(success).toBe(false);
-		});
-
-		it("should return empty array for listCompletedTasks when no completed tasks exist", async () => {
-			const completedTasks = await coreFileSystem(core).listCompletedTasks();
-			expect(completedTasks).toHaveLength(0);
-		});
+	it("should return no completed tasks when the directory is empty", async () => {
+		expect(await coreFileSystem(core).listCompletedTasks()).toHaveLength(0);
 	});
 });

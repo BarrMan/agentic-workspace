@@ -64,7 +64,12 @@ async function fixture(omit?: Omitted, resume = false) {
 	};
 	const fakeProcess = {
 		prepare: async () => {},
-		create: async (_record: AgentSession, _env: Record<string, string>, acquired?: (paneId?: string) => void) => {
+		create: async (
+			_record: AgentSession,
+			_cwd: string,
+			_env: Record<string, string>,
+			acquired?: (paneId?: string) => void,
+		) => {
 			acquired?.("%42");
 		},
 		preparePane: async () => {},

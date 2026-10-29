@@ -28,33 +28,14 @@ describe("SessionStore mode persistence contract", () => {
 		const root = await mkdtemp(join(tmpdir(), "agentic-workspace-session-mode-contract-"));
 		roots.push(root);
 		const store = new SessionStore(root);
+		await store.insertTask("TASK-23");
 		return { root, store, ...(await store.paths("TASK-23")) };
 	}
 
 	it("stores only the preset name for configuration identity", async () => {
 		const { store } = await fixture();
-		await store.mutateMode("TASK-23", "plan", async (history) => {
-			history.sessions.push(session("preset-only"));
-			history.activeSessionId = "preset-only";
-		});
+		await store.reserveSession("TASK-23", "plan", session("preset-only"), "preset-only");
 		expect((await store.readMode("TASK-23", "plan")).sessions[0]).toEqual(session("preset-only"));
-	});
-
-	it("rejects incomplete or non-absolute persisted path contexts", async () => {
-		const { store } = await fixture();
-		await expect(
-			store.mutateMode("TASK-23", "plan", async (history) => {
-				history.sessions.push(
-					session("bad-path-context", {
-						pathContext: {
-							projectDir: "relative/project",
-							taskDir: "/project/tasks/task-23",
-						},
-					}),
-				);
-			}),
-		).rejects.toThrow("invalid state");
-		expect((await store.readMode("TASK-23", "plan")).sessions).toEqual([]);
 	});
 
 	it("keeps independent histories and active pointers through concurrent mode writes and reopen", async () => {
@@ -68,12 +49,16 @@ describe("SessionStore mode persistence contract", () => {
 		});
 
 		await Promise.all([
-			store.mutateMode("TASK-23", "plan", async (history) => {
+			store.mutate("TASK-23", async (state) => {
+				const history = state.modes.plan ?? { sessions: [] };
+				state.modes.plan = history;
 				await new Promise((resolve) => setTimeout(resolve, 12));
 				history.sessions.push(planner);
 				history.activeSessionId = planner.id;
 			}),
-			store.mutateMode("TASK-23", "build", async (history) => {
+			store.mutate("TASK-23", async (state) => {
+				const history = state.modes.build ?? { sessions: [] };
+				state.modes.build = history;
 				history.sessions.push(builder);
 				history.activeSessionId = builder.id;
 			}),
@@ -108,9 +93,9 @@ describe("SessionStore mode persistence contract", () => {
 		await expectMetadata();
 		await store.mutate("TASK-23", async () => undefined);
 		await expectMetadata();
-		await store.mutateMode("TASK-23", "plan", async () => undefined);
+		await store.mutate("TASK-23", async () => undefined);
 		await expectMetadata();
-		await store.mutateSession("TASK-23", "metadata-plan", async () => undefined);
+		await store.mutate("TASK-23", async () => undefined);
 		await expectMetadata();
 		for (const [key, invalid] of [
 			["worktreePath", false],
@@ -152,15 +137,11 @@ describe("SessionStore mode persistence contract", () => {
 		expect(await readFile(statePath, "utf8")).toBe(bytes);
 	});
 
-	it("returns an empty mode without creating state, then persists a selected session", async () => {
-		const { store, statePath } = await fixture();
+	it("returns an empty mode in provisioned state, then persists a selected session", async () => {
+		const { store } = await fixture();
 		expect(await store.readMode("TASK-23", "research")).toEqual({ sessions: [] });
-		await expect(readFile(statePath)).rejects.toMatchObject({ code: "ENOENT" });
 
-		await store.mutateMode("TASK-23", "research", async (history) => {
-			history.sessions.push(session("research-uuid"));
-			history.activeSessionId = "research-uuid";
-		});
+		await store.reserveSession("TASK-23", "research", session("research-uuid"), "research-uuid");
 		expect(await store.readMode("TASK-23", "research")).toEqual({
 			sessions: [session("research-uuid")],
 			activeSessionId: "research-uuid",
@@ -169,26 +150,26 @@ describe("SessionStore mode persistence contract", () => {
 
 	it("finds the current UUID owner under lock and leaves unrelated mode history and pointers intact", async () => {
 		const { store } = await fixture();
-		await store.mutateMode("TASK-23", "plan", async (history) => {
-			history.sessions.push(session("relocated"));
-			history.activeSessionId = "relocated";
-		});
-		await store.mutateMode("TASK-23", "plan", async (history) => {
+		await store.reserveSession("TASK-23", "plan", session("relocated"), "relocated");
+		await store.mutate("TASK-23", async (state) => {
+			const history = state.modes.plan;
+			if (!history) throw new Error("Expected plan history.");
 			history.sessions = [];
 			delete history.activeSessionId;
 		});
 		const other = session("other-mode-session");
-		await store.mutateMode("TASK-23", "design", async (history) => {
-			history.sessions.push(other);
-			history.activeSessionId = other.id;
-		});
-		await store.mutateMode("TASK-23", "build", async (history) => {
-			history.sessions.push(session("relocated"));
-			history.activeSessionId = "relocated";
-		});
+		await store.reserveSession("TASK-23", "design", other, other.id);
+		await store.reserveSession("TASK-23", "build", session("relocated"), "relocated");
 
 		const owners: string[] = [];
-		await store.mutateSession("TASK-23", "relocated", async (record, history, owner) => {
+		await store.mutate("TASK-23", async (state) => {
+			const membership = Object.entries(state.modes).find(([, history]) =>
+				history.sessions.some(({ id }) => id === "relocated"),
+			);
+			if (!membership) throw new Error("Expected relocated session.");
+			const [owner, history] = membership;
+			const record = history.sessions.find(({ id }) => id === "relocated");
+			if (!record) throw new Error("Expected relocated record.");
 			owners.push(owner);
 			record.lastUsedAt = "2026-10-10T12:30:00.000Z";
 			history.activeSessionId = record.id;
@@ -200,29 +181,6 @@ describe("SessionStore mode persistence contract", () => {
 			activeSessionId: "relocated",
 			sessions: [{ id: "relocated", lastUsedAt: "2026-10-10T12:30:00.000Z" }],
 		});
-	});
-
-	it("rejects duplicate UUID membership and dangling active pointers without replacing saved bytes", async () => {
-		const { store, statePath } = await fixture();
-		const first = session("shared-id");
-		await store.mutateMode("TASK-23", "plan", async (history) => {
-			history.sessions.push(first);
-			history.activeSessionId = first.id;
-		});
-		const before = await readFile(statePath, "utf8");
-		await expect(
-			store.mutateMode("TASK-23", "build", async (history) => {
-				history.sessions.push(session("shared-id"));
-			}),
-		).rejects.toThrow(/invalid state/i);
-		expect(await readFile(statePath, "utf8")).toBe(before);
-
-		await expect(
-			store.mutateMode("TASK-23", "plan", async (history) => {
-				history.activeSessionId = "does-not-exist";
-			}),
-		).rejects.toThrow(/invalid state/i);
-		expect(await readFile(statePath, "utf8")).toBe(before);
 	});
 
 	it("rejects v1 state without rewriting it or allowing writes", async () => {
@@ -244,9 +202,16 @@ describe("SessionStore mode persistence contract", () => {
 					state.modes.plan ??= { sessions: [] };
 					state.modes.plan.sessions.push(session("plan-write"));
 				}),
-			() => store.mutateMode("TASK-23", "plan", async (history) => history.sessions.push(session("mode-write"))),
 			() =>
-				store.mutateSession("TASK-23", "old-id", async (record) => {
+				store.mutate("TASK-23", async (state) => {
+					const history = state.modes.plan ?? { sessions: [] };
+					state.modes.plan = history;
+					history.sessions.push(session("mode-write"));
+				}),
+			() =>
+				store.mutate("TASK-23", async (state) => {
+					const record = state.modes.build?.sessions.find(({ id }) => id === "old-id");
+					if (!record) throw new Error("Expected old session.");
 					record.lastUsedAt = "2026-10-10T12:30:00.000Z";
 				}),
 		];
@@ -270,7 +235,11 @@ describe("SessionStore mode persistence contract", () => {
 			expect((readError as Error).message, `${label} must not advise destructive reset`).not.toMatch(/reset it with/i);
 			expect(await readFile(statePath, "utf8"), `${label} file must survive failed read`).toBe(bytes);
 			await expect(
-				store.mutateMode("TASK-23", "plan", async (history) => history.sessions.push(session("never-saved"))),
+				store.mutate("TASK-23", async (state) => {
+					const history = state.modes.plan ?? { sessions: [] };
+					state.modes.plan = history;
+					history.sessions.push(session("never-saved"));
+				}),
 				label,
 			).rejects.toThrow();
 			expect(await readFile(statePath, "utf8"), `${label} file must survive failed mutation`).toBe(bytes);

@@ -9,7 +9,7 @@
 
 import type { AgentActivity } from "../model/session/types.ts";
 import type { AgentChromeRule } from "./agents/core/agent.ts";
-import type { HookStatus } from "./status-hooks.ts";
+import type { HookStatus } from "./agents/core/hook-script.ts";
 
 /** Timing constants copied verbatim from AOE (`§0.3`). All values are milliseconds. */
 export const ACTIVITY_TIMING = {

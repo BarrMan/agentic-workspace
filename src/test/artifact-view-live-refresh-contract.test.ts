@@ -62,7 +62,9 @@ describe("artifact viewer live-refresh contract", () => {
 				return () => listeners.delete(callback);
 			},
 		};
-		const watcher = new Core(root).watchTasks({
+		const core = new Core(root);
+		await core.tasks.init();
+		const unsubscribe = core.tasks.subscribe({
 			onArtifactChanged: ({ taskId: changedTask }) => {
 				if (changedTask.toLowerCase() === taskId.toLowerCase()) {
 					for (const listener of [...listeners]) listener();
@@ -104,7 +106,8 @@ describe("artifact viewer live-refresh contract", () => {
 			expect(listeners.size).toBe(0);
 		} finally {
 			view.dispose();
-			watcher.stop();
+			unsubscribe();
+			core.tasks.dispose();
 		}
 	});
 });

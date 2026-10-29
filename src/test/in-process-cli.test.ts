@@ -23,7 +23,7 @@ describe("runInProcessCli", () => {
 			expect(viewed.stdout).toContain(description);
 			const cleared = await runInProcessCli(["task", "edit", "TASK-1", "--description", ""], { cwd });
 			expect(cleared.exitCode).toBe(0);
-			expect((await core.getTask("TASK-1"))?.description).toBeUndefined();
+			expect((await core.tasks.getTask("TASK-1"))?.description).toBeUndefined();
 		} finally {
 			await rm(cwd, { recursive: true, force: true });
 		}
@@ -35,7 +35,7 @@ describe("runInProcessCli", () => {
 			const core = new Core(cwd);
 			await initializeFilesystemTestProject(core, "In-process CLI queue");
 			for (const title of ["Alpha queued search", "Beta queued search"]) {
-				await core.createTaskFromInput({ title, status: "To Do" });
+				await core.tasks.create({ title, status: "To Do" });
 			}
 
 			const invalid = await runInProcessCli(["definitely-not-a-command"], { cwd });

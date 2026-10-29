@@ -19,12 +19,14 @@ This document owns repeatable coding, organization, and verification practices. 
 - Let [biome.json](../biome.json) define formatting and lint rules; do not maintain a second style configuration in prose.
 - Put changes in the directory of the owning component as fixed by [BLUEPRINT](BLUEPRINT.md#repository-layout), and reuse its existing types and helpers. `model/` holds domain records and behavior; `storage/` and `filesystem/` hold persistence and its substrate; `controller/` holds operations; `runtime/` holds execution; `renderer/` and `cli/` are frontends; `lib/` holds generic domain-free helpers. Do not use `lib/` as a default for domain helpers. Keep focused tests beside the implementation and shared test helpers under `src/test/`.
 - Follow [BLUEPRINT](BLUEPRINT.md) for provider isolation, rendering and orchestration boundaries, dependency direction, boundary ownership, module boundaries, and public contracts.
+- Call the real operation owner: TasksService sequences task operations, Core owns session execution, and models retain domain transforms ([Controller](blueprints/controller.md)). Do not add Core forwarding facades for its task/read/workflow owners. Keep Storage as the model-typed persistence boundary; its FileSystem implementation stays private. Delegation alone does not make a boundary redundant.
+- Define named path and glob constants in the owning module. Use standard filesystem, path, and glob APIs for file selection and path handling rather than hand-written filename parsers, regex/extension filters, or temporary-file blacklists. Preserve containment and symlink checks.
 
 ### Identity and Reference Resolution
 
-- Normalize an identity at the boundary that writes it. Do not add read-time alias layers or per-caller normalization for a value that has a canonical form.
-- Use each identity family's shared comparison key for equality, lookup, and mutation: `taskIdKey` for task IDs and `labelComparisonKey` for labels; do not hand-roll `toLowerCase`/`trim`. Task statuses use the exact configured label; do not use a separate whitespace-insensitive status lookup key. Priorities are exact configured labels, not normalized values.
-- Where existing stored data requires aliases, one resolver owns their precedence; callers consume its result instead of reimplementing matching. Keep identity resolution separate from presentation and aggregation.
+- Compare and look up task IDs as exact strings, including task references and mutation targets. Do not use `taskIdKey`, case folding, trimming, input uppercasing for lookup, or read aliases. Use the supplied or stored ID unchanged; see [TASK-003](specs/tasks.md#task-003-task-identity).
+- Controlled ID creation owns the configured prefix and uppercase spelling of newly allocated IDs. This is distinct from lookup: preserve numeric segments exactly, including leading zeroes and dotted segments; `TASK-01` and `TASK-1` are distinct. Do not infer prefixes or accept bare-number aliases.
+- Labels use `labelComparisonKey`; do not hand-roll label comparison with `toLowerCase`/`trim`. Task statuses and priorities use exact configured labels, without a separate normalized comparison value. Keep identity lookup separate from presentation, ordering, and search.
 - Do not fabricate records or clone entities with blank fields to reuse a helper; make the helper's scope explicit. Aggregate a collection once instead of filtering it again for each bucket or output row.
 
 ## Error Handling
@@ -39,11 +41,13 @@ This document owns repeatable coding, organization, and verification practices. 
 - **Unexpected failures:** Catch errors where cleanup or useful context is required; avoid catch-and-rethrow that adds neither.
 - **Propagation:** Preserve the primary failure and expose cleanup/release failures. Follow [BLUEPRINT](BLUEPRINT.md) for operation completion and concurrency contracts.
 - **Cleanup:** Ignore only explicitly best-effort cleanup, such as an already-absent temporary resource. Follow [BLUEPRINT](BLUEPRINT.md) for cleanup ordering.
+- Publish success only after the required durable write succeeds. A later hook or notification failure does not undo committed writes; report partial effects and still attempt required cleanup. Do not hide operation-specific sequencing behind a generic deferred-publication collector.
 
 ## Asynchronous and Concurrent Code
 
 - Await asynchronous work and ensure owned processes/resources are cleaned up on success, failure, and timeout. Tests that spawn processes must stop children and await exit ([test procedure](../AGENTS.md#running-tests)).
 - Follow [BLUEPRINT](BLUEPRINT.md) for concurrency and cleanup ordering. Timeout handling is operation-specific; there is no repository-wide cancellation or timeout convention, so follow the owning operation contract.
+- Use the shared locking primitive with an explicit acquisition owner for each resource. Consume the current task supplied by `withTaskLock`; do not reload it or reacquire the same lock in persistence. Complete-object replacement requires the caller-held lock; its signature alone supplies no concurrency guarantee. Preserve short session-state critical sections and task-operation exclusion during external startup; see [ADR-0012](adr/0012-explicit-operation-persistence-coordination.md).
 
 ## Testing
 
@@ -81,12 +85,13 @@ This document owns repeatable coding, organization, and verification practices. 
 
 ### Changes and Refactoring
 
-- Define each persisted record's shape and validation once in a schema beside its codec; map schema failures to the public error contract. Do not add per-field decoders or validators.
+- Validate unknown input once at its accepting boundary using the owning schema; a TypeScript interface is not runtime validation. Define persisted-record shape and decoding validation once beside the codec, reuse those schemas, and map failures to the public error contract. Do not add parallel per-field validators or repeatedly revalidate accepted typed objects. Retain storage encoding checks, security decoding, and operation-specific relationship checks.
 - Keep record validation, serialization, callers, and fixtures aligned with an interface change.
 - Pruning stale worktree registrations must not discard worktree contents, branches, or uncommitted data. Prune only registrations proven stale; preserve and report any worktree containing work.
 - Persist information only for an essential product or recovery need; do not persist redundant historical state. Fix application-produced corruption at its source; do not add automatic repair.
-- Follow [SPEC](SPEC.md): remove superseded behavior and its callers/fixtures rather than retaining aliases or fallback paths. If stored-data preservation or ownership is unresolved, escalate it; a bounded assignment does not authorize a compatibility route.
-- For breaking stored-data changes during development, use manual correction only with explicit data-preservation authorization.
+- Explicit initialization and new-task creation provision required resources. Ordinary reads, writes, and lock acquisition must fail on missing required state rather than recreate it or report an empty collection. Genuinely optional files follow their owning absence contract; see [Storage](blueprints/storage.md). Keep real locks, atomic replacement, create-only collision protection, containment, and execution-safety checks.
+- Follow [SPEC](SPEC.md): remove superseded behavior and its callers/fixtures. Compatibility aliases, migrations, conversion entry points, and automatic repair require explicit separate authorization. If stored-data preservation or ownership is unresolved, escalate it; a bounded assignment does not authorize a fallback path.
+- Before changing existing stored data, name what would be rewritten, renamed, deleted, or reinterpreted and obtain explicit authorization. Approval to remove code or change contracts is not data-migration approval.
 
 ## Validation
 

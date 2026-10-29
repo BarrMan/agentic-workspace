@@ -6,6 +6,7 @@ import { Filter } from "../renderer/opentui/board/models/filter.ts";
 const task = (id: string, status: string, ordinal: number, branch?: string): Task => ({
 	id,
 	title: id,
+	done: false,
 	status,
 	ordinal,
 	branch,

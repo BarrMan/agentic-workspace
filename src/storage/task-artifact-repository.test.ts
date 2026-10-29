@@ -96,14 +96,14 @@ describe("TaskArtifactRepository", () => {
 		await expect(service.list("back-23")).rejects.toThrow(/real directory/);
 	});
 
-	it("handles a missing artifacts directory without reading container-root files", async () => {
+	it("fails when a required artifacts directory is missing without recreating it", async () => {
 		const { service, agenticWorkspaceDirectory } = await repository();
 		const container = join(agenticWorkspaceDirectory, "tasks", "back-23");
 		await writeFile(join(container, "root-file.md"), "preserved");
 		await rm(join(container, "artifacts"), { recursive: true });
-		expect(await service.list("back-23")).toEqual([]);
+		await expect(service.list("back-23")).rejects.toMatchObject({ code: "ENOENT" });
 		await expect(service.read("back-23", "root-file.md")).rejects.toThrow();
-		expect(await service.resolve("back-23", "notes.md")).toBe(join(container, "artifacts", "notes.md"));
+		await expect(service.resolve("back-23", "notes.md")).rejects.toMatchObject({ code: "ENOENT" });
 		expect(await readFile(join(container, "root-file.md"), "utf8")).toBe("preserved");
 	});
 });

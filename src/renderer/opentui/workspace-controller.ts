@@ -1,3 +1,4 @@
+import { uniq } from "lodash";
 import { loadProjectModeCatalog } from "../../controller/agent-configuration.ts";
 import type { Core } from "../../controller/agentic-workspace.ts";
 import { loadTaskDetail } from "../../controller/task-detail.ts";
@@ -9,7 +10,6 @@ import { getPriorityLabels } from "../../model/task/priority-config.ts";
 import { TaskOrdering } from "../../model/task/task-ordering.ts";
 import type { TaskDetail } from "../../model/task/task-projection.ts";
 import { TaskSearchIndex } from "../../model/task/task-search.ts";
-import { isTerminalStatus } from "../../model/task/terminal-status.ts";
 import type { AgenticWorkspaceConfig, Milestone, Task } from "../../model/types.ts";
 import { type ActivityProbe, createActivityProbe } from "../../runtime/agent-status-probe.ts";
 import { createExistingAgentHost } from "../../runtime/live/existing-agent-host.ts";
@@ -125,6 +125,7 @@ function taskEntry(task: Task): OpenTuiWorkspaceTaskEntry {
 		description: task.description,
 		labels: task.labels,
 		priority: task.priority,
+		done: task.done,
 	};
 }
 
@@ -176,12 +177,6 @@ function workspaceFilters(filters: OpenTuiFilterState): SharedWorkspaceState["fi
 	};
 }
 
-function uniqueValues(values: Iterable<string | undefined>): string[] {
-	return [
-		...new Set([...values].map((value) => value?.trim()).filter((value): value is string => Boolean(value))),
-	].sort((a, b) => a.localeCompare(b));
-}
-
 /** Owns startup, navigation, refresh serialization, surface composition, and global modal arbitration. */
 export class OpenTuiWorkspaceController {
 	readonly #core: Core;
@@ -207,7 +202,7 @@ export class OpenTuiWorkspaceController {
 	#unsubscribe: (() => void) | undefined;
 	#tasks = new Map<string, Task>();
 	readonly #artifactChangeListeners = new Map<string, Set<() => void>>();
-	#taskWatcher: { stop(): void } | undefined;
+	#unsubscribeTasks: (() => void) | undefined;
 	#configWatcher: { stop(): void } | undefined;
 	#selectedTaskId: string | undefined;
 	#refreshRevision = 0;
@@ -376,29 +371,26 @@ export class OpenTuiWorkspaceController {
 			void this.#scheduleRefresh().catch(() => undefined);
 		};
 		try {
-			this.#taskWatcher = this.#core.watchTasks(
-				{
-					onTaskAdded: refresh,
-					onTaskChanged: refresh,
-					onArtifactChanged: ({ taskId }) => {
-						for (const listener of [...(this.#artifactChangeListeners.get(taskId) ?? [])]) listener();
-						refresh();
-					},
-					onTaskRemoved: async (taskId) => {
-						try {
-							await this.#sessions?.removeTask(taskId);
-						} finally {
-							refresh();
-						}
-					},
+			this.#unsubscribeTasks = this.#core.tasks.subscribe({
+				onTaskAdded: refresh,
+				onTaskChanged: refresh,
+				onArtifactChanged: ({ taskId }) => {
+					for (const listener of [...(this.#artifactChangeListeners.get(taskId) ?? [])]) listener();
+					refresh();
 				},
-				[...this.#tasks.values()],
-			);
+				onTaskRemoved: async (taskId) => {
+					try {
+						await this.#sessions?.removeTask(taskId);
+					} finally {
+						refresh();
+					}
+				},
+			});
 		} catch (error) {
 			process.stderr.write(`Could not watch tasks for live updates: ${String(error)}\n`);
 		}
 		try {
-			this.#configWatcher = this.#core.watchConfig({ onConfigChanged: refresh });
+			this.#configWatcher = this.#core.storage.watchConfig({ onConfigChanged: refresh });
 		} catch (error) {
 			process.stderr.write(`Could not watch config for live updates: ${String(error)}\n`);
 		}
@@ -418,8 +410,8 @@ export class OpenTuiWorkspaceController {
 		this.#artifactChangeListeners.clear();
 		this.#unsubscribe?.();
 		this.#unsubscribe = undefined;
-		this.#taskWatcher?.stop();
-		this.#taskWatcher = undefined;
+		this.#unsubscribeTasks?.();
+		this.#unsubscribeTasks = undefined;
 		this.#configWatcher?.stop();
 		this.#configWatcher = undefined;
 		this.#filterEditor?.dispose();
@@ -599,9 +591,9 @@ export class OpenTuiWorkspaceController {
 			selectedModeId: snapshot.selectedModeId,
 			modeProjectionByTask: (taskId) => snapshot.modeProjectionByTask.get(taskId),
 			taskArtifactApi: {
-				list: (taskId) => this.#core.listTaskArtifacts(taskId),
-				read: (taskId, path) => this.#core.readTaskArtifact(taskId, path),
-				write: (taskId, path, bytes) => this.#core.writeTaskArtifact(taskId, path, bytes),
+				list: (taskId) => this.#core.storage.taskArtifacts.list(taskId),
+				read: (taskId, path) => this.#core.storage.taskArtifacts.read(taskId, path),
+				write: (taskId, path, bytes) => this.#core.storage.taskArtifacts.write(taskId, path, bytes),
 				subscribeArtifactChanges: (taskId, callback) => {
 					let listeners = this.#artifactChangeListeners.get(taskId);
 					if (!listeners) {
@@ -682,10 +674,10 @@ export class OpenTuiWorkspaceController {
 
 	async #loadSnapshot(state: SharedWorkspaceState): Promise<WorkspaceSnapshot> {
 		const [tasks, config, milestones, archivedMilestones] = await Promise.all([
-			this.#view === "board" ? this.#core.loadTasks() : this.#workspaceState.listTasks(),
-			this.#core.getStoredConfig(),
-			this.#core.loadMilestones(),
-			this.#core.loadArchivedMilestones(),
+			this.#core.loadTasks(),
+			this.#core.storage.loadConfig(),
+			this.#core.storage.loadMilestones(),
+			this.#core.storage.loadArchivedMilestones(),
 		]);
 		this.#tasks = new Map(tasks.map((task) => [task.id, task]));
 		this.#milestones = milestones;
@@ -760,10 +752,10 @@ export class OpenTuiWorkspaceController {
 	}
 
 	async #followStartedTaskStatus(taskId: string): Promise<void> {
-		const task = await this.#core.getTask(taskId);
+		const task = await this.#core.tasks.getTask(taskId);
 		if (
 			!task ||
-			isTerminalStatus(task.status, this.#config?.statuses ?? []) ||
+			task.done ||
 			!task.status ||
 			this.#selectedTaskId !== taskId ||
 			this.#viewState?.current.activeStatus === task.status
@@ -863,16 +855,29 @@ export class OpenTuiWorkspaceController {
 		const filter = mountOpenTuiFilterEditor(host.renderer, host.root, {
 			initial: openTuiFilters(viewState.current.filters),
 			choices: {
-				status: uniqueValues([...(this.#config?.statuses ?? []), ...tasks.map((task) => task.status)]),
-				type: uniqueValues([...(this.#config?.types ?? []), ...tasks.map((task) => task.type)]),
-				project: uniqueValues([...(this.#config?.projects ?? []), ...tasks.map((task) => task.project)]),
-				priority: uniqueValues([...getPriorityLabels(this.#config), ...tasks.map((task) => task.priority)]),
-				labels: uniqueValues(tasks.flatMap((task) => task.labels)),
-				milestone: uniqueValues([
+				status: uniq([...(this.#config?.statuses ?? []), ...tasks.map((task) => task.status)]).sort((a, b) =>
+					a.localeCompare(b),
+				),
+				type: uniq([
+					...(this.#config?.types ?? []),
+					...tasks.flatMap((task) => (task.type === undefined ? [] : [task.type])),
+				]).sort((a, b) => a.localeCompare(b)),
+				project: uniq([
+					...(this.#config?.projects ?? []),
+					...tasks.flatMap((task) => (task.project === undefined ? [] : [task.project])),
+				]).sort((a, b) => a.localeCompare(b)),
+				priority: uniq([
+					...getPriorityLabels(this.#config),
+					...tasks.flatMap((task) => (task.priority === undefined ? [] : [task.priority])),
+				]).sort((a, b) => a.localeCompare(b)),
+				labels: uniq(tasks.flatMap((task) => task.labels)).sort((a, b) => a.localeCompare(b)),
+				milestone: uniq([
 					...this.#milestones.map((milestone) => milestone.title),
 					...this.#archivedMilestones.map((milestone) => milestone.title),
-					...tasks.map((task) => task.milestone && getMilestoneLabel(task.milestone, this.#milestones)),
-				]),
+					...tasks.flatMap((task) =>
+						task.milestone === undefined ? [] : [getMilestoneLabel(task.milestone, this.#milestones)],
+					),
+				]).sort((a, b) => a.localeCompare(b)),
 			},
 			onApply: (filters) => {
 				if (this.#filterEditor === filter) this.#filterEditor = undefined;
@@ -899,9 +904,7 @@ export class OpenTuiWorkspaceController {
 		const items = shortcutHelpItems(this.#view);
 		if (this.#view !== "workspace") return items;
 		const task = this.#selectedTaskId ? this.#tasks.get(this.#selectedTaskId) : undefined;
-		return task && isTerminalStatus(task.status, this.#config?.statuses ?? [])
-			? items.filter((item) => item.shortcut.id !== "workspace.markDone")
-			: items;
+		return task?.done ? items.filter((item) => item.shortcut.id !== "workspace.markDone") : items;
 	}
 
 	#openHelp(): void {
@@ -940,9 +943,9 @@ export class OpenTuiWorkspaceController {
 
 	async #setHideEmptyColumns(hideEmpty: boolean): Promise<void> {
 		try {
-			const config = await this.#core.getStoredConfig();
+			const config = await this.#core.storage.loadConfig();
 			if (!config) throw new Error("No config found.");
-			await this.#core.saveWorkspaceConfig({ ...config, hideEmptyColumns: hideEmpty });
+			await this.#core.storage.saveConfig({ ...config, hideEmptyColumns: hideEmpty });
 			this.#notice = hideEmpty ? "Hidden empty columns" : "Showing empty columns";
 		} catch (error) {
 			this.#notice = `Could not update board: ${error instanceof Error ? error.message : "Unknown error"}`;

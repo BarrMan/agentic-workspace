@@ -7,7 +7,13 @@ import type { Task } from "../model/types.ts";
 import { parseFrontmatter } from "../storage/markdown/frontmatter.ts";
 import { parseMilestone, parseTask } from "../storage/markdown/parser.ts";
 import { serializeTask } from "../storage/markdown/serializer.ts";
-import { coreFileSystem, createUniqueTestDir, initializeFilesystemTestProject, safeCleanup } from "./test-utils.ts";
+import {
+	coreFileSystem,
+	createUniqueTestDir,
+	initializeFilesystemTestProject,
+	initializeFilesystemTestWorkspace,
+	safeCleanup,
+} from "./test-utils.ts";
 
 describe("date-only due date model", () => {
 	it("normalizes a due date to the day alone", () => {
@@ -59,6 +65,7 @@ describe("date-only due date model", () => {
 			id: "TASK-1",
 			title: "Due task",
 			status: "To Do",
+			done: false,
 			createdDate: "2026-08-01 09:00",
 			dueDate: "2026-08-10",
 			labels: [],
@@ -156,7 +163,7 @@ describe("due date persistence operations", () => {
 		testDir = createUniqueTestDir("due-date");
 		await mkdir(testDir, { recursive: true });
 		core = new Core(testDir);
-		await coreFileSystem(core).ensureAgenticWorkspaceStructure();
+		await initializeFilesystemTestWorkspace(coreFileSystem(core));
 		await initializeFilesystemTestProject(core, "Due date project");
 	});
 
@@ -165,17 +172,23 @@ describe("due date persistence operations", () => {
 	});
 
 	it("creates, updates, and clears a task due date", async () => {
-		const { task } = await core.createTaskFromInput({
+		const { task } = await core.tasks.create({
 			title: "Deadline task",
 			dueDate: "2026-08-10",
 		});
 		expect(task.dueDate).toBe("2026-08-10");
 
-		const updated = await core.updateTaskFromInput(task.id, { dueDate: "2026-08-12" });
+		const updated = await core.storage.withTaskLock(
+			task.id,
+			async (current) => await core.tasks.edit({ ...current, dueDate: "2026-08-12" }),
+		);
 		expect(updated.dueDate).toBe("2026-08-12");
 		expect((await coreFileSystem(core).loadTask(task.id))?.dueDate).toBe("2026-08-12");
 
-		const cleared = await core.updateTaskFromInput(task.id, { dueDate: null });
+		const cleared = await core.storage.withTaskLock(
+			task.id,
+			async (current) => await core.tasks.edit({ ...current, dueDate: undefined }),
+		);
 		expect(cleared.dueDate).toBeUndefined();
 		expect(await Bun.file(cleared.filePath ?? "").text()).not.toContain("due_date:");
 	});

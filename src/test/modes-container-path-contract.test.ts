@@ -23,6 +23,7 @@ function task(id: string, title: string): Task {
 		id,
 		title,
 		status: "To Do",
+		done: false,
 		createdDate: "2026-10-10",
 		labels: [],
 		dependencies: [],
@@ -63,7 +64,7 @@ describe("BACK-23 canonical task container and artifact path contract", () => {
 		await $`git -c user.name=Test -c user.email=test@example.com commit --allow-empty -m initial`.cwd(main).quiet();
 		await $`git worktree add -b feature ${linked}`.cwd(main).quiet();
 		const canonicalContainer = join(await realpath(main), ".agentic-workspace", "tasks", "back-23");
-		await mkdir(canonicalContainer, { recursive: true });
+		await mkdir(join(canonicalContainer, "artifacts"), { recursive: true });
 		await writeFile(join(canonicalContainer, "task.md"), serializeTask(task("BACK-23", "Canonical")));
 		const repository = new TaskArtifactRepository({
 			projectRoot: linked,

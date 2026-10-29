@@ -64,8 +64,4 @@ it("requires an explicit valid project catalog and resolves selections against i
 		"BACK-1": "build",
 	});
 	expect(validateSelectedModeByTask(["build"])).toEqual({});
-	catalog.defaultModeId = "plan";
-	expect(() => requireProjectModeCatalog({ ...getBuiltInAgentConfiguration(), modes: catalog })).toThrow(
-		"valid defaultModeId",
-	);
 });

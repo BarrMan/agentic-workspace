@@ -72,6 +72,7 @@ describe("UTC date display", () => {
 			id: "TASK-1",
 			title: "UTC plain output",
 			status: "To Do",
+			done: false,
 			createdDate: "2026-06-07",
 			updatedDate: "2026-06-07 21:54",
 			labels: [],
@@ -79,7 +80,7 @@ describe("UTC date display", () => {
 			description: "Task description",
 		};
 
-		const output = formatTaskPlainText(toTaskDetail(task, { tasks: [task], completedTasks: [], statuses: undefined }));
+		const output = formatTaskPlainText(toTaskDetail(task, { tasks: [task], completedTasks: [] }));
 
 		expect(output).toContain("Created: 2026-06-07 (UTC)");
 		expect(output).toContain("Updated: 2026-06-07 21:54 (UTC)");

@@ -5,7 +5,7 @@ import { runCli } from "../cli/register.ts";
 import { Core } from "../index.ts";
 import { TaskOrdering } from "../model/task/task-ordering.ts";
 import type { Task } from "../model/types.ts";
-import { prepareBoardColumns } from "../renderer/opentui/board/policies/column-policy.ts";
+import { Storage } from "../storage/storage.ts";
 import { coreFileSystem, createUniqueTestDir, initializeFilesystemTestProject, safeCleanup } from "./test-utils.ts";
 
 async function runCliCommand(args: string[], cwd: string) {
@@ -49,6 +49,7 @@ const createTask = (id: string, overrides: Partial<Task> = {}): Task => ({
 	id,
 	title: `Task ${id}`,
 	status: "To Do",
+	done: false,
 	labels: [],
 	dependencies: [],
 	createdDate: "2026-01-01",
@@ -67,13 +68,13 @@ describe("subtask ordering consistency", () => {
 		core = new Core(TEST_DIR);
 		await initializeFilesystemTestProject(core, "Subtask Ordering Test");
 
-		await core.createTask(createTask("TASK-1", { title: "Parent" }));
+		await Storage.open(TEST_DIR).createTask(createTask("TASK-1", { title: "Parent" }));
 		// Created out of numeric order so no surface can pass by echoing creation order.
 		for (const id of [...SUBTASK_IDS].reverse()) {
-			await core.createTask(createTask(id, { parentTaskId: "TASK-1" }));
+			await Storage.open(TEST_DIR).createTask(createTask(id, { parentTaskId: "TASK-1" }));
 		}
-		await core.createTask(createTask("TASK-11"));
-		await core.createTask(createTask("TASK-2"));
+		await Storage.open(TEST_DIR).createTask(createTask("TASK-11"));
+		await Storage.open(TEST_DIR).createTask(createTask("TASK-2"));
 	});
 
 	afterEach(async () => {
@@ -92,14 +93,14 @@ describe("subtask ordering consistency", () => {
 
 	it("agrees across every corpus reader", async () => {
 		expect((await core.loadTasks()).map((task) => task.id)).toEqual(EXPECTED_ORDER);
-		expect((await core.queryTasks()).map((task) => task.id)).toEqual(EXPECTED_ORDER);
-		expect((await core.queryTasks({})).map((task) => task.id)).toEqual(EXPECTED_ORDER);
+		expect((await core.tasks.query({})).map((task) => task.id)).toEqual(EXPECTED_ORDER);
+		expect((await core.tasks.query({})).map((task) => task.id)).toEqual(EXPECTED_ORDER);
 		expect((await coreFileSystem(core).listTasks()).map((task) => task.id)).toEqual(EXPECTED_ORDER);
 	});
 
 	it("agrees with the board columns and with the comparator the web list sorts by", async () => {
 		const tasks = await core.loadTasks();
-		const [column] = prepareBoardColumns(tasks, ["To Do"]);
+		const [column] = TaskOrdering.boardColumns(tasks, ["To Do"]);
 
 		expect(column?.tasks.map((task) => task.id)).toEqual(EXPECTED_COLUMN_ORDER);
 		// The web task list sorts with this same comparator, so a corpus already in its order

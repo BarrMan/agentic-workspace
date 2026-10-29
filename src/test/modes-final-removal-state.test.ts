@@ -1,4 +1,4 @@
-import { describe, expect, it } from "bun:test";
+import { describe, expect, it, mock } from "bun:test";
 import { EventEmitter } from "node:events";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -12,10 +12,19 @@ import { OpenTuiWorkspaceController } from "../renderer/opentui/workspace-contro
 import { getDefaultModeCatalog } from "../storage/config.ts";
 import { openViewStateStore } from "../storage/view-state-store.ts";
 
+let removed: ((id: string) => void | Promise<void>) | undefined;
+mock.module("../storage/watchers/task-watcher.ts", () => ({
+	watchTaskRecords: (_storage: unknown, callbacks: { onTaskRemoved?: (id: string) => void | Promise<void> }) => {
+		removed = callbacks.onTaskRemoved;
+		return { stop() {} };
+	},
+}));
+
 const task: Task = {
 	id: "TASK-1",
 	title: "Removal lifecycle",
 	status: "To Do",
+	done: false,
 	createdDate: "2026-01-01",
 	labels: [],
 	dependencies: [],
@@ -41,13 +50,13 @@ describe("final task removal mode state", () => {
 			},
 			modes,
 		};
-		mkdirSync(join(directory, ".agentic-workspace"), { recursive: true });
+		mkdirSync(join(directory, ".agentic-workspace", ".locks"), { recursive: true });
 		writeFileSync(
 			join(directory, ".agentic-workspace", "agentic-workspace.config.yml"),
 			`agent_configuration: ${JSON.stringify(agentConfiguration)}\n`,
 		);
 		const store = await openViewStateStore(
-			join(directory, ".agentic-workspace"),
+			directory,
 			() =>
 				({
 					filters: createWorkspaceFilters(),
@@ -56,46 +65,43 @@ describe("final task removal mode state", () => {
 				}) as never,
 		);
 		let mounted: OpenTuiWorkspaceOptions | undefined;
-		let removed: ((id: string) => void | Promise<void>) | undefined;
 		let taskList = [task];
 		const renderer = Object.assign(new EventEmitter(), { width: 120, height: 40 });
 		const host = { renderer, root: {}, async destroy() {} } as unknown as OpenTuiHost;
 		const core = {
 			getProjectModeCatalog: async () => modes,
-			getStoredConfig: async () => ({ agentConfiguration }),
-			loadTasks: async () => taskList,
-			loadMilestones: async () => [],
-			loadArchivedMilestones: async () => [],
-			loadTaskSnapshot: async () => ({
-				tasks: taskList,
-				activeTasks: taskList,
-				config: { statuses: ["To Do", "Done"] },
-				identityIndex: { getTasks: () => taskList, getContestedIds: () => new Set() },
-			}),
-			watchTasks: (callbacks: { onTaskRemoved?: (id: string) => void | Promise<void> }) => {
-				removed = callbacks.onTaskRemoved;
-				return { stop() {} };
+			tasks: {
+				loadSnapshot: async () => ({
+					tasks: taskList,
+					activeTasks: taskList,
+					config: { statuses: ["To Do", "Done"] },
+					identityIndex: { getTasks: () => [], getContestedIds: () => new Set() },
+				}),
 			},
-			watchConfig: () => ({ stop() {} }),
+			projectInventory: async () => taskList.map((task) => ({ task, sessions: [] })),
 			filesystem: {
 				agenticWorkspaceDir: join(directory, ".agentic-workspace"),
-				tasksDir: join(directory, "agentic-workspace", "tasks"),
+				tasksDir: join(directory, ".agentic-workspace", "tasks"),
 				projectRoot: directory,
 				configFilePath: "",
 				loadConfig: async () => ({ projectName: "Test", statuses: ["To Do", "Done"], agentConfiguration }),
 				listMilestones: async () => [],
 				listArchivedMilestones: async () => [],
 			},
+			storage: {
+				loadTasks: async () => taskList,
+				loadConfig: async () => ({ projectName: "Test", statuses: ["To Do", "Done"], agentConfiguration }),
+				loadMilestones: async () => [],
+				loadArchivedMilestones: async () => [],
+				watchConfig: () => ({ stop() {} }),
+			},
 		} as unknown as Core;
 		const controller = new OpenTuiWorkspaceController(core, {
 			selectedTaskId: task.id,
 			workspaceState: {
-				sessionApplication: { projectInventory: async () => [] },
-				listTasks: async () => taskList,
-				listSessions: async (taskId: string) => ({ taskId, sessions: [] }),
-				listModeSessions: async (taskId: string, modeId: string) => ({
+				listSessions: async (taskId: string, modeId?: string) => ({
 					taskId,
-					modeId,
+					...(modeId ? { modeId } : {}),
 					sessions: [],
 					activeSessionId: undefined,
 				}),

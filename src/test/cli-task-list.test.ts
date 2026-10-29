@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { mkdir } from "node:fs/promises";
 import { $ as shell } from "bun";
 import { Core } from "../index.ts";
+import { Storage } from "../storage/storage.ts";
 import { runInProcessCli } from "./in-process-cli.ts";
 import { coreFileSystem, createUniqueTestDir, initializeTestProject, safeCleanup } from "./test-utils.ts";
 
@@ -37,9 +38,10 @@ describe("CLI Integration", () => {
 			const core = new Core(TEST_DIR);
 
 			// Create test tasks with different statuses
-			await core.createTask({
+			await new Storage(coreFileSystem(core)).createTask({
 				id: "task-1",
 				title: "First Task",
+				done: false,
 				status: "To Do",
 				createdDate: "2025-06-08",
 				labels: [],
@@ -47,9 +49,10 @@ describe("CLI Integration", () => {
 				rawContent: "First test task",
 			});
 
-			await core.createTask({
+			await new Storage(coreFileSystem(core)).createTask({
 				id: "task-2",
 				title: "Second Task",
+				done: false,
 				status: "Done",
 				createdDate: "2025-06-08",
 				labels: [],
@@ -57,9 +60,10 @@ describe("CLI Integration", () => {
 				rawContent: "Second test task",
 			});
 
-			await core.createTask({
+			await new Storage(coreFileSystem(core)).createTask({
 				id: "task-3",
 				title: "Third Task",
+				done: false,
 				status: "To Do",
 				createdDate: "2025-06-08",
 				labels: [],
@@ -87,9 +91,10 @@ describe("CLI Integration", () => {
 				["task-2", "Second limited task"],
 			] as const;
 			for (const [id, title] of fixtures) {
-				await core.createTask({
+				await new Storage(coreFileSystem(core)).createTask({
 					id,
 					title,
+					done: false,
 					status: "To Do",
 					createdDate: "2025-06-08",
 					labels: [],
@@ -114,9 +119,10 @@ describe("CLI Integration", () => {
 
 		it("clamps negative list-window values to zero", async () => {
 			const core = new Core(TEST_DIR);
-			await core.createTask({
+			await new Storage(coreFileSystem(core)).createTask({
 				id: "task-1",
 				title: "First task",
+				done: false,
 				status: "To Do",
 				createdDate: "2025-06-08",
 				labels: [],

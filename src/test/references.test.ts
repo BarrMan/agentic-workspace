@@ -22,7 +22,7 @@ describe("Task References", () => {
 
 	describe("Create task with references", () => {
 		it("should create a task without references", async () => {
-			const { task } = await core.createTaskFromInput({
+			const { task } = await core.tasks.create({
 				title: "Task without refs",
 			});
 
@@ -32,27 +32,33 @@ describe("Task References", () => {
 
 	describe("Update task references", () => {
 		it("should not add duplicate references", async () => {
-			const { task } = await core.createTaskFromInput({
+			const { task } = await core.tasks.create({
 				title: "Task with refs",
 				references: ["file1.ts", "file2.ts"],
 			});
 
-			const updated = await core.updateTaskFromInput(task.id, {
-				addReferences: ["file2.ts", "file3.ts"],
-			});
+			const updated = await core.storage.withTaskLock(task.id, async (current) =>
+				core.tasks.edit({
+					...current,
+					references: [
+						...(current.references ?? []),
+						...["file2.ts", "file3.ts"].filter((value) => !current.references?.includes(value)),
+					],
+				}),
+			);
 
 			expect(updated.references).toEqual(["file1.ts", "file2.ts", "file3.ts"]);
 		});
 
 		it("should replace references when setting directly", async () => {
-			const { task } = await core.createTaskFromInput({
+			const { task } = await core.tasks.create({
 				title: "Task with refs to replace",
 				references: ["old1.ts", "old2.ts"],
 			});
 
-			const updated = await core.updateTaskFromInput(task.id, {
-				references: ["new1.ts", "new2.ts"],
-			});
+			const updated = await core.storage.withTaskLock(task.id, async (current) =>
+				core.tasks.edit({ ...current, references: ["new1.ts", "new2.ts"] }),
+			);
 
 			expect(updated.references).toEqual(["new1.ts", "new2.ts"]);
 		});
@@ -60,7 +66,7 @@ describe("Task References", () => {
 
 	describe("References in markdown", () => {
 		it("should not include empty references in frontmatter", async () => {
-			const { filePath } = await core.createTaskFromInput({
+			const { filePath } = await core.tasks.create({
 				title: "Task without refs",
 			});
 
@@ -71,11 +77,11 @@ describe("Task References", () => {
 
 	describe("Archive cleanup", () => {
 		it("removes only exact-ID references when archiving, in the working copy and the completed corpus", async () => {
-			const { task: archiveTarget } = await core.createTaskFromInput({
+			const { task: archiveTarget } = await core.tasks.create({
 				title: "Archive target",
 			});
 
-			const { task: activeTask } = await core.createTaskFromInput({
+			const { task: activeTask } = await core.tasks.create({
 				title: "Active referencing task",
 				references: [
 					"task-1",
@@ -89,17 +95,17 @@ describe("Task References", () => {
 				],
 			});
 
-			const { task: completedTask } = await core.createTaskFromInput({
+			const { task: completedTask } = await core.tasks.create({
 				title: "Completed referencing task",
 				status: "Done",
 				references: ["task-1", "https://example.com/tasks/task-1"],
 			});
-			await core.completeTask(completedTask.id);
+			await coreFileSystem(core).moveTaskContainer(completedTask, coreFileSystem(core).completedDir);
 
-			const archived = await core.archiveTask(archiveTarget.id);
+			const archived = await core.tasks.archive(archiveTarget.id);
 			expect(archived.success).toBe(true);
 
-			const updatedActive = await core.loadTaskById(activeTask.id);
+			const updatedActive = await core.tasks.getTask(activeTask.id);
 			const completedTasks = await coreFileSystem(core).listCompletedTasks();
 			const updatedCompleted = completedTasks.find((task) => task.id === completedTask.id);
 
@@ -111,8 +117,7 @@ describe("Task References", () => {
 				"JIRA-1",
 				"task-12",
 			]);
-			// The completed corpus is cleaned too: the archived ID is free for reallocation, so a
-			// reference kept there would rebind to whatever task is created next.
+			// Archive cleanup removes exact-ID references from the completed corpus too.
 			expect(updatedCompleted?.references).toEqual(["https://example.com/tasks/task-1"]);
 		});
 	});

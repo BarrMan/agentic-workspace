@@ -49,13 +49,17 @@ statuses: ["To Do", "In Progress", "Done"]
 		await symlink(agenticWorkspaceDir, join(repoDir, ".agentic-workspace"));
 
 		const core = new Core(repoDir);
-		const { task } = await core.createTaskFromInput({ title: "Symlink root task" });
+		await core.storage.initializeWorkspace(
+			{ projectName: "Symlink Root", statuses: ["To Do", "In Progress", "Done"], labels: [], dateFormat: "yyyy-mm-dd" },
+			{ agenticWorkspaceDirectory: ".agentic-workspace", configLocation: "folder" },
+		);
+		const { task } = await core.tasks.create({ title: "Symlink root task" });
 
 		const taskFile = join(agenticWorkspaceDir, "tasks", "task-1", "task.md");
 		expect(await Bun.file(taskFile).exists()).toBe(true);
 		expect(task.id).toBe("TASK-1");
 
-		const tasks = await core.queryTasks({});
+		const tasks = await core.tasks.query({});
 		expect(tasks).toHaveLength(1);
 		expect(tasks[0]?.id).toBe("TASK-1");
 	});

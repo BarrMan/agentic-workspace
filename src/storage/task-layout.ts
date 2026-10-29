@@ -1,0 +1,16 @@
+import { DEFAULT_DIRECTORIES } from "../model/constants.ts";
+
+export const TASK_RECORD_FILENAME = "task.md";
+export const TASK_ARTIFACTS_DIRECTORY = "artifacts";
+export const TASK_ARTIFACT_TEMP_PREFIX = ".agentic-workspace-artifact-";
+export const TASK_CONTAINER_LOCATIONS = [
+	DEFAULT_DIRECTORIES.TASKS,
+	DEFAULT_DIRECTORIES.COMPLETED,
+	DEFAULT_DIRECTORIES.ARCHIVE_TASKS,
+] as const;
+export const TASK_STORAGE_GLOBS = {
+	CONTAINERS: "*",
+	RECORDS: `*/${TASK_RECORD_FILENAME}`,
+	ARTIFACTS: `*/${TASK_ARTIFACTS_DIRECTORY}{,/**}`,
+	ARTIFACTS_IN_CONTAINER: `${TASK_ARTIFACTS_DIRECTORY}{,/**}`,
+} as const;

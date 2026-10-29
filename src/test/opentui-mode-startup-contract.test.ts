@@ -5,7 +5,8 @@ import { tmpdir } from "node:os";
 import { join, relative } from "node:path";
 import { Writable } from "node:stream";
 import { runCli } from "../cli/register.ts";
-import type { Core } from "../controller/agentic-workspace.ts";
+import { Core } from "../controller/agentic-workspace.ts";
+import { initializeProject } from "../controller/init.ts";
 import type { WorkspaceStateService } from "../controller/workspace-state.ts";
 import type { AgentConfiguration, TaskSessions } from "../model/session/types.ts";
 import type { Task } from "../model/types.ts";
@@ -13,12 +14,15 @@ import type { OpenTuiHost } from "../renderer/opentui/host.ts";
 import { createWorkspaceFilters, type SharedWorkspaceState } from "../renderer/opentui/workspace/state.ts";
 import type { OpenTuiWorkspaceOptions } from "../renderer/opentui/workspace.ts";
 import { OpenTuiWorkspaceController } from "../renderer/opentui/workspace-controller.ts";
-import { getBuiltInAgentConfiguration, getDefaultModeCatalog, requireProjectModeCatalog } from "../storage/config.ts";
+import { getBuiltInAgentConfiguration, requireProjectModeCatalog } from "../storage/config.ts";
+
+mock.module("../storage/watchers/task-watcher.ts", () => ({ watchTaskRecords: () => ({ stop() {} }) }));
 
 const task: Task = {
 	id: "BACK-1",
 	title: "Startup contract",
 	status: "To Do",
+	done: false,
 	createdDate: "2026-10-10",
 	labels: [],
 	dependencies: [],
@@ -86,25 +90,19 @@ function project(configuration?: AgentConfiguration) {
 			join(agenticWorkspaceDir, "agentic-workspace.config.yml"),
 			`agent_configuration: ${JSON.stringify(configuration)}\n`,
 		);
-	let currentConfiguration = configuration;
+	const currentConfiguration = configuration;
 	const core = {
-		getStoredConfig: async () => ({ agentConfiguration: currentConfiguration }),
-		getProjectModeCatalog: async () => {
-			if (!currentConfiguration?.modes)
-				currentConfiguration = { ...(currentConfiguration ?? {}), modes: getDefaultModeCatalog() };
-			return requireProjectModeCatalog(currentConfiguration);
+		getProjectModeCatalog: async () => requireProjectModeCatalog(currentConfiguration ?? null),
+		tasks: {
+			loadSnapshot: async () => ({
+				tasks: [task],
+				activeTasks: [task],
+				config: { statuses: ["To Do"] },
+				identityIndex: { getTasks: () => [], getContestedIds: () => new Set<string>() },
+			}),
 		},
 		loadTasks: async () => [task],
-		loadMilestones: async () => [],
-		loadArchivedMilestones: async () => [],
-		loadTaskSnapshot: async () => ({
-			tasks: [task],
-			activeTasks: [task],
-			config: { statuses: ["To Do"] },
-			identityIndex: { getTasks: () => [task], getContestedIds: () => new Set<string>() },
-		}),
-		watchTasks: () => ({ stop() {} }),
-		watchConfig: () => ({ stop() {} }),
+		projectInventory: async () => [],
 		filesystem: {
 			rootDir,
 			projectRoot: rootDir,
@@ -116,6 +114,17 @@ function project(configuration?: AgentConfiguration) {
 			}),
 			listMilestones: async () => [],
 			listArchivedMilestones: async () => [],
+		},
+		storage: {
+			loadTasks: async () => [task],
+			loadConfig: async () => ({
+				projectName: "Startup contract",
+				statuses: ["To Do"],
+				agentConfiguration: currentConfiguration,
+			}),
+			loadMilestones: async () => [],
+			loadArchivedMilestones: async () => [],
+			watchConfig: () => ({ stop() {} }),
 		},
 	} as unknown as Core;
 	return { rootDir, core, configuration: () => currentConfiguration };
@@ -147,22 +156,23 @@ function stores(selectedMode?: string) {
 }
 
 function workspace() {
-	const listModeSessions = mock(async (_taskId: string, _modeId: string) => ({ sessions: [] }));
+	const listSessions = mock(async (taskId: string, modeId?: string) => ({
+		taskId,
+		...(modeId ? { modeId } : {}),
+		sessions: [],
+	}));
 	const service = {
-		sessionApplication: { projectInventory: async () => [] },
-		listTasks: mock(async () => [task]),
 		listAllSessions: mock(async () => new Map<string, TaskSessions>()),
-		listSessions: mock(async () => ({ taskId: task.id, sessions: [] })),
-		listModeSessions,
+		listSessions,
 		liveSession: async () => undefined,
 	} as unknown as WorkspaceStateService;
-	return { service, listModeSessions };
+	return { service, listSessions };
 }
 
 describe("public controller.run project mode startup contract", () => {
 	for (const initialView of ["workspace", "board"] as const) {
 		for (const missing of ["project configuration", "modes in mode-less project configuration"] as const) {
-			it(`initializes absent ${missing} and reaches the host (${initialView})`, async () => {
+			it(`rejects absent ${missing} before reaching the host (${initialView})`, async () => {
 				const fixture = project(missing === "project configuration" ? undefined : getBuiltInAgentConfiguration());
 				const supplied = stores();
 				const createHost = mock(async (): Promise<OpenTuiHost> => {
@@ -180,9 +190,11 @@ describe("public controller.run project mode startup contract", () => {
 						(error: unknown) => error,
 					);
 					expect(error).toBeInstanceOf(Error);
-					expect((error as Error).message).toBe("Reached host creation");
-					expect(createHost).toHaveBeenCalledTimes(1);
-					expect(fixture.configuration()?.modes?.order).toEqual(["plan", "build"]);
+					expect((error as Error).message).toContain("Project modes are not initialized.");
+					expect(createHost).toHaveBeenCalledTimes(0);
+					expect(fixture.configuration()).toEqual(
+						missing === "project configuration" ? undefined : getBuiltInAgentConfiguration(),
+					);
 				} finally {
 					controller.destroy();
 					rmSync(fixture.rootDir, { recursive: true, force: true });
@@ -235,8 +247,9 @@ describe("public controller.run project mode startup contract", () => {
 					modeLabel: expectedMode === "ship" ? "SHIP" : "REVIEW",
 					approved: false,
 				});
-				expect(state.listModeSessions.mock.calls.length).toBeGreaterThan(0);
-				for (const [, modeId] of state.listModeSessions.mock.calls) expect(modeId).toBe(expectedMode);
+				const modeCalls = state.listSessions.mock.calls.filter(([, modeId]) => modeId !== undefined);
+				expect(modeCalls.length).toBeGreaterThan(0);
+				for (const [, modeId] of modeCalls) expect(modeId).toBe(expectedMode);
 				expect(supplied.viewStateStore.current).toEqual(originalState);
 				expect(snapshot(fixture.rootDir)).toEqual(before);
 			} finally {
@@ -250,7 +263,7 @@ describe("public controller.run project mode startup contract", () => {
 
 describe("source entrypoint mode startup contract", () => {
 	for (const modeLessConfiguration of [false, true]) {
-		it(`initializes ${modeLessConfiguration ? "configuration without modes" : "missing project configuration"}`, async () => {
+		it(`preserves explicit initialization for ${modeLessConfiguration ? "configuration without modes" : "missing project configuration"}`, async () => {
 			const fixture = project(modeLessConfiguration ? getBuiltInAgentConfiguration() : undefined);
 			const stdout = new Writable({
 				write: (_chunk, _encoding, done) => {
@@ -263,6 +276,7 @@ describe("source entrypoint mode startup contract", () => {
 				},
 			});
 			try {
+				await initializeProject(new Core(fixture.rootDir), { projectName: "Startup contract", filesystemOnly: true });
 				await runCli(["workspace"], { cwd: fixture.rootDir, stdout, stderr });
 				const saved = readFileSync(join(fixture.rootDir, ".agentic-workspace", "config.yml"), "utf8");
 				expect(saved).toContain('"plan"');

@@ -29,9 +29,9 @@ describe("workspace mode row render contract", () => {
 		const parent = new BoxRenderable(setup.renderer, { width: "100%", height: "100%" });
 		setup.renderer.root.add(parent);
 		const tasks = [
-			{ id: "TASK-1", title: "A sufficiently long title for the normal row", status: "To Do" },
-			{ id: "TASK-2", title: "Approved title", status: "To Do" },
-			{ id: "TASK-3", title: "界", status: "Done" },
+			{ id: "TASK-1", title: "A sufficiently long title for the normal row", status: "To Do", done: false },
+			{ id: "TASK-2", title: "Approved title", status: "To Do", done: false },
+			{ id: "TASK-3", title: "界", status: "Done", done: true },
 		];
 		const projections = new Map([
 			["TASK-1", { modeLabel: "Build", approved: false }],

@@ -2,22 +2,35 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { initializeAgentConfiguration } from "../controller/agent-configuration.ts";
 import { Core } from "../controller/agentic-workspace.ts";
 import type { Session } from "../model/session/session.ts";
 import type { AgentSession, SessionFactory, SessionLaunchContext, SessionSnapshot } from "../model/session/types.ts";
+import { Storage } from "../storage/storage.ts";
 import { initializeTestProject } from "./test-utils.ts";
 
 const roots: string[] = [];
 
 function factory(beforeStart: (context: SessionLaunchContext) => Promise<void> = async () => {}): SessionFactory {
-	return ((_taskId: string, _modeId: string, record?: AgentSession) => {
+	return ((_taskId: string, modeId: string, record?: AgentSession) => {
 		if (!record) throw new Error("Expected a durable session record.");
+		let currentRecord: Readonly<AgentSession> = record;
+		let currentModeId = modeId;
 		let snapshot: SessionSnapshot = { state: "stopped", activity: "unknown", idleSince: null };
 		return {
 			id: record.id,
-			record,
-			moveToMode() {},
+			get record() {
+				return currentRecord;
+			},
+			get modeId() {
+				return currentModeId;
+			},
+			replaceLoadedRecord(record: Readonly<AgentSession>, nextModeId: string) {
+				currentRecord = record;
+				currentModeId = nextModeId;
+			},
+			moveToMode(nextModeId: string) {
+				currentModeId = nextModeId;
+			},
 			get view() {
 				return snapshot;
 			},
@@ -27,9 +40,6 @@ function factory(beforeStart: (context: SessionLaunchContext) => Promise<void> =
 			},
 			async stop() {
 				snapshot = { state: "stopped", activity: "unknown", idleSince: null };
-			},
-			async serialize() {
-				return { ...record };
 			},
 		} as unknown as Session;
 	}) as SessionFactory;
@@ -43,20 +53,20 @@ describe("session in-progress status coordination", () => {
 	test("moves an unfinished task before reservation and startup", async () => {
 		const root = await mkdtemp(join(tmpdir(), "agentic-workspace-session-in-progress-"));
 		roots.push(root);
-		let core!: Core;
-		core = new Core(root, {
+		const storage = Storage.open(root);
+		const core = new Core(root, {
+			storage,
 			sessionFactory: factory(async ({ taskId, modeId }) => {
-				const history = await core.sessionApplication.store.read(taskId);
+				const history = await core.store.read(taskId);
 				expect(history.modes[modeId]?.sessions).toHaveLength(1);
-				expect((await core.loadTaskById(taskId))?.status).toBe("In Progress");
+				expect((await core.tasks.getTask(taskId))?.status).toBe("In Progress");
 			}),
 		});
 		await initializeTestProject(core, "Session status coordination");
-		await initializeAgentConfiguration(core, "project");
-		const { task } = await core.createTaskFromInput({ title: "Move me", status: "To Do" });
-		const session = await core.sessionApplication.newSession(task);
+		const { task } = await core.tasks.create({ title: "Move me", status: "To Do" });
+		const session = await core.newSession(task);
 		expect(session.snapshot.state).toBe("running");
-		expect((await core.loadTaskById(task.id))?.status).toBe("In Progress");
+		expect((await core.tasks.getTask(task.id))?.status).toBe("In Progress");
 	});
 
 	test("leaves a terminal task unchanged before starting", async () => {
@@ -64,30 +74,30 @@ describe("session in-progress status coordination", () => {
 		roots.push(root);
 		const core = new Core(root, { sessionFactory: factory() });
 		await initializeTestProject(core, "Session status coordination");
-		await initializeAgentConfiguration(core, "project");
-		const { task } = await core.createTaskFromInput({ title: "Already shipped", status: "Done" });
-		await core.sessionApplication.newSession(task);
-		expect((await core.loadTaskById(task.id))?.status).toBe("Done");
+		const { task } = await core.tasks.create({ title: "Already shipped", status: "Done" });
+		const completed = await core.storage.withTaskLock(task.id, (current) =>
+			core.tasks.edit({ ...current, done: true }),
+		);
+		await core.newSession(completed);
+		expect((await core.tasks.getTask(task.id))?.status).toBe("Done");
 	});
 
 	test("does not reserve or start when status coordination fails", async () => {
 		const root = await mkdtemp(join(tmpdir(), "agentic-workspace-session-in-progress-"));
 		roots.push(root);
-		const core = new Core(root, { sessionFactory: factory() });
+		const storage = Storage.open(root);
+		const core = new Core(root, { storage, sessionFactory: factory() });
 		await initializeTestProject(core, "Session status coordination");
-		await initializeAgentConfiguration(core, "project");
-		const { task } = await core.createTaskFromInput({ title: "Cannot change", status: "To Do" });
-		const update = core.updateTaskFromInput.bind(core);
-		core.updateTaskFromInput = async () => {
+		const { task } = await core.tasks.create({ title: "Cannot change", status: "To Do" });
+		const saveTask = storage.saveTask.bind(storage);
+		storage.saveTask = async () => {
 			throw new Error("status write failed");
 		};
 		try {
-			await expect(core.sessionApplication.newSession(task)).rejects.toThrow("status write failed");
-			expect(
-				Object.values((await core.sessionApplication.store.read(task.id)).modes).flatMap(({ sessions }) => sessions),
-			).toEqual([]);
+			await expect(core.newSession(task)).rejects.toThrow("status write failed");
+			expect(Object.values((await core.store.read(task.id)).modes).flatMap(({ sessions }) => sessions)).toEqual([]);
 		} finally {
-			core.updateTaskFromInput = update;
+			storage.saveTask = saveTask;
 		}
 	});
 });

@@ -16,6 +16,7 @@ const dependencyTask: Task = {
 	id: "BACK-2",
 	title: "Dependency task",
 	status: "Todo",
+	done: false,
 	createdDate: "2026-01-01",
 	labels: [],
 	dependencies: [],
@@ -25,6 +26,7 @@ const richTask: Task = {
 	id: "BACK-1",
 	title: "Rich task",
 	status: "In Progress",
+	done: false,
 	reporter: "bob",
 	createdDate: "2026-01-01",
 	updatedDate: "2026-02-02",
@@ -42,11 +44,12 @@ const richTask: Task = {
 };
 
 const entries: OpenTuiWorkspaceTaskEntry[] = [
-	{ id: richTask.id, title: richTask.title, status: richTask.status, description: richTask.description },
+	{ id: richTask.id, title: richTask.title, status: richTask.status, done: false, description: richTask.description },
 	{
 		id: dependencyTask.id,
 		title: dependencyTask.title,
 		status: dependencyTask.status,
+		done: false,
 		description: "Fallback description",
 	},
 ];
@@ -63,7 +66,6 @@ describe("native workspace rich detail", () => {
 		const detail = toTaskDetail(richTask, {
 			tasks: [richTask, dependencyTask],
 			completedTasks: [],
-			statuses: ["Todo", "In Progress", "Done"],
 		});
 		const mount = mountOpenTuiWorkspace(setup.renderer, attachParent(setup), {
 			tasks: entries,
@@ -105,7 +107,15 @@ describe("native workspace rich detail", () => {
 		const setup = await createTestRenderer({ width: 120, height: 80, exitOnCtrlC: false });
 		renderers.push(setup);
 		const mount = mountOpenTuiWorkspace(setup.renderer, attachParent(setup), {
-			tasks: [{ id: "BACK-1", title: "Code task", status: "Todo", description: "```ts\nconst visible = true;\n```" }],
+			tasks: [
+				{
+					id: "BACK-1",
+					title: "Code task",
+					status: "Todo",
+					done: false,
+					description: "```ts\nconst visible = true;\n```",
+				},
+			],
 		});
 		try {
 			await setup.flush();
@@ -121,7 +131,6 @@ describe("native workspace rich detail", () => {
 		const detail = toTaskDetail(richTask, {
 			tasks: [richTask, dependencyTask],
 			completedTasks: [],
-			statuses: ["Todo", "In Progress", "Done"],
 		});
 		const mount = mountOpenTuiWorkspace(setup.renderer, attachParent(setup), {
 			tasks: entries,
@@ -148,8 +157,14 @@ describe("native workspace rich detail", () => {
 		renderers.push(setup);
 		const mount = mountOpenTuiWorkspace(setup.renderer, attachParent(setup), {
 			tasks: [
-				{ id: "BACK-1", title: "Long task", status: "Todo", description: "long description ".repeat(20_000) },
-				{ id: "BACK-2", title: "Empty task", status: "Todo", description: "" },
+				{
+					id: "BACK-1",
+					title: "Long task",
+					status: "Todo",
+					done: false,
+					description: "long description ".repeat(20_000),
+				},
+				{ id: "BACK-2", title: "Empty task", status: "Todo", done: false, description: "" },
 			],
 		});
 		try {

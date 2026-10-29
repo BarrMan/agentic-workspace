@@ -8,6 +8,7 @@ import { runCli } from "../cli/register.ts";
 import { updateAgentConfiguration } from "../controller/agent-configuration.ts";
 import { Core } from "../index.ts";
 import { getDefaultModeCatalog } from "../storage/config.ts";
+import { Storage } from "../storage/storage.ts";
 import { coreFileSystem, createUniqueTestDir, initializeTestProject, safeCleanup } from "./test-utils.ts";
 
 let testDir: string;
@@ -54,10 +55,11 @@ describe("CLI task mode approval", () => {
 			...configuration,
 			modes: getDefaultModeCatalog(),
 		}));
-		await new Core(testDir).createTask({
+		await new Storage(coreFileSystem(new Core(testDir))).createTask({
 			id: "task-1",
 			title: "Approval target",
 			status: "To Do",
+			done: false,
 			createdDate: "2026-10-17",
 			labels: [],
 			dependencies: [],
@@ -99,7 +101,7 @@ describe("CLI task mode approval", () => {
 		const result = await runTaskCommand(["task", "done"]);
 		expect(result.exitCode).toBe(0);
 		const task = await coreFileSystem(core).loadTask("task-1");
-		expect(task?.status).toBe("Shipped");
+		expect({ status: task?.status, done: task?.done }).toEqual({ status: "To Do", done: true });
 		expect(task?.modeApprovals ?? {}).toEqual({});
 	});
 });

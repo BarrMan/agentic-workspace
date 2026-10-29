@@ -2,7 +2,6 @@ import { homedir } from "node:os";
 import { basename, join } from "node:path";
 import { spawn } from "bun";
 import { slug } from "../../lib/slug.ts";
-import { taskIdKey, taskIdsEqual } from "../../model/task/task-id.ts";
 
 /** Minimal task identity needed to name a task-owned worktree. */
 export interface WorktreeTaskRef {
@@ -32,11 +31,11 @@ function taskWorktreeRoot(): string {
 export function taskWorktreePath(projectRoot: string, task: WorktreeTaskRef): string {
 	const project = basename(projectRoot).replaceAll(/[^A-Za-z0-9._-]+/g, "-") || "project";
 	const title = slug(task.title) || "task";
-	return join(taskWorktreeRoot(), project, `${title}-${taskIdKey(task.id)}`);
+	return join(taskWorktreeRoot(), project, `${title}-${task.id}`);
 }
 
 function taskWorktreeBranch(taskId: string): string {
-	return `agentic-workspace/task/${taskIdKey(taskId)}`;
+	return `agentic-workspace/task/${taskId}`;
 }
 
 async function runGit(args: string[], cwd: string): Promise<GitResult> {
@@ -86,11 +85,11 @@ async function worktreeEntries(projectRoot: string): Promise<WorktreeEntry[]> {
  */
 function findTaskWorktree(entries: WorktreeEntry[], task: WorktreeTaskRef): WorktreeEntry | undefined {
 	const branchPrefix = "refs/heads/agentic-workspace/task/";
-	const idSuffix = `-${taskIdKey(task.id)}`;
+	const idSuffix = `-${task.id}`;
 	const matches = entries.filter(
 		(entry) =>
-			(entry.branch?.startsWith(branchPrefix) && taskIdsEqual(entry.branch.slice(branchPrefix.length), task.id)) ||
-			basename(entry.path).toLowerCase().endsWith(idSuffix.toLowerCase()),
+			(entry.branch?.startsWith(branchPrefix) && entry.branch.slice(branchPrefix.length) === task.id) ||
+			basename(entry.path).endsWith(idSuffix),
 	);
 	return matches.length === 1 ? matches[0] : undefined;
 }

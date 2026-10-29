@@ -5,8 +5,8 @@ import { dirname, join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import type { ModeProfile } from "../../../model/session/types.ts";
 import type { InstalledStatusHook } from "../../status-hooks.ts";
-import type { AgentModel } from "../core/agent.ts";
 import {
+	type AgentModel,
 	type AgentPreparation,
 	type AskCommandRequest,
 	appendArguments,

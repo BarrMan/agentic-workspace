@@ -14,10 +14,23 @@ import { initializeProject as initializeProjectShared } from "../controller/init
 import type { Task } from "../model/types.ts";
 import type { FileSystem } from "../storage/file-system.ts";
 import { serializeTask } from "../storage/markdown/serializer.ts";
+import { Storage } from "../storage/storage.ts";
 
 /** Opens the public persistence API for a Core instance in tests. */
 export function coreFileSystem(core: Core): FileSystem {
 	return (core as unknown as { storage: { filesystem: FileSystem } }).storage.filesystem;
+}
+
+/** Initializes test storage through the production initializer. */
+export async function initializeFilesystemTestWorkspace(filesystem: FileSystem): Promise<void> {
+	const rootConfigPath = join(filesystem.rootDir, "agentic-workspace.config.yml");
+	await new Storage(filesystem, { stateRoot: join(filesystem.rootDir, ".agentic-workspace") }).initializeWorkspace(
+		{ projectName: "Test", statuses: ["To Do"], labels: [], dateFormat: "yyyy-MM-dd" },
+		{
+			agenticWorkspaceDirectory: filesystem.agenticWorkspaceDirName,
+			configLocation: filesystem.configFilePath === rootConfigPath ? "root" : "folder",
+		},
+	);
 }
 
 /**
@@ -94,7 +107,7 @@ export async function commitSamePathBranchTaskVariant(
 	branchTask: Task,
 	distinctBranchPath?: string,
 ): Promise<void> {
-	const taskPath = await core.createTask(localTask);
+	const taskPath = await new Storage(coreFileSystem(core)).saveTask(localTask, { create: true });
 	await $`git add .`.cwd(core.projectRoot).quiet();
 	await $`git commit -m "Add local task"`.cwd(core.projectRoot).quiet();
 

@@ -41,6 +41,7 @@ Let users inspect and organize project tasks in a grouped workspace list or a st
 2. Allow switching between views without losing task organization or selected task identity; switching views does not change session lifecycle.
 3. Selecting a task changes only its selected-task presentation and never starts or resumes a session.
 4. Filtering, searching, and changing visible groups change the visible task set and reconcile selection; they never start, resume, or stop sessions.
+5. Consume the [loaded task collection](tasks.md#task-005-project-task-store) and its per-record changes; view reads do not trigger a full collection rebuild or identity-resolution scan.
 
 **Outcome:** The selected view displays project tasks.
 
@@ -52,6 +53,7 @@ Let users inspect and organize project tasks in a grouped workspace list or a st
 - [ ] IF-WB-001-AC-03: Select a task and confirm selection changes its presentation only, without starting or resuming a session.
 - [ ] IF-WB-001-AC-04: Switch views and confirm selected task identity is preserved and session lifecycle is unchanged.
 - [ ] IF-WB-001-AC-05: Filter, search, or change visible groups and confirm the visible task set and selection are reconciled without changing any session lifecycle.
+- [ ] IF-WB-001-AC-06: Per-record task changes update the visible collection without rebuilding it on ordinary view reads.
 
 ### IF-WB-002: Nested groups
 
@@ -97,19 +99,23 @@ Let users inspect and organize project tasks in a grouped workspace list or a st
 
 **Trigger:** User reopens workspace.
 
-**Preconditions:** Workspace state was previously saved.
+**Preconditions:** The required workspace/state directories exist; optional group/view files may not yet have been saved.
 
 **Behavior:**
 1. Restore filters, task and mode selection, details visibility, shortcut overrides, group membership, and collapsed groups.
 2. Restore each task's remembered mode independently of other tasks.
+3. An initially absent optional group/view file permits empty groups or default presentation state. It does not permit creating missing required directories or reconstructing task/session state; [TASK-006](tasks.md#task-006-task-storage-format) owns those resources.
+4. Read current persisted group/view state inside its mutation lock and write atomically. If previously persisted state disappears before mutation, fail rather than overwrite it from a cached/default value. Malformed files are errors, not absent optional files.
 
 **Outcome:** Reopened workspace reflects its saved state.
 
-**Failures:** None specified.
+**Failures:** Missing required directories, malformed group/view files, or disappearance of previously persisted state during mutation fail without repair or cached-state overwrite.
 
 **Acceptance Criteria:**
 - [ ] IF-WB-004-AC-01: Reopen a workspace and confirm filters, task/mode selection, details visibility, shortcut overrides, group membership, and collapsed groups are restored.
 - [ ] IF-WB-004-AC-02: Confirm each task's remembered mode is independent of other tasks.
+- [ ] IF-WB-004-AC-03: Initially absent optional group/view files use their empty/default semantics; missing required directories and malformed files fail without reconstruction.
+- [ ] IF-WB-004-AC-04: Mutations use current persisted state under the lock; disappearance after persistence fails without replacing it from cache.
 
 ### IF-WB-005: Screen specifications
 
@@ -143,6 +149,7 @@ Let users inspect and organize project tasks in a grouped workspace list or a st
 1. Expose and perform board-move preview, cancellation, and commit; cancellation preserves the original position.
 2. Assign and unassign groups, expand and collapse groups, copy a task ID, choose a retained session, and show an agent terminal fullscreen.
 3. Expose task creation, editing, and archival actions on interactive task surfaces.
+4. Commit board/status changes through the [complete-record task edit contract](tasks.md#task-025-complete-record-updates-and-edits), preserving the independent `done` indication and storage location. Archive follows [TASK-022](tasks.md#task-022-archive-and-cleanup) regardless of status or `done`.
 
 **Outcome:** Requested action is performed; board move remains previewable and cancellable before commit.
 
@@ -156,6 +163,7 @@ Let users inspect and organize project tasks in a grouped workspace list or a st
 - [ ] IF-WB-006-AC-05: Choose a retained session and confirm the chosen session is retained.
 - [ ] IF-WB-006-AC-06: Show an agent terminal fullscreen and confirm the terminal is displayed fullscreen.
 - [ ] IF-WB-006-AC-07: Confirm interactive task surfaces expose task creation, editing, and archival actions.
+- [ ] IF-WB-006-AC-08: Committed board/status edits preserve `done` and location and use the task edit failure/hook contract; archive availability has no status/done gate.
 
 ### IF-WB-007: Searchable help and shortcuts
 
@@ -252,6 +260,7 @@ Let users inspect and organize project tasks in a grouped workspace list or a st
 
 **Invariants:**
 - A canceled board move leaves the task in its original position.
+- A committed status move preserves `done` and storage location and follows TASK-025's durable-edit and actual-status-change behavior.
 
 ### Workspace state
 
@@ -270,6 +279,7 @@ Let users inspect and organize project tasks in a grouped workspace list or a st
 **Invariants:**
 - Each task's remembered mode is independent of other tasks.
 - Deleting a populated group preserves its tasks and child groups.
+- Optional group/view-file absence is distinct from loss of required directories or task/session resources; previously persisted state is not overwritten from stale cache after disappearance.
 
 ### Shortcut bindings
 
@@ -310,7 +320,7 @@ Let users inspect and organize project tasks in a grouped workspace list or a st
 
 **Outputs:** Selected workspace view, task/group changes, previews, restored workspace state, and visible action/help listings.
 
-**Failures:** Reject a conflicting shortcut while retaining its working binding. A canceled move leaves the task unchanged. No other failure behavior is specified here.
+**Failures:** Reject a conflicting shortcut while retaining its working binding. A canceled move leaves the task unchanged. State-load/mutation failures follow IF-WB-004; committed task edits and archive follow their task contracts, including truthful partial-effect reporting.
 
 ## Non-Functional Requirements
 
@@ -339,6 +349,10 @@ Let users inspect and organize project tasks in a grouped workspace list or a st
 | User cancels a previewed board move | Leave task in its original position. |
 | Deleted group contains tasks or nested groups | Preserve all contents and let user select destination, including root/ungrouped. |
 | Shortcut assignment conflicts with a working binding | Reject assignment and retain working binding. |
+| An optional group/view file has never been saved | Use its empty/default state with required directories already provisioned. |
+| Required directories are missing or a group/view file is malformed | Fail without recreating directories or substituting default state. |
+| Previously persisted group/view state disappears before mutation | Fail without overwriting from cache; preserve concurrent data through locked current-state mutation. |
+| A task edit notification fails after a committed board move | Preserve durable effects and report the error under TASK-025; do not imply rollback. |
 
 ## Open Questions
 

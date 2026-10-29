@@ -1,8 +1,6 @@
 import type { AgentConfiguration } from "./session/types.ts";
 
 export type TaskStatus = string;
-export const TASK_DIRECTORY_TYPES = ["task", "archived", "completed"] as const;
-export type TaskDirectoryType = (typeof TASK_DIRECTORY_TYPES)[number];
 
 export const TASK_SOURCE = {
 	LOCAL: "local",
@@ -18,18 +16,11 @@ export type TaskSource = (typeof TASK_SOURCE)[keyof typeof TASK_SOURCE];
  */
 export type LabelMatchMode = "any" | "all";
 
-/**
- * Entity types in AgenticWorkspace.
- * Used for ID generation and prefix resolution.
- */
-export enum EntityType {
-	Task = "task",
-}
-
 export interface Task {
 	id: string;
 	title: string;
 	status: TaskStatus;
+	done: boolean;
 	reporter?: string;
 	createdDate: string;
 	updatedDate?: string;
@@ -202,21 +193,16 @@ export interface AgenticWorkspaceConfig {
 	priorities?: string[];
 	/** Allowed monorepo project/component values. No default; the `project` field is unusable until this is configured. */
 	projects?: string[];
-	/** @deprecated Milestones are sourced from milestone files, not config. */
-	milestones?: string[];
 	defaultStatus?: string;
 	dateFormat: string;
 	maxColumnWidth?: number;
 	defaultEditor?: string;
-	autoOpenBrowser?: boolean;
-	defaultPort?: number;
 	/** When true, hide board columns whose status has no tasks. Columns reappear while a task is being dragged so they remain valid drop targets. Defaults to false. */
 	hideEmptyColumns?: boolean;
 	remoteOperations?: boolean;
 	/** Disable all Git integration for filesystem-only projects. */
 	filesystemOnly?: boolean;
 	zeroPaddedIds?: number;
-	includeDateTimeInDates?: boolean; // Whether to include time in new dates
 	bypassGitHooks?: boolean;
 	/** Project-relative AgenticWorkspace folder when config is stored at project root in agentic-workspace.config.yml. */
 	agenticWorkspaceDirectory?: string;

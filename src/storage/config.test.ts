@@ -3,7 +3,6 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import {
 	getEditableAgentConfiguration,
-	initializeAgentConfiguration,
 	loadAgentConfiguration,
 	resolveAgentConfiguration,
 	resolveSessionPreset,
@@ -11,16 +10,18 @@ import {
 	upsertAgentConfiguration,
 } from "../controller/agent-configuration.ts";
 import { Core } from "../controller/agentic-workspace.ts";
+import { validateArtifactPath } from "../model/session/agent-config-schema.ts";
 import { Config } from "../model/session/config.ts";
 import { effectiveModeTextColor, MODE_TEXT_COLORS, type ModeTextColor } from "../model/session/mode-colors.ts";
 import { type AgentConfiguration, resolveSessionSettings } from "../model/session/types.ts";
-import { coreFileSystem, createUniqueTestDir, initializeTestProject, safeCleanup } from "../test/test-utils.ts";
 import {
-	getBuiltInAgentConfiguration,
-	getDefaultModeCatalog,
-	resolveSelectedMode,
-	validateArtifactPath,
-} from "./config.ts";
+	coreFileSystem,
+	createUniqueTestDir,
+	initializeFilesystemTestWorkspace,
+	initializeTestProject,
+	safeCleanup,
+} from "../test/test-utils.ts";
+import { getBuiltInAgentConfiguration, getDefaultModeCatalog, resolveSelectedMode } from "./config.ts";
 import { parseMarkdown, parseTask } from "./markdown/parser.ts";
 import { serializeTask } from "./markdown/serializer.ts";
 
@@ -57,7 +58,7 @@ beforeEach(async () => {
 	originalXdgConfigHome = process.env.XDG_CONFIG_HOME;
 	process.env.XDG_CONFIG_HOME = join(testDir, "user-config");
 	core = new Core(testDir);
-	await coreFileSystem(core).ensureAgenticWorkspaceStructure();
+	await initializeFilesystemTestWorkspace(coreFileSystem(core));
 	await initializeTestProject(core, "Agent workspace config");
 });
 
@@ -132,7 +133,7 @@ describe("agent workspace configuration", () => {
 	});
 
 	it("resolves a saved arbitrary preset name from current task, project, then user configuration", async () => {
-		await core.createTaskFromInput({ title: "Current configuration", status: "To Do" });
+		await core.tasks.create({ title: "Current configuration", status: "To Do" });
 		const saved = { taskId: "TASK-1", preset: "custom" };
 		await upsertAgentConfiguration(core, "root", configuration());
 		expect((await resolveSessionPreset(core, saved)).command).toEqual(["custom-agent", "--run"]);
@@ -169,7 +170,10 @@ describe("agent workspace configuration", () => {
 		await expect(resolveSessionPreset(core, { ...saved, preset: "removed" })).rejects.toThrow("Agent preset not found");
 		const task = await coreFileSystem(core).loadTask(saved.taskId);
 		if (!task) throw new Error("Missing configuration test task");
-		await core.updateTask({ ...task, agentConfiguration: undefined });
+		await core.storage.withTaskLock(
+			task.id,
+			async (current) => await core.tasks.edit({ ...current, agentConfiguration: undefined }),
+		);
 		// Stale expectation: the project preset remains configured, so it outranks the user preset.
 		expect((await resolveSessionPreset(core, saved)).command).toEqual(["project-agent"]);
 	});
@@ -189,7 +193,6 @@ describe("agent workspace configuration", () => {
 		for (const [id, profile] of Object.entries(loaded.modes.profiles))
 			expect(effectiveModeTextColor(profile, id)).toBeUndefined();
 		await upsertAgentConfiguration(core, "project", loaded);
-		await initializeAgentConfiguration(core, "project");
 		expect((await coreFileSystem(core).loadConfig())?.agentConfiguration).toEqual({ ...configuration(), modes });
 	});
 
@@ -227,7 +230,7 @@ describe("agent workspace configuration", () => {
 
 	it("uses the complete built-in preset set when no override exists", async () => {
 		const resolved = await resolveAgentConfiguration(core);
-		expect(resolved.scope).toBe("root");
+		expect(resolved.scope).toBe("project");
 		expect(resolved.config.selectedPreset).toBe("opencode");
 		expect(Object.keys(resolved.config.presets)).toEqual(["opencode", "claude", "pi"]);
 		expect(resolved.config.presets.pi).toEqual({
@@ -249,9 +252,8 @@ describe("agent workspace configuration", () => {
 
 	it("previews an editable parent configuration without writing an override", async () => {
 		const preview = await getEditableAgentConfiguration(core, "project");
-		// Stale expectation: exact-scope editing returns the sparse persisted project value.
-		expect(preview).toEqual({});
-		expect(await loadAgentConfiguration(core, "project")).toBeNull();
+		expect(preview).toEqual({ modes: getDefaultModeCatalog() });
+		expect(await loadAgentConfiguration(core, "project")).toEqual({ modes: getDefaultModeCatalog() });
 	});
 
 	it("rejects the retired per-preset worktree key without rewriting the configuration", async () => {
@@ -263,7 +265,6 @@ describe("agent workspace configuration", () => {
 		await expect(loadAgentConfiguration(core, "root")).rejects.toThrow(
 			/worktree is retired.*remove this unsupported field/,
 		);
-		await expect(initializeAgentConfiguration(core, "root")).rejects.toThrow(/worktree is retired/);
 		expect(await readFile(path, "utf8")).toBe(raw);
 	});
 
@@ -289,7 +290,6 @@ describe("agent workspace configuration", () => {
 		await expect(loadAgentConfiguration(core, "root")).rejects.toThrow(
 			/bootstrap is invalid.*supported bootstrap value/,
 		);
-		await expect(initializeAgentConfiguration(core, "root")).rejects.toThrow(/bootstrap is invalid/);
 		expect(await readFile(path, "utf8")).toBe(raw);
 	});
 
@@ -324,6 +324,7 @@ describe("agent workspace configuration", () => {
 	});
 
 	it("inherits configuration fields from project while task fields override them", async () => {
+		const { task } = await core.tasks.create({ title: "Field inheritance" });
 		await upsertAgentConfiguration(core, "root", configuration());
 		await upsertAgentConfiguration(core, "project", {
 			selectedPreset: "project",
@@ -337,7 +338,6 @@ describe("agent workspace configuration", () => {
 			},
 			sessions: { worktreePerTask: true, yoloMode: true },
 		});
-		const { task } = await core.createTaskFromInput({ title: "Field inheritance" });
 		await upsertAgentConfiguration(
 			core,
 			"card",
@@ -364,7 +364,7 @@ describe("agent workspace configuration", () => {
 	});
 
 	it("preserves an explicit task false and resolves current preset values for retained sessions", async () => {
-		const { task } = await core.createTaskFromInput({ title: "Current task settings" });
+		const { task } = await core.tasks.create({ title: "Current task settings" });
 		await upsertAgentConfiguration(core, "root", {
 			...configuration(),
 			sessions: { worktreePerTask: false, yoloMode: true },
@@ -432,7 +432,7 @@ describe("agent workspace configuration", () => {
 		expect(resolveSessionSettings(await loadAgentConfiguration(core, "project"))).toMatchObject({
 			autoResumeOnRestart: true,
 		});
-		const { task } = await core.createTaskFromInput({ title: "Scoped session settings" });
+		const { task } = await core.tasks.create({ title: "Scoped session settings" });
 		await upsertAgentConfiguration(
 			core,
 			"card",
@@ -463,22 +463,22 @@ describe("agent workspace configuration", () => {
 
 	it("copies the effective parent once and keeps overrides isolated", async () => {
 		await upsertAgentConfiguration(core, "root", configuration());
-		const project = await initializeAgentConfiguration(core, "project");
+		const project = (await loadAgentConfiguration(core, "project")) ?? {};
 		// Explicit initialization seeds project-owned modes; sparse project values do not snapshot root presets.
 		expect(project.presets).toBeUndefined();
 
 		const root = await loadAgentConfiguration(core, "root");
 		expect(root?.presets?.custom?.command).toEqual(["custom-agent", "--run"]);
 
-		const { task } = await core.createTaskFromInput({ title: "Preserve card body", description: "Original content" });
-		const card = await initializeAgentConfiguration(core, "card", task.id);
+		const { task } = await core.tasks.create({ title: "Preserve card body", description: "Original content" });
+		const card = (await loadAgentConfiguration(core, "card", task.id)) ?? {};
 		// Exact-scope task initialization does not copy the effective parent preset map.
 		card.presets = {
 			custom: { command: ["card-agent"], env: { TOKEN: "card-only" }, prepare: "", bootstrap: "opencode" },
 		};
 		await upsertAgentConfiguration(core, "card", card, task.id);
 
-		const reread = await initializeAgentConfiguration(core, "card", task.id);
+		const reread = (await loadAgentConfiguration(core, "card", task.id)) ?? {};
 		expect(reread.presets?.custom?.env.TOKEN).toBe("card-only");
 		// Sparse project settings do not copy root presets into the project scope.
 		expect((await loadAgentConfiguration(core, "project"))?.presets?.custom).toBeUndefined();
@@ -486,7 +486,7 @@ describe("agent workspace configuration", () => {
 	});
 
 	it("round-trips card configuration without changing task content", async () => {
-		const { task } = await core.createTaskFromInput({
+		const { task } = await core.tasks.create({
 			title: "Card metadata",
 			description: "Keep this paragraph intact.",
 		});
@@ -500,7 +500,7 @@ describe("agent workspace configuration", () => {
 	});
 
 	it("rejects a card snapshot with a retired bootstrap without rewriting task data", async () => {
-		const { task } = await core.createTaskFromInput({ title: "Stale card preset" });
+		const { task } = await core.tasks.create({ title: "Stale card preset" });
 		const stale = {
 			selectedPreset: "codex",
 			presets: {
@@ -508,7 +508,7 @@ describe("agent workspace configuration", () => {
 				opencode: { command: ["opencode"], env: {}, prepare: "", bootstrap: "opencode" },
 			},
 		} as unknown as AgentConfiguration;
-		await core.updateTask({ ...task, agentConfiguration: stale });
+		await writeFile(task.filePath as string, serializeTask({ ...task, agentConfiguration: stale }));
 
 		await expect(loadAgentConfiguration(core, "card", task.id)).rejects.toThrow(/bootstrap is invalid/);
 		await expect(
@@ -526,7 +526,7 @@ describe("agent workspace configuration", () => {
 	});
 
 	it("reloads a saved card preset with an empty environment", async () => {
-		const { task } = await core.createTaskFromInput({ title: "Card preset" });
+		const { task } = await core.tasks.create({ title: "Card preset" });
 		await upsertAgentConfiguration(core, "card", getBuiltInAgentConfiguration(), task.id);
 		await updateAgentConfiguration(
 			core,
@@ -585,7 +585,7 @@ describe("agent workspace configuration", () => {
 	});
 
 	it("fails closed for malformed and ambiguous card identities", async () => {
-		const { task } = await core.createTaskFromInput({ title: "Card configuration" });
+		const { task } = await core.tasks.create({ title: "Card configuration" });
 		const content = await readFile(task.filePath as string, "utf8");
 		await writeFile(task.filePath as string, content.replace("---\n", "---\nagentConfiguration: false\n"), "utf8");
 		await expect(loadAgentConfiguration(core, "card", task.id)).rejects.toThrow("must be an object");
@@ -600,58 +600,14 @@ describe("agent workspace configuration", () => {
 	});
 
 	it("preserves card configuration through ordinary task updates", async () => {
-		const { task } = await core.createTaskFromInput({ title: "Metadata persistence" });
+		const { task } = await core.tasks.create({ title: "Metadata persistence" });
 		await upsertAgentConfiguration(core, "card", configuration(), task.id);
-		await core.updateTaskFromInput(task.id, { description: "Updated description", status: "In Progress" });
+		await core.storage.withTaskLock(
+			task.id,
+			async (current) =>
+				await core.tasks.edit({ ...current, description: "Updated description", status: "In Progress" }),
+		);
 		expect((await loadAgentConfiguration(core, "card", task.id))?.selectedPreset).toBe("custom");
-	});
-
-	it("seeds modes on explicit initialization of existing project config and preserves custom catalog on repeat", async () => {
-		const existing = configuration();
-		existing.sessions = { worktreePerTask: true, yoloMode: false };
-		await saveProjectConfiguration(existing);
-		expect((await loadAgentConfiguration(core, "project"))?.modes).toBeUndefined();
-		expect((await coreFileSystem(core).loadConfig())?.agentConfiguration).toEqual(existing);
-
-		const initialized = await initializeAgentConfiguration(core, "project");
-		expect(initialized.modes?.order).toEqual(["plan", "build"]);
-		expect(initialized.modes?.defaultModeId).toBe("plan");
-		expect(initialized.modes?.profiles.plan?.textColor).toBe("green");
-		expect(initialized.modes?.profiles.build?.textColor).toBe("blue");
-		expect(initialized.presets).toEqual(existing.presets);
-		expect(initialized.sessions).toEqual(existing.sessions);
-
-		const modes = initialized.modes;
-		if (!modes?.profiles.plan) throw new Error("Missing seeded PLAN profile");
-		modes.order = ["custom"];
-		modes.defaultModeId = "custom";
-		modes.profiles = { custom: { ...modes.profiles.plan, name: "Custom" } };
-		await upsertAgentConfiguration(core, "project", initialized);
-		const repeated = await initializeAgentConfiguration(core, "project");
-		expect(repeated.modes?.order).toEqual(["custom"]);
-		expect(repeated.modes?.defaultModeId).toBe("custom");
-	});
-
-	it("initializes absent modes on startup and preserves configured catalogs", async () => {
-		const initialized = await core.getProjectModeCatalog();
-		expect(initialized.order).toEqual(["plan", "build"]);
-		expect(initialized.defaultModeId).toBe("plan");
-		expect(initialized.profiles.plan).toMatchObject({ name: "PLAN", permissions: { repository: "read" } });
-		expect(initialized.profiles.build).toMatchObject({ name: "BUILD", permissions: { repository: "read-write" } });
-		expect(initialized.profiles.plan).not.toBe(initialized.profiles.build);
-		expect(await core.getProjectModeCatalog()).toEqual(initialized);
-
-		const plan = initialized.profiles.plan;
-		if (!plan) throw new Error("Expected default PLAN mode.");
-		const oneMode = {
-			...initialized,
-			order: ["custom"],
-			defaultModeId: "custom",
-			profiles: { custom: { ...plan, name: "Custom" } },
-		};
-		await upsertAgentConfiguration(core, "project", { modes: oneMode });
-		expect(await core.getProjectModeCatalog()).toEqual(oneMode);
-		expect(await core.getProjectModeCatalog()).toEqual(oneMode);
 	});
 
 	it("returns independent mutable copies of the default catalog", () => {
@@ -670,41 +626,21 @@ describe("agent workspace configuration", () => {
 	});
 
 	it("does not replace an invalid configured catalog on startup", async () => {
-		await saveProjectConfiguration({
-			modes: { version: 1, defaultModeId: "missing", order: [], profiles: {} } as NonNullable<
-				AgentConfiguration["modes"]
-			>,
-		});
-		const path = join(testDir, ".agentic-workspace", "config.yml");
+		const path = core.projectConfigPath;
+		await writeFile(
+			path,
+			`agent_configuration: ${JSON.stringify({
+				modes: { version: 1, defaultModeId: "missing", order: [], profiles: {} },
+			})}\n`,
+		);
 		const before = await readFile(path, "utf8");
 		await expect(core.getProjectModeCatalog()).rejects.toThrow(/mode|catalog/i);
 		expect(await readFile(path, "utf8")).toBe(before);
 	});
 });
 
-it("seeds a project-only mode catalog on explicit initialization and round-trips unrelated settings", async () => {
-	const project = await initializeAgentConfiguration(core, "project");
-	expect(project.modes?.defaultModeId).toBe("plan");
-	expect(project.modes?.profiles.plan).toMatchObject({
-		model: { kind: "default" },
-		permissions: { repository: "read", task: "read-write", artifacts: "read-write", subagents: "allowed" },
-		approvalArtifact: "plan.md",
-	});
-	expect(project.modes?.profiles.build).toMatchObject({
-		model: { kind: "default" },
-		permissions: { repository: "read-write", task: "read-write", artifacts: "read-write", subagents: "allowed" },
-	});
-	if (project.modes?.profiles.plan) project.modes.profiles.plan.name = "Planner";
-	await upsertAgentConfiguration(core, "project", project);
-	const saved = await loadAgentConfiguration(core, "project");
-	expect(saved?.modes?.profiles.plan?.name).toBe("Planner");
-	// Project initialization is project-catalog-only; built-in presets remain inherited rather than persisted.
-	expect(saved?.presets).toBeUndefined();
-	expect((await getEditableAgentConfiguration(core, "root")).modes).toBeUndefined();
-});
-
 it("round-trips opaque explicit mode model selections", async () => {
-	const project = await initializeAgentConfiguration(core, "project");
+	const project = (await loadAgentConfiguration(core, "project")) ?? {};
 	const plan = project.modes?.profiles.plan;
 	if (!plan || !project.modes) throw new Error("Missing seeded PLAN profile");
 	plan.model = { kind: "explicit", id: "provider/model-v1" };
@@ -725,7 +661,7 @@ it("does not reseed removed modes on ordinary saves and resolves renamed profile
 	plan.name = "Design Review";
 	expect(resolveSelectedMode(catalog, "plan")).toBe("plan");
 	expect(resolveSelectedMode(catalog, "removed")).toBe("plan");
-	const config = await initializeAgentConfiguration(core, "project");
+	const config = (await loadAgentConfiguration(core, "project")) ?? {};
 	if (!config.modes) throw new Error("Missing seeded modes");
 	delete config.modes.profiles.plan;
 	config.modes.order = ["build"];

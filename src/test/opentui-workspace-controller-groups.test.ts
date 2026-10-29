@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from "bun:test";
+import { afterEach, describe, expect, it, mock } from "bun:test";
 import { EventEmitter } from "node:events";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -12,6 +12,8 @@ import type { OpenTuiWorkspaceOptions } from "../renderer/opentui/workspace.ts";
 import { OpenTuiWorkspaceController } from "../renderer/opentui/workspace-controller.ts";
 import { getBuiltInAgentConfiguration, getDefaultModeCatalog } from "../storage/config.ts";
 import type { GroupState, GroupStore } from "../storage/group-store.ts";
+
+mock.module("../storage/watchers/task-watcher.ts", () => ({ watchTaskRecords: () => ({ stop() {} }) }));
 
 const roots: string[] = [];
 afterEach(() => {
@@ -40,6 +42,7 @@ const tasks: Task[] = ["T1", "T2"].map((id) => ({
 	id,
 	title: id,
 	status: "To Do",
+	done: false,
 	createdDate: "2026-01-01",
 	labels: [],
 	dependencies: [],
@@ -89,21 +92,17 @@ function setup(groups: Groups | undefined, runtimeOverrides: Record<string, unkn
 	} as never;
 	const core = {
 		getProjectModeCatalog: async () => getDefaultModeCatalog(),
+		tasks: {
+			loadSnapshot: async () => ({
+				tasks,
+				activeTasks: tasks,
+				config: { statuses: ["To Do"] },
+				identityIndex: { getTasks: () => [], getContestedIds: () => new Set() },
+			}),
+		},
 		workspaceDirectory: agenticWorkspaceDir,
-		getStoredConfig: async () => ({
-			agentConfiguration: { ...getBuiltInAgentConfiguration(), modes: getDefaultModeCatalog() },
-		}),
 		loadTasks: async () => tasks,
-		loadMilestones: async () => [],
-		loadArchivedMilestones: async () => [],
-		loadTaskSnapshot: async () => ({
-			tasks,
-			activeTasks: tasks,
-			config: { statuses: ["To Do"] },
-			identityIndex: { getTasks: () => tasks, getContestedIds: () => new Set() },
-		}),
-		watchTasks: () => ({ stop() {} }),
-		watchConfig: () => ({ stop() {} }),
+		projectInventory: async () => [],
 		filesystem: {
 			agenticWorkspaceDir,
 			loadConfig: async () => ({
@@ -113,14 +112,21 @@ function setup(groups: Groups | undefined, runtimeOverrides: Record<string, unkn
 			listMilestones: async () => [],
 			listArchivedMilestones: async () => [],
 		},
+		storage: {
+			loadTasks: async () => tasks,
+			loadConfig: async () => ({
+				projectName: "Test",
+				agentConfiguration: { ...getBuiltInAgentConfiguration(), modes: getDefaultModeCatalog() },
+			}),
+			loadMilestones: async () => [],
+			loadArchivedMilestones: async () => [],
+			watchConfig: () => ({ stop() {} }),
+		},
 	} as unknown as Core;
 	const workspace = {
-		sessionApplication: { projectInventory: async () => [] },
-		listTasks: async () => tasks,
-		listSessions: async (taskId: string) => ({ taskId, sessions: [] }),
-		listModeSessions: async (taskId: string, modeId: string) => ({
+		listSessions: async (taskId: string, modeId?: string) => ({
 			taskId,
-			modeId,
+			...(modeId ? { modeId } : {}),
 			sessions: [],
 			activeSessionId: undefined,
 		}),

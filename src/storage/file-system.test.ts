@@ -1,10 +1,10 @@
 import { afterEach, describe, expect, it, spyOn } from "bun:test";
-import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { fileURLToPath } from "node:url";
-import { createUniqueTestDir, initGitRepo, safeCleanup } from "../test/test-utils.ts";
+import { createUniqueTestDir, safeCleanup } from "../test/test-utils.ts";
 import { FileSystem } from "./file-system.ts";
 import { serializeTask } from "./markdown/serializer.ts";
+import { Storage } from "./storage.ts";
 
 const roots: string[] = [];
 afterEach(async () => {
@@ -15,7 +15,10 @@ async function filesystem() {
 	const root = createUniqueTestDir("filesystem-records");
 	roots.push(root);
 	const fs = new FileSystem(root);
-	await fs.ensureAgenticWorkspaceStructure();
+	await new Storage(fs).initializeWorkspace(
+		{ projectName: "test", statuses: ["To Do"], labels: [], dateFormat: "yyyy-MM-dd" },
+		{ agenticWorkspaceDirectory: ".agentic-workspace", configLocation: "folder" },
+	);
 	return fs;
 }
 
@@ -68,39 +71,6 @@ describe("persisted task counter", () => {
 		});
 	});
 
-	it("explicitly converts all prefixes once, preserving next allocation and mode", async () => {
-		const fs = await filesystem();
-		const path = join(fs.agenticWorkspaceDir, "task-counter.json");
-		const raw = '{"TASK":{"next":3},"OPS":{"next":1}}';
-		await writeFile(path, raw, { mode: 0o600 });
-		await expect(fs.withCreateLock(() => fs.allocateTaskId("TASK", undefined, async () => []))).rejects.toThrow(
-			"scripts/migrate-task-counter.ts",
-		);
-		expect(await readFile(path, "utf8")).toBe(raw);
-		expect(await fs.convertTaskCounterToLastAllocated()).toEqual({ path, converted: true });
-		expect(JSON.parse(await readFile(path, "utf8"))).toEqual({ TASK: { lastAllocated: 2 }, OPS: { lastAllocated: 0 } });
-		expect((await stat(path)).mode & 0o777).toBe(0o600);
-		expect(await fs.convertTaskCounterToLastAllocated()).toEqual({ path, converted: false });
-		expect(await fs.withCreateLock(() => fs.allocateTaskId("TASK", undefined, async () => []))).toBe("TASK-3");
-		expect(await fs.withCreateLock(() => fs.allocateTaskId("OPS", undefined, async () => []))).toBe("OPS-1");
-	});
-
-	it.each([
-		"null",
-		"[]",
-		"{",
-		'{"TASK":{"next":0}}',
-		'{"TASK":{"next":3},"OPS":{"next":-1}}',
-		'{"TASK":{"next":3},"OPS":{"lastAllocated":2}}',
-		'{"TASK":{"next":3,"extra":true}}',
-	])("refuses malformed or mixed-format conversion unchanged: %s", async (raw) => {
-		const fs = await filesystem();
-		const path = join(fs.agenticWorkspaceDir, "task-counter.json");
-		await writeFile(path, raw);
-		await expect(fs.convertTaskCounterToLastAllocated()).rejects.toThrow(path);
-		expect(await readFile(path, "utf8")).toBe(raw);
-	});
-
 	it("consumes completed and archived collisions and rejects exhausted counters unchanged", async () => {
 		const fs = await filesystem();
 		const path = join(fs.agenticWorkspaceDir, "task-counter.json");
@@ -116,53 +86,6 @@ describe("persisted task counter", () => {
 		);
 		expect(await readFile(path, "utf8")).toBe(exhausted);
 	});
-
-	it("runs conversion only for the selected store through explicit script invocation", async () => {
-		const fs = await filesystem();
-		const directory = join(fs.rootDir, "custom-store");
-		await mkdir(directory);
-		const path = join(directory, "task-counter.json");
-		await writeFile(path, '{"TASK":{"next":3}}');
-		const script = fileURLToPath(new URL("../../scripts/migrate-task-counter.ts", import.meta.url));
-		const run = () => Bun.spawnSync([process.execPath, script, fs.rootDir], { timeout: 10_000 });
-		const unselected = run();
-		expect(unselected.exitCode).toBe(0);
-		expect(JSON.parse(unselected.stdout.toString()).converted).toBe(false);
-		expect(await readFile(path, "utf8")).toBe('{"TASK":{"next":3}}');
-		await writeFile(
-			join(fs.rootDir, "agentic-workspace.config.yml"),
-			"project_name: Test\nagentic_workspace_directory: custom-store\n",
-		);
-		const converted = run();
-		expect(converted.exitCode).toBe(0);
-		expect(JSON.parse(converted.stdout.toString()).converted).toBe(true);
-		expect(JSON.parse(await readFile(path, "utf8"))).toEqual({ TASK: { lastAllocated: 2 } });
-		expect((await new FileSystem(fs.rootDir).loadConfig())?.agenticWorkspaceDirectory).toBe("custom-store");
-	});
-
-	it("converts the shared Git counter when explicitly invoked from a linked worktree", async () => {
-		const fs = await filesystem();
-		initGitRepo(fs.rootDir);
-		const git = (args: string[]) => Bun.spawnSync(["git", ...args], { cwd: fs.rootDir });
-		expect(
-			git(["-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "--allow-empty", "-m", "fixture"])
-				.exitCode,
-		).toBe(0);
-		const linked = join(fs.rootDir, "linked");
-		expect(git(["worktree", "add", "-b", "linked", linked]).exitCode).toBe(0);
-		const path = join(fs.rootDir, ".git", "agentic-workspace", "task-counter.json");
-		await mkdir(join(fs.rootDir, ".git", "agentic-workspace"));
-		await writeFile(path, '{"TASK":{"next":3}}');
-		const script = fileURLToPath(new URL("../../scripts/migrate-task-counter.ts", import.meta.url));
-		const result = Bun.spawnSync([process.execPath, script, linked], { timeout: 10_000 });
-		expect(result.exitCode).toBe(0);
-		expect(JSON.parse(await readFile(path, "utf8"))).toEqual({ TASK: { lastAllocated: 2 } });
-		const fromLinked = new FileSystem(linked);
-		expect(await fromLinked.withCreateLock(() => fromLinked.allocateTaskId("TASK", undefined, async () => []))).toBe(
-			"TASK-3",
-		);
-		expect(await Bun.file(join(linked, ".agentic-workspace", "task-counter.json")).exists()).toBe(false);
-	});
 });
 
 it("warns and skips mismatched identity in collections but fails direct loads and edits", async () => {
@@ -171,11 +94,12 @@ it("warns and skips mismatched identity in collections but fails direct loads an
 		id: "TASK-1",
 		title: "kept",
 		status: "To Do",
+		done: false,
 		createdDate: "2026-01-01",
 		labels: [],
 		dependencies: [],
 	};
-	const path = await fs.saveTask(task);
+	const path = await fs.saveTask(task, { create: true });
 	const raw = serializeTask({ ...task, id: "TASK-2" });
 	await writeFile(path, raw);
 	const warn = spyOn(console, "warn").mockImplementation(() => {});
@@ -185,7 +109,7 @@ it("warns and skips mismatched identity in collections but fails direct loads an
 		expect(String(warn.mock.calls[0]?.[0])).toContain(path);
 		expect(String(warn.mock.calls[0]?.[0])).toContain("identity");
 		await expect(fs.loadTask("TASK-1")).rejects.toThrow(path);
-		await expect(fs.saveTask(task)).rejects.toThrow(path);
+		await expect(fs.saveTask(task, { create: true })).rejects.toThrow(path);
 		await expect(fs.saveTask({ ...task, filePath: path })).rejects.toThrow(path);
 		expect(await readFile(path, "utf8")).toBe(raw);
 	} finally {
@@ -205,6 +129,7 @@ it("preserves malformed identity in completed and archived collections and direc
 				id: "TASK-2",
 				title: "mismatch",
 				status: "Done",
+				done: true,
 				createdDate: "2026-01-01",
 				labels: [],
 				dependencies: [],
@@ -232,16 +157,20 @@ it("uses a configured external task root without changing existing project data"
 		`project_name: Test\nagentic_workspace_directory: ${JSON.stringify(outside)}\n`,
 	);
 	const selected = new FileSystem(root);
-	await selected.ensureAgenticWorkspaceStructure();
+	await new Storage(fs).initializeWorkspace(
+		{ projectName: "test", statuses: ["To Do"], labels: [], dateFormat: "yyyy-MM-dd" },
+		{ agenticWorkspaceDirectory: outside, configLocation: "root" },
+	);
 	const task = {
 		id: "TASK-1",
 		title: "external",
 		status: "To Do",
+		done: false,
 		createdDate: "2026-01-01",
 		labels: [],
 		dependencies: [],
 	};
-	const path = await selected.saveTask(task);
+	const path = await selected.saveTask(task, { create: true });
 	const bytes = new TextEncoder().encode("artifact");
 	await selected.taskArtifacts.write(task.id, "task.md", bytes);
 	await expect(selected.taskArtifacts.read(task.id, "task.md")).resolves.toEqual(bytes);

@@ -5,13 +5,14 @@ import type { Task } from "../model/types.ts";
 import { FileSystem } from "../storage/file-system.ts";
 import { serializeTask } from "../storage/markdown/serializer.ts";
 import { TASK_FILE_READ_CONCURRENCY } from "../storage/task-repository.ts";
-import { createUniqueTestDir, safeCleanup } from "./test-utils.ts";
+import { createUniqueTestDir, initializeFilesystemTestWorkspace, safeCleanup } from "./test-utils.ts";
 
 function task(id: string, title: string): Task {
 	return {
 		id,
 		title,
 		status: "To Do",
+		done: false,
 		createdDate: "2026-08-10",
 		labels: ["cache"],
 		dependencies: [],
@@ -35,7 +36,7 @@ describe("FileSystem task parse cache", () => {
 	beforeEach(async () => {
 		testDir = createUniqueTestDir("test-task-file-cache");
 		filesystem = new FileSystem(testDir);
-		await filesystem.ensureAgenticWorkspaceStructure();
+		await initializeFilesystemTestWorkspace(filesystem);
 	});
 
 	afterEach(async () => {
@@ -43,7 +44,7 @@ describe("FileSystem task parse cache", () => {
 	});
 
 	it("reuses exact active and completed contents without sharing mutable parse results", async () => {
-		await filesystem.saveTask(task("TASK-1", "Active task"));
+		await filesystem.saveTask(task("TASK-1", "Active task"), { create: true });
 		await Bun.write(
 			join(filesystem.completedDir, "task-2", "task.md"),
 			serializeTask({ ...task("TASK-2", "Completed task"), status: "Done" }),
@@ -131,10 +132,10 @@ describe("FileSystem task parse cache", () => {
 	});
 
 	it("keeps parsed tasks scoped to independently selected agentic-workspace roots", async () => {
-		await filesystem.saveTask(task("TASK-1", "Primary root"));
+		await filesystem.saveTask(task("TASK-1", "Primary root"), { create: true });
 		const secondary = new FileSystem(testDir, { agenticWorkspaceDirectory: "secondary", configLocation: "folder" });
-		await secondary.ensureAgenticWorkspaceStructure();
-		await secondary.saveTask(task("TASK-1", "Secondary root"));
+		await initializeFilesystemTestWorkspace(secondary);
+		await secondary.saveTask(task("TASK-1", "Secondary root"), { create: true });
 		expect((await filesystem.listTasks())[0]?.title).toBe("Primary root");
 		expect((await secondary.listTasks())[0]?.title).toBe("Secondary root");
 		expect((await filesystem.listTasks())[0]?.title).toBe("Primary root");
@@ -143,7 +144,7 @@ describe("FileSystem task parse cache", () => {
 	it("does not let an older in-flight read replace a newer cached value", async () => {
 		const original = serializeTask(task("TASK-1", "Older value"));
 		const replacement = serializeTask(task("TASK-1", "Newer value"));
-		const taskPath = await filesystem.saveTask(task("TASK-1", "Concurrent"));
+		const taskPath = await filesystem.saveTask(task("TASK-1", "Concurrent"), { create: true });
 		const olderRead = deferred<string>();
 		const newerRead = deferred<string>();
 		let readCount = 0;
@@ -177,7 +178,7 @@ describe("FileSystem task parse cache", () => {
 
 	it("does not return a deleted task from a later listing after an in-flight read", async () => {
 		const content = serializeTask(task("TASK-1", "Deleted task"));
-		const taskPath = await filesystem.saveTask(task("TASK-1", "Deleted task"));
+		const taskPath = await filesystem.saveTask(task("TASK-1", "Deleted task"), { create: true });
 		const inFlightRead = deferred<string>();
 		const startedRead = deferred<void>();
 		const fileSpy = spyOn(Bun, "file").mockImplementation(((filepath: string | URL) => {

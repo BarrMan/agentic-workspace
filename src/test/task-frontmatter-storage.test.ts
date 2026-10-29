@@ -9,12 +9,13 @@ import { getDefaultModeCatalog } from "../storage/config.ts";
 import { FrontmatterSchemaError, UnsupportedTaskFrontmatterSchemaError } from "../storage/errors/frontmatter.ts";
 import { parseMilestone, parseTask } from "../storage/markdown/parser.ts";
 import { serializeMilestone, serializeTask } from "../storage/markdown/serializer.ts";
-import { coreFileSystem } from "./test-utils.ts";
+import { coreFileSystem, initializeFilesystemTestWorkspace } from "./test-utils.ts";
 
 const task: Task = {
 	id: "TASK-1",
 	title: "Structured frontmatter",
 	status: "In Progress",
+	done: false,
 	createdDate: "2026-09-30 12:00",
 	labels: ["storage"],
 	dependencies: [],
@@ -77,12 +78,12 @@ describe("task frontmatter storage", () => {
 		const root = await mkdtemp(join(tmpdir(), "agentic-workspace-task-approval-"));
 		const core = new Core(root);
 		try {
-			await coreFileSystem(core).ensureAgenticWorkspaceStructure();
+			await initializeFilesystemTestWorkspace(coreFileSystem(core));
 			await updateAgentConfiguration(core, "project", (configuration) => ({
 				...configuration,
 				modes: getDefaultModeCatalog(),
 			}));
-			await coreFileSystem(core).saveTask(task);
+			await coreFileSystem(core).saveTask(task, { create: true });
 			await Promise.all([core.setTaskModeApproval(task.id, "build"), core.setTaskModeApproval(task.id, "plan")]);
 			expect((await coreFileSystem(core).loadTask(task.id))?.modeApprovals).toEqual({ build: true, plan: true });
 		} finally {

@@ -3,7 +3,13 @@ import { join } from "node:path";
 import { Core } from "../controller/agentic-workspace.ts";
 import { initializeProject } from "../controller/init.ts";
 import type { AgenticWorkspaceConfig } from "../model/types.ts";
-import { coreFileSystem, createUniqueTestDir, initializeTestProject, safeCleanup } from "./test-utils.ts";
+import {
+	coreFileSystem,
+	createUniqueTestDir,
+	initializeFilesystemTestWorkspace,
+	initializeTestProject,
+	safeCleanup,
+} from "./test-utils.ts";
 
 describe("Enhanced init command", () => {
 	let tmpDir: string;
@@ -42,7 +48,6 @@ describe("Enhanced init command", () => {
 			projectName: "Custom Project",
 			statuses: ["Backlog", "In Progress", "Review", "Done"],
 			labels: ["bug", "feature", "enhancement"],
-			milestones: ["v1.0", "v2.0"],
 			defaultStatus: "Backlog",
 			dateFormat: "dd/MM/yyyy",
 			maxColumnWidth: 30,
@@ -50,7 +55,7 @@ describe("Enhanced init command", () => {
 			prefixes: { task: "WORK" },
 		};
 
-		await coreFileSystem(core).ensureAgenticWorkspaceStructure();
+		await initializeFilesystemTestWorkspace(coreFileSystem(core));
 		await coreFileSystem(core).saveConfig(customConfig);
 
 		// Simulate re-initialization by loading existing config
@@ -87,11 +92,10 @@ describe("Enhanced init command", () => {
 			defaultStatus: "To Do",
 			dateFormat: "yyyy-MM-dd",
 			defaultReporter: "@bot",
-			includeDateTimeInDates: true,
 			onStatusChange: "echo changed",
 		};
 
-		await coreFileSystem(core).ensureAgenticWorkspaceStructure();
+		await initializeFilesystemTestWorkspace(coreFileSystem(core));
 		await coreFileSystem(core).saveConfig(initialConfig);
 
 		const existingConfig = await coreFileSystem(core).loadConfig();
@@ -105,7 +109,6 @@ describe("Enhanced init command", () => {
 		const reloaded = await coreFileSystem(core).loadConfig();
 		expect(reloaded?.projectName).toBe("Preserve Fields Project Updated");
 		expect(reloaded?.defaultReporter).toBe("@bot");
-		expect(reloaded?.includeDateTimeInDates).toBe(true);
 		expect(reloaded?.onStatusChange).toBe("echo changed");
 	});
 

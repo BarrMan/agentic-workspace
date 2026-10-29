@@ -6,6 +6,7 @@ import { Core } from "../src/controller/agentic-workspace.ts";
 import { initializeProject } from "../src/controller/init.ts";
 import type { Task } from "../src/model/types.ts";
 import { Storage } from "../src/storage/storage.ts";
+import { FileSystem } from "../src/storage/file-system.ts";
 
 const DEFAULTS = {
 	iterations: 3,
@@ -199,6 +200,7 @@ function benchmarkTask(id: number, title: string, status = "To Do"): Task {
 		id: `TASK-${id}`,
 		title,
 		status,
+		done: false,
 		createdDate: "2026-01-01",
 		updatedDate: "2026-01-02",
 		labels: ["benchmark"],
@@ -242,8 +244,10 @@ async function populateCorpus(root: string, options: Options): Promise<Corpus> {
 	}
 	for (let index = 1; index <= options.completedTasks; index += 1) {
 		const id = options.localTasks + index;
-		await storage.saveTask(benchmarkTask(id, `Benchmark completed task ${index}`, "Done"));
-		if (!(await storage.completeTask(`TASK-${id}`))) throw new Error(`Could not complete benchmark task TASK-${id}.`);
+		const task = benchmarkTask(id, `Benchmark completed task ${index}`, "Done");
+		await storage.saveTask(task);
+		const filesystem = new FileSystem(projectRoot);
+		await filesystem.moveTaskContainer(task, filesystem.completedDir);
 	}
 
 	await runProcess(["git", "add", "."], projectRoot);
@@ -558,22 +562,18 @@ async function benchmarkSurface(
 	];
 }
 
-function formatNumber(value: number, decimals = 1): string {
-	return value.toFixed(decimals);
-}
-
 function printTable(options: Options, results: BenchmarkResult[]): void {
 	const rows = results.map((result) => ({
 		Surface: result.surface,
 		Mode: result.mode,
 		Samples: String(result.samples),
-		"Median ms": formatNumber(result.elapsedMs.median),
-		"p95 ms": formatNumber(result.elapsedMs.p95),
-		"Git procs": formatNumber(result.gitProcesses.median, 0),
-		Repo: formatNumber(result.semanticOperations.repositoryChecks.median, 0),
-		Fetch: formatNumber(result.semanticOperations.remoteFetches.median, 0),
-		Tips: formatNumber(result.semanticOperations.branchTipSnapshots.median, 0),
-		Count: formatNumber(result.resultCount.median, 0),
+		"Median ms": result.elapsedMs.median.toFixed(1),
+		"p95 ms": result.elapsedMs.p95.toFixed(1),
+		"Git procs": result.gitProcesses.median.toFixed(0),
+		Repo: result.semanticOperations.repositoryChecks.median.toFixed(0),
+		Fetch: result.semanticOperations.remoteFetches.median.toFixed(0),
+		Tips: result.semanticOperations.branchTipSnapshots.median.toFixed(0),
+		Count: result.resultCount.median.toFixed(0),
 		Expected: String(result.expectedResultCount),
 		Digest: result.resultDigest,
 		Correct: result.correctResult ? "yes" : "NO",

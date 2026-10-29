@@ -40,9 +40,9 @@ export function registerAgentWorkspaceCommands(
 		.option("--preset <name>", "configured preset name")
 		.action(async (taskId: string, options: { preset?: string; mode?: string }) => {
 			const core = await getCore.project();
-			const task = await core.getTask(taskId);
+			const task = await core.tasks.getTask(taskId);
 			if (!task) throw new Error(`Task not found: ${taskId}`);
-			const session = await core.sessionApplication.newSession(
+			const session = await core.newSession(
 				task,
 				options.mode ? await resolveModeOption(core, options.mode) : undefined,
 				options.preset,
@@ -64,7 +64,8 @@ export function registerAgentWorkspaceCommands(
 
 	const agentConfig = program.command("agent-config").description("set the calling session's mode model");
 	agentConfig
-		.command("model set <id>")
+		.command("model")
+		.command("set <id>")
 		.description("set the calling session's mode model")
 		.action(async (id: string) => {
 			const core = await getCore.project();

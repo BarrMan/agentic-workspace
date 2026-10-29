@@ -4,7 +4,7 @@ import type { Task } from "../model/types.ts";
 import { FileSystem } from "../storage/file-system.ts";
 import { parseTask } from "../storage/markdown/parser.ts";
 import { serializeTask } from "../storage/markdown/serializer.ts";
-import { createUniqueTestDir, safeCleanup } from "./test-utils.ts";
+import { createUniqueTestDir, initializeFilesystemTestWorkspace, safeCleanup } from "./test-utils.ts";
 
 describe("Priority functionality", () => {
 	describe("priority configuration", () => {
@@ -28,7 +28,7 @@ describe("Priority functionality", () => {
 			const testDir = createUniqueTestDir("priority-config");
 			const filesystem = new FileSystem(testDir);
 			try {
-				await filesystem.ensureAgenticWorkspaceStructure();
+				await initializeFilesystemTestWorkspace(filesystem);
 				await filesystem.saveConfig({
 					projectName: "Priority Config",
 					statuses: ["To Do", "Done"],
@@ -114,6 +114,7 @@ This task has mixed case priority.`;
 			const task: Task = {
 				id: "task-1",
 				title: "No priority task",
+				done: false,
 				status: "To Do",
 				createdDate: "2025-06-20",
 				labels: [],
@@ -133,6 +134,7 @@ This task has mixed case priority.`;
 				const originalTask: Task = {
 					id: "task-1",
 					title: `${priority} priority task`,
+					done: false,
 					status: "To Do",
 					createdDate: "2025-06-20",
 					labels: [],

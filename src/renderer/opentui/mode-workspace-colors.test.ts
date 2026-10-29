@@ -36,8 +36,8 @@ describe("mode name color projection", () => {
 			const parent = new BoxRenderable(setup.renderer, { width: "100%", height: "100%" });
 			setup.renderer.root.add(parent);
 			const tasks = [
-				{ id: "TASK-1", title: "Plan title", status: "To Do" },
-				{ id: "TASK-2", title: "Completed title", status: "Done" },
+				{ id: "TASK-1", title: "Plan title", status: "To Do", done: false },
+				{ id: "TASK-2", title: "Completed title", status: "Done", done: true },
 			];
 			const mount = mountOpenTuiWorkspace(setup.renderer, parent, {
 				tasks,
@@ -119,9 +119,9 @@ describe("mode name color projection", () => {
 		const parent = new BoxRenderable(setup.renderer, { width: "100%", height: "100%" });
 		setup.renderer.root.add(parent);
 		const tasks = [
-			{ id: "TASK-1", title: "Plan title", status: "To Do" },
-			{ id: "TASK-2", title: "Other title", status: "To Do" },
-			{ id: "TASK-3", title: "Colorless title", status: "To Do" },
+			{ id: "TASK-1", title: "Plan title", status: "To Do", done: false },
+			{ id: "TASK-2", title: "Other title", status: "To Do", done: false },
+			{ id: "TASK-3", title: "Colorless title", status: "To Do", done: false },
 		];
 		const modes = new Map<string, OpenTuiWorkspaceModeProjection>([
 			["TASK-1", { modeLabel: "Plan", approved: true, modeColor: "green" }],
@@ -203,8 +203,8 @@ describe("mode name color projection", () => {
 		const longTitle = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ";
 		const mount = mountOpenTuiWorkspace(setup.renderer, parent, {
 			tasks: [
-				{ id: "TASK-1", title: longTitle, status: "Done" },
-				{ id: "TASK-2", title: "Next task", status: "Done" },
+				{ id: "TASK-1", title: longTitle, status: "Done", done: true },
+				{ id: "TASK-2", title: "Next task", status: "Done", done: true },
 			],
 			statuses: ["To Do", "Done"],
 			modeProjectionByTask: (id) => ({
@@ -258,7 +258,7 @@ describe("mode name color projection", () => {
 		setup.renderer.root.add(parent);
 		const title = "Cafe\u0301 界e\u0301";
 		const mount = mountOpenTuiWorkspace(setup.renderer, parent, {
-			tasks: [{ id: "TASK-1", title, status: "Done" }],
+			tasks: [{ id: "TASK-1", title, status: "Done", done: true }],
 			statuses: ["To Do", "Done"],
 			modeProjectionByTask: () => ({ modeLabel: "PLAN", approved: true, modeColor: "green" }),
 		});
@@ -288,7 +288,7 @@ describe("mode name color projection", () => {
 		});
 		let projection: OpenTuiWorkspaceModeProjection = { modeLabel: "Plan", approved: false, modeColor: "green" };
 		const options = {
-			tasks: [{ id: "TASK-1", title: "Retained task", status: "To Do" }],
+			tasks: [{ id: "TASK-1", title: "Retained task", status: "To Do", done: false }],
 			activeAgentSession: { id: "retained", taskId: "TASK-1", status: "running", preset: "test", cwd: "/project" },
 			modeProjectionByTask: () => projection,
 			liveAgent: { taskId: "TASK-1", label: "Retained", status: "running" as const, host, terminal },

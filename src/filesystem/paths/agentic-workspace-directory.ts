@@ -7,7 +7,6 @@ import { DEFAULT_DIRECTORIES, DEFAULT_FILES } from "../../model/constants.ts";
 
 export const AGENTIC_WORKSPACE_DIRECTORY_SOURCE = {
 	DEFAULT: ".agentic-workspace",
-	HIDDEN: ".agentic-workspace",
 	CUSTOM: "custom",
 } as const;
 export type AgenticWorkspaceDirectorySource =
@@ -154,11 +153,7 @@ function readRootAgenticWorkspaceConfigMetadata(rootConfigPath: string): Agentic
 
 function resolveFolderConfigPath(agenticWorkspacePath: string): string | null {
 	const primary = join(agenticWorkspacePath, DEFAULT_FILES.CONFIG);
-	if (fileExists(primary) && containedByProject(dirname(agenticWorkspacePath), primary)) {
-		return primary;
-	}
-	const alternate = join(agenticWorkspacePath, DEFAULT_FILES.CONFIG_YAML);
-	return fileExists(alternate) && containedByProject(dirname(agenticWorkspacePath), alternate) ? alternate : null;
+	return fileExists(primary) && containedByProject(dirname(agenticWorkspacePath), primary) ? primary : null;
 }
 
 function resolveBuiltInAgenticWorkspaceDirectory(projectRoot: string): {
@@ -204,9 +199,7 @@ export function resolveAgenticWorkspaceDirectoryFromRootConfig(
 		const configuredSource: AgenticWorkspaceDirectorySource =
 			configuredAgenticWorkspaceDir === DEFAULT_DIRECTORIES.AGENTIC_WORKSPACE
 				? AGENTIC_WORKSPACE_DIRECTORY_SOURCE.DEFAULT
-				: configuredAgenticWorkspaceDir === DEFAULT_DIRECTORIES.HIDDEN_AGENTIC_WORKSPACE
-					? AGENTIC_WORKSPACE_DIRECTORY_SOURCE.HIDDEN
-					: AGENTIC_WORKSPACE_DIRECTORY_SOURCE.CUSTOM;
+				: AGENTIC_WORKSPACE_DIRECTORY_SOURCE.CUSTOM;
 		return {
 			projectRoot,
 			agenticWorkspaceDir: configuredAgenticWorkspaceDir,

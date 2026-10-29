@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { Core } from "../controller/agentic-workspace.ts";
 import { executeStatusCallback } from "../controller/status-callback.ts";
 import { serializeTask } from "../storage/markdown/serializer.ts";
-import { coreFileSystem } from "./test-utils.ts";
+import { coreFileSystem, initializeFilesystemTestProject } from "./test-utils.ts";
 
 function projectDataDir(root: string): string {
 	return join(root, ".agentic-workspace");
@@ -89,7 +89,7 @@ describe("Status Change Callbacks", () => {
 		});
 	});
 
-	describe("Core.updateTaskFromInput with callbacks", () => {
+	describe("TasksService.edit with callbacks", () => {
 		let testDir: string;
 		let core: Core;
 		let callbackOutputFile: string;
@@ -100,7 +100,7 @@ describe("Status Change Callbacks", () => {
 			previousHookOptIn = process.env.AGENTIC_WORKSPACE_ALLOW_STATUS_HOOK;
 			testDir = join(tmpdir(), `agentic-workspace-callback-test-${Date.now()}`);
 			await mkdir(testDir, { recursive: true });
-			await mkdir(join(projectDataDir(testDir), "tasks"), { recursive: true });
+			await initializeFilesystemTestProject(new Core(testDir), "Test");
 
 			callbackOutputFile = join(testDir, "callback-output.txt");
 			callbackOutputPath = callbackOutputFile.replace(/\\/g, "/");
@@ -121,7 +121,6 @@ statuses:
   - In Progress
   - Done
 labels: []
-milestones: []
 date_format: yyyy-mm-dd
 on_status_change: 'echo "$TASK_ID:$OLD_STATUS->$NEW_STATUS" > "${callbackOutputPath}"'
 `;
@@ -133,7 +132,7 @@ on_status_change: 'echo "$TASK_ID:$OLD_STATUS->$NEW_STATUS" > "${callbackOutputP
 			expect(writtenConfig).toContain("on_status_change");
 
 			// Create a task
-			const { task } = await core.createTaskFromInput({
+			const { task } = await core.tasks.create({
 				title: "Test Callback Task",
 				status: "To Do",
 			});
@@ -142,7 +141,7 @@ on_status_change: 'echo "$TASK_ID:$OLD_STATUS->$NEW_STATUS" > "${callbackOutputP
 			coreFileSystem(core).invalidateConfigCache();
 
 			// Update status
-			await core.updateTaskFromInput(task.id, { status: "In Progress" });
+			await core.storage.withTaskLock(task.id, (current) => core.tasks.edit({ ...current, status: "In Progress" }));
 
 			// Check callback was executed
 			const output = await Bun.file(callbackOutputFile).text();
@@ -158,7 +157,6 @@ statuses:
   - In Progress
   - Done
 labels: []
-milestones: []
 date_format: yyyy-mm-dd
 on_status_change: 'echo "global" > "${callbackOutputPath}"'
 `;
@@ -171,6 +169,7 @@ on_status_change: 'echo "global" > "${callbackOutputPath}"'
 				title: "Task with legacy callback",
 				status: "To Do",
 				createdDate: "2025-01-01",
+				done: false,
 				labels: [],
 				dependencies: [],
 			}).replace("---\n", `---\nonStatusChange: 'echo legacy > "${callbackOutputPath}"'\n`);
@@ -178,7 +177,7 @@ on_status_change: 'echo "global" > "${callbackOutputPath}"'
 			await writeFile(join(projectDataDir(testDir), "tasks", "task-1", "task.md"), taskContent);
 
 			// Update status
-			await core.updateTaskFromInput("task-1", { status: "Done" });
+			await core.storage.withTaskLock("task-1", (current) => core.tasks.edit({ ...current, status: "Done" }));
 
 			// Legacy task frontmatter cannot override the project-level command.
 			const output = await Bun.file(callbackOutputFile).text();
@@ -189,8 +188,8 @@ on_status_change: 'echo "global" > "${callbackOutputPath}"'
 			const config = `project_name: Test\nstatuses: [To Do, Done]\non_status_change: 'echo executed > "${callbackOutputPath}"'\n`;
 			await writeFile(join(projectDataDir(testDir), "config.yml"), config);
 			core = new Core(testDir);
-			const { task } = await core.createTaskFromInput({ title: "Opt-in gate", status: "To Do" });
-			await core.updateTaskFromInput(task.id, { status: "Done" });
+			const { task } = await core.tasks.create({ title: "Opt-in gate", status: "To Do" });
+			await core.storage.withTaskLock(task.id, (current) => core.tasks.edit({ ...current, status: "Done" }));
 			expect(await Bun.file(callbackOutputFile).exists()).toBe(false);
 		});
 
@@ -203,7 +202,6 @@ statuses:
   - In Progress
   - Done
 labels: []
-milestones: []
 date_format: yyyy-mm-dd
 on_status_change: 'echo "callback-ran" > "${callbackOutputPath}"'
 `;
@@ -211,13 +209,13 @@ on_status_change: 'echo "callback-ran" > "${callbackOutputPath}"'
 			core = new Core(testDir);
 
 			// Create a task
-			const { task } = await core.createTaskFromInput({
+			const { task } = await core.tasks.create({
 				title: "Test No Callback Task",
 				status: "To Do",
 			});
 
 			// Update something other than status
-			await core.updateTaskFromInput(task.id, { title: "Updated Title" });
+			await core.storage.withTaskLock(task.id, (current) => core.tasks.edit({ ...current, title: "Updated Title" }));
 
 			// Check callback was NOT executed
 			const exists = await Bun.file(callbackOutputFile).exists();
@@ -232,20 +230,21 @@ statuses:
   - In Progress
   - Done
 labels: []
-milestones: []
 date_format: yyyy-mm-dd
 `;
 			await writeFile(join(projectDataDir(testDir), "config.yml"), configContent);
 			core = new Core(testDir);
 
 			// Create a task
-			const { task } = await core.createTaskFromInput({
+			const { task } = await core.tasks.create({
 				title: "Test No Config Task",
 				status: "To Do",
 			});
 
 			// Update status - should not fail even without callback
-			const result = await core.updateTaskFromInput(task.id, { status: "In Progress" });
+			const result = await core.storage.withTaskLock(task.id, (current) =>
+				core.tasks.edit({ ...current, status: "In Progress" }),
+			);
 			expect(result.status).toBe("In Progress");
 		});
 
@@ -258,7 +257,6 @@ statuses:
   - In Progress
   - Done
 labels: []
-milestones: []
 date_format: yyyy-mm-dd
 on_status_change: 'exit 1'
 `;
@@ -266,14 +264,14 @@ on_status_change: 'exit 1'
 			core = new Core(testDir);
 
 			// Create a task
-			const { task } = await core.createTaskFromInput({
+			const { task } = await core.tasks.create({
 				title: "Test Failing Callback Task",
 				status: "To Do",
 			});
 
-			await expect(core.updateTaskFromInput(task.id, { status: "Done" })).rejects.toThrow(
-				"Task changes were committed; post-commit delivery failed.",
-			);
+			await expect(
+				core.storage.withTaskLock(task.id, (current) => core.tasks.edit({ ...current, status: "Done" })),
+			).rejects.toThrow(`Task ${task.id} was saved, but post-commit work failed.`);
 			expect(await coreFileSystem(core).loadTask(task.id)).toMatchObject({ status: "Done" });
 		});
 
@@ -286,7 +284,6 @@ statuses:
   - In Progress
   - Done
 labels: []
-milestones: []
 date_format: yyyy-mm-dd
 on_status_change: 'echo "$TASK_ID:$OLD_STATUS->$NEW_STATUS" >> "${callbackOutputPath}"'
 `;
@@ -294,7 +291,7 @@ on_status_change: 'echo "$TASK_ID:$OLD_STATUS->$NEW_STATUS" >> "${callbackOutput
 			core = new Core(testDir);
 
 			// Create a task in "To Do"
-			const { task } = await core.createTaskFromInput({
+			const { task } = await core.tasks.create({
 				title: "Reorder Callback Test",
 				status: "To Do",
 			});

@@ -11,13 +11,8 @@ import type {
 } from "../model/session/types.ts";
 import { Storage } from "../storage/storage.ts";
 import { initializeTestProject } from "../test/test-utils.ts";
-import {
-	initializeAgentConfiguration,
-	loadAgentConfiguration,
-	upsertAgentConfiguration,
-} from "./agent-configuration.ts";
+import { loadAgentConfiguration, upsertAgentConfiguration } from "./agent-configuration.ts";
 import { Core } from "./agentic-workspace.ts";
-import { SessionApplication } from "./session-application.ts";
 
 const roots: string[] = [];
 afterEach(
@@ -117,19 +112,7 @@ function controlledRuntime(
 async function fixture(options: { startError?: Error; resumeError?: Error; maxSessions?: number } = {}) {
 	const root = await mkdtemp(join(tmpdir(), "session-application-"));
 	roots.push(root);
-	const core = new Core(root);
-	await initializeTestProject(core, "Session application");
-	const { task } = await core.createTaskFromInput({ title: "Application task", status: "To Do" });
-	await initializeAgentConfiguration(core, "project");
-	const config = await loadAgentConfiguration(core, "project");
-	if (!config) throw new Error("Expected initialized configuration.");
-	await upsertAgentConfiguration(core, "project", {
-		...config,
-		selectedPreset: "test",
-		presets: { test: { command: ["agent"], env: {}, prepare: "", bootstrap: "pi" } },
-	});
-	const storage = Storage.open(root);
-	const store = storage.sessionStore();
+	let store!: ReturnType<Storage["sessionStore"]>;
 	const controlled = controlledRuntime(
 		async (context) => {
 			const state = await store.read(context.taskId);
@@ -138,12 +121,20 @@ async function fixture(options: { startError?: Error; resumeError?: Error; maxSe
 		},
 		{ resumeError: options.resumeError },
 	);
+	const storage = Storage.open(root);
+	const core = new Core(root, { storage, sessionFactory: controlled.factory, maxSessions: options.maxSessions });
+	await initializeTestProject(core, "Session application");
+	const { task } = await core.tasks.create({ title: "Application task", status: "To Do" });
+	const config = await loadAgentConfiguration(core, "project");
+	if (!config) throw new Error("Expected initialized configuration.");
+	await upsertAgentConfiguration(core, "project", {
+		...config,
+		selectedPreset: "test",
+		presets: { test: { command: ["agent"], env: {}, prepare: "", bootstrap: "pi" } },
+	});
+	store = storage.sessionStore();
 	return {
-		application: new SessionApplication(core, {
-			storage,
-			sessionFactory: controlled.factory,
-			maxSessions: options.maxSessions,
-		}),
+		application: core,
 		core,
 		controlled,
 		store,
@@ -151,7 +142,7 @@ async function fixture(options: { startError?: Error; resumeError?: Error; maxSe
 	};
 }
 
-describe("SessionApplication", () => {
+describe("Core session operations", () => {
 	it.each([
 		false,
 		true,
@@ -178,9 +169,9 @@ describe("SessionApplication", () => {
 		const moved = await application.newSession(task, source);
 		const retained = await application.newSession(task, "destination");
 		const mover = external
-			? new SessionApplication(core, { storage: Storage.open(core.projectRoot), sessionFactory: controlled.factory })
+			? new Core(core.projectRoot, { storage: Storage.open(core.projectRoot), sessionFactory: controlled.factory })
 			: application;
-		await mover.moveModeSessions(task.id, source, "destination");
+		await mover.moveModeSessions(task.id, source, "destination", task);
 		await application.readObserved(task.id, moved.record.id);
 		await application.forgetModeSessions(task.id, source);
 		const state = await store.read(task.id);
@@ -326,7 +317,7 @@ describe("SessionApplication", () => {
 			activity: record.id === oldest.record.id ? "idle" : "unknown",
 			idleSince: record.id === oldest.record.id ? 10 : null,
 		});
-		const other = new SessionApplication(core, {
+		const other = new Core(core.projectRoot, {
 			storage: Storage.open(core.projectRoot),
 			sessionFactory: controlled.factory,
 			maxSessions: 1,
@@ -337,9 +328,9 @@ describe("SessionApplication", () => {
 
 	it("fails enabled worktree preparation before reserving instead of using the checkout", async () => {
 		const { application, controlled, core, store, task } = await fixture();
-		const current = await core.loadTaskById(task.id);
+		const current = await core.tasks.getTask(task.id);
 		if (!current) throw new Error("Missing task");
-		await core.updateTask({ ...current, worktreePolicy: "enabled" });
+		await core.tasks.edit({ ...current, worktreePolicy: "enabled" });
 		await expect(application.newSession(task)).rejects.toThrow("Could not prepare task worktree at");
 		expect(controlled.starts()).toBe(0);
 		expect(Object.values((await store.read(task.id)).modes).flatMap(({ sessions }) => sessions)).toHaveLength(0);
@@ -349,7 +340,7 @@ describe("SessionApplication", () => {
 		const created = await application.newSession(task);
 		expect(controlled.starts()).toBe(1);
 		expect(created.snapshot.state).toBe("running");
-		expect((await core.loadTaskById(task.id))?.status).not.toBe("To Do");
+		expect((await core.tasks.getTask(task.id))?.status).not.toBe("To Do");
 	});
 
 	it("resumes the exact durable conversation without another reservation", async () => {
@@ -428,7 +419,7 @@ describe("SessionApplication", () => {
 		const { application, controlled, core, task } = await fixture({ maxSessions: 1 });
 		const existing = await application.newSession(task);
 		controlled.emit(existing.record.id, "idle", 10);
-		const { task: otherTask } = await core.createTaskFromInput({ title: "Other task", status: "To Do" });
+		const { task: otherTask } = await core.tasks.create({ title: "Other task", status: "To Do" });
 		const created = await application.newSession(otherTask);
 		expect(controlled.stopped).toEqual([existing.record.id]);
 		expect(created.record.id).not.toBe(existing.record.id);

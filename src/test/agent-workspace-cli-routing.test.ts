@@ -11,6 +11,15 @@ describe("agent-workspace CLI routing", () => {
 	});
 
 	const mocks: Array<{ mockRestore(): void }> = [];
+	const task = {
+		id: "BACK-1",
+		title: "Routing",
+		status: "To Do",
+		done: false,
+		createdDate: "2026-10-10",
+		labels: [],
+		dependencies: [],
+	};
 
 	const register = (newSession: (...args: unknown[]) => Promise<unknown>) => {
 		const program = new Command();
@@ -20,7 +29,8 @@ describe("agent-workspace CLI routing", () => {
 				({
 					projectRoot: process.cwd(),
 					workspaceDirectory: join(process.cwd(), ".agentic-workspace"),
-					sessionApplication: { newSession },
+					newSession,
+					tasks: { getTask: async () => task },
 				}) as unknown as Core,
 			workspace: async () => ({
 				core: {
@@ -69,7 +79,7 @@ describe("agent-workspace CLI routing", () => {
 
 		const output = await captureOutput(program, ["node", "test", "agent-session", "start", "BACK-1"]);
 
-		expect(newSession).toHaveBeenCalledWith("BACK-1", undefined, undefined);
+		expect(newSession).toHaveBeenCalledWith(task, undefined, undefined);
 		expect(output.stdout).toBe("Started session session-1 (preset: opencode).\n");
 	});
 });

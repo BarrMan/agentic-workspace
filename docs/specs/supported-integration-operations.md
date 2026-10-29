@@ -57,22 +57,22 @@ Provide agents inside sessions and external applications with a selective public
 
 ### IF-API-002: Mark the current task Done
 
-**Description:** The CLI must let the calling session mark its current task Done using the [status-only Done action](tasks.md#task-013-done-and-completion).
+**Description:** The CLI must let the calling session mark its current task Done using the [independent completion indication](tasks.md#task-013-done-and-completion).
 
 **Trigger:** The calling session marks its current task Done.
 
 **Preconditions:** The operation is invoked by a session for its current task.
 
 **Behavior:**
-1. Change only the current task's status to Done.
-2. Do not perform completion or cleanup effects as part of this action.
+1. Set the current task's `done` boolean to true through the task edit contract.
+2. Preserve status, storage location, sessions, worktree, and branch; invoke no status-change hook or archive/cleanup effects. A branch or worktree does not prevent the action.
 
-**Outcome:** The task status is Done and other completion/cleanup effects are not performed by this action.
+**Outcome:** The task is indicated as done while its status and retained execution/work context remain unchanged.
 
 **Failures:** Follow the task completion contract.
 
 **Acceptance Criteria:**
-- Marking the calling session's current task Done changes only its status.
+- Marking the calling session's current task Done sets `done: true`, preserves status/location/work context, and invokes no status-change hook or cleanup, including when a branch/worktree exists.
 
 ### IF-API-003: Start a session
 
@@ -212,25 +212,26 @@ Provide agents inside sessions and external applications with a selective public
 
 ### IF-API-012: Handle malformed records in collection reads
 
-**Description:** List/search collection reads must skip malformed records, warn on CLI stderr with the filename and parse error, and return readable results successfully with exit code 0. An operation directly targeting malformed data must fail. This requirement does not define a non-CLI warning representation.
+**Description:** List/search collection reads and direct-target operations fail on malformed records under [TASK-007](tasks.md#task-007-malformed-records). Report the affected filename and decoder error on CLI stderr and exit nonzero; do not skip malformed records and return successful partial results.
 
 **Trigger:** A list/search collection read or direct operation encounters malformed data.
 
 **Preconditions:** The collection or directly targeted record is read by a CLI operation.
 
 **Behavior:**
-1. For collection reads, skip each malformed record.
-2. Write the malformed filename and parse error to CLI stderr.
-3. Return readable results successfully with exit code 0.
-4. Fail a direct operation targeting malformed data.
+1. Fail a collection load or direct operation when record decoding fails.
+2. Write the affected filename and decoder error to CLI stderr and exit nonzero.
+3. Do not skip malformed records, return a successful readable subset, repair data, or introduce a duplicate/corruption recovery resolver.
+4. Distinguish malformed records from missing required roots/state under [TASK-006](tasks.md#task-006-task-storage-format). Required-resource loss also fails without reconstruction or an empty-success result.
 
-**Outcome:** Collection reads with readable results exit successfully with code 0; direct operations on malformed data fail.
+**Outcome:** Invalid stored data causes an explicit failure with decoder context and remains unchanged.
 
-**Failures:** Direct operations targeting malformed data fail.
+**Failures:** Collection/direct-target decoding failures and missing required roots/state exit nonzero without repair or successful partial results.
 
 **Acceptance Criteria:**
-- A collection containing malformed and readable records returns readable results with exit code 0 and reports each malformed filename and parse error on CLI stderr.
-- A direct operation targeting malformed data fails.
+- A collection containing malformed and readable records fails, reports the affected filename and decoder error on CLI stderr, and exits nonzero rather than succeeding with a readable subset.
+- A direct operation targeting malformed data fails with filename and decoder error on stderr and nonzero exit.
+- Missing required roots/state fail without recreation or a successful empty result; neither malformed data nor resource loss introduces recovery, identity resolution, or ranking.
 
 ### IF-API-013: Exclude additional CLI surfaces
 
@@ -271,7 +272,7 @@ Provide agents inside sessions and external applications with a selective public
 
 **Response:** The CLI performs the requested operation according to this contract and its linked feature contract.
 
-**Feedback:** Collection reads encountering malformed records report the filename and parse error on CLI stderr while returning readable results successfully; other outcomes follow the linked contract.
+**Feedback:** Collection reads and direct-target operations encountering malformed records fail with filename and decoder error on CLI stderr and nonzero exit; other outcomes follow the linked contract.
 
 ## External Behavior
 
@@ -282,7 +283,7 @@ Provide agents inside sessions and external applications with a selective public
 **Inputs:** Requests for exactly these supported operations, scoped to the relevant project, task, session, or configuration:
 - Create a project-scoped task (IF-API-001; [task model](tasks.md#functional-requirements)).
 - List and view tasks through the CLI, and edit an existing task by replacing its title and description ([task operations](tasks.md#functional-requirements)).
-- Mark the calling session's current task Done using the status-only action (IF-API-002; [task completion](tasks.md#task-013-done-and-completion)).
+- Mark the calling session's current task Done using its independent boolean indication (IF-API-002; [task completion](tasks.md#task-013-done-and-completion)).
 - Start a session using workspace launch semantics (IF-API-003; [session startup](sessions.md#session-004-start-consistently-across-surfaces)).
 - Set task/mode approval in response to user direction (IF-API-004; [mode approval](configuration.md#functional-requirements)).
 - List, read, and write generic files in a task's artifacts directory; writes replace selected contents from a file or standard input (IF-API-005; [task artifacts](tasks.md#task-009-artifact-file-operations)).
@@ -294,7 +295,7 @@ The inventory is exhaustive. Unsupported inputs include `agent-config init` and 
 
 **Outputs:** Operation results as defined here and in linked feature contracts. Search output is plain text or JSON only.
 
-**Failures:** Follow [Error Handling](../CONVENTIONS.md#error-handling) and the applicable requirement and linked feature contract. Malformed collection records are skipped and reported on CLI stderr; direct operations targeting malformed data fail. Unsupported requests remain unsupported.
+**Failures:** Follow [Error Handling](../CONVENTIONS.md#error-handling) and the applicable requirement and linked feature contract. Malformed collection/direct-target data fails with filename and decoder error on CLI stderr and nonzero exit. Unsupported requests remain unsupported.
 
 ## Non-Functional Requirements
 
@@ -304,7 +305,7 @@ The inventory is exhaustive. Unsupported inputs include `agent-config init` and 
 
 ### Reliability
 
-- Collection reads that encounter malformed records still return readable results successfully, as specified in IF-API-012.
+- Collection reads that encounter malformed records fail without skipping them or reporting successful partial results, as specified in IF-API-012.
 
 ### Security
 
@@ -318,8 +319,8 @@ The inventory is exhaustive. Unsupported inputs include `agent-config init` and 
 
 | Condition | Required Behavior |
 |---|---|
-| A list/search collection read encounters malformed data. | Skip the malformed record, warn on CLI stderr with filename and parse error, and return readable results with exit code 0. |
-| An operation directly targets malformed data. | The operation fails. |
+| A list/search collection read encounters malformed data. | Fail with filename and decoder error on CLI stderr and nonzero exit; do not skip records or return a successful partial collection. |
+| An operation directly targets malformed data. | Fail with filename and decoder error on CLI stderr and nonzero exit. |
 | `agent-session ask` has no previous saved session in the current mode. | Fail and report that no previous session exists; start no execution, modify no session, and exit nonzero. |
 | The answer to `agent-session ask` fails or is interrupted. | Fail and report that no answer was returned; exit nonzero. Do not roll back the sent message or execution effects already completed. |
 | `agent-session ask` targets the previous saved session in the current mode. | Send one message, start the execution bound to that conversation if needed, wait, and return the response as a question/answer result. |

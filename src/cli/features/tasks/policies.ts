@@ -1,5 +1,3 @@
-export const TASK_SORT_FIELDS = ["priority", "id", "ordinal", "newest"];
-
 export function formatTaskEditError(error: unknown, taskId: string, commandKind = "task"): string {
 	const message = error instanceof Error ? error.message : String(error);
 	if (message.startsWith("Invalid index:"))

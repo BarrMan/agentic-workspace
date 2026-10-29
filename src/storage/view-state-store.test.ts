@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import { mkdtemp, readdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import { safeCleanup, waitUntil } from "../test/test-utils.ts";
@@ -40,6 +40,7 @@ async function makeRoot(prefix: string): Promise<string> {
 	// this keeps every test isolated without the test having to know the path formula.
 	const root = await mkdtemp(join(tmpdir(), `agentic-workspace-view-state-${prefix}-`));
 	roots.push(root);
+	await mkdir(join(root, ".agentic-workspace", ".locks"), { recursive: true });
 	return root;
 }
 

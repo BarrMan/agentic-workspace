@@ -5,6 +5,7 @@ import { $ } from "bun";
 import { updateAgentConfiguration } from "../controller/agent-configuration.ts";
 import { Core } from "../controller/agentic-workspace.ts";
 import { getDefaultModeCatalog } from "../storage/config.ts";
+import { Storage } from "../storage/storage.ts";
 import { getTestCliCommand } from "./test-cli.ts";
 import { coreFileSystem, createUniqueTestDir, initializeTestProject, safeCleanup } from "./test-utils.ts";
 
@@ -63,10 +64,11 @@ async function runLiveRefreshScenario(): Promise<{ title: string; transcriptPath
 	}));
 	const config = await coreFileSystem(core).loadConfig();
 	if (!config) throw new Error("Failed to load live refresh config");
-	await core.createTask({
+	await new Storage(coreFileSystem(core)).createTask({
 		id: "task-1",
 		title: "before-refresh",
 		status: "To Do",
+		done: false,
 		createdDate: "2026-07-14 00:00",
 		labels: [],
 		dependencies: [],

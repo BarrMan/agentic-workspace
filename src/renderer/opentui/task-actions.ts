@@ -9,7 +9,7 @@ import {
 import type { Task } from "../../model/types.ts";
 import { createKeybindings, formatShortcut, keybindingPropagation, shortcutsConfig } from "./keybindings.ts";
 
-const OPEN_TUI_TASK_ACTIONS = ["edit", "copy", "complete", "archive", "cancel"] as const;
+const OPEN_TUI_TASK_ACTIONS = ["edit", "copy", "archive", "cancel"] as const;
 
 export type OpenTuiTaskAction = (typeof OPEN_TUI_TASK_ACTIONS)[number];
 
@@ -18,7 +18,6 @@ export type OpenTuiTaskActionCallback = (task: Task) => void | Promise<void>;
 export type OpenTuiTaskActionCallbacks = {
 	readonly onEdit: OpenTuiTaskActionCallback;
 	readonly onCopy: OpenTuiTaskActionCallback;
-	readonly onComplete: OpenTuiTaskActionCallback;
 	readonly onArchive: OpenTuiTaskActionCallback;
 	readonly onCancel: OpenTuiTaskActionCallback;
 };
@@ -42,7 +41,6 @@ type ActionOption = {
 const ACTION_OPTIONS: readonly ActionOption[] = [
 	{ action: "edit", label: "Edit task", description: "Open task editor." },
 	{ action: "copy", label: "Copy task ID", description: "Copy task ID for reuse." },
-	{ action: "complete", label: "Complete task", description: "Move task to completed work." },
 	{ action: "archive", label: "Archive task", description: "Archive task and remove it from active work." },
 	{ action: "cancel", label: "Cancel", description: "Close this menu." },
 ];
@@ -159,8 +157,6 @@ export function mountOpenTuiTaskActions(
 				return options.onEdit;
 			case "copy":
 				return options.onCopy;
-			case "complete":
-				return options.onComplete;
 			case "archive":
 				return options.onArchive;
 			case "cancel":

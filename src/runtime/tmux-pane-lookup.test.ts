@@ -2,17 +2,6 @@ import { describe, expect, it } from "bun:test";
 import { findTmuxPanesByTaskAndRole } from "./tmux-pane-lookup.ts";
 
 describe("durable tmux pane identity", () => {
-	it("matches task identity case-insensitively without rewriting the pane tag", async () => {
-		const panes = await findTmuxPanesByTaskAndRole({
-			rootPath: "/project",
-			taskId: " task-1 ",
-			role: "live-preview",
-			listPanes: async () => ["%1\t0\t@1\t/project\tTASK-1\tsession-1\tlive-preview\tTASK-1 live-preview"],
-		});
-
-		expect(panes.map(({ taskId }) => taskId)).toEqual(["TASK-1"]);
-	});
-
 	it("finds a renamed agent without accepting foreign, mistagged, or dead panes", async () => {
 		const panes = await findTmuxPanesByTaskAndRole({
 			rootPath: "/project",

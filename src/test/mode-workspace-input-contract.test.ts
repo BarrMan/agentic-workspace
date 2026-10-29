@@ -32,7 +32,7 @@ describe("workspace mode input contract", () => {
 		const terminal = createWorkspaceAgent(setup.renderer, host, 80, 24, (error) => {
 			throw error;
 		});
-		const task = { id: "TASK-1", title: "Input routing", status: "To Do" };
+		const task = { id: "TASK-1", title: "Input routing", status: "To Do", done: false };
 		const mount = mountOpenTuiWorkspace(setup.renderer, parent, {
 			tasks: [task],
 			selectedModeId: "plan",

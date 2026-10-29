@@ -2,11 +2,7 @@ import { afterEach, describe, expect, it } from "bun:test";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import {
-	initializeAgentConfiguration,
-	loadAgentConfiguration,
-	upsertAgentConfiguration,
-} from "../controller/agent-configuration.ts";
+import { loadAgentConfiguration, upsertAgentConfiguration } from "../controller/agent-configuration.ts";
 import { Core } from "../controller/agentic-workspace.ts";
 import type { SessionRuntime } from "../model/session/session.ts";
 import { Session } from "../model/session/session.ts";
@@ -90,8 +86,7 @@ async function fixture(runtime = controlledRuntime()) {
 	const storage = Storage.open(root);
 	const core = new Core(root, { storage, sessionFactory });
 	await initializeTestProject(core, "Agent sessions");
-	const { task } = await core.createTaskFromInput({ title: "Session task", status: "To Do" });
-	await initializeAgentConfiguration(core, "project");
+	const { task } = await core.tasks.create({ title: "Session task", status: "To Do" });
 	const config = await loadAgentConfiguration(core, "project");
 	if (!config) throw new Error("Expected initialized configuration.");
 	await upsertAgentConfiguration(core, "project", {
@@ -99,7 +94,7 @@ async function fixture(runtime = controlledRuntime()) {
 		selectedPreset: "test",
 		presets: { test: { command: ["agent"], env: {}, prepare: "", bootstrap: "pi" } },
 	});
-	return { application: core.sessionApplication, core, root, task, runtime, sessionFactory };
+	return { application: core, core, root, task, runtime, sessionFactory };
 }
 
 describe("consolidated session lifecycle", () => {

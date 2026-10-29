@@ -7,9 +7,9 @@ describe("TaskOrdering.boardColumns", () => {
 			TaskOrdering.boardColumns(
 				[
 					{ id: "TASK-1", status: "To Do" },
-					{ id: "TASK-1.1", parentTaskId: "task-1", status: "To Do" },
-					{ id: "TASK-1.1.1", parentTaskId: "task-1.1", status: "To Do" },
-					{ id: "task-1.1.1", parentTaskId: "TASK-1.1", status: "To Do" },
+					{ id: "TASK-1.1", parentTaskId: "TASK-1", status: "To Do" },
+					{ id: "TASK-1.1.1", parentTaskId: "TASK-1.1", status: "To Do" },
+					{ id: "TASK-1.1.1", parentTaskId: "TASK-1.1", status: "To Do" },
 					{ id: "TASK-2", parentTaskId: "TASK-3", status: "To Do" },
 					{ id: "TASK-3", parentTaskId: "TASK-2", status: "To Do" },
 				],

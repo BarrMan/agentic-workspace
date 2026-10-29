@@ -79,9 +79,9 @@ function liveAgent(setup: TestRendererSetup, status: "starting" | "running" = "r
 }
 
 const tasks = [
-	{ id: "BACK-1", title: "First task", status: "Todo", description: "OPAQUE TASK DETAILS" },
-	{ id: "BACK-2", title: "Second task", status: "Todo" },
-	{ id: "BACK-3", title: "Third task", status: "Doing" },
+	{ id: "BACK-1", title: "First task", status: "Todo", done: false, description: "OPAQUE TASK DETAILS" },
+	{ id: "BACK-2", title: "Second task", status: "Todo", done: false },
+	{ id: "BACK-3", title: "Third task", status: "Doing", done: false },
 ];
 
 const TASK_TITLES: Record<string, string> = Object.fromEntries(
@@ -270,10 +270,10 @@ describe("native workspace layout", () => {
 		const setup = await createTestRenderer({ width: 120, height: 40, exitOnCtrlC: false });
 		renderers.push(setup);
 		const entries = [
-			{ id: "BACK-1", title: "Doing task", status: "Doing" },
-			{ id: "BACK-2", title: "First todo", status: "Todo" },
-			{ id: "BACK-3", title: "Review task", status: "Review" },
-			{ id: "BACK-4", title: "Second todo", status: "Todo" },
+			{ id: "BACK-1", title: "Doing task", status: "Doing", done: false },
+			{ id: "BACK-2", title: "First todo", status: "Todo", done: false },
+			{ id: "BACK-3", title: "Review task", status: "Review", done: false },
+			{ id: "BACK-4", title: "Second todo", status: "Todo", done: false },
 		];
 		const mount = mountOpenTuiWorkspace(setup.renderer, attachParent(setup), {
 			tasks: entries,
@@ -299,9 +299,9 @@ describe("native workspace layout", () => {
 		renderers.push(setup);
 		const mount = mountOpenTuiWorkspace(setup.renderer, attachParent(setup), {
 			tasks: [
-				{ id: "BACK-1", title: "Exact todo", status: "To Do" },
-				{ id: "BACK-2", title: "Padded todo", status: "To Do" },
-				{ id: "BACK-3", title: "Lowercase todo", status: "To Do" },
+				{ id: "BACK-1", title: "Exact todo", status: "To Do", done: false },
+				{ id: "BACK-2", title: "Padded todo", status: "To Do", done: false },
+				{ id: "BACK-3", title: "Lowercase todo", status: "To Do", done: false },
 			],
 			statuses: ["To Do"],
 			detailsVisible: false,
@@ -319,11 +319,11 @@ describe("native workspace layout", () => {
 		}
 	});
 
-	test("strikes through terminal-status rows while keeping non-terminal rows plain", async () => {
+	test("strikes through done rows while keeping unfinished rows plain", async () => {
 		const setup = await createTestRenderer({ width: 120, height: 40, exitOnCtrlC: false });
 		renderers.push(setup);
 		const mount = mountOpenTuiWorkspace(setup.renderer, attachParent(setup), {
-			tasks,
+			tasks: tasks.map((task) => ({ ...task, done: task.id === "BACK-3" })),
 			statuses: ["Todo", "Doing"],
 			detailsVisible: false,
 		});
@@ -344,12 +344,12 @@ describe("native workspace layout", () => {
 		}
 	});
 
-	test("shift+z and shift+d route task actions and hide the done hint for terminal tasks", async () => {
+	test("shift+z and shift+d route task actions and hide the done hint for done tasks", async () => {
 		const setup = await createTestRenderer({ width: 120, height: 40, exitOnCtrlC: false });
 		renderers.push(setup);
 		const actions: string[] = [];
 		const mount = mountOpenTuiWorkspace(setup.renderer, attachParent(setup), {
-			tasks,
+			tasks: tasks.map((task) => ({ ...task, done: task.id === "BACK-3" })),
 			statuses: ["Todo", "Doing"],
 			detailsVisible: false,
 			onTaskAction: (task, action) => actions.push(`${task.id}:${action}`),
@@ -495,6 +495,7 @@ describe("native workspace layout", () => {
 			id: `BACK-${index + 1}`,
 			title: `Task ${index + 1}`,
 			status: "Todo",
+			done: false,
 		}));
 		const mount = mountOpenTuiWorkspace(setup.renderer, attachParent(setup), {
 			tasks: manyTasks,
@@ -517,6 +518,7 @@ describe("native workspace layout", () => {
 			id: `BACK-${index + 1}`,
 			title: `Task ${index + 1}`,
 			status: "Todo",
+			done: false,
 		}));
 		const { agent } = liveAgent(setup);
 		const mount = mountOpenTuiWorkspace(setup.renderer, attachParent(setup), {
@@ -656,6 +658,7 @@ describe("native workspace layout", () => {
 			id: `BACK-${index + 1}`,
 			title: `Task ${index + 1}`,
 			status: "Todo",
+			done: false,
 		}));
 		const rowOf = (id: string): number =>
 			setup
@@ -690,6 +693,7 @@ describe("native workspace layout", () => {
 			id: `BACK-${index + 1}`,
 			title: `Task ${index + 1}`,
 			status: "Todo",
+			done: false,
 		}));
 		const visibleTaskIds = (): string[] =>
 			setup
@@ -920,7 +924,7 @@ describe("native workspace layout", () => {
 		const setup = await createTestRenderer({ width: 120, height: 40, exitOnCtrlC: false });
 		renderers.push(setup);
 		const mount = mountOpenTuiWorkspace(setup.renderer, attachParent(setup), {
-			tasks: [{ id: "BACK-1", title: "First task", status: "Todo" }],
+			tasks: [{ id: "BACK-1", title: "First task", status: "Todo", done: false }],
 			selectedTaskIndex: 0,
 			selectedModeId: "plan",
 			modeProjectionByTask: () => ({ modeLabel: "PLAN", approved: false }),
@@ -943,7 +947,7 @@ describe("native workspace layout", () => {
 		const setup = await createTestRenderer({ width: 120, height: 40, exitOnCtrlC: false });
 		renderers.push(setup);
 		const mount = mountOpenTuiWorkspace(setup.renderer, attachParent(setup), {
-			tasks: [{ id: "BACK-1", title: "First task", status: "Todo" }],
+			tasks: [{ id: "BACK-1", title: "First task", status: "Todo", done: false }],
 			selectedTaskIndex: 0,
 			activeAgentSession: { id: "ended", status: "stopped", preset: "test", taskId: "BACK-1", cwd: "/project" },
 			sessionTaskIds: ["BACK-1"],

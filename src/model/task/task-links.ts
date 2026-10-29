@@ -1,31 +1,5 @@
 import { stringArraysEqual } from "../../lib/string-list.ts";
 import type { Task } from "../types.ts";
-import { extractAnyPrefix } from "./prefix-config.ts";
-import { taskIdsEqual } from "./task-id.ts";
-
-/**
- * True when the reference names exactly this task rather than merely containing its ID: a URL or a
- * file path that mentions TASK-1 is not a reference to TASK-1.
- *
- * Both sides must carry a prefix, and the same one, so a bare number or a doc, draft or decision ID
- * never matches a task. Past that guard the comparison uses the normalized prefix and exact ID body,
- * so TASK-01 and TASK-1 remain different task references.
- */
-function isExactTaskReference(reference: string, taskId: string): boolean {
-	const trimmed = reference.trim();
-	if (!trimmed) {
-		return false;
-	}
-	const taskPrefix = extractAnyPrefix(taskId);
-	const referencePrefix = extractAnyPrefix(trimmed);
-	if (!taskPrefix || !referencePrefix) {
-		return false;
-	}
-	if (taskPrefix.toLowerCase() !== referencePrefix.toLowerCase()) {
-		return false;
-	}
-	return taskIdsEqual(trimmed, taskId);
-}
 
 /**
  * The task with every dependency and reference naming `vacatedTaskId` removed, or `null` when it
@@ -38,8 +12,8 @@ export function withoutVacatedTaskLinks(task: Task, vacatedTaskId: string): Task
 	const dependencies = task.dependencies ?? [];
 	const references = task.references ?? [];
 
-	const sanitizedDependencies = dependencies.filter((dependency) => !taskIdsEqual(dependency, vacatedTaskId));
-	const sanitizedReferences = references.filter((reference) => !isExactTaskReference(reference, vacatedTaskId));
+	const sanitizedDependencies = dependencies.filter((dependency) => dependency !== vacatedTaskId);
+	const sanitizedReferences = references.filter((reference) => reference !== vacatedTaskId);
 
 	if (stringArraysEqual(dependencies, sanitizedDependencies) && stringArraysEqual(references, sanitizedReferences)) {
 		return null;

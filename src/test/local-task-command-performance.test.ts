@@ -5,10 +5,17 @@ import { Writable } from "node:stream";
 import { $ } from "bun";
 import { runCli } from "../cli/register.ts";
 import { Core } from "../controller/agentic-workspace.ts";
-import { AmbiguousTaskIdError } from "../model/errors/task-id.ts";
 import type { Task } from "../model/types.ts";
 import { serializeTask } from "../storage/markdown/serializer.ts";
-import { coreFileSystem, createUniqueTestDir, initGitRepo, initializeTestProject, safeCleanup } from "./test-utils.ts";
+import { Storage } from "../storage/storage.ts";
+import {
+	coreFileSystem,
+	createUniqueTestDir,
+	initGitRepo,
+	initializeTestProject,
+	safeCleanup,
+	waitUntil,
+} from "./test-utils.ts";
 
 async function cli(args: string[], cwd: string) {
 	const stdout: string[] = [];
@@ -33,6 +40,7 @@ const parentTask: Task = {
 	id: "TASK-1",
 	title: "Fast local task",
 	status: "To Do",
+	done: false,
 	createdDate: "2026-08-10",
 	labels: ["local"],
 	dependencies: [],
@@ -57,20 +65,21 @@ async function setupLocalTaskProject(): Promise<{ dir: string; core: Core }> {
 		remoteOperations: true,
 	});
 
-	await coreFileSystem(core).saveTask(parentTask);
-	await coreFileSystem(core).saveTask({
+	await Storage.open(core.projectRoot).createTask({ ...parentTask });
+	await Storage.open(core.projectRoot).createTask({
 		...parentTask,
 		id: "TASK-1.1",
 		title: "Local child",
 		parentTaskId: parentTask.id,
 		description: "Child content",
 	});
-	await coreFileSystem(core).saveTask({
+	await Storage.open(core.projectRoot).createTask({
 		...parentTask,
 		id: "TASK-2",
 		title: "Unrelated local task",
 		description: "No matching search content",
 	});
+	await core.tasks.init();
 
 	return { dir, core };
 }
@@ -80,17 +89,21 @@ describe("local task command performance boundaries", () => {
 	it("lists and searches working-copy tasks without loading branches", async () => {
 		const { dir, core } = await setupLocalTaskProject();
 		try {
-			await coreFileSystem(core).saveTask({
+			await Storage.open(core.projectRoot).createTask({
 				...parentTask,
 				id: "TASK-0007.0024",
 				title: "Padded task identity",
 				description: "No matching search content",
 			});
-			const listed = await core.queryTasks({});
-			const searched = await core.queryTasks({
+			await waitUntil(
+				() => core.tasks.getActiveTasks().some((task) => task.id === "TASK-0007.0024"),
+				"padded task entering the loaded corpus",
+			);
+			const listed = await core.tasks.query({});
+			const searched = await core.tasks.query({
 				query: "local-search-token",
 			});
-			const searchedByPaddedSegment = await core.queryTasks({
+			const searchedByPaddedSegment = await core.tasks.query({
 				query: "7",
 			});
 
@@ -98,19 +111,21 @@ describe("local task command performance boundaries", () => {
 			expect(searched.map((task) => task.id)).toEqual(["TASK-1"]);
 			expect(searchedByPaddedSegment.map((task) => task.id)).toContain("TASK-0007.0024");
 		} finally {
+			core.tasks.dispose();
 			await safeCleanup(dir);
 		}
 	});
 
-	it("loads one working-copy task and its subtasks without loading branches", async () => {
+	it("loads one task and its subtasks without loading branches", async () => {
 		const { dir, core } = await setupLocalTaskProject();
 		try {
-			const loaded = await core.loadTaskById(parentTask.id, {});
+			const loaded = await core.tasks.getTask(parentTask.id, {});
 			const withSubtasks = await core.getTaskWithSubtasks(parentTask.id, undefined, {});
 
 			expect(loaded?.title).toBe(parentTask.title);
 			expect(withSubtasks?.subtaskSummaries).toEqual([{ id: "TASK-1.1", title: "Local child" }]);
 		} finally {
+			core.tasks.dispose();
 			await safeCleanup(dir);
 		}
 	});
@@ -118,9 +133,10 @@ describe("local task command performance boundaries", () => {
 	it("archives and completes working-copy tasks without loading branches", async () => {
 		const { dir, core } = await setupLocalTaskProject();
 		try {
-			expect((await core.archiveTask("TASK-1", {})).success).toBe(true);
-			expect(await core.completeTask("TASK-1.1", {})).toBe(true);
+			expect((await core.tasks.archive("TASK-1", {})).success).toBe(true);
+			expect((await core.tasks.archive("TASK-1.1", {})).success).toBe(true);
 		} finally {
+			core.tasks.dispose();
 			await safeCleanup(dir);
 		}
 	});
@@ -131,7 +147,7 @@ describe("local task command performance boundaries", () => {
 			await $`git add .`.cwd(dir).quiet();
 			await $`git commit -m ${"Commit working copy"}`.cwd(dir).quiet();
 			await $`git switch -c branch-only`.cwd(dir).quiet();
-			await coreFileSystem(core).saveTask({
+			await Storage.open(core.projectRoot).createTask({
 				...parentTask,
 				id: "TASK-99",
 				title: "Branch-only task",
@@ -161,6 +177,7 @@ describe("local task command performance boundaries", () => {
 			expect(await coreFileSystem(core).loadTask("TASK-99.1")).toBeNull();
 			expect((await coreFileSystem(core).loadTask("TASK-1"))?.dependencies ?? []).toEqual([]);
 		} finally {
+			core.tasks.dispose();
 			await safeCleanup(dir);
 		}
 	});
@@ -168,59 +185,17 @@ describe("local task command performance boundaries", () => {
 	it("resolves a create parent from the working copy without loading branches", async () => {
 		const { dir, core } = await setupLocalTaskProject();
 		try {
-			await expect(
-				core.createTaskFromInput({ title: "Child of a missing parent", parentTaskId: "TASK-99" }),
-			).rejects.toThrow("Parent task TASK-99 not found.");
+			await expect(core.tasks.create({ title: "Child of a missing parent", parentTaskId: "TASK-99" })).rejects.toThrow(
+				"Parent task TASK-99 not found.",
+			);
 			// The parent is rejected before an ID is allocated, which is the only step that may
 			// legitimately look beyond the working copy.
 
-			const child = await core.createTaskFromInput({ title: "Child of a local parent", parentTaskId: "TASK-1" });
+			const child = await core.tasks.create({ title: "Child of a local parent", parentTaskId: "TASK-1" });
 			expect(child.task.id).toBe("TASK-1.2");
 			expect(child.task.parentTaskId).toBe("TASK-1");
 		} finally {
-			await safeCleanup(dir);
-		}
-	});
-
-	it("validates dependencies against the working copy without loading branches", async () => {
-		const { dir, core } = await setupLocalTaskProject();
-		try {
-			const updated = await core.updateTaskFromInput("TASK-1", { addDependencies: ["TASK-2"] }, {});
-			expect(updated.dependencies).toEqual(["TASK-2"]);
-
-			await expect(core.updateTaskFromInput("TASK-1", { dependencies: ["TASK-99"] }, {})).rejects.toThrow(
-				"The following dependencies do not exist: TASK-99",
-			);
-
-			expect((await coreFileSystem(core).loadTask("TASK-1"))?.dependencies).toEqual(["TASK-2"]);
-		} finally {
-			await safeCleanup(dir);
-		}
-	});
-
-	it("fails closed only when the exact parent and dependency IDs are duplicated", async () => {
-		const { dir, core } = await setupLocalTaskProject();
-		try {
-			await mkdir(join(coreFileSystem(core).completedDir, "task-2"), { recursive: true });
-			await Bun.write(
-				join(coreFileSystem(core).completedDir, "task-2", "task.md"),
-				serializeTask({
-					...parentTask,
-					id: "TASK-2",
-					title: "Completed collision",
-					status: "Done",
-				}),
-			);
-			await expect(
-				core.createTaskFromInput({ title: "Child of an ambiguous parent", parentTaskId: "TASK-2" }),
-			).rejects.toBeInstanceOf(AmbiguousTaskIdError);
-			await expect(core.updateTaskFromInput("TASK-1", { addDependencies: ["TASK-2"] }, {})).rejects.toBeInstanceOf(
-				AmbiguousTaskIdError,
-			);
-
-			expect((await coreFileSystem(core).loadTask("TASK-1"))?.dependencies ?? []).toEqual([]);
-			expect(await coreFileSystem(core).loadTask("TASK-2.1")).toBeNull();
-		} finally {
+			core.tasks.dispose();
 			await safeCleanup(dir);
 		}
 	});
@@ -228,13 +203,16 @@ describe("local task command performance boundaries", () => {
 	it("edits a working-copy task without loading branches", async () => {
 		const { dir, core } = await setupLocalTaskProject();
 		try {
-			const updated = await core.updateTaskFromInput(parentTask.id, { title: "Renamed locally" }, {});
+			const updated = await core.storage.withTaskLock(parentTask.id, (current) =>
+				core.tasks.edit({ ...current, title: "Renamed locally" }),
+			);
 
 			expect(updated.title).toBe("Renamed locally");
 			expect((await coreFileSystem(core).listTasks()).find((task) => task.id === parentTask.id)?.title).toBe(
 				"Renamed locally",
 			);
 		} finally {
+			core.tasks.dispose();
 			await safeCleanup(dir);
 		}
 	});
@@ -250,21 +228,31 @@ describe("local task command performance boundaries", () => {
 					id: "TASK-01",
 					title: "Completed collision",
 					status: "Done",
+					done: true,
 				}),
 			);
-			expect((await core.loadTaskById(parentTask.id, {}))?.id).toBe("TASK-1");
-			expect((await core.loadTaskById("TASK-01", {}))?.id).toBe("TASK-01");
-			expect((await core.getTaskWithSubtasks(parentTask.id, undefined, {}))?.id).toBe("TASK-1");
-			expect((await core.updateTaskFromInput(parentTask.id, { title: "Updated unpadded identity" }, {})).title).toBe(
-				"Updated unpadded identity",
+			await waitUntil(
+				() => core.tasks.getCompletedTasks().some((task) => task.id === "TASK-01"),
+				"completed task entering the loaded corpus",
 			);
+			expect((await core.tasks.getTask(parentTask.id, {}))?.id).toBe("TASK-1");
+			expect((await core.tasks.getTask("TASK-01", {}))?.id).toBe("TASK-01");
+			expect((await core.getTaskWithSubtasks(parentTask.id, undefined, {}))?.id).toBe("TASK-1");
+			expect(
+				(
+					await core.storage.withTaskLock(parentTask.id, (current) =>
+						core.tasks.edit({ ...current, title: "Updated unpadded identity" }),
+					)
+				).title,
+			).toBe("Updated unpadded identity");
 
 			expect((await coreFileSystem(core).listCompletedTasks()).find((task) => task.id === "TASK-01")?.title).toBe(
 				"Completed collision",
 			);
-			expect(await core.generateNextId()).toBe("TASK-3");
+			expect(await core.tasks.generateNextId()).toBe("TASK-3");
 			expect((await coreFileSystem(core).listTasks()).filter((task) => task.id === "TASK-1")).toHaveLength(1);
 		} finally {
+			core.tasks.dispose();
 			await safeCleanup(dir);
 		}
 	});

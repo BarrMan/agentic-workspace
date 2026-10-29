@@ -9,6 +9,7 @@ const task: Task = {
 	id: "TASK-1",
 	title: "Schema-backed task",
 	status: "To Do",
+	done: false,
 	createdDate: "2026-09-30 12:00",
 	labels: ["schema"],
 	dependencies: ["TASK-0"],

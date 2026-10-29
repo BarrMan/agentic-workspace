@@ -11,7 +11,6 @@ import {
 	t,
 } from "@opentui/core";
 import type { AgentIndication } from "../../model/session/types.ts";
-import { isTerminalStatus } from "../../model/task/terminal-status.ts";
 import { getIndicationColor, getSelectedIndicationColor } from "../formatters/status-icon.ts";
 import type { GroupRow } from "./groups.ts";
 import { renderModeRowLabel } from "./mode-row-label.ts";
@@ -154,11 +153,11 @@ export function mountWorkspaceTaskList(
 							selected,
 							activityMarker: marker,
 							depth: row.depth,
-							done: isTerminalStatus(task.status, state?.statuses ?? []),
+							done: task.done,
 							width: Math.max(0, viewport.width - 2),
 							narrow: viewport.width < 24,
 						});
-						const terminal = isTerminalStatus(task.status, state?.statuses ?? []);
+						const terminal = task.done;
 						const title = sliceByCells(label.text, label.title.start, label.title.end);
 						const beforeTitle = sliceByCells(label.text, 0, label.title.start);
 						const afterActivity = beforeTitle.slice(indication ? marker.length : 0);

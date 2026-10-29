@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from "bun:test";
+import { afterEach, describe, expect, it, mock } from "bun:test";
 import { EventEmitter } from "node:events";
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -11,10 +11,13 @@ import { OpenTuiWorkspaceController } from "../renderer/opentui/workspace-contro
 import { TaskArtifactRepository } from "../storage/task-artifact-repository.ts";
 import { createUniqueTestDir, safeCleanup } from "./test-utils.ts";
 
+mock.module("../storage/watchers/task-watcher.ts", () => ({ watchTaskRecords: () => ({ stop() {} }) }));
+
 const task: Task = {
 	id: "BACK-23",
 	title: "Approval projection",
 	status: "To Do",
+	done: false,
 	createdDate: "2026-10-10",
 	labels: [],
 	dependencies: [],
@@ -137,18 +140,16 @@ async function setup() {
 	const controller = new OpenTuiWorkspaceController(
 		{
 			getProjectModeCatalog: async () => modes,
+			tasks: {
+				loadSnapshot: async () => ({
+					tasks: [task],
+					activeTasks: [task],
+					config: { statuses: ["To Do"] },
+					identityIndex: { getTasks: () => [], getContestedIds: () => new Set() },
+				}),
+			},
 			loadTasks: async () => [task],
-			getStoredConfig: async () => projectConfig,
-			loadMilestones: async () => [],
-			loadArchivedMilestones: async () => [],
-			loadTaskSnapshot: async () => ({
-				tasks: [task],
-				activeTasks: [task],
-				config: { statuses: ["To Do"] },
-				identityIndex: { getTasks: () => [task], getContestedIds: () => new Set() },
-			}),
-			watchTasks: () => ({ stop() {} }),
-			watchConfig: () => ({ stop() {} }),
+			projectInventory: async () => [],
 			filesystem: {
 				rootDir: root,
 				agenticWorkspaceDir,
@@ -171,18 +172,21 @@ async function setup() {
 					},
 				}),
 				listMilestones: async () => [],
-				listArchivedMilestones: async () => [],
+			},
+			storage: {
+				loadTasks: async () => [task],
+				loadConfig: async () => projectConfig,
+				loadMilestones: async () => [],
+				loadArchivedMilestones: async () => [],
+				watchConfig: () => ({ stop() {} }),
 			},
 		} as unknown as Core,
 		{
 			selectedTaskId: task.id,
 			workspaceState: {
-				sessionApplication: { projectInventory: async () => [] },
-				listTasks: async () => [task],
-				listSessions: async (taskId: string) => ({ taskId, sessions: [] }),
-				listModeSessions: async (taskId: string, modeId: string) => ({
+				listSessions: async (taskId: string, modeId?: string) => ({
 					taskId,
-					modeId,
+					...(modeId ? { modeId } : {}),
 					sessions: [],
 					activeSessionId: undefined,
 				}),

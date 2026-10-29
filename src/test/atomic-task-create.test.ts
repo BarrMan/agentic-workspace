@@ -6,7 +6,6 @@ import { basename, join } from "node:path";
 import { resolveAgentConfiguration, upsertAgentConfiguration } from "../controller/agent-configuration.ts";
 import { Core } from "../controller/agentic-workspace.ts";
 import type { AgentConfiguration } from "../model/session/types.ts";
-import type { Task } from "../model/types.ts";
 import { CREATE_LOCK_ERROR_MESSAGE } from "../storage/file-system.ts";
 import { coreFileSystem, initializeTestProject, withTimeout } from "./test-utils.ts";
 
@@ -69,8 +68,8 @@ describe("atomic task creation", () => {
 			},
 		};
 		await upsertAgentConfiguration(core, "project", configuration);
-		const inherited = await core.createTaskFromInput({ title: "Inherited preset" });
-		const overridden = await core.createTaskFromInput({
+		const inherited = await core.tasks.create({ title: "Inherited preset" });
+		const overridden = await core.tasks.create({
 			title: "Task preset",
 			agentConfiguration: { ...configuration, selectedPreset: "second" },
 		});
@@ -93,7 +92,8 @@ describe("atomic task creation", () => {
 
 		const patchSaveTask = (core: Core) => {
 			const original = coreFileSystem(core).saveTask.bind(coreFileSystem(core));
-			coreFileSystem(core).saveTask = (async (task: Task): Promise<string> => {
+			coreFileSystem(core).saveTask = async (...args) => {
+				const [task] = args;
 				saveEntries += 1;
 				if (task.title === "Alpha") {
 					firstEnteredSave.resolve();
@@ -102,17 +102,17 @@ describe("atomic task creation", () => {
 				if (task.title === "Beta") {
 					secondEnteredSave.resolve();
 				}
-				return await original(task);
-			}) as ReturnType<typeof coreFileSystem>["saveTask"];
+				return await original(...args);
+			};
 		};
 
 		patchSaveTask(first);
 		patchSaveTask(second);
 
-		const firstCreate = first.createTaskFromInput({ title: "Alpha" });
+		const firstCreate = first.tasks.create({ title: "Alpha" });
 		await firstEnteredSave.promise;
 
-		const secondCreate = second.createTaskFromInput({ title: "Beta" });
+		const secondCreate = second.tasks.create({ title: "Beta" });
 		await Promise.resolve();
 		await Promise.resolve();
 		expect(saveEntries).toBe(1);

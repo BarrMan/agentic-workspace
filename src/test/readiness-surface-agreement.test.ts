@@ -6,6 +6,7 @@ import { Core } from "../controller/agentic-workspace.ts";
 import { type TaskCorpus, toTaskDetail, withReadiness } from "../controller/task-detail.ts";
 import { searchJson } from "../renderer/formatters/json-output.ts";
 import { generateTaskDetailSections } from "../renderer/opentui/task-detail-content.ts";
+import { Storage } from "../storage/storage.ts";
 import { coreFileSystem, createUniqueTestDir, initializeFilesystemTestProject, safeCleanup } from "./test-utils.ts";
 
 /**
@@ -40,23 +41,34 @@ describe("readiness agreement across surfaces", () => {
 
 		// Dates come from the run clock so the fixture never ages into a different meaning.
 		const createdDate = new Date().toISOString().slice(0, 10);
-		const addTask = async (id: string, title: string, status: string, dependencies: string[] = []) => {
-			await core.createTask({ id, title, status, labels: [], dependencies, createdDate, rawContent: "" });
+		const addTask = async (id: string, title: string, status: string, dependencies: string[] = [], done = false) => {
+			await Storage.open(testDir).createTask({
+				id,
+				title,
+				status,
+				done,
+				labels: [],
+				dependencies,
+				createdDate,
+				rawContent: "",
+			});
 		};
 
-		await addTask("task-1", "Completed dependency", "Done");
-		await addTask("task-2", "Waits on the completed dependency", "To Do", ["task-1"]);
-		await addTask("task-3", "Unfinished blocker", "In Progress");
-		await addTask("task-4", "Waits on the unfinished blocker", "To Do", ["task-3"]);
-		await addTask("task-5", "Waits on nothing known", "To Do", ["task-404"]);
-		await addTask("task-6", "Already finished", "Done");
+		await addTask("TASK-1", "Completed dependency", "Done", [], true);
+		await addTask("TASK-2", "Waits on the completed dependency", "To Do", ["TASK-1"]);
+		await addTask("TASK-3", "Unfinished blocker", "In Progress");
+		await addTask("TASK-4", "Waits on the unfinished blocker", "To Do", ["TASK-3"]);
+		await addTask("TASK-5", "Waits on nothing known", "To Do", ["task-404"]);
+		await addTask("TASK-6", "Already finished", "Done", [], true);
 
-		// The dependency leaves the active corpus: only its location in agentic-workspace/completed still says
-		// the work is finished.
-		expect(await core.completeTask("task-1")).toBe(true);
+		// Seed the historical completed corpus without invoking archive cleanup.
+		const fs = coreFileSystem(core);
+		await fs.moveTaskContainer((await fs.loadTask("TASK-1"))!, fs.completedDir);
+		await core.tasks.init();
 	});
 
 	afterEach(async () => {
+		core.tasks.dispose();
 		await safeCleanup(testDir);
 	});
 
@@ -82,9 +94,8 @@ describe("readiness agreement across surfaces", () => {
 	const tuiCorpus = async (): Promise<TaskCorpus> => ({
 		// The corpus the interactive task list resolves against: the working copy it displays plus
 		// the completed records it loads alongside the milestone metadata.
-		tasks: await core.queryTasks({}),
+		tasks: await core.tasks.query({}),
 		completedTasks: await coreFileSystem(core).listCompletedTasks(),
-		statuses: (await coreFileSystem(core).loadConfig())?.statuses,
 	});
 
 	it("derives readiness for the interactive task corpus", async () => {
@@ -145,53 +156,6 @@ describe("readiness agreement across surfaces", () => {
 		const blockedDetail = generateTaskDetailSections(toTaskDetail(blocked, corpus));
 		expect(blockedDetail.beforeDescription.chunks.map((chunk) => chunk.text).join("")).toContain("● Blocked by TASK-3");
 	});
-
-	it("does not treat a padded claimant as the dependency identity", async () => {
-		const createdDate = new Date().toISOString().slice(0, 10);
-		await core.createTask({
-			id: "task-7",
-			title: "Unfinished unpadded identity",
-			status: "In Progress",
-			labels: [],
-			dependencies: [],
-			createdDate,
-			rawContent: "",
-		});
-		await core.createTask({
-			id: "TASK-07",
-			title: "Finished padded identity",
-			status: "Done",
-			labels: [],
-			dependencies: [],
-			createdDate,
-			rawContent: "",
-		});
-		await core.createTask({
-			id: "task-8",
-			title: "Waits on the contested identity",
-			status: "To Do",
-			labels: [],
-			dependencies: ["task-7"],
-			createdDate,
-			rawContent: "",
-		});
-		const unresolved = {
-			isReady: false,
-			isBlocked: true,
-			blockingDependencies: ["TASK-7"],
-			missingDependencies: [],
-		};
-
-		const viewResult = await runCliCommand(["task", "view", "TASK-8", "--json"]);
-		expect(viewResult.exitCode).toBe(0);
-		const viewed = JSON.parse(viewResult.stdout).task;
-		expect(viewed.isReady).toBe(false);
-		expect(viewed.readiness).toEqual(unresolved);
-
-		const corpus = await tuiCorpus();
-		const contestedDependent = withReadiness(corpus.tasks, corpus).find((row) => row.id === "TASK-8");
-		expect(contestedDependent?.isReady).toBe(false);
-	});
 });
 
 /**
@@ -207,6 +171,7 @@ describe("search JSON readiness for a contested identity", () => {
 			id,
 			title,
 			status: "To Do",
+			done: false,
 			labels: [],
 			dependencies,
 			createdDate,
@@ -219,7 +184,6 @@ describe("search JSON readiness for a contested identity", () => {
 		const rows = withReadiness([blockedClaimant, readyClaimant], {
 			tasks: [blocker, blockedClaimant, readyClaimant],
 			completedTasks: [],
-			statuses: ["To Do", "In Progress", "Done"],
 		});
 		// The two claimants genuinely differ: one waits on unfinished work, the other on nothing.
 		expect(rows.map((row) => row.isReady)).toEqual([false, true]);

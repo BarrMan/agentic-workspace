@@ -91,7 +91,7 @@ export class GitOperations {
 
 		let check = this.repositoryChecks.get(cacheKey);
 		if (!check) {
-			check = this.detectRepository(cwd);
+			check = isGitRepository(cwd);
 			this.repositoryChecks.set(cacheKey, check);
 		}
 
@@ -106,10 +106,6 @@ export class GitOperations {
 				this.repositoryChecks.delete(cacheKey);
 			}
 		}
-	}
-
-	private async detectRepository(cwd: string): Promise<boolean> {
-		return await isGitRepository(cwd);
 	}
 
 	async commitChanges(message: string, repoRoot?: string | null): Promise<void> {
@@ -166,7 +162,17 @@ export class GitOperations {
 	}
 
 	async getRepositoryRoot(cwd = this.projectRoot): Promise<string | null> {
-		return await this.resolveRepoRoot(cwd);
+		await this.loadConfigIfNeeded();
+		if (this.config?.filesystemOnly) {
+			return null;
+		}
+		try {
+			const { stdout } = await this.execGit(["rev-parse", "--show-toplevel"], { readOnly: true, cwd });
+			const root = stdout.trim();
+			return root.length > 0 ? root : null;
+		} catch {
+			return null;
+		}
 	}
 
 	async listWorktreePaths(): Promise<string[]> {
@@ -572,20 +578,6 @@ export class GitOperations {
 		return relativePath === "" ? "." : relativePath;
 	}
 
-	private async resolveRepoRoot(startDir: string): Promise<string | null> {
-		await this.loadConfigIfNeeded();
-		if (this.config?.filesystemOnly) {
-			return null;
-		}
-		try {
-			const { stdout } = await this.execGit(["rev-parse", "--show-toplevel"], { readOnly: true, cwd: startDir });
-			const root = stdout.trim();
-			return root.length > 0 ? root : null;
-		} catch {
-			return null;
-		}
-	}
-
 	private async resolveMissingPath(absolutePath: string): Promise<string | null> {
 		const resolvedDir = await realpath(dirname(absolutePath)).catch(() => null);
 		if (!resolvedDir) return null;
@@ -603,7 +595,7 @@ export class GitOperations {
 			}
 		}
 
-		const repoRoot = cwd ? await this.resolveRepoRoot(cwd) : null;
+		const repoRoot = cwd ? await this.getRepositoryRoot(cwd) : null;
 		if (!repoRoot) return null;
 
 		const relativePath = this.normalizeGitPath(relative(repoRoot, resolvedPath));

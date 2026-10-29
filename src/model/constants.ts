@@ -4,8 +4,6 @@
 export const DEFAULT_DIRECTORIES = {
 	/** Main AgenticWorkspace directory */
 	AGENTIC_WORKSPACE: ".agentic-workspace",
-	/** Hidden AgenticWorkspace directory */
-	HIDDEN_AGENTIC_WORKSPACE: ".agentic-workspace",
 	/** Active tasks directory */
 	TASKS: "tasks",
 	/** Completed tasks directory */
@@ -26,8 +24,6 @@ export const DEFAULT_DIRECTORIES = {
 export const DEFAULT_FILES = {
 	/** Main configuration file */
 	CONFIG: "config.yml",
-	/** Alternate config filename accepted for discovery */
-	CONFIG_YAML: "config.yaml",
 	/** Root-level AgenticWorkspace configuration file */
 	ROOT_CONFIG: "agentic-workspace.config.yml",
 } as const;
@@ -61,8 +57,6 @@ export const DEFAULT_INIT_CONFIG = {
 	filesystemOnly: false,
 	zeroPaddedIds: undefined as number | undefined,
 	defaultEditor: undefined as string | undefined,
-	defaultPort: 6420,
-	autoOpenBrowser: true,
 } as const;
 
 /** Values written by a newly initialized project. */

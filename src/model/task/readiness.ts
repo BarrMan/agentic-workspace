@@ -1,7 +1,4 @@
 import type { Task } from "../types.ts";
-import type { TaskRecordIndex } from "./task-record-index.ts";
-import { createTaskRecordIndex } from "./task-record-index.ts";
-import { isTerminalStatus } from "./terminal-status.ts";
 
 export interface TaskReadiness {
 	/** Work can start now: the task is unfinished and every dependency is resolved and completed. */
@@ -10,60 +7,22 @@ export interface TaskReadiness {
 	isBlocked: boolean;
 	/** Dependencies that resolved to a task that has not been completed. */
 	blockingDependencies: string[];
-	/** Dependency IDs that could not be resolved to exactly one task in the graph. */
+	/** Dependency IDs absent from the graph. */
 	missingDependencies: string[];
-}
-
-type DependencyResolution =
-	| { state: "completed" }
-	| { state: "unfinished"; id: string }
-	/** Not in the graph, or more than one record claims the identity. Never treated as satisfied. */
-	| { state: "unresolved" };
-
-/**
- * An index over the task graph readiness resolves dependencies against.
- *
- * Built once per evaluation so filtering a large list stays linear, and it is what makes the
- * two completion signals explicit: a record's location in the completed corpus, and its status.
- */
-export interface ReadinessGraph {
-	resolveDependency(dependencyId: string): DependencyResolution;
-	/** True when this task's own record lives in the completed corpus. */
-	isCompletedRecord(taskId: string): boolean;
-	/** Configured statuses with the project default applied, so an empty config still resolves. */
-	readonly statuses: readonly string[];
 }
 
 /**
  * Build the readiness index over the corpus this read is allowed to see.
  *
- * Identity, ambiguity, and completion evidence come from the shared task record index, so readiness
- * and the dependency graph never disagree about which record an ID means. An identity claimed by
- * more than one record resolves as unresolved rather than picking a winner by insertion order.
+ * Readiness and the dependency graph share exact-ID lookup and the record's done flag.
  */
 export function createReadinessGraph(options: {
 	tasks: Task[];
 	completedTasks?: Task[];
-	statuses?: readonly string[];
-	ambiguousIds?: ReadonlySet<string>;
-	/** Reuse a corpus-wide record index when readiness is part of a prepared task graph. */
-	index?: TaskRecordIndex;
-}): ReadinessGraph {
-	const index = options.index ?? createTaskRecordIndex(options);
-
-	return {
-		statuses: index.statuses,
-		isCompletedRecord(taskId) {
-			const record = index.lookup(taskId);
-			return record !== undefined && record !== "ambiguous" && record.completedRecord;
-		},
-		resolveDependency(dependencyId) {
-			const record = index.lookup(dependencyId);
-			if (record === undefined || record === "ambiguous") return { state: "unresolved" };
-			if (index.isFinished(record)) return { state: "completed" };
-			return { state: "unfinished", id: record.task.id };
-		},
-	};
+	/** Reuse a corpus-wide task map when readiness is part of a prepared task graph. */
+	index?: ReadonlyMap<string, Task>;
+}): ReadonlyMap<string, Task> {
+	return options.index ?? new Map([...options.tasks, ...(options.completedTasks ?? [])].map((task) => [task.id, task]));
 }
 
 /**
@@ -71,10 +30,10 @@ export function createReadinessGraph(options: {
  *
  * Readiness never reorders or mutates anything: it answers "can this task be started now?".
  * Dependencies that resolved to unfinished work and dependency IDs that could not be resolved are
- * reported separately, and both fail closed, so a partial or ambiguous graph is never mistaken for
+ * reported separately, and both block readiness, so a partial graph is never mistaken for
  * satisfied work.
  */
-export function getTaskReadiness(task: Task, graph: ReadinessGraph): TaskReadiness {
+export function getTaskReadiness(task: Task, graph: ReadonlyMap<string, Task>): TaskReadiness {
 	const notActionable: TaskReadiness = {
 		isReady: false,
 		isBlocked: false,
@@ -83,7 +42,7 @@ export function getTaskReadiness(task: Task, graph: ReadinessGraph): TaskReadine
 	};
 
 	// A task that is already completed is neither ready to start nor blocked.
-	if (graph.isCompletedRecord(task.id) || isTerminalStatus(task.status, graph.statuses)) {
+	if (task.done) {
 		return notActionable;
 	}
 
@@ -95,11 +54,11 @@ export function getTaskReadiness(task: Task, graph: ReadinessGraph): TaskReadine
 	const blockingDependencies: string[] = [];
 	const missingDependencies: string[] = [];
 	for (const dependencyId of dependencies) {
-		const resolution = graph.resolveDependency(dependencyId);
-		if (resolution.state === "unresolved") {
+		const dependency = graph.get(dependencyId);
+		if (dependency === undefined) {
 			missingDependencies.push(dependencyId);
-		} else if (resolution.state === "unfinished") {
-			blockingDependencies.push(resolution.id);
+		} else if (!dependency.done) {
+			blockingDependencies.push(dependency.id);
 		}
 	}
 

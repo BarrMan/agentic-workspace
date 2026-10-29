@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { $ } from "bun";
 import { Core } from "../controller/agentic-workspace.ts";
 import type { Task } from "../model/types.ts";
+import { Storage } from "../storage/storage.ts";
 import { coreFileSystem, createUniqueTestDir, initGitRepo, initializeTestProject, safeCleanup } from "./test-utils.ts";
 
 let TEST_DIR: string;
@@ -64,8 +65,8 @@ describe("worktree task refresh", () => {
 		await $`git commit -m "Configure active branch scanning"`.cwd(TEST_DIR).quiet();
 
 		mainCore = new Core(TEST_DIR);
-		expect(await mainCore.queryTasks()).toEqual([]);
-		expect(await mainCore.queryTasks({ query: "Created elsewhere" })).toEqual([]);
+		expect(await mainCore.tasks.query({})).toEqual([]);
+		expect(await mainCore.tasks.query({ query: "Created elsewhere" })).toEqual([]);
 
 		await $`git worktree add ${WORKTREE_DIR} -b feature`.cwd(TEST_DIR).quiet();
 		worktreeAdded = true;
@@ -73,37 +74,39 @@ describe("worktree task refresh", () => {
 		const worktreeTask: Task = {
 			id: "task-1",
 			title: "Created elsewhere",
+			done: false,
 			status: "To Do",
 			createdDate: "2026-07-01",
 			labels: [],
 			dependencies: [],
 			rawContent: "## Description\nCreated after the main Core initialized.",
 		};
-		await featureCore.createTask(worktreeTask);
+		await Storage.open(WORKTREE_DIR).createTask(worktreeTask);
 		await $`git add ${join(coreFileSystem(featureCore).agenticWorkspaceDirName, "tasks")}`.cwd(TEST_DIR).quiet();
 		await $`git commit -m "Add shared task-store fixture"`.cwd(TEST_DIR).quiet();
 
-		const searchResults = await mainCore.queryTasks({ query: "Created elsewhere" });
+		const searchResults = await mainCore.tasks.query({ query: "Created elsewhere" });
 		expect(searchResults.map((task) => task.id)).toContain("TASK-1");
 
-		const listedTasks = await mainCore.queryTasks();
+		const listedTasks = await mainCore.tasks.query({});
 		expect(listedTasks.map((task) => task.id)).toContain("TASK-1");
 	});
 
 	it("reads working-copy mutations made after an earlier persistent query", async () => {
 		mainCore = new Core(TEST_DIR);
 		await initializeTestProject(mainCore, "Missed Working Copy Refresh", true);
-		expect(await mainCore.queryTasks()).toEqual([]);
-		await mainCore.createTask({
+		expect(await mainCore.tasks.query({})).toEqual([]);
+		await Storage.open(TEST_DIR).createTask({
 			id: "TASK-1",
 			title: "Recovered by persistent read",
+			done: false,
 			status: "To Do",
 			createdDate: "2026-08-10",
 			labels: [],
 			dependencies: [],
 		});
 
-		expect((await mainCore.queryTasks()).map((task) => task.title)).toEqual(["Recovered by persistent read"]);
+		expect((await mainCore.tasks.query({})).map((task) => task.title)).toEqual(["Recovered by persistent read"]);
 		expect(
 			(await mainCore.searchPersistently({ query: "persistent read", types: ["task"] })).flatMap((result) =>
 				result.type === "task" ? [result.task.title] : [],

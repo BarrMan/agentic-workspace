@@ -1,6 +1,6 @@
 import { DateTime } from "luxon";
 import { z } from "zod";
-import { AgentConfigurationSchema } from "../../model/session/agent-config-schema.ts";
+import { NonProjectAgentConfigurationSchema } from "../../model/session/agent-config-schema.ts";
 import { normalizeDueDate } from "../../model/task/due-date.ts";
 import { isValidTaskId } from "../../model/task/task-id.ts";
 import { TASK_FRONTMATTER_FIELDS as FIELD } from "./schema.ts";
@@ -10,6 +10,7 @@ export const TASK_FRONTMATTER_KEY_MAP = {
 	id: FIELD.ID,
 	title: FIELD.TITLE,
 	status: FIELD.STATUS,
+	done: FIELD.DONE,
 	reporter: FIELD.REPORTER,
 	createdDate: FIELD.CREATED_DATE,
 	updatedDate: FIELD.UPDATED_DATE,
@@ -113,6 +114,7 @@ export const TaskFrontmatterSchema = z.object({
 	id: taskId,
 	title: requiredText,
 	status: requiredText,
+	done: z.boolean().default(false),
 	reporter: optionalString,
 	createdDate: dateField(FIELD.CREATED_DATE).transform((value) => value ?? ""),
 	updatedDate: dateField(FIELD.UPDATED_DATE),
@@ -131,7 +133,7 @@ export const TaskFrontmatterSchema = z.object({
 		(value) => (value === undefined || value === null || value === "" ? undefined : Number(value)),
 		z.number().finite().nonnegative().optional(),
 	),
-	agentConfiguration: AgentConfigurationSchema.optional(),
+	agentConfiguration: NonProjectAgentConfigurationSchema.optional(),
 	modeApprovals,
 	worktreePolicy: z.preprocess(
 		optionalText,

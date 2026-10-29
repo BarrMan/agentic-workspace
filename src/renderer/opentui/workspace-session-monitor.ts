@@ -2,7 +2,6 @@ import { watch } from "node:fs";
 import { dirname } from "node:path";
 import { resolveSessionPreset } from "../../controller/agent-configuration.ts";
 import type { Core } from "../../controller/agentic-workspace.ts";
-import type { WorkspaceStateService } from "../../controller/workspace-state.ts";
 import type { SessionRuntime } from "../../model/session/session.ts";
 import {
 	type ActivityMetadata,
@@ -53,7 +52,6 @@ export class WorkspaceSessionMonitor {
 
 	constructor(
 		private readonly core: Core,
-		private readonly workspace: WorkspaceStateService,
 		private readonly sessionRuntime: SessionRuntime | undefined,
 		private readonly createProbe: () => ActivityProbe,
 		private readonly operations: { paused(): boolean; changed(): void; refresh(): Promise<void> },
@@ -80,7 +78,7 @@ export class WorkspaceSessionMonitor {
 
 	async refresh(inventory?: ReadonlyMap<string, TaskSessions>): Promise<void> {
 		if (inventory) this.#inventory = inventory;
-		const observed = await this.workspace.sessionApplication.projectInventory();
+		const observed = await this.core.projectInventory();
 		if (this.#closed) return;
 		this.#snapshots.clear();
 		for (const { sessions } of observed) {
@@ -135,7 +133,7 @@ export class WorkspaceSessionMonitor {
 						if (observed?.state !== "starting" && observed?.state !== "running") continue;
 						if (this.#targets.has(active.id) && !this.#targets.get(active.id)?.supervised) continue;
 						try {
-							const live = await this.workspace.sessionApplication.readObserved(taskId, active.id);
+							const live = await this.core.readObserved(taskId, active.id);
 							if (this.#closed) return;
 							if (
 								live.snapshot.state !== "running" &&

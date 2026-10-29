@@ -15,12 +15,7 @@ import {
 	TASK_FRONTMATTER_FIELDS,
 	TASK_FRONTMATTER_SCHEMA_VERSION,
 } from "./schema.ts";
-import {
-	STRUCTURED_DEPENDENCY_MESSAGE,
-	TASK_FRONTMATTER_KEY_MAP,
-	TaskFrontmatterSchema,
-	TaskRecordSchema,
-} from "./task-record-schema.ts";
+import { STRUCTURED_DEPENDENCY_MESSAGE, TASK_FRONTMATTER_KEY_MAP, TaskRecordSchema } from "./task-record-schema.ts";
 
 export function parseMarkdown(content: string): ParsedMarkdown {
 	const parsed = parseFrontmatter(content);
@@ -61,32 +56,21 @@ function throwRecordSchemaError(kind: "milestone", id: string, error: z.ZodError
 	throw new FrontmatterSchemaError(`Invalid ${kind} frontmatter for ${id || "(missing id)"}: ${detail}.`);
 }
 
-function parseTaskFrontmatter(frontmatter: Record<string, unknown>) {
-	const taskId = String(frontmatter[TASK_FRONTMATTER_FIELDS.ID] || "");
-	try {
-		return TaskFrontmatterSchema.parse(frontmatterFields(frontmatter, TASK_FRONTMATTER_KEY_MAP));
-	} catch (error) {
-		if (error instanceof z.ZodError) throwTaskSchemaError(taskId, error);
-		throw error;
-	}
-}
-
 export function parseTask(content: string): Task {
 	const { frontmatter, content: rawContent } = parseMarkdown(content);
-	const fields = parseTaskFrontmatter(frontmatter);
-	const schemaVersion = frontmatter[TASK_FRONTMATTER_FIELDS.SCHEMA_VERSION];
-	if (schemaVersion !== TASK_FRONTMATTER_SCHEMA_VERSION)
-		throw new UnsupportedTaskFrontmatterSchemaError(fields.id, schemaVersion);
-
+	const taskId = String(frontmatter[TASK_FRONTMATTER_FIELDS.ID] || "");
 	try {
 		const record = TaskRecordSchema.parse({
-			...fields,
+			...frontmatterFields(frontmatter, TASK_FRONTMATTER_KEY_MAP),
 			dependencies: frontmatter[TASK_FRONTMATTER_FIELDS.DEPENDENCIES],
 			rawContent,
 		});
+		const schemaVersion = frontmatter[TASK_FRONTMATTER_FIELDS.SCHEMA_VERSION];
+		if (schemaVersion !== TASK_FRONTMATTER_SCHEMA_VERSION)
+			throw new UnsupportedTaskFrontmatterSchemaError(record.id, schemaVersion);
 		return record as Task;
 	} catch (error) {
-		if (error instanceof z.ZodError) throwTaskSchemaError(fields.id, error);
+		if (error instanceof z.ZodError) throwTaskSchemaError(taskId, error);
 		throw error;
 	}
 }

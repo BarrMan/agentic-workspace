@@ -1,6 +1,6 @@
 import { getPriorityRank } from "./priority-config.ts";
 import { statusComparisonKey } from "./status.ts";
-import { parseTaskId as parseTaskIdSegments, taskIdBody, taskIdKey } from "./task-id.ts";
+import { parseTaskId as parseTaskIdSegments, taskIdBody } from "./task-id.ts";
 
 /** Ordering and comparison over task IDs, ordinals, and priorities. */
 export class TaskOrdering {
@@ -34,7 +34,7 @@ export class TaskOrdering {
 			const bNum = bParts[i] ?? 0;
 			if (aNum !== bNum) return aNum - bNum;
 		}
-		return a.localeCompare(b, undefined, { sensitivity: "base", numeric: true });
+		return a.localeCompare(b);
 	}
 
 	/** Compare descending while keeping parents before children. */
@@ -124,7 +124,7 @@ export class TaskOrdering {
 			}
 			columns.get(key)?.push(task);
 		}
-		const byId = new Map(items.map((task) => [taskIdKey(task.id), task]));
+		const byId = new Map(items.map((task) => [task.id, task]));
 		return orderedStatuses.map((status) => ({
 			status,
 			tasks: TaskOrdering.orderColumn(columns.get(statusComparisonKey(status)) ?? [], byId),
@@ -142,17 +142,17 @@ export class TaskOrdering {
 			return ordinal || TaskOrdering.compareIds(b.id, a.id);
 		});
 		for (const task of sorted) {
-			const parent = task.parentTaskId ? byId.get(taskIdKey(task.parentTaskId)) : undefined;
+			const parent = task.parentTaskId ? byId.get(task.parentTaskId) : undefined;
 			if (parent && parent.status === task.status) {
-				const children = childrenByParent.get(taskIdKey(parent.id)) ?? [];
+				const children = childrenByParent.get(parent.id) ?? [];
 				children.push(task);
-				childrenByParent.set(taskIdKey(parent.id), children);
+				childrenByParent.set(parent.id, children);
 			} else topLevel.push(task);
 		}
 		const result: T[] = [];
 		const seen = new Set<string>();
 		const visit = (task: T): void => {
-			const key = taskIdKey(task.id);
+			const key = task.id;
 			if (seen.has(key)) return;
 			seen.add(key);
 			result.push(task);
@@ -166,10 +166,7 @@ export class TaskOrdering {
 	}
 
 	private static isAncestorId(parentId: string, childId: string): boolean {
-		const parentParts = TaskOrdering.parseId(parentId);
-		const childParts = TaskOrdering.parseId(childId);
-		if (parentParts.length >= childParts.length) return false;
-		return parentParts.every((part, index) => part === childParts[index]);
+		return childId.startsWith(`${parentId}.`);
 	}
 
 	private static comparePriorityThenId<T extends { id: string; priority?: string }>(

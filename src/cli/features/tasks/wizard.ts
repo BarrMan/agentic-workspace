@@ -174,20 +174,6 @@ function buildConfiguredChoicePromptValues(
 	};
 }
 
-function buildTaskTypePromptValues(initialType: string, types?: string[]) {
-	return buildConfiguredChoicePromptValues(initialType, types, resolveTaskTypeValue, getTaskTypeValues, "No task type");
-}
-
-function buildProjectPromptValues(initialProject: string, projects?: string[]) {
-	return buildConfiguredChoicePromptValues(
-		initialProject,
-		projects,
-		resolveProjectValue,
-		getProjectValues,
-		"No project",
-	);
-}
-
 function formatListInput(values?: string[]): string {
 	return values && values.length > 0 ? values.join("\n") : "";
 }
@@ -365,8 +351,20 @@ function buildWizardForm(params: Parameters<typeof runTaskWizardValues>[0]) {
 		initialStatus: params.initialValues.status,
 	});
 	const priority = buildPriorityPromptValues(params.initialValues.priority, params.priorities);
-	const type = buildTaskTypePromptValues(params.initialValues.type, params.types);
-	const project = buildProjectPromptValues(params.initialValues.project, params.projects);
+	const type = buildConfiguredChoicePromptValues(
+		params.initialValues.type,
+		params.types,
+		resolveTaskTypeValue,
+		getTaskTypeValues,
+		"No task type",
+	);
+	const project = buildConfiguredChoicePromptValues(
+		params.initialValues.project,
+		params.projects,
+		resolveProjectValue,
+		getProjectValues,
+		"No project",
+	);
 	const field = (
 		name: keyof TaskWizardValues,
 		message: string,

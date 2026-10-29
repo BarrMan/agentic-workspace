@@ -9,10 +9,6 @@ export interface ModeSettingsSavePlan {
 
 export type ModeSettingsSave = (plan: ModeSettingsSavePlan) => Promise<void>;
 
-function copy<T>(value: T): T {
-	return structuredClone(value);
-}
-
 function emptyProfile(name: string): ModeProfile {
 	return {
 		name,
@@ -37,13 +33,13 @@ export class ModeSettingsDraft {
 
 	/** Clone the source so unrelated settings are retained and edits cannot leak through. */
 	constructor(configuration: AgentConfiguration) {
-		this.baseline = copy(configuration);
-		this.configuration = copy(configuration);
+		this.baseline = structuredClone(configuration);
+		this.configuration = structuredClone(configuration);
 		if (!this.configuration.modes) throw new Error("Initialize the project mode catalog before editing mode settings.");
 	}
 
 	discard(): AgentConfiguration {
-		return copy(this.baseline);
+		return structuredClone(this.baseline);
 	}
 
 	validate(): void {
@@ -103,7 +99,10 @@ export class ModeSettingsDraft {
 	/** Save is the sole side-effect boundary; failures leave the draft available for retry. */
 	async save(save: ModeSettingsSave): Promise<void> {
 		this.validate();
-		await save({ configuration: copy(this.configuration), deletedModeIds: copy(this.deletedModeIds) });
+		await save({
+			configuration: structuredClone(this.configuration),
+			deletedModeIds: structuredClone(this.deletedModeIds),
+		});
 	}
 
 	private catalog(): ModeCatalog {

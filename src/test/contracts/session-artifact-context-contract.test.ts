@@ -17,7 +17,7 @@ describe("session artifact context contract", () => {
 		roots.push(root);
 		const core = new Core(root);
 		await initializeTestProject(core, "Artifact context");
-		await core.createTaskFromInput({ title: "Context task", status: "To Do" });
+		await core.tasks.create({ title: "Context task", status: "To Do" });
 		const taskId = "task-1";
 		const taskRoot = await coreFileSystem(core).taskArtifacts.containerPath(taskId);
 		const actualPath = "notes/actual.md";

@@ -1,8 +1,9 @@
 import { afterAll, describe, expect, it } from "bun:test";
 import { mkdir } from "node:fs/promises";
 import { Core } from "../index.ts";
+import { Storage } from "../storage/storage.ts";
 import { runInProcessCli } from "./in-process-cli.ts";
-import { createUniqueTestDir, initializeFilesystemTestProject, safeCleanup } from "./test-utils.ts";
+import { coreFileSystem, createUniqueTestDir, initializeFilesystemTestProject, safeCleanup } from "./test-utils.ts";
 
 const createdDirs: string[] = [];
 
@@ -18,9 +19,9 @@ async function makeDir(): Promise<string> {
 async function initCustomPrefixProject(dir: string): Promise<Core> {
 	const core = new Core(dir);
 	await initializeFilesystemTestProject(core, "Custom Prefix ID Resolution");
-	const config = await core.getStoredConfig();
+	const config = await core.storage.loadConfig();
 	if (!config) throw new Error("Expected config to be loaded");
-	await core.saveWorkspaceConfig({ ...config, prefixes: { ...config.prefixes, task: "BACK" } });
+	await core.storage.saveConfig({ ...config, prefixes: { ...config.prefixes, task: "BACK" } });
 	return core;
 }
 
@@ -30,10 +31,11 @@ async function createTask(
 	title: string,
 	extra: { status?: string; parentTaskId?: string } = {},
 ): Promise<void> {
-	await core.createTask({
+	await new Storage(coreFileSystem(core)).createTask({
 		id,
 		title,
 		status: extra.status ?? "To Do",
+		done: false,
 		labels: [],
 		dependencies: [],
 		createdDate: "2026-08-08",

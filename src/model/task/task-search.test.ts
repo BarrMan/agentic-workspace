@@ -6,6 +6,7 @@ const tasks: Task[] = [
 	{
 		id: "task-1",
 		title: "Add auth",
+		done: false,
 		status: "To Do",
 		labels: ["backend", "security"],
 		createdDate: "2025-01-01",
@@ -15,6 +16,7 @@ const tasks: Task[] = [
 	{
 		id: "task-2",
 		title: "Fix button",
+		done: false,
 		status: "To Do",
 		labels: [" UI "],
 		createdDate: "2025-01-01",
@@ -24,6 +26,7 @@ const tasks: Task[] = [
 	{
 		id: "task-3",
 		title: "Docs",
+		done: false,
 		status: "Done",
 		labels: ["docs", "ui"],
 		createdDate: "2025-01-01",

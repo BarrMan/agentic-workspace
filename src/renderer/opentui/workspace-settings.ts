@@ -106,7 +106,7 @@ export class WorkspaceSettings {
 							const deletedMode = await deleteModeFromChoice(
 								modeId,
 								() => this.#chooseDestination(modeId, destinations),
-								(id, options) => this.core.deleteMode(id, options),
+								(id, options) => this.core.modeDeletion.deleteMode(id, options),
 							);
 							if (!deletedMode) throw new Error("Mode deletion cancelled.");
 							completedDeletions.push(modeId);

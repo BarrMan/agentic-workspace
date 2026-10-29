@@ -3,33 +3,27 @@ import { mkdir, readFile, rename, rm, stat } from "node:fs/promises";
 import { basename, dirname, isAbsolute, join, resolve } from "node:path";
 import { z } from "zod";
 import { resolveMainWorktreeRootSync } from "../filesystem/git/main-worktree.ts";
-import { type LockAttemptSettings, LockOwner } from "../filesystem/lock-owner.ts";
+import { LockOwner } from "../filesystem/lock-owner.ts";
 import type { AgenticWorkspaceConfigSource } from "../filesystem/paths/agentic-workspace-directory.ts";
 import {
 	normalizeProjectAgenticWorkspaceDirectory,
 	resolveAgenticWorkspaceDirectory,
 	resolveAgenticWorkspaceDirectoryFromRootConfig,
 } from "../filesystem/paths/agentic-workspace-directory.ts";
-import { ProjectLayout } from "../filesystem/project-layout.ts";
 import { DEFAULT_DIRECTORIES, DEFAULT_FILES } from "../model/constants.ts";
-import { AmbiguousTaskIdError } from "../model/errors/task-id.ts";
-import { isValidTaskId, taskIdKey, taskIdsEqual } from "../model/task/task-id.ts";
+import { isValidTaskId } from "../model/task/task-id.ts";
 import { TaskOrdering } from "../model/task/task-ordering.ts";
 import { TaskSearchIndex } from "../model/task/task-search.ts";
-import {
-	type AgenticWorkspaceConfig,
-	type Milestone,
-	TASK_DIRECTORY_TYPES,
-	type Task,
-	type TaskListFilter,
-} from "../model/types.ts";
+import type { AgenticWorkspaceConfig, Milestone, Task, TaskListFilter } from "../model/types.ts";
 import { writeAtomically } from "./atomic-write.ts";
-import { isConfigValueError, parseConfig, serializeConfig } from "./config-codec.ts";
+import { withConfigPathLock } from "./config.ts";
+import { parseConfig, serializeConfig } from "./config-codec.ts";
 import { parseMarkdown, parseTask } from "./markdown/parser.ts";
 import { serializeTask } from "./markdown/serializer.ts";
 import { MilestoneStore } from "./milestones.ts";
 import { TaskArtifactRepository } from "./task-artifact-repository.ts";
-import { TaskRepository, validateTaskRecordIdentity } from "./task-repository.ts";
+import { TASK_ARTIFACTS_DIRECTORY, TASK_CONTAINER_LOCATIONS, TASK_RECORD_FILENAME } from "./task-layout.ts";
+import { TaskRepository } from "./task-repository.ts";
 
 // Interface for task path resolution context
 interface CreateLockOptions {
@@ -43,27 +37,13 @@ interface CreateLockTarget {
 	locksDir: string;
 }
 
-/** True when an error already explains an unreadable config value, so it needs no extra framing. */
-export { isConfigValueError };
-
 const DEFAULT_CREATE_LOCK_TIMEOUT_MS = 30_000;
 const DEFAULT_CREATE_LOCK_RETRY_DELAY_MS = 100;
 const DEFAULT_CREATE_LOCK_STALE_MS = 10_000;
-const TASK_DIRECTORY = TASK_DIRECTORY_TYPES[0];
 const taskCounterSchema = z.record(
 	z.string().regex(/^[A-Z]+$/),
 	z.strictObject({ lastAllocated: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER) }),
 );
-const nextUnusedTaskCounterSchema = z.record(
-	z.string().regex(/^[A-Z]+$/),
-	z.strictObject({ next: z.number().int().min(1).max(Number.MAX_SAFE_INTEGER) }),
-);
-
-export type ContentMutation =
-	| { type: typeof TASK_DIRECTORY; root: string; taskId: string; filePath: string }
-	| { type: "artifact"; root: string; taskId: string; path?: string };
-
-export type ContentMutationListener = (mutation: ContentMutation) => void | Promise<void>;
 
 export type FileSystemSelection = {
 	agenticWorkspaceDirectory: string;
@@ -129,8 +109,6 @@ export class FileSystem {
 	private cachedConfigSnapshot: { path: string; content: string } | null = null;
 	private readonly taskRepository: TaskRepository;
 	private readonly locks = new LockOwner();
-	private readonly layout = new ProjectLayout();
-	private readonly contentMutationListeners = new Set<ContentMutationListener>();
 	get taskParseCacheEpoch() {
 		return this.taskRepository.epoch;
 	}
@@ -199,16 +177,6 @@ export class FileSystem {
 		return new TaskArtifactRepository({
 			agenticWorkspaceDirectory: this.resolvedAgenticWorkspaceDir,
 			projectRoot: this.agenticWorkspaceResolutionRoot,
-			onMutation: (event) => {
-				for (const listener of this.contentMutationListeners) {
-					void listener({
-						type: "artifact",
-						root: this.resolvedAgenticWorkspaceDir,
-						taskId: event.taskId,
-						path: event.path,
-					});
-				}
-			},
 		});
 	}
 
@@ -313,20 +281,6 @@ export class FileSystem {
 		return join(agenticWorkspaceDir, DEFAULT_DIRECTORIES.COMPLETED);
 	}
 
-	async ensureAgenticWorkspaceStructure(): Promise<void> {
-		const agenticWorkspaceDir = await this.getAgenticWorkspaceDir();
-		const directories = [
-			agenticWorkspaceDir,
-			join(agenticWorkspaceDir, DEFAULT_DIRECTORIES.TASKS),
-			join(agenticWorkspaceDir, DEFAULT_DIRECTORIES.COMPLETED),
-			join(agenticWorkspaceDir, DEFAULT_DIRECTORIES.ARCHIVE_TASKS),
-			join(agenticWorkspaceDir, DEFAULT_DIRECTORIES.MILESTONES),
-			join(agenticWorkspaceDir, DEFAULT_DIRECTORIES.ARCHIVE_MILESTONES),
-		];
-
-		await this.layout.ensureDirectories(directories);
-	}
-
 	private toCreateLockError(error: unknown): Error {
 		if (isCreateLockError(error)) {
 			return error;
@@ -405,13 +359,17 @@ export class FileSystem {
 		};
 	}
 
+	async taskCreationLockDirectory(): Promise<string> {
+		return (await this.getCreateLockTarget(await this.getAgenticWorkspaceDir())).locksDir;
+	}
+
 	// Uses a maintained lockfile with stale-lock recovery.
 	async withCreateLock<T>(fn: () => Promise<T>, options: CreateLockOptions = {}): Promise<T> {
 		const agenticWorkspaceDir = await this.getAgenticWorkspaceDir();
 		const lockTarget = await this.getCreateLockTarget(agenticWorkspaceDir);
 		const timeoutMs = options.timeoutMs ?? DEFAULT_CREATE_LOCK_TIMEOUT_MS;
 		const retryDelayMs = options.retryDelayMs ?? DEFAULT_CREATE_LOCK_RETRY_DELAY_MS;
-		return await this.withLockTarget(
+		return await this.locks.withTarget(
 			lockTarget.targetPath,
 			join(lockTarget.locksDir, "create"),
 			{
@@ -424,63 +382,25 @@ export class FileSystem {
 		);
 	}
 
-	/**
-	 * Per-task counterpart of the create lock, used to serialize a task's read-modify-write.
-	 * It fails fast instead of waiting: on contention the caller (human or agent) decides
-	 * whether to retry, and nothing is merged or overwritten behind their back.
-	 *
-	 * The lock target is the task file itself because proper-lockfile keys its in-process
-	 * lock registry by target path: a shared target with per-task lockfile paths would
-	 * clobber concurrent locks held by one process. Unlike the create lock, the lockfile
-	 * lives under this project's AgenticWorkspace directory rather than the shared git common dir:
-	 * an edit protects one file, so sibling worktrees editing their own copy of a task must
-	 * not fail each other.
-	 */
-	async withTaskLock<T>(task: Pick<Task, "id" | "filePath">, fn: () => Promise<T>): Promise<T> {
-		const filePath = task.filePath?.trim();
-		if (!filePath) {
-			throw new Error(`Cannot lock task ${task.id} for editing without its file path.`);
-		}
-		return await this.withEntityFileLock(TASK_DIRECTORY, task.id, filePath, fn);
+	/** Wait for the project/task identity lock, independent of the task's current record path. */
+	async acquireTaskLock(taskId: string): Promise<() => Promise<void>> {
+		const lockTarget = await this.getCreateLockTarget(await this.getAgenticWorkspaceDir());
+		const key = sanitizeLockKey(taskId);
+		return await this.locks.acquireTarget(
+			join(lockTarget.locksDir, "targets", `task-${key}`),
+			join(lockTarget.locksDir, `task-${key}`),
+			{
+				staleMs: DEFAULT_CREATE_LOCK_STALE_MS,
+				retries: Number.POSITIVE_INFINITY,
+				retryDelayMs: DEFAULT_CREATE_LOCK_RETRY_DELAY_MS,
+			},
+			(error) => this.toTaskLockError(error, taskId),
+		);
 	}
 
 	private async taskCounterPath(): Promise<string> {
 		const lockTarget = await this.getCreateLockTarget(await this.getAgenticWorkspaceDir());
 		return join(dirname(lockTarget.locksDir), "task-counter.json");
-	}
-
-	/** Explicit maintenance only; ordinary allocation never converts existing counters. */
-	async convertTaskCounterToLastAllocated(): Promise<{ path: string; converted: boolean }> {
-		return await this.withCreateLock(async () => {
-			const path = await this.taskCounterPath();
-			let raw: string;
-			try {
-				raw = await readFile(path, "utf8");
-			} catch (error) {
-				if ((error as NodeJS.ErrnoException).code === "ENOENT") return { path, converted: false };
-				throw error;
-			}
-			try {
-				const data: unknown = JSON.parse(raw);
-				if (taskCounterSchema.safeParse(data).success) return { path, converted: false };
-				const old = nextUnusedTaskCounterSchema.parse(data);
-				const counters = Object.fromEntries(
-					Object.entries(old).map(([prefix, { next }]) => [prefix, { lastAllocated: next - 1 }]),
-				);
-				await writeAtomically(
-					path,
-					JSON.stringify(counters, null, 2),
-					"Task counter conversion",
-					(await stat(path)).mode & 0o777,
-				);
-				return { path, converted: true };
-			} catch (error) {
-				throw new Error(
-					`Cannot convert task counter at ${path}. Only a complete valid next-unused record can be converted.`,
-					{ cause: error },
-				);
-			}
-		});
 	}
 
 	/** Counter shape: { "PREFIX": { "lastAllocated": integer } }; callers hold the create lock. */
@@ -490,15 +410,16 @@ export class FileSystem {
 		existingIds: () => Promise<string[]>,
 	): Promise<string> {
 		const counterPath = await this.taskCounterPath();
-		await mkdir(dirname(counterPath), { recursive: true });
 		let counters: Record<string, { lastAllocated: number }>;
 		try {
 			counters = taskCounterSchema.parse(JSON.parse(await readFile(counterPath, "utf8")));
 		} catch (error) {
 			if ((error as NodeJS.ErrnoException).code !== "ENOENT")
 				throw new Error(
-					`Invalid task counter at ${counterPath}; expected lastAllocated records. Existing next-unused counters require explicit conversion: bun scripts/migrate-task-counter.ts ${JSON.stringify(this.projectRoot)}. Existing bytes were preserved.`,
-					{ cause: error },
+					`Invalid task counter at ${counterPath}; expected lastAllocated records. Existing bytes were preserved.`,
+					{
+						cause: error,
+					},
 				);
 			counters = {};
 		}
@@ -508,7 +429,7 @@ export class FileSystem {
 		if (lastAllocated === undefined) {
 			let max = 0;
 			for (const id of await existingIds()) {
-				const canonicalId = taskIdKey(id);
+				const canonicalId = id;
 				const prefix = `${canonicalPrefix}-`;
 				const suffix = canonicalId.startsWith(prefix) ? canonicalId.slice(prefix.length) : "";
 				if (/^\d+$/.test(suffix)) max = Math.max(max, Number(suffix));
@@ -525,7 +446,7 @@ export class FileSystem {
 			const number = String(allocated).padStart(zeroPadding && zeroPadding > 0 ? zeroPadding : 0, "0");
 			const id = `${canonicalPrefix}-${number}`;
 			const occupied = await Promise.all(
-				(["tasks", "completed", "archive/tasks"] as const).map(async (location) => {
+				TASK_CONTAINER_LOCATIONS.map(async (location) => {
 					try {
 						await stat(await this.taskArtifacts.containerPath(id.toLowerCase(), location));
 						return true;
@@ -540,50 +461,41 @@ export class FileSystem {
 		throw new Error(`Could not allocate an unused task ID for ${canonicalPrefix} after 10 attempts.`);
 	}
 
-	private async withEntityFileLock<T>(
-		scope: typeof TASK_DIRECTORY,
-		entityId: string,
-		filePath: string,
-		fn: () => Promise<T>,
-	): Promise<T> {
-		const lockKey = sanitizeLockKey(taskIdKey(entityId));
-		return await this.withLockTarget(
-			filePath,
-			join(await this.getAgenticWorkspaceDir(), ".locks", `${scope}-${lockKey}`),
-			{ staleMs: DEFAULT_CREATE_LOCK_STALE_MS, retries: 0, retryDelayMs: 0 },
-			(error) => this.toTaskLockError(error, entityId),
-			fn,
-		);
-	}
-
 	/**
 	 * Hold a stable set of task locks for one operation. The callback runs only after every
 	 * lock is acquired, so a contended task cannot leave an earlier write from a bulk operation
 	 * on disk. Sorting also keeps multi-task operations from acquiring the same locks in opposite
 	 * orders and deadlocking each other.
 	 */
-	async withTaskLocks<T>(tasks: Array<Pick<Task, "id" | "filePath">>, fn: () => Promise<T>): Promise<T> {
-		const uniqueTasks = Array.from(new Map(tasks.map((task) => [taskIdKey(task.id), task])).values()).sort(
-			(left, right) => taskIdKey(left.id).localeCompare(taskIdKey(right.id)),
-		);
-
-		const acquire = async (index: number): Promise<T> => {
-			const task = uniqueTasks[index];
-			if (!task) return await fn();
-			return await this.withTaskLock(task, async () => await acquire(index + 1));
+	async acquireTaskLocks(taskIds: string[]): Promise<() => Promise<void>> {
+		const identities = [...new Set(taskIds)].sort((left, right) => left.localeCompare(right));
+		const releases: Array<() => Promise<void>> = [];
+		try {
+			for (const taskId of identities) releases.push(await this.acquireTaskLock(taskId));
+		} catch (error) {
+			const releaseErrors: unknown[] = [];
+			for (const release of releases.reverse()) {
+				try {
+					await release();
+				} catch (releaseError) {
+					releaseErrors.push(releaseError);
+				}
+			}
+			if (releaseErrors.length)
+				throw new AggregateError([error, ...releaseErrors], "Task lock acquisition and cleanup failed.");
+			throw error;
+		}
+		return async () => {
+			const releaseErrors: unknown[] = [];
+			for (const release of releases.reverse()) {
+				try {
+					await release();
+				} catch (error) {
+					releaseErrors.push(error);
+				}
+			}
+			if (releaseErrors.length) throw new AggregateError(releaseErrors, "Task lock release failed.");
 		};
-
-		return await acquire(0);
-	}
-
-	private async withLockTarget<T>(
-		targetPath: string,
-		lockDir: string,
-		settings: LockAttemptSettings,
-		toError: (error: unknown) => Error,
-		fn: () => Promise<T>,
-	): Promise<T> {
-		return await this.locks.withTarget(targetPath, lockDir, settings, toError, fn);
 	}
 
 	// Task operations
@@ -592,9 +504,9 @@ export class FileSystem {
 			throw new Error(
 				`Invalid task ID ${JSON.stringify(task.id)}; expected PREFIX-NUMBER with optional dotted numeric segments.`,
 			);
-		const id = taskIdKey(task.id);
+		const id = task.id;
 		const directory = await this.getTasksDir();
-		const filename = "task.md";
+		const filename = TASK_RECORD_FILENAME;
 		const filePath = join(directory, id.toLowerCase(), filename);
 		return { id, filename, filePath };
 	}
@@ -602,7 +514,6 @@ export class FileSystem {
 	private async existingTaskAtWritePath(filepath: string): Promise<Task | null> {
 		try {
 			const task = parseTask(await Bun.file(filepath).text());
-			validateTaskRecordIdentity(task, filepath);
 			return task;
 		} catch (error) {
 			if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
@@ -620,10 +531,10 @@ export class FileSystem {
 		const roots = await Promise.all([this.getTasksDir(), this.getCompletedDir(), this.getArchiveTasksDir()]);
 		const root = roots.find((candidate) => resolve(dirname(container)) === resolve(candidate));
 		if (!root) throw new Error(`Task ${task.id} has a non-canonical storage path; refusing operation.`);
-		if (basename(container) !== taskIdKey(task.id).toLowerCase())
+		if (basename(container) !== task.id.toLowerCase())
 			throw new Error(`Task ${task.id} record/container identity mismatch; refusing operation.`);
 		const record = await this.existingTaskAtWritePath(path);
-		if (!record || !taskIdsEqual(record.id, task.id))
+		if (!record || record.id !== task.id)
 			throw new Error(`Task ${task.id} record identity changed; refusing operation.`);
 		return { path, root: resolve(root), record };
 	}
@@ -635,85 +546,62 @@ export class FileSystem {
 				const retained = { ...parseMarkdown(await Bun.file(filepath).text()).frontmatter };
 				delete retained.agent_summary;
 				return retained;
-			} catch {}
+			} catch (error) {
+				if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+			}
 		}
 		return {};
 	}
 
-	async saveTask(task: Task, options: { approvalMutation?: boolean; create?: boolean } = {}): Promise<string> {
+	async saveTask(task: Task, options: { create?: boolean } = {}): Promise<string> {
 		const { id: requestedId } = await this.resolveTaskWriteTarget(task);
 		const normalizedId = requestedId.toLowerCase();
 		const roots = await Promise.all([this.getTasksDir(), this.getCompletedDir(), this.getArchiveTasksDir()]);
 		let existingTask: Task | null = null;
 		let filepath: string;
 
-		if (typeof task.filePath === "string" && task.filePath.trim()) {
-			if (options.create)
+		if (options.create) {
+			if (task.filePath)
 				throw new Error(`Task ID ${requestedId} already exists; refusing to merge or reuse its identity.`);
+			if (await this.loadTask(requestedId, { includeArchived: true }))
+				throw new Error(`Task ID ${requestedId} already exists; refusing to merge or reuse its identity.`);
+			const container = await this.taskArtifacts.containerPath(normalizedId, "tasks");
+			if (resolve(dirname(container)) !== resolve(roots[0]))
+				throw new Error(`Task ${requestedId} resolves outside active task storage.`);
+			try {
+				await stat(container);
+				throw new Error(`Task container ${container} already exists; refusing to merge or reuse its task ID.`);
+			} catch (error) {
+				if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+			}
+			filepath = join(container, TASK_RECORD_FILENAME);
+		} else if (typeof task.filePath === "string" && task.filePath.trim()) {
 			const resolved = await this.resolveCanonicalExistingRecord(task);
 			filepath = resolved.path;
 			existingTask = resolved.record;
 		} else {
-			const existing = await this.loadTask(requestedId, { includeArchived: true });
-			if (existing && options.create)
-				throw new Error(`Task ID ${requestedId} already exists; refusing to merge or reuse its identity.`);
-			if (existing?.filePath) {
-				const resolved = await this.resolveCanonicalExistingRecord(existing);
-				filepath = resolved.path;
-				existingTask = resolved.record;
-			} else {
-				const container = await this.taskArtifacts.containerPath(normalizedId, "tasks");
-				if (resolve(dirname(container)) !== resolve(roots[0]))
-					throw new Error(`Task ${requestedId} resolves outside active task storage.`);
-				try {
-					await stat(container);
-					throw new Error(`Task container ${container} already exists; refusing to merge or reuse its task ID.`);
-				} catch (error) {
-					if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
-				}
-				filepath = join(container, "task.md");
-			}
+			throw new Error(`Task ${requestedId} has no record path; existing-task saves require filePath.`);
 		}
 
-		if (existingTask && !taskIdsEqual(existingTask.id, task.id))
+		if (existingTask && existingTask.id !== task.id)
 			throw new Error(`Task identity mismatch: requested ${task.id}, stored record is ${existingTask.id}.`);
-		if (!existingTask) {
-			const [activeTasks, completedTasks] = await Promise.all([this.listTasks(), this.listCompletedTasks()]);
-			const duplicateMatches = [...activeTasks, ...completedTasks].filter((record) =>
-				taskIdsEqual(record.id, requestedId),
-			);
-			if (duplicateMatches.length > 1)
-				throw new AmbiguousTaskIdError(
-					requestedId,
-					duplicateMatches.map((record) => record.filePath ?? record.id),
-				);
-		}
-		const exactParentTaskId = task.parentTaskId;
 		const normalizedTask = {
 			...task,
-			...(!options.approvalMutation && existingTask ? { modeApprovals: existingTask.modeApprovals } : {}),
-			id: existingTask?.id ?? requestedId,
 			filePath: filepath,
-			parentTaskId:
-				existingTask?.parentTaskId && task.parentTaskId && taskIdsEqual(existingTask.parentTaskId, task.parentTaskId)
-					? existingTask.parentTaskId
-					: exactParentTaskId
-						? taskIdKey(exactParentTaskId)
-						: undefined,
 		};
 		const content = serializeTask(normalizedTask, await this.retainedTaskFrontmatter(filepath));
 		const container = dirname(filepath);
 		if (!existingTask) {
-			await this.ensureDirectoryExists(dirname(container));
+			try {
+				await mkdir(dirname(container));
+			} catch (error) {
+				if ((error as NodeJS.ErrnoException).code !== "EEXIST" || !(await stat(dirname(container))).isDirectory())
+					throw error;
+			}
 			await mkdir(container);
+			await mkdir(join(container, TASK_ARTIFACTS_DIRECTORY));
 		}
 		await writeAtomically(filepath, content, "Task");
-		await this.publishContentMutation({
-			type: TASK_DIRECTORY,
-			root: resolve(this.agenticWorkspaceDir),
-			taskId: normalizedTask.id,
-			filePath: filepath,
-		});
 		return filepath;
 	}
 
@@ -722,47 +610,42 @@ export class FileSystem {
 			throw new Error(
 				`Invalid task ID ${JSON.stringify(taskId)}; expected PREFIX-NUMBER with optional dotted numeric segments.`,
 			);
-		const canonicalId = taskIdKey(taskId);
-		const idDirectory = canonicalId.toLowerCase();
+		const idDirectory = taskId.toLowerCase();
 		const directories = await Promise.all([
 			this.getTasksDir(),
 			this.getCompletedDir(),
 			...(options.includeArchived ? [this.getArchiveTasksDir()] : []),
 		]);
-		const matches: Task[] = [];
+		await Promise.all(directories.map(async (directory) => await stat(directory)));
 		for (const directory of directories) {
-			const filepath = join(directory, idDirectory, "task.md");
+			const filepath = join(directory, idDirectory, TASK_RECORD_FILENAME);
 			try {
 				const parsed = parseTask(await Bun.file(filepath).text());
-				validateTaskRecordIdentity(parsed, filepath);
-				matches.push({ ...parsed, filePath: filepath });
+				if (parsed.id === taskId) return { ...parsed, filePath: filepath };
 			} catch (error) {
 				if ((error as NodeJS.ErrnoException).code === "ENOENT") continue;
 				throw error;
 			}
 		}
-		if (matches.length > 1)
-			throw new AmbiguousTaskIdError(
-				canonicalId,
-				matches.map((task) => task.filePath ?? task.id),
-			);
-		return matches[0] ?? null;
+		return null;
 	}
 
-	async readTaskFiles(directory: string, files: string[], cacheEpoch = this.taskParseCacheEpoch): Promise<Task[]> {
-		return await this.taskRepository.readFiles(directory, files, cacheEpoch);
-	}
-
-	private async listConfiguredTaskFiles(directory: string): Promise<string[]> {
-		return await this.taskRepository.listFiles(directory);
+	async readTaskRecord(filePath: string): Promise<Task | null> {
+		try {
+			const task = await this.taskRepository.readParsedFile(filePath);
+			return { ...task, filePath };
+		} catch (error) {
+			if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
+			throw error;
+		}
 	}
 
 	async listTasks(filter?: TaskListFilter): Promise<Task[]> {
 		const cacheEpoch = this.taskParseCacheEpoch;
 		const tasksDir = await this.getTasksDir();
-		const taskFiles = await this.listConfiguredTaskFiles(tasksDir);
+		const taskFiles = await this.taskRepository.listFiles(tasksDir);
 
-		let tasks = await this.readTaskFiles(tasksDir, taskFiles, cacheEpoch);
+		let tasks = await this.taskRepository.readFiles(tasksDir, taskFiles, cacheEpoch);
 
 		if (filter) tasks = TaskSearchIndex.apply(tasks, filter);
 
@@ -772,34 +655,21 @@ export class FileSystem {
 	async listCompletedTasks(): Promise<Task[]> {
 		const cacheEpoch = this.taskParseCacheEpoch;
 		const completedDir = await this.getCompletedDir();
-		const taskFiles = await this.listConfiguredTaskFiles(completedDir);
+		const taskFiles = await this.taskRepository.listFiles(completedDir);
 
-		const tasks = await this.readTaskFiles(completedDir, taskFiles, cacheEpoch);
+		const tasks = await this.taskRepository.readFiles(completedDir, taskFiles, cacheEpoch);
 
 		return TaskOrdering.byId(tasks);
 	}
 
 	async listArchivedTasks(): Promise<Task[]> {
+		const cacheEpoch = this.taskParseCacheEpoch;
 		const archiveTasksDir = await this.getArchiveTasksDir();
-		const taskFiles = await this.listConfiguredTaskFiles(archiveTasksDir);
+		const taskFiles = await this.taskRepository.listFiles(archiveTasksDir);
 
-		const tasks = await this.readTaskFiles(archiveTasksDir, taskFiles);
+		const tasks = await this.taskRepository.readFiles(archiveTasksDir, taskFiles, cacheEpoch);
 
 		return TaskOrdering.byId(tasks);
-	}
-
-	async archiveTask(taskId: string): Promise<boolean> {
-		const task = await this.loadTask(taskId);
-		if (!task?.filePath) return false;
-		await this.moveTaskContainer(task, await this.getArchiveTasksDir());
-		return true;
-	}
-
-	async completeTask(taskId: string, alreadyLocked = false): Promise<boolean> {
-		const task = await this.loadTask(taskId, { includeArchived: true });
-		if (!task?.filePath) return false;
-		await this.moveTaskContainer(task, await this.getCompletedDir(), alreadyLocked);
-		return true;
 	}
 
 	/** Move a canonical task folder with its artifacts and approval sidecar intact. */
@@ -808,7 +678,7 @@ export class FileSystem {
 		return { path: dirname(resolved.path), root: resolved.root };
 	}
 
-	async moveTaskContainer(task: Task, destinationDirectory: string, alreadyLocked = false): Promise<string> {
+	async moveTaskContainer(task: Task, destinationDirectory: string): Promise<string> {
 		if (!task.filePath) throw new Error(`Cannot move task ${task.id} without its record path.`);
 		const move = async () => {
 			const { path: sourceContainer } = await this.resolveTaskContainer(task);
@@ -816,7 +686,7 @@ export class FileSystem {
 			const roots = await Promise.all([this.getTasksDir(), this.getCompletedDir(), this.getArchiveTasksDir()]);
 			if (!roots.some((root) => resolve(root) === destinationRoot))
 				throw new Error(`Task ${task.id} destination is not a canonical task storage root.`);
-			const sourcePath = join(sourceContainer, "task.md");
+			const sourcePath = join(sourceContainer, TASK_RECORD_FILENAME);
 			const targetContainer = join(destinationRoot, basename(sourceContainer));
 			if (resolve(sourceContainer) === resolve(targetContainer)) return sourcePath;
 			try {
@@ -825,48 +695,22 @@ export class FileSystem {
 			} catch (error) {
 				if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
 			}
-			await this.ensureDirectoryExists(destinationRoot);
 			await rename(sourceContainer, targetContainer);
 			this.taskRepository.invalidate();
-			const targetPath = join(targetContainer, "task.md");
-			await this.publishContentMutation({
-				type: TASK_DIRECTORY,
-				root: resolve(this.agenticWorkspaceDir),
-				taskId: task.id,
-				filePath: targetPath,
-			});
+			const targetPath = join(targetContainer, TASK_RECORD_FILENAME);
 			return targetPath;
 		};
-		return alreadyLocked ? await move() : await this.withTaskLock(task, move);
+		return await move();
 	}
 
-	async deleteTaskContainer(task: Task, alreadyLocked = false): Promise<void> {
+	async deleteTaskContainer(task: Task): Promise<void> {
 		if (!task.filePath) throw new Error(`Cannot delete task ${task.id} without its record path.`);
 		const remove = async () => {
 			const { path: sourceContainer } = await this.resolveTaskContainer(task);
-			const sourcePath = join(sourceContainer, "task.md");
 			await rm(sourceContainer, { recursive: true });
 			this.taskRepository.invalidate();
-			await this.publishContentMutation({
-				type: TASK_DIRECTORY,
-				root: resolve(this.agenticWorkspaceDir),
-				taskId: task.id,
-				filePath: sourcePath,
-			});
 		};
-		if (alreadyLocked) await remove();
-		else await this.withTaskLock(task, remove);
-	}
-
-	subscribeToContentMutations(listener: ContentMutationListener): () => void {
-		this.contentMutationListeners.add(listener);
-		return () => this.contentMutationListeners.delete(listener);
-	}
-
-	private async publishContentMutation(mutation: ContentMutation): Promise<void> {
-		for (const listener of this.contentMutationListeners) {
-			await listener(mutation);
-		}
+		await remove();
 	}
 
 	async listMilestones(): Promise<Milestone[]> {
@@ -916,6 +760,11 @@ export class FileSystem {
 			return this.cachedConfig;
 		}
 
+		return await this.loadConfigFromDisk();
+	}
+
+	/** Read the persisted configuration, bypassing the instance cache for locked updates. */
+	async loadConfigFromDisk(): Promise<AgenticWorkspaceConfig | null> {
 		const configPath = this.resolvedConfigPath;
 		let content: string;
 		try {
@@ -934,6 +783,14 @@ export class FileSystem {
 	}
 
 	async saveConfig(config: AgenticWorkspaceConfig): Promise<void> {
+		await withConfigPathLock(
+			this.resolvedConfigPath,
+			"project",
+			async () => await this.saveConfigUnderConfigLock(config),
+		);
+	}
+
+	async saveConfigUnderConfigLock(config: AgenticWorkspaceConfig): Promise<void> {
 		const normalizedConfig: AgenticWorkspaceConfig = {
 			...config,
 			...(this.configSource === "root" ? { agenticWorkspaceDirectory: this.resolvedAgenticWorkspaceDirName } : {}),

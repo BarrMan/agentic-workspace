@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { DEFAULT_FRESH_INIT_POLICY, DEFAULT_PRIORITIES, DEFAULT_STATUSES } from "../model/constants.ts";
-import { AgentConfigurationSchema } from "../model/session/agent-config-schema.ts";
+import { AgentConfigurationSchema, NonProjectAgentConfigurationSchema } from "../model/session/agent-config-schema.ts";
 import type { AgenticWorkspaceConfig } from "../model/types.ts";
 
 const MAX_SAFE_INTEGER = Number.MAX_SAFE_INTEGER;
@@ -40,66 +40,62 @@ const nonNegativeInteger = z
 	.int("must be a non-negative integer.")
 	.min(0, "must be a non-negative integer.")
 	.max(MAX_SAFE_INTEGER, "must be a safe integer.");
-const port = z
-	.number({ error: "must be an integer between 1 and 65535." })
-	.int("must be an integer between 1 and 65535.")
-	.min(1, "must be an integer between 1 and 65535.")
-	.max(65_535, "must be an integer between 1 and 65535.");
 const taskPrefix = z.string({ error: "must contain only letters." }).regex(/^[a-zA-Z]+$/, "must contain only letters.");
 
-const rawConfigSchema = z.object({
-	agent_configuration: AgentConfigurationSchema.optional(),
-	project_name: z.string().default(""),
-	default_reporter: z.string().optional(),
-	statuses,
-	labels,
-	types: optionalConfigList,
-	priorities: z.preprocess(
-		(value) => (value === null ? undefined : value),
-		configList().default(() => [...DEFAULT_PRIORITIES]),
-	),
-	projects: optionalConfigList,
-	milestones: z.array(z.string()).optional(),
-	default_status: z.string().optional(),
-	date_format: dateFormat,
-	max_column_width: positiveInteger.optional(),
-	default_editor: z.string().optional(),
-	auto_open_browser: boolean.optional(),
-	default_port: port.optional(),
-	hide_empty_columns: boolean.optional(),
-	remote_operations: boolean.optional(),
-	filesystem_only: boolean.optional(),
-	zero_padded_ids: nonNegativeInteger.optional(),
-	bypass_git_hooks: boolean.optional(),
-	agentic_workspace_directory: z.string().optional(),
-	on_status_change: z.string().optional(),
-	task_prefix: taskPrefix.optional(),
-});
+function rawConfigSchema<T extends z.ZodType>(agentConfigurationSchema: T) {
+	return z.object({
+		agent_configuration: agentConfigurationSchema.optional(),
+		project_name: z.string().default(""),
+		default_reporter: z.string().optional(),
+		statuses,
+		labels,
+		types: optionalConfigList,
+		priorities: z.preprocess(
+			(value) => (value === null ? undefined : value),
+			configList().default(() => [...DEFAULT_PRIORITIES]),
+		),
+		projects: optionalConfigList,
+		default_status: z.string().optional(),
+		date_format: dateFormat,
+		max_column_width: positiveInteger.optional(),
+		default_editor: z.string().optional(),
+		hide_empty_columns: boolean.optional(),
+		remote_operations: boolean.optional(),
+		filesystem_only: boolean.optional(),
+		zero_padded_ids: nonNegativeInteger.optional(),
+		bypass_git_hooks: boolean.optional(),
+		agentic_workspace_directory: z.string().optional(),
+		on_status_change: z.string().optional(),
+		task_prefix: taskPrefix.optional(),
+	});
+}
 
-export const AgenticWorkspaceConfigSchema = rawConfigSchema.transform(
-	(raw): AgenticWorkspaceConfig => ({
-		projectName: raw.project_name,
-		agentConfiguration: raw.agent_configuration as AgenticWorkspaceConfig["agentConfiguration"],
-		defaultReporter: raw.default_reporter,
-		statuses: raw.statuses,
-		labels: raw.labels,
-		types: raw.types,
-		priorities: raw.priorities,
-		projects: raw.projects,
-		milestones: raw.milestones,
-		defaultStatus: raw.default_status,
-		dateFormat: raw.date_format,
-		maxColumnWidth: raw.max_column_width,
-		defaultEditor: raw.default_editor,
-		autoOpenBrowser: raw.auto_open_browser,
-		defaultPort: raw.default_port,
-		hideEmptyColumns: raw.hide_empty_columns,
-		remoteOperations: raw.remote_operations,
-		filesystemOnly: raw.filesystem_only,
-		zeroPaddedIds: raw.zero_padded_ids,
-		bypassGitHooks: raw.bypass_git_hooks,
-		onStatusChange: raw.on_status_change,
-		prefixes: raw.task_prefix ? { task: raw.task_prefix } : undefined,
-		agenticWorkspaceDirectory: raw.agentic_workspace_directory,
-	}),
-);
+function configSchema<T extends z.ZodType>(agentConfigurationSchema: T) {
+	return rawConfigSchema(agentConfigurationSchema).transform(
+		(raw): AgenticWorkspaceConfig => ({
+			projectName: raw.project_name,
+			agentConfiguration: raw.agent_configuration as AgenticWorkspaceConfig["agentConfiguration"],
+			defaultReporter: raw.default_reporter,
+			statuses: raw.statuses,
+			labels: raw.labels,
+			types: raw.types,
+			priorities: raw.priorities,
+			projects: raw.projects,
+			defaultStatus: raw.default_status,
+			dateFormat: raw.date_format,
+			maxColumnWidth: raw.max_column_width,
+			defaultEditor: raw.default_editor,
+			hideEmptyColumns: raw.hide_empty_columns,
+			remoteOperations: raw.remote_operations,
+			filesystemOnly: raw.filesystem_only,
+			zeroPaddedIds: raw.zero_padded_ids,
+			bypassGitHooks: raw.bypass_git_hooks,
+			onStatusChange: raw.on_status_change,
+			prefixes: raw.task_prefix ? { task: raw.task_prefix } : undefined,
+			agenticWorkspaceDirectory: raw.agentic_workspace_directory,
+		}),
+	);
+}
+
+export const AgenticWorkspaceConfigSchema = configSchema(AgentConfigurationSchema);
+export const RootAgenticWorkspaceConfigSchema = configSchema(NonProjectAgentConfigurationSchema);

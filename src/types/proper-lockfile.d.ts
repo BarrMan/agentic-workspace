@@ -1,6 +1,7 @@
 declare module "proper-lockfile" {
 	interface RetryOptions {
 		retries?: number;
+		forever?: boolean;
 		factor?: number;
 		minTimeout?: number;
 		maxTimeout?: number;

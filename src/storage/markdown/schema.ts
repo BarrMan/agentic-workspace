@@ -3,6 +3,7 @@ export const TASK_FRONTMATTER_FIELDS = {
 	ID: "id",
 	TITLE: "title",
 	STATUS: "status",
+	DONE: "done",
 	REPORTER: "reporter",
 	CREATED_DATE: "created_date",
 	UPDATED_DATE: "updated_date",

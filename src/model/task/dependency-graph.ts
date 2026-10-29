@@ -1,7 +1,5 @@
 import type { Task } from "../types.ts";
-import { taskIdKey } from "./task-id.ts";
 import { TaskOrdering } from "./task-ordering.ts";
-import { createTaskRecordIndex, type TaskRecordIndex } from "./task-record-index.ts";
 
 /** Which way a traversal walks the dependency edges away from the selected task. */
 export type DependencyDirection = "dependencies" | "dependents";
@@ -10,8 +8,6 @@ export type DependencyDirection = "dependencies" | "dependents";
 export type DependencyNodeState =
 	/** Exactly one visible record claims the identity. */
 	| "resolved"
-	/** More than one record claims the identity, so no record may be chosen. */
-	| "ambiguous"
 	/** No visible record claims the identity. */
 	| "missing";
 
@@ -21,7 +17,7 @@ export interface DependencyGraphNode {
 	title: string | null;
 	status: string | null;
 	state: DependencyNodeState;
-	/** The record is in the completed corpus or holds the terminal status. Never true when unresolved. */
+	/** The record is marked done. Never true when unresolved. */
 	completed: boolean;
 	/** Hops along dependency edges from the root: 0 root, 1 direct, higher transitive, null unreachable. */
 	dependencyDepth: number | null;
@@ -47,42 +43,37 @@ export interface DependencyGraph {
 	edges: DependencyGraphEdge[];
 }
 
-type GraphEntry = { key: string; node: DependencyGraphNode };
-type GraphTraversalState = { key: string; depth: number };
+type GraphTraversalState = { id: string; depth: number };
 
 export interface DependencyGraphContext {
-	readonly index: TaskRecordIndex;
-	readonly dependencies: ReadonlyMap<string, readonly { key: string; reference: string }[]>;
-	readonly dependents: ReadonlyMap<string, readonly { key: string; reference: string }[]>;
+	readonly index: ReadonlyMap<string, Task>;
+	readonly dependencies: ReadonlyMap<string, readonly string[]>;
+	readonly dependents: ReadonlyMap<string, readonly string[]>;
 }
 
 export type DependencyGraphOptions = {
 	tasks: Task[];
 	completedTasks?: Task[];
-	statuses?: readonly string[];
-	ambiguousIds?: ReadonlySet<string>;
-	index?: TaskRecordIndex;
+	index?: ReadonlyMap<string, Task>;
 };
 
-/** Prepare canonical relationship indexes once for a task corpus. */
+/** Prepare exact-ID relationships once for a task corpus. */
 export function createDependencyGraphContext(options: DependencyGraphOptions): DependencyGraphContext {
-	const index = options.index ?? createTaskRecordIndex(options);
-	const dependencies = new Map<string, Array<{ key: string; reference: string }>>();
-	const dependents = new Map<string, Array<{ key: string; reference: string }>>();
-	for (const record of index.records) {
-		const fromKey = taskIdKey(record.task.id);
-		const declared = (record.task.dependencies ?? []).map((reference) => ({
-			key: taskIdKey(reference),
-			reference,
-		}));
-		dependencies.set(fromKey, declared);
-		for (const dependency of declared) {
-			const existing = dependents.get(dependency.key);
-			if (existing) existing.push({ key: fromKey, reference: record.task.id });
-			else dependents.set(dependency.key, [{ key: fromKey, reference: record.task.id }]);
+	const index =
+		options.index ?? new Map([...options.tasks, ...(options.completedTasks ?? [])].map((task) => [task.id, task]));
+	const dependencies = new Map<string, string[]>();
+	const dependents = new Map<string, string[]>();
+	for (const task of index.values()) {
+		const fromId = task.id;
+		const declared = task.dependencies ?? [];
+		dependencies.set(fromId, declared);
+		for (const dependencyId of declared) {
+			const existing = dependents.get(dependencyId);
+			if (existing) existing.push(fromId);
+			else dependents.set(dependencyId, [fromId]);
 		}
 	}
-	for (const entries of dependents.values()) entries.sort((a, b) => TaskOrdering.compareIds(a.key, b.key));
+	for (const entries of dependents.values()) entries.sort(TaskOrdering.compareIds);
 	return { index, dependencies, dependents };
 }
 
@@ -108,12 +99,10 @@ export function nodesInDirection(graph: DependencyGraph, direction: DependencyDi
  * not part of any of those corpora, so an archived ID resolves as missing instead of being
  * resurrected after archiving released its identity.
  *
- * Both traversals are breadth-first over canonical identities, so every reached identity becomes
+ * Both traversals are breadth-first over exact IDs, so every reached identity becomes
  * exactly one node carrying its shortest distance from the root, and chains, branches, diamonds,
- * and cycles all terminate without duplicating a node or repeating a subtree. Identities that no
- * visible record claims, and identities that more than one record claims, become explicit
- * unresolved nodes: they are reported, never guessed at, and never traversed through, so a
- * relationship behind one is never presented as resolved.
+ * and cycles all terminate without duplicating a node or repeating a subtree. Missing IDs become
+ * explicit unresolved nodes and are never traversed through.
  */
 export function buildDependencyGraph(
 	root: Task,
@@ -121,116 +110,107 @@ export function buildDependencyGraph(
 ): DependencyGraph {
 	const context = "index" in options && "dependencies" in options ? options : createDependencyGraphContext(options);
 	const { index } = context;
-	const rootKey = taskIdKey(root.id);
-	const entries = new Map<string, GraphEntry>();
-	const edges = new Map<string, { fromKey: string; toKey: string }>();
+	const rootId = root.id;
+	const nodes = new Map<string, DependencyGraphNode>();
+	const edges = new Map<string, DependencyGraphEdge>();
 
-	const rootRecord = index.lookup(rootKey);
-	entries.set(rootKey, {
-		key: rootKey,
-		node: {
-			id: root.id,
-			title: root.title,
-			status: root.status,
-			state: "resolved",
-			completed: index.isFinished(
-				rootRecord !== undefined && rootRecord !== "ambiguous" ? rootRecord : { task: root, completedRecord: false },
-			),
-			dependencyDepth: 0,
-			dependentDepth: 0,
-		},
+	nodes.set(rootId, {
+		id: root.id,
+		title: root.title,
+		status: root.status,
+		state: "resolved",
+		completed: root.done,
+		dependencyDepth: 0,
+		dependentDepth: 0,
 	});
 
-	const ensureEntry = (key: string, reference: string): GraphEntry => {
-		const existing = entries.get(key);
+	const ensureNode = (id: string): DependencyGraphNode => {
+		const existing = nodes.get(id);
 		if (existing) return existing;
 
-		const record = index.lookup(key);
-		const base = { dependencyDepth: null, dependentDepth: null, completed: false } as const;
+		const record = index.get(id);
 		let node: DependencyGraphNode;
 		if (record === undefined) {
-			node = { id: reference.trim() || key, title: null, status: null, state: "missing", ...base };
-		} else if (record === "ambiguous") {
-			node = { id: key, title: null, status: null, state: "ambiguous", ...base };
+			node = {
+				id,
+				title: null,
+				status: null,
+				state: "missing",
+				completed: false,
+				dependencyDepth: null,
+				dependentDepth: null,
+			};
 		} else {
 			node = {
-				id: record.task.id,
-				title: record.task.title,
-				status: record.task.status,
+				id: record.id,
+				title: record.title,
+				status: record.status,
 				state: "resolved",
-				completed: index.isFinished(record),
+				completed: record.done,
 				dependencyDepth: null,
 				dependentDepth: null,
 			};
 		}
-		const entry: GraphEntry = { key, node };
-		entries.set(key, entry);
-		return entry;
+		nodes.set(id, node);
+		return node;
 	};
 
-	const addEdge = (fromKey: string, toKey: string) => {
-		edges.set(`${fromKey} -> ${toKey}`, { fromKey, toKey });
+	const addEdge = (from: string, to: string) => {
+		edges.set(`${from} -> ${to}`, { from, to });
 	};
 
 	// The declared dependencies of an identity. The root is answered from the caller's record so the
 	// graph still resolves for a task that is not part of the supplied corpus.
-	const dependenciesOf = (key: string): string[] => {
-		if (key === rootKey) return root.dependencies ?? [];
-		return context.dependencies.get(key)?.map((dependency) => dependency.reference) ?? [];
+	const dependenciesOf = (id: string): readonly string[] => {
+		if (id === rootId) return root.dependencies ?? [];
+		return context.dependencies.get(id) ?? [];
 	};
 
-	const traverse = (
-		direction: DependencyDirection,
-		neighbours: (key: string) => ReadonlyArray<{ key: string; reference: string }>,
-	) => {
-		const queue: GraphTraversalState[] = [{ key: rootKey, depth: 0 }];
+	const traverse = (direction: DependencyDirection, neighbours: (id: string) => readonly string[]) => {
+		const queue: GraphTraversalState[] = [{ id: rootId, depth: 0 }];
 		for (let cursor = 0; cursor < queue.length; cursor++) {
 			const current = queue[cursor];
 			if (!current) break;
-			const entry = entries.get(current.key);
 			// Unresolved identities are never walked through: their edges cannot be attributed.
-			if (entry?.node.state !== "resolved") continue;
+			if (nodes.get(current.id)?.state !== "resolved") continue;
 
-			for (const neighbour of neighbours(current.key)) {
-				addTraversalNeighbour(direction, current, neighbour, queue, ensureEntry, addEdge);
+			for (const neighbourId of neighbours(current.id)) {
+				addTraversalNeighbour(direction, current, neighbourId, queue, ensureNode, addEdge);
 			}
 		}
 	};
 
-	traverse("dependencies", (key) => dependenciesOf(key).map((reference) => ({ key: taskIdKey(reference), reference })));
+	traverse("dependencies", dependenciesOf);
 	traverse("dependents", (key) => context.dependents.get(key) ?? []);
 
-	const rootEntry = entries.get(rootKey);
-	const ordered = [...entries.values()]
-		.filter((entry) => entry.key !== rootKey)
-		.sort((a, b) => TaskOrdering.compareIds(a.node.id, b.node.id));
-	const orderedEntries = rootEntry ? [rootEntry, ...ordered] : ordered;
-	const idByKey = new Map(orderedEntries.map((entry) => [entry.key, entry.node.id]));
+	const ordered = [...nodes.entries()]
+		.filter(([id]) => id !== rootId)
+		.sort(([a], [b]) => TaskOrdering.compareIds(a, b));
 
 	return {
 		rootId: root.id,
-		nodes: orderedEntries.map((entry) => entry.node),
-		edges: [...edges.values()]
-			.map((edge) => ({ from: idByKey.get(edge.fromKey) ?? edge.fromKey, to: idByKey.get(edge.toKey) ?? edge.toKey }))
-			.sort((a, b) => TaskOrdering.compareIds(a.from, b.from) || TaskOrdering.compareIds(a.to, b.to)),
+		nodes: [nodes.get(rootId)!, ...ordered.map(([, node]) => node)],
+		edges: [...edges.values()].sort(
+			(a, b) => TaskOrdering.compareIds(a.from, b.from) || TaskOrdering.compareIds(a.to, b.to),
+		),
 	};
 }
 
 function addTraversalNeighbour(
 	direction: DependencyDirection,
 	current: GraphTraversalState,
-	neighbour: { key: string; reference: string },
+	neighbourId: string,
 	queue: GraphTraversalState[],
-	ensureEntry: (key: string, reference: string) => GraphEntry,
-	addEdge: (fromKey: string, toKey: string) => void,
+	ensureNode: (id: string) => DependencyGraphNode,
+	addEdge: (from: string, to: string) => void,
 ): void {
-	const next = ensureEntry(neighbour.key, neighbour.reference);
-	if (direction === "dependencies") addEdge(current.key, neighbour.key);
-	else addEdge(neighbour.key, current.key);
-	if (depthInDirection(next.node, direction) !== null) return;
-	if (direction === "dependencies") next.node.dependencyDepth = current.depth + 1;
-	else next.node.dependentDepth = current.depth + 1;
-	queue.push({ key: neighbour.key, depth: current.depth + 1 });
+	const next = ensureNode(neighbourId);
+	if (direction === "dependencies") addEdge(current.id, neighbourId);
+	else addEdge(neighbourId, current.id);
+	if (depthInDirection(next, direction) !== null) return;
+	if (direction === "dependencies") next.dependencyDepth = current.depth + 1;
+	else next.dependentDepth = current.depth + 1;
+	queue.push({ id: neighbourId, depth: current.depth + 1 });
 }
 
 /**

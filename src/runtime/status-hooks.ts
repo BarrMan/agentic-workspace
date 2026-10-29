@@ -10,10 +10,6 @@
 
 import { join } from "node:path";
 import type { AgentPreset, RuntimeAgentBootstrap } from "../model/session/types.ts";
-import { buildHookCommand, HOOK_STATUS_VALUES, type HookStatus } from "./agents/core/hook-script.ts";
-
-export type { HookStatus };
-export { buildHookCommand, HOOK_STATUS_VALUES };
 
 /** The environment variable a launched agent reads to find its owned status sidecar directory. */
 export const STATUS_DIR_ENV = "AGENTIC_WORKSPACE_AGENT_STATUS_DIR";

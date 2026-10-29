@@ -1,125 +1,93 @@
 # Storage
 
-Part of [BLUEPRINT](../BLUEPRINT.md). Storage owns model-typed workspace persistence and presentation configuration. It is the only component that knows workspace paths, record formats, storage codecs, locks, and file watching. It validates encoding and never applies model rules. Runtime execution resources belong to SessionRuntime, Harness, or Renderer. Paths and formats are fixed by [ADR-0002](../adr/0002-storage-filesystem-paths-formats.md).
+Part of [BLUEPRINT](../BLUEPRINT.md). [Storage](../../src/storage/storage.ts) is the retained model-typed public boundary for workspace persistence, including configuration, session histories, locks and file watching. Its [FileSystem](../../src/storage/file-system.ts) implementation is private. Thin forwarding at this boundary preserves ownership and is legitimate; callers do not reach through to the backend. [ADR-0002](../adr/0002-storage-filesystem-paths-formats.md) retains the paths/formats strategy; [ADR-0013](../adr/0013-current-only-task-storage-and-format-handling.md) owns current-only formats and decoding-failure handling.
 
 ## Operations
 
-```ts
-Storage.loadProject(project) {
-  taskRecords = []
+| Boundary | Contract |
+|---|---|
+| `loadTasks`, `loadCompletedTasks`, `loadArchivedTasks` | Load records from the configured project store for TasksService initialization. Location does not determine status or `done`. |
+| `loadTask(taskId, options)` | Direct exact-identity record read; strict on malformed targets. |
+| `saveTask(task)` | Persist the complete supplied task record. No timestamp advancement, task event, status hook, approval override or session-history write. |
+| `createTask(task)` | Create-only task persistence plus required task-resource provisioning; return a rollback receipt. |
+| `withTaskLock`, `acquireTaskLock`, multi-task variants | Acquire before fresh record reads; supply complete current records and own missing-task failure. |
+| `sessionStore()` | Supply the SessionStore boundary for durable histories and conversation claims. |
+| Configuration and presentation stores | Read, lock and persist their own typed records; see below. |
+| `watchTasks`, `watchConfig` | Own filesystem subscriptions; task collection reconciliation belongs to TasksService. |
 
-  for (record of project.taskRecords) {
-    record.sessions = this.loadSessionHistories(record.id)
-    taskRecords.push(record)
-  }
+The [Storage declaration](../../src/storage/storage.ts) owns the full API inventory. Milestone reads remain typed Storage operations (`loadMilestones`, `loadArchivedMilestones`), not caller filesystem access.
 
-  return { taskRecords }
-}
+## Initialization and Required State
 
-Storage.loadSessionHistories(taskId) {
-  state = this.readJson(this.sessionsPath(taskId))
+Explicit workspace initialization provisions required task/milestone roots, archive/completed roots, state roots, lock parents and configuration defaults, including the project mode catalogue. [Initialization](../../src/controller/init-helpers.ts) supplies the configuration; `Storage.initializeWorkspace` owns provisioning for the selected location, including custom workspace and root-user configuration lock parents.
 
-  return Object.entries(state.modes).map(([modeId, history]) => ({
-    modeId,
-    sessions: history.sessions,
-    activeSessionId: history.activeSessionId ?? null,
-  }))
-}
+New-task creation provisions the task container, artifacts directory, empty initial session state and required session resource/lock directories. `SessionStore.insertTask` is part of that explicit creation, not a lazy read or launch repair.
 
-Storage.loadTasks() {
-  return this.readTaskRecords(this.tasksPath())
-}
+Ordinary startup, reads, writes and lock acquisition require their initialized resources. Missing required task, artifact or milestone roots, required session state, or a required mode catalogue fail with an error; they are not recreated or treated as empty collections. Missing optional files are governed by their own store contract, below. Malformed individual task records remain distinct from a missing required collection root.
 
-Storage.loadMilestones() {
-  return this.readMilestones(this.milestonesPath())
-}
+Only current supported formats and configured locations are read. There are no startup conversions, migration entry points, deprecated configuration aliases or alternate legacy discovery paths. Existing records and historical migration files are not rewritten, relocated or deleted merely because migration support was removed.
 
-Storage.loadArchivedMilestones() {
-  return this.readMilestones(this.archivedMilestonesPath())
-}
+## Task Records and Creation
 
-Storage.loadUserAgentConfiguration() {
-  return this.readUserAgentConfiguration()
-}
+[TaskRepository](../../src/storage/task-repository.ts) and the [task record schema](../../src/storage/markdown/task-record-schema.ts) own task persistence and decoding. Records use Markdown with YAML frontmatter; the codec owns schema/version checks and preserves the task body and supported custom frontmatter. Accepted models are not repeatedly schema-parsed in Controller, but encoding and trust-boundary validation remain required.
 
-Storage.loadProjectAgentConfiguration() {
-  return this.loadProjectConfig()?.agentConfiguration ?? null
-}
+An existing-record save uses the supplied complete record and resolved `filePath`; it does not reconstruct a missing location, merge a patch, update timestamps or apply approval policy. Atomic replacement uses a sibling temporary file and rename. The caller owns the surrounding task lock; persistence does not acquire it again. These rules do not imply that the persistence implementation performs no reads of its own.
 
-Storage.saveTask(task) {
-  this.writeAtomic(this.taskPath(task.id), this.serializeTaskRecord(task.serialize()))
-  this.writeAtomic(this.sessionsPath(task.id), JSON.stringify(this.sessionState(task)))
-}
+Creation is separate: allocate under the shared create lock, persist the current-schema counter atomically before create-only publication, and never overwrite an occupied destination or reuse a consumed identity. Configured task prefixes and subtask allocation remain supported. A malformed counter fails unchanged rather than triggering conversion or a scan fallback. [Task identity and allocation](../specs/tasks.md#task-003-task-identity) owns the allocation requirements.
 
-Storage.allocateTaskId(prefix) {
-  // Called under the create lock.
-  counter = this.readTaskCounter() ?? {}
-  if (counter[prefix] is missing) {
-    counter[prefix] = { next: this.maximumExistingTopLevelTaskNumber(prefix, [active, completed, archived, siblingWorktrees]) ?? 0 }
-    this.writeAtomic(this.taskCounterPathInCreateLockDirectory(), JSON.stringify(counter))
-  }
-  while (true) {
-    counter[prefix].next++
-    this.writeAtomic(this.taskCounterPathInCreateLockDirectory(), JSON.stringify(counter))
-    try {
-      id = `${prefix}-${counter[prefix].next}`
-      this.saveTaskCreateOnly(id)
-      return id
-    } catch (error) {
-      if (!isTaskTargetConflict(error)) throw error
-    }
-  }
-}
+Creation rollback uses the receipt to remove only resources still matching the operation's writes and to restore prior state where applicable. Concurrently changed data is retained, with incomplete cleanup reported. Task writes, session-state writes and container moves are separate effects, not a multi-record transaction.
 
-Storage.sessionState(task) {
-  return {
-    version: 2,
-    taskId: task.id,
-    modes: Object.fromEntries(
-      task.serializeSessions().map(history => [
-        history.modeId,
-        { sessions: history.sessions, activeSessionId: history.activeSessionId ?? undefined },
-      ]),
-    ),
-  }
-}
+Task identity is the exact stored string. Path encoding does not change identity. Existing-record writes must not target another task; destination and create-only collisions fail. Collection reads perform no container/frontmatter identity reconciliation, identity/path reconstruction or candidate ranking. Collection and direct-target reads propagate codec validation and security errors with filename and decoder context; neither skips corrupt records to return a partial success nor repairs them. [TASK-007](../specs/tasks.md#task-007-malformed-records) owns malformed-record behavior.
 
-Storage.loadPresentationConfig() {
-  return this.readJson(this.presentationPath())
-}
+`moveTaskToArchive` and `deleteTaskContainer` perform persistence effects after TasksService coordinates required cleanup. They do not apply status/Done eligibility policy. Historical completed records remain readable in place.
 
-Storage.savePresentationConfig(config) {
-  this.writeAtomic(this.presentationPath(), JSON.stringify(config))
-}
+## Locking and Fresh Reads
 
-Storage.serializeTaskRecord(record) {
-  return this.markdown.serialize(record)  // task.md: YAML frontmatter + Markdown body
-}
+[LockOwner](../../src/filesystem/lock-owner.ts) is the shared acquisition/release mechanism for task operations, create counters, configuration, session state, conversation claims and other persisted resources under [ADR-0012](../adr/0012-explicit-operation-persistence-coordination.md). Each owner supplies the actual resource identity and contention behavior; sharing a mechanism does not combine all resources into one lock. Linked worktrees use the main project's shared task identity and store; distinct projects remain independent.
 
-Storage.readJson(path) {
-  return JSON.parse(this.fs.read(path))
-}
-
-Storage.writeAtomic(path, content) {
-  temporary = `${path}.${randomUUID()}.tmp`
-  this.fs.write(temporary, content)
-  this.fs.rename(temporary, path)
-}
+```text
+Storage.withTaskLock(taskId, callback, options):
+  acquire the task operation lock
+  read the current complete task through Storage
+  fail if missing or invalid
+  await callback(currentTask)
+  release the lock, preserving operation and release errors
 ```
+
+The caller computes and persists its complete replacement inside that callback. `acquireTaskLock` exposes the same acquired-record guarantee with an explicit release function. Multi-task operations acquire their locks in deterministic order before loading the records. There is one acquisition owner per resource; do not nest acquisition of the same lock or add a second lifecycle-lock mechanism. `TasksService.update` and `edit` require the caller's task lock and do not enforce it themselves.
+
+Session-state writes acquire their own resource lock, read current state, apply the accepted relationship change, write atomically and release in a short critical section. Provider startup and arbitrary external work remain outside that state lock. The outer task operation lock still spans startup/settlement to exclude deletion. Conversation claims use the same LockOwner mechanism for their separate execution-exclusion resource.
+
+## Session Histories
+
+[SessionStore](../../src/storage/session-store.ts) owns durable per-task mode histories, active session IDs, retained `AgentSession` records and conversation claims. Its versioned JSON is separate from task Markdown. Core supplies model-derived relationship changes; the store owns fresh locked persistence and record-incarnation/existence checks, not execution policy.
+
+Reads decode unknown disk data, including membership and task-identity checks. Missing, malformed or unsupported required session state fails without reset or overwrite. Hydration and accepted post-mutation objects do not run a second schema-validation/repair pass. The Task model exposes its record and relationships directly, and Session exposes its `record` property; there are no model serializer wrappers to invoke.
+
+Runtime observations are not durable lifecycle history. Stop, observation, provider cleanup and execution readiness belong to Session/Core/runtime, never to SessionStore. A saved record is not evidence that an execution stopped.
+
+## Configuration and Presentation State
+
+[storage/config.ts](../../src/storage/config.ts) uses the typed `AgentConfigurationStorage` interface. Project configuration mutation acquires the configuration lock, calls `loadConfigFromDisk()` for a fresh read that bypasses the instance cache, transforms accepted configuration, and calls `saveConfigUnderConfigLock()` before release. Both Storage methods are structurally required boundary operations. A normal save uses the same resource identity; it must not nest a second acquisition inside this flow.
+
+Root configuration follows the same locked read-modify-write principle, preserving file permissions and atomic replacement. Unknown configuration is decoded at acceptance; accepted transforms are not reparsed across layers. Config snapshots are refreshed after successful persistence. Default mode seeding belongs to explicit initialization, not catalogue reads.
+
+[GroupStore](../../src/storage/group-store.ts) and [ViewStateStore](../../src/storage/view-state-store.ts) may seed an absent optional presentation file on open under its lock. Their parent directories must already exist. Once open, mutations read current disk state under the lock; disappearance of a previously persisted file is an error, never permission to overwrite it from cached state. These optional-file semantics do not authorize repair of required workspace or task resources.
+
+## Watching
+
+Storage supplies watched locations and record readers through `watchTasks`. [task-layout.ts](../../src/storage/task-layout.ts) owns task layout names and globs; [task-watcher.ts](../../src/storage/watchers/task-watcher.ts) owns filesystem notifications. Controller and Renderer do not hardcode those details.
+
+Notifications identify the affected record or artifact and its storage location. TasksService applies per-record changes to its initialized collection; its own commits update that collection immediately. The watcher is notification-driven, with errors surfaced by its owner; no polling interval, periodic full scan or missed-notification recovery is guaranteed. Subscription disposal closes watching, not execution.
+
+Actual record absence while reconciling a received event is distinct from malformed data. It may remove the affected cached entry; it must not turn a decoder failure into a removal, a repaired record or successful partial loading. Missing required roots/state remain errors.
 
 ## Invariants
 
-- Only Storage holds a workspace filesystem handle. Controller, Renderer, and CLI never read or write workspace records, construct workspace storage paths, or hold a workspace filesystem handle. Renderer may use Storage only for presentation configuration; CLI calls Controller only.
+- Storage retains its typed public boundary and private FileSystem. Frontends may use its lock and presentation APIs; task-write policy remains exclusively in TasksService. Callers never construct workspace storage paths or reach into the private backend.
 - Runtime-host I/O stays with SessionRuntime, Harness, or Renderer: provider receipts, terminal sockets and panes, process handles, logs, and user-selected input files are not workspace persistence.
-- `loadTasks`, `loadMilestones`, and `loadArchivedMilestones` are the read operations for Controller workflows; no caller reaches through Storage to its filesystem.
-- Task records are `task.md` Markdown with YAML frontmatter, schema version 3. The Markdown record codec extracts frontmatter with `gray-matter` and validates it against the record schema.
-- Task IDs are `PREFIX-NUMBER` strings with optional dotted numeric subtask segments. New IDs are written uppercase; existing stored casing is preserved, and identity comparison is case-insensitive. Numeric segments are preserved exactly (`TASK-01` differs from `TASK-1`). Alphanumeric IDs are invalid. Lookup does not normalize numeric segments, accept bare numbers, or infer prefixes. The ID contract is defined in [TASK-003](../specs/tasks.md#task-003-task-identity).
-- Storage implements the counter schema, bootstrap, allocation, and [explicit conversion procedure](../specs/tasks.md#explicit-counter-conversion) in [TASK-003](../specs/tasks.md#task-003-task-identity) under the shared create lock, using temporary-file-plus-rename persistence before create-only save. Validate the complete counter schema; malformed existing entries fail unchanged and are never treated as missing prefixes. Task-container selectors and keep-in-place policy belong to [TASK-006](../specs/tasks.md#task-006-task-storage-format); [location resolution](../../src/filesystem/paths/agentic-workspace-directory.ts) owns their path mechanics.
-- Session state is `state.json` JSON version 2; presentation state is `view-state.json` JSON.
-- Storage returns records; Controller constructs Task models with the Session factory.
-- Task metadata and session relationships are separate records; `loadProject` rejoins them.
-- Selection is part of the task record, not a preference.
-- A durable write completes before Controller publishes a signal.
-- Storage never starts, stops, selects, or manages provider-owned Session state.
+- Source directories are storage metadata, not task status or completion. No normal read repairs identity, moves historical records or converts old formats.
+- Atomic replacement, create-only allocation, destination-exists checks, rollback receipts, containment and symlink checks remain mandatory. Unknown record decoding is distinct from redundant validation of an accepted model.
+- A durable write completes before its owner publishes success. Failed publication cannot undo persistence, and partial multi-effect operations must be reported accurately.
+- Storage never starts, stops or manages provider-owned execution state. It persists model-selected relationships without choosing domain outcomes.
 - Single-session sidecar deletion derives targets from the trusted task directory and validated session ID, canonicalizes the ancestor directory, verifies containment, checks targets with `lstat`, and unlinks only regular files. Recursive purge containment is determined with path/filesystem APIs, never regex or string-prefix comparisons.
-- Ordinary Core startup/load performs no task/config migration and creates no migration state or manifest directory. The maintenance invocation `bun scripts/migrate-task-config.ts <project target>` is the only trigger for this migration; it covers root configuration, resolved project configuration, and records in active, completed, and archived task directories. Its no-op behavior, manifest ordering and placement, partial-completion reporting, and exactly-once source/target hash handling are specified by [TASK-023](../specs/tasks.md#task-023-explicit-task-and-configuration-migration), [CONFIG-015](../specs/configuration.md#config-015-priority-labels), and [CONFIG-016](../specs/configuration.md#config-016-date-format-tokens). For nonempty work the manifest is `task-config-migration.json` in the resolved project state root and is written before record rewrites; a no-op creates neither that manifest nor the state root/manifest directory. The distinct legacy agent-preset command conversion remains a selected-workspace startup migration under [CONFIG-008](../specs/configuration.md#config-008-agent-settings).

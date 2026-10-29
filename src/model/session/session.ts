@@ -1,5 +1,4 @@
 import type {
-	AgentActivity,
 	AgentSession,
 	ExecutionIdentity,
 	ModeId,
@@ -31,13 +30,6 @@ export interface RecoverableExecutionFailure extends Error {
 	readonly execution?: RunningExecution;
 	readonly identity?: ExecutionIdentity;
 }
-export interface SessionEvent {
-	readonly kind: "turn-completed" | "permission-wait" | "execution-exit" | "activity";
-	readonly activity?: AgentActivity;
-	readonly executionIdentity: RunningExecution["identity"];
-	readonly snapshot: SessionSnapshot;
-}
-
 export class Session {
 	readonly id: string;
 	private currentRecord: Readonly<AgentSession>;
@@ -47,7 +39,6 @@ export class Session {
 	private currentModeId: ModeId;
 	private readonly runtime: SessionRuntime;
 	private stopObserving?: Unsubscribe;
-	private readonly listeners = new Set<(event: SessionEvent) => void>();
 	private disposed = false;
 	private retainedObservation: RetainedSessionObservation = "absent";
 
@@ -65,6 +56,12 @@ export class Session {
 
 	get modeId(): ModeId {
 		return this.currentModeId;
+	}
+
+	replaceLoadedRecord(record: Readonly<AgentSession>, modeId: ModeId): void {
+		this.currentRecord = record;
+		this.providerSessionId = record.nativeSessionId;
+		this.currentModeId = modeId;
 	}
 
 	/** Membership changes do not replace the execution or its launch identity. */
@@ -147,24 +144,6 @@ export class Session {
 		return await this.runtime.ask(this.providerSessionId, context);
 	}
 
-	async attach(): Promise<TerminalAttachment> {
-		return await this.runtime.attach(this.currentRecord);
-	}
-
-	async detach(attachment: TerminalAttachment): Promise<void> {
-		await this.runtime.detach(attachment);
-	}
-
-	subscribe(listener: (event: SessionEvent) => void): Unsubscribe {
-		if (this.disposed) return () => {};
-		this.listeners.add(listener);
-		return () => this.listeners.delete(listener);
-	}
-
-	serialize(): AgentSession {
-		return { ...this.currentRecord };
-	}
-
 	private retainFailedExecution(error: unknown): void {
 		const execution = error instanceof Error ? (error as RecoverableExecutionFailure).execution : undefined;
 		if (!execution) return;
@@ -184,7 +163,7 @@ export class Session {
 		if (this.disposed || !observe) return;
 		this.stopObserving = this.runtime.observe(execution, (event) => {
 			if (this.currentExecution !== execution || this.disposed) return;
-			this.publish(event, execution);
+			this.handleExecutionEvent(event, execution);
 		});
 	}
 
@@ -211,7 +190,7 @@ export class Session {
 		this.retainedObservation = "absent";
 	}
 
-	private publish(event: RunningExecutionEvent, execution: RunningExecution): void {
+	private handleExecutionEvent(event: RunningExecutionEvent, execution: RunningExecution): void {
 		const capability = {
 			"turn-completed": execution.events.turnCompleted,
 			"permission-wait": execution.events.permissionWait,
@@ -231,8 +210,6 @@ export class Session {
 					activity === "idle" ? (this.snapshot.activity === "idle" ? this.snapshot.idleSince : event.observedAt) : null,
 			};
 		}
-		const executionIdentity = execution.identity;
-		for (const listener of this.listeners) listener({ ...event, executionIdentity, snapshot: { ...this.snapshot } });
 	}
 
 	private assertMode(context: SessionLaunchContext): void {

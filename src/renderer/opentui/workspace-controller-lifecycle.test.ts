@@ -1,11 +1,10 @@
-import { afterEach, describe, expect, it } from "bun:test";
+import { afterEach, describe, expect, it, spyOn } from "bun:test";
 import { EventEmitter } from "node:events";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { upsertAgentConfiguration } from "../../controller/agent-configuration.ts";
-import { Core } from "../../controller/agentic-workspace.ts";
-import type { ObservedSession } from "../../controller/session-application.ts";
+import { Core, type ObservedSession } from "../../controller/agentic-workspace.ts";
 import type { AgentSession, SessionState, TerminalAttachment } from "../../model/session/types.ts";
 import { getBuiltInAgentConfiguration, getDefaultModeCatalog } from "../../storage/config.ts";
 import { initializeTestProject } from "../../test/test-utils.ts";
@@ -16,7 +15,11 @@ import type { OpenTuiWorkspaceOptions } from "./workspace.ts";
 import { OpenTuiWorkspaceController } from "./workspace-controller.ts";
 
 const roots: string[] = [];
+const cores: Core[] = [];
+const subscriptionSpies: Array<{ mockRestore(): void }> = [];
 afterEach(async () => {
+	for (const subscription of subscriptionSpies.splice(0)) subscription.mockRestore();
+	for (const core of cores.splice(0)) core.tasks.dispose();
 	for (const root of roots.splice(0)) await rm(root, { recursive: true, force: true });
 });
 
@@ -44,19 +47,22 @@ async function fixture(
 	const root = await mkdtemp(join(tmpdir(), "workspace-controller-lifecycle-"));
 	roots.push(root);
 	const core = new Core(root);
-	let taskCallbacks!: Parameters<Core["watchTasks"]>[0];
-	core.watchTasks = (callbacks) => {
-		taskCallbacks = callbacks;
-		return { stop() {} } as ReturnType<Core["watchTasks"]>;
-	};
+	cores.push(core);
 	await initializeTestProject(core, "Lifecycle");
+	await core.tasks.init();
+	let taskCallbacks!: Parameters<typeof core.tasks.subscribe>[0];
+	const taskSubscriptionSpy = spyOn(core.tasks, "subscribe").mockImplementation((callbacks) => {
+		taskCallbacks = callbacks;
+		return () => {};
+	});
+	subscriptionSpies.push(taskSubscriptionSpy);
 	await upsertAgentConfiguration(core, "project", {
 		...getBuiltInAgentConfiguration(),
 		modes: getDefaultModeCatalog(),
 	});
-	const { task } = await core.createTaskFromInput({ title: "Handoff task", status: "To Do" });
+	const { task } = await core.tasks.create({ title: "Handoff task", status: "To Do" });
 	const tasks = [task];
-	if (options.secondTask) tasks.push((await core.createTaskFromInput({ title: "Other task", status: "To Do" })).task);
+	if (options.secondTask) tasks.push((await core.tasks.create({ title: "Other task", status: "To Do" })).task);
 	let deferModeHistory = false;
 	let historyStarted = false;
 	let finishModeHistory: (() => void) | undefined;
@@ -97,7 +103,7 @@ async function fixture(
 		bootstrapPath: join(root, `${id}.sh`),
 	});
 	if (options.deferResume) history.push(makeRecord("saved"));
-	const sessionApplication = {
+	Object.assign(core, {
 		projectInventory: async () =>
 			options.deferShutdown || options.workingSessions !== undefined
 				? [
@@ -148,23 +154,18 @@ async function fixture(
 					finishShutdown = (error) => (error ? reject(error) : resolve());
 				});
 		},
-	} as never;
+	});
 	const workspaceState = {
-		sessionApplication,
-		listTasks: async () => tasks,
 		listAllSessions: async () =>
 			new Map([[task.id, { taskId: task.id, sessions: [...history], activeSessionId: history.at(-1)?.id }]]),
-		listSessions: async () => ({ taskId: task.id, sessions: history }),
-		listModeSessions: async (taskId: string, modeId: string) => {
+		listSessions: async (taskId: string, modeId?: string) => {
 			if (deferModeHistory) {
 				deferModeHistory = false;
 				historyStarted = true;
 				await new Promise<void>((resolve) => (finishModeHistory = resolve));
 			}
-			return { taskId, modeId, sessions: [...history], activeSessionId: history.at(-1)?.id };
+			return { taskId, ...(modeId ? { modeId } : {}), sessions: [...history], activeSessionId: history.at(-1)?.id };
 		},
-		findSessionMode: async () => "plan",
-		liveSession: async () => undefined,
 	} as never;
 	let workspace: OpenTuiWorkspaceOptions | undefined;
 	const renderer = Object.assign(new EventEmitter(), { width: 120, height: 40 });

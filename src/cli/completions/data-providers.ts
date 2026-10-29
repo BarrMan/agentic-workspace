@@ -11,7 +11,11 @@ type CoreCallback<T> = (core: Core) => Promise<T>;
 async function withCore<T>(callback: CoreCallback<T>, fallback: T): Promise<T> {
 	try {
 		const core = await createRuntimeCore();
-		return await callback(core);
+		try {
+			return await callback(core);
+		} finally {
+			core.tasks.dispose();
+		}
 	} catch {
 		return fallback;
 	}
@@ -26,7 +30,7 @@ function getDefaultStatuses(): string[] {
  */
 export async function getTaskIds(): Promise<string[]> {
 	return await withCore(async (core) => {
-		const tasks = await core.loadStoredTasks();
+		const tasks = core.tasks.getActiveTasks();
 		return tasks.map((task) => task.id).sort();
 	}, []);
 }
@@ -36,7 +40,7 @@ export async function getTaskIds(): Promise<string[]> {
  */
 export async function getStatuses(): Promise<string[]> {
 	return await withCore(async (core) => {
-		const config: AgenticWorkspaceConfig | null = await core.getStoredConfig();
+		const config: AgenticWorkspaceConfig | null = await core.storage.loadConfig();
 		const statuses = config?.statuses;
 		if (Array.isArray(statuses) && statuses.length > 0) {
 			return statuses;
@@ -50,7 +54,7 @@ export async function getStatuses(): Promise<string[]> {
  */
 export async function getLabels(): Promise<string[]> {
 	return await withCore(async (core) => {
-		const tasks = await core.loadStoredTasks();
+		const tasks = core.tasks.getActiveTasks();
 		const labels = new Map<string, string>();
 		for (const task of tasks) {
 			for (const label of task.labels) {

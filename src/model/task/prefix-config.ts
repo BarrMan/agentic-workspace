@@ -1,12 +1,4 @@
-import { type AgenticWorkspaceConfig, EntityType, type PrefixConfig } from "../types.ts";
-import { isNumericTaskIdSegment, parseTaskId, taskIdBody, taskIdKey } from "./task-id.ts";
-
-/**
- * Default prefix configuration for tasks.
- */
-const DEFAULT_PREFIX_CONFIG: PrefixConfig = {
-	task: EntityType.Task,
-};
+import { isNumericTaskIdSegment, parseTaskId, taskIdBody } from "./task-id.ts";
 
 /**
  * Init-time task prefix validation. Empty input is allowed (the default prefix is used).
@@ -51,11 +43,11 @@ export function extractIdBody(id: string, prefix: string): string {
  *
  * @example
  * hasPrefix("task-123", "task") // => true
- * hasPrefix("TASK-123", "task") // => true (case-insensitive)
+ * hasPrefix("TASK-123", "task") // => false
  * hasPrefix("JIRA-1", "task") // => false
  */
 export function hasPrefix(id: string, prefix: string): boolean {
-	return id.trim().toLowerCase().startsWith(`${prefix.toLowerCase()}-`);
+	return id.startsWith(`${prefix}-`);
 }
 
 /**
@@ -63,17 +55,17 @@ export function hasPrefix(id: string, prefix: string): boolean {
  * Returns null if the ID has no valid prefix pattern.
  *
  * @param id - The ID to extract from
- * @returns The prefix (lowercase), or null if no prefix
+ * @returns The prefix, or null if no prefix
  *
  * @example
  * extractAnyPrefix("task-123") // => "task"
- * extractAnyPrefix("JIRA-456") // => "jira"
+ * extractAnyPrefix("JIRA-456") // => "JIRA"
  * extractAnyPrefix("123") // => null
  */
 export function extractAnyPrefix(id: string): string | null {
 	if (!id || typeof id !== "string") return null;
 	const match = id.trim().match(/^([a-zA-Z]+)-/);
-	return match?.[1] ? match[1].toLowerCase() : null;
+	return match?.[1] ?? null;
 }
 
 /**
@@ -93,7 +85,7 @@ export function generateNextId(existingIds: string[], prefix: string, zeroPaddin
 	let max = 0n;
 
 	for (const id of existingIds) {
-		const parsed = parseTaskId(id, prefix);
+		const parsed = parseTaskId(id, upperPrefix);
 		if (parsed) {
 			// Only consider top-level IDs (no dots for subtasks)
 			const body = parsed.segments[0];
@@ -133,9 +125,7 @@ export function generateNextSubtaskId(
 	prefix: string,
 	zeroPadding?: number,
 ): string {
-	const parentKey = taskIdKey(parentId);
-	const normalizedParent = hasPrefix(parentKey, prefix) ? parentKey : `${prefix.toUpperCase()}-${parentKey}`;
-	const parentBody = extractIdBody(normalizedParent, prefix);
+	const parentBody = extractIdBody(parentId, prefix);
 	const parentSegments = parentBody.split(".");
 
 	let max = 0n;
@@ -148,10 +138,10 @@ export function generateNextSubtaskId(
 	const nextNum = (max + 1n).toString();
 
 	if (zeroPadding && zeroPadding > 0) {
-		return `${normalizedParent}.${nextNum.padStart(2, "0")}`;
+		return `${parentId}.${nextNum.padStart(2, "0")}`;
 	}
 
-	return `${normalizedParent}.${nextNum}`;
+	return `${parentId}.${nextNum}`;
 }
 
 function subtaskSequenceNumber(
@@ -163,32 +153,7 @@ function subtaskSequenceNumber(
 	const bodySegments = extractIdBody(id, prefix).split(".");
 	if (bodySegments.length <= parentSegments.length) return null;
 	const candidateParentSegments = bodySegments.slice(0, parentSegments.length);
-	if (!subtaskParentMatches(candidateParentSegments, parentBody)) return null;
+	if (candidateParentSegments.join(".") !== parentBody) return null;
 	const sequence = bodySegments[parentSegments.length];
 	return sequence && isNumericTaskIdSegment(sequence) ? BigInt(sequence) : null;
-}
-
-function subtaskParentMatches(candidateSegments: string[], parentBody: string): boolean {
-	return candidateSegments.join(".").toLowerCase() === parentBody.toLowerCase();
-}
-
-/**
- * Gets the prefix for a given entity type.
- * Tasks use the configured prefix when present, or the built-in task prefix.
- *
- * @param type - The entity type
- * @param config - Optional AgenticWorkspace config (only used for Task type)
- * @returns The prefix string for the entity type
- *
- * @example
- * getPrefixForType(EntityType.Task) // => "task"
- * getPrefixForType(EntityType.Task, { prefixes: { task: "JIRA" } }) // => "JIRA"
- */
-export function getPrefixForType(type: EntityType, config?: AgenticWorkspaceConfig): string {
-	switch (type) {
-		case EntityType.Task:
-			return config?.prefixes?.task ?? DEFAULT_PREFIX_CONFIG.task;
-		default:
-			return type;
-	}
 }

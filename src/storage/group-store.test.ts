@@ -24,6 +24,7 @@ const stores: Store[] = [];
 async function makeRoot(prefix: string): Promise<string> {
 	const root = await mkdtemp(join(tmpdir(), `agentic-workspace-groups-${prefix}-`));
 	roots.push(root);
+	await mkdir(join(agenticWorkspaceOf(root), ".locks"), { recursive: true });
 	return root;
 }
 

@@ -235,15 +235,19 @@ export class WorkspaceTaskActions {
 				persist: async (input, { groupId }) => {
 					try {
 						if (committedTask) {
-							committedTask = await this.core.updateTaskFromInput(committedTask.id, {
-								...input,
-								description: input.description ?? "",
-								type: input.type ?? "",
-								priority: input.priority ?? "",
-								agentConfiguration: input.agentConfiguration ?? null,
+							committedTask = await this.core.storage.withTaskLock(committedTask.id, async (current) => {
+								const task = { ...current, ...input };
+								task.description = input.description ?? "";
+								if (input.type) task.type = input.type;
+								else delete task.type;
+								if (input.priority) task.priority = input.priority;
+								else delete task.priority;
+								if (input.agentConfiguration) task.agentConfiguration = input.agentConfiguration;
+								else delete task.agentConfiguration;
+								return await this.core.tasks.edit(task);
 							});
 						} else {
-							committedTask = (await this.core.createTaskFromInput(input)).task;
+							committedTask = (await this.core.tasks.create(input)).task;
 						}
 						if (groupId || this.organization.membership[committedTask.id])
 							await this.#setTaskGroup(committedTask.id, groupId);
@@ -303,15 +307,28 @@ export class WorkspaceTaskActions {
 
 	async #saveTaskFields(taskId: string, draft: WorkspaceDraft, values: EditorValues): Promise<void> {
 		try {
-			const latest = await this.core.getTask(taskId);
-			if (!latest) throw new Error(`Task ${taskId} no longer exists.`);
 			const submitted: WorkspaceDraft = { ...draft, values: { ...draft.values, ...values } };
-			const changes = changedTaskFields(submitted, latest);
+			let changes: ReturnType<typeof changedTaskFields> = {};
+			const committed = await this.core.storage.withTaskLock(taskId, async (latest) => {
+				changes = changedTaskFields(submitted, latest);
+				if (Object.keys(changes).length === 0) return latest;
+				const updated = { ...latest };
+				if (changes.title !== undefined) updated.title = changes.title;
+				if (changes.description !== undefined) updated.description = changes.description;
+				if (changes.type !== undefined) {
+					if (changes.type) updated.type = changes.type;
+					else delete updated.type;
+				}
+				if (changes.priority !== undefined) {
+					if (changes.priority) updated.priority = changes.priority;
+					else delete updated.priority;
+				}
+				return await this.core.tasks.edit(updated);
+			});
 			if (Object.keys(changes).length === 0) {
 				this.operations.notice("No task fields changed.");
 				return;
 			}
-			const committed = await this.core.updateTaskFromInput(taskId, changes, {});
 			const committedValues = createWorkspaceDraft(committed).values;
 			for (const field of Object.keys(changes) as EditorField[]) {
 				draft.baseline[field] = committedValues[field];
@@ -373,7 +390,7 @@ export class WorkspaceTaskActions {
 	): Promise<void> {
 		if (action === "edit") return this.#openEditor(editTask, config);
 		try {
-			const task = await this.core.getTask(taskId);
+			const task = await this.core.tasks.getTask(taskId);
 			if (!task) {
 				this.operations.notice(`Task ${taskId} no longer exists.`);
 				return;
@@ -383,7 +400,7 @@ export class WorkspaceTaskActions {
 				return;
 			}
 			if (action === "done") {
-				const result = await this.core.markTaskDone(task.id);
+				const result = await this.core.tasks.markDone(task.id);
 				this.operations.notice(
 					result.changed ? `Moved ${task.id} to ${result.task.status}` : `Task ${task.id} is already done.`,
 				);

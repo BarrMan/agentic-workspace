@@ -3,6 +3,7 @@ import { mkdir } from "node:fs/promises";
 import { Core } from "../controller/agentic-workspace.ts";
 import { toTaskDetail } from "../controller/task-detail.ts";
 import { formatTaskPlainText } from "../renderer/formatters/task-plain-text.ts";
+import { Storage } from "../storage/storage.ts";
 import { coreFileSystem, createUniqueTestDir, initializeFilesystemTestProject, safeCleanup } from "./test-utils.ts";
 
 describe("opaque task body integration", () => {
@@ -21,23 +22,25 @@ describe("opaque task body integration", () => {
 	});
 
 	it("preserves a free-form body while rendering the stored content fields", async () => {
-		await core.createTask({
+		await Storage.open(testDir).createTask({
 			id: "task-1",
 			title: "Opaque body",
 			status: "To Do",
+			done: false,
 			createdDate: "2026-09-30 12:00",
 			labels: [],
 			dependencies: [],
 			description: "Stored description",
 			rawContent: "## Example\n\n- [~] This is free-form body text.",
 		});
+		await core.tasks.init();
 
 		const task = await coreFileSystem(core).loadTask("task-1");
 		if (!task) throw new Error("Expected created task");
 		expect(task.rawContent).toContain("- [~] This is free-form body text.");
 		expect(task.description).toBe("Stored description");
 
-		const output = formatTaskPlainText(toTaskDetail(task, { tasks: [task], completedTasks: [], statuses: ["To Do"] }));
+		const output = formatTaskPlainText(toTaskDetail(task, { tasks: [task], completedTasks: [] }));
 		expect(output).toContain("Description:");
 		expect(output).toContain("Stored description");
 	});

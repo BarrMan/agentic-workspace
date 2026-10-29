@@ -89,7 +89,7 @@ describe("agent configuration model", () => {
 			presets: { shared: { command: ["project"], env: {}, prepare: "", bootstrap: "pi" } },
 		};
 
-		const updated = removeAgentPreset(user, "shared", "root");
+		const updated = removeAgentPreset(user, "shared");
 
 		expect(updated.presets).toEqual({});
 		expect(project.presets?.shared?.command).toEqual(["project"]);
@@ -100,7 +100,7 @@ describe("agent configuration model", () => {
 			presets: { kept: { command: ["kept"], env: {}, prepare: "", bootstrap: "opencode" } },
 		};
 
-		expect(() => removeAgentPreset(current, "missing", "root")).toThrow("Agent preset not found: missing");
+		expect(() => removeAgentPreset(current, "missing")).toThrow("Agent preset not found: missing");
 		expect(current.presets).toHaveProperty("kept");
 	});
 
@@ -110,7 +110,7 @@ describe("agent configuration model", () => {
 			presets: { selected: { command: ["selected"], env: {}, prepare: "", bootstrap: "opencode" } },
 		};
 
-		expect(() => removeAgentPreset(current, "selected", "root")).toThrow("Choose another preset");
+		expect(() => removeAgentPreset(current, "selected")).toThrow("Choose another preset");
 	});
 
 	it("returns a fresh schema-valid configuration without mutating the input", () => {
@@ -123,7 +123,7 @@ describe("agent configuration model", () => {
 			sessions: { yoloMode: false },
 		};
 
-		const updated = removeAgentPreset(current, "removed", "root");
+		const updated = removeAgentPreset(current, "removed");
 
 		expect(updated).not.toBe(current);
 		expect(updated.presets).not.toBe(current.presets);

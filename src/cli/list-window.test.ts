@@ -1,4 +1,4 @@
-import { describe, expect, it, spyOn } from "bun:test";
+import { describe, expect, it } from "bun:test";
 import { Command } from "commander";
 import {
 	addListWindowOptions,
@@ -119,20 +119,6 @@ describe("list windows", () => {
 			count: true,
 			forcesText: true,
 		});
-	});
-
-	it("rejects count with JSON", () => {
-		const errors = spyOn(console, "error").mockImplementation(() => {});
-		const previousExitCode = process.exitCode;
-		try {
-			expect(parseListWindow({ count: true, json: true }, taskListCommand(), [])).toBeNull();
-			expect(errors).toHaveBeenLastCalledWith(
-				"--count cannot be combined with --json. Try 'agentic-workspace task list --help' for options.",
-			);
-		} finally {
-			errors.mockRestore();
-			process.exitCode = previousExitCode ?? 0;
-		}
 	});
 
 	it("accepts zero and negative paging values and clamps them to an empty-or-first page", async () => {

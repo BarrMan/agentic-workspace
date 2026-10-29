@@ -27,15 +27,6 @@ export function getStatusStyle(status: string): StatusStyle {
 }
 
 /**
- * Get just the color for a status (for backward compatibility)
- * @param status - The task status
- * @returns The color for the status
- */
-export function getStatusColor(status: string): string {
-	return getStatusStyle(status).color;
-}
-
-/**
  * Colour for the derived agent-activity dot. This is the agent-session status indication, a distinct
  * axis from task statuses:
  *   green  = `running` — the agent is doing work

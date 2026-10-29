@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { constants } from "node:fs";
-import { access, lstat, mkdir, readFile, realpath, stat } from "node:fs/promises";
+import { access, lstat, readFile, realpath, stat } from "node:fs/promises";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { LockOwner } from "../filesystem/lock-owner.ts";
 import { type ProjectStateRootOptions, resolveProjectStateRoot, writeFileAtomic } from "./session-store.ts";
@@ -69,7 +69,7 @@ async function writableDirectory(path: string): Promise<boolean> {
 
 async function canonicalViewLock(projectRoot: string): Promise<string | undefined> {
 	const physicalProjectRoot = await realpath(projectRoot);
-	const canonical = join(physicalProjectRoot, "agentic-workspace", ".locks", "workspace-view-state");
+	const canonical = join(physicalProjectRoot, ".agentic-workspace", ".locks", "workspace-view-state");
 	let parent = dirname(canonical);
 	for (;;) {
 		let exists = false;
@@ -111,6 +111,7 @@ class ViewStateStoreImpl<T extends object> implements ViewStateStore<T> {
 	private state: T;
 	private rev = 0;
 	private path = "";
+	private lockTargetPath = "";
 	private externalStateRoot?: string;
 
 	constructor(
@@ -128,10 +129,9 @@ class ViewStateStoreImpl<T extends object> implements ViewStateStore<T> {
 	async open(): Promise<void> {
 		const stateRoot = await resolveProjectStateRoot(this.rootDir, this.options);
 		this.path = join(stateRoot, VIEW_STATE_FILE);
-		// The directory has to exist before fs.watch can attach to it.
-		await mkdir(stateRoot, { recursive: true });
 		const physicalStateRoot = await realpath(stateRoot);
 		const physicalProjectRoot = await realpath(this.rootDir);
+		this.lockTargetPath = join(physicalStateRoot, VIEW_STATE_FILE);
 		this.externalStateRoot =
 			physicalStateRoot === join(physicalProjectRoot, ".agentic-workspace") ? undefined : physicalStateRoot;
 		await this.seed();
@@ -148,7 +148,8 @@ class ViewStateStoreImpl<T extends object> implements ViewStateStore<T> {
 	 */
 	async update(patch: (state: T) => T): Promise<void> {
 		await this.withLock(async () => {
-			const base = (await this.readEnvelope()) ?? { rev: this.rev, origin: this.origin, state: this.state };
+			const base = await this.readEnvelope();
+			if (!base) throw new Error(`Workspace view state disappeared at ${this.path}; refusing to overwrite it.`);
 			const next = patch(base.state);
 			if (JSON.stringify(next) === JSON.stringify(base.state)) return;
 			const envelope: ViewStateEnvelope<T> = { rev: base.rev + 1, origin: this.origin, state: next };
@@ -220,7 +221,7 @@ class ViewStateStoreImpl<T extends object> implements ViewStateStore<T> {
 			new Error(`Could not lock workspace view state: ${error instanceof Error ? error.message : String(error)}`);
 		if (this.externalStateRoot) {
 			return await this.lock.withTarget(
-				this.externalStateRoot,
+				this.lockTargetPath,
 				join(this.externalStateRoot, "workspace-view-state.lock"),
 				settings,
 				toError,
@@ -228,8 +229,8 @@ class ViewStateStoreImpl<T extends object> implements ViewStateStore<T> {
 			);
 		}
 		const canonical = await canonicalViewLock(this.rootDir);
-		if (!canonical) return await operation();
-		return await this.lock.withTarget(this.rootDir, canonical, settings, toError, operation);
+		if (!canonical) throw new Error("Cannot use a safe workspace view-state lock.");
+		return await this.lock.withTarget(this.lockTargetPath, canonical, settings, toError, operation);
 	}
 }
 

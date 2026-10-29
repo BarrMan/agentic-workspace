@@ -6,7 +6,13 @@ import { NO_MILESTONE_FILTER_VALUE, type TaskFilterOptions, TaskSearchIndex } fr
 import type { Task, TaskSearchResult } from "../model/types.ts";
 import type { FileSystem } from "../storage/file-system.ts";
 import { runInProcessCli } from "./in-process-cli.ts";
-import { coreFileSystem, createUniqueTestDir, initializeFilesystemTestProject, safeCleanup } from "./test-utils.ts";
+import {
+	coreFileSystem,
+	createUniqueTestDir,
+	initializeFilesystemTestProject,
+	initializeFilesystemTestWorkspace,
+	safeCleanup,
+} from "./test-utils.ts";
 
 /**
  * The local one-shot index (`task list --search`, the TUI views) and the
@@ -17,6 +23,7 @@ import { coreFileSystem, createUniqueTestDir, initializeFilesystemTestProject, s
 const labelledTask: Task = {
 	id: "task-1",
 	title: "Rework the exporter",
+	done: false,
 	status: "To Do",
 	reporter: "@morgan",
 	createdDate: "2026-01-05 09:00",
@@ -29,6 +36,7 @@ const labelledTask: Task = {
 const otherTask: Task = {
 	id: "task-2",
 	title: "Polish the sidebar",
+	done: false,
 	status: "To Do",
 	reporter: "@riley",
 	createdDate: "2026-01-05 09:00",
@@ -60,9 +68,9 @@ describe("cross-surface search parity", () => {
 		TEST_DIR = createUniqueTestDir("task-search-parity");
 		core = new Core(TEST_DIR);
 		filesystem = coreFileSystem(core);
-		await filesystem.ensureAgenticWorkspaceStructure();
+		await initializeFilesystemTestWorkspace(filesystem);
 		for (const task of tasks) {
-			await filesystem.saveTask(task);
+			await filesystem.saveTask(task, { create: true });
 		}
 	});
 
@@ -129,6 +137,7 @@ describe("filters mean the same thing with and without a query", () => {
 		{
 			id: "task-10",
 			title: "Wire the release checklist",
+			done: false,
 			status: "To Do",
 			createdDate: "2026-01-05 09:00",
 			labels: [],
@@ -138,6 +147,7 @@ describe("filters mean the same thing with and without a query", () => {
 		{
 			id: "task-11",
 			title: "Wire the follow-up checklist",
+			done: false,
 			status: "To Do",
 			createdDate: "2026-01-05 09:00",
 			labels: [],
@@ -147,6 +157,7 @@ describe("filters mean the same thing with and without a query", () => {
 		{
 			id: "task-12",
 			title: "Wire the unscheduled checklist",
+			done: false,
 			status: "To Do",
 			createdDate: "2026-01-05 09:00",
 			labels: [],
@@ -222,14 +233,14 @@ describe("filter wiring across surfaces", () => {
 		if (!config) throw new Error("Expected test config");
 		await coreFileSystem(core).saveConfig({ ...config, projects: ["Web", "API"] });
 
-		await core.createTaskFromInput({
+		await core.tasks.create({
 			title: "Wiring both labels",
 			project: "web",
 			status: "To Do",
 			labels: ["backend", "infrastructure"],
 		});
-		await core.createTaskFromInput({ title: "Wiring one label", project: "api", status: "To Do", labels: ["backend"] });
-		await core.createTaskFromInput({ title: "Wiring no labels", status: "To Do" });
+		await core.tasks.create({ title: "Wiring one label", project: "api", status: "To Do", labels: ["backend"] });
+		await core.tasks.create({ title: "Wiring no labels", status: "To Do" });
 	});
 
 	afterEach(async () => {
@@ -246,7 +257,7 @@ describe("filter wiring across surfaces", () => {
 		const expected = ["Wiring both labels"];
 
 		// Core.queryTasks backs `task list` and `GET /api/tasks`.
-		const coreTasks = await core.queryTasks({ filters: { project: "web" } });
+		const coreTasks = await core.tasks.query({ filters: { project: "web" } });
 		expect(coreTasks.map((task) => task.title)).toEqual(expected);
 
 		const searchTitles = (await core.searchPersistently({ types: ["task"], filters: { project: "web" } }))
@@ -261,14 +272,14 @@ describe("filter wiring across surfaces", () => {
 	});
 
 	it("keeps OR semantics when several projects are requested", async () => {
-		const both = await core.queryTasks({ filters: { project: ["WEB", "api"] } });
+		const both = await core.tasks.query({ filters: { project: ["WEB", "api"] } });
 		expect(both.map((task) => task.title).sort()).toEqual(["Wiring both labels", "Wiring one label"]);
 		// A task with no project never matches a non-empty project filter.
 		expect(both.some((task) => task.project === undefined)).toBe(false);
 	});
 
 	it("searches the local task corpus before applying task-list filters", async () => {
-		const matches = await core.queryTasks({
+		const matches = await core.tasks.query({
 			query: "Wiring",
 			filters: { project: "api" },
 		});
